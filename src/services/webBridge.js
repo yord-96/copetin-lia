@@ -1,0 +1,6649 @@
+import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability';
+
+export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
+const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
+const RESET_SECURITY_CODE = '1703';
+const PRESENCE_TTL_MS = 90 * 1000;
+const USER_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
+
+const ROLE_DEFINITIONS = {
+  super_admin: {
+    label: 'Super admin',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias'],
+  },
+  ventas: {
+    label: 'Ventas',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'caja'],
+  },
+  inventario: {
+    label: 'Inventario',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'caja', 'inventario'],
+  },
+  transporte: {
+    label: 'Transporte',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'devolucion', 'caja'],
+  },
+  contabilidad: {
+    label: 'Contabilidad',
+    defaultTab: 'contabilidad',
+    allowedTabs: ['resumen', 'personal', 'devolucion', 'contabilidad', 'recibos', 'caja'],
+  },
+};
+
+const normalizeText = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const normalizeRoleId = (role) => {
+  const normalized = normalizeText(role).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (normalized.includes('admin')) return 'super_admin';
+  if (normalized.includes('invent')) return 'inventario';
+  if (normalized.includes('venta') || normalized.includes('comercial')) return 'ventas';
+  if (normalized.includes('trans') || normalized.includes('chofer')) return 'transporte';
+  if (normalized.includes('cont') || normalized.includes('caja') || normalized.includes('recibo')) return 'contabilidad';
+  return ROLE_DEFINITIONS[normalized] ? normalized : 'ventas';
+};
+
+const hashPassword = (password) => {
+  const input = String(password ?? '');
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+};
+
+const colorForUserId = (userId) => {
+  const input = String(userId ?? 'user');
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return USER_COLORS[hash % USER_COLORS.length];
+};
+
+const normalizeUsername = (username) =>
+  normalizeText(username)
+    .replace(/[^a-z0-9._-]+/g, '')
+    .slice(0, 32);
+
+const usernameFromName = (name) => {
+  const parts = normalizeText(name).split(/\s+/).filter(Boolean);
+  return normalizeUsername(parts.slice(0, 2).join('.')) || `user${Date.now()}`;
+};
+
+const sanitizeUserForSession = (user) => {
+  if (!user) return null;
+  const roleId = normalizeRoleId(user.roleId ?? user.role);
+  const role = ROLE_DEFINITIONS[roleId] ?? ROLE_DEFINITIONS.ventas;
+  return {
+    id: user.id,
+    fullName: user.fullName,
+    username: user.username,
+    roleId,
+    role: role.label,
+    allowedTabs: role.allowedTabs,
+    defaultTab: role.defaultTab,
+    status: user.status,
+    lastAccessAt: user.lastAccessAt ?? null,
+  };
+};
+
+const readSessionUserId = () => {
+  if (!canUseLocalStorage()) return null;
+  return window.localStorage.getItem(WEB_SESSION_STORAGE_KEY);
+};
+
+const writeSessionUserId = (userId) => {
+  if (!canUseLocalStorage()) return;
+  window.localStorage.setItem(WEB_SESSION_STORAGE_KEY, userId);
+};
+
+const clearSessionUserId = () => {
+  if (!canUseLocalStorage()) return;
+  window.localStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+};
+
+const categoryRequiresCleaning = (category) => {
+  const normalized = normalizeText(category);
+  return normalized.includes('manteleria') || normalized.includes('mantel');
+};
+
+const toNumber = (value, fieldName) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`El campo "${fieldName}" debe ser numerico.`);
+  }
+  return parsed;
+};
+
+const toInteger = (value, fieldName) => Math.trunc(toNumber(value, fieldName));
+
+const toPositiveRoundedNumber = (value) => Number(Number(value ?? 0).toFixed(2));
+
+const timeToMinutes = (value) => {
+  const raw = String(value ?? '').trim();
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+const minutesToHours = (minutes) => Number(Math.max(0, minutes / 60).toFixed(2));
+
+const getWeekdayFromDate = (date) => {
+  const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.getDay();
+};
+
+const calculateAttendanceMeta = ({ employee, date, checkIn, checkOut }) => {
+  const inMinutes = timeToMinutes(checkIn);
+  const outMinutes = timeToMinutes(checkOut);
+  const workingDays = Array.isArray(employee?.schedule?.workingDays) && employee.schedule.workingDays.length
+    ? employee.schedule.workingDays.map((day) => Number(day))
+    : [1, 2, 3, 4, 5, 6];
+  const weekday = getWeekdayFromDate(date);
+  const isWorkingDay = !employee || weekday === null || workingDays.includes(weekday);
+  const scheduleStart = timeToMinutes(employee?.schedule?.start ?? '08:00') ?? 480;
+  const scheduleEnd = timeToMinutes(employee?.schedule?.end ?? '17:00') ?? 1020;
+  const expectedMinutes = isWorkingDay
+    ? Math.max(60, Number(employee?.schedule?.dailyHours ?? 8) * 60)
+    : 0;
+
+  if (!date || inMinutes === null || outMinutes === null || outMinutes <= inMinutes) {
+    return {
+      workedHours: 0,
+      overtimeHours: 0,
+      missingHours: employee && isWorkingDay ? minutesToHours(expectedMinutes) : 0,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      status: 'incompleto',
+    };
+  }
+
+  const workedMinutes = outMinutes - inMinutes;
+  const lateMinutes = isWorkingDay ? Math.max(0, inMinutes - scheduleStart) : 0;
+  const earlyLeaveMinutes = isWorkingDay ? Math.max(0, scheduleEnd - outMinutes) : 0;
+  const overtimeMinutes = Math.max(0, workedMinutes - expectedMinutes);
+  const missingMinutes = Math.max(0, expectedMinutes - workedMinutes);
+  const status = missingMinutes > 0 || lateMinutes > 0 || earlyLeaveMinutes > 0
+    ? 'observado'
+    : overtimeMinutes > 0
+      ? 'extra'
+      : 'normal';
+
+  return {
+    workedHours: minutesToHours(workedMinutes),
+    overtimeHours: minutesToHours(overtimeMinutes),
+    missingHours: minutesToHours(missingMinutes),
+    lateMinutes,
+    earlyLeaveMinutes,
+    workingDay: isWorkingDay,
+    status,
+  };
+};
+
+const nextPersonnelCode = (employees) => {
+  let nextNumber = employees.length + 1;
+  let code = `EMP-${String(nextNumber).padStart(4, '0')}`;
+  const existingCodes = new Set(employees.map((employee) => normalizeText(employee?.employeeCode)));
+  while (existingCodes.has(normalizeText(code))) {
+    nextNumber += 1;
+    code = `EMP-${String(nextNumber).padStart(4, '0')}`;
+  }
+  return code;
+};
+
+const DEFAULT_DURATION_PRICING_TIERS = [
+  { fromDay: 1, toDay: 1, percent: 100 },
+  { fromDay: 2, toDay: 3, percent: 85 },
+  { fromDay: 4, toDay: 0, percent: 50 },
+];
+
+const parsePositiveInteger = (value, fallback = 1) => {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parsePercentage = (value, fallback = 100) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(100, parsed));
+};
+
+const normalizeDurationPricingTiers = (tiers) => {
+  const source = Array.isArray(tiers) && tiers.length > 0 ? tiers : DEFAULT_DURATION_PRICING_TIERS;
+  return source
+    .map((tier, index) => {
+      const fromDay = parsePositiveInteger(tier?.fromDay, index + 1);
+      const rawToDay = String(tier?.toDay ?? '').trim();
+      const parsedToDay = rawToDay === '' ? 0 : parsePositiveInteger(rawToDay, fromDay);
+      return {
+        fromDay,
+        toDay: parsedToDay > 0 ? Math.max(fromDay, parsedToDay) : 0,
+        percent: parsePercentage(tier?.percent),
+      };
+    })
+    .sort((a, b) => a.fromDay - b.fromDay);
+};
+
+const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
+  const safeBase = Math.max(0, Number(baseSubtotalBs ?? 0));
+  const mode = pricingPlan?.mode === 'duration' ? 'duration' : 'simple';
+  const days = mode === 'duration' ? parsePositiveInteger(pricingPlan?.days, 1) : 1;
+  const tiers = normalizeDurationPricingTiers(pricingPlan?.tiers);
+
+  if (mode !== 'duration') {
+    return {
+      mode: 'simple',
+      days: 1,
+      tiers,
+      baseSubtotalBs: toPositiveRoundedNumber(safeBase),
+      theoreticalSubtotalBs: toPositiveRoundedNumber(safeBase),
+      chargeableSubtotalBs: toPositiveRoundedNumber(safeBase),
+      durationDiscountBs: 0,
+      effectiveMultiplier: 1,
+    };
+  }
+
+  const chargeableSubtotalBs = Array.from({ length: days }, (_, index) => {
+    const day = index + 1;
+    const tier = tiers.find((entry) => day >= entry.fromDay && (entry.toDay === 0 || day <= entry.toDay));
+    return safeBase * ((tier?.percent ?? 100) / 100);
+  }).reduce((sum, amount) => sum + amount, 0);
+  const theoreticalSubtotalBs = safeBase * days;
+
+  return {
+    mode,
+    days,
+    tiers,
+    baseSubtotalBs: toPositiveRoundedNumber(safeBase),
+    theoreticalSubtotalBs: toPositiveRoundedNumber(theoreticalSubtotalBs),
+    chargeableSubtotalBs: toPositiveRoundedNumber(chargeableSubtotalBs),
+    durationDiscountBs: toPositiveRoundedNumber(Math.max(0, theoreticalSubtotalBs - chargeableSubtotalBs)),
+    effectiveMultiplier: safeBase > 0 ? Number((chargeableSubtotalBs / safeBase).toFixed(4)) : 0,
+  };
+};
+
+const makeId = (prefix = 'id') => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const canUseLocalStorage = () => {
+  try {
+    return typeof window !== 'undefined' && Boolean(window.localStorage);
+  } catch {
+    return false;
+  }
+};
+
+function normalizeDeliveryStatus(value) {
+  const normalized = String(value?.status ?? value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (normalized === 'en_ruta' || normalized === 'ruta') return 'en_ruta';
+  if (normalized === 'completada' || normalized === 'completo' || normalized === 'entregada') return 'completada';
+  if (normalized === 'incidencia' || normalized === 'problema') return 'incidencia';
+  if (normalized === 'cancelada' || normalized === 'cancelado') return 'cancelada';
+  return 'programada';
+}
+
+const syncRentalTransportStatus = (state, rental, now = new Date().toISOString()) => {
+  if (!rental || rental.deletedAt || rental.status !== 'active') {
+    return;
+  }
+
+  rental.operational = {
+    inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+    transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+    inventoryNote: rental.operational?.inventoryNote ?? '',
+    transportNote: rental.operational?.transportNote ?? '',
+    inventorySentAt: rental.operational?.inventorySentAt ?? null,
+    transportSentAt: rental.operational?.transportSentAt ?? null,
+    inventoryConfirmedAt: rental.operational?.inventoryConfirmedAt ?? null,
+    transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
+  };
+
+  if (rental.logisticsMode === 'recojo') {
+    rental.operational.transportStatus = 'no_aplica';
+    return;
+  }
+
+  const linkedDeliveries = (state.deliveries ?? []).filter(
+    (delivery) =>
+      !delivery.deletedAt
+      && (
+        (delivery.rentalId && delivery.rentalId === rental.id)
+        || (delivery.orderCode && rental.orderCode && delivery.orderCode === rental.orderCode)
+      ),
+  );
+
+  if (linkedDeliveries.length === 0) {
+    return;
+  }
+
+  const everyCompleted = linkedDeliveries.every((delivery) => normalizeDeliveryStatus(delivery) === 'completada');
+  if (everyCompleted) {
+    rental.operational.transportStatus = 'confirmado';
+    rental.operational.transportSentAt = rental.operational.transportSentAt ?? now;
+    rental.operational.transportConfirmedAt = rental.operational.transportConfirmedAt ?? now;
+    return;
+  }
+
+  const anyInProgress = linkedDeliveries.some((delivery) => ['en_ruta', 'completada'].includes(normalizeDeliveryStatus(delivery)));
+  if (anyInProgress && rental.operational.transportStatus !== 'confirmado') {
+    rental.operational.transportStatus = 'enviado';
+    rental.operational.transportSentAt = rental.operational.transportSentAt ?? now;
+  }
+};
+
+const deepClone = (value) => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+};
+
+const createDefaultSettings = () => ({
+  defaultDepositBs: 200,
+  deliveryBaseFeeBs: 0,
+  missingMultiplier: 2,
+  damageMultiplier: 1.2,
+  companyName: 'Copetin SRL',
+  taxId: '30-71234567-8',
+  address: 'Av. Cordoba 1234, Piso 5, Oficina 12',
+  phone: '11 4567-8901',
+  email: 'contacto@copetin.com',
+  website: 'www.copetin.com',
+  timezone: 'America/Argentina/Buenos_Aires',
+  dateFormat: 'DD/MM/YYYY',
+  timeFormat: '24h',
+  language: 'es',
+  currency: 'BOB',
+  fiscalCondition: 'Responsable Inscripto',
+  activityStartDate: '2018-03-01',
+  numbering: {
+    quotePrefix: 'COT-',
+    quoteNext: 1,
+    contractPrefix: 'CON-',
+    contractNext: 1,
+    serviceOrderPrefix: 'OS-',
+    serviceOrderNext: 125,
+    deliveryPrefix: 'ENT-',
+    deliveryNext: 46,
+    supplierQuotePrefix: 'PRO-COT-',
+    supplierQuoteNext: 1,
+    supplierLoanPrefix: 'SUB-',
+    supplierLoanNext: 1,
+    hrImportPrefix: 'BIO-',
+    hrImportNext: 1,
+    adjustmentPrefix: 'AJ-',
+    adjustmentNext: 46,
+    movementPrefix: 'MOV-',
+    movementNext: 457,
+  },
+  backupMode: 'automatico',
+});
+
+const CREATE_DEFAULT_CATEGORIES = (createdAt) => [
+  {
+    id: 'cat-vajilla',
+    name: 'Vajilla',
+    icon: 'plate',
+    color: '#2f8f67',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cat-mobiliario',
+    name: 'Mobiliario',
+    icon: 'chair',
+    color: '#b26a33',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cat-manteleria',
+    name: 'Manteleria',
+    icon: 'fabric',
+    color: '#5d59e0',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cat-decoracion',
+    name: 'Decoracion',
+    icon: 'star',
+    color: '#ba5d78',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const CREATE_DEFAULT_CLIENTS = (createdAt) => [
+  {
+    id: 'cli-ana-martinez',
+    customerType: 'persona',
+    name: 'Ana Martinez',
+    companyName: 'Eventos Exclusivos SA',
+    contactName: 'Ana Martinez',
+    contactRole: 'Directora',
+    nitCi: '',
+    phone: '11 2345-6789',
+    whatsapp: '11 2345-6789',
+    email: 'ana@eventosexclusivos.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-carlos-rodriguez',
+    customerType: 'persona',
+    name: 'Carlos Rodriguez',
+    companyName: 'CR Producciones',
+    contactName: 'Carlos Rodriguez',
+    contactRole: 'Gerente',
+    nitCi: '',
+    phone: '11 3456-7890',
+    whatsapp: '11 3456-7890',
+    email: 'info@crproducciones.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-eventos-delta',
+    customerType: 'empresa',
+    name: 'Eventos Delta',
+    companyName: 'Eventos Delta SRL',
+    contactName: 'Lucia Fernandez',
+    contactRole: 'Coordinadora',
+    nitCi: '',
+    phone: '11 4567-8901',
+    whatsapp: '11 4567-8901',
+    email: 'contacto@eventosdelta.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-lucia-fernandez',
+    customerType: 'persona',
+    name: 'Lucia Fernandez',
+    companyName: 'LF Celebraciones',
+    contactName: 'Lucia Fernandez',
+    contactRole: 'Propietaria',
+    nitCi: '',
+    phone: '11 5678-9012',
+    whatsapp: '11 5678-9012',
+    email: 'lucia@lfcelebraciones.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-grupo-samsung',
+    customerType: 'empresa',
+    name: 'Grupo Samsung',
+    companyName: 'Samsung Argentina',
+    contactName: 'Diego Silva',
+    contactRole: 'Compras',
+    nitCi: '',
+    phone: '11 6789-0123',
+    whatsapp: '11 6789-0123',
+    email: 'eventos@samsung.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-hotel-central',
+    customerType: 'empresa',
+    name: 'Hotel Central',
+    companyName: 'Hotel Central Buenos Aires',
+    contactName: 'Sofia Herrera',
+    contactRole: 'Eventos',
+    nitCi: '',
+    phone: '11 8901-2345',
+    whatsapp: '11 8901-2345',
+    email: 'eventos@hotelcentral.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-rp-fiestas',
+    customerType: 'empresa',
+    name: 'RP Fiestas',
+    companyName: 'RP Fiestas Infantiles',
+    contactName: 'Roberto Perez',
+    contactRole: 'Dueno',
+    nitCi: '',
+    phone: '11 9012-3456',
+    whatsapp: '11 9012-3456',
+    email: 'roberto@rpfiestas.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'cli-coporativo-martinez',
+    customerType: 'empresa',
+    name: 'Corporativo Martinez',
+    companyName: 'Martinez & Asociados',
+    contactName: 'Javier Martinez',
+    contactRole: 'Office Manager',
+    nitCi: '',
+    phone: '11 7890-1234',
+    whatsapp: '11 7890-1234',
+    email: 'jmartinez@martinez.com',
+    address: '',
+    city: '',
+    observations: '',
+    status: 'active',
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const createDefaultUsers = (createdAt) => [
+  {
+    id: 'usr-maria',
+    fullName: 'Yordy Copa Cerezo',
+    username: 'admin',
+    passwordHash: hashPassword('admin123'),
+    roleId: 'super_admin',
+    role: 'Super admin',
+    status: 'active',
+    phone: '',
+    isCurrentUser: false,
+    invitedAt: null,
+    lastAccessAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'usr-juan',
+    fullName: 'Juan Perez',
+    username: 'ventas',
+    passwordHash: hashPassword('ventas123'),
+    roleId: 'ventas',
+    role: 'Ventas',
+    status: 'active',
+    phone: '11 4567-0002',
+    isCurrentUser: false,
+    invitedAt: null,
+    lastAccessAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'usr-luis',
+    fullName: 'Luis Sanchez',
+    username: 'transporte',
+    passwordHash: hashPassword('transporte123'),
+    roleId: 'transporte',
+    role: 'Transporte',
+    status: 'active',
+    phone: '11 4567-0003',
+    isCurrentUser: false,
+    invitedAt: null,
+    lastAccessAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'usr-lucia',
+    fullName: 'Lucia Gomez',
+    username: 'inventario',
+    passwordHash: hashPassword('inventario123'),
+    roleId: 'inventario',
+    role: 'Inventario',
+    status: 'active',
+    phone: '11 4567-0004',
+    isCurrentUser: false,
+    invitedAt: null,
+    lastAccessAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'usr-diego',
+    fullName: 'Diego Castro',
+    username: 'contabilidad',
+    passwordHash: hashPassword('contabilidad123'),
+    roleId: 'contabilidad',
+    role: 'Contabilidad',
+    status: 'suspended',
+    phone: '11 4567-0005',
+    isCurrentUser: false,
+    invitedAt: null,
+    lastAccessAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'usr-matias',
+    fullName: 'Matias Fernandez',
+    username: 'matias',
+    passwordHash: hashPassword('matias123'),
+    roleId: 'ventas',
+    role: 'Ventas',
+    status: 'invited',
+    phone: '11 4567-0006',
+    isCurrentUser: false,
+    invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    lastAccessAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const CREATE_DEFAULT_VEHICLES = (createdAt) => [
+  {
+    id: 'veh-ive-234',
+    code: 'IVE-234',
+    name: 'Camion Furgon',
+    model: 'Mercedes-Benz Sprinter',
+    type: 'Camion 3.5T',
+    capacityKg: 3500,
+    year: 2021,
+    status: 'activo',
+    mileageKm: 45680,
+    nextMaintenanceAt: '2024-07-15',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'veh-ive-123',
+    code: 'IVE-123',
+    name: 'Camion 3.5T',
+    model: 'Iveco Daily',
+    type: 'Camion 3.5T',
+    capacityKg: 3200,
+    year: 2020,
+    status: 'activo',
+    mileageKm: 62340,
+    nextMaintenanceAt: '2024-08-02',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'veh-ive-456',
+    code: 'IVE-456',
+    name: 'Camion Furgon',
+    model: 'Renault Master',
+    type: 'Camion Furgon',
+    capacityKg: 2500,
+    year: 2022,
+    status: 'mantenimiento',
+    mileageKm: 28900,
+    nextMaintenanceAt: '2024-06-20',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'veh-ive-789',
+    code: 'IVE-789',
+    name: 'Camion Grande',
+    model: 'IVECO Tector',
+    type: 'Camion Grande',
+    capacityKg: 5000,
+    year: 2019,
+    status: 'activo',
+    mileageKm: 89120,
+    nextMaintenanceAt: '2024-09-10',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const CREATE_DEFAULT_DRIVERS = (createdAt) => [
+  {
+    id: 'drv-juan',
+    fullName: 'Juan Perez',
+    code: 'CH-001',
+    licenseNumber: 'A123456',
+    licenseCategory: 'A3 - Profesional',
+    phone: '11 4567-8901',
+    status: 'activo',
+    rating: 4.8,
+    licenseExpiryAt: '2024-11-20',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'drv-luis',
+    fullName: 'Luis Sanchez',
+    code: 'CH-002',
+    licenseNumber: 'B987654',
+    licenseCategory: 'B2 - Camiones',
+    phone: '11 2345-6789',
+    status: 'activo',
+    rating: 4.7,
+    licenseExpiryAt: '2024-10-15',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'drv-diego',
+    fullName: 'Diego Castro',
+    code: 'CH-003',
+    licenseNumber: 'A456789',
+    licenseCategory: 'A3 - Profesional',
+    phone: '11 9876-5432',
+    status: 'vacaciones',
+    rating: 4.9,
+    licenseExpiryAt: '2024-12-05',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'drv-lucia',
+    fullName: 'Lucia Gomez',
+    code: 'CH-004',
+    licenseNumber: 'B456123',
+    licenseCategory: 'B1 - Utilitarios',
+    phone: '11 3456-7890',
+    status: 'activo',
+    rating: 4.6,
+    licenseExpiryAt: '2024-09-30',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'drv-marcos',
+    fullName: 'Marcos Diaz',
+    code: 'CH-005',
+    licenseNumber: 'B123789',
+    licenseCategory: 'B2 - Camiones',
+    phone: '11 8765-4321',
+    status: 'suspendido',
+    rating: null,
+    licenseExpiryAt: '2024-06-10',
+    imageDataUrl: null,
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const CREATE_DEFAULT_DELIVERIES = (createdAt) => [
+  {
+    id: 'del-00045',
+    deliveryCode: 'ENT-00045',
+    orderCode: 'OS-00124',
+    rentalId: null,
+    customerName: 'Ana Martinez',
+    companyName: 'Eventos Exclusivos SA',
+    address: 'Av. Libertador 2450',
+    city: 'CABA',
+    windowStart: '08:00',
+    windowEnd: '10:00',
+    scheduledDate: '2024-06-15',
+    driverId: 'drv-juan',
+    vehicleId: 'veh-ive-234',
+    status: 'en_ruta',
+    progress: 65,
+    notes: 'Entrega principal',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'del-00044',
+    deliveryCode: 'ENT-00044',
+    orderCode: 'OS-00123',
+    rentalId: null,
+    customerName: 'Carlos Rodriguez',
+    companyName: 'CR Producciones',
+    address: 'San Martin 1020',
+    city: 'Vicente Lopez',
+    windowStart: '16:00',
+    windowEnd: '17:30',
+    scheduledDate: '2024-06-14',
+    driverId: 'drv-luis',
+    vehicleId: 'veh-ive-123',
+    status: 'programada',
+    progress: 0,
+    notes: '',
+    createdAt,
+    updatedAt: createdAt,
+  },
+  {
+    id: 'del-00043',
+    deliveryCode: 'ENT-00043',
+    orderCode: 'OS-00122',
+    rentalId: null,
+    customerName: 'Eventos Delta',
+    companyName: 'Eventos Delta SRL',
+    address: 'Dorrego 1890',
+    city: 'Rosario',
+    windowStart: '07:00',
+    windowEnd: '09:00',
+    scheduledDate: '2024-06-14',
+    driverId: 'drv-diego',
+    vehicleId: 'veh-ive-456',
+    status: 'completada',
+    progress: 100,
+    notes: '',
+    createdAt,
+    updatedAt: createdAt,
+  },
+];
+
+const createSeedData = () => {
+  const createdAt = new Date().toISOString();
+  return {
+    schemaVersion: 3,
+    settings: createDefaultSettings(),
+    categories: [],
+    clients: [],
+    users: createDefaultUsers(createdAt).slice(0, 1),
+    items: [],
+    quotes: [],
+    contracts: [],
+    rentals: [],
+    deliveries: [],
+    vehicles: [],
+    drivers: [],
+    calendarEvents: [],
+    generatedReports: [],
+    suppliers: [],
+    supplierQuotes: [],
+    supplierLoans: [],
+    personnelEmployees: [],
+    personnelAttendance: [],
+    personnelIncidents: [],
+    inventoryMovements: [],
+    stockRecoveries: [],
+    cashSessions: [],
+    cashMovements: [],
+    userPresence: [],
+  };
+};
+
+const normalizeState = (state) => {
+  const source = deepClone(state ?? {});
+  const now = new Date().toISOString();
+  source.schemaVersion = 3;
+
+  source.settings = {
+    ...createDefaultSettings(),
+    ...(source.settings ?? {}),
+    numbering: {
+      ...createDefaultSettings().numbering,
+      ...(source.settings?.numbering ?? {}),
+    },
+  };
+
+  if (!Array.isArray(source.categories)) {
+    source.categories = [];
+  } else {
+    source.categories = source.categories
+      .map((category) => ({
+        id: category?.id ?? makeId('cat'),
+        name: String(category?.name ?? '').trim(),
+        icon: String(category?.icon ?? 'box').trim() || 'box',
+        color: String(category?.color ?? '#5d59e0').trim() || '#5d59e0',
+        status: String(category?.status ?? 'active').trim() || 'active',
+        createdAt: category?.createdAt ?? now,
+        updatedAt: category?.updatedAt ?? category?.createdAt ?? now,
+      }))
+      .filter((category) => category.name);
+  }
+
+  const defaultCategory = source.categories[0]?.name ?? 'General';
+
+  source.clients = Array.isArray(source.clients)
+    ? source.clients.map((client) => ({
+      id: client?.id ?? makeId('cli'),
+      customerType: String(client?.customerType ?? 'persona').trim() || 'persona',
+      name: String(client?.name ?? '').trim(),
+      companyName: String(client?.companyName ?? '').trim(),
+      contactName: String(client?.contactName ?? '').trim(),
+      contactRole: String(client?.contactRole ?? '').trim(),
+      nitCi: String(client?.nitCi ?? '').trim(),
+      phone: String(client?.phone ?? '').trim(),
+      whatsapp: String(client?.whatsapp ?? client?.phone ?? '').trim(),
+      email: String(client?.email ?? '').trim().toLowerCase(),
+      address: String(client?.address ?? '').trim(),
+      city: String(client?.city ?? '').trim(),
+      observations: String(client?.observations ?? '').trim(),
+      deliveryAddresses: Array.isArray(client?.deliveryAddresses)
+        ? client.deliveryAddresses
+          .map((entry) => ({
+            id: entry?.id ?? makeId('addr'),
+            label: String(entry?.label ?? entry?.etiqueta ?? 'Principal').trim() || 'Principal',
+            address: String(entry?.address ?? entry?.direccion ?? '').trim(),
+            city: String(entry?.city ?? entry?.ciudad ?? '').trim(),
+            reference: String(entry?.reference ?? entry?.referencia ?? '').trim(),
+            isPrimary: Boolean(entry?.isPrimary ?? entry?.predeterminada),
+          }))
+          .filter((entry) => entry.address || entry.city)
+        : [],
+      attachments: Array.isArray(client?.attachments)
+        ? client.attachments
+          .map((entry) => ({
+            id: entry?.id ?? makeId('att'),
+            name: String(entry?.name ?? '').trim(),
+            mimeType: String(entry?.mimeType ?? '').trim(),
+            size: Number(entry?.size ?? 0),
+            dataUrl: entry?.dataUrl ?? null,
+            url: entry?.url ?? null,
+            uploadedAt: entry?.uploadedAt ?? now,
+          }))
+          .filter((entry) => entry.name)
+        : [],
+      status: String(client?.status ?? 'active').trim() || 'active',
+      createdAt: client?.createdAt ?? now,
+      updatedAt: client?.updatedAt ?? client?.createdAt ?? now,
+    })).filter((client) => client.name && client.phone)
+    : [];
+
+  source.users = Array.isArray(source.users)
+    ? source.users.map((user) => ({
+      id: user?.id ?? makeId('usr'),
+      fullName: String(user?.fullName ?? '').trim(),
+      username: normalizeUsername(user?.username)
+        || normalizeUsername(String(user?.email ?? '').split('@')[0])
+        || usernameFromName(user?.fullName),
+      passwordHash: String(user?.passwordHash ?? '').trim() || hashPassword(user?.password ?? (normalizeRoleId(user?.roleId ?? user?.role) === 'super_admin' ? 'admin123' : 'usuario123')),
+      roleId: normalizeRoleId(user?.roleId ?? user?.role ?? 'ventas'),
+      role: ROLE_DEFINITIONS[normalizeRoleId(user?.roleId ?? user?.role ?? 'ventas')]?.label ?? 'Ventas',
+      status: String(user?.status ?? 'active').trim() || 'active',
+      phone: String(user?.phone ?? '').trim(),
+      isCurrentUser: Boolean(user?.isCurrentUser),
+      invitedAt: user?.invitedAt ?? null,
+      lastAccessAt: user?.lastAccessAt ?? null,
+      createdAt: user?.createdAt ?? now,
+      updatedAt: user?.updatedAt ?? user?.createdAt ?? now,
+      deletedAt: user?.deletedAt ?? null,
+    })).filter((user) => user.fullName && user.username)
+    : [];
+
+  if (source.users.length === 0) {
+    source.users = createDefaultUsers(now).slice(0, 1);
+  }
+
+  source.vehicles = Array.isArray(source.vehicles)
+    ? source.vehicles.map((vehicle) => ({
+      id: vehicle?.id ?? makeId('veh'),
+      code: String(vehicle?.code ?? '').trim(),
+      name: String(vehicle?.name ?? '').trim(),
+      model: String(vehicle?.model ?? '').trim(),
+      type: String(vehicle?.type ?? '').trim(),
+      capacityKg: Math.max(0, Math.trunc(Number(vehicle?.capacityKg ?? 0))),
+      year: Math.max(2000, Math.trunc(Number(vehicle?.year ?? new Date().getFullYear()))),
+      status: String(vehicle?.status ?? 'activo').trim() || 'activo',
+      mileageKm: Math.max(0, Math.trunc(Number(vehicle?.mileageKm ?? 0))),
+      nextMaintenanceAt: String(vehicle?.nextMaintenanceAt ?? '').trim() || null,
+      imageDataUrl: vehicle?.imageDataUrl ?? null,
+      createdAt: vehicle?.createdAt ?? now,
+      updatedAt: vehicle?.updatedAt ?? vehicle?.createdAt ?? now,
+      deletedAt: vehicle?.deletedAt ?? null,
+    })).filter((vehicle) => vehicle.code && vehicle.name)
+    : [];
+
+  source.drivers = Array.isArray(source.drivers)
+    ? source.drivers.map((driver) => ({
+      id: driver?.id ?? makeId('drv'),
+      fullName: String(driver?.fullName ?? '').trim(),
+      code: String(driver?.code ?? '').trim(),
+      licenseNumber: String(driver?.licenseNumber ?? '').trim(),
+      licenseCategory: String(driver?.licenseCategory ?? '').trim(),
+      phone: String(driver?.phone ?? '').trim(),
+      status: String(driver?.status ?? 'activo').trim() || 'activo',
+      rating: driver?.rating === null ? null : Number(driver?.rating ?? 0),
+      licenseExpiryAt: String(driver?.licenseExpiryAt ?? '').trim() || null,
+      imageDataUrl: driver?.imageDataUrl ?? null,
+      createdAt: driver?.createdAt ?? now,
+      updatedAt: driver?.updatedAt ?? driver?.createdAt ?? now,
+      deletedAt: driver?.deletedAt ?? null,
+    })).filter((driver) => driver.fullName && driver.licenseNumber)
+    : [];
+
+  source.items = Array.isArray(source.items)
+    ? source.items.map((item) => {
+      const totalStock = Math.max(0, Math.trunc(Number(item?.totalStock ?? 0)));
+      const availableStock = Math.max(0, Math.min(totalStock, Math.trunc(Number(item?.availableStock ?? 0))));
+      const rentalPriceBs = Number(item?.rentalPriceBs ?? 0);
+      const damagedUnitChargeBs = Number.isFinite(Number(item?.damagedUnitChargeBs))
+        ? Number(item.damagedUnitChargeBs)
+        : Number((rentalPriceBs * 1.2).toFixed(2));
+      const missingUnitChargeBs = Number.isFinite(Number(item?.missingUnitChargeBs))
+        ? Number(item.missingUnitChargeBs)
+        : Number((rentalPriceBs * 2).toFixed(2));
+
+      return {
+        id: item?.id ?? makeId('item'),
+        name: String(item?.name ?? '').trim(),
+        category: String(item?.category ?? '').trim() || defaultCategory,
+        brand: String(item?.brand ?? '').trim(),
+        itemColor: String(item?.itemColor ?? item?.colorDescription ?? '').trim(),
+        totalStock,
+        availableStock,
+        needsCleaningOnReturn: categoryRequiresCleaning(item?.category)
+          ? true
+          : Boolean(item?.needsCleaningOnReturn),
+        rentalPriceBs: Number.isFinite(rentalPriceBs) ? rentalPriceBs : 0,
+        damagedUnitChargeBs: Number.isFinite(damagedUnitChargeBs) ? damagedUnitChargeBs : 0,
+        missingUnitChargeBs: Number.isFinite(missingUnitChargeBs) ? missingUnitChargeBs : 0,
+        imageDataUrl: item?.imageDataUrl ?? null,
+        createdAt: item?.createdAt ?? now,
+        updatedAt: item?.updatedAt,
+      };
+    }).filter((item) => item.name)
+    : [];
+
+  source.rentals = Array.isArray(source.rentals)
+    ? source.rentals.map((rental) => {
+      const totalBs = Number(rental?.totals?.totalBs ?? 0);
+      const paidAtRentalBs = Number(
+        rental?.payment?.paidAtRentalBs
+        ?? rental?.totals?.paidAtRentalBs
+        ?? totalBs,
+      );
+      const pendingPaymentBs = Number(
+        rental?.payment?.pendingPaymentBs
+        ?? rental?.totals?.pendingPaymentBs
+        ?? Math.max(0, totalBs - paidAtRentalBs),
+      );
+
+      return {
+        ...rental,
+        id: rental?.id ?? makeId('rent'),
+        customerName: String(rental?.customerName ?? '').trim(),
+        customerPhone: String(rental?.customerPhone ?? '').trim(),
+        items: Array.isArray(rental?.items) ? rental.items : [],
+        status: rental?.status === 'returned' ? 'returned' : 'active',
+        operational: {
+          inventoryStatus: rental?.operational?.inventoryStatus ?? 'pendiente',
+          transportStatus: rental?.operational?.transportStatus ?? 'pendiente',
+          inventoryNote: String(rental?.operational?.inventoryNote ?? '').trim(),
+          transportNote: String(rental?.operational?.transportNote ?? '').trim(),
+          inventorySentAt: rental?.operational?.inventorySentAt ?? null,
+          transportSentAt: rental?.operational?.transportSentAt ?? null,
+          inventoryConfirmedAt: rental?.operational?.inventoryConfirmedAt ?? null,
+          transportConfirmedAt: rental?.operational?.transportConfirmedAt ?? null,
+          inventoryConfirmedByName: rental?.operational?.inventoryConfirmedByName ?? null,
+          inventoryConfirmedByRole: rental?.operational?.inventoryConfirmedByRole ?? null,
+          transportConfirmedByName: rental?.operational?.transportConfirmedByName ?? null,
+          transportConfirmedByRole: rental?.operational?.transportConfirmedByRole ?? null,
+        },
+        totals: {
+          ...(rental?.totals ?? {}),
+          totalBs,
+          paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
+          pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
+        },
+        payment: {
+          mode:
+            rental?.payment?.mode
+            ?? (pendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
+          status:
+            rental?.payment?.status
+            ?? (pendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
+          paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
+          pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
+        },
+        createdById: rental?.createdById ?? rental?.userId ?? null,
+        createdByName: String(rental?.createdByName ?? rental?.userName ?? rental?.createdBy ?? 'Sistema').trim() || 'Sistema',
+        createdByRole: String(rental?.createdByRole ?? rental?.userRole ?? 'Sistema').trim() || 'Sistema',
+        deletedAt: rental?.deletedAt ?? null,
+      };
+    }).filter((rental) => rental.customerName && rental.customerPhone)
+    : [];
+
+  source.deliveries = Array.isArray(source.deliveries)
+    ? source.deliveries.map((delivery) => ({
+      id: delivery?.id ?? makeId('del'),
+      deliveryCode: String(delivery?.deliveryCode ?? '').trim(),
+      orderCode: String(delivery?.orderCode ?? '').trim(),
+      rentalId: delivery?.rentalId ?? null,
+      customerName: String(delivery?.customerName ?? '').trim(),
+      companyName: String(delivery?.companyName ?? '').trim(),
+      address: String(delivery?.address ?? '').trim(),
+      city: String(delivery?.city ?? '').trim(),
+      windowStart: String(delivery?.windowStart ?? '08:00').trim(),
+      windowEnd: String(delivery?.windowEnd ?? '10:00').trim(),
+      scheduledDate: String(delivery?.scheduledDate ?? '').trim(),
+      driverId: String(delivery?.driverId ?? '').trim() || null,
+      vehicleId: String(delivery?.vehicleId ?? '').trim() || null,
+      status: String(delivery?.status ?? 'programada').trim() || 'programada',
+      progress: Math.max(0, Math.min(100, Math.trunc(Number(delivery?.progress ?? 0)))),
+      notes: String(delivery?.notes ?? '').trim(),
+      createdAt: delivery?.createdAt ?? now,
+      updatedAt: delivery?.updatedAt ?? delivery?.createdAt ?? now,
+      deletedAt: delivery?.deletedAt ?? null,
+    })).filter((delivery) => delivery.deliveryCode && delivery.customerName)
+    : [];
+
+  source.rentals.forEach((rental) => syncRentalTransportStatus(source, rental, now));
+
+  source.calendarEvents = Array.isArray(source.calendarEvents)
+    ? source.calendarEvents.map((event) => ({
+      id: event?.id ?? makeId('evt'),
+      title: String(event?.title ?? '').trim(),
+      subtitle: String(event?.subtitle ?? '').trim(),
+      type: String(event?.type ?? 'other').trim(),
+      date: String(event?.date ?? '').trim(),
+      startTime: String(event?.startTime ?? '08:00').trim(),
+      endTime: String(event?.endTime ?? '09:00').trim(),
+      status: String(event?.status ?? '').trim() || null,
+      relatedType: String(event?.relatedType ?? '').trim() || null,
+      relatedId: String(event?.relatedId ?? '').trim() || null,
+      createdAt: event?.createdAt ?? now,
+      updatedAt: event?.updatedAt ?? event?.createdAt ?? now,
+    })).filter((event) => event.title && event.date)
+    : [];
+
+  source.generatedReports = Array.isArray(source.generatedReports)
+    ? source.generatedReports.map((report) => ({
+      id: report?.id ?? makeId('rep'),
+      name: String(report?.name ?? '').trim(),
+      category: String(report?.category ?? 'General').trim(),
+      periodFrom: String(report?.periodFrom ?? '').trim() || null,
+      periodTo: String(report?.periodTo ?? '').trim() || null,
+      format: String(report?.format ?? 'PDF').trim() || 'PDF',
+      generatedBy: String(report?.generatedBy ?? 'Sistema').trim() || 'Sistema',
+      generatedAt: report?.generatedAt ?? now,
+      sourceType: String(report?.sourceType ?? '').trim() || null,
+      sourceId: String(report?.sourceId ?? '').trim() || null,
+    })).filter((report) => report.name)
+    : [];
+
+  source.quotes = Array.isArray(source.quotes)
+    ? source.quotes.map((quote) => {
+      const items = Array.isArray(quote?.items)
+        ? quote.items
+          .map((line) => ({
+            itemId: String(line?.itemId ?? '').trim(),
+            itemName: String(line?.itemName ?? '').trim(),
+            quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
+            unitPriceBs: Number(line?.unitPriceBs ?? 0),
+            lineTotalBs: Number(line?.lineTotalBs ?? 0),
+          }))
+          .filter((line) => line.itemId && line.itemName)
+        : [];
+
+      const baseSubtotalBs = Number(
+        quote?.totals?.baseSubtotalBs
+          ?? items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)), 0),
+      );
+      const pricingPlan = calculateDurationPricing({ pricingPlan: quote?.pricingPlan, baseSubtotalBs });
+      const subtotalBs = Number(quote?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
+      const discountBs = Number(quote?.totals?.discountBs ?? 0);
+      const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
+      const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs));
+      const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
+      const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+
+      return {
+        id: quote?.id ?? makeId('quo'),
+        quoteCode: String(quote?.quoteCode ?? '').trim(),
+        clientId: quote?.clientId ?? null,
+        customerName: String(quote?.customerName ?? '').trim(),
+        customerPhone: String(quote?.customerPhone ?? '').trim(),
+        companyName: String(quote?.companyName ?? '').trim(),
+        eventType: String(quote?.eventType ?? 'general').trim() || 'general',
+        eventDate: String(quote?.eventDate ?? '').trim(),
+        eventTime: String(quote?.eventTime ?? '').trim(),
+        address: String(quote?.address ?? '').trim(),
+        city: String(quote?.city ?? '').trim(),
+        deliveryDate: String(quote?.deliveryDate ?? '').trim(),
+        logisticsMode: ['envio', 'recojo'].includes(quote?.logisticsMode) ? quote.logisticsMode : 'envio',
+        deliveryWindowStart: String(quote?.deliveryWindowStart ?? '08:00').trim(),
+        deliveryWindowEnd: String(quote?.deliveryWindowEnd ?? '10:00').trim(),
+        pickupDate: String(quote?.pickupDate ?? '').trim(),
+        pickupWindowStart: String(quote?.pickupWindowStart ?? '20:00').trim(),
+        pickupWindowEnd: String(quote?.pickupWindowEnd ?? '22:00').trim(),
+        driverId: String(quote?.driverId ?? '').trim() || null,
+        vehicleId: String(quote?.vehicleId ?? '').trim() || null,
+        validUntil: String(quote?.validUntil ?? '').trim() || null,
+        observations: String(quote?.observations ?? '').trim(),
+        billingMode: ['con_factura', 'sin_factura'].includes(quote?.billingMode) ? quote.billingMode : 'sin_factura',
+        status: String(quote?.status ?? 'borrador').trim() || 'borrador',
+        totals: {
+          baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+          subtotalBs: Number(subtotalBs.toFixed(2)),
+          durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          discountBs: Number(discountBs.toFixed(2)),
+          guaranteeBs: Number(guaranteeBs.toFixed(2)),
+          totalBs: Number(totalBs.toFixed(2)),
+        },
+        pricingPlan,
+        payment: {
+          paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+          pendingBs: Number(pendingBs.toFixed(2)),
+        },
+        items,
+        approvedAt: quote?.approvedAt ?? null,
+        rejectedAt: quote?.rejectedAt ?? null,
+        rentalId: quote?.rentalId ?? null,
+        orderCode: quote?.orderCode ?? null,
+        createdBy: String(quote?.createdBy ?? 'system').trim() || 'system',
+        createdById: quote?.createdById ?? quote?.userId ?? null,
+        createdByName: String(quote?.createdByName ?? quote?.userName ?? quote?.createdBy ?? 'Sistema').trim() || 'Sistema',
+        createdByRole: String(quote?.createdByRole ?? quote?.userRole ?? 'Sistema').trim() || 'Sistema',
+        createdAt: quote?.createdAt ?? now,
+        updatedAt: quote?.updatedAt ?? quote?.createdAt ?? now,
+        deletedAt: quote?.deletedAt ?? null,
+      };
+    }).filter((quote) => quote.quoteCode && quote.customerName)
+    : [];
+
+  source.contracts = Array.isArray(source.contracts)
+    ? source.contracts.map((contract) => {
+      const items = Array.isArray(contract?.items)
+        ? contract.items
+          .map((line) => ({
+            itemId: String(line?.itemId ?? '').trim(),
+            itemName: String(line?.itemName ?? '').trim(),
+            quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
+            unitPriceBs: Number(line?.unitPriceBs ?? 0),
+            lineTotalBs: Number(line?.lineTotalBs ?? 0),
+          }))
+          .filter((line) => line.itemId)
+        : [];
+
+      const baseSubtotalBs = Number(
+        contract?.totals?.baseSubtotalBs
+          ?? items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)), 0),
+      );
+      const pricingPlan = calculateDurationPricing({ pricingPlan: contract?.pricingPlan, baseSubtotalBs });
+      const subtotalBs = Number(contract?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
+      const discountBs = Number(contract?.totals?.discountBs ?? 0);
+      const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
+      const totalBs = Number(contract?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs));
+      const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
+      const pendingBs = Number(contract?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+
+      return {
+        id: contract?.id ?? makeId('con'),
+        contractCode: String(contract?.contractCode ?? '').trim(),
+        quoteId: String(contract?.quoteId ?? '').trim() || null,
+        clientId: contract?.clientId ?? null,
+        customerName: String(contract?.customerName ?? '').trim(),
+        customerPhone: String(contract?.customerPhone ?? '').trim(),
+        companyName: String(contract?.companyName ?? '').trim(),
+        eventType: String(contract?.eventType ?? 'general').trim() || 'general',
+        eventDate: String(contract?.eventDate ?? '').trim(),
+        eventTime: String(contract?.eventTime ?? '').trim(),
+        address: String(contract?.address ?? '').trim(),
+        city: String(contract?.city ?? '').trim(),
+        deliveryDate: String(contract?.deliveryDate ?? '').trim(),
+        logisticsMode: ['envio', 'recojo'].includes(contract?.logisticsMode) ? contract.logisticsMode : 'envio',
+        deliveryWindowStart: String(contract?.deliveryWindowStart ?? '08:00').trim(),
+        deliveryWindowEnd: String(contract?.deliveryWindowEnd ?? '10:00').trim(),
+        pickupDate: String(contract?.pickupDate ?? '').trim(),
+        pickupWindowStart: String(contract?.pickupWindowStart ?? '20:00').trim(),
+        pickupWindowEnd: String(contract?.pickupWindowEnd ?? '22:00').trim(),
+        driverId: String(contract?.driverId ?? '').trim() || null,
+        vehicleId: String(contract?.vehicleId ?? '').trim() || null,
+        validUntil: null,
+        observations: String(contract?.observations ?? '').trim(),
+        billingMode: ['con_factura', 'sin_factura'].includes(contract?.billingMode) ? contract.billingMode : 'sin_factura',
+        status: String(contract?.status ?? 'borrador').trim() || 'borrador',
+        totals: {
+          baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+          subtotalBs: Number(subtotalBs.toFixed(2)),
+          durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          discountBs: Number(discountBs.toFixed(2)),
+          guaranteeBs: Number(guaranteeBs.toFixed(2)),
+          totalBs: Number(totalBs.toFixed(2)),
+        },
+        pricingPlan,
+        payment: {
+          paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+          pendingBs: Number(pendingBs.toFixed(2)),
+        },
+        items,
+        approvedAt: contract?.approvedAt ?? null,
+        rejectedAt: contract?.rejectedAt ?? null,
+        rentalId: contract?.rentalId ?? null,
+        orderCode: contract?.orderCode ?? null,
+        createdBy: String(contract?.createdBy ?? 'system').trim() || 'system',
+        createdById: contract?.createdById ?? contract?.userId ?? null,
+        createdByName: String(contract?.createdByName ?? contract?.userName ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
+        createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? 'Sistema').trim() || 'Sistema',
+        createdAt: contract?.createdAt ?? now,
+        updatedAt: contract?.updatedAt ?? contract?.createdAt ?? now,
+        deletedAt: contract?.deletedAt ?? null,
+      };
+    }).filter((contract) => contract.contractCode && contract.customerName)
+    : [];
+
+  source.suppliers = Array.isArray(source.suppliers)
+    ? source.suppliers
+      .map((supplier) => ({
+        id: supplier?.id ?? makeId('sup'),
+        name: String(supplier?.name ?? '').trim(),
+        contactName: String(supplier?.contactName ?? '').trim(),
+        phone: String(supplier?.phone ?? '').trim(),
+        whatsapp: String(supplier?.whatsapp ?? supplier?.phone ?? '').trim(),
+        email: String(supplier?.email ?? '').trim().toLowerCase(),
+        address: String(supplier?.address ?? '').trim(),
+        city: String(supplier?.city ?? '').trim(),
+        type: supplier?.type === 'exchange' ? 'exchange' : 'regular',
+        paymentTerms: String(supplier?.paymentTerms ?? '').trim(),
+        notes: String(supplier?.notes ?? '').trim(),
+        status: String(supplier?.status ?? 'active').trim() || 'active',
+        createdAt: supplier?.createdAt ?? now,
+        updatedAt: supplier?.updatedAt ?? supplier?.createdAt ?? now,
+        deletedAt: supplier?.deletedAt ?? null,
+      }))
+      .filter((supplier) => supplier.name)
+    : [];
+
+  source.supplierQuotes = Array.isArray(source.supplierQuotes)
+    ? source.supplierQuotes
+      .map((quote) => {
+        const supplier = source.suppliers.find((entry) => entry.id === quote?.supplierId) ?? null;
+        const items = Array.isArray(quote?.items)
+          ? quote.items
+            .map((line) => {
+              const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+              const unitPriceBs = Math.max(0, Number(line?.unitPriceBs ?? 0));
+              return {
+                id: line?.id ?? makeId('supitem'),
+                itemId: String(line?.itemId ?? '').trim() || null,
+                itemName: String(line?.itemName ?? line?.name ?? '').trim(),
+                category: String(line?.category ?? '').trim(),
+                quantity,
+                unit: String(line?.unit ?? 'unidad').trim() || 'unidad',
+                unitPriceBs: Number(unitPriceBs.toFixed(2)),
+                lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              };
+            })
+            .filter((line) => line.itemName)
+          : [];
+        const totalBs = items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        return {
+          id: quote?.id ?? makeId('supquo'),
+          quoteCode: String(quote?.quoteCode ?? '').trim(),
+          supplierId: String(quote?.supplierId ?? '').trim(),
+          supplierName: String(quote?.supplierName ?? supplier?.name ?? '').trim(),
+          title: String(quote?.title ?? 'Lista de precios').trim() || 'Lista de precios',
+          validFrom: String(quote?.validFrom ?? '').trim() || null,
+          validUntil: String(quote?.validUntil ?? '').trim() || null,
+          status: String(quote?.status ?? 'vigente').trim() || 'vigente',
+          notes: String(quote?.notes ?? '').trim(),
+          totals: { totalBs: Number(totalBs.toFixed(2)) },
+          items,
+          createdAt: quote?.createdAt ?? now,
+          updatedAt: quote?.updatedAt ?? quote?.createdAt ?? now,
+          deletedAt: quote?.deletedAt ?? null,
+        };
+      })
+      .filter((quote) => quote.quoteCode && quote.supplierId && quote.supplierName)
+    : [];
+
+  source.supplierLoans = Array.isArray(source.supplierLoans)
+    ? source.supplierLoans
+      .map((loan) => {
+        const supplier = source.suppliers.find((entry) => entry.id === loan?.supplierId) ?? null;
+        const items = Array.isArray(loan?.items)
+          ? loan.items
+            .map((line) => {
+              const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+              const unitPriceBs = Math.max(0, Number(line?.unitPriceBs ?? 0));
+              return {
+                id: line?.id ?? makeId('supline'),
+                itemId: String(line?.itemId ?? '').trim() || null,
+                itemName: String(line?.itemName ?? line?.name ?? '').trim(),
+                category: String(line?.category ?? '').trim(),
+                quantity,
+                unitPriceBs: Number(unitPriceBs.toFixed(2)),
+                lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              };
+            })
+            .filter((line) => line.itemName)
+          : [];
+        const totalBs = items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const direction = loan?.direction === 'to_supplier' ? 'to_supplier' : 'from_supplier';
+        return {
+          id: loan?.id ?? makeId('suploan'),
+          loanCode: String(loan?.loanCode ?? '').trim(),
+          supplierId: String(loan?.supplierId ?? '').trim(),
+          supplierName: String(loan?.supplierName ?? supplier?.name ?? '').trim(),
+          direction,
+          flowType: loan?.flowType === 'exchange' ? 'exchange' : 'paid',
+          requestDate: String(loan?.requestDate ?? '').trim(),
+          returnDate: String(loan?.returnDate ?? '').trim() || null,
+          eventName: String(loan?.eventName ?? '').trim(),
+          status: String(loan?.status ?? 'programado').trim() || 'programado',
+          showPricesOnDocument: Boolean(loan?.showPricesOnDocument),
+          notes: String(loan?.notes ?? '').trim(),
+          totals: { totalBs: Number(totalBs.toFixed(2)) },
+          items,
+          settledAt: loan?.settledAt ?? null,
+          createdAt: loan?.createdAt ?? now,
+          updatedAt: loan?.updatedAt ?? loan?.createdAt ?? now,
+          deletedAt: loan?.deletedAt ?? null,
+        };
+      })
+      .filter((loan) => loan.loanCode && loan.supplierId && loan.supplierName)
+    : [];
+
+  source.personnelEmployees = Array.isArray(source.personnelEmployees)
+    ? source.personnelEmployees
+      .map((employee) => ({
+        id: employee?.id ?? makeId('emp'),
+        employeeCode: String(employee?.employeeCode ?? employee?.code ?? '').trim(),
+        biometricCode: String(employee?.biometricCode ?? employee?.employeeCode ?? employee?.code ?? '').trim(),
+        fullName: String(employee?.fullName ?? employee?.name ?? '').trim(),
+        documentId: String(employee?.documentId ?? employee?.ci ?? '').trim(),
+        phone: String(employee?.phone ?? '').trim(),
+        whatsapp: String(employee?.whatsapp ?? employee?.phone ?? '').trim(),
+        photoUrl: String(employee?.photoUrl ?? employee?.photo ?? '').trim(),
+        email: String(employee?.email ?? '').trim().toLowerCase(),
+        address: String(employee?.address ?? '').trim(),
+        city: String(employee?.city ?? '').trim(),
+        department: String(employee?.department ?? 'Operaciones').trim() || 'Operaciones',
+        position: String(employee?.position ?? '').trim(),
+        contractType: String(employee?.contractType ?? 'indefinido').trim() || 'indefinido',
+        hireDate: String(employee?.hireDate ?? '').trim() || null,
+        salaryBs: Math.max(0, Number(employee?.salaryBs ?? 0)),
+        schedule: {
+          start: String(employee?.schedule?.start ?? employee?.shiftStart ?? '08:00').trim() || '08:00',
+          end: String(employee?.schedule?.end ?? employee?.shiftEnd ?? '17:00').trim() || '17:00',
+          dailyHours: Math.max(1, Number(employee?.schedule?.dailyHours ?? employee?.dailyHours ?? 8)),
+          workingDays: Array.isArray(employee?.schedule?.workingDays) && employee.schedule.workingDays.length
+            ? employee.schedule.workingDays.map((day) => Number(day)).filter((day) => day >= 0 && day <= 6)
+            : [1, 2, 3, 4, 5, 6],
+        },
+        emergencyContact: String(employee?.emergencyContact ?? '').trim(),
+        emergencyPhone: String(employee?.emergencyPhone ?? '').trim(),
+        notes: String(employee?.notes ?? '').trim(),
+        status: String(employee?.status ?? 'active').trim() || 'active',
+        createdAt: employee?.createdAt ?? now,
+        updatedAt: employee?.updatedAt ?? employee?.createdAt ?? now,
+        deletedAt: employee?.deletedAt ?? null,
+      }))
+      .filter((employee) => employee.fullName)
+    : [];
+
+  source.personnelAttendance = Array.isArray(source.personnelAttendance)
+    ? source.personnelAttendance
+      .map((entry) => ({
+        id: entry?.id ?? makeId('att'),
+        employeeId: String(entry?.employeeId ?? '').trim() || null,
+        employeeCode: String(entry?.employeeCode ?? '').trim(),
+        employeeName: String(entry?.employeeName ?? '').trim(),
+        date: String(entry?.date ?? '').trim(),
+        checkIn: String(entry?.checkIn ?? '').trim(),
+        checkOut: String(entry?.checkOut ?? '').trim(),
+        workedHours: Math.max(0, Number(entry?.workedHours ?? 0)),
+        overtimeHours: Math.max(0, Number(entry?.overtimeHours ?? 0)),
+        missingHours: Math.max(0, Number(entry?.missingHours ?? 0)),
+        lateMinutes: Math.max(0, Math.trunc(Number(entry?.lateMinutes ?? 0))),
+        earlyLeaveMinutes: Math.max(0, Math.trunc(Number(entry?.earlyLeaveMinutes ?? 0))),
+        status: String(entry?.status ?? 'normal').trim() || 'normal',
+        source: String(entry?.source ?? 'manual').trim() || 'manual',
+        importCode: String(entry?.importCode ?? '').trim(),
+        notes: String(entry?.notes ?? '').trim(),
+        createdAt: entry?.createdAt ?? now,
+        updatedAt: entry?.updatedAt ?? entry?.createdAt ?? now,
+      }))
+      .filter((entry) => entry.date && (entry.employeeId || entry.employeeName || entry.employeeCode))
+    : [];
+
+  source.personnelIncidents = Array.isArray(source.personnelIncidents)
+    ? source.personnelIncidents
+      .map((entry) => ({
+        id: entry?.id ?? makeId('hrinc'),
+        employeeId: String(entry?.employeeId ?? '').trim(),
+        employeeName: String(entry?.employeeName ?? '').trim(),
+        type: String(entry?.type ?? 'permiso').trim() || 'permiso',
+        dateFrom: String(entry?.dateFrom ?? entry?.date ?? '').trim(),
+        dateTo: String(entry?.dateTo ?? entry?.dateFrom ?? entry?.date ?? '').trim(),
+        hours: Math.max(0, Number(entry?.hours ?? 0)),
+        status: String(entry?.status ?? 'aprobado').trim() || 'aprobado',
+        reason: String(entry?.reason ?? '').trim(),
+        notes: String(entry?.notes ?? '').trim(),
+        createdAt: entry?.createdAt ?? now,
+        updatedAt: entry?.updatedAt ?? entry?.createdAt ?? now,
+        deletedAt: entry?.deletedAt ?? null,
+      }))
+      .filter((entry) => entry.employeeId && entry.dateFrom)
+    : [];
+
+  source.inventoryMovements = Array.isArray(source.inventoryMovements)
+    ? source.inventoryMovements
+    : [];
+  source.stockRecoveries = Array.isArray(source.stockRecoveries)
+    ? source.stockRecoveries.filter((entry) => Number(entry?.quantity ?? 0) > 0)
+    : [];
+  source.cashSessions = Array.isArray(source.cashSessions)
+    ? source.cashSessions.map((session) => ({
+      ...session,
+      openingBigCashBs: Number(session?.openingBigCashBs ?? session?.openingAmountBs ?? 0),
+      openingPettyCashBs: Number(session?.openingPettyCashBs ?? 0),
+      expectedBigCashBs: session?.expectedBigCashBs ?? null,
+      expectedPettyCashBs: session?.expectedPettyCashBs ?? null,
+      countedBigCashBs: session?.countedBigCashBs ?? null,
+      countedPettyCashBs: session?.countedPettyCashBs ?? null,
+      differenceBigCashBs: session?.differenceBigCashBs ?? null,
+      differencePettyCashBs: session?.differencePettyCashBs ?? null,
+    }))
+    : [];
+  source.cashMovements = Array.isArray(source.cashMovements)
+    ? source.cashMovements.map((movement) => ({
+      ...movement,
+      cashBoxType: normalizeCashBoxType(movement?.cashBoxType),
+      category: String(movement?.category ?? '').trim(),
+      paymentMethod: String(movement?.paymentMethod ?? '').trim(),
+      responsible: String(movement?.responsible ?? movement?.createdBy ?? '').trim(),
+      receipt: String(movement?.receipt ?? '').trim(),
+      isInternalTransfer: Boolean(movement?.isInternalTransfer),
+      transferGroupId: movement?.transferGroupId ?? null,
+    }))
+    : [];
+  source.userPresence = Array.isArray(source.userPresence)
+    ? source.userPresence.map((presence) => ({
+      userId: String(presence?.userId ?? '').trim(),
+      fullName: String(presence?.fullName ?? 'Usuario').trim() || 'Usuario',
+      role: String(presence?.role ?? 'Operador').trim() || 'Operador',
+      activeTab: String(presence?.activeTab ?? 'resumen').trim() || 'resumen',
+      color: String(presence?.color ?? colorForUserId(presence?.userId)).trim() || colorForUserId(presence?.userId),
+      lastSeenAt: presence?.lastSeenAt ?? now,
+      updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
+    })).filter((presence) => presence.userId)
+    : [];
+
+  return source;
+};
+
+let inMemoryState = createSeedData();
+
+const readState = () => {
+  if (!canUseLocalStorage()) {
+    inMemoryState = normalizeState(inMemoryState);
+    return deepClone(inMemoryState);
+  }
+
+  const raw = window.localStorage.getItem(WEB_DB_STORAGE_KEY);
+  if (!raw) {
+    const seed = normalizeState(createSeedData());
+    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(seed));
+    return deepClone(seed);
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeState(parsed);
+    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(normalized));
+    return deepClone(normalized);
+  } catch {
+    const fallback = normalizeState(createSeedData());
+    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(fallback));
+    return deepClone(fallback);
+  }
+};
+
+const writeState = (state) => {
+  const normalized = normalizeState(state);
+  if (!canUseLocalStorage()) {
+    inMemoryState = normalized;
+    return deepClone(normalized);
+  }
+
+  window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(normalized));
+  return deepClone(normalized);
+};
+
+const transaction = (mutator) => {
+  const state = readState();
+  const clone = deepClone(state);
+  const result = mutator(clone);
+  const toPersist = result ?? clone;
+  writeState(toPersist);
+  return toPersist;
+};
+
+const getActiveSession = (state) => state.cashSessions.find((session) => session.status === 'open') ?? null;
+const CASH_BOX_TYPES = {
+  BIG_CASH: 'BIG_CASH',
+  PETTY_CASH: 'PETTY_CASH',
+};
+
+const normalizeCashBoxType = (value, fallback = CASH_BOX_TYPES.BIG_CASH) =>
+  Object.values(CASH_BOX_TYPES).includes(value) ? value : fallback;
+
+const PETTY_CASH_CATEGORY_HINTS = [
+  'gasto_menor',
+  'materiales_menores',
+  'transporte_menor',
+  'lavado_menor',
+  'reparacion_menor',
+  'gasto_diario',
+  'urgencia_evento',
+];
+
+const inferCashBoxType = ({ movementType, category, cashBoxType }) => {
+  const normalized = normalizeCashBoxType(cashBoxType, null);
+  if (normalized) return normalized;
+  if (movementType === 'egreso' && PETTY_CASH_CATEGORY_HINTS.includes(String(category ?? ''))) {
+    return CASH_BOX_TYPES.PETTY_CASH;
+  }
+  return CASH_BOX_TYPES.BIG_CASH;
+};
+
+const buildCashMovement = ({
+  sessionId = null,
+  type,
+  amountBs,
+  description,
+  sourceType = null,
+  sourceId = null,
+  createdBy = 'Sistema',
+  cashBoxType = CASH_BOX_TYPES.BIG_CASH,
+  category = '',
+  paymentMethod = '',
+  responsible = '',
+  receipt = '',
+  isInternalTransfer = false,
+  transferGroupId = null,
+}) => ({
+  id: makeId('mov'),
+  sessionId,
+  type,
+  amountBs: Number(Number(amountBs ?? 0).toFixed(2)),
+  description,
+  sourceType,
+  sourceId,
+  createdBy,
+  cashBoxType: normalizeCashBoxType(cashBoxType),
+  category: String(category ?? '').trim(),
+  paymentMethod: String(paymentMethod ?? '').trim(),
+  responsible: String(responsible ?? createdBy ?? '').trim(),
+  receipt: String(receipt ?? '').trim(),
+  isInternalTransfer: Boolean(isInternalTransfer),
+  transferGroupId,
+  createdAt: new Date().toISOString(),
+});
+
+const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
+  const balance = state.cashMovements
+    .filter((movement) => movement.sessionId === sessionId)
+    .filter((movement) => !cashBoxType || normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
+    .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0);
+  return Number(balance.toFixed(2));
+};
+
+const addRentalCashMovements = (state, rental) => {
+  const activeSession = getActiveSession(state);
+  const sessionId = activeSession?.id ?? null;
+  const customerName = String(rental.customerName ?? 'Cliente');
+  const paidAtRentalBs = Number(
+    rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? rental?.totals?.totalBs ?? 0,
+  );
+  const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+  const depositBs = Number(rental?.depositBs ?? 0);
+
+  if (paidAtRentalBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'ingreso_alquiler',
+        amountBs: paidAtRentalBs,
+        description: `Cobro inicial alquiler: ${customerName}`,
+        sourceType: 'rental',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+
+  if (depositBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'ingreso_garantia',
+        amountBs: depositBs,
+        description: `Ingreso garantia: ${customerName}`,
+        sourceType: 'rental',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+
+  if (pendingPaymentBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'saldo_alquiler_pendiente',
+        amountBs: 0,
+        description: `Saldo alquiler pendiente (${customerName}): Bs ${pendingPaymentBs.toFixed(2)}`,
+        sourceType: 'rental',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+};
+
+const addReturnCashMovements = (state, rental) => {
+  const activeSession = getActiveSession(state);
+  const sessionId = activeSession?.id ?? null;
+  const customerName = String(rental.customerName ?? 'Cliente');
+  const settlement = rental?.returnSettlement ?? {};
+  const penaltiesBs = Number(settlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
+  const outstandingRentalBs = Number(settlement?.outstandingRentalBs ?? 0);
+  const pendingCollectionBs = Number(settlement?.pendingCollectionBs ?? 0);
+  const refundBs = Number(settlement?.refundBs ?? rental?.refundBs ?? 0);
+
+  state.cashMovements.push(
+    buildCashMovement({
+      sessionId,
+      type: 'liquidacion_devolucion',
+      amountBs: 0,
+      description: `Liquidacion devolucion (${customerName}) | Penalidad: Bs ${penaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
+      sourceType: 'return',
+      sourceId: rental.id,
+      cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+    }),
+  );
+
+  if (refundBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'egreso_devolucion_garantia',
+        amountBs: -refundBs,
+        description: `Devolucion garantia: ${customerName}`,
+        sourceType: 'return',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+
+  if (pendingCollectionBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'saldo_pendiente_cobro',
+        amountBs: 0,
+        description: `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`,
+        sourceType: 'return',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+};
+
+const getDueTimestamp = (rental) => {
+  if (rental?.dueAt) {
+    const parsed = new Date(rental.dueAt).getTime();
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  const dueDate = String(rental?.dueDate ?? '');
+  const dueTime = String(rental?.dueTime ?? '23:59');
+  const parsedFallback = new Date(`${dueDate}T${dueTime}:00`).getTime();
+  return Number.isNaN(parsedFallback) ? Number.MAX_SAFE_INTEGER : parsedFallback;
+};
+
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const formatBs = (value) =>
+  new Intl.NumberFormat('es-BO', {
+    style: 'currency',
+    currency: 'BOB',
+    minimumFractionDigits: 2,
+  }).format(Number(value ?? 0));
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  return parsed.toLocaleString('es-BO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('es-BO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const openPrintWindow = (html) => {
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=920,height=860');
+  if (!printWindow) {
+    throw new Error('No se pudo abrir la ventana de impresion. Habilita ventanas emergentes.');
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 120);
+};
+
+const buildRentalReceiptHtml = (rental) => {
+  const rows = (rental.items ?? [])
+    .map(
+      (line) => `
+        <tr>
+          <td>${escapeHtml(line.itemName)}</td>
+          <td>${line.quantity}</td>
+          <td>${formatBs(line.rentalPriceBs)}</td>
+          <td>${formatBs(line.lineTotalBs ?? line.quantity * line.rentalPriceBs)}</td>
+        </tr>`,
+    )
+    .join('');
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Recibo ${escapeHtml(rental.id)}</title>
+      <style>
+        body { font-family: "Segoe UI", sans-serif; margin: 24px; color: #1f2d33; }
+        h1, h2, p { margin: 0; }
+        .head { margin-bottom: 12px; }
+        .box { border: 1px solid #d9e6e6; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #e4eeee; text-align: left; padding: 8px 6px; font-size: 13px; }
+        th { font-size: 12px; text-transform: uppercase; color: #46606b; }
+      </style>
+    </head>
+    <body>
+      <div class="head">
+        <h1>Recibo de Alquiler</h1>
+        <p>Alquiler demo | ${escapeHtml(formatDateTime(rental.createdAt || rental.rentalAt))}</p>
+      </div>
+      <section class="box grid">
+        <p><strong>Cliente:</strong> ${escapeHtml(rental.customerName)}</p>
+        <p><strong>Celular:</strong> ${escapeHtml(rental.customerPhone)}</p>
+        <p><strong>Orden:</strong> ${escapeHtml(String(rental.id).slice(0, 8).toUpperCase())}</p>
+        <p><strong>Devolucion:</strong> ${escapeHtml(`${rental.dueDate} ${rental.dueTime}`)}</p>
+      </section>
+      <section class="box">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Cant.</th><th>Precio</th><th>Subtotal</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </section>
+      <section class="box">
+        <p><strong>Total:</strong> ${formatBs(rental?.totals?.totalBs ?? 0)}</p>
+        <p><strong>Garantia:</strong> ${formatBs(rental?.depositBs ?? 0)}</p>
+      </section>
+    </body>
+  </html>`;
+};
+
+const buildReturnReceiptHtml = (rental) => {
+  const rows = (rental.returnReport ?? [])
+    .map(
+      (line) => `
+      <tr>
+        <td>${escapeHtml(line.itemName)}</td>
+        <td>${line.expectedQty}</td>
+        <td>${line.returnedQty}</td>
+        <td>${line.damagedQty}</td>
+        <td>${line.missingQty}</td>
+        <td>${formatBs(line.penaltyBs ?? 0)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Recibo Devolucion ${escapeHtml(rental.id)}</title>
+      <style>
+        body { font-family: "Segoe UI", sans-serif; margin: 24px; color: #1f2d33; }
+        h1, p { margin: 0; }
+        .head { margin-bottom: 12px; }
+        .box { border: 1px solid #d9e6e6; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #e4eeee; text-align: left; padding: 8px 6px; font-size: 13px; }
+        th { font-size: 12px; text-transform: uppercase; color: #46606b; }
+      </style>
+    </head>
+    <body>
+      <div class="head">
+        <h1>Recibo de Devolucion</h1>
+        <p>Alquiler demo | ${escapeHtml(formatDateTime(rental.returnedAt))}</p>
+      </div>
+      <section class="box">
+        <p><strong>Cliente:</strong> ${escapeHtml(rental.customerName)}</p>
+        <p><strong>Orden:</strong> ${escapeHtml(String(rental.id).slice(0, 8).toUpperCase())}</p>
+      </section>
+      <section class="box">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Esp.</th><th>Dev.</th><th>Dan.</th><th>Falt.</th><th>Cargo</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </section>
+      <section class="box">
+        <p><strong>Penalidades:</strong> ${formatBs(rental.penaltiesBs ?? 0)}</p>
+        <p><strong>Reembolso:</strong> ${formatBs(rental.refundBs ?? 0)}</p>
+      </section>
+    </body>
+  </html>`;
+};
+
+const resolveRentalForPrinting = (state, payload) => {
+  const rentalId = String(payload?.rentalId ?? '').trim();
+  const orderCode = String(payload?.orderCode ?? '').trim();
+  return (
+    state.rentals.find(
+      (entry) =>
+        (rentalId && entry.id === rentalId)
+        || (orderCode && entry.orderCode === orderCode),
+    ) ?? null
+  );
+};
+
+const resolveDeliveriesForRental = (state, rental) =>
+  state.deliveries
+    .filter(
+      (entry) =>
+        (entry.rentalId && entry.rentalId === rental.id)
+        || (entry.orderCode && entry.orderCode === rental.orderCode),
+    )
+    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+
+const resolveContractForRental = (state, rental) =>
+  state.contracts.find(
+    (entry) =>
+      !entry.deletedAt
+      && (
+        (entry.rentalId && entry.rentalId === rental.id)
+        || (entry.orderCode && entry.orderCode === rental.orderCode)
+      ),
+  ) ?? null;
+
+const buildRentalSnapshotFromContract = (contract) => ({
+  id: contract?.rentalId ?? `contract-${contract?.id ?? 'sin-id'}`,
+  orderCode: contract?.orderCode ?? contract?.contractCode ?? 'SIN-ORDEN',
+  clientId: contract?.clientId ?? null,
+  customerName: contract?.customerName ?? '',
+  customerPhone: contract?.customerPhone ?? '',
+  rentalDate: contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
+  dueDate: contract?.pickupDate || contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
+  createdAt: contract?.createdAt,
+  eventType: contract?.eventType,
+  eventAddress: contract?.address,
+  billingMode: contract?.billingMode,
+  logisticsMode: contract?.logisticsMode,
+  pricingPlan: contract?.pricingPlan ?? null,
+  observations: contract?.observations,
+  depositBs: Number(contract?.totals?.guaranteeBs ?? 0),
+  totals: {
+    ...(contract?.totals ?? {}),
+    paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
+    pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
+  },
+  payment: {
+    paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
+    pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
+  },
+  items: (contract?.items ?? []).map((line) => ({
+    itemId: line.itemId,
+    itemName: line.itemName,
+    quantity: line.quantity,
+    rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
+    lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
+  })),
+});
+
+const formatDocumentDate = (value) => {
+  const text = String(value ?? '').trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  return formatDate(value);
+};
+
+const getDocumentCompany = (settings = {}) => ({
+  name: String(settings.companyName ?? 'Copetin SRL').trim() || 'Copetin SRL',
+  taxId: String(settings.taxId ?? '').trim() || '-',
+  address: String(settings.address ?? '').trim() || '-',
+  phone: String(settings.phone ?? '').trim() || '-',
+  email: String(settings.email ?? '').trim() || '-',
+  website: String(settings.website ?? '').trim() || '',
+  fiscalCondition: String(settings.fiscalCondition ?? '').trim() || '',
+});
+
+const getProfessionalDocumentStyles = () => `
+  @page { size: A4; margin: 8mm; }
+  * { box-sizing: border-box; }
+  html { background: #edf1f7; }
+  body {
+    margin: 0;
+    padding: 24px;
+    color: #18262d;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  h1, h2, h3, p { margin: 0; }
+  .document-sheet {
+    display: flex;
+    flex-direction: column;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    padding: 16mm 17mm;
+    background: #ffffff;
+    border: 1px solid #dfe6f0;
+    box-shadow: 0 18px 50px rgba(20, 32, 64, 0.16);
+  }
+  .doc-topbar {
+    display: grid;
+    grid-template-columns: 1fr 58mm;
+    gap: 14px;
+    align-items: stretch;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #172554;
+  }
+  .brand-block { display: flex; gap: 11px; align-items: center; }
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    border: 2px solid #172554;
+    display: grid;
+    place-items: center;
+    color: #172554;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0;
+  }
+  .brand-name {
+    color: #101a3d;
+    font-size: 21px;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .brand-meta {
+    margin-top: 2px;
+    color: #53627a;
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  .doc-id-card {
+    border: 1px solid #172554;
+    display: grid;
+    align-content: center;
+    gap: 3px;
+    padding: 9px 11px;
+    text-align: right;
+  }
+  .doc-id-card span {
+    color: #53627a;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .doc-id-card strong {
+    color: #101a3d;
+    font-size: 19px;
+    line-height: 1;
+  }
+  .doc-id-card small { color: #6a7488; font-size: 10px; }
+  .company-line {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 0 12px;
+    border-bottom: 1px solid #d9e1ec;
+    color: #334155;
+    font-size: 11px;
+  }
+  .company-line strong {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .doc-title {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: end;
+    margin: 18px 0 13px;
+  }
+  .doc-title h1 {
+    color: #0f172a;
+    font-size: 24px;
+    line-height: 1.12;
+    letter-spacing: 0;
+  }
+  .doc-title p { margin-top: 4px; color: #526173; font-size: 12px; }
+  .status-stamp {
+    min-width: 34mm;
+    border: 1px solid #94a3b8;
+    padding: 6px 10px;
+    text-align: center;
+    color: #0f766e;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .section {
+    margin-top: 10px;
+    border: 1px solid #d8e0eb;
+    page-break-inside: avoid;
+  }
+  .section-title {
+    padding: 7px 10px;
+    border-bottom: 1px solid #d8e0eb;
+    background: #f8fafc;
+    color: #172554;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+  }
+  .info-item {
+    min-height: 38px;
+    padding: 8px 10px;
+    border-right: 1px solid #e5ebf3;
+    border-bottom: 1px solid #e5ebf3;
+  }
+  .info-item:nth-child(2n) { border-right: 0; }
+  .info-item strong {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .info-item span {
+    display: block;
+    margin-top: 2px;
+    color: #16242d;
+    font-weight: 700;
+  }
+  .doc-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .doc-table th,
+  .doc-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    vertical-align: top;
+  }
+  .doc-table th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .doc-table td.number,
+  .doc-table th.number { text-align: right; white-space: nowrap; }
+  .totals-grid {
+    display: grid;
+    grid-template-columns: 1fr 72mm;
+    gap: 12px;
+    padding: 10px;
+  }
+  .note-box {
+    min-height: 54px;
+    border: 1px solid #e2e8f0;
+    padding: 8px;
+    color: #475569;
+  }
+  .money-lines { border: 1px solid #d8e0eb; }
+  .money-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 9px;
+    border-bottom: 1px solid #e5ebf3;
+  }
+  .money-line:last-child { border-bottom: 0; }
+  .money-line.total {
+    background: #172554;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .terms-list {
+    margin: 0;
+    padding: 9px 12px 9px 28px;
+    color: #334155;
+  }
+  .terms-list li { margin: 4px 0; }
+  .check-cell {
+    height: 20px;
+    border: 1px solid #94a3b8;
+  }
+  .route-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid #d8e0eb;
+  }
+  .route-summary div {
+    padding: 8px 10px;
+    border-right: 1px solid #e5ebf3;
+  }
+  .route-summary div:last-child { border-right: 0; }
+  .route-summary strong {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .signature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 22px;
+  }
+  .signature-box {
+    padding-top: 34px;
+    border-top: 1px solid #334155;
+    text-align: center;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .doc-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px solid #d8e0eb;
+    color: #64748b;
+    font-size: 10px;
+  }
+  @media print {
+    html, body { background: #ffffff; }
+    body {
+      padding: 0;
+      font-size: 10.2px;
+      line-height: 1.26;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .document-sheet {
+      width: auto;
+      min-height: calc(297mm - 16mm);
+      margin: 0;
+      padding: 0;
+      border: 0;
+      box-shadow: none;
+    }
+    .doc-topbar {
+      grid-template-columns: 1fr 50mm;
+      gap: 9px;
+      padding-bottom: 8px;
+    }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      font-size: 17px;
+    }
+    .brand-name { font-size: 17px; }
+    .brand-meta { font-size: 8.5px; }
+    .doc-id-card {
+      padding: 6px 8px;
+      gap: 2px;
+    }
+    .doc-id-card span,
+    .doc-id-card small { font-size: 8px; }
+    .doc-id-card strong { font-size: 16px; }
+    .company-line {
+      margin-top: 6px;
+      padding: 5px 0 7px;
+      font-size: 8.8px;
+    }
+    .company-line strong,
+    .info-item strong,
+    .doc-table th { font-size: 7.8px; }
+    .doc-title {
+      margin: 10px 0 7px;
+      gap: 8px;
+    }
+    .doc-title h1 { font-size: 19px; }
+    .doc-title p { font-size: 9.2px; }
+    .status-stamp {
+      min-width: 28mm;
+      padding: 4px 7px;
+      font-size: 9px;
+    }
+    .section {
+      margin-top: 6px;
+      page-break-inside: auto;
+      break-inside: auto;
+    }
+    .section-title { padding: 4px 7px; }
+    .info-item {
+      min-height: 27px;
+      padding: 4px 7px;
+    }
+    .doc-table th,
+    .doc-table td { padding: 4px 6px; }
+    .totals-grid {
+      grid-template-columns: 1fr 58mm;
+      gap: 7px;
+      padding: 6px;
+    }
+    .note-box {
+      min-height: 38px;
+      padding: 6px;
+    }
+    .money-line {
+      padding: 4px 7px;
+      gap: 6px;
+    }
+    .money-line.total { font-size: 11px; }
+    .terms-list {
+      padding: 5px 9px 5px 22px;
+    }
+    .terms-list li { margin: 1px 0; }
+    .signature-grid {
+      gap: 9px;
+      margin-top: auto;
+      padding-top: 16mm;
+    }
+    .signature-box {
+      padding-top: 23px;
+      font-size: 8.5px;
+    }
+    .doc-footer {
+      margin-top: 10px;
+      padding-top: 5px;
+      font-size: 8px;
+    }
+  }
+`;
+
+const buildDocumentShell = ({
+  title,
+  subtitle,
+  documentLabel,
+  documentCode,
+  status,
+  company,
+  children,
+}) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(`${documentLabel} ${documentCode}`)}</title>
+    <style>${getProfessionalDocumentStyles()}</style>
+  </head>
+  <body>
+    <main class="document-sheet">
+      <header class="doc-topbar">
+        <div class="brand-block">
+          <div class="brand-mark">${escapeHtml(company.name.slice(0, 1).toUpperCase() || 'C')}</div>
+          <div>
+            <p class="brand-name">${escapeHtml(company.name)}</p>
+            <p class="brand-meta">${escapeHtml(company.fiscalCondition || 'Administracion de alquileres')}</p>
+          </div>
+        </div>
+        <div class="doc-id-card">
+          <span>${escapeHtml(documentLabel)}</span>
+          <strong>${escapeHtml(documentCode)}</strong>
+          <small>Emitido: ${escapeHtml(formatDocumentDate(new Date().toISOString()))}</small>
+        </div>
+      </header>
+
+      <section class="company-line">
+        <div><strong>Domicilio fiscal</strong>${escapeHtml(company.address)}</div>
+        <div><strong>NIT / CI</strong>${escapeHtml(company.taxId)}</div>
+        <div><strong>Contacto</strong>${escapeHtml([company.phone, company.email].filter(Boolean).join(' | '))}</div>
+      </section>
+
+      <section class="doc-title">
+        <div>
+          <h1>${escapeHtml(title)}</h1>
+          <p>${escapeHtml(subtitle)}</p>
+        </div>
+        ${status ? `<div class="status-stamp">${escapeHtml(status)}</div>` : ''}
+      </section>
+
+      ${children}
+
+      <footer class="doc-footer">
+        <span>Documento generado por ${escapeHtml(company.name)}${company.website ? ` | ${escapeHtml(company.website)}` : ''}</span>
+        <span>Pagina 1 de 1</span>
+      </footer>
+    </main>
+  </body>
+</html>`;
+
+const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) => {
+  const statusLabels = {
+    borrador: 'Borrador',
+    pendiente: 'Pendiente',
+    aprobado: 'Aprobado',
+    rechazado: 'Rechazado',
+  };
+  const currentStatus = String(contract?.status ?? '').trim().toLowerCase();
+  const statusLabel = statusLabels[currentStatus] ?? 'Sin estado';
+  const billingLabel = contract?.billingMode === 'con_factura' ? 'Con factura' : 'Sin factura';
+
+  const deliveryOut = deliveries[0] ?? null;
+  const deliveryBack = deliveries[1] ?? null;
+  const company = getDocumentCompany(settings);
+  const subtotalBs = contract?.totals?.subtotalBs ?? rental?.totals?.subtotalBs ?? rental?.totals?.totalBs ?? 0;
+  const discountBs = contract?.totals?.discountBs ?? rental?.totals?.discountBs ?? 0;
+  const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
+  const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
+  const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
+  const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
+  const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
+  const hasDurationPricing = pricingPlan?.mode === 'duration';
+  const hasManualDiscount = Number(discountBs ?? 0) > 0;
+  const logisticsMode = contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
+  const isCustomerPickup = logisticsMode === 'recojo';
+  const logisticsLabel = isCustomerPickup ? 'Recojo por cliente' : 'Envio por equipo';
+  const logisticsResponsibility = isCustomerPickup
+    ? 'El cliente recoge y devuelve los items en coordinacion con administracion.'
+    : 'El equipo de Copetin realiza la entrega y el recojo programado.';
+  const deliverySchedule = `${formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate)} ${
+    deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? ''
+  }${deliveryOut?.windowEnd || contract?.deliveryWindowEnd ? ` - ${deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd}` : ''}`.trim();
+  const pickupSchedule = `${formatDocumentDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate)} ${
+    deliveryBack?.windowStart ?? contract?.pickupWindowStart ?? ''
+  }${deliveryBack?.windowEnd || contract?.pickupWindowEnd ? ` - ${deliveryBack?.windowEnd ?? contract?.pickupWindowEnd}` : ''}`.trim();
+  const durationLabel = hasDurationPricing
+    ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
+    : 'Precio unico';
+  const tierRows = hasDurationPricing
+    ? (pricingPlan.tiers ?? [])
+      .map((tier) => {
+        const range = tier.toDay > 0 ? `${tier.fromDay} - ${tier.toDay}` : `${tier.fromDay}+`;
+        return `<li>Dia ${escapeHtml(range)}: ${escapeHtml(tier.percent)}%</li>`;
+      })
+      .join('')
+    : '';
+
+  const rows = (rental.items ?? [])
+    .map(
+      (line) => `
+        <tr>
+          <td>${escapeHtml(line.itemName)}</td>
+          <td class="number">${line.quantity}</td>
+          <td class="number">${formatBs(line.rentalPriceBs)}</td>
+          <td class="number">${formatBs(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0))}</td>
+        </tr>`,
+    )
+    .join('');
+
+  return buildDocumentShell({
+    title: 'Contrato de Servicio',
+    subtitle: `Orden ${rental.orderCode ?? rental.id} | Cliente ${rental.customerName}`,
+    documentLabel: 'Contrato',
+    documentCode: contract?.contractCode ?? 'CON-SIN-CODIGO',
+    status: statusLabel,
+    company,
+    children: `
+      <section class="section">
+        <h2 class="section-title">Datos del cliente y evento</h2>
+        <div class="info-grid">
+          <div class="info-item"><strong>Cliente</strong><span>${escapeHtml(rental.customerName)}</span></div>
+          <div class="info-item"><strong>Telefono</strong><span>${escapeHtml(rental.customerPhone)}</span></div>
+          <div class="info-item"><strong>Fecha de emision</strong><span>${escapeHtml(formatDocumentDate(contract?.createdAt ?? rental.createdAt))}</span></div>
+          <div class="info-item"><strong>Evento</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span></div>
+          <div class="info-item"><strong>Direccion del servicio</strong><span>${escapeHtml(contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-')}</span></div>
+          <div class="info-item"><strong>Facturacion</strong><span>${escapeHtml(billingLabel)}</span></div>
+          <div class="info-item"><strong>Tarifa</strong><span>${escapeHtml(durationLabel)}</span></div>
+          <div class="info-item"><strong>Logistica</strong><span>${escapeHtml(logisticsLabel)}</span></div>
+          <div class="info-item"><strong>Orden vinculada</strong><span>${escapeHtml(rental.orderCode ?? contract?.orderCode ?? rental.id ?? '-')}</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Cronograma operativo</h2>
+        <div class="info-grid">
+          <div class="info-item"><strong>${isCustomerPickup ? 'Alistamiento para recojo' : 'Entrega programada'}</strong><span>${escapeHtml(deliverySchedule)}</span></div>
+          <div class="info-item"><strong>${isCustomerPickup ? 'Devolucion por cliente' : 'Recojo programado'}</strong><span>${escapeHtml(pickupSchedule)}</span></div>
+          <div class="info-item"><strong>Modalidad acordada</strong><span>${escapeHtml(logisticsLabel)}</span></div>
+          <div class="info-item"><strong>Responsable operativo</strong><span>${escapeHtml(logisticsResponsibility)}</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Detalle de items contratados</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Descripcion</th><th class="number">Cant.</th><th class="number">Precio unit.</th><th class="number">Subtotal</th></tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="4">Sin items registrados</td></tr>'}</tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Resumen economico y observaciones</h2>
+        <div class="totals-grid">
+          <div class="note-box">
+            <strong>Observaciones</strong><br />
+            ${escapeHtml(contract?.observations || rental?.observations || 'El cliente declara recibir los bienes listados en condiciones operativas y se compromete a devolverlos en la fecha indicada.')}
+            ${hasDurationPricing ? `<br /><br /><strong>Plan de duracion</strong><ul>${tierRows}</ul>` : ''}
+          </div>
+          <div class="money-lines">
+            ${hasDurationPricing ? `<div class="money-line"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
+            ${hasDurationPricing ? `<div class="money-line"><span>Promocion duracion</span><strong>${formatBs(contract?.totals?.durationDiscountBs ?? pricingPlan.durationDiscountBs ?? 0)}</strong></div>` : ''}
+            <div class="money-line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
+            ${hasManualDiscount ? `<div class="money-line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>` : ''}
+            <div class="money-line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            <div class="money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
+            <div class="money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+            <div class="money-line total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Condiciones del servicio</h2>
+        <ol class="terms-list">
+          <li>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</li>
+          <li>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</li>
+          <li>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</li>
+        </ol>
+      </section>
+
+      <div class="signature-grid">
+        <div class="signature-box">Firma cliente</div>
+        <div class="signature-box">Responsable comercial</div>
+        <div class="signature-box">Administracion</div>
+      </div>
+    `,
+  });
+};
+
+const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
+  const deliveryOut = deliveries[0] ?? null;
+  const company = getDocumentCompany(settings);
+  const rows = (rental.items ?? [])
+    .map(
+      (line) => `
+        <tr>
+          <td>${escapeHtml(line.itemName)}</td>
+          <td class="number">${line.quantity}</td>
+          <td class="number">${formatBs(line.rentalPriceBs ?? 0)}</td>
+          <td class="number">${line.quantity}</td>
+          <td><div class="check-cell"></div></td>
+          <td><div class="check-cell"></div></td>
+        </tr>`,
+    )
+    .join('');
+
+  return buildDocumentShell({
+    title: 'Orden Operativa de Inventario',
+    subtitle: `Orden ${rental.orderCode ?? rental.id} | Cliente ${rental.customerName}`,
+    documentLabel: 'Inventario',
+    documentCode: rental.orderCode ?? rental.id,
+    status: deliveryOut?.status === 'en_ruta' ? 'Prioridad alta' : 'Programada',
+    company,
+    children: `
+      <section class="section">
+        <h2 class="section-title">Datos de preparacion</h2>
+        <div class="info-grid">
+          <div class="info-item"><strong>Fecha de alistamiento</strong><span>${escapeHtml(formatDocumentDate(deliveryOut?.scheduledDate ?? rental.rentalDate))}</span></div>
+          <div class="info-item"><strong>Ventana operativa</strong><span>${escapeHtml(deliveryOut ? `${deliveryOut.windowStart} - ${deliveryOut.windowEnd}` : '-')}</span></div>
+          <div class="info-item"><strong>Destino</strong><span>${escapeHtml(deliveryOut?.address ?? rental.eventAddress ?? '-')}</span></div>
+          <div class="info-item"><strong>Estado de inventario</strong><span>${escapeHtml(rental.operational?.inventoryStatus ?? 'pendiente')}</span></div>
+          <div class="info-item"><strong>Preparado por</strong><span>____________________________</span></div>
+          <div class="info-item"><strong>Validado por</strong><span>____________________________</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Checklist de alistamiento</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Item</th><th class="number">Cantidad</th><th class="number">Precio ref.</th><th class="number">A alistar</th><th>Revisado</th><th>Cargado</th></tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="6">Sin items registrados</td></tr>'}</tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Control de salida</h2>
+        <div class="info-grid">
+          <div class="info-item"><strong>Hora fin de preparacion</strong><span>____ : ____</span></div>
+          <div class="info-item"><strong>Estado general</strong><span>Completo / Observado</span></div>
+          <div class="info-item"><strong>Observaciones de almacen</strong><span>${escapeHtml(rental.operational?.inventoryNote || 'Sin observaciones registradas.')}</span></div>
+          <div class="info-item"><strong>Precintos / bultos</strong><span>____________________________</span></div>
+        </div>
+      </section>
+
+      <div class="signature-grid">
+        <div class="signature-box">Almacen</div>
+        <div class="signature-box">Supervisor</div>
+        <div class="signature-box">Transporte</div>
+      </div>
+    `,
+  });
+};
+
+const getDeliveryStatusLabel = (value) => {
+  const normalized = String(value ?? '').replace(/_/g, ' ').trim();
+  if (!normalized) return '-';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const buildRouteSheetHtml = ({ rental, deliveries, drivers, vehicles, settings }) => {
+  const company = getDocumentCompany(settings);
+  const getStopType = (delivery, index) => {
+    const note = normalizeText(delivery?.notes);
+    if (note.includes('recojo') || note.includes('recog')) return 'Recojo';
+    if (index === 0) return 'Entrega';
+    if (index === deliveries.length - 1) return 'Recojo';
+    return `Parada ${index + 1}`;
+  };
+  const rows = deliveries
+    .map((delivery, index) => {
+      const driver = drivers.find((entry) => entry.id === delivery.driverId) ?? null;
+      const vehicle = vehicles.find((entry) => entry.id === delivery.vehicleId) ?? null;
+      return `
+        <tr>
+          <td>${escapeHtml(delivery.deliveryCode ?? '-')}</td>
+          <td>${escapeHtml(getStopType(delivery, index))}</td>
+          <td>${escapeHtml(formatDocumentDate(delivery.scheduledDate))}</td>
+          <td>${escapeHtml(`${delivery.windowStart} - ${delivery.windowEnd}`)}</td>
+          <td>${escapeHtml(delivery.address ?? '-')}</td>
+          <td>${escapeHtml(driver?.fullName ?? 'Sin asignar')}</td>
+          <td>${escapeHtml(vehicle?.code ?? 'Sin vehiculo')}</td>
+          <td>${escapeHtml(getDeliveryStatusLabel(delivery.status))}</td>
+          <td>${escapeHtml(delivery.notes || rental.operational?.transportNote || '-')}</td>
+        </tr>`;
+    })
+    .join('');
+  const itemsRows = (rental.items ?? [])
+    .map((line) => `
+      <tr>
+        <td>${escapeHtml(line.itemName ?? '-')}</td>
+        <td class="number">${escapeHtml(line.quantity ?? 0)}</td>
+        <td>${escapeHtml(line.itemId ?? '-')}</td>
+        <td>________________</td>
+        <td>________________</td>
+      </tr>`)
+    .join('');
+  const firstDelivery = deliveries[0] ?? null;
+  const lastDelivery = deliveries[deliveries.length - 1] ?? null;
+  const assignedDrivers = deliveries
+    .map((delivery) => drivers.find((entry) => entry.id === delivery.driverId)?.fullName)
+    .filter(Boolean);
+  const assignedVehicles = deliveries
+    .map((delivery) => vehicles.find((entry) => entry.id === delivery.vehicleId)?.code)
+    .filter(Boolean);
+
+  return buildDocumentShell({
+    title: 'Hoja de Ruta',
+    subtitle: `Orden ${rental.orderCode ?? rental.id} | Cliente ${rental.customerName}`,
+    documentLabel: 'Ruta',
+    documentCode: rental.orderCode ?? rental.id,
+    status: deliveries.length > 0 ? 'Despacho programado' : 'Sin ruta',
+    company,
+    children: `
+      <section class="section">
+        <h2 class="section-title">Resumen de despacho</h2>
+        <div class="route-summary">
+          <div><strong>Rutas</strong>${deliveries.length}</div>
+          <div><strong>Entrega</strong>${escapeHtml(`${formatDocumentDate(firstDelivery?.scheduledDate)} ${firstDelivery ? `${firstDelivery.windowStart} - ${firstDelivery.windowEnd}` : ''}`)}</div>
+          <div><strong>Recojo</strong>${escapeHtml(`${formatDocumentDate(lastDelivery?.scheduledDate)} ${lastDelivery ? `${lastDelivery.windowStart} - ${lastDelivery.windowEnd}` : ''}`)}</div>
+          <div><strong>Cliente</strong>${escapeHtml(rental.customerName)}</div>
+        </div>
+        <div class="info-grid">
+          <div class="info-item"><strong>Telefono cliente</strong><span>${escapeHtml(rental.customerPhone)}</span></div>
+          <div class="info-item"><strong>Direccion de entrega</strong><span>${escapeHtml(firstDelivery?.address ?? rental.eventAddress ?? '-')}</span></div>
+          <div class="info-item"><strong>Direccion de recojo</strong><span>${escapeHtml(lastDelivery?.address ?? firstDelivery?.address ?? rental.eventAddress ?? '-')}</span></div>
+          <div class="info-item"><strong>Orden de servicio</strong><span>${escapeHtml(rental.orderCode ?? rental.id)}</span></div>
+          <div class="info-item"><strong>Chofer asignado</strong><span>${escapeHtml([...new Set(assignedDrivers)].join(', ') || 'Sin asignar')}</span></div>
+          <div class="info-item"><strong>Vehiculo asignado</strong><span>${escapeHtml([...new Set(assignedVehicles)].join(', ') || 'Sin vehiculo')}</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Itinerario operativo: entrega y recojo</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Codigo</th><th>Tipo</th><th>Fecha</th><th>Ventana</th><th>Direccion</th><th>Chofer</th><th>Vehiculo</th><th>Estado</th><th>Notas</th></tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="9">Sin rutas programadas</td></tr>'}</tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Items a transportar</h2>
+        <table class="doc-table">
+          <thead>
+            <tr><th>Item</th><th class="number">Cantidad</th><th>Codigo</th><th>Cargado</th><th>Devuelto</th></tr>
+          </thead>
+          <tbody>${itemsRows || '<tr><td colspan="5">Sin items registrados</td></tr>'}</tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Indicaciones para transporte</h2>
+        <ol class="terms-list">
+          <li>Confirmar carga completa contra la orden de inventario antes de salir de almacen.</li>
+          <li>Registrar novedades de acceso, espera, entrega parcial o cambios de responsable en destino.</li>
+          <li>Solicitar firma o conformidad del cliente al finalizar entrega y recojo.</li>
+        </ol>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">Observaciones de ruta</h2>
+        <div class="note-box">${escapeHtml(rental.operational?.transportNote || firstDelivery?.notes || 'Sin observaciones registradas.')}</div>
+      </section>
+
+      <div class="signature-grid">
+        <div class="signature-box">Chofer</div>
+        <div class="signature-box">Cliente / receptor</div>
+        <div class="signature-box">Control logistico</div>
+      </div>
+    `,
+  });
+};
+
+const parseDateRange = (value, endOfDay = false) => {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return null;
+  }
+  const [yearText, monthText, dayText] = text.split('-');
+  const year = Number.parseInt(yearText, 10);
+  const month = Number.parseInt(monthText, 10);
+  const day = Number.parseInt(dayText, 10);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+
+  return endOfDay
+    ? new Date(year, month - 1, day, 23, 59, 59, 999)
+    : new Date(year, month - 1, day, 0, 0, 0, 0);
+};
+
+const isInRange = (value, fromDate, toDate) => {
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  if (fromDate && timestamp < fromDate.getTime()) {
+    return false;
+  }
+  if (toDate && timestamp > toDate.getTime()) {
+    return false;
+  }
+  return true;
+};
+
+const formatDocNumber = (value, size = 5) => String(Math.max(1, Number(value ?? 1))).padStart(size, '0');
+
+const consumeDocumentCode = (state, fieldPrefix, fieldNext, size = 5) => {
+  const numbering = state.settings?.numbering ?? {};
+  const prefix = String(numbering[fieldPrefix] ?? '');
+  const next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
+  state.settings.numbering[fieldNext] = next + 1;
+  return `${prefix}${formatDocNumber(next, size)}`;
+};
+
+const resolveClientFromName = (state, customerName, customerPhone) => {
+  const normalizedTarget = normalizeText(customerName);
+  const existing = state.clients.find((client) => normalizeText(client.name) === normalizedTarget);
+  if (existing) {
+    if (!existing.phone && customerPhone) {
+      existing.phone = customerPhone;
+      existing.updatedAt = new Date().toISOString();
+    }
+    return existing.id;
+  }
+
+  const now = new Date().toISOString();
+  const created = {
+    id: makeId('cli'),
+    name: String(customerName ?? '').trim(),
+    companyName: String(customerName ?? '').trim(),
+    contactName: String(customerName ?? '').trim(),
+    contactRole: 'Contacto',
+    phone: String(customerPhone ?? '').trim(),
+    email: '',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.clients.push(created);
+  return created.id;
+};
+
+const createDeliveryFromRental = (state, rental) => {
+  const defaultDriver = state.drivers.find((entry) => entry.status === 'activo') ?? state.drivers[0] ?? null;
+  const defaultVehicle = state.vehicles.find((entry) => entry.status === 'activo') ?? state.vehicles[0] ?? null;
+  const orderCode = rental.orderCode ?? consumeDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
+  const deliveryCode = consumeDocumentCode(state, 'deliveryPrefix', 'deliveryNext', 5);
+  const dateText = String(rental.dueDate ?? '').trim();
+  const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? dateText : new Date().toISOString().slice(0, 10);
+  const now = new Date().toISOString();
+
+  const created = {
+    id: makeId('del'),
+    deliveryCode,
+    orderCode,
+    rentalId: rental.id,
+    customerName: rental.customerName,
+    companyName: rental.customerName,
+    address: 'Direccion pendiente',
+    city: 'Ciudad',
+    windowStart: '08:00',
+    windowEnd: '10:00',
+    scheduledDate: safeDate,
+    driverId: defaultDriver?.id ?? null,
+    vehicleId: defaultVehicle?.id ?? null,
+    status: 'programada',
+    progress: 0,
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  state.deliveries.push(created);
+  return created;
+};
+
+const computeClientMetrics = (state) => {
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  const summaryByClientId = {};
+
+  for (const rental of state.rentals) {
+    if (rental.deletedAt) {
+      continue;
+    }
+    const clientId = rental.clientId ?? null;
+    if (!clientId) {
+      continue;
+    }
+    if (!summaryByClientId[clientId]) {
+      summaryByClientId[clientId] = {
+        ordersCount: 0,
+        totalBilledBs: 0,
+        lastOrderAt: null,
+      };
+    }
+
+    const entry = summaryByClientId[clientId];
+    const createdAt = rental.createdAt ?? rental.rentalAt ?? null;
+    entry.ordersCount += 1;
+    entry.totalBilledBs += Number(rental?.totals?.totalBs ?? 0);
+    if (!entry.lastOrderAt || new Date(createdAt) > new Date(entry.lastOrderAt)) {
+      entry.lastOrderAt = createdAt;
+    }
+  }
+
+  let newClientsThisMonth = 0;
+  let activeClients = 0;
+  for (const client of state.clients) {
+    const created = new Date(client.createdAt ?? now.toISOString());
+    if (created.getMonth() === month && created.getFullYear() === year) {
+      newClientsThisMonth += 1;
+    }
+    if (client.status !== 'inactive') {
+      activeClients += 1;
+    }
+  }
+
+  return {
+    activeClients,
+    newClientsThisMonth,
+    byClientId: summaryByClientId,
+  };
+};
+
+const getStatusFromDelivery = (delivery) => {
+  return normalizeDeliveryStatus(delivery);
+};
+
+const createWebBridge = () => ({
+  inventory: {
+    list: async () => {
+      const { items } = readState();
+      return items.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    },
+    listMovements: async () => {
+      const { inventoryMovements } = readState();
+      return inventoryMovements.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    listRecoveries: async () => {
+      const { stockRecoveries } = readState();
+      return stockRecoveries
+        .filter((entry) => Number(entry.quantity ?? 0) > 0)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    create: async (payload) => {
+      const name = String(payload?.name ?? '').trim();
+      const category = String(payload?.category ?? '').trim();
+      const brand = String(payload?.brand ?? '').trim();
+      const itemColor = String(payload?.itemColor ?? '').trim();
+      const totalStock = Math.trunc(toNumber(payload?.totalStock, 'stock total'));
+      const rentalPriceBs = toNumber(payload?.rentalPriceBs, 'precio');
+      const damagedUnitChargeBs = toNumber(payload?.damagedUnitChargeBs, 'cargo por danio');
+      const missingUnitChargeBs = toNumber(payload?.missingUnitChargeBs, 'cargo por perdida');
+      const requestedNeedsCleaningOnReturn = Boolean(payload?.needsCleaningOnReturn);
+      const imageDataUrl = payload?.imageDataUrl ?? null;
+
+      if (!name) {
+        throw new Error('El nombre es obligatorio.');
+      }
+      if (!category) {
+        throw new Error('La categoria es obligatoria.');
+      }
+      if (totalStock <= 0) {
+        throw new Error('El stock total debe ser mayor a 0.');
+      }
+      if (rentalPriceBs < 0) {
+        throw new Error('El precio no puede ser negativo.');
+      }
+      if (damagedUnitChargeBs < 0 || missingUnitChargeBs < 0) {
+        throw new Error('Los cargos por danio y perdida no pueden ser negativos.');
+      }
+      if (imageDataUrl && (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/'))) {
+        throw new Error('La imagen enviada no es valida.');
+      }
+
+      let createdItem = null;
+      transaction((state) => {
+        const categoryExists = state.categories.some((entry) => entry.name === category);
+        if (!categoryExists) {
+          throw new Error('La categoria seleccionada no existe.');
+        }
+
+        createdItem = {
+          id: makeId('item'),
+          name,
+          category,
+          brand,
+          itemColor,
+          totalStock,
+          availableStock: totalStock,
+          needsCleaningOnReturn: categoryRequiresCleaning(category)
+            ? true
+            : requestedNeedsCleaningOnReturn,
+          rentalPriceBs,
+          damagedUnitChargeBs,
+          missingUnitChargeBs,
+          imageDataUrl,
+          createdAt: new Date().toISOString(),
+        };
+        state.items.push(createdItem);
+        return state;
+      });
+
+      return createdItem;
+    },
+    update: async (payload) => {
+      const id = payload?.id;
+      if (!id) {
+        throw new Error('Debe enviar el id del item.');
+      }
+
+      let updatedItem = null;
+      transaction((state) => {
+        const item = state.items.find((entry) => entry.id === id);
+        if (!item) {
+          throw new Error('No se encontro el item seleccionado.');
+        }
+
+        const reservedStock = item.totalStock - item.availableStock;
+
+        if (typeof payload.name === 'string') {
+          const nextName = payload.name.trim();
+          if (!nextName) {
+            throw new Error('El nombre no puede estar vacio.');
+          }
+          item.name = nextName;
+        }
+
+        if (typeof payload.category === 'string') {
+          const nextCategory = payload.category.trim();
+          if (!nextCategory) {
+            throw new Error('La categoria no puede estar vacia.');
+          }
+          const categoryExists = state.categories.some((entry) => entry.name === nextCategory);
+          if (!categoryExists) {
+            throw new Error('La categoria seleccionada no existe.');
+          }
+          item.category = nextCategory;
+        }
+
+        if (payload.brand !== undefined) {
+          item.brand = String(payload.brand ?? '').trim();
+        }
+
+        if (payload.itemColor !== undefined) {
+          item.itemColor = String(payload.itemColor ?? '').trim();
+        }
+
+        if (payload.totalStock !== undefined) {
+          const nextTotalStock = Math.trunc(toNumber(payload.totalStock, 'stock total'));
+          if (nextTotalStock < reservedStock) {
+            throw new Error('El stock total no puede ser menor al stock ya alquilado.');
+          }
+          item.totalStock = nextTotalStock;
+          item.availableStock = nextTotalStock - reservedStock;
+        }
+
+        if (payload.rentalPriceBs !== undefined) {
+          const nextPrice = toNumber(payload.rentalPriceBs, 'precio');
+          if (nextPrice < 0) {
+            throw new Error('El precio no puede ser negativo.');
+          }
+          item.rentalPriceBs = nextPrice;
+        }
+
+        if (payload.damagedUnitChargeBs !== undefined) {
+          const nextDamagedCharge = toNumber(payload.damagedUnitChargeBs, 'cargo por danio');
+          if (nextDamagedCharge < 0) {
+            throw new Error('El cargo por danio no puede ser negativo.');
+          }
+          item.damagedUnitChargeBs = nextDamagedCharge;
+        }
+
+        if (payload.missingUnitChargeBs !== undefined) {
+          const nextMissingCharge = toNumber(payload.missingUnitChargeBs, 'cargo por perdida');
+          if (nextMissingCharge < 0) {
+            throw new Error('El cargo por perdida no puede ser negativo.');
+          }
+          item.missingUnitChargeBs = nextMissingCharge;
+        }
+
+        const nextNeedsCleaningOnReturn =
+          payload.needsCleaningOnReturn !== undefined
+            ? Boolean(payload.needsCleaningOnReturn)
+            : Boolean(item.needsCleaningOnReturn);
+        item.needsCleaningOnReturn = categoryRequiresCleaning(item.category) ? true : nextNeedsCleaningOnReturn;
+
+        if (payload.imageDataUrl !== undefined) {
+          if (
+            payload.imageDataUrl &&
+            (typeof payload.imageDataUrl !== 'string' || !payload.imageDataUrl.startsWith('data:image/'))
+          ) {
+            throw new Error('La imagen enviada no es valida.');
+          }
+          item.imageDataUrl = payload.imageDataUrl;
+        }
+
+        item.updatedAt = new Date().toISOString();
+        updatedItem = deepClone(item);
+        return state;
+      });
+
+      return updatedItem;
+    },
+    remove: async (payload) => {
+      const id = payload?.id;
+      if (!id) {
+        throw new Error('Debe enviar el id del item.');
+      }
+
+      let deletedItem = null;
+      transaction((state) => {
+        const itemIndex = state.items.findIndex((entry) => entry.id === id);
+        if (itemIndex < 0) {
+          throw new Error('No se encontro el item seleccionado.');
+        }
+
+        const item = state.items[itemIndex];
+        const hasActiveRentals = state.rentals.some(
+          (rental) =>
+            rental.status === 'active'
+            && !rental.deletedAt
+            && Array.isArray(rental.items)
+            && rental.items.some((line) => line.itemId === item.id),
+        );
+        if (hasActiveRentals) {
+          throw new Error('No puedes eliminar un item con unidades alquiladas.');
+        }
+
+        const hasRecoveryQueue = state.stockRecoveries.some((entry) => entry.itemId === item.id);
+        if (hasRecoveryQueue) {
+          throw new Error('No puedes eliminar un item con unidades pendientes de lavado o reparacion.');
+        }
+
+        if (item.availableStock < item.totalStock) {
+          throw new Error('No puedes eliminar un item con unidades no operativas o faltantes pendientes.');
+        }
+
+        deletedItem = deepClone(item);
+        state.items.splice(itemIndex, 1);
+        return state;
+      });
+
+      return deletedItem;
+    },
+    createMovement: async (payload) => {
+      const itemId = payload?.itemId;
+      const type = String(payload?.type ?? '').trim();
+      const reason = String(payload?.reason ?? '').trim();
+      const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+      const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+      const quantity = payload?.quantity !== undefined ? toInteger(payload.quantity, 'cantidad') : 0;
+      const targetTotalStock =
+        payload?.targetTotalStock !== undefined ? toInteger(payload.targetTotalStock, 'stock fisico') : null;
+
+      if (!itemId) {
+        throw new Error('Debes seleccionar un item para registrar movimiento.');
+      }
+      if (!['entrada', 'salida', 'ajuste'].includes(type)) {
+        throw new Error('Tipo de movimiento invalido.');
+      }
+      if (!reason) {
+        throw new Error('Debes registrar el motivo del movimiento.');
+      }
+
+      let createdMovement = null;
+      transaction((state) => {
+        const item = state.items.find((entry) => entry.id === itemId);
+        if (!item) {
+          throw new Error('El item seleccionado no existe.');
+        }
+
+        const beforeTotalStock = item.totalStock;
+        const beforeAvailableStock = item.availableStock;
+        const reservedStock = beforeTotalStock - beforeAvailableStock;
+
+        let deltaUnits = 0;
+        let movementDetail = '';
+
+        if (type === 'entrada') {
+          if (quantity <= 0) {
+            throw new Error('La cantidad de entrada debe ser mayor a 0.');
+          }
+          deltaUnits = quantity;
+          movementDetail = `Entrada de ${quantity} unidades`;
+          item.totalStock += quantity;
+          item.availableStock += quantity;
+        }
+
+        if (type === 'salida') {
+          if (quantity <= 0) {
+            throw new Error('La cantidad de salida debe ser mayor a 0.');
+          }
+          if (quantity > item.availableStock) {
+            throw new Error(`No hay stock disponible suficiente para salida. Disponible: ${item.availableStock}.`);
+          }
+          deltaUnits = -quantity;
+          movementDetail = `Salida de ${quantity} unidades`;
+          item.totalStock -= quantity;
+          item.availableStock -= quantity;
+        }
+
+        if (type === 'ajuste') {
+          if (targetTotalStock === null) {
+            throw new Error('Debes indicar el stock fisico para el ajuste.');
+          }
+          if (targetTotalStock < reservedStock) {
+            throw new Error(`El stock fisico no puede ser menor al stock alquilado (${reservedStock}).`);
+          }
+          deltaUnits = targetTotalStock - beforeTotalStock;
+          movementDetail = `Ajuste a stock fisico ${targetTotalStock}`;
+          item.totalStock = targetTotalStock;
+          item.availableStock = targetTotalStock - reservedStock;
+        }
+
+        item.updatedAt = new Date().toISOString();
+
+        createdMovement = {
+          id: makeId('mov'),
+          itemId: item.id,
+          itemName: item.name,
+          category: item.category,
+          type,
+          reason,
+          detail: movementDetail,
+          deltaUnits,
+          beforeTotalStock,
+          afterTotalStock: item.totalStock,
+          beforeAvailableStock,
+          afterAvailableStock: item.availableStock,
+          reservedStockAfter: item.totalStock - item.availableStock,
+          userName,
+          userRole,
+          createdAt: new Date().toISOString(),
+        };
+
+        state.inventoryMovements.push(createdMovement);
+        return state;
+      });
+
+      return createdMovement;
+    },
+    processRecovery: async (payload) => {
+      const recoveryId = String(payload?.recoveryId ?? '').trim();
+      const action = String(payload?.action ?? '').trim();
+      const quantity = toInteger(payload?.quantity ?? 0, 'cantidad');
+      const note = String(payload?.note ?? '').trim();
+
+      if (!recoveryId) {
+        throw new Error('Debes seleccionar un pendiente para procesar.');
+      }
+      if (!['reinsert', 'discard'].includes(action)) {
+        throw new Error('La accion de reinsercion no es valida.');
+      }
+      if (quantity <= 0) {
+        throw new Error('La cantidad a procesar debe ser mayor a 0.');
+      }
+
+      let processedResult = null;
+      transaction((state) => {
+        const recoveryIndex = state.stockRecoveries.findIndex((entry) => entry.id === recoveryId);
+        if (recoveryIndex < 0) {
+          throw new Error('No se encontro el pendiente seleccionado.');
+        }
+
+        const recovery = state.stockRecoveries[recoveryIndex];
+        if (quantity > recovery.quantity) {
+          throw new Error(`La cantidad maxima para este pendiente es ${recovery.quantity}.`);
+        }
+
+        const item = state.items.find((entry) => entry.id === recovery.itemId);
+        if (!item) {
+          throw new Error('El item asociado ya no existe.');
+        }
+
+        const beforeTotalStock = item.totalStock;
+        const beforeAvailableStock = item.availableStock;
+        const now = new Date().toISOString();
+
+        if (action === 'reinsert') {
+          item.availableStock += quantity;
+          if (item.availableStock > item.totalStock) {
+            throw new Error('La reinsercion supera el stock total del item.');
+          }
+        } else {
+          if (item.totalStock - quantity < item.availableStock) {
+            throw new Error('No se puede dar de baja mas unidades de las no disponibles.');
+          }
+          item.totalStock -= quantity;
+        }
+
+        item.updatedAt = now;
+        recovery.quantity -= quantity;
+        recovery.updatedAt = now;
+
+        if (recovery.quantity <= 0) {
+          state.stockRecoveries.splice(recoveryIndex, 1);
+        }
+
+        state.inventoryMovements.push({
+          id: makeId('mov'),
+          itemId: item.id,
+          itemName: item.name,
+          category: item.category,
+          type: action === 'reinsert' ? 'reinsercion' : 'salida',
+          reason:
+            note
+            || (action === 'reinsert'
+              ? `Reinsercion desde ${recovery.stage === 'lavado' ? 'lavado' : 'reparacion'}`
+              : `Baja definitiva desde ${recovery.stage === 'lavado' ? 'lavado' : 'reparacion'}`),
+          detail:
+            action === 'reinsert'
+              ? `Reinsertadas ${quantity} unidades (${recovery.stage})`
+              : `Baja definitiva de ${quantity} unidades (${recovery.stage})`,
+          deltaUnits: action === 'reinsert' ? 0 : -quantity,
+          beforeTotalStock,
+          afterTotalStock: item.totalStock,
+          beforeAvailableStock,
+          afterAvailableStock: item.availableStock,
+          reservedStockAfter: item.totalStock - item.availableStock,
+          createdAt: now,
+        });
+
+        processedResult = {
+          recoveryId,
+          action,
+          quantity,
+          itemId: item.id,
+        };
+        return state;
+      });
+
+      return processedResult;
+    },
+  },
+
+  categories: {
+    list: async () => {
+      const { categories } = readState();
+      return categories.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    },
+    create: async (payload) => {
+      const name = String(payload?.name ?? '').trim();
+      const icon = String(payload?.icon ?? 'box').trim() || 'box';
+      const color = String(payload?.color ?? '#5d59e0').trim() || '#5d59e0';
+      if (!name) {
+        throw new Error('El nombre de categoria es obligatorio.');
+      }
+
+      let createdCategory = null;
+      transaction((state) => {
+        const exists = state.categories.some(
+          (category) => category.name.trim().toLowerCase() === name.toLowerCase(),
+        );
+
+        if (exists) {
+          throw new Error('Esa categoria ya existe.');
+        }
+
+        createdCategory = {
+          id: makeId('cat'),
+          name,
+          icon,
+          color,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        state.categories.push(createdCategory);
+        return state;
+      });
+
+      return createdCategory;
+    },
+    update: async (payload) => {
+      const categoryId = String(payload?.id ?? '').trim();
+      const name = String(payload?.name ?? '').trim();
+      const icon = String(payload?.icon ?? 'box').trim() || 'box';
+      const color = String(payload?.color ?? '#5d59e0').trim() || '#5d59e0';
+
+      if (!categoryId) {
+        throw new Error('No se pudo identificar la categoria.');
+      }
+      if (!name) {
+        throw new Error('El nombre de categoria es obligatorio.');
+      }
+
+      let updatedCategory = null;
+      transaction((state) => {
+        const index = state.categories.findIndex((entry) => entry.id === categoryId);
+        if (index === -1) {
+          throw new Error('La categoria no existe.');
+        }
+
+        const exists = state.categories.some(
+          (entry, entryIndex) =>
+            entryIndex !== index
+            && String(entry.name ?? '').trim().toLowerCase() === name.toLowerCase(),
+        );
+        if (exists) {
+          throw new Error('Ya existe otra categoria con ese nombre.');
+        }
+
+        const previousName = state.categories[index].name;
+        const now = new Date().toISOString();
+        state.categories[index] = {
+          ...state.categories[index],
+          name,
+          icon,
+          color,
+          updatedAt: now,
+        };
+
+        if (previousName !== name) {
+          state.items = state.items.map((item) =>
+            item.category === previousName
+              ? { ...item, category: name }
+              : item,
+          );
+        }
+
+        updatedCategory = { ...state.categories[index] };
+        return state;
+      });
+
+      return updatedCategory;
+    },
+    remove: async (payload) => {
+      const categoryId = String(payload?.id ?? '').trim();
+      if (!categoryId) {
+        throw new Error('No se pudo identificar la categoria.');
+      }
+
+      let removedCategory = null;
+      transaction((state) => {
+        const index = state.categories.findIndex((entry) => entry.id === categoryId);
+        if (index === -1) {
+          throw new Error('La categoria no existe.');
+        }
+        if (state.categories.length <= 1) {
+          throw new Error('Debe existir al menos una categoria activa.');
+        }
+
+        const target = state.categories[index];
+        const linkedItems = state.items.filter((item) => item.category === target.name);
+        if (linkedItems.length > 0) {
+          throw new Error('No puedes eliminar una categoria con productos asociados.');
+        }
+
+        removedCategory = { ...target };
+        state.categories.splice(index, 1);
+        return state;
+      });
+
+      return removedCategory;
+    },
+  },
+
+  clients: {
+    list: async () => {
+      const state = readState();
+      const metrics = computeClientMetrics(state);
+      return state.clients
+        .map((client) => {
+          const summary = metrics.byClientId[client.id] ?? {
+            ordersCount: 0,
+            totalBilledBs: 0,
+            lastOrderAt: null,
+          };
+
+          return {
+            ...client,
+            ordersCount: summary.ordersCount,
+            totalBilledBs: Number(summary.totalBilledBs.toFixed(2)),
+            lastOrderAt: summary.lastOrderAt,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    },
+    create: async (payload) => {
+      const name = String(payload?.name ?? '').trim();
+      const phone = String(payload?.phone ?? '').trim();
+      const email = String(payload?.email ?? '').trim().toLowerCase();
+      const customerType = String(payload?.customerType ?? 'persona').trim() || 'persona';
+      const nitCi = String(payload?.nitCi ?? '').trim();
+      if (!name) throw new Error('El nombre del cliente es obligatorio.');
+      if (!phone) throw new Error('El telefono del cliente es obligatorio.');
+      if (!nitCi) throw new Error('El campo NIT/CI es obligatorio.');
+      if (customerType === 'empresa' && !String(payload?.companyName ?? '').trim()) {
+        throw new Error('La razon social es obligatoria para cliente empresa.');
+      }
+
+      let created = null;
+      transaction((state) => {
+        if (email && state.clients.some((client) => client.email === email)) {
+          throw new Error('Ya existe un cliente con ese email.');
+        }
+
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('cli'),
+          customerType,
+          name,
+          companyName: String(payload?.companyName ?? name).trim(),
+          contactName: String(payload?.contactName ?? name).trim(),
+          contactRole: String(payload?.contactRole ?? 'Contacto').trim(),
+          nitCi,
+          phone,
+          whatsapp: String(payload?.whatsapp ?? phone).trim(),
+          email,
+          address: String(payload?.address ?? '').trim(),
+          city: String(payload?.city ?? '').trim(),
+          observations: String(payload?.observations ?? '').trim(),
+          deliveryAddresses: Array.isArray(payload?.deliveryAddresses)
+            ? payload.deliveryAddresses
+              .map((entry) => ({
+                id: entry?.id ?? makeId('addr'),
+                label: String(entry?.label ?? 'Principal').trim() || 'Principal',
+                address: String(entry?.address ?? '').trim(),
+                city: String(entry?.city ?? '').trim(),
+                reference: String(entry?.reference ?? '').trim(),
+                isPrimary: Boolean(entry?.isPrimary),
+              }))
+              .filter((entry) => entry.address || entry.city)
+            : [],
+          attachments: Array.isArray(payload?.attachments)
+            ? payload.attachments
+              .map((entry) => ({
+                id: entry?.id ?? makeId('att'),
+                name: String(entry?.name ?? '').trim(),
+                mimeType: String(entry?.mimeType ?? '').trim(),
+                size: Number(entry?.size ?? 0),
+                dataUrl: entry?.dataUrl ?? null,
+                url: entry?.url ?? null,
+                uploadedAt: entry?.uploadedAt ?? now,
+              }))
+              .filter((entry) => entry.name)
+            : [],
+          status: String(payload?.status ?? 'active').trim() || 'active',
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.clients.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    update: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el cliente a actualizar.');
+
+      let updated = null;
+      transaction((state) => {
+        const client = state.clients.find((entry) => entry.id === id);
+        if (!client) throw new Error('Cliente no encontrado.');
+
+        if (payload.name !== undefined) client.name = String(payload.name ?? '').trim() || client.name;
+        if (payload.companyName !== undefined) {
+          client.companyName = String(payload.companyName ?? '').trim() || client.companyName;
+        }
+        if (payload.contactName !== undefined) {
+          client.contactName = String(payload.contactName ?? '').trim() || client.contactName;
+        }
+        if (payload.contactRole !== undefined) {
+          client.contactRole = String(payload.contactRole ?? '').trim() || client.contactRole;
+        }
+        if (payload.customerType !== undefined) {
+          client.customerType = String(payload.customerType ?? '').trim() || client.customerType;
+        }
+        if (payload.nitCi !== undefined) {
+          client.nitCi = String(payload.nitCi ?? '').trim();
+        }
+        if (payload.phone !== undefined) {
+          const nextPhone = String(payload.phone ?? '').trim();
+          if (!nextPhone) throw new Error('El telefono no puede estar vacio.');
+          client.phone = nextPhone;
+        }
+        if (payload.whatsapp !== undefined) {
+          client.whatsapp = String(payload.whatsapp ?? '').trim();
+        }
+        if (payload.email !== undefined) {
+          const nextEmail = String(payload.email ?? '').trim().toLowerCase();
+          const duplicate = state.clients.some((entry) => entry.id !== id && entry.email === nextEmail);
+          if (nextEmail && duplicate) throw new Error('Ya existe otro cliente con ese email.');
+          client.email = nextEmail;
+        }
+        if (payload.address !== undefined) {
+          client.address = String(payload.address ?? '').trim();
+        }
+        if (payload.city !== undefined) {
+          client.city = String(payload.city ?? '').trim();
+        }
+        if (payload.observations !== undefined) {
+          client.observations = String(payload.observations ?? '').trim();
+        }
+        if (payload.deliveryAddresses !== undefined) {
+          client.deliveryAddresses = Array.isArray(payload.deliveryAddresses)
+            ? payload.deliveryAddresses
+              .map((entry) => ({
+                id: entry?.id ?? makeId('addr'),
+                label: String(entry?.label ?? 'Principal').trim() || 'Principal',
+                address: String(entry?.address ?? '').trim(),
+                city: String(entry?.city ?? '').trim(),
+                reference: String(entry?.reference ?? '').trim(),
+                isPrimary: Boolean(entry?.isPrimary),
+              }))
+              .filter((entry) => entry.address || entry.city)
+            : [];
+        }
+        if (payload.attachments !== undefined) {
+          client.attachments = Array.isArray(payload.attachments)
+            ? payload.attachments
+              .map((entry) => ({
+                id: entry?.id ?? makeId('att'),
+                name: String(entry?.name ?? '').trim(),
+                mimeType: String(entry?.mimeType ?? '').trim(),
+                size: Number(entry?.size ?? 0),
+                dataUrl: entry?.dataUrl ?? null,
+                url: entry?.url ?? null,
+                uploadedAt: entry?.uploadedAt ?? new Date().toISOString(),
+              }))
+              .filter((entry) => entry.name)
+            : [];
+        }
+        if (payload.status !== undefined) {
+          client.status = String(payload.status ?? '').trim() || client.status;
+        }
+        client.updatedAt = new Date().toISOString();
+        updated = deepClone(client);
+        return state;
+      });
+
+      return updated;
+    },
+  },
+
+  users: {
+    list: async () => {
+      const { users } = readState();
+      return users.filter((user) => !user.deletedAt).slice().sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+    },
+    create: async (payload) => {
+      const fullName = String(payload?.fullName ?? '').trim();
+      const username = normalizeUsername(payload?.username);
+      const password = String(payload?.password ?? '').trim();
+      const roleId = normalizeRoleId(payload?.roleId ?? payload?.role ?? 'ventas');
+      if (!fullName) throw new Error('El nombre del usuario es obligatorio.');
+      if (!username) throw new Error('El usuario de acceso es obligatorio.');
+      if (!password || password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
+
+      let created = null;
+      transaction((state) => {
+        if (state.users.some((user) => user.username === username)) {
+          throw new Error('Ya existe un usuario con ese nombre de usuario.');
+        }
+
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('usr'),
+          fullName,
+          username,
+          passwordHash: hashPassword(password),
+          roleId,
+          role: ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas',
+          status: String(payload?.status ?? 'active').trim() || 'active',
+          phone: String(payload?.phone ?? '').trim(),
+          isCurrentUser: false,
+          invitedAt: null,
+          lastAccessAt: null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.users.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    update: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el usuario.');
+
+      let updated = null;
+      transaction((state) => {
+        const user = state.users.find((entry) => entry.id === id);
+        if (!user) throw new Error('Usuario no encontrado.');
+        if (readSessionUserId() === user.id && payload.status === 'suspended') {
+          throw new Error('No puedes suspender al usuario actual.');
+        }
+
+        if (payload.fullName !== undefined) user.fullName = String(payload.fullName ?? '').trim() || user.fullName;
+        if (payload.username !== undefined) {
+          const nextUsername = normalizeUsername(payload.username);
+          if (!nextUsername) throw new Error('El usuario de acceso no puede estar vacio.');
+          const duplicated = state.users.some((entry) => entry.id !== id && entry.username === nextUsername);
+          if (duplicated) throw new Error('Ya existe otro usuario con ese nombre de usuario.');
+          user.username = nextUsername;
+        }
+        if (payload.password !== undefined && String(payload.password ?? '').trim()) {
+          const nextPassword = String(payload.password ?? '').trim();
+          if (nextPassword.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
+          user.passwordHash = hashPassword(nextPassword);
+        }
+        if (payload.role !== undefined || payload.roleId !== undefined) {
+          const roleId = normalizeRoleId(payload.roleId ?? payload.role);
+          user.roleId = roleId;
+          user.role = ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas';
+        }
+        if (payload.status !== undefined) user.status = String(payload.status ?? '').trim() || user.status;
+        if (payload.phone !== undefined) user.phone = String(payload.phone ?? '').trim();
+        user.updatedAt = new Date().toISOString();
+        updated = deepClone(user);
+        return state;
+      });
+
+      return updated;
+    },
+    remove: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el usuario.');
+
+      let removed = null;
+      transaction((state) => {
+        const user = state.users.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!user) throw new Error('Usuario no encontrado.');
+        if (readSessionUserId() === user.id) {
+          throw new Error('No puedes eliminar al usuario actual.');
+        }
+        user.deletedAt = new Date().toISOString();
+        user.status = 'suspended';
+        user.updatedAt = user.deletedAt;
+        removed = deepClone(user);
+        return state;
+      });
+
+      return removed;
+    },
+    resendInvite: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el usuario.');
+
+      let result = null;
+      transaction((state) => {
+        const user = state.users.find((entry) => entry.id === id);
+        if (!user) throw new Error('Usuario no encontrado.');
+        user.status = 'invited';
+        user.invitedAt = new Date().toISOString();
+        user.updatedAt = new Date().toISOString();
+        result = deepClone(user);
+        return state;
+      });
+
+      return result;
+    },
+  },
+
+  personnel: {
+    listBundle: async () => {
+      const state = readState();
+      return {
+        employees: state.personnelEmployees
+          .filter((row) => !row.deletedAt)
+          .slice()
+          .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es')),
+        attendance: state.personnelAttendance
+          .slice()
+          .sort((a, b) => new Date(`${b.date}T${b.checkIn || '00:00'}`) - new Date(`${a.date}T${a.checkIn || '00:00'}`)),
+        incidents: state.personnelIncidents
+          .filter((row) => !row.deletedAt)
+          .slice()
+          .sort((a, b) => new Date(b.dateFrom || b.createdAt) - new Date(a.dateFrom || a.createdAt)),
+      };
+    },
+    createEmployee: async (payload) => {
+      const fullName = String(payload?.fullName ?? '').trim();
+      if (!fullName) throw new Error('El nombre del trabajador es obligatorio.');
+
+      let created = null;
+      transaction((state) => {
+        const now = new Date().toISOString();
+        const employeeCode = String(payload?.employeeCode ?? '').trim()
+          || nextPersonnelCode(state.personnelEmployees);
+        const exists = state.personnelEmployees.some(
+          (entry) => !entry.deletedAt && normalizeText(entry.employeeCode) === normalizeText(employeeCode),
+        );
+        if (exists) throw new Error('Ya existe personal con ese codigo.');
+
+        created = {
+          id: makeId('emp'),
+          employeeCode,
+          biometricCode: String(payload?.biometricCode ?? employeeCode).trim(),
+          fullName,
+          documentId: String(payload?.documentId ?? '').trim(),
+          phone: String(payload?.phone ?? payload?.whatsapp ?? '').trim(),
+          whatsapp: String(payload?.whatsapp ?? payload?.phone ?? '').trim(),
+          photoUrl: String(payload?.photoUrl ?? '').trim(),
+          email: String(payload?.email ?? '').trim().toLowerCase(),
+          address: String(payload?.address ?? '').trim(),
+          city: String(payload?.city ?? '').trim(),
+          department: String(payload?.department ?? 'Operaciones').trim() || 'Operaciones',
+          position: String(payload?.position ?? '').trim(),
+          contractType: String(payload?.contractType ?? 'indefinido').trim() || 'indefinido',
+          hireDate: String(payload?.hireDate ?? '').trim() || null,
+          salaryBs: Math.max(0, Number(payload?.salaryBs ?? 0)),
+          schedule: {
+            start: String(payload?.schedule?.start ?? '08:00').trim() || '08:00',
+            end: String(payload?.schedule?.end ?? '17:00').trim() || '17:00',
+            dailyHours: Math.max(1, Number(payload?.schedule?.dailyHours ?? 8)),
+            workingDays: Array.isArray(payload?.schedule?.workingDays) && payload.schedule.workingDays.length
+              ? payload.schedule.workingDays.map((day) => Number(day)).filter((day) => day >= 0 && day <= 6)
+              : [1, 2, 3, 4, 5, 6],
+          },
+          emergencyContact: String(payload?.emergencyContact ?? '').trim(),
+          emergencyPhone: String(payload?.emergencyPhone ?? '').trim(),
+          notes: String(payload?.notes ?? '').trim(),
+          status: String(payload?.status ?? 'active').trim() || 'active',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.personnelEmployees.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    updateEmployee: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el trabajador.');
+
+      let updated = null;
+      transaction((state) => {
+        const employee = state.personnelEmployees.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!employee) throw new Error('Personal no encontrado.');
+
+        const nextCode = String(payload?.employeeCode ?? employee.employeeCode).trim();
+        if (!nextCode) throw new Error('El codigo no puede estar vacio.');
+        const exists = state.personnelEmployees.some(
+          (entry) => entry.id !== id && !entry.deletedAt && normalizeText(entry.employeeCode) === normalizeText(nextCode),
+        );
+        if (exists) throw new Error('Ya existe otro trabajador con ese codigo.');
+
+        employee.employeeCode = nextCode;
+        employee.biometricCode = String(payload?.biometricCode ?? employee.biometricCode ?? nextCode).trim();
+        employee.fullName = String(payload?.fullName ?? employee.fullName).trim() || employee.fullName;
+        employee.documentId = String(payload?.documentId ?? employee.documentId ?? '').trim();
+        employee.phone = String(payload?.phone ?? payload?.whatsapp ?? employee.phone ?? '').trim();
+        employee.whatsapp = String(payload?.whatsapp ?? payload?.phone ?? employee.whatsapp ?? '').trim();
+        employee.photoUrl = String(payload?.photoUrl ?? employee.photoUrl ?? '').trim();
+        employee.email = String(payload?.email ?? employee.email ?? '').trim().toLowerCase();
+        employee.address = String(payload?.address ?? employee.address ?? '').trim();
+        employee.city = String(payload?.city ?? employee.city ?? '').trim();
+        employee.department = String(payload?.department ?? employee.department ?? 'Operaciones').trim() || 'Operaciones';
+        employee.position = String(payload?.position ?? employee.position ?? '').trim();
+        employee.contractType = String(payload?.contractType ?? employee.contractType ?? 'indefinido').trim() || 'indefinido';
+        employee.hireDate = String(payload?.hireDate ?? employee.hireDate ?? '').trim() || null;
+        employee.salaryBs = Math.max(0, Number(payload?.salaryBs ?? employee.salaryBs ?? 0));
+        employee.schedule = {
+          start: String(payload?.schedule?.start ?? employee.schedule?.start ?? '08:00').trim() || '08:00',
+          end: String(payload?.schedule?.end ?? employee.schedule?.end ?? '17:00').trim() || '17:00',
+          dailyHours: Math.max(1, Number(payload?.schedule?.dailyHours ?? employee.schedule?.dailyHours ?? 8)),
+          workingDays: Array.isArray(payload?.schedule?.workingDays) && payload.schedule.workingDays.length
+            ? payload.schedule.workingDays.map((day) => Number(day)).filter((day) => day >= 0 && day <= 6)
+            : (Array.isArray(employee.schedule?.workingDays) && employee.schedule.workingDays.length
+              ? employee.schedule.workingDays
+              : [1, 2, 3, 4, 5, 6]),
+        };
+        employee.emergencyContact = String(payload?.emergencyContact ?? employee.emergencyContact ?? '').trim();
+        employee.emergencyPhone = String(payload?.emergencyPhone ?? employee.emergencyPhone ?? '').trim();
+        employee.notes = String(payload?.notes ?? employee.notes ?? '').trim();
+        employee.status = String(payload?.status ?? employee.status ?? 'active').trim() || 'active';
+        employee.updatedAt = new Date().toISOString();
+
+        state.personnelAttendance.forEach((entry) => {
+          if (entry.employeeId === id) {
+            entry.employeeCode = employee.employeeCode;
+            entry.employeeName = employee.fullName;
+          }
+        });
+        state.personnelIncidents.forEach((entry) => {
+          if (entry.employeeId === id) entry.employeeName = employee.fullName;
+        });
+        updated = deepClone(employee);
+        return state;
+      });
+
+      return updated;
+    },
+    removeEmployee: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el trabajador.');
+
+      let removed = null;
+      transaction((state) => {
+        const employee = state.personnelEmployees.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!employee) throw new Error('Personal no encontrado.');
+        employee.deletedAt = new Date().toISOString();
+        employee.status = 'inactive';
+        employee.updatedAt = employee.deletedAt;
+        removed = deepClone(employee);
+        return state;
+      });
+      return removed;
+    },
+    createIncident: async (payload) => {
+      const employeeId = String(payload?.employeeId ?? '').trim();
+      const dateFrom = String(payload?.dateFrom ?? payload?.date ?? '').trim();
+      if (!employeeId) throw new Error('Selecciona un trabajador.');
+      if (!dateFrom) throw new Error('Indica la fecha del registro.');
+
+      let created = null;
+      transaction((state) => {
+        const employee = state.personnelEmployees.find((entry) => entry.id === employeeId && !entry.deletedAt);
+        if (!employee) throw new Error('Personal no encontrado.');
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('hrinc'),
+          employeeId,
+          employeeName: employee.fullName,
+          type: String(payload?.type ?? 'permiso').trim() || 'permiso',
+          dateFrom,
+          dateTo: String(payload?.dateTo ?? dateFrom).trim() || dateFrom,
+          hours: Math.max(0, Number(payload?.hours ?? 0)),
+          status: String(payload?.status ?? 'aprobado').trim() || 'aprobado',
+          reason: String(payload?.reason ?? '').trim(),
+          notes: String(payload?.notes ?? '').trim(),
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.personnelIncidents.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    updateIncident: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el registro.');
+
+      let updated = null;
+      transaction((state) => {
+        const incident = state.personnelIncidents.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!incident) throw new Error('Registro no encontrado.');
+        if (payload.type !== undefined) incident.type = String(payload.type ?? '').trim() || incident.type;
+        if (payload.dateFrom !== undefined) incident.dateFrom = String(payload.dateFrom ?? '').trim() || incident.dateFrom;
+        if (payload.dateTo !== undefined) incident.dateTo = String(payload.dateTo ?? '').trim() || incident.dateTo;
+        if (payload.hours !== undefined) incident.hours = Math.max(0, Number(payload.hours ?? 0));
+        if (payload.status !== undefined) incident.status = String(payload.status ?? '').trim() || incident.status;
+        if (payload.reason !== undefined) incident.reason = String(payload.reason ?? '').trim();
+        if (payload.notes !== undefined) incident.notes = String(payload.notes ?? '').trim();
+        incident.updatedAt = new Date().toISOString();
+        updated = deepClone(incident);
+        return state;
+      });
+      return updated;
+    },
+    importAttendance: async (payload) => {
+      const records = Array.isArray(payload?.records) ? payload.records : [];
+      if (!records.length) throw new Error('No hay registros validos para importar.');
+
+      let result = { imported: 0, unmatched: 0, observed: 0, overtime: 0 };
+      transaction((state) => {
+        const importCode = consumeDocumentCode(state, 'hrImportPrefix', 'hrImportNext', 5);
+        const now = new Date().toISOString();
+
+        records.forEach((record) => {
+          const employeeCode = String(record?.employeeCode ?? record?.biometricCode ?? '').trim();
+          const employeeName = String(record?.employeeName ?? record?.fullName ?? '').trim();
+          const employee = state.personnelEmployees.find((entry) =>
+            !entry.deletedAt
+            && (
+              (employeeCode && normalizeText(entry.biometricCode || entry.employeeCode) === normalizeText(employeeCode))
+              || (employeeCode && normalizeText(entry.employeeCode) === normalizeText(employeeCode))
+              || (employeeName && normalizeText(entry.fullName) === normalizeText(employeeName))
+            ));
+          if (!employee) result.unmatched += 1;
+
+          const date = String(record?.date ?? '').trim();
+          const checkIn = String(record?.checkIn ?? '').trim();
+          const checkOut = String(record?.checkOut ?? '').trim();
+          if (!date || !checkIn || !checkOut) return;
+
+          const meta = calculateAttendanceMeta({ employee, date, checkIn, checkOut });
+          const duplicateIndex = state.personnelAttendance.findIndex(
+            (entry) =>
+              entry.date === date
+              && (
+                (employee?.id && entry.employeeId === employee.id)
+                || (!employee?.id && entry.employeeCode === employeeCode && entry.employeeName === employeeName)
+              ),
+          );
+          const nextEntry = {
+            id: duplicateIndex >= 0 ? state.personnelAttendance[duplicateIndex].id : makeId('att'),
+            employeeId: employee?.id ?? null,
+            employeeCode: employee?.employeeCode ?? employeeCode,
+            employeeName: employee?.fullName ?? employeeName,
+            date,
+            checkIn,
+            checkOut,
+            ...meta,
+            source: String(payload?.source ?? 'ZKTeco').trim() || 'ZKTeco',
+            importCode,
+            notes: employee ? '' : 'No se encontro coincidencia con el personal registrado.',
+            createdAt: duplicateIndex >= 0 ? state.personnelAttendance[duplicateIndex].createdAt : now,
+            updatedAt: now,
+          };
+          if (duplicateIndex >= 0) {
+            state.personnelAttendance[duplicateIndex] = nextEntry;
+          } else {
+            state.personnelAttendance.push(nextEntry);
+          }
+
+          result.imported += 1;
+          if (meta.overtimeHours > 0) result.overtime += 1;
+          if (meta.status === 'observado' || meta.status === 'incompleto') result.observed += 1;
+        });
+        return state;
+      });
+
+      return result;
+    },
+  },
+
+  auth: {
+    getSession: async () => {
+      const userId = readSessionUserId();
+      if (!userId) return null;
+      const state = readState();
+      const user = state.users.find((entry) => entry.id === userId && entry.status === 'active');
+      if (!user) {
+        clearSessionUserId();
+        return null;
+      }
+      return sanitizeUserForSession(user);
+    },
+    login: async (payload) => {
+      const username = normalizeUsername(payload?.username);
+      const passwordHash = hashPassword(payload?.password);
+      if (!username) throw new Error('Ingresa tu usuario.');
+      if (!String(payload?.password ?? '').trim()) throw new Error('Ingresa tu contrasena.');
+
+      let sessionUser = null;
+      transaction((state) => {
+        const user = state.users.find((entry) => entry.username === username);
+        if (!user || user.passwordHash !== passwordHash) {
+          throw new Error('Usuario o contrasena incorrectos.');
+        }
+        if (user.status !== 'active') {
+          throw new Error('Este usuario no esta activo. Consulta con administracion.');
+        }
+
+        const now = new Date().toISOString();
+        state.users.forEach((entry) => {
+          entry.isCurrentUser = entry.id === user.id;
+        });
+        user.lastAccessAt = now;
+        user.updatedAt = now;
+        sessionUser = sanitizeUserForSession(user);
+        return state;
+      });
+
+      writeSessionUserId(sessionUser.id);
+      return sessionUser;
+    },
+    logout: async () => {
+      clearSessionUserId();
+      transaction((state) => {
+        state.users.forEach((entry) => {
+          entry.isCurrentUser = false;
+        });
+        return state;
+      });
+      return { ok: true };
+    },
+  },
+
+  presence: {
+    listActive: async () => {
+      const state = readState();
+      const threshold = Date.now() - PRESENCE_TTL_MS;
+      return (state.userPresence ?? [])
+        .filter((presence) => new Date(presence.lastSeenAt).getTime() >= threshold)
+        .sort((a, b) => new Date(b.lastSeenAt) - new Date(a.lastSeenAt));
+    },
+    heartbeat: async (payload) => {
+      const userId = String(payload?.userId ?? '').trim();
+      if (!userId) return [];
+      let activePresence = [];
+      transaction((state) => {
+        if (!Array.isArray(state.userPresence)) state.userPresence = [];
+        const now = new Date().toISOString();
+        const threshold = Date.now() - PRESENCE_TTL_MS;
+        state.userPresence = state.userPresence.filter((presence) => (
+          presence.userId === userId || new Date(presence.lastSeenAt).getTime() >= threshold
+        ));
+        const existing = state.userPresence.find((presence) => presence.userId === userId);
+        const nextPresence = {
+          userId,
+          fullName: String(payload?.fullName ?? 'Usuario').trim() || 'Usuario',
+          role: String(payload?.role ?? 'Operador').trim() || 'Operador',
+          activeTab: String(payload?.activeTab ?? 'resumen').trim() || 'resumen',
+          color: String(payload?.color ?? colorForUserId(userId)).trim() || colorForUserId(userId),
+          lastSeenAt: now,
+          updatedAt: now,
+        };
+        if (existing) {
+          Object.assign(existing, nextPresence);
+        } else {
+          state.userPresence.push(nextPresence);
+        }
+        activePresence = state.userPresence
+          .filter((presence) => new Date(presence.lastSeenAt).getTime() >= threshold)
+          .sort((a, b) => new Date(b.lastSeenAt) - new Date(a.lastSeenAt));
+        return state;
+      });
+      return activePresence;
+    },
+    leave: async (payload) => {
+      const userId = String(payload?.userId ?? '').trim();
+      if (!userId) return { ok: true };
+      transaction((state) => {
+        state.userPresence = (state.userPresence ?? []).filter((presence) => presence.userId !== userId);
+        return state;
+      });
+      return { ok: true };
+    },
+  },
+
+  transport: {
+    listDeliveries: async () => {
+      const state = readState();
+      return state.deliveries
+        .filter((delivery) => !delivery.deletedAt)
+        .map((delivery) => {
+          const driver = state.drivers.find((entry) => entry.id === delivery.driverId) ?? null;
+          const vehicle = state.vehicles.find((entry) => entry.id === delivery.vehicleId) ?? null;
+          const rental = state.rentals.find(
+            (entry) =>
+              !entry.deletedAt
+              && (
+                (delivery.rentalId && entry.id === delivery.rentalId)
+                || (delivery.orderCode && entry.orderCode === delivery.orderCode)
+              ),
+          ) ?? null;
+          return {
+            ...delivery,
+            status: getStatusFromDelivery(delivery),
+            customerPhone: rental?.customerPhone ?? '',
+            driverName: driver?.fullName ?? 'Sin chofer',
+            driverLicense: driver?.licenseNumber ?? '-',
+            driverPhone: driver?.phone ?? '-',
+            vehicleCode: vehicle?.code ?? 'SIN-VEH',
+            vehicleName: vehicle?.name ?? 'Sin vehiculo',
+            vehicleType: vehicle?.type ?? '-',
+          };
+        })
+        .sort((a, b) => new Date(b.scheduledDate) - new Date(a.scheduledDate));
+    },
+    createDelivery: async (payload) => {
+      const customerName = String(payload?.customerName ?? '').trim();
+      const address = String(payload?.address ?? '').trim();
+      const city = String(payload?.city ?? '').trim();
+      const scheduledDate = String(payload?.scheduledDate ?? '').trim();
+      const windowStart = String(payload?.windowStart ?? '').trim();
+      const windowEnd = String(payload?.windowEnd ?? '').trim();
+      if (!customerName) throw new Error('El cliente es obligatorio.');
+      if (!address) throw new Error('La direccion es obligatoria.');
+      if (!scheduledDate) throw new Error('La fecha programada es obligatoria.');
+      if (!windowStart || !windowEnd) throw new Error('Debes indicar la ventana horaria.');
+
+      let created = null;
+      transaction((state) => {
+        created = {
+          id: makeId('del'),
+          deliveryCode: consumeDocumentCode(state, 'deliveryPrefix', 'deliveryNext', 5),
+          orderCode: String(payload?.orderCode ?? '').trim() || consumeDocumentCode(
+            state,
+            'serviceOrderPrefix',
+            'serviceOrderNext',
+            5,
+          ),
+          rentalId: payload?.rentalId ?? null,
+          customerName,
+          companyName: String(payload?.companyName ?? customerName).trim(),
+          address,
+          city,
+          windowStart,
+          windowEnd,
+          scheduledDate,
+          driverId: payload?.driverId ?? null,
+          vehicleId: payload?.vehicleId ?? null,
+          status: 'programada',
+          progress: 0,
+          notes: String(payload?.notes ?? '').trim(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        state.deliveries.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    updateDelivery: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar la entrega.');
+
+      let updated = null;
+      transaction((state) => {
+        const delivery = state.deliveries.find((entry) => entry.id === id);
+        if (!delivery) throw new Error('Entrega no encontrada.');
+
+        if (payload.status !== undefined) delivery.status = getStatusFromDelivery({ status: payload.status });
+        if (payload.progress !== undefined) {
+          delivery.progress = Math.max(0, Math.min(100, Math.trunc(Number(payload.progress ?? 0))));
+        }
+        if (payload.driverId !== undefined) delivery.driverId = payload.driverId;
+        if (payload.vehicleId !== undefined) delivery.vehicleId = payload.vehicleId;
+        if (payload.windowStart !== undefined) delivery.windowStart = String(payload.windowStart ?? '').trim();
+        if (payload.windowEnd !== undefined) delivery.windowEnd = String(payload.windowEnd ?? '').trim();
+        if (payload.scheduledDate !== undefined) delivery.scheduledDate = String(payload.scheduledDate ?? '').trim();
+        if (payload.address !== undefined) delivery.address = String(payload.address ?? '').trim();
+        if (payload.city !== undefined) delivery.city = String(payload.city ?? '').trim();
+        if (payload.notes !== undefined) delivery.notes = String(payload.notes ?? '').trim();
+        delivery.updatedAt = new Date().toISOString();
+        const linkedRental = state.rentals.find(
+          (rental) =>
+            !rental.deletedAt
+            && (
+              (delivery.rentalId && rental.id === delivery.rentalId)
+              || (delivery.orderCode && rental.orderCode && rental.orderCode === delivery.orderCode)
+            ),
+        );
+        if (linkedRental) {
+          syncRentalTransportStatus(state, linkedRental, delivery.updatedAt);
+        }
+        updated = deepClone(delivery);
+        return state;
+      });
+
+      return updated;
+    },
+    registerPickupChecklist: async (payload) => {
+      const deliveryId = String(payload?.deliveryId ?? '').trim();
+      const rentalId = String(payload?.rentalId ?? '').trim();
+      const lines = Array.isArray(payload?.items) ? payload.items : [];
+      const receivedBy = String(payload?.receivedBy ?? 'Transporte').trim() || 'Transporte';
+      const notes = String(payload?.notes ?? '').trim();
+
+      if (!deliveryId) {
+        throw new Error('Debes seleccionar el recojo.');
+      }
+      if (lines.length === 0) {
+        throw new Error('Debes registrar el checklist de items recogidos.');
+      }
+
+      let updated = null;
+      transaction((state) => {
+        const delivery = state.deliveries.find((entry) => entry.id === deliveryId && !entry.deletedAt);
+        if (!delivery) {
+          throw new Error('Recojo no encontrado.');
+        }
+
+        const rental = state.rentals.find(
+          (entry) =>
+            !entry.deletedAt
+            && (
+              (rentalId && entry.id === rentalId)
+              || (delivery.rentalId && entry.id === delivery.rentalId)
+              || (delivery.orderCode && entry.orderCode === delivery.orderCode)
+            ),
+        );
+        if (!rental) {
+          throw new Error('Orden de servicio no encontrada para este recojo.');
+        }
+
+        const checklist = (rental.items ?? []).map((rentalLine) => {
+          const incoming = lines.find((entry) => entry.itemId === rentalLine.itemId);
+          if (!incoming) {
+            throw new Error(`Falta checklist para "${rentalLine.itemName}".`);
+          }
+          const quantity = Math.max(0, toInteger(incoming.quantity ?? 0, `cantidad (${rentalLine.itemName})`));
+          const condition = ['ok', 'observado', 'danado', 'faltante'].includes(incoming.condition)
+            ? incoming.condition
+            : 'ok';
+          const note = String(incoming.note ?? '').trim();
+          if (quantity > Number(rentalLine.quantity ?? 0)) {
+            throw new Error(`La cantidad recogida de "${rentalLine.itemName}" no puede superar ${rentalLine.quantity}.`);
+          }
+          if (condition !== 'ok' && !note) {
+            throw new Error(`Registra una observacion para "${rentalLine.itemName}".`);
+          }
+          return {
+            itemId: rentalLine.itemId,
+            itemName: rentalLine.itemName,
+            expectedQty: Number(rentalLine.quantity ?? 0),
+            pickedQty: quantity,
+            condition,
+            note,
+          };
+        });
+
+        const now = new Date().toISOString();
+        delivery.status = 'completada';
+        delivery.progress = 100;
+        delivery.pickupChecklist = checklist;
+        delivery.pickupCheckedAt = now;
+        delivery.pickupCheckedBy = receivedBy;
+        delivery.notes = notes || delivery.notes;
+        delivery.updatedAt = now;
+
+        rental.pickupChecklist = {
+          deliveryId: delivery.id,
+          deliveryCode: delivery.deliveryCode,
+          checkedAt: now,
+          checkedBy: receivedBy,
+          notes,
+          items: checklist,
+        };
+        rental.updatedAt = now;
+        syncRentalTransportStatus(state, rental, now);
+        updated = deepClone(delivery);
+        return state;
+      });
+
+      return updated;
+    },
+    listVehicles: async () => {
+      const { vehicles } = readState();
+      return vehicles.filter((row) => !row.deletedAt).slice().sort((a, b) => a.code.localeCompare(b.code, 'es'));
+    },
+    createVehicle: async (payload) => {
+      const code = String(payload?.code ?? '').trim().toUpperCase();
+      if (!code) throw new Error('La patente/codigo es obligatorio.');
+
+      let created = null;
+      transaction((state) => {
+        if (state.vehicles.some((vehicle) => vehicle.code === code)) {
+          throw new Error('Ya existe un vehiculo con esa patente/codigo.');
+        }
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('veh'),
+          code,
+          name: String(payload?.name ?? 'Vehiculo').trim(),
+          model: String(payload?.model ?? '').trim(),
+          type: String(payload?.type ?? '').trim() || 'Camion',
+          capacityKg: Math.max(0, Math.trunc(Number(payload?.capacityKg ?? 0))),
+          year: Math.max(2000, Math.trunc(Number(payload?.year ?? new Date().getFullYear()))),
+          status: String(payload?.status ?? 'activo').trim() || 'activo',
+          mileageKm: Math.max(0, Math.trunc(Number(payload?.mileageKm ?? 0))),
+          nextMaintenanceAt: String(payload?.nextMaintenanceAt ?? '').trim() || null,
+          imageDataUrl: payload?.imageDataUrl ?? null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.vehicles.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    updateVehicle: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el vehiculo.');
+
+      let updated = null;
+      transaction((state) => {
+        const vehicle = state.vehicles.find((entry) => entry.id === id);
+        if (!vehicle) throw new Error('Vehiculo no encontrado.');
+
+        const nextCode = payload?.code !== undefined
+          ? String(payload.code ?? '').trim().toUpperCase()
+          : vehicle.code;
+
+        if (!nextCode) throw new Error('La patente/codigo es obligatorio.');
+        if (state.vehicles.some((entry) => entry.id !== id && entry.code === nextCode)) {
+          throw new Error('Ya existe un vehiculo con esa patente/codigo.');
+        }
+
+        vehicle.code = nextCode;
+        if (payload.name !== undefined) vehicle.name = String(payload.name ?? '').trim() || vehicle.name;
+        if (payload.model !== undefined) vehicle.model = String(payload.model ?? '').trim();
+        if (payload.type !== undefined) vehicle.type = String(payload.type ?? '').trim() || 'Camion';
+        if (payload.capacityKg !== undefined) vehicle.capacityKg = Math.max(0, Math.trunc(Number(payload.capacityKg ?? 0)));
+        if (payload.year !== undefined) vehicle.year = Math.max(2000, Math.trunc(Number(payload.year ?? vehicle.year)));
+        if (payload.status !== undefined) vehicle.status = String(payload.status ?? '').trim() || vehicle.status;
+        if (payload.mileageKm !== undefined) vehicle.mileageKm = Math.max(0, Math.trunc(Number(payload.mileageKm ?? 0)));
+        if (payload.nextMaintenanceAt !== undefined) vehicle.nextMaintenanceAt = String(payload.nextMaintenanceAt ?? '').trim() || null;
+        if (payload.imageDataUrl !== undefined) vehicle.imageDataUrl = payload.imageDataUrl ?? null;
+        if (payload.deletedAt !== undefined) vehicle.deletedAt = payload.deletedAt ?? null;
+        vehicle.updatedAt = new Date().toISOString();
+        updated = deepClone(vehicle);
+        return state;
+      });
+
+      return updated;
+    },
+    removeVehicle: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el vehiculo.');
+
+      let updated = null;
+      transaction((state) => {
+        const vehicle = state.vehicles.find((entry) => entry.id === id);
+        if (!vehicle) throw new Error('Vehiculo no encontrado.');
+        vehicle.deletedAt = new Date().toISOString();
+        vehicle.updatedAt = new Date().toISOString();
+        updated = deepClone(vehicle);
+        return state;
+      });
+
+      return updated;
+    },
+    listDrivers: async () => {
+      const { drivers } = readState();
+      return drivers.filter((row) => !row.deletedAt).slice().sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+    },
+    createDriver: async (payload) => {
+      const fullName = String(payload?.fullName ?? '').trim();
+      const licenseNumber = String(payload?.licenseNumber ?? '').trim().toUpperCase();
+      if (!fullName) throw new Error('El nombre del chofer es obligatorio.');
+      if (!licenseNumber) throw new Error('La licencia es obligatoria.');
+
+      let created = null;
+      transaction((state) => {
+        if (state.drivers.some((driver) => driver.licenseNumber === licenseNumber)) {
+          throw new Error('Ya existe un chofer con esa licencia.');
+        }
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('drv'),
+          fullName,
+          code: `CH-${formatDocNumber(state.drivers.length + 1, 3)}`,
+          licenseNumber,
+          licenseCategory: String(payload?.licenseCategory ?? 'B1 - Utilitarios').trim(),
+          phone: String(payload?.phone ?? '').trim(),
+          status: String(payload?.status ?? 'activo').trim() || 'activo',
+          rating: Number.isFinite(Number(payload?.rating)) ? Number(payload.rating) : null,
+          licenseExpiryAt: String(payload?.licenseExpiryAt ?? '').trim() || null,
+          imageDataUrl: payload?.imageDataUrl ?? null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.drivers.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    updateDriver: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el chofer.');
+
+      let updated = null;
+      transaction((state) => {
+        const driver = state.drivers.find((entry) => entry.id === id);
+        if (!driver) throw new Error('Chofer no encontrado.');
+
+        const nextLicenseNumber = payload?.licenseNumber !== undefined
+          ? String(payload.licenseNumber ?? '').trim().toUpperCase()
+          : driver.licenseNumber;
+
+        if (!nextLicenseNumber) throw new Error('La licencia es obligatoria.');
+        if (state.drivers.some((entry) => entry.id !== id && entry.licenseNumber === nextLicenseNumber)) {
+          throw new Error('Ya existe un chofer con esa licencia.');
+        }
+
+        if (payload.fullName !== undefined) driver.fullName = String(payload.fullName ?? '').trim() || driver.fullName;
+        driver.licenseNumber = nextLicenseNumber;
+        if (payload.licenseCategory !== undefined) driver.licenseCategory = String(payload.licenseCategory ?? '').trim() || driver.licenseCategory;
+        if (payload.phone !== undefined) driver.phone = String(payload.phone ?? '').trim();
+        if (payload.status !== undefined) driver.status = String(payload.status ?? '').trim() || driver.status;
+        if (payload.rating !== undefined) {
+          driver.rating = payload.rating === null ? null : (Number.isFinite(Number(payload.rating)) ? Number(payload.rating) : driver.rating);
+        }
+        if (payload.licenseExpiryAt !== undefined) driver.licenseExpiryAt = String(payload.licenseExpiryAt ?? '').trim() || null;
+        if (payload.imageDataUrl !== undefined) driver.imageDataUrl = payload.imageDataUrl ?? null;
+        if (payload.deletedAt !== undefined) driver.deletedAt = payload.deletedAt ?? null;
+        driver.updatedAt = new Date().toISOString();
+        updated = deepClone(driver);
+        return state;
+      });
+
+      return updated;
+    },
+    removeDriver: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el chofer.');
+
+      let updated = null;
+      transaction((state) => {
+        const driver = state.drivers.find((entry) => entry.id === id);
+        if (!driver) throw new Error('Chofer no encontrado.');
+        driver.deletedAt = new Date().toISOString();
+        driver.updatedAt = new Date().toISOString();
+        updated = deepClone(driver);
+        return state;
+      });
+
+      return updated;
+    },
+  },
+
+  calendar: {
+    listEvents: async () => {
+      const state = readState();
+      const deliveryEvents = state.deliveries.map((delivery) => ({
+        id: `del-${delivery.id}`,
+        title: delivery.deliveryCode,
+        subtitle: `${delivery.customerName} - ${delivery.companyName}`,
+        type: 'delivery',
+        date: delivery.scheduledDate,
+        startTime: delivery.windowStart,
+        endTime: delivery.windowEnd,
+        status: delivery.status,
+        relatedType: 'delivery',
+        relatedId: delivery.id,
+      }));
+
+      const maintenanceEvents = state.vehicles
+        .filter((vehicle) => vehicle.nextMaintenanceAt)
+        .map((vehicle) => ({
+          id: `veh-maint-${vehicle.id}`,
+          title: 'Mantenimiento Preventivo',
+          subtitle: `${vehicle.code} - ${vehicle.name}`,
+          type: 'maintenance',
+          date: vehicle.nextMaintenanceAt,
+          startTime: '14:00',
+          endTime: '16:00',
+          status: vehicle.status === 'mantenimiento' ? 'programada' : 'confirmado',
+          relatedType: 'vehicle',
+          relatedId: vehicle.id,
+        }));
+
+      const licenseEvents = state.drivers
+        .filter((driver) => driver.licenseExpiryAt)
+        .map((driver) => ({
+          id: `drv-exp-${driver.id}`,
+          title: 'Vence licencia',
+          subtitle: driver.fullName,
+          type: 'license',
+          date: driver.licenseExpiryAt,
+          startTime: '08:00',
+          endTime: '09:00',
+          status: 'programada',
+          relatedType: 'driver',
+          relatedId: driver.id,
+        }));
+
+      const manualEvents = state.calendarEvents.map((event) => ({ ...event }));
+      return [...deliveryEvents, ...maintenanceEvents, ...licenseEvents, ...manualEvents].sort(
+        (a, b) => new Date(`${a.date}T${a.startTime}:00`) - new Date(`${b.date}T${b.startTime}:00`),
+      );
+    },
+    createEvent: async (payload) => {
+      const title = String(payload?.title ?? '').trim();
+      const date = String(payload?.date ?? '').trim();
+      const startTime = String(payload?.startTime ?? '').trim();
+      const endTime = String(payload?.endTime ?? '').trim();
+      if (!title) throw new Error('El titulo del evento es obligatorio.');
+      if (!date) throw new Error('La fecha del evento es obligatoria.');
+      if (!startTime || !endTime) throw new Error('La hora de inicio y fin son obligatorias.');
+
+      let created = null;
+      transaction((state) => {
+        created = {
+          id: makeId('evt'),
+          title,
+          subtitle: String(payload?.subtitle ?? '').trim(),
+          type: String(payload?.type ?? 'other').trim() || 'other',
+          date,
+          startTime,
+          endTime,
+          status: String(payload?.status ?? 'programada').trim() || 'programada',
+          relatedType: null,
+          relatedId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        state.calendarEvents.push(created);
+        return state;
+      });
+
+      return created;
+    },
+  },
+
+  settings: {
+    get: async () => {
+      const state = readState();
+      return {
+        settings: deepClone(state.settings),
+        categories: state.categories.slice().sort((a, b) => a.name.localeCompare(b.name, 'es')),
+      };
+    },
+    update: async (payload) => {
+      let updated = null;
+      transaction((state) => {
+        const nextSettings = { ...(state.settings ?? {}) };
+        Object.entries(payload ?? {}).forEach(([key, value]) => {
+          if (key === 'numbering' && value && typeof value === 'object') {
+            nextSettings.numbering = {
+              ...(nextSettings.numbering ?? {}),
+              ...value,
+            };
+          } else {
+            nextSettings[key] = value;
+          }
+        });
+        state.settings = {
+          ...createDefaultSettings(),
+          ...nextSettings,
+          numbering: {
+            ...createDefaultSettings().numbering,
+            ...(nextSettings.numbering ?? {}),
+          },
+        };
+        updated = deepClone(state.settings);
+        return state;
+      });
+
+      return updated;
+    },
+  },
+
+  reports: {
+    listGenerated: async () => {
+      const state = readState();
+      const receiptReports = state.rentals.filter((rental) => !rental.deletedAt).slice(0, 30).map((rental) => ({
+        id: `rent-report-${rental.id}`,
+        name: `Orden ${rental.orderCode ?? rental.id} - ${rental.customerName}`,
+        category: 'Ordenes',
+        periodFrom: rental.rentalDate ?? null,
+        periodTo: rental.dueDate ?? null,
+        format: rental.status === 'returned' ? 'PDF' : 'Excel',
+        generatedBy: 'Yordy Copa Cerezo',
+        generatedAt: rental.createdAt,
+        sourceType: rental.status === 'returned' ? 'devolucion' : 'alquiler',
+        sourceId: rental.id,
+      }));
+
+      const merged = [...state.generatedReports, ...receiptReports];
+      return merged
+        .slice()
+        .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt))
+        .slice(0, 60);
+    },
+    generate: async (payload) => {
+      const name = String(payload?.name ?? '').trim();
+      if (!name) throw new Error('El nombre del reporte es obligatorio.');
+      let created = null;
+
+      transaction((state) => {
+        created = {
+          id: makeId('rep'),
+          name,
+          category: String(payload?.category ?? 'General').trim() || 'General',
+          periodFrom: String(payload?.periodFrom ?? '').trim() || null,
+          periodTo: String(payload?.periodTo ?? '').trim() || null,
+          format: String(payload?.format ?? 'PDF').trim() || 'PDF',
+          generatedBy: String(payload?.generatedBy ?? 'Yordy Copa Cerezo').trim() || 'Yordy Copa Cerezo',
+          generatedAt: new Date().toISOString(),
+          sourceType: String(payload?.sourceType ?? '').trim() || null,
+          sourceId: String(payload?.sourceId ?? '').trim() || null,
+        };
+        state.generatedReports.unshift(created);
+        return state;
+      });
+
+      return created;
+    },
+  },
+
+  quotes: {
+    list: async () => {
+      const { quotes } = readState();
+      return quotes
+        .filter((row) => !row.deletedAt)
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    create: async (payload) => {
+      const customerName = String(payload?.customerName ?? '').trim();
+      const customerPhone = String(payload?.customerPhone ?? '').trim();
+      const eventDate = String(payload?.eventDate ?? '').trim();
+      const eventTime = String(payload?.eventTime ?? '').trim();
+      const deliveryDate = String(payload?.deliveryDate ?? eventDate).trim();
+      const deliveryWindowStart = String(payload?.deliveryWindowStart ?? '08:00').trim();
+      const deliveryWindowEnd = String(payload?.deliveryWindowEnd ?? '10:00').trim();
+      const pickupDate = String(payload?.pickupDate ?? eventDate).trim();
+      const pickupWindowStart = String(payload?.pickupWindowStart ?? '20:00').trim();
+      const pickupWindowEnd = String(payload?.pickupWindowEnd ?? '22:00').trim();
+      const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
+      const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+
+      if (!customerName) throw new Error('Debes indicar el cliente de la cotizacion.');
+      if (!customerPhone) throw new Error('Debes indicar el WhatsApp o celular del cliente.');
+      if (!eventDate) throw new Error('Debes indicar la fecha del evento.');
+      if (!eventTime) throw new Error('Debes indicar la hora del evento.');
+      if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
+      if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+      if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
+
+      let created = null;
+      transaction((state) => {
+        const now = new Date().toISOString();
+        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
+        const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
+        const clientId = payload?.clientId ?? resolveClientFromName(state, customerName, customerPhone);
+
+        const normalizedItems = requestedItems.map((line) => {
+          const item = state.items.find((entry) => entry.id === line.itemId);
+          if (!item) throw new Error('Uno de los items seleccionados no existe.');
+          const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+          const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          return {
+            itemId: item.id,
+            itemName: item.name,
+            quantity,
+            unitPriceBs,
+            lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+          };
+        });
+
+        const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
+        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const totalBs = Math.max(0, subtotalBs - discountBs);
+        if (paidAtApprovalBs > totalBs) {
+          throw new Error('El pago inicial no puede superar el total de la cotizacion.');
+        }
+
+        created = {
+          id: makeId('quo'),
+          quoteCode: consumeDocumentCode(state, 'quotePrefix', 'quoteNext', 5),
+          clientId,
+          customerName,
+          customerPhone,
+          companyName: String(payload?.companyName ?? customerName).trim(),
+          eventType: String(payload?.eventType ?? 'general').trim() || 'general',
+          eventDate,
+          eventTime,
+          address: String(payload?.address ?? '').trim(),
+          city: String(payload?.city ?? '').trim(),
+          deliveryDate,
+          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          deliveryWindowStart,
+          deliveryWindowEnd,
+          pickupDate,
+          pickupWindowStart,
+          pickupWindowEnd,
+          driverId: String(payload?.driverId ?? '').trim() || null,
+          vehicleId: String(payload?.vehicleId ?? '').trim() || null,
+          validUntil: String(payload?.validUntil ?? '').trim() || null,
+          observations: String(payload?.observations ?? '').trim(),
+          billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
+          status,
+          pricingPlan,
+          totals: {
+            baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+            subtotalBs: Number(subtotalBs.toFixed(2)),
+            theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+            durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+            discountBs: Number(discountBs.toFixed(2)),
+            guaranteeBs: Number(guaranteeBs.toFixed(2)),
+            totalBs: Number(totalBs.toFixed(2)),
+          },
+          payment: {
+            paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+            pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          },
+          items: normalizedItems,
+          approvedAt: null,
+          rejectedAt: null,
+          rentalId: null,
+          orderCode: null,
+          createdBy: String(payload?.createdBy ?? 'system').trim() || 'system',
+          createdById: payload?.createdById ?? payload?.userId ?? null,
+          createdByName: String(payload?.createdByName ?? payload?.userName ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
+          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? 'Sistema').trim() || 'Sistema',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+
+        if (!Array.isArray(state.quotes)) state.quotes = [];
+        state.quotes.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    update: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar la cotizacion.');
+
+      let updated = null;
+      transaction((state) => {
+        if (!Array.isArray(state.quotes)) state.quotes = [];
+        const quote = state.quotes.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!quote) throw new Error('Cotizacion no encontrada.');
+
+        if (payload.customerName !== undefined) quote.customerName = String(payload.customerName ?? '').trim() || quote.customerName;
+        if (payload.customerPhone !== undefined) quote.customerPhone = String(payload.customerPhone ?? '').trim() || quote.customerPhone;
+        if (payload.companyName !== undefined) quote.companyName = String(payload.companyName ?? '').trim() || quote.companyName;
+        if (payload.eventType !== undefined) quote.eventType = String(payload.eventType ?? '').trim() || quote.eventType;
+        if (payload.eventDate !== undefined) quote.eventDate = String(payload.eventDate ?? '').trim() || quote.eventDate;
+        if (payload.eventTime !== undefined) quote.eventTime = String(payload.eventTime ?? '').trim() || quote.eventTime;
+        if (payload.address !== undefined) quote.address = String(payload.address ?? '').trim();
+        if (payload.city !== undefined) quote.city = String(payload.city ?? '').trim();
+        if (payload.deliveryDate !== undefined) quote.deliveryDate = String(payload.deliveryDate ?? '').trim() || quote.deliveryDate;
+        if (payload.logisticsMode !== undefined) {
+          quote.logisticsMode = ['envio', 'recojo'].includes(payload.logisticsMode) ? payload.logisticsMode : 'envio';
+        }
+        if (payload.deliveryWindowStart !== undefined) quote.deliveryWindowStart = String(payload.deliveryWindowStart ?? '').trim() || quote.deliveryWindowStart;
+        if (payload.deliveryWindowEnd !== undefined) quote.deliveryWindowEnd = String(payload.deliveryWindowEnd ?? '').trim() || quote.deliveryWindowEnd;
+        if (payload.pickupDate !== undefined) quote.pickupDate = String(payload.pickupDate ?? '').trim() || quote.pickupDate;
+        if (payload.pickupWindowStart !== undefined) quote.pickupWindowStart = String(payload.pickupWindowStart ?? '').trim() || quote.pickupWindowStart;
+        if (payload.pickupWindowEnd !== undefined) quote.pickupWindowEnd = String(payload.pickupWindowEnd ?? '').trim() || quote.pickupWindowEnd;
+        if (payload.clientId !== undefined) quote.clientId = payload.clientId ?? null;
+        if (payload.status !== undefined) quote.status = String(payload.status ?? '').trim() || quote.status;
+        if (payload.observations !== undefined) quote.observations = String(payload.observations ?? '').trim();
+        if (payload.billingMode !== undefined) {
+          quote.billingMode = ['con_factura', 'sin_factura'].includes(payload.billingMode) ? payload.billingMode : 'sin_factura';
+        }
+        if (payload.validUntil !== undefined) quote.validUntil = String(payload.validUntil ?? '').trim() || null;
+        if (payload.driverId !== undefined) quote.driverId = String(payload.driverId ?? '').trim() || null;
+        if (payload.vehicleId !== undefined) quote.vehicleId = String(payload.vehicleId ?? '').trim() || null;
+        if (payload.approvedAt !== undefined) quote.approvedAt = payload.approvedAt ?? null;
+        if (payload.rejectedAt !== undefined) quote.rejectedAt = payload.rejectedAt ?? null;
+        if (payload.rentalId !== undefined) quote.rentalId = payload.rentalId ?? null;
+        if (payload.orderCode !== undefined) quote.orderCode = payload.orderCode ?? null;
+
+        if (payload.items !== undefined) {
+          const requestedItems = Array.isArray(payload.items) ? payload.items : [];
+          if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
+          quote.items = requestedItems.map((line) => {
+            const item = state.items.find((entry) => entry.id === line.itemId);
+            if (!item) throw new Error('Uno de los items seleccionados no existe.');
+            const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            return {
+              itemId: item.id,
+              itemName: item.name,
+              quantity,
+              unitPriceBs,
+              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            };
+          });
+        }
+
+        if (payload.pricingPlan !== undefined) {
+          quote.pricingPlan = payload.pricingPlan;
+        }
+
+        const baseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs });
+        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
+        const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
+        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? quote?.payment?.paidAtApprovalBs ?? 0));
+        if (paidAtApprovalBs > totalBs) {
+          throw new Error('El pago inicial no puede superar el total de la cotizacion.');
+        }
+
+        quote.totals = {
+          baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+          subtotalBs: Number(subtotalBs.toFixed(2)),
+          theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          discountBs: Number(discountBs.toFixed(2)),
+          guaranteeBs: Number(guaranteeBs.toFixed(2)),
+          totalBs: Number(totalBs.toFixed(2)),
+        };
+        quote.pricingPlan = pricingPlan;
+        quote.payment = {
+          paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+          pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+        };
+        quote.updatedAt = new Date().toISOString();
+
+        updated = deepClone(quote);
+        return state;
+      });
+
+      return updated;
+    },
+    remove: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar la cotizacion.');
+
+      let updated = null;
+      transaction((state) => {
+        if (!Array.isArray(state.quotes)) state.quotes = [];
+        const quote = state.quotes.find((entry) => entry.id === id);
+        if (!quote) throw new Error('Cotizacion no encontrada.');
+        quote.deletedAt = new Date().toISOString();
+        quote.updatedAt = new Date().toISOString();
+        updated = deepClone(quote);
+        return state;
+      });
+
+      return updated;
+    },
+  },
+
+  contracts: {
+    list: async () => {
+      const { contracts } = readState();
+      return contracts
+        .filter((row) => !row.deletedAt)
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    create: async (payload) => {
+      const customerName = String(payload?.customerName ?? '').trim();
+      const customerPhone = String(payload?.customerPhone ?? '').trim();
+      const eventDate = String(payload?.eventDate ?? '').trim();
+      const eventTime = String(payload?.eventTime ?? '').trim();
+      const deliveryDate = String(payload?.deliveryDate ?? eventDate).trim();
+      const deliveryWindowStart = String(payload?.deliveryWindowStart ?? '08:00').trim();
+      const deliveryWindowEnd = String(payload?.deliveryWindowEnd ?? '10:00').trim();
+      const pickupDate = String(payload?.pickupDate ?? eventDate).trim();
+      const pickupWindowStart = String(payload?.pickupWindowStart ?? '20:00').trim();
+      const pickupWindowEnd = String(payload?.pickupWindowEnd ?? '22:00').trim();
+      const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
+      const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+
+      if (!customerName) throw new Error('Debes indicar el cliente del contrato.');
+      if (!customerPhone) throw new Error('Debes indicar el WhatsApp o celular del cliente.');
+      if (!eventDate) throw new Error('Debes indicar la fecha del evento.');
+      if (!eventTime) throw new Error('Debes indicar la hora del evento.');
+      if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
+      if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+      if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
+
+      let created = null;
+      transaction((state) => {
+        const now = new Date().toISOString();
+        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
+        const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
+        const clientId = payload?.clientId ?? resolveClientFromName(state, customerName, customerPhone);
+
+        const normalizedItems = requestedItems.map((line) => {
+          const itemId = String(line?.itemId ?? '').trim();
+          const item = state.items.find((entry) => entry.id === itemId);
+          if (!item) throw new Error('Uno de los items seleccionados no existe.');
+
+          const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+          const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          return {
+            itemId: item.id,
+            itemName: item.name,
+            quantity,
+            unitPriceBs,
+            lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+          };
+        });
+
+        const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
+        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const totalBs = Math.max(0, subtotalBs - discountBs);
+        if (paidAtApprovalBs > totalBs) {
+          throw new Error('El pago inicial no puede superar el total del contrato.');
+        }
+
+        created = {
+          id: makeId('con'),
+          contractCode: consumeDocumentCode(state, 'contractPrefix', 'contractNext', 5),
+          quoteId: String(payload?.quoteId ?? '').trim() || null,
+          clientId,
+          customerName,
+          customerPhone,
+          companyName: String(payload?.companyName ?? customerName).trim(),
+          eventType: String(payload?.eventType ?? 'general').trim() || 'general',
+          eventDate,
+          eventTime,
+          address: String(payload?.address ?? '').trim(),
+          city: String(payload?.city ?? '').trim(),
+          deliveryDate,
+          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          deliveryWindowStart,
+          deliveryWindowEnd,
+          pickupDate,
+          pickupWindowStart,
+          pickupWindowEnd,
+          driverId: String(payload?.driverId ?? '').trim() || null,
+          vehicleId: String(payload?.vehicleId ?? '').trim() || null,
+          validUntil: null,
+          observations: String(payload?.observations ?? '').trim(),
+          billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
+          status,
+          pricingPlan,
+          totals: {
+            baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+            subtotalBs: Number(subtotalBs.toFixed(2)),
+            theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+            durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+            discountBs: Number(discountBs.toFixed(2)),
+            guaranteeBs: Number(guaranteeBs.toFixed(2)),
+            totalBs: Number(totalBs.toFixed(2)),
+          },
+          payment: {
+            paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+            pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          },
+          items: normalizedItems,
+          approvedAt: null,
+          rejectedAt: null,
+          rentalId: null,
+          orderCode: null,
+          createdBy: String(payload?.createdBy ?? 'system').trim() || 'system',
+          createdById: payload?.createdById ?? payload?.userId ?? null,
+          createdByName: String(payload?.createdByName ?? payload?.userName ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
+          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? 'Sistema').trim() || 'Sistema',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+
+        if (!Array.isArray(state.contracts)) state.contracts = [];
+        state.contracts.push(created);
+        return state;
+      });
+
+      return created;
+    },
+    update: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el contrato.');
+
+      let updated = null;
+      transaction((state) => {
+        if (!Array.isArray(state.contracts)) state.contracts = [];
+        const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!contract) throw new Error('Contrato no encontrado.');
+
+        if (payload.customerName !== undefined) contract.customerName = String(payload.customerName ?? '').trim() || contract.customerName;
+        if (payload.customerPhone !== undefined) contract.customerPhone = String(payload.customerPhone ?? '').trim() || contract.customerPhone;
+        if (payload.companyName !== undefined) contract.companyName = String(payload.companyName ?? '').trim() || contract.companyName;
+        if (payload.eventType !== undefined) contract.eventType = String(payload.eventType ?? '').trim() || contract.eventType;
+        if (payload.eventDate !== undefined) contract.eventDate = String(payload.eventDate ?? '').trim() || contract.eventDate;
+        if (payload.eventTime !== undefined) contract.eventTime = String(payload.eventTime ?? '').trim() || contract.eventTime;
+        if (payload.address !== undefined) contract.address = String(payload.address ?? '').trim();
+        if (payload.city !== undefined) contract.city = String(payload.city ?? '').trim();
+        if (payload.deliveryDate !== undefined) contract.deliveryDate = String(payload.deliveryDate ?? '').trim() || contract.deliveryDate;
+        if (payload.logisticsMode !== undefined) {
+          contract.logisticsMode = ['envio', 'recojo'].includes(payload.logisticsMode) ? payload.logisticsMode : 'envio';
+        }
+        if (payload.deliveryWindowStart !== undefined) contract.deliveryWindowStart = String(payload.deliveryWindowStart ?? '').trim() || contract.deliveryWindowStart;
+        if (payload.deliveryWindowEnd !== undefined) contract.deliveryWindowEnd = String(payload.deliveryWindowEnd ?? '').trim() || contract.deliveryWindowEnd;
+        if (payload.pickupDate !== undefined) contract.pickupDate = String(payload.pickupDate ?? '').trim() || contract.pickupDate;
+        if (payload.pickupWindowStart !== undefined) contract.pickupWindowStart = String(payload.pickupWindowStart ?? '').trim() || contract.pickupWindowStart;
+        if (payload.pickupWindowEnd !== undefined) contract.pickupWindowEnd = String(payload.pickupWindowEnd ?? '').trim() || contract.pickupWindowEnd;
+        if (payload.driverId !== undefined) contract.driverId = String(payload.driverId ?? '').trim() || null;
+        if (payload.vehicleId !== undefined) contract.vehicleId = String(payload.vehicleId ?? '').trim() || null;
+        contract.validUntil = null;
+        if (payload.observations !== undefined) contract.observations = String(payload.observations ?? '').trim();
+        if (payload.billingMode !== undefined) {
+          contract.billingMode = ['con_factura', 'sin_factura'].includes(payload.billingMode) ? payload.billingMode : 'sin_factura';
+        }
+        if (payload.status !== undefined) contract.status = String(payload.status ?? '').trim() || contract.status;
+        if (payload.approvedAt !== undefined) contract.approvedAt = payload.approvedAt ?? null;
+        if (payload.rejectedAt !== undefined) contract.rejectedAt = payload.rejectedAt ?? null;
+        if (payload.rentalId !== undefined) contract.rentalId = payload.rentalId ?? null;
+        if (payload.orderCode !== undefined) contract.orderCode = payload.orderCode ?? null;
+
+        if (payload.items !== undefined) {
+          const requestedItems = Array.isArray(payload.items) ? payload.items : [];
+          if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
+          const normalizedItems = requestedItems.map((line) => {
+            const itemId = String(line?.itemId ?? '').trim();
+            const item = state.items.find((entry) => entry.id === itemId);
+            if (!item) throw new Error('Uno de los items seleccionados no existe.');
+            const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            return {
+              itemId: item.id,
+              itemName: item.name,
+              quantity,
+              unitPriceBs,
+              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            };
+          });
+          contract.items = normalizedItems;
+        }
+
+        if (payload.pricingPlan !== undefined) {
+          contract.pricingPlan = payload.pricingPlan;
+        }
+
+        const baseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs });
+        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
+        const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
+        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const paidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? contract?.payment?.paidAtApprovalBs ?? 0));
+        if (paidAtApprovalBs > totalBs) {
+          throw new Error('El pago inicial no puede superar el total del contrato.');
+        }
+
+        contract.totals = {
+          baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
+          subtotalBs: Number(subtotalBs.toFixed(2)),
+          theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          discountBs: Number(discountBs.toFixed(2)),
+          guaranteeBs: Number(guaranteeBs.toFixed(2)),
+          totalBs: Number(totalBs.toFixed(2)),
+        };
+        contract.pricingPlan = pricingPlan;
+        contract.payment = {
+          paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
+          pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+        };
+        contract.updatedAt = new Date().toISOString();
+        updated = deepClone(contract);
+        return state;
+      });
+
+      return updated;
+    },
+    remove: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el contrato.');
+
+      let updated = null;
+      transaction((state) => {
+        const contract = state.contracts.find((entry) => entry.id === id);
+        if (!contract) throw new Error('Contrato no encontrado.');
+        contract.deletedAt = new Date().toISOString();
+        contract.updatedAt = new Date().toISOString();
+        updated = deepClone(contract);
+        return state;
+      });
+
+      return updated;
+    },
+  },
+
+  suppliers: {
+    listBundle: async () => {
+      const state = readState();
+      return {
+        suppliers: state.suppliers
+          .filter((row) => !row.deletedAt)
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+        quotes: state.supplierQuotes
+          .filter((row) => !row.deletedAt)
+          .slice()
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+        loans: state.supplierLoans
+          .filter((row) => !row.deletedAt)
+          .slice()
+          .sort((a, b) => new Date(b.requestDate || b.createdAt) - new Date(a.requestDate || a.createdAt)),
+      };
+    },
+    create: async (payload) => {
+      const name = String(payload?.name ?? '').trim();
+      if (!name) throw new Error('El nombre del proveedor es obligatorio.');
+
+      let created = null;
+      transaction((state) => {
+        const exists = state.suppliers.some(
+          (supplier) => !supplier.deletedAt && normalizeText(supplier.name) === normalizeText(name),
+        );
+        if (exists) throw new Error('Ya existe un proveedor con ese nombre.');
+        const now = new Date().toISOString();
+        created = {
+          id: makeId('sup'),
+          name,
+          contactName: String(payload?.contactName ?? '').trim(),
+          phone: String(payload?.phone ?? '').trim(),
+          whatsapp: String(payload?.whatsapp ?? payload?.phone ?? '').trim(),
+          email: String(payload?.email ?? '').trim().toLowerCase(),
+          address: String(payload?.address ?? '').trim(),
+          city: String(payload?.city ?? '').trim(),
+          type: payload?.type === 'exchange' ? 'exchange' : 'regular',
+          paymentTerms: String(payload?.paymentTerms ?? '').trim(),
+          notes: String(payload?.notes ?? '').trim(),
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.suppliers.push(created);
+        return state;
+      });
+      return created;
+    },
+    update: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      const name = String(payload?.name ?? '').trim();
+      if (!id) throw new Error('Debes indicar el proveedor.');
+      if (!name) throw new Error('El nombre del proveedor es obligatorio.');
+
+      let updated = null;
+      transaction((state) => {
+        const supplier = state.suppliers.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!supplier) throw new Error('Proveedor no encontrado.');
+        const exists = state.suppliers.some(
+          (entry) => entry.id !== id && !entry.deletedAt && normalizeText(entry.name) === normalizeText(name),
+        );
+        if (exists) throw new Error('Ya existe otro proveedor con ese nombre.');
+        supplier.name = name;
+        supplier.contactName = String(payload?.contactName ?? '').trim();
+        supplier.phone = String(payload?.phone ?? '').trim();
+        supplier.whatsapp = String(payload?.whatsapp ?? payload?.phone ?? '').trim();
+        supplier.email = String(payload?.email ?? '').trim().toLowerCase();
+        supplier.address = String(payload?.address ?? '').trim();
+        supplier.city = String(payload?.city ?? '').trim();
+        supplier.type = payload?.type === 'exchange' ? 'exchange' : 'regular';
+        supplier.paymentTerms = String(payload?.paymentTerms ?? '').trim();
+        supplier.notes = String(payload?.notes ?? '').trim();
+        supplier.status = String(payload?.status ?? supplier.status ?? 'active').trim() || 'active';
+        supplier.updatedAt = new Date().toISOString();
+
+        state.supplierQuotes.forEach((quote) => {
+          if (quote.supplierId === id) quote.supplierName = name;
+        });
+        state.supplierLoans.forEach((loan) => {
+          if (loan.supplierId === id) loan.supplierName = name;
+        });
+        updated = deepClone(supplier);
+        return state;
+      });
+      return updated;
+    },
+    createQuote: async (payload) => {
+      const supplierId = String(payload?.supplierId ?? '').trim();
+      const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      if (!supplierId) throw new Error('Debes seleccionar un proveedor.');
+      if (!requestedItems.length) throw new Error('Debes agregar al menos un precio a la cotizacion.');
+
+      let created = null;
+      transaction((state) => {
+        const supplier = state.suppliers.find((entry) => entry.id === supplierId && !entry.deletedAt);
+        if (!supplier) throw new Error('Proveedor no encontrado.');
+        const now = new Date().toISOString();
+        const items = requestedItems
+          .map((line) => {
+            const itemName = String(line?.itemName ?? line?.name ?? '').trim();
+            const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? 0));
+            return {
+              id: makeId('supitem'),
+              itemId: String(line?.itemId ?? '').trim() || null,
+              itemName,
+              category: String(line?.category ?? '').trim(),
+              quantity,
+              unit: String(line?.unit ?? 'unidad').trim() || 'unidad',
+              unitPriceBs,
+              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            };
+          })
+          .filter((line) => line.itemName);
+        if (!items.length) throw new Error('Debes agregar productos validos a la cotizacion.');
+        created = {
+          id: makeId('supquo'),
+          quoteCode: consumeDocumentCode(state, 'supplierQuotePrefix', 'supplierQuoteNext', 5),
+          supplierId,
+          supplierName: supplier.name,
+          title: String(payload?.title ?? 'Lista de precios').trim() || 'Lista de precios',
+          validFrom: String(payload?.validFrom ?? '').trim() || null,
+          validUntil: String(payload?.validUntil ?? '').trim() || null,
+          status: String(payload?.status ?? 'vigente').trim() || 'vigente',
+          notes: String(payload?.notes ?? '').trim(),
+          totals: { totalBs: Number(items.reduce((sum, line) => sum + line.lineTotalBs, 0).toFixed(2)) },
+          items,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.supplierQuotes.push(created);
+        return state;
+      });
+      return created;
+    },
+    createLoan: async (payload) => {
+      const supplierId = String(payload?.supplierId ?? '').trim();
+      const direction = payload?.direction === 'to_supplier' ? 'to_supplier' : 'from_supplier';
+      const flowType = payload?.flowType === 'exchange' ? 'exchange' : 'paid';
+      const requestDate = String(payload?.requestDate ?? '').trim();
+      const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      if (!supplierId) throw new Error('Debes seleccionar un proveedor.');
+      if (!requestDate) throw new Error('Debes indicar la fecha solicitada.');
+      if (!requestedItems.length) throw new Error('Debes agregar al menos un item al prestamo.');
+
+      let created = null;
+      transaction((state) => {
+        const supplier = state.suppliers.find((entry) => entry.id === supplierId && !entry.deletedAt);
+        if (!supplier) throw new Error('Proveedor no encontrado.');
+        const now = new Date().toISOString();
+        const items = requestedItems
+          .map((line) => {
+            const itemName = String(line?.itemName ?? line?.name ?? '').trim();
+            const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? 0));
+            return {
+              id: makeId('supline'),
+              itemId: String(line?.itemId ?? '').trim() || null,
+              itemName,
+              category: String(line?.category ?? '').trim(),
+              quantity,
+              unitPriceBs,
+              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            };
+          })
+          .filter((line) => line.itemName);
+        if (!items.length) throw new Error('Debes agregar items validos al prestamo.');
+        created = {
+          id: makeId('suploan'),
+          loanCode: consumeDocumentCode(state, 'supplierLoanPrefix', 'supplierLoanNext', 5),
+          supplierId,
+          supplierName: supplier.name,
+          direction,
+          flowType,
+          requestDate,
+          returnDate: String(payload?.returnDate ?? '').trim() || null,
+          eventName: String(payload?.eventName ?? '').trim(),
+          status: String(payload?.status ?? 'programado').trim() || 'programado',
+          showPricesOnDocument: Boolean(payload?.showPricesOnDocument),
+          notes: String(payload?.notes ?? '').trim(),
+          totals: { totalBs: Number(items.reduce((sum, line) => sum + line.lineTotalBs, 0).toFixed(2)) },
+          items,
+          settledAt: null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.supplierLoans.push(created);
+        return state;
+      });
+      return created;
+    },
+    updateLoanStatus: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      const status = String(payload?.status ?? '').trim();
+      if (!id) throw new Error('Debes indicar el prestamo.');
+      if (!status) throw new Error('Debes indicar el estado.');
+      let updated = null;
+      transaction((state) => {
+        const loan = state.supplierLoans.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!loan) throw new Error('Prestamo no encontrado.');
+        loan.status = status;
+        loan.updatedAt = new Date().toISOString();
+        if (status === 'liquidado') loan.settledAt = loan.updatedAt;
+        updated = deepClone(loan);
+        return state;
+      });
+      return updated;
+    },
+  },
+
+  rentals: {
+    list: async () => {
+      const { rentals } = readState();
+      return rentals
+        .filter((row) => !row.deletedAt)
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    create: async (payload) => {
+      const customerName = String(payload?.customerName ?? '').trim();
+      const customerPhone = String(payload?.customerPhone ?? '').trim();
+      const dueDate = String(payload?.dueDate ?? '').trim();
+      const dueTime = String(payload?.dueTime ?? '').trim();
+      const notes = String(payload?.notes ?? '').trim();
+      const idCardHeld = Boolean(payload?.idCardHeld);
+      const paymentMode = ['sin_pago', 'a_cuenta', 'cancelado'].includes(payload?.paymentMode)
+        ? payload.paymentMode
+        : 'sin_pago';
+      const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+
+      if (!customerName) {
+        throw new Error('Debe registrar el nombre del cliente.');
+      }
+      if (!customerPhone) {
+        throw new Error('Debe registrar el celular del cliente.');
+      }
+      if (!dueDate || !dueTime) {
+        throw new Error('Debe registrar fecha y hora maxima de devolucion.');
+      }
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(dueTime)) {
+        throw new Error('La hora maxima de devolucion no es valida.');
+      }
+      if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
+        throw new Error('Debe agregar al menos un item al alquiler.');
+      }
+
+      let createdRental = null;
+      transaction((state) => {
+        const settings = state.settings ?? {};
+        const depositBs = toNumber(payload?.depositBs ?? settings.defaultDepositBs ?? 200, 'garantia');
+        const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
+        const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
+        const now = new Date();
+        const clientId = resolveClientFromName(state, customerName, customerPhone);
+        const orderCode = consumeDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
+        const reservationMovements = [];
+        const userId = payload?.userId ?? payload?.createdById ?? null;
+        const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+        const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+        const rentalDate = String(payload?.rentalDate ?? now.toISOString().slice(0, 10));
+        const availabilityPeriod = buildAvailabilityPeriod({
+          deliveryDate: rentalDate,
+          deliveryWindowStart: payload?.deliveryWindowStart || '00:00',
+          pickupDate: dueDate,
+          pickupWindowEnd: payload?.pickupWindowEnd || dueTime,
+        });
+        const projectedIssues = validateProjectedInventoryRequest({
+          items: state.items,
+          rentals: state.rentals,
+          contracts: state.contracts,
+          period: availabilityPeriod,
+          requestedItems,
+        });
+        if (projectedIssues.length) {
+          const issue = projectedIssues[0];
+          throw new Error(
+            `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}. Coordina proveedor o cambia fechas.`,
+          );
+        }
+        const availabilityAtApproval = getProjectedInventoryAvailability({
+          items: state.items,
+          rentals: state.rentals,
+          contracts: state.contracts,
+          period: availabilityPeriod,
+        });
+        const inventoryAvailabilityAssumptions = requestedItems
+          .map((line) => {
+            const item = state.items.find((entry) => entry.id === line.itemId);
+            const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+            const summary = availabilityAtApproval.get(line.itemId);
+            const currentAvailable = Math.max(0, Number(item?.availableStock ?? 0));
+            if (!item || !summary || quantity <= currentAvailable || summary.returningBeforeStartQty <= 0) return null;
+            return {
+              itemId: item.id,
+              itemName: item.name,
+              requestedQty: quantity,
+              currentAvailableAtApproval: currentAvailable,
+              returningBeforeStartQty: summary.returningBeforeStartQty,
+              sourceReturns: summary.returningBeforeStartQtyRecords,
+              createdAt: now.toISOString(),
+            };
+          })
+          .filter(Boolean);
+
+        const rentalItems = requestedItems.map((line) => {
+          const item = state.items.find((entry) => entry.id === line.itemId);
+          if (!item) {
+            throw new Error('Uno de los items seleccionados ya no existe.');
+          }
+
+          const quantity = toInteger(line.quantity, `cantidad (${item.name})`);
+          if (quantity <= 0) {
+            throw new Error(`La cantidad de "${item.name}" debe ser mayor a 0.`);
+          }
+          const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+
+          const beforeTotalStock = item.totalStock;
+          const beforeAvailableStock = item.availableStock;
+          item.availableStock = Math.max(0, item.availableStock - quantity);
+          item.updatedAt = now.toISOString();
+
+          reservationMovements.push({
+            id: makeId('mov'),
+            itemId: item.id,
+            itemName: item.name,
+            category: item.category,
+            type: 'reserva',
+            reason: `Asignado a orden de servicio ${orderCode}`,
+            detail: `Reserva de ${quantity} unidades para ${orderCode}`,
+            reference: orderCode,
+            deltaUnits: -quantity,
+            beforeTotalStock,
+            afterTotalStock: item.totalStock,
+            beforeAvailableStock,
+            afterAvailableStock: item.availableStock,
+            reservedStockAfter: item.totalStock - item.availableStock,
+            userName,
+            userRole,
+            createdAt: now.toISOString(),
+          });
+
+          return {
+            itemId: item.id,
+            itemName: item.name,
+            rentalPriceBs,
+            damagedUnitChargeBs: Number.isFinite(Number(item.damagedUnitChargeBs))
+              ? Number(item.damagedUnitChargeBs)
+              : Number((rentalPriceBs * fallbackDamageMultiplier).toFixed(2)),
+            missingUnitChargeBs: Number.isFinite(Number(item.missingUnitChargeBs))
+              ? Number(item.missingUnitChargeBs)
+              : Number((rentalPriceBs * fallbackMissingMultiplier).toFixed(2)),
+            quantity,
+            lineTotalBs: quantity * rentalPriceBs,
+          };
+        });
+
+        const [year, month, day] = dueDate.split('-').map((value) => Number.parseInt(value, 10));
+        const [dueHours, dueMinutes] = dueTime.split(':').map((value) => Number.parseInt(value, 10));
+        const dueAt = new Date(year, month - 1, day, dueHours, dueMinutes, 0, 0);
+        if (Number.isNaN(dueAt.getTime()) || dueAt <= now) {
+          throw new Error('La fecha y hora maxima de devolucion deben ser posteriores al momento actual.');
+        }
+
+        const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs });
+        const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
+        const subtotalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs));
+        const discountBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountBs ?? 0));
+        const totalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.totalBs ?? subtotalBs - discountBs));
+        let paidAtRentalBs = toNumber(payload?.paidAtRentalBs ?? 0, 'pago inicial');
+
+        if (paymentMode === 'sin_pago') {
+          paidAtRentalBs = 0;
+        } else if (paymentMode === 'cancelado') {
+          paidAtRentalBs = totalBs;
+        } else {
+          if (paidAtRentalBs <= 0) {
+            throw new Error('Si el pago es a cuenta, el monto inicial debe ser mayor a 0.');
+          }
+          if (paidAtRentalBs >= totalBs) {
+            throw new Error('Si el pago es a cuenta, el monto inicial debe ser menor al total.');
+          }
+        }
+
+        const pendingPaymentBs = Number((totalBs - paidAtRentalBs).toFixed(2));
+        const paymentStatus =
+          paymentMode === 'cancelado' ? 'cancelado' : paymentMode === 'a_cuenta' ? 'a_cuenta' : 'sin_pago';
+
+        createdRental = {
+          id: makeId('rent'),
+          clientId,
+          orderCode,
+          customerName,
+          customerPhone,
+          rentalDate,
+          rentalAt: now.toISOString(),
+          dueDate,
+          dueTime,
+          dueAt: dueAt.toISOString(),
+          deliveryWindowStart: String(payload?.deliveryWindowStart ?? '').trim() || null,
+          deliveryWindowEnd: String(payload?.deliveryWindowEnd ?? '').trim() || null,
+          pickupWindowStart: String(payload?.pickupWindowStart ?? '').trim() || null,
+          pickupWindowEnd: String(payload?.pickupWindowEnd ?? '').trim() || dueTime,
+          idCardHeld,
+          depositBs: toPositiveRoundedNumber(depositBs),
+          items: rentalItems,
+          pricingPlan,
+          totals: {
+            itemsSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs),
+            baseSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs),
+            subtotalBs: toPositiveRoundedNumber(subtotalBs),
+            theoreticalSubtotalBs: toPositiveRoundedNumber(quotedTotals?.theoreticalSubtotalBs ?? pricingPlan.theoreticalSubtotalBs),
+            durationDiscountBs: toPositiveRoundedNumber(quotedTotals?.durationDiscountBs ?? pricingPlan.durationDiscountBs),
+            discountBs: toPositiveRoundedNumber(discountBs),
+            totalBs: toPositiveRoundedNumber(totalBs),
+            paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
+            pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
+          },
+          payment: {
+            mode: paymentMode,
+            status: paymentStatus,
+            paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
+            pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
+          },
+          notes,
+          billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
+          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          inventoryAvailabilityAssumptions,
+          status: 'active',
+          createdById: userId,
+          createdByName: userName,
+          createdByRole: userRole,
+          operational: {
+            inventoryStatus: 'pendiente',
+            transportStatus: payload?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
+            inventoryNote: '',
+            transportNote: '',
+            inventorySentAt: null,
+            transportSentAt: null,
+            inventoryConfirmedAt: null,
+            transportConfirmedAt: null,
+            inventoryConfirmedByName: null,
+            inventoryConfirmedByRole: null,
+            transportConfirmedByName: null,
+            transportConfirmedByRole: null,
+          },
+          createdAt: now.toISOString(),
+          deletedAt: null,
+        };
+
+        state.rentals.push(createdRental);
+        state.inventoryMovements.push(...reservationMovements);
+        if (createdRental.logisticsMode !== 'recojo') {
+          createDeliveryFromRental(state, createdRental);
+        }
+        addRentalCashMovements(state, createdRental);
+        return state;
+      });
+
+      return createdRental;
+    },
+    updateOperational: async (payload) => {
+      const id = String(payload?.id ?? payload?.rentalId ?? '').trim();
+      if (!id) {
+        throw new Error('No se pudo identificar la orden de servicio.');
+      }
+
+      let updated = null;
+      transaction((state) => {
+        const rental = state.rentals.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!rental) {
+          throw new Error('Orden de servicio no encontrada.');
+        }
+
+        const now = new Date().toISOString();
+        const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+        const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+        rental.operational = {
+          inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+          transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+          inventoryNote: rental.operational?.inventoryNote ?? '',
+          transportNote: rental.operational?.transportNote ?? '',
+          inventorySentAt: rental.operational?.inventorySentAt ?? null,
+          transportSentAt: rental.operational?.transportSentAt ?? null,
+          inventoryConfirmedAt: rental.operational?.inventoryConfirmedAt ?? null,
+          transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
+          inventoryConfirmedByName: rental.operational?.inventoryConfirmedByName ?? null,
+          inventoryConfirmedByRole: rental.operational?.inventoryConfirmedByRole ?? null,
+          transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
+          transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
+        };
+
+        if (payload.inventoryStatus !== undefined) {
+          rental.operational.inventoryStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
+          if (rental.operational.inventoryStatus === 'enviado' && !rental.operational.inventorySentAt) {
+            rental.operational.inventorySentAt = now;
+          }
+          if (rental.operational.inventoryStatus === 'confirmado') {
+            rental.operational.inventoryConfirmedAt = now;
+            rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
+            rental.operational.inventoryConfirmedByName = userName;
+            rental.operational.inventoryConfirmedByRole = userRole;
+          }
+        }
+
+        if (payload.transportStatus !== undefined) {
+          rental.operational.transportStatus = String(payload.transportStatus ?? 'pendiente').trim() || 'pendiente';
+          if (rental.operational.transportStatus === 'enviado' && !rental.operational.transportSentAt) {
+            rental.operational.transportSentAt = now;
+          }
+          if (rental.operational.transportStatus === 'confirmado') {
+            rental.operational.transportConfirmedAt = now;
+            rental.operational.transportSentAt = rental.operational.transportSentAt ?? now;
+            rental.operational.transportConfirmedByName = userName;
+            rental.operational.transportConfirmedByRole = userRole;
+          }
+        }
+
+        if (payload.inventoryNote !== undefined) {
+          rental.operational.inventoryNote = String(payload.inventoryNote ?? '').trim();
+        }
+        if (payload.transportNote !== undefined) {
+          rental.operational.transportNote = String(payload.transportNote ?? '').trim();
+        }
+
+        rental.updatedAt = now;
+        updated = deepClone(rental);
+        return state;
+      });
+
+      return updated;
+    },
+    remove: async (payload) => {
+      const id = String(payload?.id ?? payload?.rentalId ?? '').trim();
+      if (!id) {
+        throw new Error('No se pudo identificar la orden de servicio.');
+      }
+
+      let removed = null;
+      transaction((state) => {
+        const rental = state.rentals.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!rental) {
+          throw new Error('Orden de servicio no encontrada.');
+        }
+        if (rental.status === 'returned') {
+          throw new Error('No se puede eliminar una orden cerrada/devuelta.');
+        }
+
+        const now = new Date().toISOString();
+        (rental.items ?? []).forEach((line) => {
+          const item = state.items.find((entry) => entry.id === line.itemId);
+          if (item) {
+            item.availableStock += Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+            item.updatedAt = now;
+          }
+        });
+
+        state.deliveries.forEach((delivery) => {
+          if (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode) {
+            delivery.status = 'cancelada';
+            delivery.deletedAt = now;
+            delivery.updatedAt = now;
+          }
+        });
+
+        state.contracts.forEach((contract) => {
+          if (contract.rentalId === rental.id || contract.orderCode === rental.orderCode) {
+            contract.rentalId = null;
+            contract.orderCode = null;
+            contract.updatedAt = now;
+          }
+        });
+
+        state.quotes.forEach((quote) => {
+          if (quote.rentalId === rental.id || quote.orderCode === rental.orderCode) {
+            quote.rentalId = null;
+            quote.orderCode = null;
+            quote.updatedAt = now;
+          }
+        });
+
+        rental.deletedAt = now;
+        rental.status = 'cancelled';
+        rental.updatedAt = now;
+        removed = deepClone(rental);
+        return state;
+      });
+
+      return removed;
+    },
+    registerReturn: async (payload) => {
+      const rentalId = payload?.rentalId;
+      const lines = payload?.returnedItems ?? [];
+
+      if (!rentalId) {
+        throw new Error('Debe seleccionar un alquiler para registrar la devolucion.');
+      }
+      if (!Array.isArray(lines) || lines.length === 0) {
+        throw new Error('Debe enviar el detalle de devolucion por item.');
+      }
+
+      let returnedRental = null;
+      transaction((state) => {
+        const hasOpenCashSession = state.cashSessions.some((session) => session.status === 'open');
+        const requireCashSession = payload?.requireCashSession !== false;
+        if (requireCashSession && !hasOpenCashSession) {
+          throw new Error('No puedes registrar devoluciones con la caja cerrada. Abre caja primero.');
+        }
+
+        const settings = state.settings ?? {};
+        const missingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
+        const damageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
+
+        const rental = state.rentals.find((entry) => entry.id === rentalId && !entry.deletedAt);
+        if (!rental) {
+          throw new Error('No se encontro el alquiler seleccionado.');
+        }
+        if (rental.status === 'returned') {
+          throw new Error('Este alquiler ya fue devuelto.');
+        }
+
+        let penaltiesBs = 0;
+        const returnReport = rental.items.map((rentalLine) => {
+          const incomingLine = lines.find((entry) => entry.itemId === rentalLine.itemId);
+          if (!incomingLine) {
+            throw new Error(`Falta detalle de devolucion para "${rentalLine.itemName}".`);
+          }
+
+          const returnedQty = Math.max(0, toInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
+          const damagedQty = Math.max(0, toInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));
+          const missingQty = Math.max(0, toInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
+          const damageNote = String(incomingLine.damageNote ?? '').trim();
+          const expectedQty = rentalLine.quantity;
+
+          if (returnedQty + damagedQty + missingQty !== expectedQty) {
+            throw new Error(
+              `La suma de devuelto + daniado + faltante para "${rentalLine.itemName}" debe ser ${expectedQty}.`,
+            );
+          }
+          if (damagedQty > 0 && !damageNote) {
+            throw new Error(`Debes registrar la nota del dano para "${rentalLine.itemName}".`);
+          }
+
+          const damagedUnitChargeBs = Number.isFinite(Number(rentalLine.damagedUnitChargeBs))
+            ? Number(rentalLine.damagedUnitChargeBs)
+            : Number((rentalLine.rentalPriceBs * damageMultiplier).toFixed(2));
+          const missingUnitChargeBs = Number.isFinite(Number(rentalLine.missingUnitChargeBs))
+            ? Number(rentalLine.missingUnitChargeBs)
+            : Number((rentalLine.rentalPriceBs * missingMultiplier).toFixed(2));
+
+          const damagedFeeBs = Number((damagedQty * damagedUnitChargeBs).toFixed(2));
+          const missingFeeBs = Number((missingQty * missingUnitChargeBs).toFixed(2));
+          const linePenaltyBs = Number((damagedFeeBs + missingFeeBs).toFixed(2));
+          penaltiesBs = Number((penaltiesBs + linePenaltyBs).toFixed(2));
+
+          const item = state.items.find((entry) => entry.id === rentalLine.itemId);
+          if (item) {
+            const needsCleaningOnReturn = categoryRequiresCleaning(item.category) || Boolean(item.needsCleaningOnReturn);
+            const movedToCleaningQty = needsCleaningOnReturn ? returnedQty : 0;
+            const returnedToAvailableQty = returnedQty - movedToCleaningQty;
+
+            item.availableStock += returnedToAvailableQty;
+            item.updatedAt = new Date().toISOString();
+
+            if (movedToCleaningQty > 0) {
+              state.stockRecoveries.push({
+                id: makeId('reco'),
+                itemId: item.id,
+                itemName: item.name,
+                category: item.category,
+                imageDataUrl: item.imageDataUrl ?? null,
+                sourceRentalId: rental.id,
+                sourceCustomerName: rental.customerName,
+                stage: 'lavado',
+                quantity: movedToCleaningQty,
+                note: 'Devuelto y enviado a lavado.',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+
+            if (damagedQty > 0) {
+              state.stockRecoveries.push({
+                id: makeId('reco'),
+                itemId: item.id,
+                itemName: item.name,
+                category: item.category,
+                imageDataUrl: item.imageDataUrl ?? null,
+                sourceRentalId: rental.id,
+                sourceCustomerName: rental.customerName,
+                stage: 'reparacion',
+                quantity: damagedQty,
+                note: damageNote || 'Dano reportado en devolucion.',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+
+            return {
+              itemId: rentalLine.itemId,
+              itemName: rentalLine.itemName,
+              expectedQty,
+              returnedQty,
+              returnedToAvailableQty,
+              movedToCleaningQty,
+              damagedQty,
+              missingQty,
+              damageNote,
+              damagedUnitChargeBs,
+              missingUnitChargeBs,
+              penaltyBs: linePenaltyBs,
+            };
+          }
+
+          return {
+            itemId: rentalLine.itemId,
+            itemName: rentalLine.itemName,
+            expectedQty,
+            returnedQty,
+            returnedToAvailableQty: returnedQty,
+            movedToCleaningQty: 0,
+            damagedQty,
+            missingQty,
+            damageNote,
+            damagedUnitChargeBs,
+            missingUnitChargeBs,
+            penaltyBs: linePenaltyBs,
+          };
+        });
+
+        const totalBs = Number(rental?.totals?.totalBs ?? 0);
+        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+        const outstandingRentalBs = Number(Math.max(0, totalBs - alreadyPaidBs).toFixed(2));
+        const totalDiscountAgainstDepositBs = Number((penaltiesBs + outstandingRentalBs).toFixed(2));
+        const refundBs = Number(Math.max(0, rental.depositBs - totalDiscountAgainstDepositBs).toFixed(2));
+        const pendingCollectionBs = Number(Math.max(0, totalDiscountAgainstDepositBs - rental.depositBs).toFixed(2));
+        const discountCoveredByDepositBs = Number(
+          Math.min(rental.depositBs, totalDiscountAgainstDepositBs).toFixed(2),
+        );
+
+        rental.status = 'returned';
+        rental.returnedAt = new Date().toISOString();
+        rental.returnReport = returnReport;
+        rental.penaltiesBs = penaltiesBs;
+        rental.refundBs = refundBs;
+        rental.payment = {
+          ...(rental.payment ?? {}),
+          status: pendingCollectionBs > 0 ? 'saldo_pendiente' : 'liquidado',
+          paidAtRentalBs: alreadyPaidBs,
+          pendingPaymentBs: pendingCollectionBs,
+        };
+        rental.returnSettlement = {
+          outstandingRentalBs,
+          penaltiesBs,
+          totalDiscountAgainstDepositBs,
+          discountCoveredByDepositBs,
+          pendingCollectionBs,
+          refundBs,
+        };
+
+        const linkedDeliveries = state.deliveries.filter(
+          (delivery) =>
+            (delivery.rentalId && delivery.rentalId === rental.id)
+            || (delivery.orderCode && rental.orderCode && delivery.orderCode === rental.orderCode),
+        );
+        linkedDeliveries.forEach((delivery) => {
+          delivery.status = 'completada';
+          delivery.progress = 100;
+          delivery.updatedAt = new Date().toISOString();
+        });
+
+        returnedRental = deepClone(rental);
+        addReturnCashMovements(state, rental);
+        return state;
+      });
+
+      return returnedRental;
+    },
+  },
+
+  cash: {
+    getSummary: async () => {
+      const state = readState();
+      const activeSession = getActiveSession(state);
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+      const todayMovements = state.cashMovements.filter(
+        (movement) => new Date(movement.createdAt).getTime() >= startOfDay,
+      );
+      const realTodayMovements = todayMovements.filter((movement) => !movement.isInternalTransfer);
+      const sumMovements = (rows, predicate) => Number(
+        rows
+          .filter(predicate)
+          .reduce((sum, movement) => sum + Number(movement.amountBs), 0)
+          .toFixed(2),
+      );
+      const bigCashBalanceBs = activeSession
+        ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.BIG_CASH)
+        : 0;
+      const pettyCashBalanceBs = activeSession
+        ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH)
+        : 0;
+
+      const todayIncomeBs = Number(
+        realTodayMovements
+          .filter((movement) => Number(movement.amountBs) > 0)
+          .reduce((sum, movement) => sum + Number(movement.amountBs), 0)
+          .toFixed(2),
+      );
+      const todayExpenseBs = Number(
+        Math.abs(
+          realTodayMovements
+            .filter((movement) => Number(movement.amountBs) < 0)
+            .reduce((sum, movement) => sum + Number(movement.amountBs), 0),
+        ).toFixed(2),
+      );
+      const todayBigCashIncomeBs = sumMovements(
+        realTodayMovements,
+        (movement) => normalizeCashBoxType(movement.cashBoxType) === CASH_BOX_TYPES.BIG_CASH && Number(movement.amountBs) > 0,
+      );
+      const todayBigCashExpenseBs = Math.abs(sumMovements(
+        realTodayMovements,
+        (movement) => normalizeCashBoxType(movement.cashBoxType) === CASH_BOX_TYPES.BIG_CASH && Number(movement.amountBs) < 0,
+      ));
+      const todayPettyCashIncomeBs = sumMovements(
+        realTodayMovements,
+        (movement) => normalizeCashBoxType(movement.cashBoxType) === CASH_BOX_TYPES.PETTY_CASH && Number(movement.amountBs) > 0,
+      );
+      const todayPettyCashExpenseBs = Math.abs(sumMovements(
+        realTodayMovements,
+        (movement) => normalizeCashBoxType(movement.cashBoxType) === CASH_BOX_TYPES.PETTY_CASH && Number(movement.amountBs) < 0,
+      ));
+
+      return {
+        activeSession: activeSession
+          ? {
+            ...activeSession,
+            expectedBigCashBs: bigCashBalanceBs,
+            expectedPettyCashBs: pettyCashBalanceBs,
+            expectedBalanceBs: Number((bigCashBalanceBs + pettyCashBalanceBs).toFixed(2)),
+          }
+          : null,
+        sessionsCount: state.cashSessions.length,
+        movementsCount: state.cashMovements.length,
+        orphanMovementsCount: state.cashMovements.filter((movement) => !movement.sessionId).length,
+        todayIncomeBs,
+        todayExpenseBs,
+        todayBigCashIncomeBs,
+        todayBigCashExpenseBs,
+        todayPettyCashIncomeBs,
+        todayPettyCashExpenseBs,
+        bigCashBalanceBs,
+        pettyCashBalanceBs,
+        totalAvailableBs: Number((bigCashBalanceBs + pettyCashBalanceBs).toFixed(2)),
+      };
+    },
+    listSessions: async () => {
+      const { cashSessions } = readState();
+      return cashSessions.slice().sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+    },
+    listMovements: async (payload) => {
+      const filterSessionId = String(payload?.sessionId ?? '').trim();
+      const { cashMovements } = readState();
+      const filtered = filterSessionId
+        ? cashMovements.filter((movement) => movement.sessionId === filterSessionId)
+        : cashMovements;
+
+      return filtered.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    },
+    openSession: async (payload) => {
+      const openingBigCashBs = toNumber(payload?.openingBigCashBs ?? payload?.openingAmountBs ?? 0, 'monto de apertura caja grande');
+      const openingPettyCashBs = toNumber(payload?.openingPettyCashBs ?? 0, 'monto de apertura caja chica');
+      const openedBy = String(payload?.openedBy ?? '').trim() || 'Admin';
+      const notes = String(payload?.notes ?? '').trim();
+
+      if (openingBigCashBs < 0 || openingPettyCashBs < 0) {
+        throw new Error('El monto de apertura no puede ser negativo.');
+      }
+
+      let createdSession = null;
+      transaction((state) => {
+        if (getActiveSession(state)) {
+          throw new Error('Ya existe una caja abierta. Debes cerrarla antes de abrir otra.');
+        }
+
+        createdSession = {
+          id: makeId('cash'),
+          status: 'open',
+          openingAmountBs: toPositiveRoundedNumber(openingBigCashBs + openingPettyCashBs),
+          openingBigCashBs: toPositiveRoundedNumber(openingBigCashBs),
+          openingPettyCashBs: toPositiveRoundedNumber(openingPettyCashBs),
+          openedBy,
+          openedAt: new Date().toISOString(),
+          openNotes: notes,
+        };
+
+        state.cashSessions.push(createdSession);
+        if (openingBigCashBs > 0) {
+          state.cashMovements.push(buildCashMovement({
+            sessionId: createdSession.id,
+            type: 'apertura',
+            amountBs: openingBigCashBs,
+            description: 'Apertura de caja grande',
+            sourceType: 'caja',
+            sourceId: createdSession.id,
+            createdBy: openedBy,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+            category: 'apertura',
+            responsible: openedBy,
+          }));
+        }
+        if (openingPettyCashBs > 0) {
+          state.cashMovements.push(buildCashMovement({
+            sessionId: createdSession.id,
+            type: 'apertura',
+            amountBs: openingPettyCashBs,
+            description: 'Apertura de caja chica',
+            sourceType: 'caja',
+            sourceId: createdSession.id,
+            createdBy: openedBy,
+            cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
+            category: 'apertura',
+            responsible: openedBy,
+          }));
+        }
+        return state;
+      });
+
+      return createdSession;
+    },
+    closeSession: async (payload) => {
+      const countedBigCashBs = toNumber(payload?.countedBigCashBs ?? payload?.countedAmountBs ?? 0, 'monto contado caja grande');
+      const countedPettyCashBs = toNumber(payload?.countedPettyCashBs ?? 0, 'monto contado caja chica');
+      const closedBy = String(payload?.closedBy ?? '').trim() || 'Admin';
+      const notes = String(payload?.notes ?? '').trim();
+
+      if (countedBigCashBs < 0 || countedPettyCashBs < 0) {
+        throw new Error('El monto de cierre no puede ser negativo.');
+      }
+
+      let closedSession = null;
+      transaction((state) => {
+        const activeSession = getActiveSession(state);
+        if (!activeSession) {
+          throw new Error('No existe una caja abierta para cerrar.');
+        }
+
+        const expectedBigCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.BIG_CASH);
+        const expectedPettyCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH);
+        const expectedAmountBs = Number((expectedBigCashBs + expectedPettyCashBs).toFixed(2));
+        const countedAmountBs = Number((countedBigCashBs + countedPettyCashBs).toFixed(2));
+        const differenceBs = Number((countedAmountBs - expectedAmountBs).toFixed(2));
+        const differenceBigCashBs = Number((countedBigCashBs - expectedBigCashBs).toFixed(2));
+        const differencePettyCashBs = Number((countedPettyCashBs - expectedPettyCashBs).toFixed(2));
+
+        activeSession.status = 'closed';
+        activeSession.closedAt = new Date().toISOString();
+        activeSession.closedBy = closedBy;
+        activeSession.countedAmountBs = toPositiveRoundedNumber(countedAmountBs);
+        activeSession.expectedAmountBs = expectedAmountBs;
+        activeSession.differenceBs = differenceBs;
+        activeSession.countedBigCashBs = toPositiveRoundedNumber(countedBigCashBs);
+        activeSession.countedPettyCashBs = toPositiveRoundedNumber(countedPettyCashBs);
+        activeSession.expectedBigCashBs = expectedBigCashBs;
+        activeSession.expectedPettyCashBs = expectedPettyCashBs;
+        activeSession.differenceBigCashBs = differenceBigCashBs;
+        activeSession.differencePettyCashBs = differencePettyCashBs;
+        activeSession.closeNotes = notes;
+
+        state.cashMovements.push(
+          buildCashMovement({
+            sessionId: activeSession.id,
+            type: 'cierre',
+            amountBs: 0,
+            description: `Cierre de caja | Grande ${expectedBigCashBs.toFixed(2)} / Chica ${expectedPettyCashBs.toFixed(2)}`,
+            sourceType: 'caja',
+            sourceId: activeSession.id,
+            createdBy: closedBy,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+            category: 'cierre',
+            responsible: closedBy,
+          }),
+        );
+
+        closedSession = deepClone(activeSession);
+        return state;
+      });
+
+      return closedSession;
+    },
+    createManualMovement: async (payload) => {
+      const movementType = String(payload?.type ?? '').trim();
+      const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto');
+      const description = String(payload?.description ?? '').trim();
+      const createdBy = String(payload?.createdBy ?? '').trim() || 'Admin';
+      const category = String(payload?.category ?? '').trim();
+      const paymentMethod = String(payload?.paymentMethod ?? '').trim();
+      const responsible = String(payload?.responsible ?? createdBy).trim() || createdBy;
+      const receipt = String(payload?.receipt ?? '').trim();
+      const cashBoxType = inferCashBoxType({ movementType, category, cashBoxType: payload?.cashBoxType });
+
+      if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
+        throw new Error('Tipo de movimiento invalido. Usa ingreso, egreso o transferencia.');
+      }
+      if (amountRaw <= 0) {
+        throw new Error('El monto del movimiento debe ser mayor a 0.');
+      }
+      if (!description) {
+        throw new Error('Debes escribir una descripcion para el movimiento.');
+      }
+
+      let createdMovement = null;
+      transaction((state) => {
+        const activeSession = getActiveSession(state);
+        if (!activeSession) {
+          throw new Error('Debes abrir caja antes de registrar movimientos manuales.');
+        }
+
+        if (movementType === 'transferencia') {
+          const transferGroupId = makeId('trf');
+          const fromMovement = buildCashMovement({
+            sessionId: activeSession.id,
+            type: 'transferencia_salida_caja_chica',
+            amountBs: -amountRaw,
+            description: `Reposicion caja chica: ${description}`,
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
+            createdBy,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+            category: category || 'reposicion_caja_chica',
+            paymentMethod,
+            responsible,
+            receipt,
+            isInternalTransfer: true,
+            transferGroupId,
+          });
+          const toMovement = buildCashMovement({
+            sessionId: activeSession.id,
+            type: 'transferencia_entrada_caja_chica',
+            amountBs: amountRaw,
+            description: `Reposicion caja chica: ${description}`,
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
+            createdBy,
+            cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
+            category: category || 'reposicion_caja_chica',
+            paymentMethod,
+            responsible,
+            receipt,
+            isInternalTransfer: true,
+            transferGroupId,
+          });
+          state.cashMovements.push(fromMovement, toMovement);
+          createdMovement = {
+            transferGroupId,
+            movements: [fromMovement, toMovement],
+          };
+        } else {
+          const signedAmount = movementType === 'ingreso' ? amountRaw : -amountRaw;
+          createdMovement = buildCashMovement({
+            sessionId: activeSession.id,
+            type: movementType === 'ingreso' ? 'ingreso_manual' : 'egreso_manual',
+            amountBs: signedAmount,
+            description,
+            sourceType: 'manual',
+            sourceId: null,
+            createdBy,
+            cashBoxType,
+            category,
+            paymentMethod,
+            responsible,
+            receipt,
+          });
+          state.cashMovements.push(createdMovement);
+        }
+        return state;
+      });
+
+      return createdMovement;
+    },
+    collectReceivable: async (payload) => {
+      const rentalId = String(payload?.rentalId ?? '').trim();
+      const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto cobrado');
+      const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
+      const note = String(payload?.note ?? '').trim();
+
+      if (!rentalId) {
+        throw new Error('No se pudo identificar la orden a cobrar.');
+      }
+      if (amountRaw <= 0) {
+        throw new Error('El monto cobrado debe ser mayor a 0.');
+      }
+
+      let result = null;
+      transaction((state) => {
+        const activeSession = getActiveSession(state);
+        if (!activeSession) {
+          throw new Error('Debes abrir caja antes de confirmar un cobro.');
+        }
+
+        const rental = state.rentals.find((entry) => entry.id === rentalId && !entry.deletedAt);
+        if (!rental) {
+          throw new Error('No se encontro la orden seleccionada.');
+        }
+
+        const isReturned = rental.status === 'returned';
+        const settlement = rental.returnSettlement ?? {};
+        const currentPending = isReturned
+          ? Number(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0)
+          : Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+
+        if (currentPending <= 0) {
+          throw new Error('Esta orden no tiene saldo pendiente por cobrar.');
+        }
+        if (amountRaw > currentPending) {
+          throw new Error(`El monto no puede superar el saldo pendiente de Bs ${currentPending.toFixed(2)}.`);
+        }
+
+        const amountBs = Number(amountRaw.toFixed(2));
+        const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
+        const previousPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
+        const now = new Date().toISOString();
+
+        rental.payment = {
+          ...(rental.payment ?? {}),
+          paidAtRentalBs: Number((previousPaidBs + amountBs).toFixed(2)),
+          pendingPaymentBs: remainingBs,
+          status: remainingBs > 0
+            ? 'saldo_pendiente'
+            : isReturned
+            ? 'cobrado_finalizado'
+            : 'cancelado',
+          mode: remainingBs > 0 ? 'a_cuenta' : 'cancelado',
+          lastCollectionAt: now,
+          lastCollectionBy: createdBy,
+        };
+
+        rental.totals = {
+          ...(rental.totals ?? {}),
+          paidAtRentalBs: rental.payment.paidAtRentalBs,
+          pendingPaymentBs: remainingBs,
+        };
+
+        if (isReturned) {
+          rental.returnSettlement = {
+            ...settlement,
+            pendingCollectionBs: remainingBs,
+            collectedAfterReturnBs: Number((Number(settlement.collectedAfterReturnBs ?? 0) + amountBs).toFixed(2)),
+            collectedAt: remainingBs === 0 ? now : settlement.collectedAt ?? null,
+            collectedBy: remainingBs === 0 ? createdBy : settlement.collectedBy ?? null,
+          };
+          rental.accountingStatus = remainingBs === 0 ? 'cobrado_finalizado' : 'finalizado_pendiente_cobro';
+          rental.finalizedAt = remainingBs === 0 ? now : rental.finalizedAt ?? null;
+        } else {
+          rental.accountingStatus = remainingBs === 0 ? 'cobrado' : 'saldo_pendiente';
+        }
+
+        rental.updatedAt = now;
+
+        state.contracts.forEach((contract) => {
+          if (contract.rentalId === rental.id || (contract.orderCode && contract.orderCode === rental.orderCode)) {
+            contract.accountingStatus = rental.accountingStatus;
+            contract.paymentStatus = rental.payment.status;
+            contract.updatedAt = now;
+          }
+        });
+
+        (state.serviceOrders ?? []).forEach((order) => {
+          if (order.rentalId === rental.id || order.id === rental.id || order.codigo === rental.orderCode) {
+            order.saldo_pendiente = remainingBs;
+            order.estado = isReturned && remainingBs === 0
+              ? 'cobrado_finalizado'
+              : remainingBs === 0
+              ? 'cobrada'
+              : 'pendiente_cobro';
+            order.updated_at = now;
+          }
+        });
+
+        const sourceType = isReturned ? 'return' : 'rental';
+        const movementType = isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
+        const description = note
+          || (isReturned
+            ? `Cobro saldo liquidacion: ${rental.customerName}`
+            : `Cobro saldo alquiler: ${rental.customerName}`);
+
+        const movement = buildCashMovement({
+          sessionId: activeSession.id,
+          type: movementType,
+          amountBs,
+          description,
+          sourceType,
+          sourceId: rental.id,
+          createdBy,
+          cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+          category: isReturned ? 'cobro_liquidacion' : 'cobro_contrato',
+          paymentMethod: String(payload?.paymentMethod ?? '').trim(),
+          responsible: createdBy,
+          receipt: String(payload?.receipt ?? '').trim(),
+        });
+        state.cashMovements.push(movement);
+
+        result = {
+          rental: deepClone(rental),
+          movement: deepClone(movement),
+        };
+        return state;
+      });
+
+      return result;
+    },
+    printHistoryReport: async (payload) => {
+      const state = readState();
+      const fromDate = parseDateRange(payload?.dateFrom, false);
+      const toDate = parseDateRange(payload?.dateTo, true);
+      const sessions = state.cashSessions
+        .filter((session) => isInRange(session.openedAt, fromDate, toDate))
+        .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+      const movements = state.cashMovements
+        .filter((movement) => isInRange(movement.createdAt, fromDate, toDate))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      const rows = movements
+        .map(
+          (movement) => `
+            <tr>
+              <td>${escapeHtml(formatDateTime(movement.createdAt))}</td>
+              <td>${escapeHtml(movement.type)}</td>
+              <td>${escapeHtml(movement.description)}</td>
+              <td>${formatBs(movement.amountBs)}</td>
+            </tr>`,
+        )
+        .join('');
+
+      const html = `<!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Reporte de Caja</title>
+            <style>
+              body { font-family: "Segoe UI", sans-serif; margin: 24px; color: #1f2d33; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border-bottom: 1px solid #e4eeee; text-align: left; padding: 8px 6px; font-size: 13px; }
+            </style>
+          </head>
+          <body>
+            <h1>Reporte de Caja</h1>
+            <p>Sesiones: ${sessions.length} | Movimientos: ${movements.length}</p>
+            <table>
+              <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripcion</th><th>Monto</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="4">Sin movimientos en el periodo</td></tr>'}</tbody>
+            </table>
+          </body>
+        </html>`;
+
+      openPrintWindow(html);
+      return { ok: true };
+    },
+  },
+
+  system: {
+    reset: async (payload) => {
+      const code = String(payload?.code ?? '').trim();
+      if (code !== RESET_SECURITY_CODE) {
+        throw new Error('Codigo de seguridad incorrecto.');
+      }
+      const currentState = readState();
+      const preservedUsers = Array.isArray(currentState.users)
+        ? currentState.users
+          .filter((user) => !user.deletedAt)
+          .map((user) => deepClone(user))
+        : [];
+      const nextState = createSeedData();
+      if (preservedUsers.length > 0) {
+        nextState.users = preservedUsers;
+      }
+      writeState(nextState);
+      return { ok: true, preservedUsers: nextState.users.length };
+    },
+  },
+
+  printer: {
+    printRentalReceipt: async (payload) => {
+      const rentalId = payload?.rentalId;
+      if (!rentalId) {
+        throw new Error('Debes indicar el alquiler para imprimir recibo.');
+      }
+
+      const state = readState();
+      const rental = state.rentals.find((entry) => entry.id === rentalId);
+      if (!rental) {
+        throw new Error('No se encontro el alquiler para imprimir.');
+      }
+
+      openPrintWindow(buildRentalReceiptHtml(rental));
+      return { ok: true };
+    },
+    printReturnReceipt: async (payload) => {
+      const rentalId = payload?.rentalId;
+      if (!rentalId) {
+        throw new Error('Debes indicar la devolucion para imprimir recibo.');
+      }
+
+      const state = readState();
+      const rental = state.rentals.find((entry) => entry.id === rentalId);
+      if (!rental) {
+        throw new Error('No se encontro la devolucion para imprimir.');
+      }
+      if (rental.status !== 'returned' || !Array.isArray(rental.returnReport)) {
+        throw new Error('Este alquiler aun no tiene devolucion confirmada.');
+      }
+
+      openPrintWindow(buildReturnReceiptHtml(rental));
+      return { ok: true };
+    },
+    printContract: async (payload) => {
+      const state = readState();
+      const contractId = String(payload?.contractId ?? '').trim();
+      const contractById = contractId
+        ? state.contracts.find((entry) => entry.id === contractId && !entry.deletedAt)
+        : null;
+      const linkedRental = resolveRentalForPrinting(state, payload);
+      const rental = linkedRental ?? (contractById ? buildRentalSnapshotFromContract(contractById) : null);
+      if (!rental) {
+        throw new Error('No se encontro la orden o contrato para abrir el documento.');
+      }
+      const contract = contractById ?? resolveContractForRental(state, rental);
+      const deliveries = resolveDeliveriesForRental(state, rental);
+      const title = `Contrato ${contract?.contractCode ?? rental.orderCode ?? rental.id}`;
+      return { ok: true, title, html: buildContractDocumentHtml({ rental, contract, deliveries, settings: state.settings }) };
+    },
+    printInventoryOrder: async (payload) => {
+      const state = readState();
+      const rental = resolveRentalForPrinting(state, payload);
+      if (!rental) {
+        throw new Error('No se encontro la orden para abrir documento de inventario.');
+      }
+      const deliveries = resolveDeliveriesForRental(state, rental);
+      const title = `Orden inventario ${rental.orderCode ?? rental.id}`;
+      return { ok: true, title, html: buildInventoryOrderHtml({ rental, deliveries, settings: state.settings }) };
+    },
+    printRouteSheet: async (payload) => {
+      const state = readState();
+      const rental = resolveRentalForPrinting(state, payload);
+      if (!rental) {
+        throw new Error('No se encontro la orden para abrir hoja de ruta.');
+      }
+      const deliveries = resolveDeliveriesForRental(state, rental);
+      const title = `Hoja de ruta ${rental.orderCode ?? rental.id}`;
+      return {
+        ok: true,
+        title,
+        html: buildRouteSheetHtml({
+          rental,
+          deliveries,
+          drivers: state.drivers ?? [],
+          vehicles: state.vehicles ?? [],
+          settings: state.settings,
+        }),
+      };
+    },
+  },
+
+  dashboard: {
+    get: async () => {
+      const state = readState();
+      const activeRentals = state.rentals.filter((rental) => rental.status === 'active' && !rental.deletedAt);
+      const returnedRentals = state.rentals.filter((rental) => rental.status === 'returned' && !rental.deletedAt);
+
+      const totalStock = state.items.reduce((sum, item) => sum + item.totalStock, 0);
+      const availableStock = state.items.reduce((sum, item) => sum + item.availableStock, 0);
+      const rentedStock = totalStock - availableStock;
+
+      const guaranteeInBoxBs = activeRentals.reduce((sum, rental) => sum + (rental.depositBs ?? 0), 0);
+      const activeRevenueBs = activeRentals.reduce((sum, rental) => sum + (rental.totals?.totalBs ?? 0), 0);
+      const historicRevenueBs = returnedRentals.reduce((sum, rental) => sum + (rental.totals?.totalBs ?? 0), 0);
+      const penaltiesBs = returnedRentals.reduce((sum, rental) => sum + (rental.penaltiesBs ?? 0), 0);
+
+      return {
+        cards: {
+          activeRentals: activeRentals.length,
+          returnedRentals: returnedRentals.length,
+          totalItems: state.items.length,
+          rentedStock,
+        },
+        money: {
+          guaranteeInBoxBs,
+          activeRevenueBs,
+          historicRevenueBs,
+          penaltiesBs,
+        },
+        itemsLowStock: state.items
+          .filter((item) => item.totalStock > 0 && item.availableStock / item.totalStock <= 0.2)
+          .sort((a, b) => a.availableStock - b.availableStock)
+          .slice(0, 5),
+        upcomingReturns: activeRentals
+          .slice()
+          .sort((a, b) => getDueTimestamp(a) - getDueTimestamp(b))
+          .slice(0, 5),
+      };
+    },
+  },
+
+  __storage: {
+    exportState: async () => deepClone(readState()),
+    replaceState: async (state) => {
+      writeState(state);
+      return { ok: true };
+    },
+  },
+});
+
+let webBridgeInstance = null;
+
+export const getWebBridge = () => {
+  if (!webBridgeInstance) {
+    webBridgeInstance = createWebBridge();
+  }
+  return webBridgeInstance;
+};
+
+export const getWebRuntimeInfo = () => ({
+  mode: 'web',
+  storage: canUseLocalStorage() ? 'localStorage' : 'memory',
+});
+

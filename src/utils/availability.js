@@ -1,0 +1,387 @@
+const pad2 = (value) => String(value).padStart(2, '0');
+
+export const toDateKey = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(parsed.getDate())}`;
+};
+
+const normalizeTime = (value, fallback) => {
+  const text = String(value ?? '').trim();
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(text) ? text : fallback;
+};
+
+const dateTimeValue = (dateValue, timeValue, fallbackTime) => {
+  const dateKey = toDateKey(dateValue);
+  if (!dateKey) return null;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const [hours, minutes] = normalizeTime(timeValue, fallbackTime).split(':').map(Number);
+  const parsed = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+};
+
+export const buildAvailabilityPeriod = ({
+  deliveryDate,
+  deliveryWindowStart,
+  pickupDate,
+  pickupWindowEnd,
+  eventDate,
+  eventTime,
+} = {}) => {
+  const startDate = toDateKey(deliveryDate || eventDate);
+  const endDate = toDateKey(pickupDate || deliveryDate || eventDate);
+  const start = dateTimeValue(startDate, deliveryWindowStart || eventTime, '00:00');
+  let end = dateTimeValue(endDate, pickupWindowEnd || eventTime, '23:59');
+  if (start !== null && end !== null && end <= start) {
+    end = dateTimeValue(endDate, '23:59', '23:59');
+  }
+  return {
+    startDate,
+    endDate,
+    startTime: normalizeTime(deliveryWindowStart || eventTime, '00:00'),
+    endTime: normalizeTime(pickupWindowEnd || eventTime, '23:59'),
+    start,
+    end,
+  };
+};
+
+const hasValidPeriod = (period) =>
+  Number.isFinite(period?.start) && Number.isFinite(period?.end) && period.end > period.start;
+
+const overlaps = (left, right) =>
+  hasValidPeriod(left) && hasValidPeriod(right) && left.start < right.end && left.end > right.start;
+
+const finishesBefore = (left, right) =>
+  hasValidPeriod(left) && hasValidPeriod(right) && left.end <= right.start;
+
+const getContractMaps = (contracts = []) => {
+  const byRentalId = new Map();
+  const byOrderCode = new Map();
+  contracts.forEach((contract) => {
+    if (contract?.rentalId) byRentalId.set(contract.rentalId, contract);
+    if (contract?.orderCode) byOrderCode.set(contract.orderCode, contract);
+  });
+  return { byRentalId, byOrderCode };
+};
+
+const periodFromRental = (rental, contract) =>
+  buildAvailabilityPeriod({
+    deliveryDate: contract?.deliveryDate || rental?.rentalDate || rental?.createdAt,
+    deliveryWindowStart: contract?.deliveryWindowStart || rental?.deliveryWindowStart || '00:00',
+    pickupDate: contract?.pickupDate || rental?.dueDate || contract?.eventDate || rental?.rentalDate,
+    pickupWindowEnd: contract?.pickupWindowEnd || rental?.pickupWindowEnd || rental?.dueTime || '23:59',
+  });
+
+const periodFromCommercialRecord = (record) =>
+  buildAvailabilityPeriod({
+    deliveryDate: record?.deliveryDate || record?.eventDate,
+    deliveryWindowStart: record?.deliveryWindowStart || record?.eventTime || '00:00',
+    pickupDate: record?.pickupDate || record?.validUntil || record?.eventDate,
+    pickupWindowEnd: record?.pickupWindowEnd || record?.eventTime || '23:59',
+  });
+
+const normalizeLineQuantity = (line) => Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+
+const recordItemLines = (record) =>
+  (Array.isArray(record?.items) ? record.items : [])
+    .map((line) => ({
+      itemId: String(line?.itemId ?? '').trim(),
+      quantity: normalizeLineQuantity(line),
+      itemName: String(line?.itemName ?? line?.name ?? '').trim(),
+    }))
+    .filter((line) => line.itemId && line.quantity > 0);
+
+const isActiveRental = (rental) => rental && !rental.deletedAt && rental.status !== 'returned' && rental.status !== 'cancelled';
+
+const isExcluded = (record, exclude = {}) =>
+  Boolean(
+    (exclude.rentalId && record?.id === exclude.rentalId)
+      || (exclude.orderCode && record?.orderCode === exclude.orderCode)
+      || (exclude.contractId && record?.id === exclude.contractId)
+      || (exclude.quoteId && record?.id === exclude.quoteId)
+      || (exclude.recordId && record?.id === exclude.recordId),
+  );
+
+const pushLineImpact = (summary, record, line, bucket) => {
+  summary[bucket] += line.quantity;
+  summary[`${bucket}Records`].push({
+    id: record.id,
+    code: record.code,
+    customerName: record.customerName,
+    quantity: line.quantity,
+    startDate: record.period.startDate,
+    endDate: record.period.endDate,
+    endTime: record.period.endTime,
+    type: record.type,
+  });
+};
+
+export function getProjectedInventoryAvailability({
+  items = [],
+  rentals = [],
+  contracts = [],
+  quotes = [],
+  period,
+  exclude = {},
+} = {}) {
+  const targetPeriod = hasValidPeriod(period) ? period : null;
+  const { byRentalId, byOrderCode } = getContractMaps(contracts);
+  const summaries = new Map();
+
+  items.forEach((item) => {
+    summaries.set(item.id, {
+      itemId: item.id,
+      itemName: item.name,
+      totalStock: Math.max(0, Math.trunc(Number(item.totalStock ?? 0))),
+      currentAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
+      unavailableOutsideRentals: 0,
+      activeRentalQty: 0,
+      hardReservedQty: 0,
+      hardReservedQtyRecords: [],
+      returningBeforeStartQty: 0,
+      returningBeforeStartQtyRecords: [],
+      softReservedQty: 0,
+      softReservedQtyRecords: [],
+      projectedAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
+      projectedAfterSoftAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
+    });
+  });
+
+  const hardRecords = [];
+  rentals.filter(isActiveRental).forEach((rental) => {
+    if (isExcluded(rental, exclude)) return;
+    const contract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
+    hardRecords.push({
+      id: rental.id,
+      code: rental.orderCode,
+      customerName: rental.customerName,
+      type: 'orden',
+      period: periodFromRental(rental, contract),
+      lines: recordItemLines(rental),
+      affectsCurrentStock: true,
+    });
+  });
+
+  contracts.forEach((contract) => {
+    if (!contract || contract.deletedAt || isExcluded(contract, exclude)) return;
+    if (contract.rentalId || contract.orderCode) return;
+    const status = String(contract.status ?? '').toLowerCase();
+    const record = {
+      id: contract.id,
+      code: contract.contractCode,
+      customerName: contract.customerName,
+      type: 'contrato',
+      period: periodFromCommercialRecord(contract),
+      lines: recordItemLines(contract),
+      affectsCurrentStock: false,
+    };
+    if (status === 'aprobado') {
+      hardRecords.push(record);
+    }
+  });
+
+  hardRecords.forEach((record) => {
+    record.lines.forEach((line) => {
+      const summary = summaries.get(line.itemId);
+      if (!summary) return;
+      if (record.affectsCurrentStock) {
+        summary.activeRentalQty += line.quantity;
+      }
+      if (!targetPeriod) return;
+      if (overlaps(record.period, targetPeriod)) {
+        pushLineImpact(summary, record, line, 'hardReservedQty');
+      } else if (finishesBefore(record.period, targetPeriod)) {
+        pushLineImpact(summary, record, line, 'returningBeforeStartQty');
+      }
+    });
+  });
+
+  summaries.forEach((summary) => {
+    summary.unavailableOutsideRentals = Math.max(
+      0,
+      summary.totalStock - summary.currentAvailable - summary.activeRentalQty,
+    );
+    summary.projectedAvailable = Math.max(
+      0,
+      summary.totalStock - summary.unavailableOutsideRentals - summary.hardReservedQty,
+    );
+  });
+
+  const softRecords = [];
+  quotes.forEach((quote) => {
+    if (!quote || quote.deletedAt || quote.rentalId || quote.orderCode || isExcluded(quote, exclude)) return;
+    const status = String(quote.status ?? '').toLowerCase();
+    if (!['enviada', 'borrador'].includes(status)) return;
+    softRecords.push({
+      id: quote.id,
+      code: quote.quoteCode,
+      customerName: quote.customerName,
+      type: 'cotizacion',
+      period: periodFromCommercialRecord(quote),
+      lines: recordItemLines(quote),
+    });
+  });
+
+  contracts.forEach((contract) => {
+    if (!contract || contract.deletedAt || contract.rentalId || contract.orderCode || isExcluded(contract, exclude)) return;
+    const status = String(contract.status ?? '').toLowerCase();
+    if (!['pendiente', 'borrador'].includes(status)) return;
+    softRecords.push({
+      id: contract.id,
+      code: contract.contractCode,
+      customerName: contract.customerName,
+      type: 'contrato',
+      period: periodFromCommercialRecord(contract),
+      lines: recordItemLines(contract),
+    });
+  });
+
+  if (targetPeriod) {
+    softRecords.forEach((record) => {
+      if (!overlaps(record.period, targetPeriod)) return;
+      record.lines.forEach((line) => {
+        const summary = summaries.get(line.itemId);
+        if (!summary) return;
+        pushLineImpact(summary, record, line, 'softReservedQty');
+      });
+    });
+  }
+
+  summaries.forEach((summary) => {
+    summary.projectedAfterSoftAvailable = Math.max(0, summary.projectedAvailable - summary.softReservedQty);
+  });
+
+  return summaries;
+}
+
+export function validateProjectedInventoryRequest({
+  items = [],
+  rentals = [],
+  contracts = [],
+  quotes = [],
+  period,
+  requestedItems = [],
+  exclude = {},
+} = {}) {
+  const availability = getProjectedInventoryAvailability({ items, rentals, contracts, quotes, period, exclude });
+  return requestedItems
+    .map((line) => {
+      const itemId = String(line?.itemId ?? '').trim();
+      const requestedQty = normalizeLineQuantity(line);
+      const summary = availability.get(itemId);
+      if (!summary || requestedQty <= summary.projectedAvailable) return null;
+      return {
+        itemId,
+        itemName: summary?.itemName || line?.itemName || 'Item',
+        requestedQty,
+        projectedAvailable: summary?.projectedAvailable ?? 0,
+        shortageQty: Math.max(0, requestedQty - (summary?.projectedAvailable ?? 0)),
+        returningBeforeStartQty: summary?.returningBeforeStartQty ?? 0,
+        hardConflicts: summary?.hardReservedQtyRecords ?? [],
+      };
+    })
+    .filter(Boolean);
+}
+
+export function buildInventoryReturnRiskEvents({
+  items = [],
+  rentals = [],
+  contracts = [],
+  todayKey = toDateKey(new Date()),
+} = {}) {
+  const events = [];
+  const availabilityByDateCache = new Map();
+  const activeTargets = rentals.filter(isActiveRental);
+  const rentalById = new Map(rentals.map((rental) => [rental.id, rental]));
+
+  activeTargets.forEach((target) => {
+    const { byRentalId, byOrderCode } = getContractMaps(contracts);
+    const targetContract = byRentalId.get(target.id) ?? byOrderCode.get(target.orderCode);
+    const targetPeriod = periodFromRental(target, targetContract);
+    if (!hasValidPeriod(targetPeriod)) return;
+
+    const storedAssumptions = Array.isArray(target.inventoryAvailabilityAssumptions)
+      ? target.inventoryAvailabilityAssumptions
+      : [];
+    if (storedAssumptions.length > 0) {
+      storedAssumptions.forEach((assumption) => {
+        (assumption.sourceReturns ?? []).forEach((source) => {
+          const sourceRental = rentalById.get(source.id);
+          if (sourceRental?.status === 'returned') return;
+          if (!source.endDate || source.endDate > targetPeriod.startDate) return;
+          events.push({
+            id: `inventory-risk-${source.id}-${target.id}-${assumption.itemId}`,
+            type: 'inventory_alert',
+            date: source.endDate,
+            startTime: source.endTime || '08:00',
+            endTime: source.endTime || '09:00',
+            status: source.endDate < todayKey ? 'retrasado' : 'pendiente',
+            title: `Asegurar ${assumption.itemName || 'inventario'}`,
+            subtitle: `${source.code || 'Orden previa'} debe volver para ${target.orderCode || 'evento futuro'}`,
+            detailLine: `${source.quantity} unidades comprometidas por disponibilidad proyectada`,
+            relatedType: 'alerta inventario',
+            relatedId: target.orderCode,
+            rentalId: target.id,
+            orderCode: target.orderCode,
+            customerName: target.customerName,
+            eventName: targetContract?.eventType || target.eventType || 'Evento futuro',
+            operationLabel: 'Alerta de inventario',
+            logisticsMode: targetContract?.logisticsMode || target.logisticsMode || 'envio',
+            referenceLine: `Recojo ${source.code || ''} antes de ${targetPeriod.startDate}`.trim(),
+          });
+        });
+      });
+      return;
+    }
+
+    const cacheKey = `${target.id}|${targetPeriod.startDate}|${targetPeriod.endDate}`;
+    const availability = availabilityByDateCache.get(cacheKey)
+      ?? getProjectedInventoryAvailability({
+        items,
+        rentals,
+        contracts,
+        period: targetPeriod,
+        exclude: { rentalId: target.id, orderCode: target.orderCode },
+      });
+    availabilityByDateCache.set(cacheKey, availability);
+
+    recordItemLines(target).forEach((line) => {
+      const summary = availability.get(line.itemId);
+      if (!summary) return;
+      if (line.quantity <= summary.currentAvailable) return;
+
+      const neededFromReturns = Math.min(line.quantity - summary.currentAvailable, summary.returningBeforeStartQty);
+      if (neededFromReturns <= 0) return;
+
+      summary.returningBeforeStartQtyRecords.forEach((source) => {
+        if (!source.endDate || source.endDate > targetPeriod.startDate) return;
+        events.push({
+          id: `inventory-risk-${source.id}-${target.id}-${line.itemId}`,
+          type: 'inventory_alert',
+          date: source.endDate,
+          startTime: source.endTime || '08:00',
+          endTime: source.endTime || '09:00',
+          status: source.endDate < todayKey ? 'retrasado' : 'pendiente',
+          title: `Asegurar ${summary.itemName}`,
+          subtitle: `${source.code || 'Orden previa'} debe volver para ${target.orderCode || 'evento futuro'}`,
+          detailLine: `${Math.min(source.quantity, neededFromReturns)} de ${line.quantity} unidades dependen de esta devolucion`,
+          relatedType: 'alerta inventario',
+          relatedId: target.orderCode,
+          rentalId: target.id,
+          orderCode: target.orderCode,
+          customerName: target.customerName,
+          eventName: targetContract?.eventType || target.eventType || 'Evento futuro',
+          operationLabel: 'Alerta de inventario',
+          logisticsMode: targetContract?.logisticsMode || target.logisticsMode || 'envio',
+          referenceLine: `Recojo ${source.code || ''} antes de ${targetPeriod.startDate}`.trim(),
+        });
+      });
+    });
+  });
+
+  return events;
+}
