@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { buildInventoryReturnRiskEvents } from '../../utils/availability';
+import { isSuperAdmin } from '../../utils/permissions';
 
 const EVENT_TYPE_META = {
   all: { label: 'Todos', className: 'all' },
@@ -166,6 +167,52 @@ const getOperationDetail = (eventType, logisticsMode) => {
   return getLogisticsMeta(logisticsMode).detail;
 };
 
+const buildMapEmbedUrl = (latitude, longitude) => {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  return `https://maps.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}&z=16&hl=es&output=embed`;
+};
+
+const initialsFromName = (name) =>
+  String(name ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+
+const getResponsibleTrace = (...records) => {
+  const source = records.find((record) => (
+    record?.responsibleName
+    || record?.createdByName
+    || record?.userName
+    || record?.responsible
+    || record?.createdBy
+  ));
+  const name = String(
+    source?.responsibleName
+    ?? source?.createdByName
+    ?? source?.userName
+    ?? source?.responsible
+    ?? source?.createdBy
+    ?? 'Sistema',
+  ).trim() || 'Sistema';
+  const role = String(
+    source?.responsibleRole
+    ?? source?.createdByRole
+    ?? source?.userRole
+    ?? 'Operacion',
+  ).trim() || 'Operacion';
+
+  return {
+    name,
+    role,
+    initials: initialsFromName(name) || 'S',
+  };
+};
+
 const isDeliveryReturnLeg = (delivery, contract, rental) => {
   if (!delivery) return false;
   const text = normalizeText([
@@ -202,20 +249,10 @@ function KpiIcon({ kind }) {
     );
   }
   if (kind === 'truck') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 6h11v9H3zM14 9h3.5L21 12v3h-7z" />
-        <circle cx="8" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="18" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      </svg>
-    );
+    return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
   }
   if (kind === 'tool') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" d="M14.5 6.5 17.5 9.5M8.8 17.2l-2.3.3.3-2.3 7-7a2.1 2.1 0 0 1 3 3l-8 8Z" />
-      </svg>
-    );
+    return <img className="asset-icon maintenance-asset-icon" src="/imagenes/herramientas-de-construccion.png" alt="" aria-hidden="true" />;
   }
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -237,11 +274,7 @@ function DayEventIcon({ kind }) {
   }
 
   if (kind === 'maintenance') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" d="M14.5 6.5 17.5 9.5M8.8 17.2l-2.3.3.3-2.3 7-7a2.1 2.1 0 0 1 3 3l-8 8Z" />
-      </svg>
-    );
+    return <img className="asset-icon maintenance-asset-icon" src="/imagenes/herramientas-de-construccion.png" alt="" aria-hidden="true" />;
   }
 
   return (
@@ -260,6 +293,8 @@ function CalendarSection({
   contracts = [],
   deliveries = [],
   supplierBundle = null,
+  currentUser = null,
+  driverLoginLocations = [],
   onCreateEvent,
   onPrintContractDocument,
 }) {
@@ -274,6 +309,19 @@ function CalendarSection({
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ ...EMPTY_EVENT_FORM, date: todayKey });
   const [formError, setFormError] = useState('');
+  const showDriverLocations = isSuperAdmin(currentUser);
+
+  const recentDriverLoginLocations = useMemo(() => {
+    return (driverLoginLocations ?? [])
+      .filter((entry) => Number.isFinite(Number(entry?.latitude)) && Number.isFinite(Number(entry?.longitude)))
+      .slice()
+      .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
+      .slice(0, 6);
+  }, [driverLoginLocations]);
+  const latestDriverLocation = recentDriverLoginLocations[0] ?? null;
+  const latestDriverMapUrl = latestDriverLocation
+    ? buildMapEmbedUrl(latestDriverLocation.latitude, latestDriverLocation.longitude)
+    : '';
 
   const relationshipMaps = useMemo(() => {
     const contractByRentalId = new Map();
@@ -346,6 +394,8 @@ function CalendarSection({
             logisticsMode: contract.logisticsMode ?? 'envio',
             eventName: contract.eventType,
             operationLabel: getOperationLabel('return', contract.logisticsMode ?? 'envio'),
+            responsibleName: contract.createdByName ?? contract.createdBy ?? 'Sistema',
+            responsibleRole: contract.createdByRole ?? 'Operacion',
           });
         }
       }
@@ -393,6 +443,8 @@ function CalendarSection({
         logisticsMode,
         eventName: contract?.eventType ?? rental.companyName,
         operationLabel: getOperationLabel('return', logisticsMode),
+        responsibleName: rental.createdByName ?? contract?.createdByName ?? rental.createdBy ?? contract?.createdBy ?? 'Sistema',
+        responsibleRole: rental.createdByRole ?? contract?.createdByRole ?? 'Operacion',
       });
     });
 
@@ -474,6 +526,7 @@ function CalendarSection({
           orderCode ? `Orden ${orderCode}` : null,
           deliveryCode ? deliveryCode : null,
         ].filter(Boolean).join(' | ');
+        const responsible = getResponsibleTrace(event, contract, rental, delivery);
 
         return {
           ...event,
@@ -490,6 +543,9 @@ function CalendarSection({
           deliveryCode,
           operationLabel,
           referenceLine,
+          responsibleName: responsible.name,
+          responsibleRole: responsible.role,
+          responsibleInitials: responsible.initials,
           totalBs: event.totalBs ?? rental?.totals?.totalBs ?? contract?.totals?.totalBs,
           itemsCount: event.itemsCount ?? rental?.items?.length ?? contract?.items?.length,
           logisticsMode,
@@ -990,6 +1046,14 @@ function CalendarSection({
               <small>Referencia</small>
               <strong>{detailEvent.referenceLine || (detailEvent.relatedType ? `${detailEvent.relatedType} ${detailEvent.relatedId ?? ''}` : 'Evento manual')}</strong>
             </article>
+            <article className="calendar-detail-owner">
+              <small>Responsable</small>
+              <span>
+                <b>{detailEvent.responsibleInitials || 'S'}</b>
+                <strong>{detailEvent.responsibleName || 'Sistema'}</strong>
+              </span>
+              <em>{detailEvent.responsibleRole || 'Operacion'}</em>
+            </article>
             <article>
               <small>Evento</small>
               <strong>{detailEvent.eventName || linkedContract?.eventType || 'Sin evento registrado'}</strong>
@@ -1012,6 +1076,11 @@ function CalendarSection({
                   {linkedContract?.contractCode ?? 'Sin contrato'} | {linkedRental?.orderCode ?? detailEvent.orderCode ?? 'sin orden'}
                 </strong>
                 <span>{linkedContract?.customerName ?? linkedRental?.customerName ?? detailEvent.customerName ?? 'Cliente sin registrar'}</span>
+                <span className="calendar-linked-owner">
+                  Responsable: {detailEvent.responsibleName || linkedContract?.createdByName || linkedRental?.createdByName || 'Sistema'}
+                  {' | '}
+                  {detailEvent.responsibleRole || linkedContract?.createdByRole || linkedRental?.createdByRole || 'Operacion'}
+                </span>
                 <span className={`calendar-logistics-badge ${logisticsMeta.className}`}>{detailEvent.operationLabel || logisticsMeta.label}</span>
                 <span>
                   {(linkedContract?.items?.length ?? linkedRental?.items?.length ?? detailEvent.itemsCount ?? 0)} items
@@ -1182,6 +1251,13 @@ function CalendarSection({
                       <strong>{event.startTime} - {event.endTime}</strong>
                       <em>{event.operationLabel || event.title}</em>
                       <small className="calendar-side-main">{event.customerName || 'Cliente sin registrar'}{event.eventName ? ` - ${event.eventName}` : ''}</small>
+                      <span className="calendar-side-owner">
+                        <b>{event.responsibleInitials || 'S'}</b>
+                        <small>
+                          Responsable: {event.responsibleName || 'Sistema'}
+                          {event.responsibleRole ? ` · ${event.responsibleRole}` : ''}
+                        </small>
+                      </span>
                       {event.referenceLine ? <small>{event.referenceLine}</small> : null}
                       {event.detailLine ? <small>{event.detailLine}</small> : null}
                     </span>
@@ -1206,7 +1282,11 @@ function CalendarSection({
             {upcomingEvents.slice(0, 4).map((event) => (
               <button type="button" key={event.id} onClick={() => handleEventClick(event, event.dateKey)}>
                 <span>{formatShortDate(event.dateKey)}</span>
-                <strong>{event.operationLabel || event.title}<small>{event.customerName || event.subtitle}{event.eventName ? ` - ${event.eventName}` : ''}</small></strong>
+                <strong>
+                  {event.operationLabel || event.title}
+                  <small>{event.customerName || event.subtitle}{event.eventName ? ` - ${event.eventName}` : ''}</small>
+                  <small>{event.responsibleName ? `Resp. ${event.responsibleName}` : 'Resp. Sistema'}</small>
+                </strong>
               </button>
             ))}
             {upcomingEvents.length === 0 ? <p>Sin proximos eventos con este filtro.</p> : null}
@@ -1221,6 +1301,43 @@ function CalendarSection({
               <article className="loan"><span>Prestamos activos</span><strong>{operationalInsights.activeLoans.length}</strong><small>{operationalInsights.lateLoans.length} retrasados</small></article>
             </div>
           </section>
+
+          {showDriverLocations ? (
+            <section className="calendar-driver-locations">
+              <h4>Ubicacion de choferes (inicio de sesion)</h4>
+              {latestDriverLocation && latestDriverMapUrl ? (
+                <div className="calendar-driver-map-wrap">
+                  <iframe
+                    title={`Mapa de ${latestDriverLocation.fullName || 'chofer'}`}
+                    src={latestDriverMapUrl}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
+              ) : null}
+              {latestDriverLocation ? (
+                <ul>
+                  <li key={latestDriverLocation.id || `${latestDriverLocation.userId}-${latestDriverLocation.sessionId}`}>
+                    <strong>{latestDriverLocation.fullName || 'Chofer'}</strong>
+                    <small>
+                      Lat {Number(latestDriverLocation.latitude).toFixed(6)} | Lng {Number(latestDriverLocation.longitude).toFixed(6)}
+                    </small>
+                    <small>
+                      {latestDriverLocation.accuracyMeters ? `Precision ~${Math.round(Number(latestDriverLocation.accuracyMeters))} m | ` : ''}
+                      {new Date(latestDriverLocation.capturedAt).toLocaleString('es-BO')}
+                    </small>
+                  </li>
+                </ul>
+              ) : (
+                <ul>
+                  <li className="empty">
+                    <strong>Sin ubicaciones registradas</strong>
+                    <small>Se mostrara cuando un chofer inicie sesion y permita ubicacion.</small>
+                  </li>
+                </ul>
+              )}
+            </section>
+          ) : null}
         </aside>
       </div>
 

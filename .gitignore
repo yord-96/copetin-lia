@@ -1,6 +1,7 @@
 # Logs
 logs
 *.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -15,6 +16,12 @@ dist-ssr
 .env.*
 !.env.example
 .copetin-shared-db.json
+data/
+data/app-state.json
+backups/
+*.tmp
+*.bak
+*.gz
 
 # Editor directories and files
 .vscode/*

@@ -6,6 +6,11 @@ const SYNC_THROTTLE_MS = 900;
 const REMOTE_POLL_MS = 3500;
 const REMOTE_POLL_HIDDEN_MS = 12000;
 const REMOTE_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
+const INTERNAL_KEY = String(
+  import.meta.env?.VITE_APP_INTERNAL_KEY
+    ?? import.meta.env?.APP_INTERNAL_KEY
+    ?? '',
+).trim();
 
 const browserTabId =
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -27,6 +32,14 @@ const getSharedDbUrl = (suffix = '') =>
   REMOTE_API_BASE_URL
     ? `${REMOTE_API_BASE_URL}${SHARED_DEMO_DB_ENDPOINT}${suffix}`
     : `${SHARED_DEMO_DB_ENDPOINT}${suffix}`;
+
+const getInternalHeaders = (extraHeaders = {}) => {
+  const headers = { ...extraHeaders };
+  if (INTERNAL_KEY) {
+    headers['X-App-Internal-Key'] = INTERNAL_KEY;
+  }
+  return headers;
+};
 
 const shouldUseSharedDemoDb = () =>
   typeof window !== 'undefined' && window.location.protocol !== 'file:';
@@ -80,7 +93,10 @@ const exportLocalState = async () => {
 };
 
 const fetchSharedState = async () => {
-  const response = await fetch(getSharedDbUrl(), { cache: 'no-store' });
+  const response = await fetch(getSharedDbUrl(), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
   if (!response.ok) {
     throw new Error('No se pudo leer la base demo compartida.');
   }
@@ -92,7 +108,10 @@ const fetchSharedState = async () => {
 };
 
 const fetchSharedMeta = async () => {
-  const response = await fetch(getSharedDbUrl('?meta=1'), { cache: 'no-store' });
+  const response = await fetch(getSharedDbUrl('?meta=1'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
   if (!response.ok) {
     throw new Error('No se pudo consultar la revision demo.');
   }
@@ -111,7 +130,7 @@ const pushSharedState = async () => {
 
   const response = await fetch(getSharedDbUrl(), {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(state),
   });
   const payload = await response.json().catch(() => null);
@@ -265,7 +284,7 @@ export const runtimeInfo =
   {
     ...getWebRuntimeInfo(),
     storage: REMOTE_API_BASE_URL
-      ? 'render-api-neon'
+      ? 'remote-api'
       : shouldUseSharedDemoDb()
         ? 'shared-demo-db'
         : getWebRuntimeInfo().storage,
@@ -339,6 +358,8 @@ export const api = {
     getSession: () => callBridge('auth', 'getSession', false),
     login: (payload) => callBridge('auth', 'login', true, payload),
     logout: () => callBridge('auth', 'logout', true),
+    listDriverLoginLocations: () => callBridge('auth', 'listDriverLoginLocations', false),
+    registerDriverLoginLocation: (payload) => callBridge('auth', 'registerDriverLoginLocation', true, payload),
   },
   presence: {
     listActive: () => callBridge('presence', 'listActive', false),
@@ -376,6 +397,7 @@ export const api = {
     list: () => callBridge('rentals', 'list', false),
     create: (payload) => callBridge('rentals', 'create', true, payload),
     updateOperational: (payload) => callBridge('rentals', 'updateOperational', true, payload),
+    cancel: (payload) => callBridge('rentals', 'cancel', true, payload),
     remove: (payload) => callBridge('rentals', 'remove', true, payload),
     registerReturn: (payload) => callBridge('rentals', 'registerReturn', true, payload),
   },
@@ -385,6 +407,7 @@ export const api = {
     listMovements: (payload) => callBridge('cash', 'listMovements', false, payload),
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
+    updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
     createManualMovement: (payload) => callBridge('cash', 'createManualMovement', true, payload),
     collectReceivable: (payload) => callBridge('cash', 'collectReceivable', true, payload),
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),

@@ -2,7 +2,11 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validatePro
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
-const RESET_SECURITY_CODE = '1703';
+const RESET_SECURITY_CODE = String(
+  import.meta.env?.RESET_SECURITY_CODE
+    ?? import.meta.env?.VITE_RESET_SECURITY_CODE
+    ?? '',
+).trim();
 const PRESENCE_TTL_MS = 90 * 1000;
 const USER_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
 
@@ -128,6 +132,38 @@ const toInteger = (value, fieldName) => Math.trunc(toNumber(value, fieldName));
 
 const toPositiveRoundedNumber = (value) => Number(Number(value ?? 0).toFixed(2));
 
+const normalizeSupplierFulfillmentPlan = (plan) => {
+  if (!Array.isArray(plan)) return [];
+  return plan
+    .map((line) => {
+      const itemId = String(line?.itemId ?? '').trim();
+      const itemName = String(line?.itemName ?? '').trim();
+      const supplierId = String(line?.supplierId ?? '').trim();
+      const supplierName = String(line?.supplierName ?? '').trim();
+      const neededQty = Math.max(1, Math.trunc(Number(line?.neededQty ?? line?.quantity ?? 1)));
+      const supplierUnitCostBs = Math.max(0, toPositiveRoundedNumber(line?.supplierUnitCostBs ?? line?.unitPriceBs ?? 0));
+      const saleUnitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.saleUnitPriceBs ?? 0));
+      if (!itemId || !supplierId || !supplierName || !itemName) return null;
+      return {
+        id: String(line?.id ?? makeId('supfill')).trim() || makeId('supfill'),
+        itemId,
+        itemName,
+        supplierId,
+        supplierName,
+        supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
+        supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
+        neededQty,
+        supplierUnitCostBs,
+        saleUnitPriceBs,
+        totalCostBs: Number((neededQty * supplierUnitCostBs).toFixed(2)),
+        totalSaleBs: Number((neededQty * saleUnitPriceBs).toFixed(2)),
+        marginBs: Number((neededQty * (saleUnitPriceBs - supplierUnitCostBs)).toFixed(2)),
+        createdAt: line?.createdAt ?? new Date().toISOString(),
+      };
+    })
+    .filter(Boolean);
+};
+
 const timeToMinutes = (value) => {
   const raw = String(value ?? '').trim();
   const match = raw.match(/(\d{1,2}):(\d{2})/);
@@ -135,7 +171,19 @@ const timeToMinutes = (value) => {
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  if (hours > 23 || minutes > 59) return null;
   return hours * 60 + minutes;
+};
+
+const assertSameDayTimeWindow = (start, end, label = 'La ventana horaria') => {
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  if (startMinutes === null || endMinutes === null) {
+    throw new Error(`${label} debe tener horas validas.`);
+  }
+  if (endMinutes <= startMinutes) {
+    throw new Error(`${label} debe terminar despues de la hora de inicio.`);
+  }
 };
 
 const minutesToHours = (minutes) => Number(Math.max(0, minutes / 60).toFixed(2));
@@ -282,6 +330,20 @@ const makeId = (prefix = 'id') => {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const normalizeTreasuryAccounts = (accounts = []) => {
+  if (!Array.isArray(accounts)) return [];
+  return accounts
+    .map((account) => ({
+      id: String(account?.id ?? makeId('acct')).trim(),
+      name: String(account?.name ?? '').trim(),
+      type: String(account?.type ?? 'banco').trim() || 'banco',
+      amountBs: toPositiveRoundedNumber(account?.amountBs ?? 0),
+      notes: String(account?.notes ?? '').trim(),
+      updatedAt: account?.updatedAt ?? new Date().toISOString(),
+    }))
+    .filter((account) => account.name || account.amountBs > 0);
+};
+
 const canUseLocalStorage = () => {
   try {
     return typeof window !== 'undefined' && Boolean(window.localStorage);
@@ -298,6 +360,36 @@ function normalizeDeliveryStatus(value) {
   if (normalized === 'cancelada' || normalized === 'cancelado') return 'cancelada';
   return 'programada';
 }
+
+const normalizeRentalStatus = (value) => {
+  const normalized = normalizeText(value).replace(/\s+/g, '_');
+  if (normalized === 'returned' || normalized === 'devuelto') return 'returned';
+  if (
+    normalized === 'cancelled'
+    || normalized === 'cancelado'
+    || normalized === 'cancelada'
+    || normalized === 'anulado'
+    || normalized === 'anulada'
+  ) return 'cancelled';
+  return 'active';
+};
+
+const toDateKey = (value) => {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+const isSameOrBeforeDay = (left, right) => {
+  const leftKey = toDateKey(left);
+  const rightKey = toDateKey(right);
+  if (!leftKey || !rightKey) return false;
+  return leftKey <= rightKey;
+};
 
 const syncRentalTransportStatus = (state, rental, now = new Date().toISOString()) => {
   if (!rental || rental.deletedAt || rental.status !== 'active') {
@@ -360,6 +452,7 @@ const createDefaultSettings = () => ({
   deliveryBaseFeeBs: 0,
   missingMultiplier: 2,
   damageMultiplier: 1.2,
+  contractCancellationPenaltyPercent: 20,
   companyName: 'Copetin SRL',
   taxId: '30-71234567-8',
   address: 'Av. Cordoba 1234, Piso 5, Oficina 12',
@@ -902,6 +995,7 @@ const createSeedData = () => {
     cashSessions: [],
     cashMovements: [],
     userPresence: [],
+    driverLoginLocations: [],
   };
 };
 
@@ -1098,10 +1192,14 @@ const normalizeState = (state) => {
         customerName: String(rental?.customerName ?? '').trim(),
         customerPhone: String(rental?.customerPhone ?? '').trim(),
         items: Array.isArray(rental?.items) ? rental.items : [],
-        status: rental?.status === 'returned' ? 'returned' : 'active',
+        status: normalizeRentalStatus(rental?.status),
         operational: {
-          inventoryStatus: rental?.operational?.inventoryStatus ?? 'pendiente',
-          transportStatus: rental?.operational?.transportStatus ?? 'pendiente',
+          inventoryStatus:
+            rental?.operational?.inventoryStatus
+            ?? (normalizeRentalStatus(rental?.status) === 'cancelled' ? 'anulado' : 'pendiente'),
+          transportStatus:
+            rental?.operational?.transportStatus
+            ?? (normalizeRentalStatus(rental?.status) === 'cancelled' ? 'anulado' : 'pendiente'),
           inventoryNote: String(rental?.operational?.inventoryNote ?? '').trim(),
           transportNote: String(rental?.operational?.transportNote ?? '').trim(),
           inventorySentAt: rental?.operational?.inventorySentAt ?? null,
@@ -1132,6 +1230,12 @@ const normalizeState = (state) => {
         createdById: rental?.createdById ?? rental?.userId ?? null,
         createdByName: String(rental?.createdByName ?? rental?.userName ?? rental?.createdBy ?? 'Sistema').trim() || 'Sistema',
         createdByRole: String(rental?.createdByRole ?? rental?.userRole ?? 'Sistema').trim() || 'Sistema',
+        supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(rental?.supplierFulfillmentPlan),
+        cancelledAt: rental?.cancelledAt ?? null,
+        cancellationPenaltyPercent: Number(rental?.cancellationPenaltyPercent ?? 0),
+        cancellationPenaltyBs: Number(rental?.cancellationPenaltyBs ?? 0),
+        cancellationReason: String(rental?.cancellationReason ?? '').trim(),
+        cancellationCutoffDate: String(rental?.cancellationCutoffDate ?? '').trim() || null,
         deletedAt: rental?.deletedAt ?? null,
       };
     }).filter((rental) => rental.customerName && rental.customerPhone)
@@ -1261,6 +1365,7 @@ const normalizeState = (state) => {
           pendingBs: Number(pendingBs.toFixed(2)),
         },
         items,
+        supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(quote?.supplierFulfillmentPlan),
         approvedAt: quote?.approvedAt ?? null,
         rejectedAt: quote?.rejectedAt ?? null,
         rentalId: quote?.rentalId ?? null,
@@ -1343,6 +1448,7 @@ const normalizeState = (state) => {
           pendingBs: Number(pendingBs.toFixed(2)),
         },
         items,
+        supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
         approvedAt: contract?.approvedAt ?? null,
         rejectedAt: contract?.rejectedAt ?? null,
         rentalId: contract?.rentalId ?? null,
@@ -1351,6 +1457,11 @@ const normalizeState = (state) => {
         createdById: contract?.createdById ?? contract?.userId ?? null,
         createdByName: String(contract?.createdByName ?? contract?.userName ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
         createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? 'Sistema').trim() || 'Sistema',
+        cancelledAt: contract?.cancelledAt ?? null,
+        cancellationPenaltyPercent: Number(contract?.cancellationPenaltyPercent ?? 0),
+        cancellationPenaltyBs: Number(contract?.cancellationPenaltyBs ?? 0),
+        cancellationReason: String(contract?.cancellationReason ?? '').trim(),
+        cancellationCutoffDate: String(contract?.cancellationCutoffDate ?? '').trim() || null,
         createdAt: contract?.createdAt ?? now,
         updatedAt: contract?.updatedAt ?? contract?.createdAt ?? now,
         deletedAt: contract?.deletedAt ?? null,
@@ -1369,7 +1480,7 @@ const normalizeState = (state) => {
         email: String(supplier?.email ?? '').trim().toLowerCase(),
         address: String(supplier?.address ?? '').trim(),
         city: String(supplier?.city ?? '').trim(),
-        type: supplier?.type === 'exchange' ? 'exchange' : 'regular',
+        type: 'regular',
         paymentTerms: String(supplier?.paymentTerms ?? '').trim(),
         notes: String(supplier?.notes ?? '').trim(),
         status: String(supplier?.status ?? 'active').trim() || 'active',
@@ -1445,14 +1556,14 @@ const normalizeState = (state) => {
             .filter((line) => line.itemName)
           : [];
         const totalBs = items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
-        const direction = loan?.direction === 'to_supplier' ? 'to_supplier' : 'from_supplier';
+        const direction = 'from_supplier';
         return {
           id: loan?.id ?? makeId('suploan'),
           loanCode: String(loan?.loanCode ?? '').trim(),
           supplierId: String(loan?.supplierId ?? '').trim(),
           supplierName: String(loan?.supplierName ?? supplier?.name ?? '').trim(),
           direction,
-          flowType: loan?.flowType === 'exchange' ? 'exchange' : 'paid',
+          flowType: 'paid',
           requestDate: String(loan?.requestDate ?? '').trim(),
           returnDate: String(loan?.returnDate ?? '').trim() || null,
           eventName: String(loan?.eventName ?? '').trim(),
@@ -1462,6 +1573,10 @@ const normalizeState = (state) => {
           totals: { totalBs: Number(totalBs.toFixed(2)) },
           items,
           settledAt: loan?.settledAt ?? null,
+          sourceContractId: String(loan?.sourceContractId ?? '').trim() || null,
+          sourceRentalId: String(loan?.sourceRentalId ?? '').trim() || null,
+          sourceOrderCode: String(loan?.sourceOrderCode ?? '').trim() || null,
+          autoCreated: Boolean(loan?.autoCreated),
           createdAt: loan?.createdAt ?? now,
           updatedAt: loan?.updatedAt ?? loan?.createdAt ?? now,
           deletedAt: loan?.deletedAt ?? null,
@@ -1570,6 +1685,9 @@ const normalizeState = (state) => {
       countedPettyCashBs: session?.countedPettyCashBs ?? null,
       differenceBigCashBs: session?.differenceBigCashBs ?? null,
       differencePettyCashBs: session?.differencePettyCashBs ?? null,
+      treasuryAccounts: normalizeTreasuryAccounts(session?.treasuryAccounts),
+      treasuryUpdatedAt: session?.treasuryUpdatedAt ?? null,
+      treasuryUpdatedBy: String(session?.treasuryUpdatedBy ?? '').trim(),
     }))
     : [];
   source.cashMovements = Array.isArray(source.cashMovements)
@@ -1594,6 +1712,29 @@ const normalizeState = (state) => {
       lastSeenAt: presence?.lastSeenAt ?? now,
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
     })).filter((presence) => presence.userId)
+    : [];
+  source.driverLoginLocations = Array.isArray(source.driverLoginLocations)
+    ? source.driverLoginLocations
+      .map((entry) => ({
+        id: String(entry?.id ?? makeId('drvloc')).trim(),
+        sessionId: String(entry?.sessionId ?? '').trim(),
+        userId: String(entry?.userId ?? '').trim(),
+        fullName: String(entry?.fullName ?? 'Chofer').trim() || 'Chofer',
+        role: String(entry?.role ?? 'Transporte').trim() || 'Transporte',
+        roleId: normalizeRoleId(entry?.roleId ?? entry?.role ?? 'transporte'),
+        latitude: Number(entry?.latitude ?? NaN),
+        longitude: Number(entry?.longitude ?? NaN),
+        accuracyMeters: Number(entry?.accuracyMeters ?? NaN),
+        capturedAt: entry?.capturedAt ?? now,
+        source: String(entry?.source ?? 'login').trim() || 'login',
+      }))
+      .filter((entry) =>
+        entry.userId
+        && entry.sessionId
+        && Number.isFinite(entry.latitude)
+        && Number.isFinite(entry.longitude))
+      .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
+      .slice(0, 200)
     : [];
 
   return source;
@@ -1715,6 +1856,23 @@ const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
     .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0);
   return Number(balance.toFixed(2));
 };
+
+const calculateCashBoxBalance = (state, cashBoxType) => Number(
+  state.cashMovements
+    .filter((movement) => normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
+    .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0)
+    .toFixed(2),
+);
+
+const calculateHeldGuarantees = (state) => Number(
+  state.rentals
+    .filter((rental) => !rental.deletedAt && String(rental.status ?? '').toLowerCase() === 'active')
+    .reduce((sum, rental) => sum + Number(rental.depositBs ?? 0), 0)
+    .toFixed(2),
+);
+
+const calculateOperationalBigCashBalance = (state) =>
+  Number(Math.max(0, calculateCashBoxBalance(state, CASH_BOX_TYPES.BIG_CASH) - calculateHeldGuarantees(state)).toFixed(2));
 
 const addRentalCashMovements = (state, rental) => {
   const activeSession = getActiveSession(state);
@@ -2511,6 +2669,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) =
     pendiente: 'Pendiente',
     aprobado: 'Aprobado',
     rechazado: 'Rechazado',
+    anulado: 'Anulado',
   };
   const currentStatus = String(contract?.status ?? '').trim().toLowerCase();
   const statusLabel = statusLabels[currentStatus] ?? 'Sin estado';
@@ -2551,6 +2710,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) =
       })
       .join('')
     : '';
+  const cancellationPenaltyPercent = Number(settings?.contractCancellationPenaltyPercent ?? 20);
+  const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
 
   const rows = (rental.items ?? [])
     .map(
@@ -2634,6 +2795,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) =
           <li>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</li>
           <li>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</li>
           <li>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</li>
+          <li>${escapeHtml(cancellationClause)}</li>
         </ol>
       </section>
 
@@ -2655,7 +2817,6 @@ const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
         <tr>
           <td>${escapeHtml(line.itemName)}</td>
           <td class="number">${line.quantity}</td>
-          <td class="number">${formatBs(line.rentalPriceBs ?? 0)}</td>
           <td class="number">${line.quantity}</td>
           <td><div class="check-cell"></div></td>
           <td><div class="check-cell"></div></td>
@@ -2687,9 +2848,9 @@ const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
         <h2 class="section-title">Checklist de alistamiento</h2>
         <table class="doc-table">
           <thead>
-            <tr><th>Item</th><th class="number">Cantidad</th><th class="number">Precio ref.</th><th class="number">A alistar</th><th>Revisado</th><th>Cargado</th></tr>
+            <tr><th>Item</th><th class="number">Cantidad</th><th class="number">A alistar</th><th>Revisado</th><th>Cargado</th></tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="6">Sin items registrados</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="5">Sin items registrados</td></tr>'}</tbody>
         </table>
       </section>
 
@@ -3783,6 +3944,152 @@ const createWebBridge = () => ({
 
       return updated;
     },
+    cancel: async (payload) => {
+      const id = String(payload?.id ?? payload?.rentalId ?? '').trim();
+      const contractId = String(payload?.contractId ?? '').trim();
+      if (!id && !contractId) {
+        throw new Error('No se pudo identificar el contrato u orden de servicio a anular.');
+      }
+
+      let cancelled = null;
+      transaction((state) => {
+        const nowIso = new Date().toISOString();
+        const todayKey = toDateKey(nowIso);
+
+        const linkedContractFromId = contractId
+          ? state.contracts.find((entry) => entry.id === contractId && !entry.deletedAt)
+          : null;
+        const rental = id
+          ? state.rentals.find((entry) => entry.id === id && !entry.deletedAt)
+          : state.rentals.find((entry) =>
+            !entry.deletedAt
+            && linkedContractFromId
+            && (
+              (linkedContractFromId.rentalId && entry.id === linkedContractFromId.rentalId)
+              || (linkedContractFromId.orderCode && entry.orderCode === linkedContractFromId.orderCode)
+            ),
+          );
+
+        if (!rental) {
+          throw new Error('Orden de servicio no encontrada.');
+        }
+        if (rental.status === 'returned') {
+          throw new Error('No se puede anular una orden ya devuelta.');
+        }
+        if (rental.status === 'cancelled') {
+          throw new Error('Esta orden ya fue anulada.');
+        }
+
+        const linkedContract = linkedContractFromId ?? state.contracts.find((entry) =>
+          !entry.deletedAt
+          && (
+            (entry.rentalId && entry.rentalId === rental.id)
+            || (entry.orderCode && rental.orderCode && entry.orderCode === rental.orderCode)
+          ),
+        ) ?? null;
+
+        const cutoffDate =
+          linkedContract?.deliveryDate
+          ?? rental.rentalDate
+          ?? linkedContract?.eventDate
+          ?? null;
+        if (!cutoffDate) {
+          throw new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
+        }
+        if (!isSameOrBeforeDay(todayKey, cutoffDate)) {
+          throw new Error(`Solo puedes anular hasta el dia de envio (${toDateKey(cutoffDate)}).`);
+        }
+
+        const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
+        const settings = state.settings ?? {};
+        const penaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
+        const reason = String(payload?.reason ?? '').trim();
+        const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+        const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+
+        (rental.items ?? []).forEach((line) => {
+          const quantity = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+          if (quantity <= 0) return;
+
+          const item = state.items.find((entry) => entry.id === line.itemId);
+          if (!item) return;
+
+          const beforeTotalStock = Number(item.totalStock ?? 0);
+          const beforeAvailableStock = Number(item.availableStock ?? 0);
+          item.availableStock = beforeAvailableStock + quantity;
+          item.updatedAt = nowIso;
+
+          state.inventoryMovements.push({
+            id: makeId('mov'),
+            itemId: item.id,
+            itemName: item.name,
+            category: item.category,
+            type: 'reinsercion',
+            reason: `Anulacion de contrato ${linkedContract?.contractCode ?? rental.orderCode}`,
+            detail: `Reintegro de ${quantity} unidades por anulacion de ${rental.orderCode}`,
+            reference: rental.orderCode,
+            deltaUnits: quantity,
+            beforeTotalStock,
+            afterTotalStock: beforeTotalStock,
+            beforeAvailableStock,
+            afterAvailableStock: item.availableStock,
+            reservedStockAfter: item.totalStock - item.availableStock,
+            userName,
+            userRole,
+            createdAt: nowIso,
+            status: 'cancelado',
+          });
+        });
+
+        state.deliveries.forEach((delivery) => {
+          if (delivery.deletedAt) return;
+          if (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode) {
+            delivery.status = 'cancelada';
+            delivery.progress = 0;
+            delivery.updatedAt = nowIso;
+            if (!String(delivery.notes ?? '').includes('[ANULADO]')) {
+              delivery.notes = `${String(delivery.notes ?? '').trim()} [ANULADO]`.trim();
+            }
+          }
+        });
+
+        rental.status = 'cancelled';
+        rental.cancelledAt = nowIso;
+        rental.cancellationPenaltyPercent = penaltyPercent;
+        rental.cancellationPenaltyBs = penaltyBs;
+        rental.cancellationReason = reason;
+        rental.cancellationCutoffDate = toDateKey(cutoffDate);
+        rental.penaltiesBs = Number((Number(rental.penaltiesBs ?? 0) + penaltyBs).toFixed(2));
+        rental.operational = {
+          ...(rental.operational ?? {}),
+          inventoryStatus: 'anulado',
+          transportStatus: 'anulado',
+          inventoryNote: reason || rental.operational?.inventoryNote || '',
+          transportNote: reason || rental.operational?.transportNote || '',
+        };
+        rental.updatedAt = nowIso;
+
+        if (linkedContract) {
+          linkedContract.status = 'anulado';
+          linkedContract.cancelledAt = nowIso;
+          linkedContract.cancellationPenaltyPercent = penaltyPercent;
+          linkedContract.cancellationPenaltyBs = penaltyBs;
+          linkedContract.cancellationReason = reason;
+          linkedContract.cancellationCutoffDate = toDateKey(cutoffDate);
+          linkedContract.updatedAt = nowIso;
+        }
+
+        cancelled = deepClone({
+          ...rental,
+          contractId: linkedContract?.id ?? null,
+          contractCode: linkedContract?.contractCode ?? null,
+        });
+        return state;
+      });
+
+      return cancelled;
+    },
     remove: async (payload) => {
       const id = String(payload?.id ?? '').trim();
       if (!id) throw new Error('Debes indicar el usuario.');
@@ -4141,6 +4448,71 @@ const createWebBridge = () => ({
       });
       return { ok: true };
     },
+    listDriverLoginLocations: async () => {
+      const state = readState();
+      return (state.driverLoginLocations ?? [])
+        .filter((entry) =>
+          entry
+          && entry.userId
+          && entry.sessionId
+          && Number.isFinite(Number(entry.latitude))
+          && Number.isFinite(Number(entry.longitude)))
+        .slice()
+        .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
+        .slice(0, 1);
+    },
+    registerDriverLoginLocation: async (payload) => {
+      const userId = String(payload?.userId ?? '').trim();
+      const sessionId = String(payload?.sessionId ?? '').trim();
+      const roleId = normalizeRoleId(payload?.roleId ?? payload?.role ?? 'transporte');
+      const role = String(payload?.role ?? ROLE_DEFINITIONS[roleId]?.label ?? 'Transporte').trim() || 'Transporte';
+      const fullName = String(payload?.fullName ?? 'Chofer').trim() || 'Chofer';
+      const latitude = Number(payload?.latitude ?? NaN);
+      const longitude = Number(payload?.longitude ?? NaN);
+      const accuracyMeters = Number(payload?.accuracyMeters ?? NaN);
+      if (!userId || !sessionId) {
+        throw new Error('No se pudo registrar la ubicacion del login.');
+      }
+      if (roleId !== 'transporte') {
+        return null;
+      }
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('La ubicacion del chofer no es valida.');
+      }
+
+      let saved = null;
+      transaction((state) => {
+        if (!Array.isArray(state.driverLoginLocations)) {
+          state.driverLoginLocations = [];
+        }
+        const existing = state.driverLoginLocations.find((entry) => entry.userId === userId && entry.sessionId === sessionId);
+        if (existing) {
+          saved = deepClone(existing);
+          return state;
+        }
+
+        const now = new Date().toISOString();
+        const nextEntry = {
+          id: makeId('drvloc'),
+          sessionId,
+          userId,
+          fullName,
+          role,
+          roleId,
+          latitude: Number(latitude.toFixed(6)),
+          longitude: Number(longitude.toFixed(6)),
+          accuracyMeters: Number.isFinite(accuracyMeters) ? Number(accuracyMeters.toFixed(1)) : null,
+          capturedAt: now,
+          source: 'login',
+        };
+
+        state.driverLoginLocations = [nextEntry];
+        saved = deepClone(nextEntry);
+        return state;
+      });
+
+      return saved;
+    },
   },
 
   presence: {
@@ -4236,6 +4608,7 @@ const createWebBridge = () => ({
       if (!address) throw new Error('La direccion es obligatoria.');
       if (!scheduledDate) throw new Error('La fecha programada es obligatoria.');
       if (!windowStart || !windowEnd) throw new Error('Debes indicar la ventana horaria.');
+      assertSameDayTimeWindow(windowStart, windowEnd, 'La ventana horaria de la entrega');
 
       let created = null;
       transaction((state) => {
@@ -4291,6 +4664,7 @@ const createWebBridge = () => ({
         if (payload.address !== undefined) delivery.address = String(payload.address ?? '').trim();
         if (payload.city !== undefined) delivery.city = String(payload.city ?? '').trim();
         if (payload.notes !== undefined) delivery.notes = String(payload.notes ?? '').trim();
+        assertSameDayTimeWindow(delivery.windowStart, delivery.windowEnd, 'La ventana horaria de la entrega');
         delivery.updatedAt = new Date().toISOString();
         const linkedRental = state.rentals.find(
           (rental) =>
@@ -4772,6 +5146,8 @@ const createWebBridge = () => ({
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
       if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
       if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
+      assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
+      assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
 
       let created = null;
       transaction((state) => {
@@ -4843,6 +5219,7 @@ const createWebBridge = () => ({
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           },
           items: normalizedItems,
+          supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
           rentalId: null,
@@ -4890,6 +5267,8 @@ const createWebBridge = () => ({
         if (payload.pickupDate !== undefined) quote.pickupDate = String(payload.pickupDate ?? '').trim() || quote.pickupDate;
         if (payload.pickupWindowStart !== undefined) quote.pickupWindowStart = String(payload.pickupWindowStart ?? '').trim() || quote.pickupWindowStart;
         if (payload.pickupWindowEnd !== undefined) quote.pickupWindowEnd = String(payload.pickupWindowEnd ?? '').trim() || quote.pickupWindowEnd;
+        assertSameDayTimeWindow(quote.deliveryWindowStart, quote.deliveryWindowEnd, 'La ventana de entrega');
+        assertSameDayTimeWindow(quote.pickupWindowStart, quote.pickupWindowEnd, 'La ventana de recojo');
         if (payload.clientId !== undefined) quote.clientId = payload.clientId ?? null;
         if (payload.status !== undefined) quote.status = String(payload.status ?? '').trim() || quote.status;
         if (payload.observations !== undefined) quote.observations = String(payload.observations ?? '').trim();
@@ -4903,6 +5282,9 @@ const createWebBridge = () => ({
         if (payload.rejectedAt !== undefined) quote.rejectedAt = payload.rejectedAt ?? null;
         if (payload.rentalId !== undefined) quote.rentalId = payload.rentalId ?? null;
         if (payload.orderCode !== undefined) quote.orderCode = payload.orderCode ?? null;
+        if (payload.supplierFulfillmentPlan !== undefined) {
+          quote.supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload.supplierFulfillmentPlan);
+        }
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
@@ -5007,6 +5389,8 @@ const createWebBridge = () => ({
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
       if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
       if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
+      assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
+      assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
 
       let created = null;
       transaction((state) => {
@@ -5081,6 +5465,7 @@ const createWebBridge = () => ({
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           },
           items: normalizedItems,
+          supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
           rentalId: null,
@@ -5128,6 +5513,8 @@ const createWebBridge = () => ({
         if (payload.pickupDate !== undefined) contract.pickupDate = String(payload.pickupDate ?? '').trim() || contract.pickupDate;
         if (payload.pickupWindowStart !== undefined) contract.pickupWindowStart = String(payload.pickupWindowStart ?? '').trim() || contract.pickupWindowStart;
         if (payload.pickupWindowEnd !== undefined) contract.pickupWindowEnd = String(payload.pickupWindowEnd ?? '').trim() || contract.pickupWindowEnd;
+        assertSameDayTimeWindow(contract.deliveryWindowStart, contract.deliveryWindowEnd, 'La ventana de entrega');
+        assertSameDayTimeWindow(contract.pickupWindowStart, contract.pickupWindowEnd, 'La ventana de recojo');
         if (payload.driverId !== undefined) contract.driverId = String(payload.driverId ?? '').trim() || null;
         if (payload.vehicleId !== undefined) contract.vehicleId = String(payload.vehicleId ?? '').trim() || null;
         contract.validUntil = null;
@@ -5140,6 +5527,9 @@ const createWebBridge = () => ({
         if (payload.rejectedAt !== undefined) contract.rejectedAt = payload.rejectedAt ?? null;
         if (payload.rentalId !== undefined) contract.rentalId = payload.rentalId ?? null;
         if (payload.orderCode !== undefined) contract.orderCode = payload.orderCode ?? null;
+        if (payload.supplierFulfillmentPlan !== undefined) {
+          contract.supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload.supplierFulfillmentPlan);
+        }
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
@@ -5253,7 +5643,7 @@ const createWebBridge = () => ({
           email: String(payload?.email ?? '').trim().toLowerCase(),
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
-          type: payload?.type === 'exchange' ? 'exchange' : 'regular',
+          type: 'regular',
           paymentTerms: String(payload?.paymentTerms ?? '').trim(),
           notes: String(payload?.notes ?? '').trim(),
           status: 'active',
@@ -5287,7 +5677,7 @@ const createWebBridge = () => ({
         supplier.email = String(payload?.email ?? '').trim().toLowerCase();
         supplier.address = String(payload?.address ?? '').trim();
         supplier.city = String(payload?.city ?? '').trim();
-        supplier.type = payload?.type === 'exchange' ? 'exchange' : 'regular';
+        supplier.type = 'regular';
         supplier.paymentTerms = String(payload?.paymentTerms ?? '').trim();
         supplier.notes = String(payload?.notes ?? '').trim();
         supplier.status = String(payload?.status ?? supplier.status ?? 'active').trim() || 'active';
@@ -5356,8 +5746,8 @@ const createWebBridge = () => ({
     },
     createLoan: async (payload) => {
       const supplierId = String(payload?.supplierId ?? '').trim();
-      const direction = payload?.direction === 'to_supplier' ? 'to_supplier' : 'from_supplier';
-      const flowType = payload?.flowType === 'exchange' ? 'exchange' : 'paid';
+      const direction = 'from_supplier';
+      const flowType = 'paid';
       const requestDate = String(payload?.requestDate ?? '').trim();
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
       if (!supplierId) throw new Error('Debes seleccionar un proveedor.');
@@ -5402,6 +5792,10 @@ const createWebBridge = () => ({
           totals: { totalBs: Number(items.reduce((sum, line) => sum + line.lineTotalBs, 0).toFixed(2)) },
           items,
           settledAt: null,
+          sourceContractId: String(payload?.sourceContractId ?? '').trim() || null,
+          sourceRentalId: String(payload?.sourceRentalId ?? '').trim() || null,
+          sourceOrderCode: String(payload?.sourceOrderCode ?? '').trim() || null,
+          autoCreated: Boolean(payload?.autoCreated),
           createdAt: now,
           updatedAt: now,
           deletedAt: null,
@@ -5449,6 +5843,7 @@ const createWebBridge = () => ({
         ? payload.paymentMode
         : 'sin_pago';
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      const supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan);
 
       if (!customerName) {
         throw new Error('Debe registrar el nombre del cliente.');
@@ -5479,6 +5874,22 @@ const createWebBridge = () => ({
         const userId = payload?.userId ?? payload?.createdById ?? null;
         const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
         const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+        const supplierSupportByItem = new Map();
+        supplierFulfillmentPlan.forEach((line) => {
+          const current = Number(supplierSupportByItem.get(line.itemId) ?? 0);
+          supplierSupportByItem.set(line.itemId, current + Math.max(0, Number(line.neededQty ?? 0)));
+        });
+        const adjustedRequestedItems = requestedItems
+          .map((line) => {
+            const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+            const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
+            const internalQty = Math.max(0, requestedQty - supportedQty);
+            return {
+              ...line,
+              quantity: internalQty,
+            };
+          })
+          .filter((line) => Number(line.quantity ?? 0) > 0);
         const rentalDate = String(payload?.rentalDate ?? now.toISOString().slice(0, 10));
         const availabilityPeriod = buildAvailabilityPeriod({
           deliveryDate: rentalDate,
@@ -5491,7 +5902,7 @@ const createWebBridge = () => ({
           rentals: state.rentals,
           contracts: state.contracts,
           period: availabilityPeriod,
-          requestedItems,
+          requestedItems: adjustedRequestedItems,
         });
         if (projectedIssues.length) {
           const issue = projectedIssues[0];
@@ -5506,6 +5917,15 @@ const createWebBridge = () => ({
           period: availabilityPeriod,
         });
         const inventoryAvailabilityAssumptions = requestedItems
+          .map((line) => {
+            const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+            const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
+            return {
+              ...line,
+              quantity: Math.max(0, requestedQty - supportedQty),
+            };
+          })
+          .filter((line) => Number(line.quantity ?? 0) > 0)
           .map((line) => {
             const item = state.items.find((entry) => entry.id === line.itemId);
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
@@ -5534,32 +5954,39 @@ const createWebBridge = () => ({
           if (quantity <= 0) {
             throw new Error(`La cantidad de "${item.name}" debe ser mayor a 0.`);
           }
+          const supplierBackedQty = Math.min(
+            quantity,
+            Math.max(0, Math.trunc(Number(supplierSupportByItem.get(item.id) ?? 0))),
+          );
+          const internalReservationQty = Math.max(0, quantity - supplierBackedQty);
           const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
 
-          const beforeTotalStock = item.totalStock;
-          const beforeAvailableStock = item.availableStock;
-          item.availableStock = Math.max(0, item.availableStock - quantity);
-          item.updatedAt = now.toISOString();
+          if (internalReservationQty > 0) {
+            const beforeTotalStock = item.totalStock;
+            const beforeAvailableStock = item.availableStock;
+            item.availableStock = Math.max(0, item.availableStock - internalReservationQty);
+            item.updatedAt = now.toISOString();
 
-          reservationMovements.push({
-            id: makeId('mov'),
-            itemId: item.id,
-            itemName: item.name,
-            category: item.category,
-            type: 'reserva',
-            reason: `Asignado a orden de servicio ${orderCode}`,
-            detail: `Reserva de ${quantity} unidades para ${orderCode}`,
-            reference: orderCode,
-            deltaUnits: -quantity,
-            beforeTotalStock,
-            afterTotalStock: item.totalStock,
-            beforeAvailableStock,
-            afterAvailableStock: item.availableStock,
-            reservedStockAfter: item.totalStock - item.availableStock,
-            userName,
-            userRole,
-            createdAt: now.toISOString(),
-          });
+            reservationMovements.push({
+              id: makeId('mov'),
+              itemId: item.id,
+              itemName: item.name,
+              category: item.category,
+              type: 'reserva',
+              reason: `Asignado a orden de servicio ${orderCode}`,
+              detail: `Reserva interna de ${internalReservationQty} unidades para ${orderCode}`,
+              reference: orderCode,
+              deltaUnits: -internalReservationQty,
+              beforeTotalStock,
+              afterTotalStock: item.totalStock,
+              beforeAvailableStock,
+              afterAvailableStock: item.availableStock,
+              reservedStockAfter: item.totalStock - item.availableStock,
+              userName,
+              userRole,
+              createdAt: now.toISOString(),
+            });
+          }
 
           return {
             itemId: item.id,
@@ -5572,6 +5999,8 @@ const createWebBridge = () => ({
               ? Number(item.missingUnitChargeBs)
               : Number((rentalPriceBs * fallbackMissingMultiplier).toFixed(2)),
             quantity,
+            supplierBackedQty,
+            internalReservedQty: internalReservationQty,
             lineTotalBs: quantity * rentalPriceBs,
           };
         });
@@ -5647,6 +6076,7 @@ const createWebBridge = () => ({
           notes,
           billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
           logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          supplierFulfillmentPlan,
           inventoryAvailabilityAssumptions,
           status: 'active',
           createdById: userId,
@@ -5692,6 +6122,9 @@ const createWebBridge = () => ({
         const rental = state.rentals.find((entry) => entry.id === id && !entry.deletedAt);
         if (!rental) {
           throw new Error('Orden de servicio no encontrada.');
+        }
+        if (rental.status === 'cancelled') {
+          throw new Error('La orden esta anulada y ya no admite cambios operativos.');
         }
 
         const now = new Date().toISOString();
@@ -5839,6 +6272,9 @@ const createWebBridge = () => ({
         }
         if (rental.status === 'returned') {
           throw new Error('Este alquiler ya fue devuelto.');
+        }
+        if (rental.status === 'cancelled') {
+          throw new Error('La orden esta anulada y no puede registrarse como devolucion.');
         }
 
         let penaltiesBs = 0;
@@ -6017,12 +6453,17 @@ const createWebBridge = () => ({
           .reduce((sum, movement) => sum + Number(movement.amountBs), 0)
           .toFixed(2),
       );
-      const bigCashBalanceBs = activeSession
-        ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.BIG_CASH)
-        : 0;
+      const bigCashBalanceBs = calculateCashBoxBalance(state, CASH_BOX_TYPES.BIG_CASH);
+      const guaranteeHeldBs = calculateHeldGuarantees(state);
+      const operationalBigCashBs = calculateOperationalBigCashBalance(state);
       const pettyCashBalanceBs = activeSession
         ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH)
         : 0;
+      const treasuryAccounts = activeSession ? normalizeTreasuryAccounts(activeSession.treasuryAccounts) : [];
+      const treasuryAllocatedBs = toPositiveRoundedNumber(
+        treasuryAccounts.reduce((sum, account) => sum + Number(account.amountBs ?? 0), 0),
+      );
+      const treasuryUnassignedBs = Number((bigCashBalanceBs - treasuryAllocatedBs).toFixed(2));
 
       const todayIncomeBs = Number(
         realTodayMovements
@@ -6073,8 +6514,13 @@ const createWebBridge = () => ({
         todayPettyCashIncomeBs,
         todayPettyCashExpenseBs,
         bigCashBalanceBs,
+        guaranteeHeldBs,
+        operationalBigCashBs,
         pettyCashBalanceBs,
         totalAvailableBs: Number((bigCashBalanceBs + pettyCashBalanceBs).toFixed(2)),
+        treasuryAccounts,
+        treasuryAllocatedBs,
+        treasuryUnassignedBs,
       };
     },
     listSessions: async () => {
@@ -6105,6 +6551,10 @@ const createWebBridge = () => ({
         if (getActiveSession(state)) {
           throw new Error('Ya existe una caja abierta. Debes cerrarla antes de abrir otra.');
         }
+        const availableBigCashBs = Number((calculateOperationalBigCashBalance(state) + openingBigCashBs).toFixed(2));
+        if (openingPettyCashBs > availableBigCashBs) {
+          throw new Error(`Caja Grande no tiene saldo suficiente para aperturar Caja Chica con Bs ${openingPettyCashBs.toFixed(2)}.`);
+        }
 
         createdSession = {
           id: makeId('cash'),
@@ -6115,6 +6565,9 @@ const createWebBridge = () => ({
           openedBy,
           openedAt: new Date().toISOString(),
           openNotes: notes,
+          treasuryAccounts: normalizeTreasuryAccounts(payload?.treasuryAccounts),
+          treasuryUpdatedAt: null,
+          treasuryUpdatedBy: '',
         };
 
         state.cashSessions.push(createdSession);
@@ -6133,17 +6586,34 @@ const createWebBridge = () => ({
           }));
         }
         if (openingPettyCashBs > 0) {
+          const transferGroupId = makeId('trf');
+          state.cashMovements.push(buildCashMovement({
+            sessionId: createdSession.id,
+            type: 'transferencia_salida_caja_chica',
+            amountBs: -openingPettyCashBs,
+            description: 'Apertura de caja chica desde Caja Grande',
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
+            createdBy: openedBy,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+            category: 'apertura_caja_chica',
+            responsible: openedBy,
+            isInternalTransfer: true,
+            transferGroupId,
+          }));
           state.cashMovements.push(buildCashMovement({
             sessionId: createdSession.id,
             type: 'apertura',
             amountBs: openingPettyCashBs,
-            description: 'Apertura de caja chica',
-            sourceType: 'caja',
-            sourceId: createdSession.id,
+            description: 'Apertura de caja chica desde Caja Grande',
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
             createdBy: openedBy,
             cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
-            category: 'apertura',
+            category: 'apertura_caja_chica',
             responsible: openedBy,
+            isInternalTransfer: true,
+            transferGroupId,
           }));
         }
         return state;
@@ -6168,7 +6638,7 @@ const createWebBridge = () => ({
           throw new Error('No existe una caja abierta para cerrar.');
         }
 
-        const expectedBigCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.BIG_CASH);
+        const expectedBigCashBs = calculateCashBoxBalance(state, CASH_BOX_TYPES.BIG_CASH);
         const expectedPettyCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH);
         const expectedAmountBs = Number((expectedBigCashBs + expectedPettyCashBs).toFixed(2));
         const countedAmountBs = Number((countedBigCashBs + countedPettyCashBs).toFixed(2));
@@ -6189,6 +6659,7 @@ const createWebBridge = () => ({
         activeSession.differenceBigCashBs = differenceBigCashBs;
         activeSession.differencePettyCashBs = differencePettyCashBs;
         activeSession.closeNotes = notes;
+        activeSession.returnedPettyCashBs = toPositiveRoundedNumber(countedPettyCashBs);
 
         state.cashMovements.push(
           buildCashMovement({
@@ -6204,12 +6675,68 @@ const createWebBridge = () => ({
             responsible: closedBy,
           }),
         );
+        if (countedPettyCashBs > 0) {
+          const transferGroupId = makeId('trf');
+          state.cashMovements.push(
+            buildCashMovement({
+              sessionId: activeSession.id,
+              type: 'devolucion_saldo_caja_chica',
+              amountBs: -countedPettyCashBs,
+              description: `Devolucion saldo caja chica a Caja Grande: ${notes || 'cierre diario'}`,
+              sourceType: 'transferencia',
+              sourceId: transferGroupId,
+              createdBy: closedBy,
+              cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
+              category: 'cierre_caja_chica',
+              responsible: closedBy,
+              isInternalTransfer: true,
+              transferGroupId,
+            }),
+            buildCashMovement({
+              sessionId: activeSession.id,
+              type: 'devolucion_saldo_caja_chica',
+              amountBs: countedPettyCashBs,
+              description: `Devolucion saldo caja chica a Caja Grande: ${notes || 'cierre diario'}`,
+              sourceType: 'transferencia',
+              sourceId: transferGroupId,
+              createdBy: closedBy,
+              cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+              category: 'cierre_caja_chica',
+              responsible: closedBy,
+              isInternalTransfer: true,
+              transferGroupId,
+            }),
+          );
+        }
 
         closedSession = deepClone(activeSession);
         return state;
       });
 
       return closedSession;
+    },
+    updateTreasuryAccounts: async (payload) => {
+      const updatedBy = String(payload?.updatedBy ?? '').trim() || 'Contabilidad';
+      const accounts = normalizeTreasuryAccounts(payload?.accounts);
+      let updatedSession = null;
+
+      transaction((state) => {
+        const activeSession = getActiveSession(state);
+        if (!activeSession) {
+          throw new Error('Debes abrir caja antes de distribuir la caja grande.');
+        }
+
+        activeSession.treasuryAccounts = accounts.map((account) => ({
+          ...account,
+          updatedAt: new Date().toISOString(),
+        }));
+        activeSession.treasuryUpdatedAt = new Date().toISOString();
+        activeSession.treasuryUpdatedBy = updatedBy;
+        updatedSession = deepClone(activeSession);
+        return state;
+      });
+
+      return updatedSession;
     },
     createManualMovement: async (payload) => {
       const movementType = String(payload?.type ?? '').trim();
@@ -6235,14 +6762,29 @@ const createWebBridge = () => ({
       let createdMovement = null;
       transaction((state) => {
         const activeSession = getActiveSession(state);
-        if (!activeSession) {
-          throw new Error('Debes abrir caja antes de registrar movimientos manuales.');
+        const requiresPettySession = movementType === 'transferencia' || cashBoxType === CASH_BOX_TYPES.PETTY_CASH;
+        if (requiresPettySession && !activeSession) {
+          throw new Error('Debes abrir caja chica antes de registrar este movimiento.');
         }
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.BIG_CASH) {
+          throw new Error('Caja Grande no registra gastos directos. Transfiere fondos a Caja Chica y registra el egreso alli.');
+        }
+        const availableBigCashBs = calculateOperationalBigCashBalance(state);
+        const availablePettyCashBs = activeSession
+          ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH)
+          : 0;
+        if (movementType === 'transferencia' && amountRaw > availableBigCashBs) {
+          throw new Error(`Caja Grande no tiene saldo suficiente. Disponible: Bs ${availableBigCashBs.toFixed(2)}.`);
+        }
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > availablePettyCashBs) {
+          throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
+        }
+        const sessionId = activeSession?.id ?? null;
 
         if (movementType === 'transferencia') {
           const transferGroupId = makeId('trf');
           const fromMovement = buildCashMovement({
-            sessionId: activeSession.id,
+            sessionId,
             type: 'transferencia_salida_caja_chica',
             amountBs: -amountRaw,
             description: `Reposicion caja chica: ${description}`,
@@ -6258,7 +6800,7 @@ const createWebBridge = () => ({
             transferGroupId,
           });
           const toMovement = buildCashMovement({
-            sessionId: activeSession.id,
+            sessionId,
             type: 'transferencia_entrada_caja_chica',
             amountBs: amountRaw,
             description: `Reposicion caja chica: ${description}`,
@@ -6281,7 +6823,7 @@ const createWebBridge = () => ({
         } else {
           const signedAmount = movementType === 'ingreso' ? amountRaw : -amountRaw;
           createdMovement = buildCashMovement({
-            sessionId: activeSession.id,
+            sessionId,
             type: movementType === 'ingreso' ? 'ingreso_manual' : 'egreso_manual',
             amountBs: signedAmount,
             description,
@@ -6317,9 +6859,6 @@ const createWebBridge = () => ({
       let result = null;
       transaction((state) => {
         const activeSession = getActiveSession(state);
-        if (!activeSession) {
-          throw new Error('Debes abrir caja antes de confirmar un cobro.');
-        }
 
         const rental = state.rentals.find((entry) => entry.id === rentalId && !entry.deletedAt);
         if (!rental) {
@@ -6408,7 +6947,7 @@ const createWebBridge = () => ({
             : `Cobro saldo alquiler: ${rental.customerName}`);
 
         const movement = buildCashMovement({
-          sessionId: activeSession.id,
+          sessionId: activeSession?.id ?? null,
           type: movementType,
           amountBs,
           description,
@@ -6483,6 +7022,9 @@ const createWebBridge = () => ({
 
   system: {
     reset: async (payload) => {
+      if (!RESET_SECURITY_CODE) {
+        throw new Error('RESET_SECURITY_CODE no esta configurado.');
+      }
       const code = String(payload?.code ?? '').trim();
       if (code !== RESET_SECURITY_CODE) {
         throw new Error('Codigo de seguridad incorrecto.');
@@ -6493,12 +7035,20 @@ const createWebBridge = () => ({
           .filter((user) => !user.deletedAt)
           .map((user) => deepClone(user))
         : [];
+      const preservedClients = Array.isArray(currentState.clients)
+        ? currentState.clients
+          .filter((client) => !client.deletedAt)
+          .map((client) => deepClone(client))
+        : [];
       const nextState = createSeedData();
       if (preservedUsers.length > 0) {
         nextState.users = preservedUsers;
       }
+      if (preservedClients.length > 0) {
+        nextState.clients = preservedClients;
+      }
       writeState(nextState);
-      return { ok: true, preservedUsers: nextState.users.length };
+      return { ok: true, preservedUsers: nextState.users.length, preservedClients: nextState.clients.length };
     },
   },
 

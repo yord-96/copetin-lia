@@ -31,7 +31,16 @@ const operationTabs = [
     ],
   },
   { id: 'recibos', label: 'Reportes', icon: 'chart', hint: '' },
-  { id: 'contabilidad', label: 'Contabilidad', icon: 'money', hint: '' },
+  {
+    id: 'contabilidad',
+    label: 'Contabilidad',
+    icon: 'money',
+    hint: '',
+    children: [
+      { id: 'contabilidad_caja_grande', label: 'Caja Grande', targetId: 'contabilidad_caja_grande' },
+      { id: 'contabilidad_caja_chica', label: 'Caja Chica', targetId: 'contabilidad_caja_chica' },
+    ],
+  },
 ];
 
 const configTabs = [
@@ -95,13 +104,7 @@ function renderIcon(icon) {
   }
 
   if (icon === 'truck') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 6h11v9H3zM14 9h3.5L21 12v3h-7z" />
-        <circle cx="8" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="18" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      </svg>
-    );
+    return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
   }
 
   if (icon === 'calendar') {
@@ -152,11 +155,12 @@ function getTabRoot(tabId) {
   const target = String(tabId ?? '');
   if (target.startsWith('devolucion')) return 'devolucion';
   if (target.startsWith('inventario')) return 'inventario';
+  if (target.startsWith('contabilidad')) return 'contabilidad';
   return target;
 }
 
 function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, allowedTabs = [], userPresence = [] }) {
-  const [expandedGroups, setExpandedGroups] = useState({ inventario: false, devolucion: false });
+  const [expandedGroups, setExpandedGroups] = useState({ inventario: false, devolucion: false, contabilidad: false });
   const allowedSet = new Set(allowedTabs);
   const presenceByRoot = userPresence.reduce((map, entry) => {
     const root = getTabRoot(entry.activeTab);
@@ -171,6 +175,7 @@ function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, 
     if (allowedSet.has(targetId) || allowedSet.has(tab.id)) return true;
     if (tab.id === 'inventario' && allowedSet.has('inventario')) return true;
     if (tab.id === 'devolucion' && allowedSet.has('devolucion')) return true;
+    if (tab.id === 'contabilidad' && allowedSet.has('contabilidad')) return true;
     return false;
   };
 
@@ -193,6 +198,7 @@ function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, 
         activeTab === targetId
         || (tab.id === 'inventario' && String(activeTab).startsWith('inventario'))
         || (tab.id === 'devolucion' && String(activeTab).startsWith('devolucion'))
+        || (tab.id === 'contabilidad' && String(activeTab).startsWith('contabilidad'))
       );
     const hasChildren = Array.isArray(tab.children) && tab.children.length > 0;
     const notificationCount = Number(notificationCounts[tab.id]) || 0;

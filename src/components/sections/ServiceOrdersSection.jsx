@@ -8,6 +8,7 @@ const ORDER_STATUS_META = {
   completed: { label: 'Finalizada', className: 'completed' },
   closed_pending: { label: 'Finalizada / por cobrar', className: 'pending' },
   charged: { label: 'Cobrado y finalizado', className: 'completed' },
+  cancelled: { label: 'Anulada', className: 'rejected' },
 };
 
 const QUOTE_STATUS_META = {
@@ -23,6 +24,7 @@ const CONTRACT_STATUS_META = {
   pendiente: { label: 'Pendiente', className: 'pending' },
   aprobado: { label: 'Aprobado', className: 'approved' },
   rechazado: { label: 'Rechazado', className: 'rejected' },
+  anulado: { label: 'Anulado', className: 'rejected' },
 };
 
 const BILLING_MODE_META = {
@@ -55,6 +57,7 @@ const OPERATIONAL_STATUS_META = {
   enviado: { label: 'Enviado', className: 'transport' },
   confirmado: { label: 'Confirmado', className: 'completed' },
   no_aplica: { label: 'No aplica', className: 'draft' },
+  anulado: { label: 'Anulado', className: 'rejected' },
 };
 
 const QUOTE_WIZARD_STEPS = [
@@ -65,7 +68,26 @@ const QUOTE_WIZARD_STEPS = [
   { id: 'summary', title: 'Resumen', subtitle: 'Revision y totales' },
 ];
 
+const timeToMinutes = (value) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value ?? '').trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+};
+
+const isValidSameDayWindow = (start, end) => {
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  return startMinutes !== null && endMinutes !== null && endMinutes > startMinutes;
+};
+
 function OrdersKpiIcon({ kind }) {
+  if (kind === 'truck') {
+    return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
+  }
+
   const icons = {
     orders: (
       <>
@@ -83,13 +105,6 @@ function OrdersKpiIcon({ kind }) {
       <>
         <path d="M6 4h9l3 3v13H6z" />
         <path d="M15 4v4h4M9 12h6M9 16h6" />
-      </>
-    ),
-    truck: (
-      <>
-        <path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" />
-        <circle cx="7" cy="17" r="1.5" />
-        <circle cx="18" cy="17" r="1.5" />
       </>
     ),
     check: (
@@ -144,6 +159,9 @@ function WhatsAppGlyph() {
 }
 
 const toOrderStatus = (rental, delivery) => {
+  if (rental.status === 'cancelled') {
+    return 'cancelled';
+  }
   if (rental.status === 'returned') {
     if (rental.accountingStatus === 'cobrado_finalizado' || rental?.payment?.status === 'cobrado_finalizado') {
       return 'charged';
@@ -203,6 +221,7 @@ const getContractTimelineLabel = (contract) => {
   const endDate = getDateKey(contract?.pickupDate || contract?.returnDate || contract?.deliveryDate || contract?.eventDate);
   const isPast = endDate && endDate < getInputDate();
 
+  if (status === 'anulado' || status === 'anulada') return 'Anulado';
   if (status === 'rechazado') return 'Rechazado';
   if (status === 'borrador') return 'Borrador';
   if (status === 'pendiente') return 'Pendiente';
@@ -437,6 +456,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     validUntil: pickupDate,
     observations: '',
     items: [],
+    supplierFulfillmentPlan: [],
   };
 };
 
@@ -506,6 +526,7 @@ function ServiceOrdersSection({
   contracts = [],
   rentals = [],
   deliveries = [],
+  supplierBundle = { suppliers: [], quotes: [], loans: [] },
   generatedReports = [],
   clients = [],
   items = [],
@@ -519,7 +540,7 @@ function ServiceOrdersSection({
   onRemoveQuote,
   onApproveQuote,
   onUpdateOrderOperational,
-  onRemoveOrder,
+  onCancelOrderContract,
   onCreateContract,
   onUpdateContract,
   onRemoveContract,
@@ -556,7 +577,8 @@ function ServiceOrdersSection({
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
-  const [orderToDelete, setOrderToDelete] = useState(null);
+  const [orderToCancel, setOrderToCancel] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -565,6 +587,7 @@ function ServiceOrdersSection({
 
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
+  const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
 
   useEffect(() => {
     setCatalogVisibleCount(CATALOG_PAGE_SIZE);
@@ -658,6 +681,10 @@ function ServiceOrdersSection({
         accountingStatus,
         pendingPaymentBs,
         pendingCollectionBs,
+        cancelledAt: rental.cancelledAt ?? null,
+        cancellationPenaltyPercent: Number(rental.cancellationPenaltyPercent ?? linkedContract?.cancellationPenaltyPercent ?? 0),
+        cancellationPenaltyBs: Number(rental.cancellationPenaltyBs ?? linkedContract?.cancellationPenaltyBs ?? 0),
+        cancellationReason: rental.cancellationReason ?? linkedContract?.cancellationReason ?? '',
         deliveryIds: linkedDeliveries.map((entry) => String(entry.id)),
         contractId: linkedContract?.id ?? null,
         contractCode: linkedContract?.contractCode ?? null,
@@ -703,7 +730,7 @@ function ServiceOrdersSection({
   );
 
   const orderCounts = useMemo(() => {
-    const base = { all: orderRowsWithMeta.length, pending: 0, prep: 0, transport: 0, completed: 0 };
+    const base = { all: orderRowsWithMeta.length, pending: 0, prep: 0, transport: 0, completed: 0, cancelled: 0 };
     orderRowsWithMeta.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
       if (row.status === 'charged' || row.status === 'closed_pending') {
@@ -785,7 +812,7 @@ function ServiceOrdersSection({
   }, [contracts]);
 
   const contractCounts = useMemo(() => {
-    const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0 };
+    const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
     contractRows.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
     });
@@ -806,7 +833,7 @@ function ServiceOrdersSection({
   }, [contractQuery, contractRows]);
 
   const visibleContractCounts = useMemo(() => {
-    const base = { all: searchedContracts.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0 };
+    const base = { all: searchedContracts.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
     searchedContracts.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
     });
@@ -937,7 +964,7 @@ function ServiceOrdersSection({
   const toggleActionsMenu = (type, id, event) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 220;
-    const menuHeight = type === 'quote' ? 268 : type === 'contract' ? 332 : 470;
+    const menuHeight = type === 'quote' ? 268 : type === 'contract' ? 384 : 470;
     const openUp = window.innerHeight - rect.bottom < menuHeight + 18;
     const clampedLeft = Math.max(12, Math.min(window.innerWidth - menuWidth - 12, rect.right - menuWidth));
     const top = openUp ? Math.max(12, rect.top - 8) : Math.max(12, rect.bottom + 8);
@@ -1083,6 +1110,175 @@ function ServiceOrdersSection({
     }),
     [selectedItems],
   );
+
+  const supplierOffersByItemId = useMemo(() => {
+    const map = new Map();
+    const supplierById = new Map(
+      (supplierBundle?.suppliers ?? []).map((supplier) => [String(supplier.id), supplier]),
+    );
+    const quotesSorted = [...(supplierBundle?.quotes ?? [])]
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    quotesSorted.forEach((quote) => {
+      const quoteSupplierId = String(quote?.supplierId ?? '').trim();
+      const quoteSupplierName = String(quote?.supplierName ?? supplierById.get(quoteSupplierId)?.name ?? '').trim();
+      (quote?.items ?? []).forEach((line, lineIndex) => {
+        const explicitItemId = String(line?.itemId ?? '').trim();
+        const lineName = String(line?.itemName ?? '').trim();
+        const resolvedItemId = explicitItemId || items.find((entry) => normalizeText(entry.name) === normalizeText(lineName))?.id || '';
+        if (!resolvedItemId) return;
+
+        const offer = {
+          offerKey: `${quote?.id ?? 'quote'}-${line?.id ?? lineIndex}`,
+          itemId: resolvedItemId,
+          itemName: lineName,
+          supplierId: quoteSupplierId,
+          supplierName: quoteSupplierName || 'Proveedor',
+          supplierQuoteId: quote?.id ?? null,
+          supplierQuoteCode: quote?.quoteCode ?? null,
+          supplierUnitCostBs: Math.max(0, Number(line?.unitPriceBs ?? 0)),
+          createdAt: quote?.createdAt ?? null,
+        };
+        if (!offer.supplierId) return;
+        const current = map.get(resolvedItemId) ?? [];
+        current.push(offer);
+        map.set(resolvedItemId, current);
+      });
+    });
+
+    map.forEach((offers, itemId) => {
+      const unique = [];
+      const seen = new Set();
+      offers
+        .slice()
+        .sort((a, b) => {
+          if (a.supplierUnitCostBs !== b.supplierUnitCostBs) return a.supplierUnitCostBs - b.supplierUnitCostBs;
+          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        })
+        .forEach((offer) => {
+          const key = `${offer.supplierId}|${offer.supplierQuoteId}|${offer.supplierUnitCostBs}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          unique.push(offer);
+        });
+      map.set(itemId, unique);
+    });
+
+    return map;
+  }, [items, supplierBundle?.quotes, supplierBundle?.suppliers]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const fromRecord = {};
+    (draft.supplierFulfillmentPlan ?? []).forEach((line) => {
+      const itemId = String(line?.itemId ?? '').trim();
+      if (!itemId) return;
+      fromRecord[itemId] = {
+        supplierId: String(line?.supplierId ?? '').trim(),
+        supplierName: String(line?.supplierName ?? '').trim(),
+        supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
+        supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
+        neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
+        supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
+      };
+    });
+    setSupplierFulfillmentDraftByItem(fromRecord);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    setSupplierFulfillmentDraftByItem((current) => {
+      const next = { ...current };
+      const validItemIds = new Set(selectedItems.map((line) => String(line.itemId)));
+
+      Object.keys(next).forEach((itemId) => {
+        if (!validItemIds.has(itemId)) delete next[itemId];
+      });
+
+      selectedItems.forEach((line) => {
+        const itemId = String(line.itemId);
+        const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+        const shortage = Math.max(0, line.quantity - available);
+        if (shortage <= 0) {
+          delete next[itemId];
+          return;
+        }
+
+        const existing = next[itemId] ?? {};
+        const offers = supplierOffersByItemId.get(itemId) ?? [];
+        const fallbackOffer = offers[0] ?? null;
+        const neededQty = Math.max(1, Math.min(shortage, Math.trunc(Number(existing.neededQty ?? shortage))));
+
+        if (!existing.supplierId && fallbackOffer) {
+          next[itemId] = {
+            supplierId: fallbackOffer.supplierId,
+            supplierName: fallbackOffer.supplierName,
+            supplierQuoteId: fallbackOffer.supplierQuoteId,
+            supplierQuoteCode: fallbackOffer.supplierQuoteCode,
+            neededQty,
+            supplierUnitCostBs: fallbackOffer.supplierUnitCostBs,
+          };
+          return;
+        }
+
+        next[itemId] = {
+          ...existing,
+          neededQty,
+          supplierUnitCostBs: Math.max(0, Number(existing.supplierUnitCostBs ?? fallbackOffer?.supplierUnitCostBs ?? 0)),
+        };
+      });
+
+      return next;
+    });
+  }, [modalOpen, selectedItems, supplierOffersByItemId]);
+
+  const supplierCoverageRows = useMemo(
+    () => selectedItems
+      .map((line) => {
+        const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+        const shortageQty = Math.max(0, line.quantity - available);
+        if (shortageQty <= 0) return null;
+        const draftLine = supplierFulfillmentDraftByItem[line.itemId] ?? null;
+        const hasSupplier = Boolean(String(draftLine?.supplierId ?? '').trim());
+        const coveredQty = hasSupplier
+          ? Math.min(shortageQty, Math.max(0, Math.trunc(Number(draftLine?.neededQty ?? 0))))
+          : 0;
+        return {
+          itemId: line.itemId,
+          itemName: line.item.name,
+          saleUnitPriceBs: line.unitPriceBs,
+          shortageQty,
+          coveredQty,
+          uncoveredQty: Math.max(0, shortageQty - coveredQty),
+          supplierId: String(draftLine?.supplierId ?? '').trim(),
+          supplierName: String(draftLine?.supplierName ?? '').trim(),
+          supplierQuoteId: draftLine?.supplierQuoteId ?? null,
+          supplierQuoteCode: draftLine?.supplierQuoteCode ?? null,
+          supplierUnitCostBs: Math.max(0, Number(draftLine?.supplierUnitCostBs ?? 0)),
+        };
+      })
+      .filter(Boolean),
+    [selectedItems, supplierFulfillmentDraftByItem],
+  );
+
+  const uncoveredStockIssues = useMemo(
+    () => supplierCoverageRows.filter((line) => line.uncoveredQty > 0),
+    [supplierCoverageRows],
+  );
+
+  const supplierCoverageTotals = useMemo(() => {
+    const coveredLines = supplierCoverageRows.filter((line) => line.coveredQty > 0 && line.supplierId);
+    const totalCoveredQty = coveredLines.reduce((sum, line) => sum + line.coveredQty, 0);
+    const totalCostBs = coveredLines.reduce((sum, line) => sum + (line.coveredQty * line.supplierUnitCostBs), 0);
+    const totalSaleBs = coveredLines.reduce((sum, line) => sum + (line.coveredQty * line.saleUnitPriceBs), 0);
+    return {
+      lines: coveredLines.length,
+      totalCoveredQty,
+      totalCostBs: Number(totalCostBs.toFixed(2)),
+      totalSaleBs: Number(totalSaleBs.toFixed(2)),
+      totalMarginBs: Number((totalSaleBs - totalCostBs).toFixed(2)),
+    };
+  }, [supplierCoverageRows]);
 
   const returnSummaryRows = useMemo(() => {
     const grouped = new Map();
@@ -1289,6 +1485,20 @@ function ServiceOrdersSection({
       quantity: line.quantity,
       unitPriceBs: line.unitPriceBs,
     })),
+    supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
+      ? record.supplierFulfillmentPlan.map((line) => ({
+        id: line.id,
+        itemId: line.itemId,
+        itemName: line.itemName,
+        supplierId: line.supplierId,
+        supplierName: line.supplierName,
+        supplierQuoteId: line.supplierQuoteId ?? null,
+        supplierQuoteCode: line.supplierQuoteCode ?? null,
+        neededQty: Number(line.neededQty ?? 0),
+        supplierUnitCostBs: Number(line.supplierUnitCostBs ?? 0),
+        saleUnitPriceBs: Number(line.saleUnitPriceBs ?? 0),
+      }))
+      : [],
   });
 
   const openCreateModal = (mode, entityType = 'quote', sourceRecord = null) => {
@@ -1308,6 +1518,7 @@ function ServiceOrdersSection({
         recordStatus: entityType === 'contract' && mode === 'order' ? 'pendiente' : 'borrador',
       });
     }
+    setSupplierFulfillmentDraftByItem({});
     setCurrentStep(0);
     setModalOpen(true);
   };
@@ -1319,6 +1530,7 @@ function ServiceOrdersSection({
     setItemSearch('');
     setItemCategoryFilter('all');
     setCurrentStep(0);
+    setSupplierFulfillmentDraftByItem({});
     setDraft(buildEmptyDraft('quote'));
   };
 
@@ -1331,6 +1543,19 @@ function ServiceOrdersSection({
       ...current,
       billingMode: value === 'con_factura' ? 'con_factura' : 'sin_factura',
     }));
+  };
+
+  const setSupplierCoverageField = (itemId, patch) => {
+    setSupplierFulfillmentDraftByItem((current) => {
+      const currentLine = current[itemId] ?? {};
+      return {
+        ...current,
+        [itemId]: {
+          ...currentLine,
+          ...patch,
+        },
+      };
+    });
   };
 
   const setDraftEventDate = (value) => {
@@ -1396,12 +1621,10 @@ function ServiceOrdersSection({
   const addDraftItem = (itemId) => {
     const item = items.find((entry) => entry.id === itemId);
     if (!item) return;
-    const projectedAvailable = Math.max(0, Number(availabilityByItemId.get(itemId)?.projectedAvailable ?? item.availableStock ?? 0));
-    if (projectedAvailable <= 0) return;
     setDraft((current) => {
       const already = current.items.find((line) => line.itemId === itemId);
       if (already) {
-        const nextQty = Math.min(projectedAvailable, Number(already.quantity ?? 1) + 1);
+        const nextQty = Math.max(1, Number(already.quantity ?? 1) + 1);
         return {
           ...current,
           items: current.items.map((line) => (line.itemId === itemId ? { ...line, quantity: nextQty } : line)),
@@ -1509,9 +1732,9 @@ function ServiceOrdersSection({
     }
     if (stepIndex === 2) {
       if (!selectedItems.length) return 'Agrega al menos un item para continuar.';
-      if (stockIssues.length) {
-        const issue = stockIssues[0];
-        return `${issue.item.name} sobrepaso la disponibilidad para esas fechas. Disponibles para el evento: ${Math.max(0, Number(issue.availability?.projectedAvailable ?? issue.item.availableStock ?? 0))}.`;
+      if (uncoveredStockIssues.length) {
+        const issue = uncoveredStockIssues[0];
+        return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`;
       }
       if (draft.pricingMode === 'duration' && parsePositiveInteger(draft.pricingDays, 0) <= 0) {
         return 'Indica cuantos dias de uso se deben cobrar.';
@@ -1521,6 +1744,12 @@ function ServiceOrdersSection({
     if (stepIndex === 3) {
       if (!draft.deliveryDate) return 'Selecciona fecha de entrega.';
       if (!draft.pickupDate) return 'Selecciona fecha de recojo.';
+      if (!isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
+        return 'La ventana de entrega debe terminar despues de la hora de inicio.';
+      }
+      if (!isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
+        return 'La ventana de recojo debe terminar despues de la hora de inicio.';
+      }
       return '';
     }
     return '';
@@ -1547,16 +1776,36 @@ function ServiceOrdersSection({
     if (!draft.eventDate) throw new Error('Debes indicar la fecha del evento.');
     if (!draft.deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
     if (!draft.pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+    if (!isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
+      throw new Error('La ventana de entrega debe terminar despues de la hora de inicio.');
+    }
+    if (!isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
+      throw new Error('La ventana de recojo debe terminar despues de la hora de inicio.');
+    }
     if (!selectedItems.length) throw new Error('Debes agregar al menos un item.');
-    if (stockIssues.length) {
-      const issue = stockIssues[0];
-      throw new Error(`${issue.item.name} sobrepaso la disponibilidad para esas fechas. Disponibles para el evento: ${Math.max(0, Number(issue.availability?.projectedAvailable ?? issue.item.availableStock ?? 0))}.`);
+    if (uncoveredStockIssues.length) {
+      const issue = uncoveredStockIssues[0];
+      throw new Error(`${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`);
     }
 
     const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
     if (paidAtApprovalBs > quoteTotalBs) {
       throw new Error('El pago inicial no puede superar el total.');
     }
+
+    const supplierFulfillmentPlan = supplierCoverageRows
+      .filter((line) => line.coveredQty > 0 && line.supplierId && line.supplierName)
+      .map((line) => ({
+        itemId: line.itemId,
+        itemName: line.itemName,
+        supplierId: line.supplierId,
+        supplierName: line.supplierName,
+        supplierQuoteId: line.supplierQuoteId,
+        supplierQuoteCode: line.supplierQuoteCode,
+        neededQty: line.coveredQty,
+        supplierUnitCostBs: line.supplierUnitCostBs,
+        saleUnitPriceBs: line.saleUnitPriceBs,
+      }));
 
     return {
       id: draft.recordId || undefined,
@@ -1588,6 +1837,7 @@ function ServiceOrdersSection({
       pricingPlan: quotePricingPlan,
       status: draft.mode === 'order' ? 'enviada' : 'borrador',
       items: selectedItems.map((line) => ({ itemId: line.itemId, quantity: line.quantity, unitPriceBs: line.unitPriceBs })),
+      supplierFulfillmentPlan,
       createdBy: 'maria.gonzalez',
     };
   };
@@ -1761,6 +2011,32 @@ function ServiceOrdersSection({
   const handleEditContractClick = (contract) => {
     setMenuState(null);
     openCreateModal('order', 'contract', contract);
+  };
+
+  const handleCancelContractClick = (contractRow) => {
+    const linkedOrder = orderRowsWithMeta.find(
+      (row) =>
+        (contractRow.rentalId && row.rentalId === contractRow.rentalId)
+        || (contractRow.orderCode && row.orderCode === contractRow.orderCode),
+    );
+
+    setOrderToCancel({
+      id: linkedOrder?.id ?? `contract-${contractRow.id}`,
+      rentalId: linkedOrder?.rentalId ?? contractRow.rentalId ?? null,
+      contractId: contractRow.id,
+      orderCode: linkedOrder?.orderCode ?? contractRow.orderCode ?? contractRow.contractCode,
+      client: linkedOrder?.client ?? contractRow.customerName,
+      totalBs: linkedOrder?.totalBs ?? Number(contractRow?.totals?.totalBs ?? 0),
+      status: linkedOrder?.status ?? (contractRow.status === 'anulado' ? 'cancelled' : 'pending'),
+      cancellationPenaltyPercent: Number(
+        linkedOrder?.cancellationPenaltyPercent
+        ?? contractRow?.cancellationPenaltyPercent
+        ?? 20,
+      ),
+      cancellationPenaltyBs: Number(contractRow?.cancellationPenaltyBs ?? 0),
+    });
+    setCancelReason(String(contractRow?.cancellationReason ?? '').trim());
+    setMenuState(null);
   };
 
   const handleCreateContractFromOrderClick = async (orderRow) => {
@@ -2009,6 +2285,11 @@ function ServiceOrdersSection({
   };
 
   const handleOpenOperationalPanel = (orderRow) => {
+    if (orderRow.status === 'cancelled') {
+      setFormError('La orden esta anulada y ya no admite gestion operativa.');
+      setMenuState(null);
+      return;
+    }
     setOperationalOrder(orderRow);
     setOperationalDraft({
       inventoryNote: orderRow.inventoryNote ?? '',
@@ -2046,26 +2327,36 @@ function ServiceOrdersSection({
     }
   };
 
-  const handleDeleteOrderClick = (orderRow) => {
-    setOrderToDelete(orderRow);
+  const handleCancelOrderClick = (orderRow) => {
+    setOrderToCancel(orderRow);
+    setCancelReason('');
     setMenuState(null);
   };
 
-  const closeDeleteOrderDialog = () => {
+  const closeCancelOrderDialog = () => {
     if (isSubmitting) return;
-    setOrderToDelete(null);
+    setOrderToCancel(null);
+    setCancelReason('');
   };
 
-  const confirmDeleteOrder = async () => {
-    if (!orderToDelete) return;
+  const confirmCancelOrder = async () => {
+    if (!orderToCancel) return;
     setIsSubmitting(true);
     setFormError('');
     try {
-      await onRemoveOrder?.({ id: orderToDelete.rentalId });
-      setActionFeedback(`Orden ${orderToDelete.orderCode} eliminada. Stock y rutas asociadas fueron liberadas.`);
-      setOrderToDelete(null);
+      const cancelled = await onCancelOrderContract?.({
+        id: orderToCancel.rentalId,
+        contractId: orderToCancel.contractId,
+        reason: cancelReason,
+      });
+      const penaltyBs = Number(cancelled?.cancellationPenaltyBs ?? orderToCancel.cancellationPenaltyBs ?? 0);
+      setActionFeedback(
+        `Contrato/orden ${orderToCancel.orderCode} anulado. Penalidad aplicada: ${formatBs(penaltyBs)}.`,
+      );
+      setOrderToCancel(null);
+      setCancelReason('');
     } catch (requestError) {
-      setFormError(requestError.message || 'No se pudo eliminar la orden de servicio.');
+      setFormError(requestError.message || 'No se pudo anular el contrato.');
     } finally {
       setIsSubmitting(false);
     }
@@ -2179,6 +2470,9 @@ function ServiceOrdersSection({
                 <button type="button" className={orderFilter === 'completed' ? 'active' : ''} onClick={() => setOrderFilter('completed')}>
                   Completadas <span>{orderCounts.completed}</span>
                 </button>
+                <button type="button" className={orderFilter === 'cancelled' ? 'active' : ''} onClick={() => setOrderFilter('cancelled')}>
+                  Anuladas <span>{orderCounts.cancelled}</span>
+                </button>
               </div>
             </div>
 
@@ -2238,6 +2532,11 @@ function ServiceOrdersSection({
                         ) : null}
                         {row.status === 'charged' ? (
                           <small className="orders-accounting-note is-paid">Caja confirmo el cobro</small>
+                        ) : null}
+                        {row.status === 'cancelled' ? (
+                          <small className="orders-accounting-note">
+                            Penalidad: {formatBs(row.cancellationPenaltyBs ?? 0)}
+                          </small>
                         ) : null}
                       </td>
                       <td>
@@ -2469,6 +2768,7 @@ function ServiceOrdersSection({
                   <option value="pendiente">Pendiente</option>
                   <option value="aprobado">Aprobado</option>
                   <option value="rechazado">Rechazado</option>
+                  <option value="anulado">Anulado</option>
                 </select>
                 <button type="button" className="ghost-button orders-range-btn">Todo el periodo</button>
                 <button type="button" className="link-button orders-export-btn">Exportar</button>
@@ -2489,6 +2789,9 @@ function ServiceOrdersSection({
                 </button>
                 <button type="button" className={contractFilter === 'rechazado' ? 'active' : ''} onClick={() => setContractFilter('rechazado')}>
                   Rechazado <span>{visibleContractCounts.rechazado}</span>
+                </button>
+                <button type="button" className={contractFilter === 'anulado' ? 'active' : ''} onClick={() => setContractFilter('anulado')}>
+                  Anulado <span>{visibleContractCounts.anulado}</span>
                 </button>
               </div>
             </div>
@@ -2653,8 +2956,13 @@ function ServiceOrdersSection({
               <button type="button" onClick={handleOpenReportsClick}>
                 Ver en reportes
               </button>
-              <button type="button" className="danger" onClick={() => handleDeleteOrderClick(activeOrderMenuRow)}>
-                Eliminar orden
+              <button
+                type="button"
+                className="danger"
+                onClick={() => handleCancelOrderClick(activeOrderMenuRow)}
+                disabled={activeOrderMenuRow.status === 'cancelled'}
+              >
+                {activeOrderMenuRow.status === 'cancelled' ? 'Contrato anulado' : 'Anular contrato'}
               </button>
             </>
           ) : null}
@@ -2705,11 +3013,15 @@ function ServiceOrdersSection({
               <button
                 type="button"
                 onClick={() => handleApproveContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'aprobado'}
+                disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
               >
                 Aprobar contrato
               </button>
-              <button type="button" onClick={() => handleEditContractClick(activeContractMenuRow)}>
+              <button
+                type="button"
+                onClick={() => handleEditContractClick(activeContractMenuRow)}
+                disabled={activeContractMenuRow.status === 'anulado'}
+              >
                 Editar contrato
               </button>
               <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
@@ -2718,9 +3030,17 @@ function ServiceOrdersSection({
               <button
                 type="button"
                 onClick={() => handleRejectContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'rechazado'}
+                disabled={activeContractMenuRow.status === 'rechazado' || activeContractMenuRow.status === 'anulado'}
               >
                 Marcar rechazado
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => handleCancelContractClick(activeContractMenuRow)}
+                disabled={activeContractMenuRow.status === 'anulado'}
+              >
+                {activeContractMenuRow.status === 'anulado' ? 'Ya anulado' : 'Anular contrato'}
               </button>
               <button
                 type="button"
@@ -3013,7 +3333,7 @@ function ServiceOrdersSection({
                 </div>
                 <div className="orders-operational-items">
                   <span>Cliente: {selectedOperationalOrder.client}</span>
-                  <span>Total: {formatBs(selectedOperationalOrder.totalBs)}</span>
+                  <span>Orden: {selectedOperationalOrder.orderCode}</span>
                   <span>Contrato: {selectedOperationalOrder.contractLabel}</span>
                 </div>
                 <label className="orders-note-field">
@@ -3113,30 +3433,44 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
-      {orderToDelete ? (
-        <div className="orders-modal-backdrop" onClick={closeDeleteOrderDialog}>
+      {orderToCancel ? (
+        <div className="orders-modal-backdrop" onClick={closeCancelOrderDialog}>
           <div className="orders-confirm-modal" onClick={(event) => event.stopPropagation()}>
             <header>
               <span className="orders-confirm-icon">!</span>
               <div>
-                <h3>Eliminar orden de servicio</h3>
-                <p>Se quitara la orden activa, se liberara el stock reservado y se cancelaran las rutas asociadas.</p>
+                <h3>Anular contrato y orden</h3>
+                <p>
+                  Solo se permite hasta el dia de envio. La orden seguira visible como anulada en Inventario y Transporte.
+                </p>
               </div>
             </header>
 
             <div className="orders-confirm-summary">
-              <strong>{orderToDelete.orderCode}</strong>
-              <span>{orderToDelete.client} Â· {formatBs(orderToDelete.totalBs)}</span>
+              <strong>{orderToCancel.orderCode}</strong>
+              <span>{orderToCancel.client} · {formatBs(orderToCancel.totalBs)}</span>
+              <small>
+                La penalidad se calculara segun el porcentaje vigente en Configuracion.
+              </small>
             </div>
+
+            <label className="orders-note-field">
+              Motivo de anulacion (opcional)
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                placeholder="Ej: cliente posterga el evento."
+              />
+            </label>
 
             {formError ? <p className="status error">{formError}</p> : null}
 
             <footer>
-              <button type="button" className="ghost-button" onClick={closeDeleteOrderDialog} disabled={isSubmitting}>
+              <button type="button" className="ghost-button" onClick={closeCancelOrderDialog} disabled={isSubmitting}>
                 Cancelar
               </button>
-              <button type="button" className="danger-button" onClick={confirmDeleteOrder} disabled={isSubmitting}>
-                {isSubmitting ? 'Eliminando...' : 'Eliminar orden'}
+              <button type="button" className="danger-button" onClick={confirmCancelOrder} disabled={isSubmitting}>
+                {isSubmitting ? 'Anulando...' : 'Confirmar anulacion'}
               </button>
             </footer>
           </div>
@@ -3480,10 +3814,22 @@ function ServiceOrdersSection({
                           </>
                         )}
                       </article>
-                      <article className={stockIssues.length ? 'danger' : 'success'}>
+                      <article className={uncoveredStockIssues.length ? 'danger' : 'success'}>
                         <span>Estado inventario</span>
-                        <strong>{stockIssues.length ? `${stockIssues.length} con faltante` : 'Disponible'}</strong>
-                        <small>{stockIssues.length ? 'Requiere proveedor o cambio de fecha' : 'Validado con calendario operativo'}</small>
+                        <strong>
+                          {stockIssues.length === 0
+                            ? 'Disponible'
+                            : uncoveredStockIssues.length > 0
+                            ? `${uncoveredStockIssues.length} faltante sin cubrir`
+                            : `${stockIssues.length} faltante cubierto por proveedor`}
+                        </strong>
+                        <small>
+                          {stockIssues.length === 0
+                            ? 'Validado con calendario operativo'
+                            : uncoveredStockIssues.length > 0
+                            ? 'Define proveedor y costo para completar cobertura'
+                            : 'Cobertura lista desde proveedores'}
+                        </small>
                       </article>
                     </section>
 
@@ -3553,7 +3899,6 @@ function ServiceOrdersSection({
                             type="button"
                             className="primary-button"
                             onClick={() => addDraftItem(item.id)}
-                            disabled={projectedAvailable <= 0}
                           >
                             Agregar
                           </button>
@@ -3604,7 +3949,6 @@ function ServiceOrdersSection({
                               <input
                                 type="number"
                                 min="1"
-                                max={availableStock}
                                 value={line.quantity}
                                 onChange={(event) => setDraftItemQuantity(line.itemId, event.target.value)}
                                 aria-label={`Cantidad de ${line.item.name}`}
@@ -3636,6 +3980,93 @@ function ServiceOrdersSection({
                                 <small className="orders-stock-error">Faltan {line.quantity - availableStock}. Coordinar proveedor.</small>
                               ) : null}
                             </label>
+                            {isOverAvailable ? (
+                              <label className="orders-line-field">
+                                <span>Proveedor para faltante</span>
+                                <select
+                                  value={`${supplierFulfillmentDraftByItem[line.itemId]?.supplierQuoteId ?? ''}|${supplierFulfillmentDraftByItem[line.itemId]?.supplierId ?? ''}`}
+                                  onChange={(event) => {
+                                    const [quoteId, supplierId] = String(event.target.value).split('|');
+                                    const offers = supplierOffersByItemId.get(line.itemId) ?? [];
+                                    const selectedOffer = offers.find((offer) => (
+                                      String(offer.supplierQuoteId ?? '') === quoteId
+                                      && String(offer.supplierId ?? '') === supplierId
+                                    ));
+                                    if (!selectedOffer) {
+                                      setSupplierCoverageField(line.itemId, {
+                                        supplierId: '',
+                                        supplierName: '',
+                                        supplierQuoteId: null,
+                                        supplierQuoteCode: null,
+                                        supplierUnitCostBs: 0,
+                                      });
+                                      return;
+                                    }
+                                    setSupplierCoverageField(line.itemId, {
+                                      supplierId: selectedOffer.supplierId,
+                                      supplierName: selectedOffer.supplierName,
+                                      supplierQuoteId: selectedOffer.supplierQuoteId,
+                                      supplierQuoteCode: selectedOffer.supplierQuoteCode,
+                                      supplierUnitCostBs: selectedOffer.supplierUnitCostBs,
+                                      neededQty: Math.max(1, Math.min(
+                                        line.quantity - availableStock,
+                                        Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? line.quantity - availableStock)),
+                                      )),
+                                    });
+                                  }}
+                                >
+                                  <option value="">Seleccionar proveedor...</option>
+                                  {(supplierOffersByItemId.get(line.itemId) ?? []).map((offer) => (
+                                    <option
+                                      key={offer.offerKey}
+                                      value={`${offer.supplierQuoteId ?? ''}|${offer.supplierId}`}
+                                    >
+                                      {offer.supplierName} - {formatBs(offer.supplierUnitCostBs)}
+                                      {offer.supplierQuoteCode ? ` - ${offer.supplierQuoteCode}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                {(supplierOffersByItemId.get(line.itemId) ?? []).length === 0 ? (
+                                  <small className="orders-stock-error">
+                                    No hay cotizacion de proveedor para este item. Registra precios en Proveedores.
+                                  </small>
+                                ) : null}
+                              </label>
+                            ) : null}
+                            {isOverAvailable ? (
+                              <label className="orders-line-field">
+                                <span>Cubrir con proveedor</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={Math.max(1, Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? (line.quantity - availableStock))))}
+                                  onChange={(event) => {
+                                    const shortage = Math.max(1, line.quantity - availableStock);
+                                    const nextQty = Math.max(1, Math.min(shortage, Math.trunc(Number(event.target.value || 1))));
+                                    setSupplierCoverageField(line.itemId, { neededQty: nextQty });
+                                  }}
+                                />
+                                <small className="orders-available-note">
+                                  Faltante total: {Math.max(0, line.quantity - availableStock)} unidades
+                                </small>
+                              </label>
+                            ) : null}
+                            {isOverAvailable ? (
+                              <label className="orders-line-field">
+                                <span>Costo proveedor (Bs)</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={Math.max(0, Number(supplierFulfillmentDraftByItem[line.itemId]?.supplierUnitCostBs ?? 0))}
+                                  onChange={(event) => {
+                                    const nextValue = Math.max(0, Number(event.target.value ?? 0));
+                                    setSupplierCoverageField(line.itemId, { supplierUnitCostBs: nextValue });
+                                  }}
+                                />
+                              </label>
+                            ) : null}
                             <label className="orders-line-field">
                               <span>Precio</span>
                               <input
@@ -3817,6 +4248,15 @@ function ServiceOrdersSection({
                       </div>
                     </div>
 
+                    {supplierCoverageTotals.lines > 0 ? (
+                      <div className="orders-form-note">
+                        Cobertura proveedor: {supplierCoverageTotals.totalCoveredQty} u. en {supplierCoverageTotals.lines} linea(s)
+                        · costo {formatBs(supplierCoverageTotals.totalCostBs)}
+                        · venta {formatBs(supplierCoverageTotals.totalSaleBs)}
+                        · margen {formatBs(supplierCoverageTotals.totalMarginBs)}.
+                      </div>
+                    ) : null}
+
                     <div className="orders-form-note orders-form-note-warn">
                       {draft.entityType === 'contract'
                         ? draft.logisticsMode === 'recojo'
@@ -3863,6 +4303,14 @@ function ServiceOrdersSection({
                     ))
                   )}
                 </div>
+
+                {stockIssues.length > 0 ? (
+                  <div className={`orders-form-note ${uncoveredStockIssues.length > 0 ? 'orders-form-note-warn' : ''}`}>
+                    {uncoveredStockIssues.length > 0
+                      ? `Hay ${uncoveredStockIssues.length} item(s) con faltante sin proveedor definido.`
+                      : `Faltantes cubiertos por proveedor (${supplierCoverageTotals.totalCoveredQty} u.).`}
+                  </div>
+                ) : null}
 
                 <div className="orders-money-summary orders-money-summary-pro">
                   <div className="orders-money-row">
@@ -3963,3 +4411,4 @@ function ServiceOrdersSection({
 }
 
 export default ServiceOrdersSection;
+

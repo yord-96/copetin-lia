@@ -25,6 +25,8 @@ const PAGE_LABELS = {
   devolucion_rutas: 'Flota',
   recibos: 'Reportes',
   contabilidad: 'Contabilidad',
+  contabilidad_caja_grande: 'Caja Grande',
+  contabilidad_caja_chica: 'Caja Chica',
   usuarios: 'Usuarios',
   categorias: 'Ajustes',
 };

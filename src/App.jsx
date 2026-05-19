@@ -187,10 +187,6 @@ function App() {
       return;
     }
 
-    if (String(resetCodeInput).trim() !== '1703') {
-      setResetDialogError('Codigo incorrecto.');
-      return;
-    }
     setResetDialogError('No se pudo reiniciar la informacion.');
   };
 
@@ -208,10 +204,10 @@ function App() {
       && controller.activeTab !== 'alquiler'
       && controller.activeTab !== 'proveedores'
       && controller.activeTab !== 'personal'
-      && controller.activeTab !== 'contabilidad'
       && controller.activeTab !== 'caja'
       && !String(controller.activeTab).startsWith('inventario')
-      && !String(controller.activeTab).startsWith('devolucion');
+      && !String(controller.activeTab).startsWith('devolucion')
+      && !String(controller.activeTab).startsWith('contabilidad');
 
     return (
       <>
@@ -245,6 +241,8 @@ function App() {
             contracts={controller.contracts}
             deliveries={controller.deliveries}
             supplierBundle={controller.supplierBundle}
+            currentUser={controller.currentUser}
+            driverLoginLocations={controller.driverLoginLocations}
             onCreateEvent={controller.handleCreateCalendarEvent}
             onPrintContractDocument={controller.handlePrintContractDocument}
           />
@@ -325,8 +323,9 @@ function App() {
           />
         )}
 
-        {controller.activeTab === 'contabilidad' && (
+        {String(controller.activeTab).startsWith('contabilidad') && (
           <AccountingSection
+            activeModule={controller.activeTab}
             rentals={controller.rentals}
             contracts={controller.contracts}
             quotes={controller.quotes}
@@ -335,6 +334,7 @@ function App() {
             inventoryMovements={controller.inventoryMovements}
             stockRecoveries={controller.stockRecoveries}
             cashSummary={controller.cashSummary}
+            cashSessions={controller.cashSessions}
             cashMovements={controller.cashMovements}
             currentUser={controller.currentUser}
             formatBs={formatBs}
@@ -353,6 +353,7 @@ function App() {
             items={controller.items}
             categories={controller.categories}
             activeRentals={controller.activeRentals}
+            cancelledRentals={controller.cancelledRentals}
             deliveries={controller.deliveries}
             stockRecoveries={controller.stockRecoveries}
             inventoryMovements={controller.inventoryMovements}
@@ -380,6 +381,7 @@ function App() {
             contracts={controller.contracts}
             rentals={controller.rentals}
             deliveries={controller.deliveries}
+            supplierBundle={controller.supplierBundle}
             generatedReports={controller.generatedReports}
             clients={controller.clients}
             items={controller.items}
@@ -393,7 +395,7 @@ function App() {
             onRemoveQuote={controller.handleRemoveQuote}
             onApproveQuote={controller.handleApproveQuote}
             onUpdateOrderOperational={controller.handleUpdateOrderOperational}
-            onRemoveOrder={controller.handleRemoveOrder}
+            onCancelOrderContract={controller.handleCancelOrderContract}
             onCreateContract={controller.handleCreateContract}
             onUpdateContract={controller.handleUpdateContract}
             onRemoveContract={controller.handleRemoveContract}
@@ -494,7 +496,7 @@ function App() {
         <div className="reset-modal-backdrop" onClick={closeResetDialog}>
           <form className="reset-modal" onSubmit={handleResetSubmit} onClick={(event) => event.stopPropagation()}>
             <h3>Reset general</h3>
-            <p>Ingresa el codigo de seguridad para borrar toda la informacion operativa y empezar desde cero. Se conservaran todos los usuarios creados para el login.</p>
+            <p>Ingresa el codigo de seguridad para borrar toda la informacion operativa y empezar desde cero. Se conservaran los usuarios de login y los datos de clientes.</p>
             <label>
               Codigo
               <input

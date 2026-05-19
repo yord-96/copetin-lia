@@ -23,8 +23,6 @@ const EMPTY_QUOTE = {
 
 const EMPTY_LOAN = {
   supplierId: '',
-  direction: 'from_supplier',
-  flowType: 'paid',
   requestDate: '',
   returnDate: '',
   eventName: '',
@@ -75,12 +73,12 @@ const createDocumentHtml = (loan) => `
       </style>
     </head>
     <body>
-      <h1>Solicitud de prestamo / subalquiler</h1>
+      <h1>Solicitud de abastecimiento proveedor</h1>
       <p><strong>${loan.loanCode}</strong> - ${loan.supplierName}</p>
       <div class="meta">
         <div class="box"><strong>Fecha solicitada</strong><br />${formatDate(loan.requestDate)}</div>
         <div class="box"><strong>Fecha devolucion</strong><br />${formatDate(loan.returnDate)}</div>
-        <div class="box"><strong>Operacion</strong><br />${loan.direction === 'from_supplier' ? 'Proveedor entrega a Copetin' : 'Copetin entrega al proveedor'}</div>
+        <div class="box"><strong>Operacion</strong><br />Proveedor entrega a Copetin</div>
         <div class="box"><strong>Evento / referencia</strong><br />${loan.eventName || '-'}</div>
       </div>
       <table>
@@ -116,8 +114,6 @@ function SuppliersSection({
   const [quoteLines, setQuoteLines] = useState([{ ...EMPTY_LINE }]);
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
   const [loanLines, setLoanLines] = useState([{ ...EMPTY_LINE }]);
-  const [periodFrom, setPeriodFrom] = useState('');
-  const [periodTo, setPeriodTo] = useState('');
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -132,7 +128,6 @@ function SuppliersSection({
         supplier,
         quoteCount: 0,
         loanCount: 0,
-        exchangeBalanceBs: 0,
         pendingPaidBs: 0,
       });
     });
@@ -145,41 +140,12 @@ function SuppliersSection({
       if (!row || loan.status === 'cancelado') return;
       row.loanCount += 1;
       const amount = Number(loan?.totals?.totalBs ?? 0);
-      if (loan.flowType === 'exchange') {
-        row.exchangeBalanceBs += loan.direction === 'from_supplier' ? amount : -amount;
-      } else if (loan.direction === 'from_supplier') {
+      if (loan.direction === 'from_supplier') {
         row.pendingPaidBs += amount;
       }
     });
     return Array.from(bySupplier.values());
   }, [loans, quotes, suppliers]);
-
-  const settlementRows = useMemo(() => {
-    const from = periodFrom ? new Date(`${periodFrom}T00:00:00`).getTime() : null;
-    const to = periodTo ? new Date(`${periodTo}T23:59:59`).getTime() : null;
-    return suppliers.map((supplier) => {
-      const rows = loans.filter((loan) => {
-        if (loan.supplierId !== supplier.id || loan.flowType !== 'exchange' || loan.status === 'cancelado') return false;
-        const time = new Date(loan.requestDate || loan.createdAt).getTime();
-        if (from !== null && time < from) return false;
-        if (to !== null && time > to) return false;
-        return true;
-      });
-      const weOweBs = rows
-        .filter((loan) => loan.direction === 'from_supplier')
-        .reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0);
-      const theyOweBs = rows
-        .filter((loan) => loan.direction === 'to_supplier')
-        .reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0);
-      return {
-        supplier,
-        count: rows.length,
-        weOweBs,
-        theyOweBs,
-        netBs: weOweBs - theyOweBs,
-      };
-    }).filter((row) => row.count > 0 || row.supplier.type === 'exchange');
-  }, [loans, periodFrom, periodTo, suppliers]);
 
   const latestPrices = useMemo(() => {
     const map = new Map();
@@ -252,12 +218,17 @@ function SuppliersSection({
     setError('');
     setFeedback('');
     try {
-      await onCreateSupplierLoan?.({ ...loanForm, items: loanLines });
-      setLoanForm({ ...EMPTY_LOAN, supplierId: loanForm.supplierId, flowType: loanForm.flowType });
+      await onCreateSupplierLoan?.({
+        ...loanForm,
+        direction: 'from_supplier',
+        flowType: 'paid',
+        items: loanLines,
+      });
+      setLoanForm({ ...EMPTY_LOAN, supplierId: loanForm.supplierId });
       setLoanLines([{ ...EMPTY_LINE }]);
-      setFeedback('Prestamo registrado.');
+      setFeedback('Solicitud registrada.');
     } catch (requestError) {
-      setError(requestError.message || 'No se pudo registrar el prestamo.');
+      setError(requestError.message || 'No se pudo registrar la solicitud.');
     }
   };
 
@@ -271,7 +242,7 @@ function SuppliersSection({
       email: supplier.email ?? '',
       address: supplier.address ?? '',
       city: supplier.city ?? '',
-      type: supplier.type ?? 'regular',
+      type: 'regular',
       paymentTerms: supplier.paymentTerms ?? '',
       notes: supplier.notes ?? '',
       status: supplier.status ?? 'active',
@@ -290,9 +261,9 @@ function SuppliersSection({
     setFeedback('');
     try {
       await onUpdateSupplierLoanStatus?.({ id: loan.id, status });
-      setFeedback(`Prestamo ${loan.loanCode} actualizado a ${status}.`);
+      setFeedback(`Solicitud ${loan.loanCode} actualizada a ${status}.`);
     } catch (requestError) {
-      setError(requestError.message || 'No se pudo actualizar el prestamo.');
+      setError(requestError.message || 'No se pudo actualizar la solicitud.');
     }
   };
 
@@ -301,13 +272,12 @@ function SuppliersSection({
       <header className="suppliers-header">
         <div>
           <h2>Proveedores</h2>
-          <p>Controla subalquileres, intercambio de servicios, listas de precios y rendiciones.</p>
+          <p>Controla listas de precios de proveedores y solicitudes de abastecimiento con costo.</p>
         </div>
         <div className="suppliers-tabs" role="tablist" aria-label="Vistas de proveedores">
           <button type="button" className={activeView === 'proveedores' ? 'active' : ''} onClick={() => setActiveView('proveedores')}>Proveedores</button>
           <button type="button" className={activeView === 'cotizaciones' ? 'active' : ''} onClick={() => setActiveView('cotizaciones')}>Cotizaciones</button>
-          <button type="button" className={activeView === 'prestamos' ? 'active' : ''} onClick={() => setActiveView('prestamos')}>Prestamos</button>
-          <button type="button" className={activeView === 'rendicion' ? 'active' : ''} onClick={() => setActiveView('rendicion')}>Rendicion</button>
+          <button type="button" className={activeView === 'prestamos' ? 'active' : ''} onClick={() => setActiveView('prestamos')}>Solicitudes</button>
         </div>
       </header>
 
@@ -317,8 +287,8 @@ function SuppliersSection({
       <div className="suppliers-kpi-grid">
         <article><span>Proveedores</span><strong>{suppliers.length}</strong></article>
         <article><span>Cotizaciones</span><strong>{quotes.length}</strong></article>
-        <article><span>Prestamos activos</span><strong>{loans.filter((loan) => !['devuelto', 'liquidado', 'cancelado'].includes(loan.status)).length}</strong></article>
-        <article><span>Intercambio neto</span><strong>{formatBs(settlementRows.reduce((sum, row) => sum + row.netBs, 0))}</strong></article>
+        <article><span>Solicitudes activas</span><strong>{loans.filter((loan) => !['devuelto', 'liquidado', 'cancelado'].includes(loan.status)).length}</strong></article>
+        <article><span>Total por pagar</span><strong>{formatBs(loans.filter((loan) => loan.status !== 'cancelado').reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0))}</strong></article>
       </div>
 
       {activeView === 'proveedores' ? (
@@ -327,14 +297,14 @@ function SuppliersSection({
             <h3>{editingSupplierId ? 'Editar proveedor' : 'Nuevo proveedor'}</h3>
             <div className="suppliers-form-grid">
               <label>Nombre<input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} required /></label>
-              <label>Tipo<select value={supplierForm.type} onChange={(event) => setSupplierForm((current) => ({ ...current, type: event.target.value }))}><option value="regular">Proveedor normal</option><option value="exchange">Intercambio / cuenta corriente</option></select></label>
+              <label>Tipo<input value="Proveedor con cobro" disabled /></label>
               <label>Contacto<input value={supplierForm.contactName} onChange={(event) => setSupplierForm((current) => ({ ...current, contactName: event.target.value }))} /></label>
               <label>Celular<input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} /></label>
               <label>WhatsApp<input value={supplierForm.whatsapp} onChange={(event) => setSupplierForm((current) => ({ ...current, whatsapp: event.target.value }))} /></label>
               <label>Email<input type="email" value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} /></label>
               <label>Direccion<input value={supplierForm.address} onChange={(event) => setSupplierForm((current) => ({ ...current, address: event.target.value }))} /></label>
               <label>Ciudad<input value={supplierForm.city} onChange={(event) => setSupplierForm((current) => ({ ...current, city: event.target.value }))} /></label>
-              <label className="full-width">Condiciones<input value={supplierForm.paymentTerms} onChange={(event) => setSupplierForm((current) => ({ ...current, paymentTerms: event.target.value }))} placeholder="Ej: liquidacion trimestral, pago contra entrega..." /></label>
+              <label className="full-width">Condiciones<input value={supplierForm.paymentTerms} onChange={(event) => setSupplierForm((current) => ({ ...current, paymentTerms: event.target.value }))} placeholder="Ej: pago contra entrega, pago semanal..." /></label>
               <label className="full-width">Notas<textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} /></label>
             </div>
             <div className="suppliers-actions">
@@ -346,15 +316,15 @@ function SuppliersSection({
           <section className="suppliers-card">
             <h3>Directorio</h3>
             <div className="suppliers-list">
-              {supplierStats.map(({ supplier, quoteCount, loanCount, exchangeBalanceBs, pendingPaidBs }) => (
+              {supplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => (
                 <article key={supplier.id} className="supplier-row">
                   <div>
                     <strong>{supplier.name}</strong>
-                    <span>{supplier.type === 'exchange' ? 'Intercambio / cuenta corriente' : 'Proveedor normal'}</span>
-                    <small>{supplier.phone || supplier.whatsapp || 'Sin telefono'} · {quoteCount} cotizaciones · {loanCount} prestamos</small>
+                    <span>Proveedor con lista de precios</span>
+                    <small>{supplier.phone || supplier.whatsapp || 'Sin telefono'} · {quoteCount} cotizaciones · {loanCount} solicitudes</small>
                   </div>
                   <div className="supplier-row-money">
-                    {supplier.type === 'exchange' ? <span>Neto: {formatBs(exchangeBalanceBs)}</span> : <span>Por pagar: {formatBs(pendingPaidBs)}</span>}
+                    <span>Por pagar: {formatBs(pendingPaidBs)}</span>
                     <button type="button" className="link-button" onClick={() => editSupplier(supplier)}>Editar</button>
                   </div>
                 </article>
@@ -407,11 +377,9 @@ function SuppliersSection({
       {activeView === 'prestamos' ? (
         <div className="suppliers-content-grid">
           <form className="suppliers-card suppliers-form" onSubmit={submitLoan}>
-            <h3>Registrar prestamo / subalquiler</h3>
+            <h3>Registrar solicitud a proveedor</h3>
             <div className="suppliers-form-grid">
               <label>Proveedor<select value={loanForm.supplierId} onChange={(event) => setLoanForm((current) => ({ ...current, supplierId: event.target.value }))} required><option value="">Seleccionar...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
-              <label>Operacion<select value={loanForm.direction} onChange={(event) => setLoanForm((current) => ({ ...current, direction: event.target.value }))}><option value="from_supplier">Proveedor nos presta</option><option value="to_supplier">Nosotros prestamos</option></select></label>
-              <label>Tipo<select value={loanForm.flowType} onChange={(event) => setLoanForm((current) => ({ ...current, flowType: event.target.value }))}><option value="paid">Pago normal</option><option value="exchange">Intercambio / rendicion</option></select></label>
               <label>Fecha solicitada<input type="date" value={loanForm.requestDate} onChange={(event) => setLoanForm((current) => ({ ...current, requestDate: event.target.value }))} required /></label>
               <label>Fecha devolucion<input type="date" value={loanForm.returnDate} onChange={(event) => setLoanForm((current) => ({ ...current, returnDate: event.target.value }))} /></label>
               <label>Evento / referencia<input value={loanForm.eventName} onChange={(event) => setLoanForm((current) => ({ ...current, eventName: event.target.value }))} /></label>
@@ -430,20 +398,20 @@ function SuppliersSection({
             </div>
             <div className="suppliers-actions">
               <button type="button" className="ghost-button" onClick={() => setLoanLines((current) => [...current, { ...EMPTY_LINE }])}>Agregar item</button>
-              <button type="submit" className="primary-button">Registrar prestamo</button>
+              <button type="submit" className="primary-button">Registrar solicitud</button>
             </div>
-            {selectedLoanSupplier ? <p className="suppliers-hint">Documento operativo sin precios disponible despues de guardar.</p> : null}
+            {selectedLoanSupplier ? <p className="suppliers-hint">Se generara la solicitud de compra para {selectedLoanSupplier.name}.</p> : null}
           </form>
 
           <section className="suppliers-card">
-            <h3>Prestamos registrados</h3>
+            <h3>Solicitudes registradas</h3>
             <div className="suppliers-table-wrap">
-              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Operacion</th><th>Fecha</th><th>Total interno</th><th>Estado</th><th></th></tr></thead><tbody>
+              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Tipo</th><th>Fecha</th><th>Total interno</th><th>Estado</th><th></th></tr></thead><tbody>
                 {loans.map((loan) => (
                   <tr key={loan.id}>
                     <td>{loan.loanCode}</td>
                     <td>{loan.supplierName}</td>
-                    <td>{loan.direction === 'from_supplier' ? 'Nos presta' : 'Prestamos'} · {loan.flowType === 'exchange' ? 'Intercambio' : 'Pago'}</td>
+                    <td>Compra a proveedor</td>
                     <td>{formatDate(loan.requestDate)}</td>
                     <td>{formatBs(loan?.totals?.totalBs ?? 0)}</td>
                     <td>{loan.status}</td>
@@ -454,41 +422,11 @@ function SuppliersSection({
                     </td>
                   </tr>
                 ))}
-                {loans.length === 0 ? <tr><td colSpan={7}>Sin prestamos registrados.</td></tr> : null}
+                {loans.length === 0 ? <tr><td colSpan={7}>Sin solicitudes registradas.</td></tr> : null}
               </tbody></table>
             </div>
           </section>
         </div>
-      ) : null}
-
-      {activeView === 'rendicion' ? (
-        <section className="suppliers-card">
-          <div className="suppliers-section-head">
-            <div>
-              <h3>Rendicion de intercambio</h3>
-              <p>Compara lo que te prestaron contra lo que prestaste. Positivo: debes al proveedor. Negativo: el proveedor te debe.</p>
-            </div>
-            <div className="supplier-period-controls">
-              <input type="date" value={periodFrom} onChange={(event) => setPeriodFrom(event.target.value)} />
-              <input type="date" value={periodTo} onChange={(event) => setPeriodTo(event.target.value)} />
-            </div>
-          </div>
-          <div className="suppliers-table-wrap">
-            <table className="suppliers-table"><thead><tr><th>Proveedor</th><th>Movimientos</th><th>Yo debo</th><th>Me deben</th><th>Neto</th><th>Resultado</th></tr></thead><tbody>
-              {settlementRows.map((row) => (
-                <tr key={row.supplier.id}>
-                  <td>{row.supplier.name}</td>
-                  <td>{row.count}</td>
-                  <td>{formatBs(row.weOweBs)}</td>
-                  <td>{formatBs(row.theyOweBs)}</td>
-                  <td>{formatBs(row.netBs)}</td>
-                  <td>{row.netBs > 0 ? 'Copetin debe pagar' : row.netBs < 0 ? 'Proveedor debe pagar' : 'Compensado'}</td>
-                </tr>
-              ))}
-              {settlementRows.length === 0 ? <tr><td colSpan={6}>No hay movimientos de intercambio en el periodo.</td></tr> : null}
-            </tbody></table>
-          </div>
-        </section>
       ) : null}
 
       <datalist id="inventory-item-names">
@@ -501,7 +439,7 @@ function SuppliersSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>Documento operativo sin importes para coordinar el prestamo.</p>
+                <p>Documento operativo para coordinar la solicitud al proveedor.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>x</button>
             </header>

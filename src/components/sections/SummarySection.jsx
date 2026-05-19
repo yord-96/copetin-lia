@@ -111,13 +111,7 @@ function MetricIcon({ name }) {
         <path d="M5.15 7.85 12 11.9l6.85-4.05M12 11.9v8.25" fill="none" stroke="currentColor" strokeWidth="1.72" strokeLinecap="round" strokeLinejoin="round" />
       </>
     ),
-    truck: (
-      <>
-        <path d="M3.5 7h10.3v8.8H3.5zM13.8 10h3.9l2.8 3.15v2.65h-6.7z" fill="none" stroke="currentColor" strokeWidth="1.72" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="7.2" cy="17" r="1.65" fill="none" stroke="currentColor" strokeWidth="1.72" />
-        <circle cx="17.8" cy="17" r="1.65" fill="none" stroke="currentColor" strokeWidth="1.72" />
-      </>
-    ),
+    truck: null,
     money: (
       <>
         <text x="12" y="15.7" textAnchor="middle" fontSize="10.2" fontWeight="800" fill="currentColor" fontFamily="Inter, Arial, sans-serif">Bs</text>
@@ -132,9 +126,13 @@ function MetricIcon({ name }) {
   };
 
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {icons[name] ?? icons.clipboard}
-    </svg>
+    name === 'truck'
+      ? <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />
+      : (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {icons[name] ?? icons.clipboard}
+        </svg>
+      )
   );
 }
 

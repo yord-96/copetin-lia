@@ -83,5 +83,6 @@ export const canAccessTab = (user, tabId) => {
   if (roots.has(target)) return true;
   if (target.startsWith('inventario')) return roots.has('inventario');
   if (target.startsWith('devolucion')) return roots.has('devolucion');
+  if (target.startsWith('contabilidad')) return roots.has('contabilidad');
   return false;
 };

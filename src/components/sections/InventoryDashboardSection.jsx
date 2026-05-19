@@ -386,6 +386,7 @@ function InventoryDashboardSection({
   items = [],
   categories = [],
   activeRentals = [],
+  cancelledRentals = [],
   deliveries = [],
   stockRecoveries = [],
   inventoryMovements = [],
@@ -556,13 +557,24 @@ function InventoryDashboardSection({
       return { key: 'baja', label: 'Baja', weight: 1 };
     };
 
+    const getInventoryMeta = (status) => {
+      if (status === 'confirmado') {
+        return { sortWeight: 0, secondarySortWeight: 1, text: 'Alistada y asignada', actionLabel: 'Ya asignada', canConfirm: false };
+      }
+      if (status === 'enviado') {
+        return { sortWeight: 1, secondarySortWeight: 0, text: 'Asignada, pendiente de confirmar', actionLabel: 'Confirmar alistado', canConfirm: true };
+      }
+      return { sortWeight: 2, secondarySortWeight: 0, text: 'Por alistar', actionLabel: 'Asignar y confirmar', canConfirm: true };
+    };
+
     return activeRentals
-      .filter((rental) => (rental.operational?.inventoryStatus ?? 'pendiente') !== 'confirmado')
       .map((rental) => {
         const delivery = deliveryByRental.get(rental.id) ?? null;
         const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
         const lines = (rental.items ?? []).length;
         const priority = getPriority(delivery);
+        const inventoryStatus = rental.operational?.inventoryStatus ?? 'pendiente';
+        const inventoryMeta = getInventoryMeta(inventoryStatus);
         return {
           id: rental.id,
           rentalId: rental.id,
@@ -572,15 +584,43 @@ function InventoryDashboardSection({
           deliveryDate: delivery?.scheduledDate ?? rental.dueDate ?? null,
           deliveryWindow: delivery ? `${delivery.windowStart || '--:--'} - ${delivery.windowEnd || '--:--'}` : 'Pendiente',
           priority,
-          inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+          inventoryStatus,
+          inventoryStatusText: inventoryMeta.text,
+          inventoryActionLabel: inventoryMeta.actionLabel,
+          canConfirmInventory: inventoryMeta.canConfirm,
+          inventorySortWeight: inventoryMeta.sortWeight,
+          inventorySecondarySortWeight: inventoryMeta.secondarySortWeight,
           inventoryNote: rental.operational?.inventoryNote ?? '',
         };
       })
       .sort((a, b) => {
+        if (a.inventorySortWeight !== b.inventorySortWeight) {
+          return a.inventorySortWeight - b.inventorySortWeight;
+        }
+        if (a.inventorySecondarySortWeight !== b.inventorySecondarySortWeight) {
+          return a.inventorySecondarySortWeight - b.inventorySecondarySortWeight;
+        }
         if (b.priority.weight !== a.priority.weight) return b.priority.weight - a.priority.weight;
         return new Date(a.deliveryDate ?? 0) - new Date(b.deliveryDate ?? 0);
       });
   }, [activeRentals, deliveries]);
+
+  const cancelledOrderRows = useMemo(() => {
+    return cancelledRentals
+      .map((rental) => {
+        const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
+        const lines = (rental.items ?? []).length;
+        return {
+          id: rental.id,
+          orderCode: rental.orderCode ?? rental.id,
+          customerName: rental.customerName,
+          cancelledAt: rental.cancelledAt ?? rental.updatedAt ?? rental.createdAt,
+          itemsText: `${totalItems} unidades · ${lines} items`,
+          penaltyBs: Number(rental.cancellationPenaltyBs ?? 0),
+        };
+      })
+      .sort((a, b) => new Date(b.cancelledAt ?? 0) - new Date(a.cancelledAt ?? 0));
+  }, [cancelledRentals]);
 
   const receptionRows = useMemo(() => {
     return activeRentals
@@ -626,7 +666,8 @@ function InventoryDashboardSection({
 
   const movementRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
-    const rentalByOrderCode = new Map(activeRentals.map((rental) => [rental.orderCode ?? rental.id, rental]));
+    const rentalsForTrace = [...activeRentals, ...cancelledRentals];
+    const rentalByOrderCode = new Map(rentalsForTrace.map((rental) => [rental.orderCode ?? rental.id, rental]));
     const reservationMovementKeys = new Set(
       inventoryMovements
         .filter((movement) => movement.type === 'reserva')
@@ -681,11 +722,11 @@ function InventoryDashboardSection({
         observation: movement.reason ?? movement.detail ?? '-',
         valueAmount: Number(movement.valueAmount ?? 0),
         status: isReservation ? inventoryStatus : movement.status ?? 'aprobado',
-        isPendingReservation: isReservation && inventoryStatus !== 'confirmado',
+        isPendingReservation: isReservation && !['confirmado', 'anulado'].includes(inventoryStatus),
       };
     });
 
-    const serviceOrderRows = activeRentals.flatMap((rental) => {
+    const serviceOrderRows = rentalsForTrace.flatMap((rental) => {
       const reference = rental.orderCode ?? rental.id;
       return (rental.items ?? [])
         .map((line, index) => {
@@ -723,7 +764,7 @@ function InventoryDashboardSection({
             observation: `Reservado para ${reference} - ${rental.customerName ?? 'Cliente'}`,
             valueAmount: Number(line.lineTotalBs ?? 0),
             status: rental.operational?.inventoryStatus ?? 'pendiente',
-            isPendingReservation: rental.operational?.inventoryStatus !== 'confirmado',
+            isPendingReservation: !['confirmado', 'anulado'].includes(rental.operational?.inventoryStatus ?? 'pendiente'),
           };
         })
         .filter(Boolean);
@@ -731,7 +772,7 @@ function InventoryDashboardSection({
 
     return [...persistedRows, ...serviceOrderRows]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [activeRentals, inventoryMovements, inventoryRows]);
+  }, [activeRentals, cancelledRentals, inventoryMovements, inventoryRows]);
 
   const movementSelectableRows = useMemo(() => {
     const text = normalizeText(movementItemQuery);
@@ -1800,7 +1841,7 @@ function InventoryDashboardSection({
                     </div>
                     <div>
                       <strong>{row.itemsText}</strong>
-                      <span>Por alistar</span>
+                      <span>{row.inventoryStatusText}</span>
                     </div>
                     <div>
                       <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
@@ -1821,15 +1862,54 @@ function InventoryDashboardSection({
                       <button
                         type="button"
                         className="link-button"
+                        disabled={!row.canConfirmInventory}
                         onClick={() => onUpdateOrderOperational?.({ id: row.rentalId, inventoryStatus: 'confirmado' })}
                       >
-                        Asignar y confirmar
+                        {row.inventoryActionLabel}
                       </button>
                     </div>
                   </div>
                 ))}
                 {prepOrderRows.length === 0 ? (
-                  <p className="status">No hay ordenes activas pendientes de alistamiento.</p>
+                  <p className="status">No hay ordenes activas para alistamiento en este momento.</p>
+                ) : null}
+              </div>
+            </article>
+          ) : null}
+
+          {isMovementsModule ? (
+            <article className="inventory-ops-card">
+              <header className="inventory-ops-head">
+                <h3>Ordenes anuladas (historial visible)</h3>
+              </header>
+              <div className="inventory-ops-list">
+                {cancelledOrderRows.slice(0, 6).map((row) => (
+                  <div key={row.id} className="inventory-ops-row">
+                    <div>
+                      <strong>{row.orderCode}</strong>
+                      <span>{row.customerName}</span>
+                    </div>
+                    <div>
+                      <strong>{row.itemsText}</strong>
+                      <span>Estado: anulado</span>
+                    </div>
+                    <div>
+                      <strong>{row.cancelledAt ? formatDateTime(row.cancelledAt).split(',')[0] : 'Sin fecha'}</strong>
+                      <span>Anulada en esta fecha</span>
+                    </div>
+                    <div className="inventory-ops-state">
+                      <span className="inventory-ops-priority alta">Anulado</span>
+                      <span>Penalidad {formatBs(row.penaltyBs)}</span>
+                    </div>
+                    <div className="inventory-ops-actions">
+                      <button type="button" className="link-button" disabled>
+                        Sin accion operativa
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {cancelledOrderRows.length === 0 ? (
+                  <p className="status">No hay ordenes anuladas en el periodo visible.</p>
                 ) : null}
               </div>
             </article>

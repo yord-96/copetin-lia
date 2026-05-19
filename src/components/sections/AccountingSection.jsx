@@ -1,168 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-const ACCOUNTING_TABS = [
-  { id: 'resumen', label: 'Resumen' },
-  { id: 'libro', label: 'Libro contable' },
-  { id: 'liquidaciones', label: 'Liquidaciones' },
-  { id: 'inventario', label: 'Inventario contable' },
-  { id: 'caja', label: 'Caja' },
-];
-
-const PERIOD_OPTIONS = [
-  { id: 'month', label: 'Este mes' },
-  { id: 'today', label: 'Hoy' },
-  { id: 'all', label: 'Todo' },
-];
-
-const CASH_TYPE_META = {
-  apertura: { label: 'Apertura de caja', kind: 'neutral', account: 'Caja' },
-  cierre: { label: 'Cierre de caja', kind: 'neutral', account: 'Caja' },
-  ingreso_alquiler: { label: 'Cobro alquiler', kind: 'income', account: 'Ingresos por alquiler' },
-  ingreso_garantia: { label: 'Garantia recibida', kind: 'liability', account: 'Garantias en custodia' },
-  saldo_alquiler_pendiente: { label: 'Saldo alquiler pendiente', kind: 'pending', account: 'Cuentas por cobrar' },
-  liquidacion_devolucion: { label: 'Liquidacion devolucion', kind: 'settlement', account: 'Liquidaciones' },
-  egreso_devolucion_garantia: { label: 'Devolucion garantia', kind: 'expense', account: 'Garantias devueltas' },
-  saldo_pendiente_cobro: { label: 'Saldo post-devolucion', kind: 'pending', account: 'Cuentas por cobrar' },
-  cobro_saldo_alquiler: { label: 'Cobro saldo alquiler', kind: 'income', account: 'Cuentas por cobrar' },
-  cobro_saldo_devolucion: { label: 'Cobro saldo devolucion', kind: 'income', account: 'Cuentas por cobrar' },
-  ingreso_manual: { label: 'Ingreso manual', kind: 'income', account: 'Caja' },
-  egreso_manual: { label: 'Egreso manual', kind: 'expense', account: 'Caja' },
-  transferencia_salida_caja_chica: { label: 'Transferencia salida', kind: 'transfer', account: 'Transferencia interna' },
-  transferencia_entrada_caja_chica: { label: 'Transferencia entrada', kind: 'transfer', account: 'Transferencia interna' },
+const getInputDate = (baseDate = new Date()) => {
+  const cloned = new Date(baseDate);
+  cloned.setMinutes(cloned.getMinutes() - cloned.getTimezoneOffset());
+  return cloned.toISOString().slice(0, 10);
 };
-
-const CASH_BOX_META = {
-  BIG_CASH: { label: 'Caja grande', shortLabel: 'Grande', className: 'big' },
-  PETTY_CASH: { label: 'Caja chica', shortLabel: 'Chica', className: 'petty' },
-};
-
-const MOVEMENT_CATEGORIES = [
-  { id: 'cobro_contrato', label: 'Cobro de contrato', defaultBox: 'BIG_CASH' },
-  { id: 'adelanto_orden', label: 'Adelanto de orden', defaultBox: 'BIG_CASH' },
-  { id: 'pago_final', label: 'Pago final', defaultBox: 'BIG_CASH' },
-  { id: 'garantia', label: 'Garantia', defaultBox: 'BIG_CASH' },
-  { id: 'proveedor_grande', label: 'Pago grande a proveedor', defaultBox: 'BIG_CASH' },
-  { id: 'inventario_importante', label: 'Compra importante inventario', defaultBox: 'BIG_CASH' },
-  { id: 'servicio_extra', label: 'Transporte/armado/decoracion', defaultBox: 'BIG_CASH' },
-  { id: 'materiales_menores', label: 'Materiales menores', defaultBox: 'PETTY_CASH' },
-  { id: 'transporte_menor', label: 'Transporte menor / taxi', defaultBox: 'PETTY_CASH' },
-  { id: 'lavado_menor', label: 'Lavado menor', defaultBox: 'PETTY_CASH' },
-  { id: 'reparacion_menor', label: 'Reparacion menor', defaultBox: 'PETTY_CASH' },
-  { id: 'urgencia_evento', label: 'Urgencia de evento', defaultBox: 'PETTY_CASH' },
-  { id: 'gasto_diario', label: 'Gasto diario operativo', defaultBox: 'PETTY_CASH' },
-  { id: 'reposicion_caja_chica', label: 'Reposicion caja chica', defaultBox: 'PETTY_CASH' },
-  { id: 'otro', label: 'Otro', defaultBox: 'BIG_CASH' },
-];
-
-const PAYMENT_METHODS = [
-  { id: 'efectivo', label: 'Efectivo' },
-  { id: 'qr', label: 'QR' },
-  { id: 'transferencia_bancaria', label: 'Transferencia bancaria' },
-  { id: 'tarjeta', label: 'Tarjeta' },
-  { id: 'otro', label: 'Otro' },
-];
-
-const FLOW_STEPS = [
-  {
-    area: 'Ventas',
-    pide: 'Cliente, evento, items, fechas y forma de pago.',
-    manda: 'Cotizacion, contrato y orden aprobada.',
-  },
-  {
-    area: 'Ordenes',
-    pide: 'Contrato aprobado con items y totales.',
-    manda: 'Reserva stock, cobro inicial, garantia y saldo.',
-  },
-  {
-    area: 'Inventario',
-    pide: 'Orden por alistar o devolucion recibida.',
-    manda: 'Movimientos, recuperacion, reinsercion o baja.',
-  },
-  {
-    area: 'Transporte',
-    pide: 'Entrega/recojo programado y checklist.',
-    manda: 'Orden lista para recepcion y devolucion.',
-  },
-  {
-    area: 'Devolucion',
-    pide: 'Detalle devuelto, daniado o faltante por item.',
-    manda: 'Liquidacion, penalidad, refund o saldo por cobrar.',
-  },
-  {
-    area: 'Contabilidad',
-    pide: 'Caja, ordenes, devoluciones e inventario.',
-    manda: 'Libro, pendientes, garantias y control de resultado.',
-  },
-];
-
-const ACTION_FORM_DEFAULTS = {
-  openingAmountBs: '0',
-  openingBigCashBs: '0',
-  openingPettyCashBs: '0',
-  countedAmountBs: '0',
-  countedBigCashBs: '0',
-  countedPettyCashBs: '0',
-  amountBs: '',
-  type: 'ingreso',
-  cashBoxType: 'BIG_CASH',
-  category: 'cobro_contrato',
-  paymentMethod: 'efectivo',
-  responsible: '',
-  receipt: '',
-  description: '',
-  notes: '',
-};
-
-function AccountingIcon({ kind }) {
-  const paths = {
-    money: (
-      <>
-        <path d="M12 4v16" />
-        <path d="M16.2 7.5A4.2 4.2 0 0 0 12 5.8c-2.2 0-3.8 1-3.8 2.6 0 1.8 1.6 2.4 3.8 3 2.2.6 3.8 1.2 3.8 3 0 1.6-1.6 2.8-3.8 2.8a4.8 4.8 0 0 1-4.6-2.2" />
-      </>
-    ),
-    wallet: (
-      <>
-        <path d="M4 7.5h14a2 2 0 0 1 2 2v8H6a2 2 0 0 1-2-2v-8Z" />
-        <path d="M6 7.5V6a2 2 0 0 1 2-2h9v3.5" />
-        <path d="M16.5 13h.01" />
-      </>
-    ),
-    pending: (
-      <>
-        <circle cx="12" cy="12" r="8" />
-        <path d="M12 8v4l2.5 2" />
-      </>
-    ),
-    shield: (
-      <>
-        <path d="M12 3 19 6v5c0 4.5-2.8 7.6-7 10-4.2-2.4-7-5.5-7-10V6l7-3Z" />
-        <path d="m9 12 2 2 4-5" />
-      </>
-    ),
-    book: (
-      <>
-        <path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z" />
-        <path d="M8 4v13a3 3 0 0 0 3 3" />
-        <path d="M9 8h5M9 12h5" />
-      </>
-    ),
-    box: (
-      <>
-        <path d="M12 3 20 7.2v9.6L12 21l-8-4.2V7.2L12 3Z" />
-        <path d="M12 11 20 7.2M12 11 4 7.2M12 11v10" />
-      </>
-    ),
-  };
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <g fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        {paths[kind] ?? paths.book}
-      </g>
-    </svg>
-  );
-}
 
 const toNumber = (value) => {
   const parsed = Number(value ?? 0);
@@ -171,74 +13,170 @@ const toNumber = (value) => {
 
 const sumBy = (rows, getter) => Number(rows.reduce((sum, row) => sum + toNumber(getter(row)), 0).toFixed(2));
 
-const getDateValue = (value) => {
+const getDateKey = (value) => {
   const parsed = new Date(value ?? '');
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  if (Number.isNaN(parsed.getTime())) return '';
+  return getInputDate(parsed);
 };
 
-const isInPeriod = (value, period) => {
-  if (period === 'all') return true;
-  const parsed = getDateValue(value);
-  if (!parsed) return false;
-  const now = new Date();
+const getHourLabel = (value) => {
+  const parsed = new Date(value ?? '');
+  if (Number.isNaN(parsed.getTime())) return '--:--';
+  return parsed.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
+};
 
-  if (period === 'today') {
-    return parsed.getFullYear() === now.getFullYear()
-      && parsed.getMonth() === now.getMonth()
-      && parsed.getDate() === now.getDate();
+const getLongHourLabel = (value) => {
+  const parsed = new Date(value ?? '');
+  if (Number.isNaN(parsed.getTime())) return '--:--';
+  return parsed.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const getMonthKey = (value) => {
+  const parsed = new Date(value ?? '');
+  if (Number.isNaN(parsed.getTime())) return '';
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const getMonthStartInput = (dateKey) => {
+  const parsed = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateKey;
+  return getInputDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+};
+
+const isBigCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH';
+const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH';
+
+function CashIcon({ kind }) {
+  if (kind === 'petty') {
+    return <img className="asset-icon wallet-asset-icon" src="/imagenes/billetera.png" alt="" aria-hidden="true" />;
   }
 
-  return parsed.getFullYear() === now.getFullYear() && parsed.getMonth() === now.getMonth();
-};
-
-const getRentalTotal = (rental) => toNumber(rental?.totals?.totalBs);
-const getRentalPaid = (rental) => toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs);
-const getRentalPending = (rental) => toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
-const getLineQuantity = (line) => toNumber(line?.quantity ?? line?.returnedQuantity ?? line?.expectedQuantity);
-const getLineName = (line) => line?.itemName ?? line?.name ?? line?.description ?? 'Item';
-const getLinePrice = (line) => toNumber(line?.rentalPriceBs ?? line?.unitPriceBs);
-const getLineTotal = (line) => toNumber(line?.lineTotalBs ?? getLineQuantity(line) * getLinePrice(line));
-const getPaymentModeLabel = (mode) => {
-  const labels = {
-    cancelado: 'Cancelado',
-    a_cuenta: 'A cuenta',
-    sin_pago: 'Sin pago',
+  const paths = {
+    big: (
+      <>
+        <rect x="4" y="6" width="16" height="12" rx="2" />
+        <circle cx="12" cy="12" r="2.8" />
+      </>
+    ),
+    summary: (
+      <>
+        <rect x="6" y="5" width="12" height="14" rx="2" />
+        <path d="M9 9h6M9 13h6" />
+      </>
+    ),
+    flow: (
+      <>
+        <path d="M5 12h14" />
+        <path d="m15 8 4 4-4 4" />
+      </>
+    ),
+    table: (
+      <>
+        <rect x="4.5" y="5" width="15" height="14" rx="2" />
+        <path d="M8 9h8M8 13h8" />
+      </>
+    ),
   };
-  return labels[mode] ?? 'No definido';
-};
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {paths[kind] ?? paths.summary}
+      </g>
+    </svg>
+  );
+}
 
-const getBillingModeLabel = (mode) => (mode === 'con_factura' ? 'Con factura' : 'Sin factura');
-const getLogisticsModeLabel = (mode) => (mode === 'recojo' ? 'Recojo por cliente' : 'Envio y recojo');
-const getCashBoxMeta = (cashBoxType) => CASH_BOX_META[cashBoxType] ?? CASH_BOX_META.BIG_CASH;
-const getCategoryLabel = (category) =>
-  MOVEMENT_CATEGORIES.find((entry) => entry.id === category)?.label ?? String(category || 'Sin categoria');
-const getPaymentMethodLabel = (method) =>
-  PAYMENT_METHODS.find((entry) => entry.id === method)?.label ?? String(method || 'No definido');
-
-const getMovementMeta = (type) => CASH_TYPE_META[type] ?? {
-  label: String(type ?? 'Movimiento'),
-  kind: 'neutral',
-  account: 'Caja',
-};
-
-function buildSettlementStatus(row) {
-  if (row.accountingStatus === 'cobrado_finalizado') return { label: 'Cobrado y finalizado', className: 'success' };
-  if (row.pendingCollectionBs > 0) return { label: 'Por cobrar', className: 'danger' };
-  if (row.refundBs > 0) return { label: 'Garantia devuelta', className: 'info' };
-  if (row.penaltiesBs > 0) return { label: 'Penalidad aplicada', className: 'warning' };
-  return { label: 'Liquidado', className: 'success' };
+function MiniIcon({ kind }) {
+  const paths = {
+    calendar: (
+      <>
+        <rect x="5" y="6" width="14" height="13" rx="2" />
+        <path d="M8 4v4M16 4v4M5 10h14" />
+      </>
+    ),
+    report: (
+      <>
+        <path d="M7 4h8l3 3v13H7z" />
+        <path d="M15 4v4h4M9.5 11h7M9.5 15h5" />
+      </>
+    ),
+    chevron: (
+      <>
+        <path d="m8 10 4 4 4-4" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="5" />
+        <path d="m15 15 4 4" />
+      </>
+    ),
+    export: (
+      <>
+        <path d="M12 4v10" />
+        <path d="m8 10 4 4 4-4" />
+        <path d="M5 20h14" />
+      </>
+    ),
+    more: (
+      <>
+        <path d="M12 6h.01M12 12h.01M12 18h.01" />
+      </>
+    ),
+    up: (
+      <>
+        <path d="M12 19V5" />
+        <path d="m7 10 5-5 5 5" />
+      </>
+    ),
+    down: (
+      <>
+        <path d="M12 5v14" />
+        <path d="m7 14 5 5 5-5" />
+      </>
+    ),
+    chart: (
+      <>
+        <path d="M5 18h14" />
+        <path d="M7 15v-4M12 15V7M17 15v-7" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 16v-4M12 8h.01" />
+      </>
+    ),
+    cart: (
+      <>
+        <path d="M5 5h2l1.2 8.2a2 2 0 0 0 2 1.7h5.8a2 2 0 0 0 1.9-1.4L20 8H8" />
+        <circle cx="10" cy="19" r="1" />
+        <circle cx="17" cy="19" r="1" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="6" y="10" width="12" height="10" rx="2" />
+        <path d="M9 10V7a3 3 0 0 1 6 0v3" />
+      </>
+    ),
+  };
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {paths[kind] ?? paths.report}
+      </g>
+    </svg>
+  );
 }
 
 function AccountingSection({
-  rentals = [],
-  contracts = [],
-  quotes = [],
-  supplierBundle = { suppliers: [], quotes: [], loans: [] },
-  personnelBundle = { employees: [], attendance: [], incidents: [] },
-  inventoryMovements = [],
-  stockRecoveries = [],
+  activeModule = 'contabilidad',
   cashSummary = null,
   cashMovements = [],
+  cashSessions = [],
+  rentals = [],
+  contracts = [],
   currentUser = null,
   formatBs,
   formatDate,
@@ -248,33 +186,31 @@ function AccountingSection({
   onCreateCashMovement,
   onCollectReceivable,
 }) {
-  const [activeTab, setActiveTab] = useState('resumen');
-  const [period, setPeriod] = useState('month');
-  const [query, setQuery] = useState('');
-  const [actionModal, setActionModal] = useState(null);
-  const [selectedReceivable, setSelectedReceivable] = useState(null);
-  const [actionForm, setActionForm] = useState(ACTION_FORM_DEFAULTS);
-  const [actionError, setActionError] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => getInputDate());
+  const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
+  const [bigCashTypeFilter, setBigCashTypeFilter] = useState('all');
+  const [bigCashQuery, setBigCashQuery] = useState('');
+  const [bigCashVisibleRows, setBigCashVisibleRows] = useState(7);
+  const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
+  const [pettyCashQuery, setPettyCashQuery] = useState('');
+  const [pettyCashVisibleRows, setPettyCashVisibleRows] = useState(5);
+  const [cashModal, setCashModal] = useState(null);
+  const [cashForm, setCashForm] = useState({
+    amountBs: '',
+    description: '',
+    category: 'varios',
+    paymentMethod: 'efectivo',
+    responsible: '',
+    receipt: '',
+    notes: '',
+  });
+  const [collectModal, setCollectModal] = useState(null);
+  const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', receipt: '', note: '' });
+  const [isSubmittingCash, setIsSubmittingCash] = useState(false);
+  const [cashActionError, setCashActionError] = useState('');
+  const [cashActionFeedback, setCashActionFeedback] = useState('');
 
-  const userName = currentUser?.fullName || currentUser?.username || 'Contabilidad';
-  const activeCashSession = cashSummary?.activeSession ?? null;
-
-  const periodRentals = useMemo(
-    () => rentals.filter((rental) => isInPeriod(rental.createdAt ?? rental.rentalAt, period)),
-    [period, rentals],
-  );
-
-  const returnedRentals = useMemo(
-    () => rentals.filter((rental) => rental.status === 'returned'),
-    [rentals],
-  );
-
-  const activeRentals = useMemo(
-    () => rentals.filter((rental) => rental.status === 'active'),
-    [rentals],
-  );
-
+  const rentalById = useMemo(() => new Map(rentals.map((rental) => [rental.id, rental])), [rentals]);
   const contractByRentalId = useMemo(() => {
     const map = new Map();
     contracts.forEach((contract) => {
@@ -283,1252 +219,1439 @@ function AccountingSection({
     return map;
   }, [contracts]);
 
-  const contractByOrderCode = useMemo(() => {
-    const map = new Map();
-    contracts.forEach((contract) => {
-      if (contract?.orderCode) map.set(contract.orderCode, contract);
-    });
-    return map;
-  }, [contracts]);
+  const sortedMovements = useMemo(
+    () => [...cashMovements].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    [cashMovements],
+  );
 
-  const settlementRows = useMemo(
-    () => returnedRentals
+  const bigCashPositiveRows = useMemo(
+    () => sortedMovements.filter((movement) => isBigCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
+    [sortedMovements],
+  );
+
+  const bigCashGuaranteeRows = useMemo(
+    () => bigCashPositiveRows.filter((movement) => String(movement?.type ?? '').toLowerCase() === 'ingreso_garantia'),
+    [bigCashPositiveRows],
+  );
+
+  const bigCashIncomeRows = useMemo(
+    () => bigCashPositiveRows.filter((movement) => String(movement?.type ?? '').toLowerCase() !== 'ingreso_garantia'),
+    [bigCashPositiveRows],
+  );
+
+  const pettyTransfersRows = useMemo(
+    () => sortedMovements.filter((movement) => isBigCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
+    [sortedMovements],
+  );
+
+  const pettyExpenseRows = useMemo(
+    () => sortedMovements.filter((movement) => isPettyCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
+    [sortedMovements],
+  );
+
+  const bigCashMovementRows = useMemo(
+    () => sortedMovements.filter((movement) => isBigCash(movement)),
+    [sortedMovements],
+  );
+
+  const dayBigIncomeBs = useMemo(
+    () => sumBy(bigCashIncomeRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate), (movement) => movement.amountBs),
+    [bigCashIncomeRows, selectedDate],
+  );
+
+  const dayTransfersToPettyBs = useMemo(
+    () => Math.abs(sumBy(pettyTransfersRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate), (movement) => movement.amountBs)),
+    [pettyTransfersRows, selectedDate],
+  );
+
+  const dayPettyExpensesRows = useMemo(
+    () => pettyExpenseRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
+    [pettyExpenseRows, selectedDate],
+  );
+
+  const dayPettyExpenseBs = useMemo(
+    () => Math.abs(sumBy(dayPettyExpensesRows, (movement) => movement.amountBs)),
+    [dayPettyExpensesRows],
+  );
+
+  const dayPettyOpeningBs = useMemo(() => {
+    const openingRows = sortedMovements.filter(
+      (movement) => isPettyCash(movement)
+        && String(movement.type ?? '').toLowerCase() === 'apertura'
+        && getDateKey(movement.createdAt) === selectedDate,
+    );
+    return sumBy(openingRows, (movement) => movement.amountBs);
+  }, [selectedDate, sortedMovements]);
+
+  const dayPettyOpeningRows = useMemo(
+    () => sortedMovements.filter(
+      (movement) => isPettyCash(movement)
+        && String(movement.type ?? '').toLowerCase() === 'apertura'
+        && getDateKey(movement.createdAt) === selectedDate,
+    ),
+    [selectedDate, sortedMovements],
+  );
+
+  const selectedDayPettyRepositions = useMemo(
+    () => pettyTransfersRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
+    [pettyTransfersRows, selectedDate],
+  );
+
+  const dayPettyRepositionBs = useMemo(
+    () => Math.max(0, dayTransfersToPettyBs - dayPettyOpeningBs),
+    [dayPettyOpeningBs, dayTransfersToPettyBs],
+  );
+
+  const bigCashBalanceBs = toNumber(cashSummary?.bigCashBalanceBs ?? 0);
+  const pettyCashBalanceBs = toNumber(cashSummary?.pettyCashBalanceBs ?? 0);
+  const selectedMonthKey = getMonthKey(`${selectedDate}T12:00:00`);
+  const monthStartDate = getMonthStartInput(selectedDate);
+  const monthBigCashIncomeBs = useMemo(
+    () => sumBy(bigCashIncomeRows.filter((movement) => getMonthKey(movement.createdAt) === selectedMonthKey), (movement) => movement.amountBs),
+    [bigCashIncomeRows, selectedMonthKey],
+  );
+  const monthBigCashTransferBs = useMemo(
+    () => Math.abs(sumBy(pettyTransfersRows.filter((movement) => getMonthKey(movement.createdAt) === selectedMonthKey), (movement) => movement.amountBs)),
+    [pettyTransfersRows, selectedMonthKey],
+  );
+  const bigCashMonthOpeningBs = bigCashBalanceBs - monthBigCashIncomeBs + monthBigCashTransferBs;
+
+  const getMovementReference = useCallback((movement) => {
+    const sourceId = String(movement?.sourceId ?? '').trim();
+    if (!sourceId) return movement?.receipt || '-';
+    const rental = rentalById.get(sourceId);
+    const contract = contractByRentalId.get(sourceId);
+    if (contract?.contractCode) return contract.contractCode;
+    if (rental?.orderCode) return rental.orderCode;
+    return movement?.receipt || sourceId;
+  }, [contractByRentalId, rentalById]);
+
+  const filteredBigCashRows = useMemo(() => {
+    const text = bigCashQuery.trim().toLowerCase();
+    return bigCashMovementRows.filter((movement) => {
+      const amount = toNumber(movement.amountBs);
+      const matchesType =
+        bigCashTypeFilter === 'all'
+        || (bigCashTypeFilter === 'income' && !movement.isInternalTransfer && amount > 0)
+        || (bigCashTypeFilter === 'transfer' && movement.isInternalTransfer && amount < 0);
+      if (!matchesType) return false;
+      if (!text) return true;
+      return [
+        movement.description,
+        movement.receipt,
+        movement.responsible,
+        movement.createdBy,
+        getMovementReference(movement),
+      ].some((value) => String(value ?? '').toLowerCase().includes(text));
+    });
+  }, [bigCashMovementRows, bigCashQuery, bigCashTypeFilter, getMovementReference]);
+
+  const getPettyExpenseCategory = useCallback((movement) => {
+    const raw = String(movement?.category ?? '').trim();
+    const description = String(movement?.description ?? '').toLowerCase();
+    const normalized = raw.toLowerCase();
+    if (normalized.includes('movilidad') || description.includes('pasaje') || description.includes('movilidad')) {
+      return { label: 'Movilidad', className: 'mobility' };
+    }
+    if (normalized.includes('aliment') || description.includes('refrigerio') || description.includes('comida')) {
+      return { label: 'Alimentacion', className: 'food' };
+    }
+    if (normalized.includes('oficina') || description.includes('oficina') || description.includes('impresion') || description.includes('fotocopia')) {
+      return { label: 'Oficina', className: 'office' };
+    }
+    return { label: raw || 'Varios', className: 'other' };
+  }, []);
+
+  const filteredPettyExpenseRows = useMemo(() => {
+    const text = pettyCashQuery.trim().toLowerCase();
+    return dayPettyExpensesRows.filter((movement) => {
+      const category = getPettyExpenseCategory(movement);
+      const matchesType = pettyCashTypeFilter === 'all' || category.className === pettyCashTypeFilter;
+      if (!matchesType) return false;
+      if (!text) return true;
+      return [
+        movement.description,
+        movement.receipt,
+        movement.responsible,
+        movement.createdBy,
+        category.label,
+      ].some((value) => String(value ?? '').toLowerCase().includes(text));
+    });
+  }, [dayPettyExpensesRows, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
+
+  const activeCashSession = useMemo(
+    () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
+    [cashSessions],
+  );
+
+  const pettySessionHistory = useMemo(
+    () => [...cashSessions]
+      .sort((a, b) => new Date(b.openedAt ?? b.closedAt ?? 0) - new Date(a.openedAt ?? a.closedAt ?? 0))
+      .slice(0, 4),
+    [cashSessions],
+  );
+
+  const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
+
+  const activeGuaranteeRows = useMemo(
+    () => rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'active')
+      .filter((rental) => toNumber(rental?.depositBs) > 0),
+    [rentals],
+  );
+
+  const guaranteesHeldBs = useMemo(
+    () => sumBy(activeGuaranteeRows, (rental) => rental.depositBs),
+    [activeGuaranteeRows],
+  );
+
+  const operationalBigCashBs = Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2)));
+  const dayGuaranteeIncomeBs = useMemo(
+    () => sumBy(bigCashGuaranteeRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate), (movement) => movement.amountBs),
+    [bigCashGuaranteeRows, selectedDate],
+  );
+
+  const pendingReceivableRows = useMemo(
+    () => rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() !== 'cancelled')
       .map((rental) => {
-        const contract = contractByRentalId.get(rental.id) ?? contractByOrderCode.get(rental.orderCode);
-        const settlement = rental.returnSettlement ?? {};
-        const row = {
+        const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
+        const settlement = rental?.returnSettlement ?? {};
+        const pendingBs = isReturned
+          ? toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs)
+          : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
+        if (pendingBs <= 0) return null;
+        const contract = contractByRentalId.get(rental.id);
+        return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
-          contractCode: contract?.contractCode ?? null,
+          contractCode: contract?.contractCode ?? '',
           customerName: rental.customerName ?? 'Cliente',
-          customerPhone: rental.customerPhone ?? contract?.customerPhone ?? '',
-          returnedAt: rental.returnedAt ?? rental.updatedAt ?? rental.createdAt,
-          rentalTotalBs: getRentalTotal(rental),
-          paidBs: getRentalPaid(rental),
-          depositBs: toNumber(rental.depositBs),
+          status: isReturned ? 'Liquidacion' : 'Contrato',
+          pendingBs,
+          totalBs: toNumber(rental?.totals?.totalBs),
+          paidBs: toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+          guaranteeBs: toNumber(rental?.depositBs),
+          penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
           outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
-          penaltiesBs: toNumber(settlement.penaltiesBs ?? rental.penaltiesBs),
-          discountCoveredByDepositBs: toNumber(settlement.discountCoveredByDepositBs),
-          refundBs: toNumber(settlement.refundBs ?? rental.refundBs),
-          pendingCollectionBs: toNumber(settlement.pendingCollectionBs),
-          accountingStatus: rental.accountingStatus ?? rental.payment?.status ?? '',
-          eventType: contract?.eventType ?? rental.eventType ?? 'General',
-          eventDate: contract?.eventDate ?? rental.rentalDate ?? rental.createdAt,
-          deliveryDate: contract?.deliveryDate ?? rental.rentalDate ?? rental.createdAt,
-          pickupDate: contract?.pickupDate ?? rental.dueDate ?? rental.dueAt,
-          billingMode: contract?.billingMode ?? rental.billingMode,
-          logisticsMode: contract?.logisticsMode ?? rental.logisticsMode,
-          items: rental.returnReport ?? rental.items ?? [],
-          rental,
-          contract,
-        };
-        return {
-          ...row,
-          status: buildSettlementStatus(row),
+          refundBs: toNumber(settlement.refundBs ?? rental?.refundBs),
         };
       })
-      .filter((row) => isInPeriod(row.returnedAt, period))
-      .sort((a, b) => new Date(b.returnedAt) - new Date(a.returnedAt)),
-    [contractByOrderCode, contractByRentalId, period, returnedRentals],
+      .filter(Boolean)
+      .sort((a, b) => b.pendingBs - a.pendingBs),
+    [contractByRentalId, rentals],
   );
 
-  const periodCashMovements = useMemo(
-    () => cashMovements.filter((movement) => isInPeriod(movement.createdAt, period)),
-    [cashMovements, period],
+  const pendingReceivableBs = useMemo(
+    () => sumBy(pendingReceivableRows, (row) => row.pendingBs),
+    [pendingReceivableRows],
   );
 
-  const realPeriodCashMovements = useMemo(
-    () => periodCashMovements.filter((movement) => !movement.isInternalTransfer),
-    [periodCashMovements],
-  );
-
-  const cashBoxStats = useMemo(() => {
-    const buildStats = (cashBoxType) => {
-      const allRows = periodCashMovements.filter((movement) => getCashBoxMeta(movement.cashBoxType).className === getCashBoxMeta(cashBoxType).className);
-      const realRows = allRows.filter((movement) => !movement.isInternalTransfer);
-      const incomeBs = sumBy(realRows.filter((movement) => toNumber(movement.amountBs) > 0), (movement) => movement.amountBs);
-      const expenseBs = Math.abs(sumBy(realRows.filter((movement) => toNumber(movement.amountBs) < 0), (movement) => movement.amountBs));
-      const transferInBs = sumBy(allRows.filter((movement) => movement.isInternalTransfer && toNumber(movement.amountBs) > 0), (movement) => movement.amountBs);
-      const transferOutBs = Math.abs(sumBy(allRows.filter((movement) => movement.isInternalTransfer && toNumber(movement.amountBs) < 0), (movement) => movement.amountBs));
-      return {
-        balanceBs: toNumber(cashBoxType === 'PETTY_CASH' ? cashSummary?.pettyCashBalanceBs : cashSummary?.bigCashBalanceBs),
-        incomeBs,
-        expenseBs,
-        transferInBs,
-        transferOutBs,
-        rows: allRows,
-      };
-    };
-
-    const big = buildStats('BIG_CASH');
-    const petty = buildStats('PETTY_CASH');
-    return {
-      BIG_CASH: big,
-      PETTY_CASH: petty,
-      totalAvailableBs: toNumber(cashSummary?.totalAvailableBs ?? big.balanceBs + petty.balanceBs),
-      internalTransfers: periodCashMovements.filter((movement) => movement.isInternalTransfer),
-    };
-  }, [cashSummary, periodCashMovements]);
-
-  const inventoryRows = useMemo(() => {
-    const text = query.trim().toLowerCase();
-    return inventoryMovements
-      .filter((movement) => ['reserva', 'reinsercion', 'salida', 'entrada', 'ajuste'].includes(movement.type))
-      .filter((movement) => isInPeriod(movement.createdAt, period))
-      .map((movement) => {
-        const beforeAvailable = toNumber(movement.beforeAvailableStock ?? movement.beforeTotalStock);
-        const afterAvailable = toNumber(movement.afterAvailableStock ?? movement.afterTotalStock);
-        const beforeTotal = toNumber(movement.beforeTotalStock);
-        const afterTotal = toNumber(movement.afterTotalStock);
-        const availableDelta = afterAvailable - beforeAvailable;
-        const totalDelta = afterTotal - beforeTotal;
-        const impactUnits = toNumber(movement.deltaUnits) || availableDelta || totalDelta;
-        return {
-          id: movement.id,
-          createdAt: movement.createdAt,
-          type: movement.type,
-          itemName: movement.itemName ?? 'Item',
-          reference: movement.reference ?? movement.id,
-          reason: movement.reason ?? movement.detail ?? '-',
-          impactUnits,
-          stockAfter: afterAvailable,
-          userName: movement.userName ?? 'Sistema',
-        };
-      })
-      .filter((row) => {
-        if (!text) return true;
-        return String(row.itemName).toLowerCase().includes(text)
-          || String(row.reference).toLowerCase().includes(text)
-          || String(row.reason).toLowerCase().includes(text)
-          || String(row.type).toLowerCase().includes(text);
-      })
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [inventoryMovements, period, query]);
-
-  const ledgerRows = useMemo(() => {
-    const rentalRows = periodRentals.map((rental) => ({
-      id: `rental-${rental.id}`,
-      createdAt: rental.createdAt ?? rental.rentalAt,
-      source: rental.orderCode ?? rental.id,
-      description: `Orden de servicio - ${rental.customerName ?? 'Cliente'}`,
-      account: 'Ingresos devengados',
-      typeLabel: 'Devengo alquiler',
-      kind: getRentalPending(rental) > 0 ? 'pending' : 'income',
-      cashBoxType: 'BIG_CASH',
-      isInternalTransfer: false,
-      amountBs: getRentalTotal(rental),
-      status: getRentalPending(rental) > 0 ? 'Con saldo' : 'Pagado',
-    }));
-
-    const movementRows = periodCashMovements.map((movement) => {
-      const meta = getMovementMeta(movement.type);
-      return {
-        id: `cash-${movement.id}`,
-        createdAt: movement.createdAt,
-        source: movement.sourceType ? `${movement.sourceType} ${movement.sourceId ?? ''}` : 'Caja',
-        description: movement.description,
-        account: meta.account,
-        typeLabel: meta.label,
-        kind: movement.isInternalTransfer ? 'transfer' : meta.kind,
-        cashBoxType: movement.cashBoxType ?? 'BIG_CASH',
-        isInternalTransfer: Boolean(movement.isInternalTransfer),
-        amountBs: toNumber(movement.amountBs),
-        status: movement.sessionId ? 'En caja' : 'Sin sesion',
-      };
-    });
-
-    const returnRows = settlementRows.map((row) => ({
-      id: `return-${row.id}`,
-      createdAt: row.returnedAt,
-      source: row.orderCode,
-      description: `Liquidacion devolucion - ${row.customerName}`,
-      account: 'Liquidaciones',
-      typeLabel: 'Cierre devolucion',
-      kind: row.pendingCollectionBs > 0 ? 'pending' : 'settlement',
-      cashBoxType: 'BIG_CASH',
-      isInternalTransfer: false,
-      amountBs: row.penaltiesBs + row.outstandingRentalBs - row.refundBs,
-      status: row.status.label,
-    }));
-
-    const text = query.trim().toLowerCase();
-    return [...rentalRows, ...movementRows, ...returnRows]
-      .filter((row) => {
-        if (!text) return true;
-        return String(row.source).toLowerCase().includes(text)
-          || String(row.description).toLowerCase().includes(text)
-          || String(row.account).toLowerCase().includes(text)
-          || String(row.typeLabel).toLowerCase().includes(text);
-      })
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [periodCashMovements, periodRentals, query, settlementRows]);
-
-  const pendingRows = useMemo(() => {
-    const buildReceivableRow = (rental, kind) => {
-      const contract = contractByRentalId.get(rental.id) ?? contractByOrderCode.get(rental.orderCode);
-      const settlement = rental.returnSettlement ?? {};
-      const isReturn = kind === 'return';
-      const items = Array.isArray(rental.items) ? rental.items : [];
-      const returnItems = Array.isArray(rental.returnReport) ? rental.returnReport : [];
-      const displayItems = isReturn && returnItems.length > 0 ? returnItems : items;
-      const source = rental.orderCode ?? rental.id;
-      const relatedMovements = cashMovements
-        .filter((movement) => movement.sourceId === rental.id || movement.sourceId === source)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      const pendingCollectionBs = toNumber(settlement.pendingCollectionBs);
-
-      return {
-        id: `${isReturn ? 'pending-return' : 'pending-rental'}-${rental.id}`,
-        sourceKind: isReturn ? 'return' : 'rental',
-        rentalId: rental.id,
-        type: isReturn ? 'Liquidacion devolucion' : 'Cobro alquiler',
-        source,
-        contractCode: contract?.contractCode ?? 'Sin contrato',
-        contractStatus: contract?.status ?? '-',
-        detail: rental.customerName ?? contract?.customerName ?? 'Cliente',
-        customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
-        customerPhone: rental.customerPhone ?? contract?.customerPhone ?? '',
-        eventType: contract?.eventType ?? rental.eventType ?? 'Servicio de alquiler',
-        eventDate: contract?.eventDate ?? rental.rentalDate ?? rental.createdAt,
-        eventTime: contract?.eventTime ?? '',
-        deliveryDate: contract?.deliveryDate ?? rental.rentalDate ?? rental.createdAt,
-        pickupDate: contract?.pickupDate ?? rental.dueDate ?? rental.dueAt,
-        dueAt: isReturn ? rental.returnedAt ?? rental.updatedAt : rental.dueAt ?? rental.dueDate ?? rental.createdAt,
-        returnedAt: rental.returnedAt ?? rental.updatedAt,
-        amountBs: isReturn ? pendingCollectionBs : getRentalPending(rental),
-        totalBs: getRentalTotal(rental),
-        paidBs: getRentalPaid(rental),
-        depositBs: toNumber(rental.depositBs ?? contract?.totals?.guaranteeBs),
-        outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
-        penaltiesBs: toNumber(settlement.penaltiesBs ?? rental.penaltiesBs),
-        refundBs: toNumber(settlement.refundBs ?? rental.refundBs),
-        discountCoveredByDepositBs: toNumber(settlement.discountCoveredByDepositBs),
-        billingMode: contract?.billingMode ?? rental.billingMode,
-        logisticsMode: contract?.logisticsMode ?? rental.logisticsMode,
-        paymentMode: rental.payment?.mode,
-        paymentStatus: rental.payment?.status ?? rental.accountingStatus ?? '-',
-        items: displayItems,
-        itemLines: displayItems.length,
-        itemUnits: displayItems.reduce((sum, line) => sum + getLineQuantity(line), 0),
-        cashMovements: relatedMovements,
-        status: isReturn ? 'Post-devolucion' : 'Por cobrar',
-      };
-    };
-
-    const activePending = activeRentals
-      .filter((rental) => getRentalPending(rental) > 0)
-      .map((rental) => buildReceivableRow(rental, 'rental'));
-
-    const returnPending = returnedRentals
-      .filter((rental) => toNumber(rental.returnSettlement?.pendingCollectionBs) > 0)
-      .filter((rental) => isInPeriod(rental.returnedAt ?? rental.updatedAt ?? rental.createdAt, period))
-      .map((rental) => buildReceivableRow(rental, 'return'));
-
-    const recoveryPending = stockRecoveries.map((recovery) => ({
-      id: `recovery-${recovery.id}`,
-      sourceKind: 'inventory',
-      type: recovery.stage === 'lavado' ? 'Lavado pendiente' : 'Reparacion pendiente',
-      source: recovery.itemName,
-      detail: recovery.sourceCustomerName ?? recovery.note ?? 'Inventario',
-      amountBs: 0,
-      dueAt: recovery.updatedAt ?? recovery.createdAt,
-      status: `${recovery.quantity} unidades`,
-      itemUnits: toNumber(recovery.quantity),
-      itemLines: 1,
-      customerName: recovery.sourceCustomerName ?? 'Inventario',
-      inventoryStage: recovery.stage,
-    }));
-
-    return [...activePending, ...returnPending, ...recoveryPending]
-      .sort((a, b) => new Date(b.dueAt ?? 0) - new Date(a.dueAt ?? 0));
-  }, [activeRentals, cashMovements, contractByOrderCode, contractByRentalId, period, returnedRentals, stockRecoveries]);
-
-  const totals = useMemo(() => {
-    const accruedRevenueBs = sumBy(periodRentals, (rental) => getRentalTotal(rental))
-      + sumBy(settlementRows, (row) => row.penaltiesBs);
-    const cashInBs = sumBy(realPeriodCashMovements.filter((movement) => toNumber(movement.amountBs) > 0), (movement) => movement.amountBs);
-    const cashOutBs = Math.abs(sumBy(realPeriodCashMovements.filter((movement) => toNumber(movement.amountBs) < 0), (movement) => movement.amountBs));
-    const netCashBs = Number((cashInBs - cashOutBs).toFixed(2));
-    const accountsReceivableBs = sumBy(activeRentals, getRentalPending) + sumBy(settlementRows, (row) => row.pendingCollectionBs);
-    const guaranteeCustodyBs = sumBy(activeRentals, (rental) => rental.depositBs);
-    const returnPenaltiesBs = sumBy(settlementRows, (row) => row.penaltiesBs);
-    const refundsBs = sumBy(settlementRows, (row) => row.refundBs);
-    const supplierLoansPending = supplierBundle.loans?.filter((loan) => !['devuelto', 'cerrado', 'cancelado'].includes(String(loan.status ?? '').toLowerCase())).length ?? 0;
-
-    return {
-      accruedRevenueBs,
-      cashInBs,
-      cashOutBs,
-      netCashBs,
-      accountsReceivableBs,
-      guaranteeCustodyBs,
-      returnPenaltiesBs,
-      refundsBs,
-      bigCashBs: cashBoxStats.BIG_CASH.balanceBs,
-      pettyCashBs: cashBoxStats.PETTY_CASH.balanceBs,
-      supplierLoansPending,
-      contractsPending: contracts.filter((contract) => contract.status === 'pendiente').length,
-      quotesOpen: quotes.filter((quote) => ['borrador', 'enviada'].includes(quote.status)).length,
-      personnelIncidents: personnelBundle.incidents?.length ?? 0,
-    };
-  }, [activeRentals, cashBoxStats, contracts, periodRentals, personnelBundle.incidents, quotes, realPeriodCashMovements, settlementRows, supplierBundle.loans]);
-
-  const kpiCards = [
-    { tone: 'mint', icon: 'money', value: formatBs(totals.accruedRevenueBs), label: 'Ingresos devengados', note: `${periodRentals.length} ordenes en periodo` },
-    { tone: 'sky', icon: 'wallet', value: formatBs(cashBoxStats.totalAvailableBs), label: 'Caja neta general', note: `Grande ${formatBs(totals.bigCashBs)} / chica ${formatBs(totals.pettyCashBs)}` },
-    { tone: 'peach', icon: 'pending', value: formatBs(totals.accountsReceivableBs), label: 'Por cobrar', note: `${pendingRows.filter((row) => row.amountBs > 0).length} pendientes monetarios` },
-    { tone: 'lilac', icon: 'shield', value: formatBs(totals.guaranteeCustodyBs), label: 'Garantias en custodia', note: `${activeRentals.length} ordenes activas` },
+  const quickReportLinks = [
+    'Libro de Caja Grande',
+    'Libro de Caja Chica',
+    'Flujo de Caja',
+    'Movimientos por Fecha',
   ];
 
-  const openActionModal = (nextAction) => {
-    setSelectedReceivable(null);
-    setActionModal(nextAction);
-    setActionError('');
-    setActionForm({
-      ...ACTION_FORM_DEFAULTS,
-      openingBigCashBs: '0',
-      openingPettyCashBs: '0',
-      countedAmountBs: String(activeCashSession?.expectedBalanceBs ?? 0),
-      countedBigCashBs: String(activeCashSession?.expectedBigCashBs ?? 0),
-      countedPettyCashBs: String(activeCashSession?.expectedPettyCashBs ?? 0),
-      responsible: userName,
-    });
+  const exportCashRows = (title, rows) => {
+    const headers = ['Fecha', 'Caja', 'Tipo', 'Concepto', 'Referencia', 'Monto', 'Usuario'];
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = rows.map((movement) => [
+      formatDateTime(movement.createdAt),
+      isBigCash(movement) ? 'Caja Grande' : 'Caja Chica',
+      movement.type || '-',
+      movement.description || '-',
+      getMovementReference(movement),
+      toNumber(movement.amountBs).toFixed(2),
+      movement.responsible || movement.createdBy || '-',
+    ].map(escapeCsv).join(','));
+    const csv = [headers.map(escapeCsv).join(','), ...body].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title}-${selectedDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
-  const openPettyCashTransferModal = () => {
-    openActionModal('movement');
-    setActionForm((current) => ({
-      ...current,
-      type: 'transferencia',
-      cashBoxType: 'PETTY_CASH',
-      category: 'reposicion_caja_chica',
+  const handleQuickReport = (label) => {
+    if (label === 'Libro de Caja Grande') {
+      exportCashRows('libro-caja-grande', bigCashMovementRows);
+      return;
+    }
+    if (label === 'Libro de Caja Chica') {
+      exportCashRows('libro-caja-chica', sortedMovements.filter((movement) => isPettyCash(movement)));
+      return;
+    }
+    if (label === 'Movimientos por Fecha') {
+      exportCashRows(`movimientos-${selectedDate}`, sortedMovements.filter((movement) => getDateKey(movement.createdAt) === selectedDate));
+      return;
+    }
+    exportCashRows('flujo-caja', sortedMovements);
+  };
+
+  const getBigCashMovementType = (movement) => {
+    const amount = toNumber(movement?.amountBs);
+    if (movement?.isInternalTransfer || amount < 0) {
+      return {
+        label: 'Retiro',
+        className: 'out',
+        icon: 'down',
+        income: '-',
+        withdrawal: formatBs(Math.abs(amount)),
+      };
+    }
+    return {
+      label: 'Ingreso',
+      className: 'in',
+      icon: 'up',
+      income: formatBs(amount),
+      withdrawal: '-',
+    };
+  };
+
+  const runningBigCashBalance = (index) => {
+    const laterMovements = filteredBigCashRows.slice(index + 1);
+    const laterDelta = sumBy(laterMovements, (movement) => movement.amountBs);
+    return bigCashBalanceBs - laterDelta;
+  };
+
+  const resetCashForm = (patch = {}) => {
+    setCashForm({
+      amountBs: '',
+      description: '',
+      category: 'varios',
       paymentMethod: 'efectivo',
-      description: 'Reposicion de caja chica desde caja grande',
-      responsible: userName,
-    }));
-  };
-
-  const openCollectModal = (receivable) => {
-    setSelectedReceivable(receivable);
-    setActionModal('collect');
-    setActionError('');
-    setActionForm({
-      ...ACTION_FORM_DEFAULTS,
-      amountBs: String(receivable.amountBs ?? 0),
-      description: `${receivable.type} ${receivable.source} | ${receivable.customerName ?? receivable.detail} | Saldo ${formatBs(receivable.amountBs ?? 0)}`,
+      responsible: currentUserName,
+      receipt: '',
+      notes: '',
+      ...patch,
     });
+    setCashActionError('');
+    setCashActionFeedback('');
   };
 
-  const closeActionModal = () => {
-    if (isSubmitting) return;
-    setActionModal(null);
-    setSelectedReceivable(null);
-    setActionError('');
+  const openCashAction = (type, patch = {}) => {
+    resetCashForm(patch);
+    setCashModal(type);
   };
 
-  const submitAction = async (event) => {
+  const closeCashAction = () => {
+    setCashModal(null);
+    setCashActionError('');
+  };
+
+  const openCollectAction = (row) => {
+    setCollectModal(row);
+    setCollectForm({
+      amountBs: String(row.pendingBs ?? ''),
+      paymentMethod: 'efectivo',
+      receipt: '',
+      note: row.status === 'Liquidacion'
+        ? `Cobro liquidacion ${row.orderCode}`
+        : `Cobro saldo contrato ${row.orderCode}`,
+    });
+    setCashActionError('');
+    setCashActionFeedback('');
+  };
+
+  const closeCollectAction = () => {
+    setCollectModal(null);
+    setCashActionError('');
+  };
+
+  const handleSubmitCashAction = async (event) => {
     event.preventDefault();
-    setActionError('');
-    setIsSubmitting(true);
+    if (!cashModal) return;
+    setIsSubmittingCash(true);
+    setCashActionError('');
     try {
-      if (actionModal === 'open') {
+      const amountBs = Math.max(0, toNumber(cashForm.amountBs));
+      if (cashModal === 'openPetty') {
         await onOpenCashSession?.({
-          openingAmountBs: actionForm.openingBigCashBs,
-          openingBigCashBs: actionForm.openingBigCashBs,
-          openingPettyCashBs: actionForm.openingPettyCashBs,
-          notes: actionForm.notes,
-          openedBy: userName,
+          openingBigCashBs: 0,
+          openingPettyCashBs: amountBs,
+          openedBy: currentUserName,
+          notes: cashForm.notes || cashForm.description || 'Apertura diaria de caja chica',
         });
-      } else if (actionModal === 'close') {
-        await onCloseCashSession?.({
-          countedAmountBs: actionForm.countedAmountBs,
-          countedBigCashBs: actionForm.countedBigCashBs,
-          countedPettyCashBs: actionForm.countedPettyCashBs,
-          notes: actionForm.notes,
-          closedBy: userName,
-        });
-      } else if (actionModal === 'movement') {
+        setCashActionFeedback('Caja Chica aperturada desde Caja Grande.');
+      } else if (cashModal === 'transfer') {
         await onCreateCashMovement?.({
-          type: actionForm.type,
-          cashBoxType: actionForm.cashBoxType,
-          category: actionForm.category,
-          amountBs: actionForm.amountBs,
-          paymentMethod: actionForm.paymentMethod,
-          description: actionForm.description,
-          responsible: actionForm.responsible,
-          receipt: actionForm.receipt,
-          createdBy: userName,
+          type: 'transferencia',
+          amountBs,
+          description: cashForm.description || 'Reposicion de Caja Chica',
+          category: 'reposicion_caja_chica',
+          paymentMethod: cashForm.paymentMethod,
+          responsible: cashForm.responsible || currentUserName,
+          receipt: cashForm.receipt,
+          createdBy: currentUserName,
         });
-      } else if (actionModal === 'collect') {
-        await onCollectReceivable?.({
-          rentalId: selectedReceivable?.rentalId,
-          amountBs: actionForm.amountBs,
-          note: actionForm.description,
+        setCashActionFeedback('Reposicion registrada en Caja Grande y Caja Chica.');
+      } else if (cashModal === 'expense') {
+        await onCreateCashMovement?.({
+          type: 'egreso',
+          cashBoxType: 'PETTY_CASH',
+          amountBs,
+          description: cashForm.description,
+          category: cashForm.category,
+          paymentMethod: cashForm.paymentMethod,
+          responsible: cashForm.responsible || currentUserName,
+          receipt: cashForm.receipt,
+          createdBy: currentUserName,
+        });
+        setCashActionFeedback('Gasto registrado en Caja Chica.');
+      } else if (cashModal === 'income') {
+        await onCreateCashMovement?.({
+          type: 'ingreso',
           cashBoxType: 'BIG_CASH',
-          paymentMethod: actionForm.paymentMethod,
-          receipt: actionForm.receipt,
-          createdBy: userName,
+          amountBs,
+          description: cashForm.description,
+          category: cashForm.category || 'ingreso_manual',
+          paymentMethod: cashForm.paymentMethod,
+          responsible: cashForm.responsible || currentUserName,
+          receipt: cashForm.receipt,
+          createdBy: currentUserName,
         });
+        setCashActionFeedback('Ingreso registrado en Caja Grande.');
+      } else if (cashModal === 'closePetty') {
+        await onCloseCashSession?.({
+          countedBigCashBs: bigCashBalanceBs,
+          countedPettyCashBs: amountBs,
+          closedBy: currentUserName,
+          notes: cashForm.notes || cashForm.description || 'Cierre diario de caja chica',
+        });
+        setCashActionFeedback('Caja Chica cerrada y saldo devuelto a Caja Grande.');
       }
-      setActionModal(null);
-      setSelectedReceivable(null);
-      setActionError('');
+      closeCashAction();
     } catch (error) {
-      setActionError(error.message || 'No se pudo completar la accion de caja.');
+      setCashActionError(error.message || 'No se pudo completar la operacion.');
     } finally {
-      setIsSubmitting(false);
+      setIsSubmittingCash(false);
     }
   };
 
-  return (
-    <section className="panel accounting-view">
-      <header className="accounting-header">
-        <div>
-          <h2>Contabilidad</h2>
-          <p>Controla caja, garantias, saldos por cobrar, liquidaciones e impacto de inventario desde los procesos reales del sistema.</p>
-        </div>
-        <div className="accounting-header-actions">
-          {activeCashSession ? (
-            <>
-              <button type="button" className="ghost-button" onClick={() => openActionModal('movement')}>
-                + Movimiento
-              </button>
-              <button type="button" className="primary-button" onClick={() => openActionModal('close')}>
-                Cerrar caja
-              </button>
-            </>
-          ) : (
-            <button type="button" className="primary-button" onClick={() => openActionModal('open')}>
-              Abrir caja
-            </button>
-          )}
-        </div>
-      </header>
+  const handleSubmitCollectAction = async (event) => {
+    event.preventDefault();
+    if (!collectModal) return;
+    setIsSubmittingCash(true);
+    setCashActionError('');
+    try {
+      await onCollectReceivable?.({
+        rentalId: collectModal.id,
+        amountBs: Math.max(0, toNumber(collectForm.amountBs)),
+        paymentMethod: collectForm.paymentMethod,
+        receipt: collectForm.receipt,
+        note: collectForm.note,
+        createdBy: currentUserName,
+      });
+      setCashActionFeedback('Cobro registrado en Caja Grande.');
+      closeCollectAction();
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo registrar el cobro.');
+    } finally {
+      setIsSubmittingCash(false);
+    }
+  };
 
-      <div className="accounting-kpi-grid">
-        {kpiCards.map((card) => (
-          <article key={card.label} className={`accounting-kpi-card ${card.tone}`}>
-            <span className={`accounting-kpi-icon ${card.tone}`}>
-              <AccountingIcon kind={card.icon} />
-            </span>
-            <strong>{card.value}</strong>
-            <p>{card.label}</p>
-            <small>{card.note}</small>
-          </article>
-        ))}
-      </div>
+  const getCashModalTitle = () => {
+    if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
+    if (cashModal === 'transfer') return 'Reponer Caja Chica';
+    if (cashModal === 'expense') return 'Registrar gasto de Caja Chica';
+    if (cashModal === 'income') return 'Registrar ingreso de Caja Grande';
+    if (cashModal === 'closePetty') return 'Cerrar Caja Chica';
+    return 'Movimiento de caja';
+  };
 
-      <article className="accounting-process-card">
-        <header>
-          <div>
-            <span className="accounting-eyebrow">Trazabilidad punta a punta</span>
-            <h3>Como se conectan los procesos</h3>
-          </div>
-          <span className={`accounting-cash-status ${activeCashSession ? 'open' : 'closed'}`}>
-            {activeCashSession ? `Caja abierta: ${formatBs(activeCashSession.expectedBalanceBs)}` : 'Caja cerrada'}
-          </span>
-        </header>
-        <div className="accounting-flow-grid">
-          {FLOW_STEPS.map((step) => (
-            <article key={step.area}>
-              <strong>{step.area}</strong>
-              <span>Pide: {step.pide}</span>
-              <span>Manda: {step.manda}</span>
-            </article>
-          ))}
-        </div>
-      </article>
-
-      <article className="accounting-board">
-        <div className="accounting-board-head">
-          <div className="accounting-tabs">
-            {ACCOUNTING_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={activeTab === tab.id ? 'active' : ''}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="accounting-filters">
-            <label className="accounting-search">
-              <input
-                type="search"
-                placeholder="Buscar orden, cliente, cuenta o item..."
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-            <select value={period} onChange={(event) => setPeriod(event.target.value)}>
-              {PERIOD_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {activeTab === 'resumen' ? (
-          <div className="accounting-summary-grid">
-            <article className="accounting-summary-panel">
-              <h3>Resultado del periodo</h3>
-              <div className="accounting-money-list">
-                <div><span>Ingreso devengado</span><strong>{formatBs(totals.accruedRevenueBs)}</strong></div>
-                <div><span>Penalidades por devolucion</span><strong>{formatBs(totals.returnPenaltiesBs)}</strong></div>
-                <div><span>Garantias devueltas</span><strong>{formatBs(totals.refundsBs)}</strong></div>
-                <div><span>Caja neta registrada</span><strong>{formatBs(totals.netCashBs)}</strong></div>
-              </div>
-            </article>
-
-            <article className="accounting-summary-panel">
-              <h3>Pendientes de control</h3>
-              <div className="accounting-pending-list">
-                {pendingRows.slice(0, 6).map((row) => (
-                  <article key={row.id} className={`accounting-pending-card ${row.amountBs > 0 ? 'is-receivable' : 'is-inventory'}`}>
-                    <header className="accounting-pending-head">
-                      <div>
-                        <span className={`accounting-pill ${row.sourceKind === 'return' ? 'warning' : row.sourceKind === 'inventory' ? 'info' : 'pending'}`}>
-                          {row.type}
-                        </span>
-                        <strong>{row.source}</strong>
-                        <small>{row.contractCode ?? row.status}</small>
-                      </div>
-                      {row.amountBs > 0 ? (
-                        <button
-                          type="button"
-                          className="accounting-inline-action"
-                          onClick={() => openCollectModal(row)}
-                          disabled={!activeCashSession}
-                        >
-                          Verificar y cobrar
-                        </button>
-                      ) : (
-                        <span className="accounting-pending-status">{row.status}</span>
-                      )}
-                    </header>
-
-                    {row.amountBs > 0 ? (
-                      <>
-                        <div className="accounting-pending-grid">
-                          <span>
-                            <small>Cliente</small>
-                            <strong>{row.customerName}</strong>
-                          </span>
-                          <span>
-                            <small>Evento</small>
-                            <strong>{row.eventType}</strong>
-                          </span>
-                          <span>
-                            <small>Entrega / recojo</small>
-                            <strong>{[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ')}</strong>
-                          </span>
-                        </div>
-                        <div className="accounting-pending-money">
-                          <span><small>Total</small><strong>{formatBs(row.totalBs)}</strong></span>
-                          <span><small>Pagado</small><strong>{formatBs(row.paidBs)}</strong></span>
-                          <span className="highlight"><small>Saldo</small><strong>{formatBs(row.amountBs)}</strong></span>
-                        </div>
-                        <footer className="accounting-pending-footer">
-                          <span>{row.itemLines} lineas / {row.itemUnits} unidades</span>
-                          <span>{row.customerPhone || 'Sin telefono'}</span>
-                        </footer>
-                      </>
-                    ) : (
-                      <div className="accounting-pending-inventory">
-                        <strong>{row.source}</strong>
-                        <span>{row.detail}</span>
-                        <small>{row.status} fuera de stock disponible hasta reinsertar.</small>
-                      </div>
-                    )}
-                  </article>
-                ))}
-                {pendingRows.length === 0 ? <p className="status">No hay pendientes contables.</p> : null}
-              </div>
-            </article>
-
-            <article className="accounting-summary-panel wide">
-              <h3>Alertas de conciliacion</h3>
-              <div className="accounting-alert-grid">
-                <div>
-                  <strong>{cashSummary?.orphanMovementsCount ?? 0}</strong>
-                  <span>Movimientos sin sesion de caja</span>
-                </div>
-                <div>
-                  <strong>{stockRecoveries.length}</strong>
-                  <span>Items en lavado o reparacion</span>
-                </div>
-                <div>
-                  <strong>{totals.contractsPending}</strong>
-                  <span>Contratos pendientes de aprobacion</span>
-                </div>
-                <div>
-                  <strong>{totals.supplierLoansPending}</strong>
-                  <span>Prestamos/subalquileres por cerrar</span>
-                </div>
-              </div>
-            </article>
-          </div>
-        ) : null}
-
-        {activeTab === 'libro' ? (
-          <div className="accounting-table-wrap">
-            <table className="accounting-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Origen</th>
-                  <th>Caja</th>
-                  <th>Cuenta</th>
-                  <th>Movimiento</th>
-                  <th>Estado</th>
-                  <th>Importe</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ledgerRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{formatDateTime(row.createdAt)}</td>
-                    <td>
-                      <div className="accounting-main-cell">
-                        <strong>{row.source}</strong>
-                        <span>{row.description}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`accounting-cashbox-badge ${row.isInternalTransfer ? 'transfer' : getCashBoxMeta(row.cashBoxType).className}`}>
-                        {row.isInternalTransfer ? 'Transferencia interna' : getCashBoxMeta(row.cashBoxType).label}
-                      </span>
-                    </td>
-                    <td>{row.account}</td>
-                    <td><span className={`accounting-pill ${row.kind}`}>{row.typeLabel}</span></td>
-                    <td>{row.status}</td>
-                    <td className={row.amountBs < 0 ? 'negative amount' : 'amount'}>{formatBs(row.amountBs)}</td>
-                  </tr>
-                ))}
-                {ledgerRows.length === 0 ? (
-                  <tr><td colSpan={7}><p className="status">No hay registros para el filtro seleccionado.</p></td></tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-
-        {activeTab === 'liquidaciones' ? (
-          <div className="accounting-table-wrap">
-            <table className="accounting-table">
-              <thead>
-                <tr>
-                  <th>Orden</th>
-                  <th>Cliente</th>
-                  <th>Devuelto</th>
-                  <th>Penalidad</th>
-                  <th>Saldo alquiler</th>
-                  <th>Refund</th>
-                  <th>Por cobrar</th>
-                  <th>Estado</th>
-                  <th>Accion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settlementRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.orderCode}</td>
-                    <td>{row.customerName}</td>
-                    <td>{formatDate(row.returnedAt)}</td>
-                    <td className="amount">{formatBs(row.penaltiesBs)}</td>
-                    <td className="amount">{formatBs(row.outstandingRentalBs)}</td>
-                    <td className="amount">{formatBs(row.refundBs)}</td>
-                    <td className="amount">{formatBs(row.pendingCollectionBs)}</td>
-                    <td><span className={`accounting-pill ${row.status.className}`}>{row.status.label}</span></td>
-                    <td>
-                      {row.pendingCollectionBs > 0 ? (() => {
-                        const receivable = pendingRows.find((pending) => pending.rentalId === row.id && pending.sourceKind === 'return') ?? {
-                          ...row,
-                          id: `pending-return-${row.id}`,
-                          rentalId: row.id,
-                          type: 'Liquidacion devolucion',
-                          source: row.orderCode,
-                          detail: row.customerName,
-                          amountBs: row.pendingCollectionBs,
-                        };
-                        return (
-                          <button
-                            type="button"
-                            className="ghost-button accounting-collect-button"
-                            onClick={() => openCollectModal(receivable)}
-                            disabled={!activeCashSession}
-                          >
-                            Verificar
-                          </button>
-                        );
-                      })() : (
-                        <span className="accounting-muted">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {settlementRows.length === 0 ? (
-                  <tr><td colSpan={9}><p className="status">No hay devoluciones liquidadas en este periodo.</p></td></tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-
-        {activeTab === 'inventario' ? (
-          <div className="accounting-inventory-grid">
-            <article className="accounting-recovery-panel">
-              <h3>Items pendientes de reinsercion</h3>
-              {stockRecoveries.length === 0 ? (
-                <p className="status">No hay items en lavado o reparacion.</p>
-              ) : (
-                stockRecoveries.map((recovery) => (
-                  <div key={recovery.id} className="accounting-recovery-row">
-                    <span className={`accounting-pill ${recovery.stage === 'lavado' ? 'info' : 'warning'}`}>
-                      {recovery.stage === 'lavado' ? 'Lavado' : 'Reparacion'}
-                    </span>
-                    <div>
-                      <strong>{recovery.itemName}</strong>
-                      <small>{recovery.sourceCustomerName ?? 'Sin cliente'} - {recovery.quantity} unidades</small>
-                    </div>
-                  </div>
-                ))
-              )}
-            </article>
-
-            <article className="accounting-table-wrap compact">
-              <table className="accounting-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Item</th>
-                    <th>Tipo</th>
-                    <th>Referencia</th>
-                    <th>Unidades</th>
-                    <th>Stock final</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventoryRows.map((row) => (
-                    <tr key={row.id}>
-                      <td>{formatDateTime(row.createdAt)}</td>
-                      <td>
-                        <div className="accounting-main-cell">
-                          <strong>{row.itemName}</strong>
-                          <span>{row.reason}</span>
-                        </div>
-                      </td>
-                      <td><span className={`accounting-pill ${row.type}`}>{row.type}</span></td>
-                      <td>{row.reference}</td>
-                      <td className={row.impactUnits < 0 ? 'negative amount' : 'amount'}>{row.impactUnits}</td>
-                      <td>{row.stockAfter}</td>
-                    </tr>
-                  ))}
-                  {inventoryRows.length === 0 ? (
-                    <tr><td colSpan={6}><p className="status">No hay movimientos de inventario para este filtro.</p></td></tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </article>
-          </div>
-        ) : null}
-
-        {activeTab === 'caja' ? (
-          <div className="accounting-cash-workspace">
-            <section className="accounting-cash-overview">
-              {['BIG_CASH', 'PETTY_CASH'].map((cashBoxType) => {
-                const meta = getCashBoxMeta(cashBoxType);
-                const stats = cashBoxStats[cashBoxType];
-                return (
-                  <article key={cashBoxType} className={`accounting-cashbox-card ${meta.className}`}>
-                    <header>
-                      <div>
-                        <span className={`accounting-cashbox-badge ${meta.className}`}>{meta.label}</span>
-                        <h3>{formatBs(stats.balanceBs)}</h3>
-                        <p>{cashBoxType === 'BIG_CASH' ? 'Fondo principal para contratos, garantias y pagos fuertes.' : 'Fondo operativo para gastos menores diarios.'}</p>
-                      </div>
-                      <AccountingIcon kind={cashBoxType === 'BIG_CASH' ? 'wallet' : 'money'} />
-                    </header>
-                    <div className="accounting-cashbox-metrics">
-                      <span><small>Ingresos reales</small><strong>{formatBs(stats.incomeBs)}</strong></span>
-                      <span><small>Egresos reales</small><strong>{formatBs(stats.expenseBs)}</strong></span>
-                      <span><small>Transferido entra</small><strong>{formatBs(stats.transferInBs)}</strong></span>
-                      <span><small>Transferido sale</small><strong>{formatBs(stats.transferOutBs)}</strong></span>
-                    </div>
-                  </article>
-                );
-              })}
-            </section>
-
-            <section className="accounting-cash-kpi-strip">
-              <article>
-                <span>Total disponible</span>
-                <strong>{formatBs(cashBoxStats.totalAvailableBs)}</strong>
-              </article>
-              <article>
-                <span>Ingresos caja grande</span>
-                <strong>{formatBs(cashBoxStats.BIG_CASH.incomeBs)}</strong>
-              </article>
-              <article>
-                <span>Egresos caja grande</span>
-                <strong>{formatBs(cashBoxStats.BIG_CASH.expenseBs)}</strong>
-              </article>
-              <article>
-                <span>Ingresos caja chica</span>
-                <strong>{formatBs(cashBoxStats.PETTY_CASH.incomeBs)}</strong>
-              </article>
-              <article>
-                <span>Egresos caja chica</span>
-                <strong>{formatBs(cashBoxStats.PETTY_CASH.expenseBs)}</strong>
-              </article>
-            </section>
-
-            <section className="accounting-cash-grid">
-              <article className="accounting-summary-panel">
-                <h3>Cierre de caja</h3>
-                <div className="accounting-money-list">
-                  <div><span>Estado</span><strong>{activeCashSession ? 'Abierta' : 'Cerrada'}</strong></div>
-                  <div><span>Esperado caja grande</span><strong>{formatBs(activeCashSession?.expectedBigCashBs ?? 0)}</strong></div>
-                  <div><span>Esperado caja chica</span><strong>{formatBs(activeCashSession?.expectedPettyCashBs ?? 0)}</strong></div>
-                  <div><span>Total esperado</span><strong>{formatBs(activeCashSession?.expectedBalanceBs ?? 0)}</strong></div>
-                </div>
-                {activeCashSession ? (
-                  <button type="button" className="primary-button accounting-close-panel-button" onClick={() => openActionModal('close')}>
-                    Preparar cierre
-                  </button>
-                ) : (
-                  <p className="status">Abre caja para registrar movimientos y preparar cierre.</p>
-                )}
-              </article>
-
-              <article className="accounting-table-wrap compact">
-                <header className="accounting-table-header">
-                  <div>
-                    <h3>Movimientos recientes</h3>
-                    <p>Incluye caja grande, caja chica y transferencias internas.</p>
-                  </div>
-                </header>
-              <table className="accounting-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Caja</th>
-                    <th>Tipo</th>
-                    <th>Categoria</th>
-                    <th>Descripcion</th>
-                    <th>Metodo</th>
-                    <th>Importe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {periodCashMovements.map((movement) => {
-                    const meta = getMovementMeta(movement.type);
-                    const cashBoxMeta = getCashBoxMeta(movement.cashBoxType);
-                    return (
-                      <tr key={movement.id}>
-                        <td>{formatDateTime(movement.createdAt)}</td>
-                        <td>
-                          <span className={`accounting-cashbox-badge ${movement.isInternalTransfer ? 'transfer' : cashBoxMeta.className}`}>
-                            {movement.isInternalTransfer ? 'Transferencia' : cashBoxMeta.shortLabel}
-                          </span>
-                        </td>
-                        <td><span className={`accounting-pill ${movement.isInternalTransfer ? 'transfer' : meta.kind}`}>{meta.label}</span></td>
-                        <td>{getCategoryLabel(movement.category)}</td>
-                        <td>{movement.description}</td>
-                        <td>{getPaymentMethodLabel(movement.paymentMethod)}</td>
-                        <td className={toNumber(movement.amountBs) < 0 ? 'negative amount' : 'amount'}>{formatBs(movement.amountBs)}</td>
-                      </tr>
-                    );
-                  })}
-                  {periodCashMovements.length === 0 ? (
-                    <tr><td colSpan={7}><p className="status">No hay movimientos de caja para este periodo.</p></td></tr>
-                  ) : null}
-                </tbody>
-              </table>
-              </article>
-            </section>
-
-            <section className="accounting-transfer-panel">
-              <header>
-                <div>
-                  <h3>Transferencias internas</h3>
-                  <p>Reposiciones de caja chica: no inflan ingresos ni egresos reales del negocio.</p>
-                </div>
-                <button type="button" className="ghost-button" onClick={openPettyCashTransferModal} disabled={!activeCashSession}>
-                  Reponer caja chica
-                </button>
-              </header>
-              <div className="accounting-transfer-list">
-                {cashBoxStats.internalTransfers.slice(0, 6).map((movement) => (
-                  <div key={movement.id}>
-                    <span className={`accounting-cashbox-badge ${getCashBoxMeta(movement.cashBoxType).className}`}>
-                      {getCashBoxMeta(movement.cashBoxType).label}
-                    </span>
-                    <strong>{movement.description}</strong>
-                    <small>{formatDateTime(movement.createdAt)}</small>
-                    <b className={toNumber(movement.amountBs) < 0 ? 'negative' : 'positive'}>{formatBs(movement.amountBs)}</b>
-                  </div>
-                ))}
-                {cashBoxStats.internalTransfers.length === 0 ? (
-                  <p className="status">No hay transferencias internas para este periodo.</p>
-                ) : null}
-              </div>
-            </section>
-          </div>
-        ) : null}
-      </article>
-
-      {actionModal ? (
-        <div className="accounting-modal-backdrop" onClick={closeActionModal}>
-          <form className={`accounting-modal ${actionModal === 'collect' ? 'is-collect' : ''}`} onSubmit={submitAction} onClick={(event) => event.stopPropagation()}>
+  const renderCashModals = () => (
+    <>
+      {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
+      {cashModal ? (
+        <div className="accounting-modal-backdrop" onClick={closeCashAction}>
+          <form className="accounting-modal accounting-movement-form" onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
             <header>
-              <h3>
-                {actionModal === 'open'
-                  ? 'Abrir caja'
-                  : actionModal === 'close'
-                  ? 'Cerrar caja'
-                  : actionModal === 'collect'
-                  ? 'Verificar cobro'
-                  : 'Registrar movimiento'}
-              </h3>
-              <button type="button" className="orders-modal-close" onClick={closeActionModal} aria-label="Cerrar">
-                x
-              </button>
+              <div>
+                <h3>{getCashModalTitle()}</h3>
+                <small>
+                  {cashModal === 'income'
+                    ? 'Los ingresos manuales entran a Caja Grande.'
+                    : cashModal === 'expense'
+                    ? 'Los gastos salen de la Caja Chica abierta.'
+                    : cashModal === 'closePetty'
+                    ? 'El saldo contado vuelve a Caja Grande al cerrar.'
+                    : 'El dinero sale de Caja Grande y entra a Caja Chica.'}
+                </small>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeCashAction}>x</button>
             </header>
 
-            {actionModal === 'open' ? (
-              <div className="accounting-form-grid two">
+            <div className="accounting-form-grid two">
+              <label>
+                Monto (Bs)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={cashForm.amountBs}
+                  onChange={(event) => setCashForm((current) => ({ ...current, amountBs: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Metodo
+                <select value={cashForm.paymentMethod} onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="qr">QR</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </label>
+            </div>
+
+            {cashModal !== 'closePetty' ? (
+              <>
                 <label>
-                  Apertura caja grande
+                  Concepto
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={actionForm.openingBigCashBs}
-                    onChange={(event) => setActionForm((current) => ({ ...current, openingBigCashBs: event.target.value }))}
+                    value={cashForm.description}
+                    onChange={(event) => setCashForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder={cashModal === 'expense' ? 'Ej: almuerzo, taxi, reparacion, sueldo...' : 'Detalle del movimiento'}
+                    required={cashModal !== 'openPetty'}
                   />
                 </label>
+                <div className="accounting-form-grid two">
+                  <label>
+                    Categoria
+                    <select value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
+                      {cashModal === 'expense' ? (
+                        <>
+                          <option value="alimentacion">Almuerzos / alimentacion</option>
+                          <option value="movilidad">Taxis / movilidad</option>
+                          <option value="reparacion_menor">Reparaciones</option>
+                          <option value="compras">Compras</option>
+                          <option value="sueldos">Pago de sueldos</option>
+                          <option value="varios">Varios</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="ingreso_manual">Ingreso manual</option>
+                          <option value="reposicion_caja_chica">Reposicion caja chica</option>
+                          <option value="ajuste">Ajuste</option>
+                        </>
+                      )}
+                    </select>
+                  </label>
+                  <label>
+                    Responsable / destino
+                    <input
+                      value={cashForm.responsible}
+                      onChange={(event) => setCashForm((current) => ({ ...current, responsible: event.target.value }))}
+                      placeholder="Persona, proveedor o destino"
+                    />
+                  </label>
+                </div>
                 <label>
-                  Apertura caja chica
+                  Comprobante / referencia
                   <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={actionForm.openingPettyCashBs}
-                    onChange={(event) => setActionForm((current) => ({ ...current, openingPettyCashBs: event.target.value }))}
+                    value={cashForm.receipt}
+                    onChange={(event) => setCashForm((current) => ({ ...current, receipt: event.target.value }))}
+                    placeholder="Recibo, factura, QR, nota interna..."
                   />
                 </label>
+              </>
+            ) : null}
+
+            {cashModal === 'closePetty' ? (
+              <div className="accounting-close-preview">
+                <span><small>Saldo esperado Caja Chica</small><strong>{formatBs(pettyCashBalanceBs)}</strong></span>
+                <span><small>Saldo que vuelve a Caja Grande</small><strong>{formatBs(toNumber(cashForm.amountBs))}</strong></span>
               </div>
             ) : null}
 
-            {actionModal === 'close' ? (
-              <>
-                <div className="accounting-close-preview">
-                  <span><small>Esperado caja grande</small><strong>{formatBs(activeCashSession?.expectedBigCashBs ?? 0)}</strong></span>
-                  <span><small>Esperado caja chica</small><strong>{formatBs(activeCashSession?.expectedPettyCashBs ?? 0)}</strong></span>
-                </div>
-                <div className="accounting-form-grid two">
-                  <label>
-                    Contado caja grande
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={actionForm.countedBigCashBs}
-                      onChange={(event) => setActionForm((current) => ({ ...current, countedBigCashBs: event.target.value }))}
-                    />
-                  </label>
-                  <label>
-                    Contado caja chica
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={actionForm.countedPettyCashBs}
-                      onChange={(event) => setActionForm((current) => ({ ...current, countedPettyCashBs: event.target.value }))}
-                    />
-                  </label>
-                </div>
-                <div className="accounting-close-preview">
-                  <span>
-                    <small>Diferencia caja grande</small>
-                    <strong>{formatBs(toNumber(actionForm.countedBigCashBs) - toNumber(activeCashSession?.expectedBigCashBs))}</strong>
-                  </span>
-                  <span>
-                    <small>Diferencia caja chica</small>
-                    <strong>{formatBs(toNumber(actionForm.countedPettyCashBs) - toNumber(activeCashSession?.expectedPettyCashBs))}</strong>
-                  </span>
-                </div>
-              </>
-            ) : null}
+            <label>
+              Nota
+              <textarea
+                rows={3}
+                value={cashForm.notes}
+                onChange={(event) => setCashForm((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Detalle adicional para auditoria interna"
+              />
+            </label>
 
-            {actionModal === 'movement' || actionModal === 'collect' ? (
-              <>
-                {actionModal === 'movement' ? (
-                  <div className="accounting-movement-form">
-                    <div className="accounting-form-grid two">
-                      <label>
-                        Tipo de caja
-                        <select
-                          value={actionForm.cashBoxType}
-                          onChange={(event) => setActionForm((current) => ({ ...current, cashBoxType: event.target.value }))}
-                          disabled={actionForm.type === 'transferencia'}
-                        >
-                          <option value="BIG_CASH">Caja grande</option>
-                          <option value="PETTY_CASH">Caja chica</option>
-                        </select>
-                      </label>
-                      <label>
-                        Tipo de movimiento
-                        <select
-                          value={actionForm.type}
-                          onChange={(event) => setActionForm((current) => ({
-                            ...current,
-                            type: event.target.value,
-                            cashBoxType: event.target.value === 'transferencia' ? 'PETTY_CASH' : current.cashBoxType,
-                            category: event.target.value === 'transferencia' ? 'reposicion_caja_chica' : current.category,
-                          }))}
-                        >
-                          <option value="ingreso">Ingreso</option>
-                          <option value="egreso">Egreso</option>
-                          <option value="transferencia">Transferencia interna</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="accounting-form-grid two">
-                      <label>
-                        Categoria
-                        <select
-                          value={actionForm.category}
-                          onChange={(event) => {
-                            const category = MOVEMENT_CATEGORIES.find((entry) => entry.id === event.target.value);
-                            setActionForm((current) => ({
-                              ...current,
-                              category: event.target.value,
-                              cashBoxType: current.type === 'transferencia' ? 'PETTY_CASH' : category?.defaultBox ?? current.cashBoxType,
-                            }));
-                          }}
-                        >
-                          {MOVEMENT_CATEGORIES.map((category) => (
-                            <option key={category.id} value={category.id}>{category.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Metodo de pago
-                        <select
-                          value={actionForm.paymentMethod}
-                          onChange={(event) => setActionForm((current) => ({ ...current, paymentMethod: event.target.value }))}
-                        >
-                          {PAYMENT_METHODS.map((method) => (
-                            <option key={method.id} value={method.id}>{method.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    {actionForm.type === 'transferencia' ? (
-                      <p className="accounting-transfer-hint">
-                        La transferencia saldra de caja grande y entrara a caja chica. No se contara como ingreso real.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="accounting-collect-summary">
-                    <div className="accounting-collect-hero">
-                      <div>
-                        <span className={`accounting-pill ${selectedReceivable?.sourceKind === 'return' ? 'warning' : 'pending'}`}>
-                          {selectedReceivable?.type}
-                        </span>
-                        <strong>{selectedReceivable?.source}</strong>
-                        <small>Contrato {selectedReceivable?.contractCode ?? 'Sin contrato vinculado'}</small>
-                      </div>
-                      <div className="accounting-collect-amount">
-                        <span>Saldo a confirmar</span>
-                        <strong>{formatBs(selectedReceivable?.amountBs ?? 0)}</strong>
-                      </div>
-                    </div>
-
-                    <div className="accounting-verify-grid">
-                      <span>
-                        <small>Cliente</small>
-                        <strong>{selectedReceivable?.customerName ?? selectedReceivable?.detail}</strong>
-                      </span>
-                      <span>
-                        <small>Telefono</small>
-                        <strong>{selectedReceivable?.customerPhone || 'Sin telefono'}</strong>
-                      </span>
-                      <span>
-                        <small>Evento</small>
-                        <strong>{selectedReceivable?.eventType ?? 'Servicio de alquiler'}</strong>
-                      </span>
-                      <span>
-                        <small>Fecha evento</small>
-                        <strong>{formatDate(selectedReceivable?.eventDate)} {selectedReceivable?.eventTime ?? ''}</strong>
-                      </span>
-                      <span>
-                        <small>Entrega</small>
-                        <strong>{formatDate(selectedReceivable?.deliveryDate)}</strong>
-                      </span>
-                      <span>
-                        <small>Recojo / devolucion</small>
-                        <strong>{formatDate(selectedReceivable?.pickupDate ?? selectedReceivable?.returnedAt)}</strong>
-                      </span>
-                      <span>
-                        <small>Modalidad</small>
-                        <strong>{getLogisticsModeLabel(selectedReceivable?.logisticsMode)}</strong>
-                      </span>
-                      <span>
-                        <small>Facturacion</small>
-                        <strong>{getBillingModeLabel(selectedReceivable?.billingMode)}</strong>
-                      </span>
-                      <span>
-                        <small>Pago inicial</small>
-                        <strong>{getPaymentModeLabel(selectedReceivable?.paymentMode)}</strong>
-                      </span>
-                      <span>
-                        <small>Estado contable</small>
-                        <strong>{selectedReceivable?.paymentStatus ?? '-'}</strong>
-                      </span>
-                    </div>
-
-                    <div className="accounting-verify-money">
-                      <span><small>Total contrato</small><strong>{formatBs(selectedReceivable?.totalBs ?? 0)}</strong></span>
-                      <span><small>Pagado en orden</small><strong>{formatBs(selectedReceivable?.paidBs ?? 0)}</strong></span>
-                      <span><small>Garantia</small><strong>{formatBs(selectedReceivable?.depositBs ?? 0)}</strong></span>
-                      <span className="highlight"><small>Saldo pendiente</small><strong>{formatBs(selectedReceivable?.amountBs ?? 0)}</strong></span>
-                    </div>
-
-                    {selectedReceivable?.sourceKind === 'return' ? (
-                      <section className="accounting-verify-section">
-                        <h4>Liquidacion de devolucion</h4>
-                        <div className="accounting-verify-money compact">
-                          <span><small>Saldo alquiler</small><strong>{formatBs(selectedReceivable?.outstandingRentalBs ?? 0)}</strong></span>
-                          <span><small>Penalidades</small><strong>{formatBs(selectedReceivable?.penaltiesBs ?? 0)}</strong></span>
-                          <span><small>Cubierto con garantia</small><strong>{formatBs(selectedReceivable?.discountCoveredByDepositBs ?? 0)}</strong></span>
-                          <span><small>Devolucion garantia</small><strong>{formatBs(selectedReceivable?.refundBs ?? 0)}</strong></span>
-                        </div>
-                      </section>
-                    ) : null}
-
-                    <section className="accounting-verify-section">
-                      <h4>Items del contrato</h4>
-                      <div className="accounting-verify-items">
-                        {(selectedReceivable?.items ?? []).slice(0, 4).map((line, index) => (
-                          <div key={`${line.itemId ?? line.itemName ?? index}-${index}`}>
-                            <span>{getLineName(line)}</span>
-                            <strong>{getLineQuantity(line)} u.</strong>
-                            <small>{formatBs(getLineTotal(line))}</small>
-                          </div>
-                        ))}
-                        {(selectedReceivable?.items ?? []).length === 0 ? (
-                          <p className="status">No hay items registrados para validar.</p>
-                        ) : null}
-                        {(selectedReceivable?.items ?? []).length > 4 ? (
-                          <p className="accounting-muted">+ {(selectedReceivable?.items ?? []).length - 4} lineas adicionales en el contrato.</p>
-                        ) : null}
-                      </div>
-                    </section>
-
-                    <section className="accounting-verify-section">
-                      <h4>Historial de caja vinculado</h4>
-                      <div className="accounting-verify-movements">
-                        {(selectedReceivable?.cashMovements ?? []).slice(0, 4).map((movement) => {
-                          const meta = getMovementMeta(movement.type);
-                          return (
-                            <div key={movement.id}>
-                              <span className={`accounting-pill ${meta.kind}`}>{meta.label}</span>
-                              <strong>{formatBs(movement.amountBs)}</strong>
-                              <small>{formatDateTime(movement.createdAt)}</small>
-                            </div>
-                          );
-                        })}
-                        {(selectedReceivable?.cashMovements ?? []).length === 0 ? (
-                          <p className="status">Sin movimientos previos vinculados a esta orden.</p>
-                        ) : null}
-                      </div>
-                    </section>
-                  </div>
-                )}
-                <label>
-                  Monto
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={actionForm.amountBs}
-                    onChange={(event) => setActionForm((current) => ({ ...current, amountBs: event.target.value }))}
-                    required
-                  />
-                </label>
-                <div className="accounting-form-grid two">
-                  {actionModal === 'collect' ? (
-                    <label>
-                      Metodo de pago
-                      <select
-                        value={actionForm.paymentMethod}
-                        onChange={(event) => setActionForm((current) => ({ ...current, paymentMethod: event.target.value }))}
-                      >
-                        {PAYMENT_METHODS.map((method) => (
-                          <option key={method.id} value={method.id}>{method.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <label>
-                      Responsable
-                      <input
-                        value={actionForm.responsible}
-                        onChange={(event) => setActionForm((current) => ({ ...current, responsible: event.target.value }))}
-                        placeholder={userName}
-                      />
-                    </label>
-                  )}
-                  <label>
-                    Comprobante opcional
-                    <input
-                      value={actionForm.receipt}
-                      onChange={(event) => setActionForm((current) => ({ ...current, receipt: event.target.value }))}
-                      placeholder="Recibo, factura, QR..."
-                    />
-                  </label>
-                </div>
-                <label>
-                  {actionModal === 'collect' ? 'Nota del cobro' : 'Descripcion'}
-                  <textarea
-                    value={actionForm.description}
-                    onChange={(event) => setActionForm((current) => ({ ...current, description: event.target.value }))}
-                    rows={3}
-                    required
-                  />
-                </label>
-              </>
-            ) : (
-              <label>
-                Nota
-                <textarea
-                  value={actionForm.notes}
-                  onChange={(event) => setActionForm((current) => ({ ...current, notes: event.target.value }))}
-                  rows={3}
-                />
-              </label>
-            )}
-
-            {actionError ? <p className="status error">{actionError}</p> : null}
+            {cashActionError ? <p className="status error">{cashActionError}</p> : null}
 
             <footer>
-              <button type="button" className="ghost-button" onClick={closeActionModal} disabled={isSubmitting}>
-                Cancelar
-              </button>
-              <button type="submit" className="primary-button" disabled={isSubmitting}>
-                {isSubmitting ? 'Procesando...' : 'Confirmar'}
+              <button type="button" className="ghost-button" onClick={closeCashAction}>Cancelar</button>
+              <button type="submit" className="primary-button" disabled={isSubmittingCash}>
+                {isSubmittingCash ? 'Guardando...' : 'Guardar movimiento'}
               </button>
             </footer>
           </form>
         </div>
       ) : null}
+
+      {collectModal ? (
+        <div className="accounting-modal-backdrop" onClick={closeCollectAction}>
+          <form className="accounting-modal is-collect" onSubmit={handleSubmitCollectAction} onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <h3>Cobrar en Caja Grande</h3>
+                <small>{collectModal.orderCode} | {collectModal.customerName}</small>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeCollectAction}>x</button>
+            </header>
+
+            <section className="accounting-collect-summary">
+              <div className="accounting-collect-hero">
+                <div>
+                  <span>{collectModal.status}</span>
+                  <strong>{collectModal.customerName}</strong>
+                  <small>{collectModal.contractCode || collectModal.orderCode}</small>
+                </div>
+                <div className="accounting-collect-amount">
+                  <small>Por cobrar</small>
+                  <strong>{formatBs(collectModal.pendingBs)}</strong>
+                </div>
+              </div>
+              <div className="accounting-verify-money compact">
+                <span><small>Total contrato</small><strong>{formatBs(collectModal.totalBs)}</strong></span>
+                <span><small>Pagado</small><strong>{formatBs(collectModal.paidBs)}</strong></span>
+                <span><small>Garantia retenida</small><strong>{formatBs(collectModal.guaranteeBs)}</strong></span>
+                <span className="highlight"><small>Danos / perdidas</small><strong>{formatBs(collectModal.penaltiesBs)}</strong></span>
+              </div>
+            </section>
+
+            <div className="accounting-form-grid two">
+              <label>
+                Monto a cobrar
+                <input
+                  type="number"
+                  min="0.01"
+                  max={collectModal.pendingBs}
+                  step="0.01"
+                  value={collectForm.amountBs}
+                  onChange={(event) => setCollectForm((current) => ({ ...current, amountBs: event.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Metodo
+                <select value={collectForm.paymentMethod} onChange={(event) => setCollectForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="qr">QR</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Comprobante
+              <input value={collectForm.receipt} onChange={(event) => setCollectForm((current) => ({ ...current, receipt: event.target.value }))} />
+            </label>
+            <label>
+              Nota del cobro
+              <textarea rows={3} value={collectForm.note} onChange={(event) => setCollectForm((current) => ({ ...current, note: event.target.value }))} />
+            </label>
+
+            {cashActionError ? <p className="status error">{cashActionError}</p> : null}
+
+            <footer>
+              <button type="button" className="ghost-button" onClick={closeCollectAction}>Cancelar</button>
+              <button type="submit" className="primary-button" disabled={isSubmittingCash}>
+                {isSubmittingCash ? 'Registrando...' : 'Confirmar cobro'}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+    </>
+  );
+
+  if (activeModule === 'contabilidad_caja_grande') {
+    return (
+      <section className="panel accounting-bigcash-view">
+        <header className="accounting-bigcash-head">
+          <div>
+            <h2>Caja Grande</h2>
+            <p>Centro de recepción de todos los ingresos.</p>
+          </div>
+          <div className="accounting-overview-actions">
+            <label className="accounting-date-control">
+              <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              <span className="date-icon"><MiniIcon kind="calendar" /></span>
+            </label>
+            <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('income', { category: 'ingreso_manual' })}>
+              <span>+ Registrar ingreso</span>
+              <span className="divider" />
+              <MiniIcon kind="chevron" />
+            </button>
+          </div>
+        </header>
+
+        <section className="bigcash-kpi-grid">
+          <article className="bigcash-kpi-card balance">
+            <small className="pill">Solo recibe</small>
+            <div className="bigcash-kpi-content">
+              <span className="bigcash-hero-icon blue"><CashIcon kind="petty" /></span>
+              <div>
+                <strong>SALDO ACTUAL</strong>
+                <h3 className="value-blue">{formatBs(bigCashBalanceBs)}</h3>
+                <p>Operativo: {formatBs(operationalBigCashBs)} | Garantias: {formatBs(guaranteesHeldBs)}</p>
+              </div>
+            </div>
+          </article>
+          <article className="bigcash-kpi-card income">
+            <div className="bigcash-kpi-content">
+              <span className="bigcash-hero-icon green"><MiniIcon kind="up" /></span>
+              <div>
+                <strong>INGRESOS DEL DIA</strong>
+                <h3 className="value-green">{formatBs(dayBigIncomeBs)}</h3>
+                <p>Total recibido hoy</p>
+              </div>
+            </div>
+          </article>
+          <article className="bigcash-kpi-card month">
+            <div className="bigcash-kpi-content">
+              <span className="bigcash-hero-icon green"><MiniIcon kind="chart" /></span>
+              <div>
+                <strong>TOTAL INGRESADO (MES)</strong>
+                <h3 className="value-green">{formatBs(monthBigCashIncomeBs)}</h3>
+                <p>Del {formatDate(monthStartDate)} al {formatDate(selectedDate)}</p>
+              </div>
+            </div>
+          </article>
+          <article className="bigcash-kpi-card transfer">
+            <div className="bigcash-kpi-content">
+              <span className="bigcash-hero-icon orange"><MiniIcon kind="down" /></span>
+              <div>
+                <strong>RETIROS A CAJA CHICA (MES)</strong>
+                <h3 className="value-orange">{formatBs(monthBigCashTransferBs)}</h3>
+                <p>Total entregado a caja chica</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="bigcash-main-grid">
+          <div className="bigcash-left">
+            <article className="bigcash-card bigcash-movements">
+            <header>
+              <h3><span className="bigcash-title-icon blue"><CashIcon kind="table" /></span>MOVIMIENTOS DE CAJA GRANDE</h3>
+            </header>
+            <div className="bigcash-toolbar">
+              <label>
+                <select value={bigCashTypeFilter} onChange={(event) => setBigCashTypeFilter(event.target.value)}>
+                  <option value="all">Todos los tipos</option>
+                  <option value="income">Ingresos</option>
+                  <option value="transfer">Retiros</option>
+                </select>
+              </label>
+              <label className="bigcash-date-range">
+                <span>{formatDate(monthStartDate)} - {formatDate(selectedDate)}</span>
+                <MiniIcon kind="calendar" />
+              </label>
+              <label className="bigcash-search">
+                <input
+                  value={bigCashQuery}
+                  onChange={(event) => setBigCashQuery(event.target.value)}
+                  placeholder="Buscar concepto, contrato, recibo..."
+                />
+                <MiniIcon kind="search" />
+              </label>
+              <button type="button" className="bigcash-export-button" onClick={() => exportCashRows('caja-grande', filteredBigCashRows)}>
+                <MiniIcon kind="export" />
+                Exportar
+              </button>
+            </div>
+
+            <div className="bigcash-table-wrap">
+              <table className="accounting-table bigcash-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Concepto</th>
+                    <th>Referencia</th>
+                    <th>Ingreso</th>
+                    <th>Retiro</th>
+                    <th>Saldo</th>
+                    <th>Usuario</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredBigCashRows.slice(0, bigCashVisibleRows).map((movement, index) => {
+                    const meta = getBigCashMovementType(movement);
+                    return (
+                      <tr key={movement.id}>
+                        <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
+                        <td><span className={`bigcash-type-icon ${meta.className}`}><MiniIcon kind={meta.icon} /></span></td>
+                        <td>{movement.description}</td>
+                        <td>{getMovementReference(movement)}</td>
+                        <td className="amount">{meta.income}</td>
+                        <td className="negative amount">{meta.withdrawal}</td>
+                        <td>{formatBs(runningBigCashBalance(index))}</td>
+                        <td>{movement.responsible || movement.createdBy || '-'}</td>
+                        <td><span className="bigcash-more"><MiniIcon kind="more" /></span></td>
+                      </tr>
+                    );
+                  })}
+                  {filteredBigCashRows.length === 0 ? <tr><td colSpan={9}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              type="button"
+              className="section-link blue"
+              onClick={() => setBigCashVisibleRows((current) => (current >= filteredBigCashRows.length ? 7 : current + 7))}
+            >
+              {bigCashVisibleRows >= filteredBigCashRows.length && bigCashVisibleRows > 7 ? 'Ver menos' : 'Ver todos los movimientos'}
+            </button>
+            </article>
+
+            <section className="bigcash-card bigcash-summary-card">
+              <h3><span className="bigcash-title-icon neutral"><CashIcon kind="summary" /></span>RESUMEN DE CAJA GRANDE</h3>
+              <div className="bigcash-summary-formula">
+                <span>
+                  <small>Saldo inicial del mes</small>
+                  <b>{formatBs(bigCashMonthOpeningBs)}</b>
+                  <em>{formatDate(monthStartDate)}</em>
+                </span>
+                <i>+</i>
+                <span>
+                  <small>Total ingresos del mes</small>
+                  <b className="value-green">{formatBs(monthBigCashIncomeBs)}</b>
+                </span>
+                <i>-</i>
+                <span>
+                  <small>Total retiros a caja chica</small>
+                  <b className="value-orange">{formatBs(monthBigCashTransferBs)}</b>
+                </span>
+                <i>=</i>
+                <span className="current">
+                  <small>Saldo actual</small>
+                  <b className="value-blue">{formatBs(bigCashBalanceBs)}</b>
+                  <em>{formatDate(selectedDate)}</em>
+                </span>
+              </div>
+            </section>
+          </div>
+
+          <aside className="bigcash-side">
+            <article className="bigcash-card bigcash-about">
+              <h3>ACERCA DE CAJA GRANDE</h3>
+              <div>
+                <span className="bigcash-about-icon">
+                  <img src="/imagenes/caja-fuerte.png" alt="" />
+                </span>
+                <ul>
+                  <li>Su función principal es recibir ingresos.</li>
+                  <li>Todos los pagos de contratos, alquiler, cuotas y servicios se registran aquí.</li>
+                  <li>No se realizan gastos desde Caja Grande.</li>
+                  <li>Los retiros solo pueden ser para reposición de Caja Chica.</li>
+                </ul>
+              </div>
+            </article>
+
+            <article className="bigcash-card bigcash-mini-list-card">
+              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>COBROS PENDIENTES</h3>
+              <div className="bigcash-mini-list">
+                {pendingReceivableRows.slice(0, 4).map((row) => (
+                  <div key={row.id}>
+                    <span>{row.orderCode} {row.contractCode ? `| ${row.contractCode}` : ''}</span>
+                    <strong>{row.customerName}</strong>
+                    <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>
+                      Cobrar {formatBs(row.pendingBs)}
+                    </button>
+                  </div>
+                ))}
+                {pendingReceivableRows.length === 0 ? <p className="status">Sin saldos pendientes por cobrar.</p> : null}
+              </div>
+            </article>
+
+            <article className="bigcash-card bigcash-mini-list-card">
+              <h3><span className="bigcash-title-icon green"><CashIcon kind="table" /></span>ULTIMOS INGRESOS</h3>
+              <div className="bigcash-mini-list">
+                {bigCashIncomeRows.slice(0, 5).map((movement) => (
+                  <div key={movement.id}>
+                    <span>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></span>
+                    <strong>{movement.description}</strong>
+                    <b>{formatBs(movement.amountBs)}</b>
+                  </div>
+                ))}
+                {bigCashIncomeRows.length === 0 ? <p className="status">Sin ingresos registrados.</p> : null}
+              </div>
+              <button type="button" className="section-link blue">Ver todos</button>
+            </article>
+
+            <article className="bigcash-card bigcash-mini-list-card">
+              <h3><span className="bigcash-title-icon orange"><CashIcon kind="table" /></span>RETIROS RECIENTES A CAJA CHICA</h3>
+              <div className="bigcash-mini-list">
+                {pettyTransfersRows.slice(0, 4).map((movement) => (
+                  <div key={movement.id}>
+                    <span>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></span>
+                    <strong>{movement.description}</strong>
+                    <b>{formatBs(Math.abs(movement.amountBs))}</b>
+                  </div>
+                ))}
+                {pettyTransfersRows.length === 0 ? <p className="status">Sin retiros registrados.</p> : null}
+              </div>
+              <button type="button" className="section-link blue">Ver todos</button>
+            </article>
+          </aside>
+        </section>
+        {renderCashModals()}
+      </section>
+    );
+  }
+
+  if (activeModule === 'contabilidad_caja_chica') {
+    const openingRow = dayPettyOpeningRows[0] ?? null;
+    const openingSource = selectedDayPettyRepositions[0] ?? openingRow;
+    const pettyOpenedBy = openingRow?.responsible || openingRow?.createdBy || activeCashSession?.openedBy || '-';
+    const isPettySessionOpen = String(activeCashSession?.status ?? '').toLowerCase() === 'open';
+
+    return (
+      <section className="panel accounting-pettycash-view">
+        <header className="accounting-bigcash-head pettycash-head">
+          <div>
+            <h2>Caja Chica</h2>
+            <p>Fondo para gastos menores del día a día.</p>
+          </div>
+          <div className="accounting-overview-actions">
+            <label className="accounting-date-control petty-date-control">
+              <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+              <span className="date-icon"><MiniIcon kind="calendar" /></span>
+            </label>
+            <button
+              type="button"
+              className="petty-primary-button"
+              onClick={() => openCashAction(isPettySessionOpen ? 'transfer' : 'openPetty', {
+                description: isPettySessionOpen ? 'Reposicion de Caja Chica' : 'Apertura diaria de Caja Chica',
+                category: isPettySessionOpen ? 'reposicion_caja_chica' : 'apertura_caja_chica',
+              })}
+            >
+              <span>{isPettySessionOpen ? '+ Reponer caja chica' : '+ Aperturar caja chica'}</span>
+            </button>
+          </div>
+        </header>
+
+        <section className="petty-kpi-grid">
+          <article className="petty-kpi-card opening">
+            <div className="petty-opening-head">
+              <span className="petty-hero-icon violet"><CashIcon kind="big" /></span>
+              <div>
+                <strong>APERTURA DEL DÍA</strong>
+                <span>{formatDate(openingRow?.createdAt ?? selectedDate)} - {getLongHourLabel(openingRow?.createdAt ?? activeCashSession?.openedAt)}</span>
+                <small>Por: {pettyOpenedBy}</small>
+              </div>
+            </div>
+            <h3 className="value-blue">{formatBs(dayPettyOpeningBs)}</h3>
+            <div className="petty-opening-note">
+              <span>Desde Caja Grande</span>
+              <b>{openingSource?.receipt || openingSource?.id ? `Ingreso N° ${String(openingSource?.receipt || openingSource?.id).slice(0, 12)}` : 'Sin referencia registrada'}</b>
+            </div>
+          </article>
+
+          <article className="petty-kpi-card balance">
+            <div className="petty-card-title">
+              <span className="petty-hero-icon green"><CashIcon kind="petty" /></span>
+              <div>
+                <strong>SALDO DISPONIBLE</strong>
+                <h3 className="value-green">{formatBs(pettyCashBalanceBs)}</h3>
+                <p>Saldo actual en caja chica</p>
+              </div>
+            </div>
+            <div className="petty-balance-list">
+              <span><small>Apertura del día</small><b>{formatBs(dayPettyOpeningBs)}</b></span>
+              <span><small>Reposiciones del dia</small><b>{formatBs(dayPettyRepositionBs)}</b></span>
+              <span><small>Gastos del día</small><b className="value-orange">- {formatBs(dayPettyExpenseBs)}</b></span>
+              <span><small>Saldo disponible</small><b className="value-green">{formatBs(pettyCashBalanceBs)}</b></span>
+            </div>
+          </article>
+
+          <article className="petty-kpi-card expenses">
+            <div className="petty-card-title">
+              <span className="petty-hero-icon orange"><MiniIcon kind="cart" /></span>
+              <div>
+                <strong>GASTOS DEL DÍA</strong>
+                <h3 className="value-orange">{formatBs(dayPettyExpenseBs)}</h3>
+                <p>Total gastado hoy</p>
+              </div>
+            </div>
+            <div className="petty-expense-foot">
+              <b>N° de gastos: {dayPettyExpensesRows.length}</b>
+              <button type="button">Ver detalles</button>
+            </div>
+          </article>
+
+          <article className="petty-kpi-card closing">
+            <div className="petty-card-title">
+              <span className="petty-hero-icon blue"><MiniIcon kind="lock" /></span>
+              <div>
+                <strong>CIERRE DEL DÍA</strong>
+                <p>{isPettySessionOpen ? 'Aún no se ha cerrado la caja chica del día.' : 'Caja chica cerrada para la fecha seleccionada.'}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="petty-close-button"
+              disabled={!isPettySessionOpen}
+              onClick={() => openCashAction('closePetty', {
+                amountBs: String(Math.max(0, pettyCashBalanceBs)),
+                description: 'Cierre diario de Caja Chica',
+              })}
+            >
+              Cerrar caja chica
+            </button>
+          </article>
+        </section>
+
+        <section className="petty-main-grid">
+          <article className="bigcash-card petty-expenses-card">
+            <header className="petty-table-head">
+              <h3>GASTOS DE CAJA CHICA - {formatDate(selectedDate)}</h3>
+              <button
+                type="button"
+                className="petty-primary-button small"
+                onClick={() => openCashAction('expense', { category: 'varios' })}
+                disabled={!isPettySessionOpen}
+              >
+                + Registrar gasto
+              </button>
+            </header>
+
+            <div className="petty-toolbar">
+              <label>
+                <select value={pettyCashTypeFilter} onChange={(event) => setPettyCashTypeFilter(event.target.value)}>
+                  <option value="all">Todos los tipos</option>
+                  <option value="office">Oficina</option>
+                  <option value="mobility">Movilidad</option>
+                  <option value="food">Alimentación</option>
+                  <option value="other">Varios</option>
+                </select>
+              </label>
+              <label className="petty-search">
+                <input
+                  value={pettyCashQuery}
+                  onChange={(event) => setPettyCashQuery(event.target.value)}
+                  placeholder="Buscar concepto, proveedor..."
+                />
+                <MiniIcon kind="search" />
+              </label>
+            </div>
+
+            <div className="bigcash-table-wrap petty-table-wrap">
+              <table className="accounting-table petty-table">
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Concepto</th>
+                    <th>Proveedor / Destino</th>
+                    <th>Categoría</th>
+                    <th>Monto</th>
+                    <th>Comprobante</th>
+                    <th>Registrado por</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPettyExpenseRows.slice(0, pettyCashVisibleRows).map((movement) => {
+                    const category = getPettyExpenseCategory(movement);
+                    return (
+                      <tr key={movement.id}>
+                        <td>{getLongHourLabel(movement.createdAt)}</td>
+                        <td>{movement.description}</td>
+                        <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
+                        <td><span className={`petty-category ${category.className}`}>{category.label}</span></td>
+                        <td>{formatBs(Math.abs(movement.amountBs))}</td>
+                        <td>{movement.receipt || '-'}</td>
+                        <td>{movement.createdBy || movement.responsible || '-'}</td>
+                        <td><span className="bigcash-more"><MiniIcon kind="more" /></span></td>
+                      </tr>
+                    );
+                  })}
+                  {filteredPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Sin gastos registrados.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              type="button"
+              className="section-link blue"
+              onClick={() => setPettyCashVisibleRows((current) => (current >= filteredPettyExpenseRows.length ? 5 : current + 5))}
+            >
+              {pettyCashVisibleRows >= filteredPettyExpenseRows.length && pettyCashVisibleRows > 5 ? 'Ver menos' : 'Ver todos los gastos'}
+            </button>
+          </article>
+
+          <aside className="petty-side">
+            <article className="petty-side-card petty-day-summary">
+              <h3>RESUMEN DEL DÍA</h3>
+              <div>
+                <span><small>Apertura (desde Caja Grande)</small><b>{formatBs(dayPettyOpeningBs)}</b></span>
+                <span><small>Reposiciones del dia</small><b>{formatBs(dayPettyRepositionBs)}</b></span>
+                <span><small>Total gastos del día</small><b className="value-orange">- {formatBs(dayPettyExpenseBs)}</b></span>
+                <span className="total"><small>Saldo disponible</small><b className="value-green">{formatBs(pettyCashBalanceBs)}</b></span>
+              </div>
+            </article>
+
+            <article className="petty-info-card">
+              <span><MiniIcon kind="info" /></span>
+              <div>
+                <strong>Importante</strong>
+                <p>La caja chica se repone desde Caja Grande según sea necesario. Asegúrate de cerrar la caja al final del día.</p>
+              </div>
+            </article>
+
+            <article className="petty-side-card petty-repositions">
+              <h3>ÚLTIMAS REPOSICIONES DESDE CAJA GRANDE</h3>
+              <div className="petty-reposition-list">
+                {pettyTransfersRows.slice(0, 4).map((movement) => (
+                  <div key={movement.id}>
+                    <span>{formatDate(movement.createdAt)}</span>
+                    <strong>Reposición</strong>
+                    <b>{formatBs(Math.abs(movement.amountBs))}</b>
+                  </div>
+                ))}
+                {pettyTransfersRows.length === 0 ? <p className="status">Sin reposiciones registradas.</p> : null}
+              </div>
+              <button type="button" className="section-link blue">Ver todas</button>
+            </article>
+          </aside>
+        </section>
+
+        <section className="petty-bottom-grid">
+          <article className="bigcash-card petty-flow-card">
+            <h3>FLUJO DE CAJA CHICA</h3>
+            <div className="petty-flow">
+              <span className="flow-node source"><b>CAJA GRANDE</b><small>Origen de fondos</small></span>
+              <i>Se transfiere /<br />repone fondos</i>
+              <span className="flow-node petty"><b>CAJA CHICA</b><small>Gastos menores del día</small></span>
+              <i>Se devuelve<br />el saldo</i>
+              <span className="flow-node return"><b>CAJA GRANDE</b><small>Devolución de saldo no utilizado</small></span>
+            </div>
+          </article>
+
+          <article className="bigcash-card petty-history-card">
+            <h3><span className="bigcash-title-icon neutral"><MiniIcon kind="lock" /></span>HISTÓRICO DE CAJAS CHICAS</h3>
+            <div className="petty-history-table-wrap">
+              <table className="accounting-table petty-history-table">
+                <thead><tr><th>Fecha</th><th>Apertura</th><th>Gastos</th><th>Saldo devuelto</th><th>Estado</th></tr></thead>
+                <tbody>
+                  {pettySessionHistory.map((session) => {
+                    const dateKey = getDateKey(session.openedAt);
+                    const sessionPettyRows = sortedMovements.filter((movement) => movement.sessionId === session.id && isPettyCash(movement));
+                    const opening = sumBy(
+                      sessionPettyRows.filter((movement) => toNumber(movement.amountBs) > 0),
+                      (movement) => movement.amountBs,
+                    );
+                    const expenses = Math.abs(sumBy(
+                      sessionPettyRows.filter((movement) => toNumber(movement.amountBs) < 0 && !movement.isInternalTransfer),
+                      (movement) => movement.amountBs,
+                    ));
+                    const returned = Math.abs(sumBy(
+                      sessionPettyRows.filter((movement) => String(movement.type ?? '') === 'devolucion_saldo_caja_chica'),
+                      (movement) => movement.amountBs,
+                    ));
+                    const closed = String(session.status ?? '').toLowerCase() !== 'open';
+                    return (
+                      <tr key={session.id}>
+                        <td>{formatDate(dateKey || session.openedAt)}</td>
+                        <td>{formatBs(opening)}</td>
+                        <td>{formatBs(expenses)}</td>
+                        <td>{formatBs(returned)}</td>
+                        <td><span className={`petty-history-state ${closed ? 'closed' : 'open'}`}>{closed ? 'Cerrada' : 'Abierta'}</span></td>
+                      </tr>
+                    );
+                  })}
+                  {pettySessionHistory.length === 0 ? <tr><td colSpan={5}><p className="status">Sin cajas chicas registradas.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" className="section-link blue">Ver todas las cajas chicas</button>
+          </article>
+        </section>
+        {renderCashModals()}
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel accounting-overview-only">
+      <header className="accounting-overview-head">
+        <div>
+          <h2>Contabilidad</h2>
+          <p>Gestiona las operaciones de Caja Grande y Caja Chica.</p>
+        </div>
+        <div className="accounting-overview-actions">
+          <label className="accounting-date-control">
+            <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+            <span className="date-icon"><MiniIcon kind="calendar" /></span>
+          </label>
+          <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('transfer', { description: 'Reposicion de Caja Chica' })}>
+            <span>+ Nueva operación</span>
+            <span className="divider" />
+            <MiniIcon kind="chevron" />
+          </button>
+        </div>
+      </header>
+
+      <section className="accounting-overview-topcards">
+        <article className="box big">
+          <div className="title-row">
+            <span className="icon-wrap big"><CashIcon kind="big" /></span>
+            <div>
+              <strong>CAJA GRANDE</strong>
+              <small>Saldo disponible</small>
+            </div>
+            <small className="pill">Solo recibe</small>
+          </div>
+          <h3 className="value-green">{formatBs(bigCashBalanceBs)}</h3>
+          <div className="meta-row">
+            <span>Ingresos del dia <b>{formatBs(dayBigIncomeBs)}</b></span>
+            <span>Retiros a caja chica (hoy) <b>{formatBs(dayTransfersToPettyBs)}</b></span>
+            <span>Garantias retenidas <b>{formatBs(guaranteesHeldBs)}</b></span>
+          </div>
+        </article>
+        <article className="box summary">
+          <div className="title-row">
+            <span className="icon-wrap summary"><CashIcon kind="summary" /></span>
+            <div>
+              <strong>RESUMEN DEL DIA</strong>
+            </div>
+          </div>
+          <div className="list">
+            <div><span>Ingresos (Caja Grande)</span><b className="value-green">{formatBs(dayBigIncomeBs)}</b></div>
+            <div><span>Garantias recibidas</span><b className="value-blue">{formatBs(dayGuaranteeIncomeBs)}</b></div>
+            <div><span>Retiros a Caja Chica</span><b className="value-orange">{formatBs(dayTransfersToPettyBs)}</b></div>
+            <div><span>Gastos Caja Chica</span><b className="value-orange">{formatBs(dayPettyExpenseBs)}</b></div>
+            <div><span>Saldo Caja Chica actual</span><b className="value-blue">{formatBs(pettyCashBalanceBs)}</b></div>
+            <div><span>Pendiente por cobrar</span><b className="value-orange">{formatBs(pendingReceivableBs)}</b></div>
+          </div>
+        </article>
+        <article className="box petty">
+          <div className="title-row">
+            <span className="icon-wrap petty"><CashIcon kind="petty" /></span>
+            <div>
+              <strong>CAJA CHICA (Hoy)</strong>
+              <small>Saldo disponible</small>
+            </div>
+          </div>
+          <h3 className="value-blue">{formatBs(pettyCashBalanceBs)}</h3>
+          <div className="meta-row">
+            <span>Apertura del dia <b>{formatBs(dayPettyOpeningBs)}</b></span>
+            <span>Gastos del dia <b>{formatBs(dayPettyExpenseBs)}</b></span>
+          </div>
+        </article>
+      </section>
+
+      <section className="accounting-overview-flow">
+        <header>
+          <span className="icon-wrap flow"><CashIcon kind="flow" /></span>
+          <strong>FLUJO ENTRE CAJAS</strong>
+        </header>
+        <article className="flow-card flow-card-big">
+          <span className="icon-wrap big"><CashIcon kind="big" /></span>
+          <div>
+            <strong>CAJA GRANDE</strong>
+            <span>Solo recibe ingresos</span>
+          </div>
+        </article>
+        <div className="flow-lines" aria-hidden="true">
+          <span className="line income"><b>Recibe todos los ingresos</b></span>
+          <span className="line out"><b>Retiros para caja chica</b></span>
+        </div>
+        <article className="flow-card flow-card-petty">
+          <span className="icon-wrap petty"><CashIcon kind="petty" /></span>
+          <div>
+            <strong>CAJA CHICA (Diaria)</strong>
+            <span>Se apertura cada dia<br />Para gastos menores</span>
+          </div>
+        </article>
+        <aside>
+          <strong>Importante</strong>
+          <p>Caja Chica se repone desde Caja Grande segun sea necesario.</p>
+        </aside>
+      </section>
+
+      <section className="accounting-overview-tables">
+        <article className="table-box">
+          <header>
+            <h4><span className="table-title-icon green"><CashIcon kind="table" /></span>ULTIMOS INGRESOS (CAJA GRANDE)</h4>
+          </header>
+          <table className="accounting-table">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Referencia</th><th>Monto</th><th>Usuario</th></tr></thead>
+            <tbody>
+              {bigCashIncomeRows.slice(0, visibleRows.incomes).map((movement) => (
+                <tr key={movement.id}>
+                  <td>{formatDate(movement.createdAt)}</td>
+                  <td>{movement.description}</td>
+                  <td>{getMovementReference(movement)}</td>
+                  <td className="amount">{formatBs(movement.amountBs)}</td>
+                  <td>{movement.responsible || movement.createdBy || '-'}</td>
+                </tr>
+              ))}
+              {bigCashIncomeRows.length === 0 ? <tr><td colSpan={5}><p className="status">Sin ingresos registrados.</p></td></tr> : null}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="section-link green"
+            onClick={() => setVisibleRows((current) => ({ ...current, incomes: current.incomes >= bigCashIncomeRows.length ? 5 : current.incomes + 5 }))}
+          >
+            {visibleRows.incomes > 5 && visibleRows.incomes >= bigCashIncomeRows.length ? 'Ver menos' : 'Ver todos los ingresos'}
+          </button>
+        </article>
+
+        <article className="table-box">
+          <header>
+            <h4><span className="table-title-icon orange"><CashIcon kind="table" /></span>MOVIMIENTOS A CAJA CHICA (DESDE CAJA GRANDE)</h4>
+          </header>
+          <table className="accounting-table">
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Usuario</th></tr></thead>
+            <tbody>
+              {pettyTransfersRows.slice(0, visibleRows.transfers).map((movement) => (
+                <tr key={movement.id}>
+                  <td>{formatDate(movement.createdAt)}</td>
+                  <td>{movement.description}</td>
+                  <td className="negative amount">{formatBs(Math.abs(movement.amountBs))}</td>
+                  <td>{movement.responsible || movement.createdBy || '-'}</td>
+                </tr>
+              ))}
+              {pettyTransfersRows.length === 0 ? <tr><td colSpan={4}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="section-link orange"
+            onClick={() => setVisibleRows((current) => ({ ...current, transfers: current.transfers >= pettyTransfersRows.length ? 5 : current.transfers + 5 }))}
+          >
+            {visibleRows.transfers > 5 && visibleRows.transfers >= pettyTransfersRows.length ? 'Ver menos' : 'Ver todos los movimientos'}
+          </button>
+        </article>
+
+        <article className="table-box">
+          <header>
+            <h4><span className="table-title-icon blue"><CashIcon kind="table" /></span>GASTOS CAJA CHICA (HOY)</h4>
+          </header>
+          <table className="accounting-table">
+            <thead><tr><th>Hora</th><th>Concepto</th><th>Monto</th><th>Usuario</th></tr></thead>
+            <tbody>
+              {dayPettyExpensesRows.slice(0, visibleRows.expenses).map((movement) => (
+                <tr key={movement.id}>
+                  <td>{getHourLabel(movement.createdAt)}</td>
+                  <td>{movement.description}</td>
+                  <td className="negative amount">{formatBs(Math.abs(movement.amountBs))}</td>
+                  <td>{movement.responsible || movement.createdBy || '-'}</td>
+                </tr>
+              ))}
+              {dayPettyExpensesRows.length === 0 ? <tr><td colSpan={4}><p className="status">Sin gastos registrados.</p></td></tr> : null}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="section-link blue"
+            onClick={() => setVisibleRows((current) => ({ ...current, expenses: current.expenses >= dayPettyExpensesRows.length ? 5 : current.expenses + 5 }))}
+          >
+            {visibleRows.expenses > 5 && visibleRows.expenses >= dayPettyExpensesRows.length ? 'Ver menos' : 'Ver todos los gastos'}
+          </button>
+        </article>
+      </section>
+
+      <section className="accounting-pending-list">
+        {pendingReceivableRows.slice(0, 4).map((row) => (
+          <article key={row.id} className="accounting-pending-card is-receivable">
+            <div className="accounting-pending-head">
+              <div>
+                <strong>{row.customerName}</strong>
+                <small>{row.orderCode} {row.contractCode ? `| ${row.contractCode}` : ''}</small>
+              </div>
+              <span className="accounting-pending-status">{row.status}</span>
+            </div>
+            <div className="accounting-pending-money">
+              <span><small>Por cobrar</small><strong>{formatBs(row.pendingBs)}</strong></span>
+              <span><small>Garantia</small><strong>{formatBs(row.guaranteeBs)}</strong></span>
+              <span className="highlight"><small>Danos/perdidas</small><strong>{formatBs(row.penaltiesBs)}</strong></span>
+            </div>
+            <div className="accounting-pending-footer">
+              <span>Cobro pendiente para Caja Grande.</span>
+              <button type="button" className="accounting-collect-button" onClick={() => openCollectAction(row)}>Registrar cobro</button>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="accounting-overview-bottom">
+        <article className="summary-card">
+          <h4><span className="table-title-icon green"><CashIcon kind="table" /></span>RESUMEN CONTABLE DEL DIA</h4>
+          <div className="accounting-daily-balance">
+            <div className="balance-group big-cash">
+              <span>
+                <small>Saldo inicial</small>
+                <em>Caja Grande</em>
+                <b>{formatBs(bigCashBalanceBs - dayBigIncomeBs + dayTransfersToPettyBs)}</b>
+              </span>
+              <i>+</i>
+              <span>
+                <small>Ingresos del dia</small>
+                <b className="value-green">{formatBs(dayBigIncomeBs)}</b>
+              </span>
+              <i>-</i>
+              <span>
+                <small>Retiros a Caja Chica</small>
+                <b className="value-orange">{formatBs(dayTransfersToPettyBs)}</b>
+              </span>
+              <i>=</i>
+              <span>
+                <small>Saldo actual</small>
+                <em>Caja Grande</em>
+                <b>{formatBs(bigCashBalanceBs)}</b>
+              </span>
+            </div>
+            <div className="balance-group petty-cash">
+              <span>
+                <small>Caja Chica</small>
+                <em>Apertura del dia</em>
+                <b className="value-blue">{formatBs(dayPettyOpeningBs)}</b>
+              </span>
+              <i>-</i>
+              <span>
+                <small>Gastos del dia</small>
+                <b className="value-blue">{formatBs(dayPettyExpenseBs)}</b>
+              </span>
+              <i>=</i>
+              <span className="petty-balance">
+                <small>Saldo actual</small>
+                <em>Caja Chica</em>
+                <b>{formatBs(pettyCashBalanceBs)}</b>
+              </span>
+            </div>
+          </div>
+        </article>
+
+        <article className="quick-reports">
+          <h4>REPORTES RAPIDOS</h4>
+          <ul>
+            {quickReportLinks.map((label) => (
+              <li key={label}>
+                <button type="button" className="report-link" onClick={() => handleQuickReport(label)}>
+                  <MiniIcon kind="report" />{label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
+
+      <footer className="accounting-overview-footnote">
+        <small>Fecha de referencia: {formatDateTime(`${selectedDate}T12:00:00`)}</small>
+      </footer>
+      {renderCashModals()}
     </section>
   );
 }

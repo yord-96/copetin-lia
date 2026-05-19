@@ -69,6 +69,46 @@ const buildReceiptsFromRentals = (rentals) => {
   return allReceipts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
+const DRIVER_LOGIN_LOCATION_SESSION_KEY = 'copetin-driver-login-location-session-v1';
+
+const isTransportDriverUser = (user) => {
+  const roleId = String(user?.roleId ?? '').trim().toLowerCase();
+  const role = String(user?.role ?? '').trim().toLowerCase();
+  return roleId === 'transporte' || role.includes('transporte') || role.includes('chofer');
+};
+
+const createLoginSessionId = (userId) => {
+  const randomPart =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 10);
+  return `${String(userId ?? 'user')}-${Date.now()}-${randomPart}`;
+};
+
+const getCurrentPositionSafe = () =>
+  new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          latitude: Number(position?.coords?.latitude ?? NaN),
+          longitude: Number(position?.coords?.longitude ?? NaN),
+          accuracyMeters: Number(position?.coords?.accuracy ?? NaN),
+        });
+      },
+      () => resolve(null),
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+    );
+  });
+
 export const useAppController = () => {
   const [activeTab, setActiveTab] = useState('caja');
   const [authReady, setAuthReady] = useState(false);
@@ -91,6 +131,7 @@ export const useAppController = () => {
   const [cashSessions, setCashSessions] = useState([]);
   const [cashMovements, setCashMovements] = useState([]);
   const [userPresence, setUserPresence] = useState([]);
+  const [driverLoginLocations, setDriverLoginLocations] = useState([]);
 
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
@@ -143,6 +184,7 @@ export const useAppController = () => {
         settingsData,
         reportsData,
         presenceData,
+        driverLoginLocationsData,
       ] = await Promise.all([
         api.dashboard.get(),
         api.inventory.list(),
@@ -166,6 +208,7 @@ export const useAppController = () => {
         api.settings.get(),
         api.reports.listGenerated(),
         api.presence.listActive(),
+        api.auth.listDriverLoginLocations(),
       ]);
 
       setDashboard(dashboardData);
@@ -190,6 +233,7 @@ export const useAppController = () => {
       setSettingsBundle(settingsData);
       setGeneratedReports(reportsData);
       setUserPresence(presenceData);
+      setDriverLoginLocations(driverLoginLocationsData);
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -305,6 +349,7 @@ export const useAppController = () => {
 
   const activeRentals = useMemo(() => rentals.filter((rental) => rental.status === 'active'), [rentals]);
   const returnedRentals = useMemo(() => rentals.filter((rental) => rental.status === 'returned'), [rentals]);
+  const cancelledRentals = useMemo(() => rentals.filter((rental) => rental.status === 'cancelled'), [rentals]);
   const receipts = useMemo(() => buildReceiptsFromRentals(rentals), [rentals]);
   const activeCashSession = cashSummary?.activeSession ?? null;
 
@@ -352,7 +397,7 @@ export const useAppController = () => {
       : activeTab === 'usuarios'
       ? 'Gestiona usuarios, roles y permisos de operacion.'
       : activeTab === 'proveedores'
-      ? 'Gestiona proveedores, subalquileres, prestamos e intercambio de servicios.'
+      ? 'Gestiona proveedores, listas de precios y solicitudes de abastecimiento con costo.'
       : activeTab === 'personal'
       ? 'Gestiona personal, asistencia, permisos y horas trabajadas.'
       : activeTab === 'contabilidad'
@@ -403,6 +448,32 @@ export const useAppController = () => {
       const session = await api.auth.login(payload);
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));
+      if (isTransportDriverUser(session)) {
+        const sessionId = createLoginSessionId(session.id);
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.setItem(DRIVER_LOGIN_LOCATION_SESSION_KEY, sessionId);
+        }
+        window.setTimeout(async () => {
+          try {
+            const location = await getCurrentPositionSafe();
+            if (!location || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+              return;
+            }
+            await api.auth.registerDriverLoginLocation({
+              userId: session.id,
+              fullName: session.fullName ?? session.username ?? 'Chofer',
+              roleId: session.roleId ?? 'transporte',
+              role: session.role ?? 'Transporte',
+              sessionId,
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracyMeters: location.accuracyMeters,
+            });
+          } catch {
+            // La ubicacion de login es complementaria y no debe bloquear el acceso.
+          }
+        }, 100);
+      }
       return session;
     } catch (requestError) {
       setAuthError(requestError.message || 'No se pudo iniciar sesion.');
@@ -737,6 +808,18 @@ export const useAppController = () => {
     }
   };
 
+  const handleUpdateTreasuryAccounts = async (payload) => {
+    setError('');
+    try {
+      const updated = await api.cash.updateTreasuryAccounts(payload);
+      await loadData();
+      return updated;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo actualizar la distribucion de caja grande.');
+      throw requestError;
+    }
+  };
+
   const handleCreateCashMovement = async (payload) => {
     setError('');
     try {
@@ -831,6 +914,21 @@ export const useAppController = () => {
       return removed;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar la orden de servicio.');
+      throw requestError;
+    }
+  };
+
+  const handleCancelOrderContract = async (payload) => {
+    setError('');
+    try {
+      const cancelled = await api.rentals.cancel({
+        ...payload,
+        ...getCurrentUserTrace(),
+      });
+      await loadData();
+      return cancelled;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo anular el contrato.');
       throw requestError;
     }
   };
@@ -970,6 +1068,7 @@ export const useAppController = () => {
         observations: quote.observations,
         billingMode: quote.billingMode ?? 'sin_factura',
         pricingPlan: quote.pricingPlan ?? null,
+        supplierFulfillmentPlan: quote.supplierFulfillmentPlan ?? [],
         discountBs: Number(quote?.totals?.discountBs ?? 0),
         guaranteeBs: Number(quote?.totals?.guaranteeBs ?? 0),
         paidAtApprovalBs: Number(quote?.payment?.paidAtApprovalBs ?? 0),
@@ -1079,6 +1178,7 @@ export const useAppController = () => {
         validUntil: rental.dueDate ?? null,
         observations: rental.notes ?? '',
         billingMode: rental.billingMode ?? 'sin_factura',
+        supplierFulfillmentPlan: rental.supplierFulfillmentPlan ?? [],
         discountBs: Number(rental?.totals?.discountBs ?? 0),
         guaranteeBs: Number(rental?.depositBs ?? 0),
         paidAtApprovalBs: Number(rental?.payment?.paidAtRentalBs ?? 0),
@@ -1230,6 +1330,7 @@ export const useAppController = () => {
         billingMode: contract.billingMode ?? 'sin_factura',
         logisticsMode: contract.logisticsMode ?? 'envio',
         pricingPlan: contract.pricingPlan ?? null,
+        supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
         quotedTotals: contract.totals ?? null,
         eventType: contract.eventType,
         eventAddress: contract.address,
@@ -1292,6 +1393,58 @@ export const useAppController = () => {
         rentalId: createdRental.id,
         orderCode: createdRental.orderCode,
       });
+
+      const supplierPlan = Array.isArray(contract.supplierFulfillmentPlan)
+        ? contract.supplierFulfillmentPlan
+        : [];
+      if (supplierPlan.length > 0) {
+        const groupedBySupplier = new Map();
+        supplierPlan.forEach((line) => {
+          const supplierId = String(line?.supplierId ?? '').trim();
+          const supplierName = String(line?.supplierName ?? '').trim();
+          const itemName = String(line?.itemName ?? '').trim();
+          const itemId = String(line?.itemId ?? '').trim();
+          const neededQty = Math.max(0, Number(line?.neededQty ?? 0));
+          const supplierUnitCostBs = Math.max(0, Number(line?.supplierUnitCostBs ?? 0));
+          if (!supplierId || !supplierName || !itemName || neededQty <= 0) return;
+
+          const key = supplierId;
+          if (!groupedBySupplier.has(key)) {
+            groupedBySupplier.set(key, {
+              supplierId,
+              supplierName,
+              items: [],
+            });
+          }
+          groupedBySupplier.get(key).items.push({
+            itemId: itemId || null,
+            itemName,
+            category: '',
+            quantity: Math.max(1, Math.trunc(neededQty)),
+            unitPriceBs: supplierUnitCostBs,
+          });
+        });
+
+        await Promise.all(
+          Array.from(groupedBySupplier.values())
+            .filter((entry) => entry.items.length > 0)
+            .map((entry) =>
+              api.suppliers.createLoan({
+                supplierId: entry.supplierId,
+                direction: 'from_supplier',
+                flowType: 'paid',
+                requestDate: contract.deliveryDate || contract.eventDate || new Date().toISOString().slice(0, 10),
+                returnDate: contract.pickupDate || null,
+                eventName: `Abastecimiento ${createdRental.orderCode}`,
+                notes: `Generado automaticamente desde contrato ${contract.contractCode}.`,
+                sourceContractId: contract.id,
+                sourceRentalId: createdRental.id,
+                sourceOrderCode: createdRental.orderCode,
+                autoCreated: true,
+                items: entry.items,
+              })),
+        );
+      }
 
       let documentsWarning = '';
       try {
@@ -1427,11 +1580,13 @@ export const useAppController = () => {
     rentals,
     activeRentals,
     returnedRentals,
+    cancelledRentals,
     receipts,
     cashSummary,
     cashSessions,
     cashMovements,
     userPresence,
+    driverLoginLocations,
     activeCashSession,
     clients,
     users,
@@ -1475,6 +1630,7 @@ export const useAppController = () => {
     handleCreateInventoryMovement,
     handleOpenCashSession,
     handleCloseCashSession,
+    handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
     handleCollectReceivable,
     handleReceiveReturnedOrder,
@@ -1486,6 +1642,7 @@ export const useAppController = () => {
     handleRemoveQuote,
     handleUpdateOrderOperational,
     handleRemoveOrder,
+    handleCancelOrderContract,
     handleCreateContract,
     handleUpdateContract,
     handleRemoveContract,

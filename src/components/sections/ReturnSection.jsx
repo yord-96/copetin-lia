@@ -64,6 +64,21 @@ const clampProgress = (value) => {
   return Math.max(0, Math.min(100, Math.trunc(numeric)));
 };
 
+const timeToMinutes = (value) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value ?? '').trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+};
+
+const isValidSameDayWindow = (start, end) => {
+  const startMinutes = timeToMinutes(start);
+  const endMinutes = timeToMinutes(end);
+  return startMinutes !== null && endMinutes !== null && endMinutes > startMinutes;
+};
+
 const getRoutePriority = (delivery) => {
   const status = String(delivery?.status ?? '').trim();
   if (status === 'incidencia' || status === 'en_ruta') return ROUTE_PRIORITY_META.alta;
@@ -126,13 +141,11 @@ const getDeliveryTransition = (status) => {
 
 function KpiIcon({ kind }) {
   if (kind === 'truck') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 6h11v9H3zM14 9h3.5L21 12v3h-7z" />
-        <circle cx="8" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="18" cy="17.5" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      </svg>
-    );
+    return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
+  }
+
+  if (kind === 'maintenance') {
+    return <img className="asset-icon maintenance-asset-icon" src="/imagenes/herramientas-de-construccion.png" alt="" aria-hidden="true" />;
   }
 
   if (kind === 'clock') {
@@ -364,9 +377,10 @@ function ReturnSection({
     const inRoute = deliveries.filter((row) => row.status === 'en_ruta').length;
     const completed = deliveries.filter((row) => row.status === 'completada').length;
     const incidents = deliveries.filter((row) => row.status === 'incidencia').length;
+    const cancelled = deliveries.filter((row) => row.status === 'cancelada').length;
     const onTimeRate = deliveries.length > 0 ? Number(((completed / deliveries.length) * 100).toFixed(1)) : 0;
     const vehiclesActive = vehicles.filter((row) => row.status === 'activo').length;
-    return { deliveriesToday, inRoute, completed, incidents, onTimeRate, vehiclesActive };
+    return { deliveriesToday, inRoute, completed, incidents, cancelled, onTimeRate, vehiclesActive };
   }, [deliveries, vehicles]);
 
   const deliveriesTodayList = useMemo(() => {
@@ -476,7 +490,7 @@ function ReturnSection({
       return [
         { key: 'fleet_all', tone: 'lilac', icon: 'truck', value: vehicles.filter((row) => row.status !== 'fuera_servicio').length, label: 'Vehiculos activos', link: 'Ver flota' },
         { key: 'fleet_drivers', tone: 'sky', icon: 'driver', value: drivers.length, label: 'Choferes registrados', link: 'Ver choferes' },
-        { key: 'fleet_maintenance', tone: 'mint', icon: 'check', value: vehicles.filter((row) => row.status === 'mantenimiento').length, label: 'En mantenimiento', link: 'Filtrar' },
+        { key: 'fleet_maintenance', tone: 'mint', icon: 'maintenance', value: vehicles.filter((row) => row.status === 'mantenimiento').length, label: 'En mantenimiento', link: 'Filtrar' },
         { key: 'fleet_alerts', tone: 'peach', icon: 'alert', value: drivers.filter((row) => row.status === 'suspendido').length, label: 'Con alerta', link: 'Revisar' },
       ];
     }
@@ -486,7 +500,7 @@ function ReturnSection({
         { key: 'all', tone: 'lilac', icon: 'truck', value: stats.deliveriesToday, label: 'Entregas hoy', link: 'Ver todas' },
         { key: 'route', tone: 'peach', icon: 'clock', value: stats.inRoute, label: 'En ruta', link: 'Filtrar' },
         { key: 'done', tone: 'mint', icon: 'check', value: stats.completed, label: 'Completadas', link: 'Filtrar' },
-        { key: 'issues', tone: 'rose', icon: 'alert', value: stats.incidents, label: 'Con incidencias', link: 'Filtrar' },
+        { key: 'cancelled', tone: 'rose', icon: 'alert', value: stats.cancelled, label: 'Anuladas', link: 'Ver anuladas' },
         { key: 'ontime', tone: 'sky', icon: 'speed', value: `${stats.onTimeRate}%`, label: 'Entregas a tiempo', link: 'Ver rendimiento' },
       ];
     }
@@ -495,7 +509,7 @@ function ReturnSection({
       { key: 'all', tone: 'lilac', icon: 'truck', value: stats.deliveriesToday, label: 'Entregas hoy', link: 'Ver todas' },
       { key: 'route', tone: 'peach', icon: 'clock', value: stats.inRoute, label: 'En ruta', link: 'Ver en ruta' },
       { key: 'done', tone: 'sky', icon: 'check', value: stats.completed, label: 'Completadas este mes', link: 'Ver historial' },
-      { key: 'issues', tone: 'rose', icon: 'alert', value: stats.incidents, label: 'Con incidencias', link: 'Ver incidencias' },
+      { key: 'cancelled', tone: 'rose', icon: 'alert', value: stats.cancelled, label: 'Anuladas', link: 'Ver anuladas' },
       { key: 'fleet', tone: 'mint', icon: 'truck', value: stats.vehiclesActive, label: 'Vehiculos activos', link: 'Gestionar flota' },
     ];
   }, [currentView, drivers, stats, vehicles]);
@@ -549,6 +563,12 @@ function ReturnSection({
     if (cardKey === 'done') {
       onSwitchTransportModule?.('devolucion_entregas');
       setStatusFilter('completada');
+      return;
+    }
+
+    if (cardKey === 'cancelled') {
+      onSwitchTransportModule?.('devolucion_entregas');
+      setStatusFilter('cancelada');
       return;
     }
 
@@ -682,6 +702,10 @@ function ReturnSection({
         return;
       }
     }
+    if (windowStart && windowEnd && !isValidSameDayWindow(windowStart, windowEnd)) {
+      setDeliveryFormError('La hora de finalizacion debe ser mayor que la hora de inicio para el mismo dia.');
+      return;
+    }
 
     setIsSavingDelivery(true);
     setDeliveryFormError('');
@@ -725,6 +749,7 @@ function ReturnSection({
 
       setDeliveryForm(null);
       setDeliveryFormError('');
+      setStatusFilter('todos');
     } catch (requestError) {
       setDeliveryFormError(requestError?.message ?? 'No se pudo guardar la entrega.');
     } finally {
@@ -735,6 +760,7 @@ function ReturnSection({
   const handleAdvanceDeliveryStatus = async (row) => {
     const transition = getDeliveryTransition(row.status);
     await onUpdateDelivery?.({ id: row.id, status: transition.nextStatus, progress: transition.nextProgress });
+    setStatusFilter('todos');
   };
 
   const findRentalForDelivery = (delivery) =>
@@ -799,6 +825,7 @@ function ReturnSection({
         items: pickupModal.items,
       });
       setPickupModal(null);
+      setStatusFilter('todos');
     } catch (error) {
       setPickupFormError(error?.message || 'No se pudo guardar el checklist de recojo.');
     } finally {
@@ -1142,7 +1169,9 @@ function ReturnSection({
                 </td>
                 <td>
                   <div className="transport-driver-cell">
-                    <span className="transport-driver-avatar">{initials(row.driverName)}</span>
+                    <span className="transport-driver-avatar">
+                      <span className="transport-driver-avatar-text">{initials(row.driverName)}</span>
+                    </span>
                     <div>
                       <strong>{row.driverName}</strong>
                       <span>{row.driverLicense}</span>
@@ -1191,6 +1220,7 @@ function ReturnSection({
                             openEditDelivery(row);
                             setOpenFleetMenu(null);
                           }}
+                          disabled={row.status === 'cancelada'}
                         >
                           Editar entrega
                         </button>
@@ -1200,6 +1230,7 @@ function ReturnSection({
                             await handleAdvanceDeliveryStatus(row);
                             setOpenFleetMenu(null);
                           }}
+                          disabled={row.status === 'cancelada'}
                         >
                           {transition.label}
                         </button>
@@ -1635,6 +1666,7 @@ function ReturnSection({
                 <option value="en_ruta">En ruta</option>
                 <option value="completada">Completada</option>
                 <option value="incidencia">Incidencia</option>
+                <option value="cancelada">Cancelada</option>
               </select>
 
               <select value={driverFilter} onChange={(event) => setDriverFilter(event.target.value)}>
@@ -1773,7 +1805,9 @@ function ReturnSection({
                 </div>
 
                 <div className="transport-driver-inline">
-                  <span className="transport-driver-avatar">{initials(selectedDelivery.driverName)}</span>
+                  <span className="transport-driver-avatar">
+                    <span className="transport-driver-avatar-text">{initials(selectedDelivery.driverName)}</span>
+                  </span>
                   <div>
                     <strong>{selectedDelivery.driverName}</strong>
                     <span>{selectedDelivery.driverLicense}</span>

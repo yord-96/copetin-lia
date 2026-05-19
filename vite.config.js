@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -80,7 +80,15 @@ const sharedDemoDbPlugin = () => ({
 })
 
 // https://vite.dev/config/
-export default defineConfig({
-  base: './',
-  plugins: [react(), sharedDemoDbPlugin()],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+
+  return {
+    base: './',
+    define: {
+      'import.meta.env.APP_INTERNAL_KEY': JSON.stringify(env.APP_INTERNAL_KEY ?? ''),
+      'import.meta.env.RESET_SECURITY_CODE': JSON.stringify(env.RESET_SECURITY_CODE ?? ''),
+    },
+    plugins: [react(), sharedDemoDbPlugin()],
+  }
 })

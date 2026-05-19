@@ -61,6 +61,7 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
       currency: settings.currency ?? 'BOB',
       fiscalCondition: settings.fiscalCondition ?? 'Responsable Inscripto',
       activityStartDate: settings.activityStartDate ?? '',
+      contractCancellationPenaltyPercent: Number(settings.contractCancellationPenaltyPercent ?? 20),
       numbering: {
         serviceOrderPrefix: settings.numbering?.serviceOrderPrefix ?? 'OS-',
         serviceOrderNext: settings.numbering?.serviceOrderNext ?? 1,
@@ -110,6 +111,7 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
       currency: form.currency,
       fiscalCondition: form.fiscalCondition,
       activityStartDate: form.activityStartDate,
+      contractCancellationPenaltyPercent: Number(form.contractCancellationPenaltyPercent),
       backupMode: form.backupMode,
       numbering: {
         serviceOrderPrefix: form.numbering.serviceOrderPrefix,
@@ -126,13 +128,6 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
 
   return (
     <section className="panel settings-view">
-      <header className="settings-header">
-        <div>
-          <h2>Ajustes</h2>
-          <p>Configura las preferencias y parametros del sistema.</p>
-        </div>
-      </header>
-
       <div className="settings-kpi-grid">
         {cards.map((card) => (
           <article key={card.label} className={`settings-kpi-card ${card.tone}`}>
@@ -271,6 +266,17 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
                   <option value="es">Espanol</option>
                   <option value="en">Ingles</option>
                 </select>
+              </label>
+              <label>
+                Penalidad por anulacion (%)
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={form.contractCancellationPenaltyPercent}
+                  onChange={(event) => setField('contractCancellationPenaltyPercent', event.target.value)}
+                />
               </label>
             </div>
           </article>

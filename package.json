@@ -11,13 +11,16 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "backup": "node scripts/backup/backup-state.cjs",
+    "restore": "node scripts/backup/restore-state.cjs"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "pg": "^8.20.0",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

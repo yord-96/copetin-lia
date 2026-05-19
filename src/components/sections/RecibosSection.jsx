@@ -48,11 +48,7 @@ function ReportIcon({ kind }) {
     );
   }
   if (kind === 'truck') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M3 7h10v8H3zM13 10h4l2 2v3h-6zM7 17.5a1.5 1.5 0 1 1 0 .01m10 0a1.5 1.5 0 1 1 0 .01" />
-      </svg>
-    );
+    return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
   }
   if (kind === 'warning') {
     return (
@@ -69,11 +65,7 @@ function ReportIcon({ kind }) {
     );
   }
   if (kind === 'tool') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" d="M14.5 6.5 17.5 9.5M8.8 17.2l-2.3.3.3-2.3 7-7a2.1 2.1 0 0 1 3 3l-8 8Z" />
-      </svg>
-    );
+    return <img className="asset-icon maintenance-asset-icon" src="/imagenes/herramientas-de-construccion.png" alt="" aria-hidden="true" />;
   }
   if (kind === 'user') {
     return (
