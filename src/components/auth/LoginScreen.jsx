@@ -85,8 +85,8 @@ function LoginIcon({ kind }) {
 }
 
 function LoginScreen({ authReady, error, onLogin }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,7 +148,7 @@ function LoginScreen({ authReady, error, onLogin }) {
           </div>
         </aside>
 
-        <form className="login-form" onSubmit={handleSubmit}>
+        <form className="login-form" onSubmit={handleSubmit} autoComplete="off">
           <div className="login-form-head">
             <h2>Bienvenido de nuevo</h2>
             <p>Ingresa tus credenciales para continuar</p>
@@ -170,10 +170,11 @@ function LoginScreen({ authReady, error, onLogin }) {
               <span className="login-input-shell">
                 <LoginIcon kind="user" />
                 <input
+                  name="copetin-login-user"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="admin"
-                  autoComplete="username"
+                  placeholder="Ingresa tu usuario"
+                  autoComplete="off"
                   disabled={!authReady || isSubmitting}
                   autoFocus
                 />
@@ -185,11 +186,12 @@ function LoginScreen({ authReady, error, onLogin }) {
               <span className="login-input-shell">
                 <LoginIcon kind="lock" />
                 <input
+                  name="copetin-login-passcode"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="admin123"
-                  autoComplete="current-password"
+                  placeholder="Ingresa tu contrasena"
+                  autoComplete="new-password"
                   disabled={!authReady || isSubmitting}
                 />
                 <button
