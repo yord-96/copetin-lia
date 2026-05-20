@@ -40,12 +40,33 @@ router.get('/__copetin_db', async (req, res, next) => {
 router.put('/__copetin_db', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
-      res.status(400).json({ error: 'El estado debe enviarse como objeto JSON.' });
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
       return;
     }
 
-    res.json(await replaceStateSnapshot(req.body));
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revision actual para guardar el estado.' });
+      return;
+    }
+
+    if (!req.body.state || typeof req.body.state !== 'object' || Array.isArray(req.body.state)) {
+      res.status(400).json({ error: 'El estado debe enviarse como objeto JSON en el campo state.' });
+      return;
+    }
+
+    res.json(await replaceStateSnapshot(req.body.state, req.body.revision));
   } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      res.status(409).json({
+        error: 'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
+        currentRevision: error.currentRevision,
+        providedRevision: error.providedRevision,
+        version: error.version,
+        updatedAt: error.updatedAt,
+      });
+      return;
+    }
+
     next(error);
   }
 });

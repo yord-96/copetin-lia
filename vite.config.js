@@ -64,7 +64,32 @@ const sharedDemoDbPlugin = () => ({
 
         if (req.method === 'PUT') {
           const body = await readBody(req)
-          const state = JSON.parse(body)
+          const payload = JSON.parse(body)
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            sendJson(res, 400, { error: 'La solicitud debe enviarse como objeto JSON.' })
+            return
+          }
+          if (!Object.prototype.hasOwnProperty.call(payload, 'revision')) {
+            sendJson(res, 400, { error: 'Debes enviar la revision actual para guardar el estado.' })
+            return
+          }
+          if (!payload.state || typeof payload.state !== 'object' || Array.isArray(payload.state)) {
+            sendJson(res, 400, { error: 'El estado debe enviarse como objeto JSON en el campo state.' })
+            return
+          }
+
+          const currentRevision = getSharedDbRevision()
+          const providedRevision = payload.revision === null ? null : String(payload.revision ?? '').trim() || null
+          if (providedRevision !== currentRevision) {
+            sendJson(res, 409, {
+              error: 'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
+              currentRevision,
+              providedRevision,
+            })
+            return
+          }
+
+          const state = payload.state
           fs.writeFileSync(sharedDbPath, JSON.stringify(state, null, 2), 'utf8')
           sendJson(res, 200, { ok: true, revision: getSharedDbRevision() })
           return

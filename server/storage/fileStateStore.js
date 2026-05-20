@@ -15,6 +15,17 @@ const checksumForState = (state) =>
     .digest('hex')
     .slice(0, 16);
 
+const revisionForPayload = (payload) =>
+  payload?.state
+    ? `${payload.version ?? 1}:${payload.checksum ?? 'state'}`
+    : null;
+
+const normalizeRevision = (revision) => {
+  if (revision === null) return null;
+  const value = String(revision ?? '').trim();
+  return value || null;
+};
+
 const readJsonFile = async () => {
   try {
     const raw = await fs.readFile(stateFilePath, 'utf8');
@@ -55,7 +66,7 @@ export const getStateSnapshot = async () => {
   return {
     initialized: true,
     state: payload.state,
-    revision: `${payload.version ?? 1}:${payload.checksum ?? 'state'}`,
+    revision: revisionForPayload(payload),
     version: Number(payload.version ?? 1),
     updatedAt: payload.updatedAt ?? null,
   };
@@ -71,9 +82,22 @@ export const getStateMeta = async () => {
   };
 };
 
-export const replaceStateSnapshot = async (state) => {
+export const replaceStateSnapshot = async (state, expectedRevision) => {
   await ensureStateStore();
   const current = await readJsonFile();
+  const currentRevision = revisionForPayload(current);
+  const providedRevision = normalizeRevision(expectedRevision);
+
+  if (providedRevision !== currentRevision) {
+    const error = new Error('La revision enviada no coincide con la revision actual.');
+    error.code = 'STATE_REVISION_CONFLICT';
+    error.currentRevision = currentRevision;
+    error.providedRevision = providedRevision;
+    error.version = Number(current?.version ?? 0);
+    error.updatedAt = current?.updatedAt ?? null;
+    throw error;
+  }
+
   const version = Number(current?.version ?? 0) + 1;
   const checksum = checksumForState(state);
   const updatedAt = new Date().toISOString();

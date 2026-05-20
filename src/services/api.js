@@ -101,7 +101,7 @@ const fetchSharedState = async () => {
     throw new Error('No se pudo leer la base demo compartida.');
   }
   const payload = await response.json();
-  if (payload?.revision) {
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'revision')) {
     lastSharedRevision = payload.revision;
   }
   return payload;
@@ -131,9 +131,24 @@ const pushSharedState = async () => {
   const response = await fetch(getSharedDbUrl(), {
     method: 'PUT',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(state),
+    body: JSON.stringify({
+      state,
+      revision: lastSharedRevision ?? null,
+    }),
   });
   const payload = await response.json().catch(() => null);
+
+  if (response.status === 409) {
+    throw new Error(
+      payload?.error
+        || 'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'No se pudo guardar la base compartida.');
+  }
+
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
   }

@@ -45,6 +45,23 @@ No debe quedar hardcodeado en el código fuente. Usa un valor largo y no obvio.
 - `JSON_LIMIT` configurable.
 - Errores sin stack trace ni detalles internos en `NODE_ENV=production`.
 
+## Control de concurrencia del estado JSON
+
+`GET /__copetin_db` devuelve el estado completo junto con su `revision` actual.
+`PUT /__copetin_db` exige enviar `{ state, revision }`. Si esa `revision` no coincide con la revision actual del archivo, el backend responde `409 Conflict` y no reemplaza `app-state.json`.
+
+Mensaje esperado para el operador:
+
+```text
+Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.
+```
+
+## Base inicial limpia
+
+El estado inicial definido en `src/services/webBridge.js` no carga clientes, inventario, vehiculos, choferes, ordenes, calendario ni movimientos demo. Si `app-state.json` no existe, el sistema arranca con configuracion base y solo un usuario `super_admin` de bootstrap.
+
+El usuario bootstrap no tiene una contrasena conocida hardcodeada. En una base nueva, el primer ingreso de `admin` define la contrasena inicial si tiene al menos 8 caracteres; luego se guarda como hash y el login vuelve al flujo normal.
+
 ## Recomendaciones antes de datos sensibles reales
 
 1. No exponer el puerto `4000`.
