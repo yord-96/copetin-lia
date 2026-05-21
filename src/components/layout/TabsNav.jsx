@@ -1,16 +1,16 @@
 import { useState } from 'react';
 
 const operationTabs = [
-  { id: 'resumen', label: 'Dashboard', icon: 'home', hint: '' },
+  { id: 'resumen', label: 'Dashboard', icon: 'dashboardPanel', hint: '' },
   { id: 'caja', label: 'Calendario', icon: 'calendar', hint: '' },
-  { id: 'items', label: 'Clientes', icon: 'users', hint: '' },
-  { id: 'alquiler', label: 'Ordenes de Servicio', icon: 'clipboard', hint: '' },
-  { id: 'proveedores', label: 'Proveedores', icon: 'store', hint: '' },
-  { id: 'personal', label: 'Personal', icon: 'user', hint: '' },
+  { id: 'items', label: 'Clientes', icon: 'customerService', hint: '' },
+  { id: 'alquiler', label: 'Ordenes de Servicio', icon: 'serviceChecklist', hint: '' },
+  { id: 'proveedores', label: 'Proveedores', icon: 'provider', hint: '' },
+  { id: 'personal', label: 'Personal', icon: 'personnel', hint: '' },
   {
     id: 'inventario',
     label: 'Inventario',
-    icon: 'box',
+    icon: 'inventoryWorker',
     hint: '',
     children: [
       { id: 'inventario_productos', label: 'Productos', targetId: 'inventario_productos' },
@@ -30,11 +30,11 @@ const operationTabs = [
       { id: 'transporte_flota', label: 'Flota y Choferes', targetId: 'devolucion_rutas' },
     ],
   },
-  { id: 'recibos', label: 'Reportes', icon: 'chart', hint: '' },
+  { id: 'recibos', label: 'Reportes', icon: 'analyticsReport', hint: '' },
   {
     id: 'contabilidad',
     label: 'Contabilidad',
-    icon: 'money',
+    icon: 'cashRegister',
     hint: '',
     children: [
       { id: 'contabilidad_caja_grande', label: 'Caja Grande', targetId: 'contabilidad_caja_grande' },
@@ -44,11 +44,58 @@ const operationTabs = [
 ];
 
 const configTabs = [
-  { id: 'usuarios', targetId: 'usuarios', label: 'Usuarios', icon: 'user' },
-  { id: 'categorias', targetId: 'categorias', label: 'Ajustes', icon: 'gear' },
+  { id: 'usuarios', targetId: 'usuarios', label: 'Usuarios', icon: 'addUser' },
+  { id: 'categorias', targetId: 'categorias', label: 'Ajustes', icon: 'settingsPanel' },
 ];
 
 function renderIcon(icon) {
+  if (icon === 'dashboardPanel') {
+    return <img className="asset-icon dashboard-panel-asset-icon" src="/imagenes/panel.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'customerService') {
+    return (
+      <img
+        className="asset-icon customer-service-asset-icon"
+        src="/imagenes/agente-de-servicio-al-cliente.png"
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (icon === 'serviceChecklist') {
+    return <img className="asset-icon service-checklist-asset-icon" src="/imagenes/lista-de-verificacion.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'provider') {
+    return <img className="asset-icon provider-asset-icon" src="/imagenes/proveedor.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'personnel') {
+    return <img className="asset-icon personnel-asset-icon" src="/imagenes/humano.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'inventoryWorker') {
+    return <img className="asset-icon inventory-worker-asset-icon" src="/imagenes/inventario.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'analyticsReport') {
+    return <img className="asset-icon analytics-report-asset-icon" src="/imagenes/analitica.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'cashRegister') {
+    return <img className="asset-icon cash-register-asset-icon" src="/imagenes/cajero-automatico.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'addUser') {
+    return <img className="asset-icon add-user-asset-icon" src="/imagenes/agregar-usuario.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'settingsPanel') {
+    return <img className="asset-icon settings-panel-asset-icon" src="/imagenes/ajuste.png" alt="" aria-hidden="true" />;
+  }
+
   if (icon === 'home') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -108,11 +155,7 @@ function renderIcon(icon) {
   }
 
   if (icon === 'calendar') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
-      </svg>
-    );
+    return <img className="asset-icon calendar-asset-icon" src="/imagenes/calendario.png" alt="" aria-hidden="true" />;
   }
 
   if (icon === 'chart') {
@@ -157,6 +200,134 @@ function getTabRoot(tabId) {
   if (target.startsWith('inventario')) return 'inventario';
   if (target.startsWith('contabilidad')) return 'contabilidad';
   return target;
+}
+
+const MOBILE_PRIMARY_TABS = ['resumen', 'items', 'alquiler', 'caja'];
+
+export function MobileNavigation({
+  activeTab,
+  allowedTabs = [],
+  notificationCounts = {},
+  isOpen = false,
+  onToggleMore,
+  onCloseMore,
+  onChange,
+}) {
+  const allowedSet = new Set(allowedTabs);
+
+  const canShowTab = (tab) => {
+    const targetId = tab.targetId ?? tab.id;
+    if (allowedSet.size === 0) return true;
+    if (allowedSet.has(targetId) || allowedSet.has(tab.id)) return true;
+    if (tab.id === 'inventario' && allowedSet.has('inventario')) return true;
+    if (tab.id === 'devolucion' && allowedSet.has('devolucion')) return true;
+    if (tab.id === 'contabilidad' && allowedSet.has('contabilidad')) return true;
+    return false;
+  };
+
+  const isActive = (tab) => {
+    const targetId = tab.targetId ?? tab.id;
+    return (
+      activeTab === targetId
+      || (tab.id === 'inventario' && String(activeTab).startsWith('inventario'))
+      || (tab.id === 'devolucion' && String(activeTab).startsWith('devolucion'))
+      || (tab.id === 'contabilidad' && String(activeTab).startsWith('contabilidad'))
+    );
+  };
+
+  const handleChange = (tabId) => {
+    onChange(tabId);
+    onCloseMore();
+  };
+
+  const allowedOperationTabs = operationTabs.filter(canShowTab);
+  const primaryTabs = MOBILE_PRIMARY_TABS
+    .map((tabId) => allowedOperationTabs.find((tab) => tab.id === tabId))
+    .filter(Boolean);
+  const moreOperationTabs = allowedOperationTabs.filter((tab) => !MOBILE_PRIMARY_TABS.includes(tab.id));
+  const moreConfigTabs = configTabs.filter(canShowTab);
+
+  return (
+    <>
+      <nav className="mobile-bottom-nav" aria-label="Navegacion movil">
+        {primaryTabs.map((tab) => {
+          const targetId = tab.targetId ?? tab.id;
+          const notificationCount = Number(notificationCounts[tab.id]) || 0;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={isActive(tab) ? 'active' : ''}
+              onClick={() => handleChange(targetId)}
+            >
+              <span className="mobile-nav-icon">{renderIcon(tab.icon)}</span>
+              <span>{tab.label === 'Ordenes de Servicio' ? 'Ordenes' : tab.label}</span>
+              {notificationCount > 0 ? <i>{notificationCount}</i> : null}
+            </button>
+          );
+        })}
+        <button type="button" className={isOpen ? 'active' : ''} onClick={onToggleMore}>
+          <span className="mobile-nav-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M5 7h14M5 12h14M5 17h14" />
+            </svg>
+          </span>
+          <span>Mas</span>
+        </button>
+      </nav>
+
+      {isOpen ? (
+        <div className="mobile-more-backdrop" onClick={onCloseMore}>
+          <section className="mobile-more-sheet" onClick={(event) => event.stopPropagation()} aria-label="Mas modulos">
+            <header>
+              <div>
+                <span>El Copetin</span>
+                <strong>Mas modulos</strong>
+              </div>
+              <button type="button" onClick={onCloseMore} aria-label="Cerrar menu movil">x</button>
+            </header>
+            <div className="mobile-more-grid">
+              {moreOperationTabs.map((tab) => (
+                <div key={tab.id} className="mobile-more-group">
+                  <button type="button" className={isActive(tab) ? 'active' : ''} onClick={() => handleChange(tab.targetId ?? tab.id)}>
+                    <span className="mobile-nav-icon">{renderIcon(tab.icon)}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                  {Array.isArray(tab.children) && tab.children.length > 0 ? (
+                    <div className="mobile-more-children">
+                      {tab.children.map((child) => {
+                        const root = getTabRoot(child.targetId);
+                        const canShowChild = allowedSet.size === 0 || allowedSet.has(child.targetId) || allowedSet.has(root) || allowedSet.has(tab.id);
+                        if (!canShowChild) return null;
+                        return (
+                          <button
+                            key={child.id}
+                            type="button"
+                            className={activeTab === child.targetId ? 'active' : ''}
+                            onClick={() => handleChange(child.targetId)}
+                          >
+                            {child.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {moreConfigTabs.map((tab) => (
+                <div key={tab.id} className="mobile-more-group">
+                  <button type="button" className={isActive(tab) ? 'active' : ''} onClick={() => handleChange(tab.targetId ?? tab.id)}>
+                    <span className="mobile-nav-icon">{renderIcon(tab.icon)}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, allowedTabs = [], userPresence = [] }) {

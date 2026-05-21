@@ -38,6 +38,10 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
   return (
     <header className="topbar">
       <div className="topbar-inner">
+        <div className="mobile-top-summary">
+          <span>{PAGE_LABELS[activeTab] ?? 'Sistema'}</span>
+          <strong>{shortName(currentUser?.fullName)}</strong>
+        </div>
         <div className="top-actions">
           <span className="mode-pill mode-pill-web">Modo Web</span>
           <div className="presence-strip" title="Usuarios activos ahora">

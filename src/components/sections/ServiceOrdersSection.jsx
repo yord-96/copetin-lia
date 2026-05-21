@@ -37,6 +37,18 @@ const LOGISTICS_MODE_META = {
   recojo: 'Recojo por cliente',
 };
 
+const DELIVERY_CHARGE_MODE_META = {
+  included: 'Envio incluido',
+  extra: 'Cobrar envio extra',
+};
+
+const DELIVERY_FEE_REASON_META = {
+  covered: 'Cubre lo alquilado',
+  quantity: 'No cubre la cantidad alquilada',
+  distance: 'Zona alejada',
+  other: 'Otro motivo',
+};
+
 const DOCUMENT_SOURCE_LABELS = {
   contrato: 'Contrato',
   orden_inventario: 'Inventario',
@@ -88,23 +100,19 @@ function OrdersKpiIcon({ kind }) {
     return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
   }
 
+  if (kind === 'quote') {
+    return <img className="asset-icon quote-asset-icon" src="/imagenes/solicitud-de-cotizacion.png" alt="" aria-hidden="true" />;
+  }
+
+  if (kind === 'contract') {
+    return <img className="asset-icon contract-asset-icon" src="/imagenes/contrato.png" alt="" aria-hidden="true" />;
+  }
+
   const icons = {
     orders: (
       <>
         <rect x="7" y="5" width="10" height="16" rx="2" />
         <path d="M9 9h6M9 13h6M9 17h4" />
-      </>
-    ),
-    quote: (
-      <>
-        <path d="M7 4h10l3 3v13H7z" />
-        <path d="M17 4v4h4M9.5 11h7M9.5 15h4" />
-      </>
-    ),
-    contract: (
-      <>
-        <path d="M6 4h9l3 3v13H6z" />
-        <path d="M15 4v4h4M9 12h6M9 16h6" />
       </>
     ),
     check: (
@@ -325,6 +333,7 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
     baseSubtotalBs: quote?.totals?.baseSubtotalBs ?? pricingPlan.baseSubtotalBs ?? 0,
   });
   const hasDuration = durationPricing.mode === 'duration';
+  const deliveryFeeBs = Number(quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0);
   const rows = (quote?.items ?? []).map((line) => `
     <tr>
       <td>${escapeDocText(line.itemName)}</td>
@@ -409,6 +418,7 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
             ${hasDuration ? `<div class="line"><span>Promocion duracion</span><strong>${formatBs(Number(quote?.totals?.durationDiscountBs ?? 0))}</strong></div>` : ''}
             <div class="line"><span>Descuento</span><strong>${formatBs(Number(quote?.totals?.discountBs ?? 0))}</strong></div>
             <div class="line"><span>Garantia</span><strong>${formatBs(Number(quote?.totals?.guaranteeBs ?? 0))}</strong></div>
+            ${quote?.logisticsMode === 'envio' ? `<div class="line"><span>Envio por equipo</span><strong>${deliveryFeeBs > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
             <div class="line total"><span>Total</span><strong>${formatBs(Number(quote?.totals?.totalBs ?? 0))}</strong></div>
           </section>
         </main>
@@ -440,6 +450,9 @@ const buildEmptyDraft = (mode = 'quote') => {
     billingMode: 'sin_factura',
     deliveryDate,
     logisticsMode: 'envio',
+    deliveryChargeMode: 'included',
+    deliveryFeeBs: '0',
+    deliveryFeeReason: 'covered',
     deliveryWindowStart: '08:00',
     deliveryWindowEnd: '10:00',
     pickupDate,
@@ -1379,10 +1392,16 @@ function ServiceOrdersSection({
     : 'Fecha pendiente';
   const sideSummaryAddress = [draft.address, draft.city].filter(Boolean).join(', ') || 'Direccion pendiente';
 
+  const quoteDeliveryFeeBs = useMemo(() => {
+    if (draft.logisticsMode !== 'envio' || draft.deliveryChargeMode !== 'extra') return 0;
+    const parsed = Number(draft.deliveryFeeBs ?? 0);
+    return Math.max(0, Number.isFinite(parsed) ? parsed : 0);
+  }, [draft.deliveryChargeMode, draft.deliveryFeeBs, draft.logisticsMode]);
+
   const quoteTotalBs = useMemo(() => {
     const discount = Math.max(0, Number(draft.discountBs ?? 0));
-    return Math.max(0, quoteSubtotalBs - discount);
-  }, [draft.discountBs, quoteSubtotalBs]);
+    return Math.max(0, quoteSubtotalBs - discount + quoteDeliveryFeeBs);
+  }, [draft.discountBs, quoteDeliveryFeeBs, quoteSubtotalBs]);
 
   const pendingAtApprovalBs = useMemo(() => {
     const paid = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
@@ -1398,6 +1417,12 @@ function ServiceOrdersSection({
     () => getClientAddressOptions(selectedClientForDraft),
     [selectedClientForDraft],
   );
+
+  const selectedClientPrepaidBalanceBs = selectedClientForDraft?.prepaidEnabled
+    ? Math.max(0, Number(selectedClientForDraft.prepaidBalanceBs ?? 0))
+    : 0;
+  const selectedClientPrepaidCoverageBs = Math.min(selectedClientPrepaidBalanceBs, quoteTotalBs);
+  const selectedClientPrepaidPendingBs = Math.max(0, quoteTotalBs - selectedClientPrepaidCoverageBs);
 
   const itemCategoryOptions = useMemo(
     () => Array.from(new Set(items.map((item) => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
@@ -1456,6 +1481,12 @@ function ServiceOrdersSection({
     city: record?.city ?? '',
     deliveryDate: record?.deliveryDate ?? getInputDate(new Date()),
     logisticsMode: record?.logisticsMode ?? 'envio',
+    deliveryChargeMode: (record?.logisticsMode ?? 'envio') === 'envio'
+      && (record?.deliveryChargeMode === 'extra' || Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0) > 0)
+      ? 'extra'
+      : 'included',
+    deliveryFeeBs: String(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0),
+    deliveryFeeReason: record?.deliveryFeeReason ?? (Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
     deliveryWindowStart: record?.deliveryWindowStart ?? '08:00',
     deliveryWindowEnd: record?.deliveryWindowEnd ?? '10:00',
     pickupDate: record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
@@ -1536,6 +1567,29 @@ function ServiceOrdersSection({
 
   const setDraftField = (field, value) => {
     setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const setDraftLogisticsMode = (value) => {
+    const logisticsMode = value === 'recojo' ? 'recojo' : 'envio';
+    setDraft((current) => ({
+      ...current,
+      logisticsMode,
+      deliveryChargeMode: logisticsMode === 'envio' ? current.deliveryChargeMode : 'included',
+      deliveryFeeBs: logisticsMode === 'envio' ? current.deliveryFeeBs : '0',
+      deliveryFeeReason: logisticsMode === 'envio' ? current.deliveryFeeReason : 'covered',
+    }));
+  };
+
+  const setDraftDeliveryChargeMode = (value) => {
+    const deliveryChargeMode = value === 'extra' ? 'extra' : 'included';
+    setDraft((current) => ({
+      ...current,
+      deliveryChargeMode,
+      deliveryFeeBs: deliveryChargeMode === 'extra' ? current.deliveryFeeBs : '0',
+      deliveryFeeReason: deliveryChargeMode === 'extra'
+        ? current.deliveryFeeReason === 'covered' ? 'quantity' : current.deliveryFeeReason
+        : 'covered',
+    }));
   };
 
   const setDraftBillingMode = (value) => {
@@ -1787,6 +1841,9 @@ function ServiceOrdersSection({
       const issue = uncoveredStockIssues[0];
       throw new Error(`${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`);
     }
+    if (draft.logisticsMode === 'envio' && draft.deliveryChargeMode === 'extra' && quoteDeliveryFeeBs <= 0) {
+      throw new Error('Indica el costo extra de envio.');
+    }
 
     const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
     if (paidAtApprovalBs > quoteTotalBs) {
@@ -1822,6 +1879,11 @@ function ServiceOrdersSection({
       billingMode: draft.billingMode,
       deliveryDate: draft.deliveryDate,
       logisticsMode: draft.logisticsMode,
+      deliveryChargeMode: draft.logisticsMode === 'envio' ? draft.deliveryChargeMode : 'included',
+      deliveryFeeBs: quoteDeliveryFeeBs,
+      deliveryFeeReason: draft.logisticsMode === 'envio' && draft.deliveryChargeMode === 'extra'
+        ? draft.deliveryFeeReason
+        : 'covered',
       deliveryWindowStart: draft.deliveryWindowStart,
       deliveryWindowEnd: draft.deliveryWindowEnd,
       pickupDate: draft.pickupDate,
@@ -3574,7 +3636,9 @@ function ServiceOrdersSection({
                         <select value={draft.clientId} onChange={(event) => setClientFromSelection(event.target.value)}>
                           <option value="">Seleccionar...</option>
                           {clients.map((client) => (
-                            <option key={client.id} value={client.id}>{client.name}</option>
+                            <option key={client.id} value={client.id}>
+                              {client.name}{client.isBlacklisted ? ' - No atender' : ''}
+                            </option>
                           ))}
                         </select>
                       </label>
@@ -3598,6 +3662,16 @@ function ServiceOrdersSection({
                     <div className="orders-form-note">
                       Estos datos se usaran en contrato, orden de servicio y hoja de ruta.
                     </div>
+                    {selectedClientForDraft?.isBlacklisted ? (
+                      <div className="orders-form-note orders-form-note-warn">
+                        Cliente en lista negra: {selectedClientForDraft.blacklistNotes || 'revisar motivo antes de atender.'}
+                      </div>
+                    ) : null}
+                    {selectedClientForDraft?.prepaidEnabled ? (
+                      <div className="orders-form-note orders-form-note-prepaid">
+                        Cliente especial con saldo prepago disponible: {formatBs(selectedClientPrepaidBalanceBs)}. Al aprobar contrato se descontara automaticamente del saldo.
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 
@@ -4099,18 +4173,67 @@ function ServiceOrdersSection({
                       <button
                         type="button"
                         className={draft.logisticsMode === 'envio' ? 'active' : ''}
-                        onClick={() => setDraftField('logisticsMode', 'envio')}
+                        onClick={() => setDraftLogisticsMode('envio')}
                       >
                         Envio por mi equipo
                       </button>
                       <button
                         type="button"
                         className={draft.logisticsMode === 'recojo' ? 'active' : ''}
-                        onClick={() => setDraftField('logisticsMode', 'recojo')}
+                        onClick={() => setDraftLogisticsMode('recojo')}
                       >
                         Recojo por cliente
                       </button>
                     </div>
+                    {draft.logisticsMode === 'envio' ? (
+                      <div className="orders-delivery-charge-panel">
+                        <div className="orders-logistics-mode orders-delivery-charge-mode">
+                          <button
+                            type="button"
+                            className={draft.deliveryChargeMode !== 'extra' ? 'active' : ''}
+                            onClick={() => setDraftDeliveryChargeMode('included')}
+                          >
+                            {DELIVERY_CHARGE_MODE_META.included}
+                          </button>
+                          <button
+                            type="button"
+                            className={draft.deliveryChargeMode === 'extra' ? 'active' : ''}
+                            onClick={() => setDraftDeliveryChargeMode('extra')}
+                          >
+                            {DELIVERY_CHARGE_MODE_META.extra}
+                          </button>
+                        </div>
+                        {draft.deliveryChargeMode === 'extra' ? (
+                          <div className="orders-form-grid orders-delivery-fee-grid">
+                            <label>
+                              Costo extra de envio (Bs) *
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={draft.deliveryFeeBs}
+                                onChange={(event) => setDraftField('deliveryFeeBs', event.target.value)}
+                              />
+                            </label>
+                            <label>
+                              Motivo
+                              <select
+                                value={draft.deliveryFeeReason}
+                                onChange={(event) => setDraftField('deliveryFeeReason', event.target.value)}
+                              >
+                                <option value="quantity">No cubre la cantidad alquilada</option>
+                                <option value="distance">Zona alejada</option>
+                                <option value="other">Otro motivo</option>
+                              </select>
+                            </label>
+                          </div>
+                        ) : (
+                          <div className="orders-form-note">
+                            El envio queda incluido porque el alquiler cubre el servicio logistico.
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                     <div className="orders-form-grid">
                       <label>
                         {draft.logisticsMode === 'recojo' ? 'Fecha de alistamiento *' : 'Fecha entrega *'}
@@ -4204,6 +4327,12 @@ function ServiceOrdersSection({
                         <span>Logistica</span>
                         <strong>{LOGISTICS_MODE_META[draft.logisticsMode] ?? 'Envio por equipo'}</strong>
                       </div>
+                      {selectedClientForDraft?.prepaidEnabled ? (
+                        <div className="orders-money-row">
+                          <span>Saldo prepago cliente</span>
+                          <strong>{formatBs(selectedClientPrepaidBalanceBs)}</strong>
+                        </div>
+                      ) : null}
                       {durationPricing.mode === 'duration' ? (
                         <div className="orders-duration-breakdown">
                           <header>
@@ -4238,7 +4367,19 @@ function ServiceOrdersSection({
                         <span>Garantia</span>
                         <strong>{formatBs(Math.max(0, Number(draft.guaranteeBs ?? 0)))}</strong>
                       </div>
-                    <div className="orders-money-row total">
+                      {draft.logisticsMode === 'envio' ? (
+                        <div className="orders-money-row muted">
+                          <span>Envio por equipo</span>
+                          <strong>{quoteDeliveryFeeBs > 0 ? formatBs(quoteDeliveryFeeBs) : 'Incluido'}</strong>
+                        </div>
+                      ) : null}
+                      {quoteDeliveryFeeBs > 0 ? (
+                        <div className="orders-money-row muted">
+                          <span>Motivo envio</span>
+                          <strong>{DELIVERY_FEE_REASON_META[draft.deliveryFeeReason] ?? 'Otro motivo'}</strong>
+                        </div>
+                      ) : null}
+                      <div className="orders-money-row total">
                         <span>{draft.entityType === 'contract' ? 'Total contrato' : 'Total cotizacion'}</span>
                         <strong>{formatBs(quoteTotalBs)}</strong>
                       </div>
@@ -4246,6 +4387,18 @@ function ServiceOrdersSection({
                         <span>Saldo pendiente</span>
                         <strong>{formatBs(pendingAtApprovalBs)}</strong>
                       </div>
+                      {selectedClientForDraft?.prepaidEnabled ? (
+                        <>
+                          <div className="orders-money-row muted">
+                            <span>Se descontaria de prepago</span>
+                            <strong>{formatBs(selectedClientPrepaidCoverageBs)}</strong>
+                          </div>
+                          <div className="orders-money-row muted">
+                            <span>Saldo por cobrar tras prepago</span>
+                            <strong>{formatBs(selectedClientPrepaidPendingBs)}</strong>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
 
                     {supplierCoverageTotals.lines > 0 ? (
@@ -4321,6 +4474,12 @@ function ServiceOrdersSection({
                     <span>Logistica</span>
                     <strong>{LOGISTICS_MODE_META[draft.logisticsMode] ?? 'Envio por equipo'}</strong>
                   </div>
+                  {selectedClientForDraft?.prepaidEnabled ? (
+                    <div className="orders-money-row">
+                      <span>Saldo prepago cliente</span>
+                      <strong>{formatBs(selectedClientPrepaidBalanceBs)}</strong>
+                    </div>
+                  ) : null}
                   {durationPricing.mode === 'duration' ? (
                     <div className="orders-duration-breakdown">
                       <header>
@@ -4359,10 +4518,34 @@ function ServiceOrdersSection({
                     <span>Pago inicial</span>
                     <strong>{formatBs(Math.max(0, Number(draft.paidAtApprovalBs ?? 0)))}</strong>
                   </div>
+                  {draft.logisticsMode === 'envio' ? (
+                    <div className="orders-money-row muted">
+                      <span>Envio por equipo</span>
+                      <strong>{quoteDeliveryFeeBs > 0 ? formatBs(quoteDeliveryFeeBs) : 'Incluido'}</strong>
+                    </div>
+                  ) : null}
+                  {quoteDeliveryFeeBs > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Motivo envio</span>
+                      <strong>{DELIVERY_FEE_REASON_META[draft.deliveryFeeReason] ?? 'Otro motivo'}</strong>
+                    </div>
+                  ) : null}
                   <div className="orders-money-row total">
                     <span>Total estimado</span>
                     <strong>{formatBs(quoteTotalBs)}</strong>
                   </div>
+                  {selectedClientForDraft?.prepaidEnabled ? (
+                    <>
+                      <div className="orders-money-row muted">
+                        <span>Se descontaria de prepago</span>
+                        <strong>{formatBs(selectedClientPrepaidCoverageBs)}</strong>
+                      </div>
+                      <div className="orders-money-row muted">
+                        <span>Saldo por cobrar tras prepago</span>
+                        <strong>{formatBs(selectedClientPrepaidPendingBs)}</strong>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </aside>
             </div>

@@ -106,6 +106,21 @@ const ORDER_DOCUMENT_META = {
   route: { label: 'Hoja de ruta', statusFallback: 'pendiente' },
 };
 
+const BLACKLIST_REASON_LABELS = {
+  rude: 'Descortes',
+  unpaid: 'No pagaron',
+  problematic: 'Problematicos',
+  other: 'Otro motivo',
+};
+
+const normalizeBlacklistReason = (value) => {
+  const normalized = normalizeText(value);
+  if (normalized.includes('descortes') || normalized.includes('rude')) return 'rude';
+  if (normalized.includes('no pag') || normalized.includes('deuda') || normalized.includes('unpaid')) return 'unpaid';
+  if (normalized.includes('proble') || normalized.includes('conflict')) return 'problematic';
+  return normalized ? 'other' : 'problematic';
+};
+
 const OPERATIONAL_STATUS_LABELS = {
   pendiente: 'Pendiente',
   enviado: 'Enviado',
@@ -167,6 +182,13 @@ const EMPTY_FORM = {
   address: '',
   city: '',
   observations: '',
+  isBlacklisted: false,
+  blacklistReason: 'problematic',
+  blacklistNotes: '',
+  prepaidEnabled: false,
+  prepaidOpeningBs: '0',
+  prepaidTopUpBs: '0',
+  prepaidTopUpNotes: '',
   deliveryAddresses: [newAddress()],
   attachments: [],
 };
@@ -226,6 +248,11 @@ const parseCsvToClients = (text) => {
       address,
       city,
       observations: payload.observaciones || payload.observation || '',
+      isBlacklisted: ['si', 'true', '1', 'lista negra', 'no deseado'].includes(normalizeText(payload.lista_negra || payload.no_deseado || payload.blacklist || '')),
+      blacklistReason: normalizeBlacklistReason(payload.motivo_lista_negra || payload.blacklist_reason || ''),
+      blacklistNotes: payload.detalle_lista_negra || payload.blacklist_notes || '',
+      prepaidEnabled: ['si', 'true', '1', 'prepago', 'especial'].includes(normalizeText(payload.cliente_especial || payload.prepago || payload.prepaid || '')),
+      prepaidOpeningBs: Math.max(0, Number(payload.saldo_prepago_bs || payload.prepaid_balance_bs || 0)),
       deliveryAddresses,
       attachments: [],
       status: 'active',
@@ -254,6 +281,11 @@ const buildCsvFromClients = (rows) => {
     'ordenes',
     'ultima_orden',
     'total_facturado_bs',
+    'lista_negra',
+    'motivo_lista_negra',
+    'detalle_lista_negra',
+    'cliente_especial',
+    'saldo_prepago_bs',
   ];
 
   const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
@@ -276,6 +308,11 @@ const buildCsvFromClients = (rows) => {
       row.ordersCount ?? 0,
       row.lastOrderAt ? String(row.lastOrderAt).slice(0, 10) : '',
       Number(row.totalBilledBs ?? 0).toFixed(2),
+      row.isBlacklisted ? 'si' : 'no',
+      row.isBlacklisted ? BLACKLIST_REASON_LABELS[row.blacklistReason] ?? row.blacklistReason ?? '' : '',
+      row.blacklistNotes ?? '',
+      row.prepaidEnabled ? 'si' : 'no',
+      Number(row.prepaidBalanceBs ?? 0).toFixed(2),
     ].map(escape).join(',');
   });
 
@@ -283,29 +320,22 @@ const buildCsvFromClients = (rows) => {
 };
 
 function CardIcon({ kind }) {
-  if (kind === 'user') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M6 18c0-2.8 2.7-4.5 6-4.5s6 1.7 6 4.5" />
-      </svg>
-    );
+  if (kind === 'customerService') {
+    return <img className="asset-icon customer-service-asset-icon" src="/imagenes/agente-de-servicio-al-cliente.png" alt="" aria-hidden="true" />;
   }
-  if (kind === 'box') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 3 20 7.2v9.6L12 21l-8-4.2V7.2L12 3Z" />
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M12 3v8m0 0 8-3.8M12 11 4 7.2" />
-      </svg>
-    );
+
+  if (kind === 'salesPoint') {
+    return <img className="asset-icon sales-point-asset-icon" src="/imagenes/punto-de-venta.png" alt="" aria-hidden="true" />;
   }
-  if (kind === 'star') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8L12 4Z" />
-      </svg>
-    );
+
+  if (kind === 'averageOrders') {
+    return <img className="asset-icon average-orders-asset-icon" src="/imagenes/hora.png" alt="" aria-hidden="true" />;
   }
+
+  if (kind === 'newClients') {
+    return <img className="asset-icon new-clients-asset-icon" src="/imagenes/demanda.png" alt="" aria-hidden="true" />;
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.8" />
@@ -382,7 +412,7 @@ function ClientsSection({
 
     const rect = event.currentTarget.getBoundingClientRect();
     const menuWidth = 220;
-    const menuHeight = 205;
+    const menuHeight = 250;
     const viewportGap = 12;
     const left = Math.max(
       viewportGap,
@@ -405,7 +435,9 @@ function ClientsSection({
       const statusMatch =
         statusFilter === 'all'
           || (statusFilter === 'active' && isActive)
-          || (statusFilter === 'inactive' && !isActive);
+          || (statusFilter === 'inactive' && !isActive)
+          || (statusFilter === 'blacklist' && Boolean(client.isBlacklisted))
+          || (statusFilter === 'prepaid' && Boolean(client.prepaidEnabled));
       if (!statusMatch) return false;
       if (!text) return true;
       return (
@@ -415,6 +447,8 @@ function ClientsSection({
         || String(client.phone).toLowerCase().includes(text)
         || String(client.email).toLowerCase().includes(text)
         || String(client.nitCi).toLowerCase().includes(text)
+        || String(client.blacklistReason).toLowerCase().includes(text)
+        || String(client.blacklistNotes).toLowerCase().includes(text)
       );
     });
   }, [clients, query, statusFilter]);
@@ -456,10 +490,10 @@ function ClientsSection({
       : 0;
 
     return [
-      { tone: 'lilac', value: String(activeClients), label: 'Clientes registrados', icon: 'user' },
-      { tone: 'mint', value: formatBs(revenueMonth), label: 'Facturacion este mes', icon: 'box' },
-      { tone: 'sky', value: String(avgOrders), label: 'Ordenes promedio', icon: 'star' },
-      { tone: 'peach', value: String(newMonth), label: 'Clientes nuevos este mes', icon: 'clock' },
+      { tone: 'lilac', value: String(activeClients), label: 'Clientes registrados', icon: 'customerService' },
+      { tone: 'mint', value: formatBs(revenueMonth), label: 'Generado este mes', icon: 'salesPoint' },
+      { tone: 'sky', value: String(avgOrders), label: 'Ordenes promedio', icon: 'averageOrders' },
+      { tone: 'peach', value: String(newMonth), label: 'Clientes nuevos este mes', icon: 'newClients' },
     ];
   }, [clients, formatBs, rentals]);
 
@@ -651,6 +685,13 @@ function ClientsSection({
       address: client.address || '',
       city: client.city || '',
       observations: client.observations || '',
+      isBlacklisted: Boolean(client.isBlacklisted),
+      blacklistReason: client.blacklistReason || 'problematic',
+      blacklistNotes: client.blacklistNotes || '',
+      prepaidEnabled: Boolean(client.prepaidEnabled),
+      prepaidOpeningBs: String(client.prepaidBalanceBs ?? 0),
+      prepaidTopUpBs: '0',
+      prepaidTopUpNotes: '',
       deliveryAddresses,
       attachments: Array.isArray(client.attachments) ? client.attachments : [],
     });
@@ -743,6 +784,9 @@ function ClientsSection({
     if (payload.customerType === 'empresa' && !payload.companyName) {
       return 'La razon social es obligatoria para cliente empresa.';
     }
+    if (payload.isBlacklisted && !payload.blacklistReason) {
+      return 'Selecciona el motivo para marcarlo como cliente no deseado.';
+    }
     return '';
   };
 
@@ -788,6 +832,13 @@ function ClientsSection({
       address: mainAddress,
       city: mainCity,
       observations: String(form.observations ?? '').trim(),
+      isBlacklisted: Boolean(form.isBlacklisted),
+      blacklistReason: Boolean(form.isBlacklisted) ? String(form.blacklistReason ?? 'problematic').trim() : '',
+      blacklistNotes: Boolean(form.isBlacklisted) ? String(form.blacklistNotes ?? '').trim() : '',
+      prepaidEnabled: Boolean(form.prepaidEnabled),
+      prepaidOpeningBs: modalMode === 'edit' ? 0 : Math.max(0, Number(form.prepaidOpeningBs ?? 0)),
+      prepaidTopUpBs: modalMode === 'edit' ? Math.max(0, Number(form.prepaidTopUpBs ?? 0)) : 0,
+      prepaidTopUpNotes: String(form.prepaidTopUpNotes ?? '').trim(),
       deliveryAddresses: normalizedAddresses,
       attachments: (form.attachments ?? []).map((entry) => ({
         id: entry.id,
@@ -831,6 +882,16 @@ function ClientsSection({
     await onUpdateClient?.({
       id: client.id,
       status: nextStatus,
+    });
+  };
+
+  const handleToggleBlacklist = async (client) => {
+    const nextIsBlacklisted = !Boolean(client.isBlacklisted);
+    await onUpdateClient?.({
+      id: client.id,
+      isBlacklisted: nextIsBlacklisted,
+      blacklistReason: nextIsBlacklisted ? client.blacklistReason || 'problematic' : '',
+      blacklistNotes: nextIsBlacklisted ? client.blacklistNotes || '' : '',
     });
   };
 
@@ -1140,6 +1201,9 @@ function ClientsSection({
           name: client.name,
           phone: client.phone,
           companyName: client.companyName,
+          isBlacklisted: Boolean(client.isBlacklisted),
+          blacklistReason: client.blacklistReason || '',
+          blacklistNotes: client.blacklistNotes || '',
         }),
       );
     } catch {
@@ -1393,6 +1457,110 @@ function ClientsSection({
                     />
                   </label>
                 </div>
+
+                <div className={`clients-form-section clients-form-section-surface clients-blacklist-section ${form.isBlacklisted ? 'is-alert' : ''}`}>
+                  <div className="clients-section-head">
+                    <h4>Lista negra</h4>
+                    <label className="clients-switch-control">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.isBlacklisted)}
+                        onChange={(event) => setForm((current) => ({
+                          ...current,
+                          isBlacklisted: event.target.checked,
+                          blacklistReason: event.target.checked ? current.blacklistReason || 'problematic' : '',
+                          blacklistNotes: event.target.checked ? current.blacklistNotes : '',
+                        }))}
+                      />
+                      <span>Cliente no deseado</span>
+                    </label>
+                  </div>
+                  <p className="clients-helper-text">
+                    Marca clientes que no conviene atender por mal trato, deudas o problemas recurrentes.
+                  </p>
+                  {form.isBlacklisted ? (
+                    <div className="clients-create-grid">
+                      <label>
+                        Motivo
+                        <select value={form.blacklistReason || 'problematic'} onChange={(event) => setField('blacklistReason', event.target.value)}>
+                          <option value="rude">Descortes</option>
+                          <option value="unpaid">No pagaron</option>
+                          <option value="problematic">Problematicos</option>
+                          <option value="other">Otro motivo</option>
+                        </select>
+                      </label>
+                      <label className="clients-create-full">
+                        Detalle interno
+                        <textarea
+                          value={form.blacklistNotes}
+                          onChange={(event) => setField('blacklistNotes', event.target.value)}
+                          placeholder="Ej: no pago saldo, trato descortes al equipo, problemas en devolucion..."
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className={`clients-form-section clients-form-section-surface clients-prepaid-section ${form.prepaidEnabled ? 'is-active' : ''}`}>
+                  <div className="clients-section-head">
+                    <h4>Cuenta prepago</h4>
+                    <label className="clients-switch-control">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form.prepaidEnabled)}
+                        onChange={(event) => setForm((current) => ({
+                          ...current,
+                          prepaidEnabled: event.target.checked,
+                        }))}
+                      />
+                      <span>Cliente especial</span>
+                    </label>
+                  </div>
+                  <p className="clients-helper-text">
+                    Usa esta cuenta para clientes que dejan dinero por adelantado y luego consumen eventos contra ese saldo.
+                  </p>
+                  {form.prepaidEnabled ? (
+                    <div className="clients-create-grid">
+                      {modalMode === 'edit' ? (
+                        <>
+                          <div className="clients-prepaid-current">
+                            <small>Saldo disponible</small>
+                            <strong>{formatBs(Number(form.prepaidOpeningBs ?? 0))}</strong>
+                          </div>
+                          <label>
+                            Registrar nuevo abono (Bs)
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={form.prepaidTopUpBs}
+                              onChange={(event) => setField('prepaidTopUpBs', event.target.value)}
+                            />
+                          </label>
+                          <label className="clients-create-full">
+                            Nota del abono
+                            <input
+                              value={form.prepaidTopUpNotes}
+                              onChange={(event) => setField('prepaidTopUpNotes', event.target.value)}
+                              placeholder="Ej: abono para eventos del semestre"
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <label>
+                          Saldo inicial recibido (Bs)
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={form.prepaidOpeningBs}
+                            onChange={(event) => setField('prepaidOpeningBs', event.target.value)}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               </>
             ) : null}
           </div>
@@ -1456,6 +1624,23 @@ function ClientsSection({
               Contactar
             </button>
           </div>
+          {detailClient.isBlacklisted ? (
+            <div className="clients-blacklist-alert">
+              <strong>No atender: {BLACKLIST_REASON_LABELS[detailClient.blacklistReason] ?? 'Revisar cliente'}</strong>
+              <span>{detailClient.blacklistNotes || 'Cliente marcado en lista negra.'}</span>
+            </div>
+          ) : null}
+          {detailClient.prepaidEnabled ? (
+            <div className="clients-prepaid-alert">
+              <div>
+                <strong>Cliente especial con saldo prepago</strong>
+                <span>Disponible: {formatBs(Number(detailClient.prepaidBalanceBs ?? 0))}</span>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => openEditModal(detailClient)}>
+                Registrar abono
+              </button>
+            </div>
+          ) : null}
           {documentError ? <p className="status error clients-document-error">{documentError}</p> : null}
 
           <div className="clients-detail-kpis">
@@ -1483,6 +1668,12 @@ function ClientsSection({
               <small>Penalidades</small>
               <strong>{formatBs(detailHistory.totalPenaltyBs)}</strong>
             </article>
+            {detailClient.prepaidEnabled ? (
+              <article>
+                <small>Saldo prepago</small>
+                <strong>{formatBs(Number(detailClient.prepaidBalanceBs ?? 0))}</strong>
+              </article>
+            ) : null}
           </div>
 
           <div className="clients-detail-columns">
@@ -1502,10 +1693,46 @@ function ClientsSection({
               <ul>
                 <li>Pagado: {formatBs(detailHistory.totalPaidBs)}</li>
                 <li>Pendiente: {formatBs(detailHistory.totalPendingBs)}</li>
+                {detailClient.prepaidEnabled ? <li>Prepago disponible: {formatBs(Number(detailClient.prepaidBalanceBs ?? 0))}</li> : null}
                 <li>Estado: {detailHistory.totalPendingBs > 0 ? 'Con saldo pendiente' : 'Al dia'}</li>
               </ul>
             </article>
           </div>
+
+          {detailClient.prepaidEnabled ? (
+            <article className="clients-detail-table-card">
+              <h4>Movimientos de cuenta prepago</h4>
+              <div className="clients-detail-table-wrap">
+                <table className="clients-detail-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Tipo</th>
+                      <th>Detalle</th>
+                      <th>Monto</th>
+                      <th>Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(detailClient.prepaidMovements ?? []).slice().reverse().map((movement) => (
+                      <tr key={movement.id}>
+                        <td>{formatDate(movement.createdAt)}</td>
+                        <td>{movement.type === 'charge' ? 'Consumo' : 'Abono'}</td>
+                        <td>{movement.description || movement.orderCode || '-'}</td>
+                        <td>{formatBs(Number(movement.amountBs ?? 0))}</td>
+                        <td>{formatBs(Number(movement.balanceAfterBs ?? 0))}</td>
+                      </tr>
+                    ))}
+                    {(detailClient.prepaidMovements ?? []).length === 0 ? (
+                      <tr>
+                        <td colSpan={5}>Sin movimientos prepago.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          ) : null}
 
           <article className="clients-detail-table-card">
             <h4>Direcciones de entrega</h4>
@@ -1975,6 +2202,8 @@ function ClientsSection({
             <option value="all">Todos</option>
             <option value="active">Activos</option>
             <option value="inactive">Inactivos</option>
+            <option value="blacklist">Lista negra</option>
+            <option value="prepaid">Clientes especiales</option>
           </select>
           <button type="button" className="link-button clients-export-btn" onClick={handleExport}>
             Exportar
@@ -2005,6 +2234,12 @@ function ClientsSection({
                       <div>
                         <strong>{row.name}</strong>
                         <span>{row.companyName || '-'}</span>
+                        {row.isBlacklisted ? (
+                          <small className="clients-blacklist-mini">No atender: {BLACKLIST_REASON_LABELS[row.blacklistReason] ?? 'Revisar'}</small>
+                        ) : null}
+                        {row.prepaidEnabled ? (
+                          <small className="clients-prepaid-mini">Especial: {formatBs(Number(row.prepaidBalanceBs ?? 0))}</small>
+                        ) : null}
                       </div>
                     </div>
                   </td>
@@ -2042,9 +2277,12 @@ function ClientsSection({
                   <td>{row.lastOrderAt ? formatDate(row.lastOrderAt) : '-'}</td>
                   <td className="clients-money">{formatBs(Number(row.totalBilledBs ?? 0))}</td>
                   <td>
-                    <span className={`client-status ${String(row.status).toLowerCase() !== 'active' ? 'inactive' : ''}`}>
-                      {String(row.status).toLowerCase() === 'active' ? 'Activo' : 'Inactivo'}
-                    </span>
+                    <div className="clients-status-stack">
+                      <span className={`client-status ${String(row.status).toLowerCase() !== 'active' ? 'inactive' : ''}`}>
+                        {String(row.status).toLowerCase() === 'active' ? 'Activo' : 'Inactivo'}
+                      </span>
+                      {row.isBlacklisted ? <span className="client-status blacklisted">Lista negra</span> : null}
+                    </div>
                   </td>
                   <td className="clients-row-menu">
                     <div className="clients-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
@@ -2095,6 +2333,16 @@ function ClientsSection({
                             }}
                           >
                             Nueva orden
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={async () => {
+                              await handleToggleBlacklist(row);
+                              closeRowMenu();
+                            }}
+                          >
+                            {row.isBlacklisted ? 'Quitar de lista negra' : 'Marcar no deseado'}
                           </button>
                           <button
                             type="button"

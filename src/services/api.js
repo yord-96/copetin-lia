@@ -373,8 +373,6 @@ export const api = {
     getSession: () => callBridge('auth', 'getSession', false),
     login: (payload) => callBridge('auth', 'login', true, payload),
     logout: () => callBridge('auth', 'logout', true),
-    listDriverLoginLocations: () => callBridge('auth', 'listDriverLoginLocations', false),
-    registerDriverLoginLocation: (payload) => callBridge('auth', 'registerDriverLoginLocation', true, payload),
   },
   presence: {
     listActive: () => callBridge('presence', 'listActive', false),

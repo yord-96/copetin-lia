@@ -54,6 +54,26 @@ const normalizeRoleId = (role) => {
   return ROLE_DEFINITIONS[normalized] ? normalized : 'ventas';
 };
 
+const normalizeRoleIds = (roles) => {
+  const source = Array.isArray(roles) ? roles : [roles];
+  const normalized = source
+    .map((role) => normalizeRoleId(role))
+    .filter((roleId) => ROLE_DEFINITIONS[roleId]);
+  const unique = [...new Set(normalized)];
+  return unique.length > 0 ? unique : ['ventas'];
+};
+
+const getUserRoleIds = (user) => normalizeRoleIds(user?.roleIds ?? user?.roleId ?? user?.role);
+
+const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? 'ventas';
+
+const getAllowedTabsForRoles = (roleIds) => [...new Set(
+  normalizeRoleIds(roleIds).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
+)];
+
+const getDisplayRoleForIds = (roleIds) =>
+  normalizeRoleIds(roleIds).map((roleId) => ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas').join(', ');
+
 const hashPassword = (password) => {
   const input = String(password ?? '');
   let hash = 2166136261;
@@ -85,15 +105,17 @@ const usernameFromName = (name) => {
 
 const sanitizeUserForSession = (user) => {
   if (!user) return null;
-  const roleId = normalizeRoleId(user.roleId ?? user.role);
+  const roleIds = getUserRoleIds(user);
+  const roleId = roleIds.includes('super_admin') ? 'super_admin' : getPrimaryRoleId(user);
   const role = ROLE_DEFINITIONS[roleId] ?? ROLE_DEFINITIONS.ventas;
   return {
     id: user.id,
     fullName: user.fullName,
     username: user.username,
+    roleIds,
     roleId,
-    role: role.label,
-    allowedTabs: role.allowedTabs,
+    role: getDisplayRoleForIds(roleIds),
+    allowedTabs: getAllowedTabsForRoles(roleIds),
     defaultTab: role.defaultTab,
     status: user.status,
     lastAccessAt: user.lastAccessAt ?? null,
@@ -131,6 +153,59 @@ const toNumber = (value, fieldName) => {
 const toInteger = (value, fieldName) => Math.trunc(toNumber(value, fieldName));
 
 const toPositiveRoundedNumber = (value) => Number(Number(value ?? 0).toFixed(2));
+
+const normalizeDeliveryCharge = (source = {}) => {
+  const logisticsMode = ['envio', 'recojo'].includes(source?.logisticsMode) ? source.logisticsMode : 'envio';
+  const parsedDeliveryFeeBs = Number(source?.deliveryFeeBs ?? source?.totals?.deliveryFeeBs ?? 0);
+  const deliveryChargeMode = logisticsMode === 'envio'
+    && (source?.deliveryChargeMode === 'extra' || (Number.isFinite(parsedDeliveryFeeBs) && parsedDeliveryFeeBs > 0))
+    ? 'extra'
+    : 'included';
+  const deliveryFeeBs = deliveryChargeMode === 'extra'
+    ? Math.max(0, Number.isFinite(parsedDeliveryFeeBs) ? Number(parsedDeliveryFeeBs.toFixed(2)) : 0)
+    : 0;
+  const deliveryFeeReason = deliveryChargeMode === 'extra'
+    ? String(source?.deliveryFeeReason ?? 'other').trim() || 'other'
+    : 'covered';
+
+  return {
+    deliveryChargeMode,
+    deliveryFeeBs,
+    deliveryFeeReason,
+  };
+};
+
+const normalizeBlacklistReason = (value) => {
+  const normalized = normalizeText(value);
+  if (normalized.includes('descortes') || normalized.includes('rude')) return 'rude';
+  if (normalized.includes('no pag') || normalized.includes('deuda') || normalized.includes('unpaid')) return 'unpaid';
+  if (normalized.includes('proble') || normalized.includes('conflict')) return 'problematic';
+  return normalized ? 'other' : 'problematic';
+};
+
+const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
+  if (!Array.isArray(movements)) return [];
+  let runningBalance = 0;
+  return movements
+    .map((movement) => {
+      const amountBs = toPositiveRoundedNumber(movement?.amountBs ?? 0);
+      const type = movement?.type === 'charge' ? 'charge' : 'deposit';
+      const signedAmountBs = type === 'charge' ? -Math.abs(amountBs) : Math.abs(amountBs);
+      runningBalance = Number((runningBalance + signedAmountBs).toFixed(2));
+      return {
+        id: String(movement?.id ?? makeId('pre')).trim() || makeId('pre'),
+        type,
+        amountBs: Number(signedAmountBs.toFixed(2)),
+        description: String(movement?.description ?? '').trim(),
+        sourceType: String(movement?.sourceType ?? '').trim() || null,
+        sourceId: String(movement?.sourceId ?? '').trim() || null,
+        orderCode: String(movement?.orderCode ?? '').trim() || null,
+        balanceAfterBs: Number(Number(movement?.balanceAfterBs ?? runningBalance ?? fallbackBalance).toFixed(2)),
+        createdAt: movement?.createdAt ?? new Date().toISOString(),
+      };
+    })
+    .filter((movement) => movement.amountBs !== 0 || movement.description);
+};
 
 const normalizeSupplierFulfillmentPlan = (plan) => {
   if (!Array.isArray(plan)) return [];
@@ -497,6 +572,7 @@ const createBootstrapSuperAdmin = (createdAt) => ({
   mustChangePassword: true,
   passwordChangedAt: null,
   roleId: 'super_admin',
+  roleIds: ['super_admin'],
   role: 'Super admin',
   status: 'active',
   phone: '',
@@ -535,7 +611,6 @@ const createSeedData = () => {
     cashSessions: [],
     cashMovements: [],
     userPresence: [],
-    driverLoginLocations: [],
   };
 };
 
@@ -572,7 +647,12 @@ const normalizeState = (state) => {
   const defaultCategory = source.categories[0]?.name ?? 'General';
 
   source.clients = Array.isArray(source.clients)
-    ? source.clients.map((client) => ({
+    ? source.clients.map((client) => {
+      const prepaidEnabled = Boolean(client?.prepaidEnabled);
+      const prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client?.prepaidBalanceBs ?? 0));
+      const prepaidMovements = normalizePrepaidMovements(client?.prepaidMovements, prepaidBalanceBs);
+
+      return {
       id: client?.id ?? makeId('cli'),
       customerType: String(client?.customerType ?? 'persona').trim() || 'persona',
       name: String(client?.name ?? '').trim(),
@@ -586,6 +666,15 @@ const normalizeState = (state) => {
       address: String(client?.address ?? '').trim(),
       city: String(client?.city ?? '').trim(),
       observations: String(client?.observations ?? '').trim(),
+      isBlacklisted: Boolean(client?.isBlacklisted),
+      blacklistReason: Boolean(client?.isBlacklisted) ? normalizeBlacklistReason(client?.blacklistReason) : '',
+      blacklistNotes: Boolean(client?.isBlacklisted) ? String(client?.blacklistNotes ?? '').trim() : '',
+      blacklistedAt: Boolean(client?.isBlacklisted) ? client?.blacklistedAt ?? client?.updatedAt ?? now : null,
+      prepaidEnabled,
+      prepaidBalanceBs,
+      prepaidTotalDepositedBs: Math.max(0, toPositiveRoundedNumber(client?.prepaidTotalDepositedBs ?? prepaidMovements.filter((entry) => entry.amountBs > 0).reduce((sum, entry) => sum + entry.amountBs, 0))),
+      prepaidTotalUsedBs: Math.max(0, toPositiveRoundedNumber(client?.prepaidTotalUsedBs ?? Math.abs(prepaidMovements.filter((entry) => entry.amountBs < 0).reduce((sum, entry) => sum + entry.amountBs, 0)))),
+      prepaidMovements,
       deliveryAddresses: Array.isArray(client?.deliveryAddresses)
         ? client.deliveryAddresses
           .map((entry) => ({
@@ -614,7 +703,8 @@ const normalizeState = (state) => {
       status: String(client?.status ?? 'active').trim() || 'active',
       createdAt: client?.createdAt ?? now,
       updatedAt: client?.updatedAt ?? client?.createdAt ?? now,
-    })).filter((client) => client.name && client.phone)
+      };
+    }).filter((client) => client.name && client.phone)
     : [];
 
   source.users = Array.isArray(source.users)
@@ -631,8 +721,9 @@ const normalizeState = (state) => {
         || (!String(user?.passwordHash ?? '').trim() && !String(user?.password ?? '').trim()),
       ),
       passwordChangedAt: user?.passwordChangedAt ?? null,
-      roleId: normalizeRoleId(user?.roleId ?? user?.role ?? 'ventas'),
-      role: ROLE_DEFINITIONS[normalizeRoleId(user?.roleId ?? user?.role ?? 'ventas')]?.label ?? 'Ventas',
+      roleIds: getUserRoleIds(user),
+      roleId: getUserRoleIds(user).includes('super_admin') ? 'super_admin' : getPrimaryRoleId(user),
+      role: getDisplayRoleForIds(getUserRoleIds(user)),
       status: String(user?.status ?? 'active').trim() || 'active',
       phone: String(user?.phone ?? '').trim(),
       isCurrentUser: Boolean(user?.isCurrentUser),
@@ -720,7 +811,10 @@ const normalizeState = (state) => {
 
   source.rentals = Array.isArray(source.rentals)
     ? source.rentals.map((rental) => {
+      const logisticsMode = ['envio', 'recojo'].includes(rental?.logisticsMode) ? rental.logisticsMode : 'envio';
+      const deliveryCharge = normalizeDeliveryCharge({ ...rental, logisticsMode });
       const totalBs = Number(rental?.totals?.totalBs ?? 0);
+      const prepaidAppliedBs = Number(rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0);
       const paidAtRentalBs = Number(
         rental?.payment?.paidAtRentalBs
         ?? rental?.totals?.paidAtRentalBs
@@ -738,6 +832,12 @@ const normalizeState = (state) => {
         customerName: String(rental?.customerName ?? '').trim(),
         customerPhone: String(rental?.customerPhone ?? '').trim(),
         items: Array.isArray(rental?.items) ? rental.items : [],
+        logisticsMode,
+        deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+        deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+        deliveryFeeReason: deliveryCharge.deliveryFeeReason,
+        prepaidClientId: rental?.prepaidClientId ?? null,
+        prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
         status: normalizeRentalStatus(rental?.status),
         operational: {
           inventoryStatus:
@@ -759,6 +859,8 @@ const normalizeState = (state) => {
         },
         totals: {
           ...(rental?.totals ?? {}),
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+          prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
           totalBs,
           paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
           pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
@@ -772,6 +874,8 @@ const normalizeState = (state) => {
             ?? (pendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
           paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
           pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
+          prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
+          cashCollectedBs: Number(Math.max(0, paidAtRentalBs - prepaidAppliedBs).toFixed(2)),
         },
         createdById: rental?.createdById ?? rental?.userId ?? null,
         createdByName: String(rental?.createdByName ?? rental?.userName ?? rental?.createdBy ?? 'Sistema').trim() || 'Sistema',
@@ -867,7 +971,9 @@ const normalizeState = (state) => {
       const subtotalBs = Number(quote?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
       const discountBs = Number(quote?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
-      const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs));
+      const logisticsMode = ['envio', 'recojo'].includes(quote?.logisticsMode) ? quote.logisticsMode : 'envio';
+      const deliveryCharge = normalizeDeliveryCharge({ ...quote, logisticsMode });
+      const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
       const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
 
@@ -884,7 +990,10 @@ const normalizeState = (state) => {
         address: String(quote?.address ?? '').trim(),
         city: String(quote?.city ?? '').trim(),
         deliveryDate: String(quote?.deliveryDate ?? '').trim(),
-        logisticsMode: ['envio', 'recojo'].includes(quote?.logisticsMode) ? quote.logisticsMode : 'envio',
+        logisticsMode,
+        deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+        deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+        deliveryFeeReason: deliveryCharge.deliveryFeeReason,
         deliveryWindowStart: String(quote?.deliveryWindowStart ?? '08:00').trim(),
         deliveryWindowEnd: String(quote?.deliveryWindowEnd ?? '10:00').trim(),
         pickupDate: String(quote?.pickupDate ?? '').trim(),
@@ -902,6 +1011,7 @@ const normalizeState = (state) => {
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
         },
@@ -949,9 +1059,12 @@ const normalizeState = (state) => {
       const subtotalBs = Number(contract?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
       const discountBs = Number(contract?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
-      const totalBs = Number(contract?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs));
+      const logisticsMode = ['envio', 'recojo'].includes(contract?.logisticsMode) ? contract.logisticsMode : 'envio';
+      const deliveryCharge = normalizeDeliveryCharge({ ...contract, logisticsMode });
+      const totalBs = Number(contract?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(contract?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+      const prepaidAppliedBs = Number(contract?.payment?.prepaidAppliedBs ?? contract?.totals?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0);
 
       return {
         id: contract?.id ?? makeId('con'),
@@ -967,7 +1080,10 @@ const normalizeState = (state) => {
         address: String(contract?.address ?? '').trim(),
         city: String(contract?.city ?? '').trim(),
         deliveryDate: String(contract?.deliveryDate ?? '').trim(),
-        logisticsMode: ['envio', 'recojo'].includes(contract?.logisticsMode) ? contract.logisticsMode : 'envio',
+        logisticsMode,
+        deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+        deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+        deliveryFeeReason: deliveryCharge.deliveryFeeReason,
         deliveryWindowStart: String(contract?.deliveryWindowStart ?? '08:00').trim(),
         deliveryWindowEnd: String(contract?.deliveryWindowEnd ?? '10:00').trim(),
         pickupDate: String(contract?.pickupDate ?? '').trim(),
@@ -985,6 +1101,7 @@ const normalizeState = (state) => {
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
         },
@@ -992,6 +1109,7 @@ const normalizeState = (state) => {
         payment: {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(pendingBs.toFixed(2)),
+          prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
         },
         items,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
@@ -1259,30 +1377,6 @@ const normalizeState = (state) => {
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
     })).filter((presence) => presence.userId)
     : [];
-  source.driverLoginLocations = Array.isArray(source.driverLoginLocations)
-    ? source.driverLoginLocations
-      .map((entry) => ({
-        id: String(entry?.id ?? makeId('drvloc')).trim(),
-        sessionId: String(entry?.sessionId ?? '').trim(),
-        userId: String(entry?.userId ?? '').trim(),
-        fullName: String(entry?.fullName ?? 'Chofer').trim() || 'Chofer',
-        role: String(entry?.role ?? 'Transporte').trim() || 'Transporte',
-        roleId: normalizeRoleId(entry?.roleId ?? entry?.role ?? 'transporte'),
-        latitude: Number(entry?.latitude ?? NaN),
-        longitude: Number(entry?.longitude ?? NaN),
-        accuracyMeters: Number(entry?.accuracyMeters ?? NaN),
-        capturedAt: entry?.capturedAt ?? now,
-        source: String(entry?.source ?? 'login').trim() || 'login',
-      }))
-      .filter((entry) =>
-        entry.userId
-        && entry.sessionId
-        && Number.isFinite(entry.latitude)
-        && Number.isFinite(entry.longitude))
-      .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
-      .slice(0, 200)
-    : [];
-
   return source;
 };
 
@@ -1427,16 +1521,32 @@ const addRentalCashMovements = (state, rental) => {
   const paidAtRentalBs = Number(
     rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? rental?.totals?.totalBs ?? 0,
   );
+  const prepaidAppliedBs = Number(rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0);
+  const cashCollectedBs = Math.max(0, Number((paidAtRentalBs - prepaidAppliedBs).toFixed(2)));
   const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
   const depositBs = Number(rental?.depositBs ?? 0);
 
-  if (paidAtRentalBs > 0) {
+  if (cashCollectedBs > 0) {
     state.cashMovements.push(
       buildCashMovement({
         sessionId,
         type: 'ingreso_alquiler',
-        amountBs: paidAtRentalBs,
+        amountBs: cashCollectedBs,
         description: `Cobro inicial alquiler: ${customerName}`,
+        sourceType: 'rental',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+
+  if (prepaidAppliedBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'aplicacion_saldo_prepago',
+        amountBs: 0,
+        description: `Aplicacion saldo prepago (${customerName}): Bs ${prepaidAppliedBs.toFixed(2)}`,
         sourceType: 'rental',
         sourceId: rental.id,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
@@ -2226,9 +2336,11 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) =
   const company = getDocumentCompany(settings);
   const subtotalBs = contract?.totals?.subtotalBs ?? rental?.totals?.subtotalBs ?? rental?.totals?.totalBs ?? 0;
   const discountBs = contract?.totals?.discountBs ?? rental?.totals?.discountBs ?? 0;
+  const deliveryFeeBs = contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0;
   const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
   const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
+  const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
   const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
   const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
   const hasDurationPricing = pricingPlan?.mode === 'duration';
@@ -2327,7 +2439,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings }) =
             ${hasDurationPricing ? `<div class="money-line"><span>Promocion duracion</span><strong>${formatBs(contract?.totals?.durationDiscountBs ?? pricingPlan.durationDiscountBs ?? 0)}</strong></div>` : ''}
             <div class="money-line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
             ${hasManualDiscount ? `<div class="money-line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>` : ''}
+            ${!isCustomerPickup ? `<div class="money-line"><span>Envio por equipo</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
             <div class="money-line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="money-line"><span>Saldo prepago aplicado</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
             <div class="money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
             <div class="money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
             <div class="money-line total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
@@ -2603,6 +2717,10 @@ const resolveClientFromName = (state, customerName, customerPhone) => {
     contactRole: 'Contacto',
     phone: String(customerPhone ?? '').trim(),
     email: '',
+    isBlacklisted: false,
+    blacklistReason: '',
+    blacklistNotes: '',
+    blacklistedAt: null,
     status: 'active',
     createdAt: now,
     updatedAt: now,
@@ -3270,6 +3388,21 @@ const createWebBridge = () => ({
         }
 
         const now = new Date().toISOString();
+        const prepaidEnabled = Boolean(payload?.prepaidEnabled);
+        const prepaidOpeningBs = prepaidEnabled ? Math.max(0, toPositiveRoundedNumber(payload?.prepaidOpeningBs ?? payload?.prepaidBalanceBs ?? 0)) : 0;
+        const prepaidMovements = prepaidOpeningBs > 0
+          ? [{
+            id: makeId('pre'),
+            type: 'deposit',
+            amountBs: prepaidOpeningBs,
+            description: String(payload?.prepaidTopUpNotes ?? 'Abono inicial prepago').trim() || 'Abono inicial prepago',
+            sourceType: 'client',
+            sourceId: null,
+            orderCode: null,
+            balanceAfterBs: prepaidOpeningBs,
+            createdAt: now,
+          }]
+          : [];
         created = {
           id: makeId('cli'),
           customerType,
@@ -3284,6 +3417,15 @@ const createWebBridge = () => ({
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
           observations: String(payload?.observations ?? '').trim(),
+          isBlacklisted: Boolean(payload?.isBlacklisted),
+          blacklistReason: Boolean(payload?.isBlacklisted) ? normalizeBlacklistReason(payload?.blacklistReason) : '',
+          blacklistNotes: Boolean(payload?.isBlacklisted) ? String(payload?.blacklistNotes ?? '').trim() : '',
+          blacklistedAt: Boolean(payload?.isBlacklisted) ? now : null,
+          prepaidEnabled,
+          prepaidBalanceBs: prepaidOpeningBs,
+          prepaidTotalDepositedBs: prepaidOpeningBs,
+          prepaidTotalUsedBs: 0,
+          prepaidMovements,
           deliveryAddresses: Array.isArray(payload?.deliveryAddresses)
             ? payload.deliveryAddresses
               .map((entry) => ({
@@ -3314,6 +3456,17 @@ const createWebBridge = () => ({
           updatedAt: now,
         };
         state.clients.push(created);
+        if (prepaidOpeningBs > 0) {
+          state.cashMovements.push(buildCashMovement({
+            sessionId: getActiveSession(state)?.id ?? null,
+            type: 'ingreso_prepago_cliente',
+            amountBs: prepaidOpeningBs,
+            description: `Abono prepago cliente: ${name}`,
+            sourceType: 'client',
+            sourceId: created.id,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+          }));
+        }
         return state;
       });
 
@@ -3367,6 +3520,61 @@ const createWebBridge = () => ({
         if (payload.observations !== undefined) {
           client.observations = String(payload.observations ?? '').trim();
         }
+        if (payload.isBlacklisted !== undefined) {
+          const nextIsBlacklisted = Boolean(payload.isBlacklisted);
+          client.isBlacklisted = nextIsBlacklisted;
+          client.blacklistedAt = nextIsBlacklisted ? client.blacklistedAt ?? new Date().toISOString() : null;
+          if (!nextIsBlacklisted) {
+            client.blacklistReason = '';
+            client.blacklistNotes = '';
+          }
+        }
+        if (payload.blacklistReason !== undefined) {
+          client.blacklistReason = client.isBlacklisted
+            ? normalizeBlacklistReason(payload.blacklistReason)
+            : '';
+        }
+        if (payload.blacklistNotes !== undefined) {
+          client.blacklistNotes = client.isBlacklisted ? String(payload.blacklistNotes ?? '').trim() : '';
+        }
+        if (payload.prepaidEnabled !== undefined) {
+          client.prepaidEnabled = Boolean(payload.prepaidEnabled);
+          client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
+          client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
+          client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
+          client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
+        }
+        const prepaidTopUpBs = Math.max(0, toPositiveRoundedNumber(payload?.prepaidTopUpBs ?? 0));
+        if (prepaidTopUpBs > 0) {
+          client.prepaidEnabled = true;
+          client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
+          client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
+          client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
+          client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
+          const nextBalance = Number((client.prepaidBalanceBs + prepaidTopUpBs).toFixed(2));
+          client.prepaidBalanceBs = nextBalance;
+          client.prepaidTotalDepositedBs = Number((client.prepaidTotalDepositedBs + prepaidTopUpBs).toFixed(2));
+          client.prepaidMovements.push({
+            id: makeId('pre'),
+            type: 'deposit',
+            amountBs: prepaidTopUpBs,
+            description: String(payload?.prepaidTopUpNotes ?? 'Abono prepago').trim() || 'Abono prepago',
+            sourceType: 'client',
+            sourceId: client.id,
+            orderCode: null,
+            balanceAfterBs: nextBalance,
+            createdAt: new Date().toISOString(),
+          });
+          state.cashMovements.push(buildCashMovement({
+            sessionId: getActiveSession(state)?.id ?? null,
+            type: 'ingreso_prepago_cliente',
+            amountBs: prepaidTopUpBs,
+            description: `Abono prepago cliente: ${client.name}`,
+            sourceType: 'client',
+            sourceId: client.id,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+          }));
+        }
         if (payload.deliveryAddresses !== undefined) {
           client.deliveryAddresses = Array.isArray(payload.deliveryAddresses)
             ? payload.deliveryAddresses
@@ -3417,7 +3625,8 @@ const createWebBridge = () => ({
       const fullName = String(payload?.fullName ?? '').trim();
       const username = normalizeUsername(payload?.username);
       const password = String(payload?.password ?? '').trim();
-      const roleId = normalizeRoleId(payload?.roleId ?? payload?.role ?? 'ventas');
+      const roleIds = normalizeRoleIds(payload?.roleIds ?? payload?.roleId ?? payload?.role ?? 'ventas');
+      const roleId = roleIds.includes('super_admin') ? 'super_admin' : roleIds[0];
       if (!fullName) throw new Error('El nombre del usuario es obligatorio.');
       if (!username) throw new Error('El usuario de acceso es obligatorio.');
       if (!password || password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
@@ -3437,7 +3646,8 @@ const createWebBridge = () => ({
           mustChangePassword: false,
           passwordChangedAt: now,
           roleId,
-          role: ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas',
+          roleIds,
+          role: getDisplayRoleForIds(roleIds),
           status: String(payload?.status ?? 'active').trim() || 'active',
           phone: String(payload?.phone ?? '').trim(),
           isCurrentUser: false,
@@ -3480,10 +3690,12 @@ const createWebBridge = () => ({
           user.mustChangePassword = false;
           user.passwordChangedAt = new Date().toISOString();
         }
-        if (payload.role !== undefined || payload.roleId !== undefined) {
-          const roleId = normalizeRoleId(payload.roleId ?? payload.role);
+        if (payload.roleIds !== undefined || payload.role !== undefined || payload.roleId !== undefined) {
+          const roleIds = normalizeRoleIds(payload.roleIds ?? payload.roleId ?? payload.role);
+          const roleId = roleIds.includes('super_admin') ? 'super_admin' : roleIds[0];
           user.roleId = roleId;
-          user.role = ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas';
+          user.roleIds = roleIds;
+          user.role = getDisplayRoleForIds(roleIds);
         }
         if (payload.status !== undefined) user.status = String(payload.status ?? '').trim() || user.status;
         if (payload.phone !== undefined) user.phone = String(payload.phone ?? '').trim();
@@ -4009,71 +4221,6 @@ const createWebBridge = () => ({
         return state;
       });
       return { ok: true };
-    },
-    listDriverLoginLocations: async () => {
-      const state = readState();
-      return (state.driverLoginLocations ?? [])
-        .filter((entry) =>
-          entry
-          && entry.userId
-          && entry.sessionId
-          && Number.isFinite(Number(entry.latitude))
-          && Number.isFinite(Number(entry.longitude)))
-        .slice()
-        .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
-        .slice(0, 1);
-    },
-    registerDriverLoginLocation: async (payload) => {
-      const userId = String(payload?.userId ?? '').trim();
-      const sessionId = String(payload?.sessionId ?? '').trim();
-      const roleId = normalizeRoleId(payload?.roleId ?? payload?.role ?? 'transporte');
-      const role = String(payload?.role ?? ROLE_DEFINITIONS[roleId]?.label ?? 'Transporte').trim() || 'Transporte';
-      const fullName = String(payload?.fullName ?? 'Chofer').trim() || 'Chofer';
-      const latitude = Number(payload?.latitude ?? NaN);
-      const longitude = Number(payload?.longitude ?? NaN);
-      const accuracyMeters = Number(payload?.accuracyMeters ?? NaN);
-      if (!userId || !sessionId) {
-        throw new Error('No se pudo registrar la ubicacion del login.');
-      }
-      if (roleId !== 'transporte') {
-        return null;
-      }
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        throw new Error('La ubicacion del chofer no es valida.');
-      }
-
-      let saved = null;
-      transaction((state) => {
-        if (!Array.isArray(state.driverLoginLocations)) {
-          state.driverLoginLocations = [];
-        }
-        const existing = state.driverLoginLocations.find((entry) => entry.userId === userId && entry.sessionId === sessionId);
-        if (existing) {
-          saved = deepClone(existing);
-          return state;
-        }
-
-        const now = new Date().toISOString();
-        const nextEntry = {
-          id: makeId('drvloc'),
-          sessionId,
-          userId,
-          fullName,
-          role,
-          roleId,
-          latitude: Number(latitude.toFixed(6)),
-          longitude: Number(longitude.toFixed(6)),
-          accuracyMeters: Number.isFinite(accuracyMeters) ? Number(accuracyMeters.toFixed(1)) : null,
-          capturedAt: now,
-          source: 'login',
-        };
-
-        state.driverLoginLocations = [nextEntry];
-        saved = deepClone(nextEntry);
-        return state;
-      });
-
-      return saved;
     },
   },
 
@@ -4736,7 +4883,9 @@ const createWebBridge = () => ({
         const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
         const subtotalBs = pricingPlan.chargeableSubtotalBs;
-        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
+        const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
+        const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total de la cotizacion.');
         }
@@ -4754,7 +4903,10 @@ const createWebBridge = () => ({
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
           deliveryDate,
-          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          logisticsMode,
+          deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+          deliveryFeeReason: deliveryCharge.deliveryFeeReason,
           deliveryWindowStart,
           deliveryWindowEnd,
           pickupDate,
@@ -4773,12 +4925,14 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
             discountBs: Number(discountBs.toFixed(2)),
+            deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
             guaranteeBs: Number(guaranteeBs.toFixed(2)),
             totalBs: Number(totalBs.toFixed(2)),
           },
           payment: {
             paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+            prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? 0)),
           },
           items: normalizedItems,
           supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
@@ -4875,18 +5029,28 @@ const createWebBridge = () => ({
         const subtotalBs = pricingPlan.chargeableSubtotalBs;
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
-        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const deliveryCharge = normalizeDeliveryCharge({
+          logisticsMode: quote.logisticsMode,
+          deliveryChargeMode: payload?.deliveryChargeMode ?? quote?.deliveryChargeMode,
+          deliveryFeeBs: payload?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? quote?.totals?.deliveryFeeBs,
+          deliveryFeeReason: payload?.deliveryFeeReason ?? quote?.deliveryFeeReason,
+        });
+        const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? quote?.payment?.paidAtApprovalBs ?? 0));
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total de la cotizacion.');
         }
 
+        quote.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
+        quote.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
+        quote.deliveryFeeReason = deliveryCharge.deliveryFeeReason;
         quote.totals = {
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
         };
@@ -4981,7 +5145,9 @@ const createWebBridge = () => ({
         const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
         const subtotalBs = pricingPlan.chargeableSubtotalBs;
-        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
+        const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
+        const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total del contrato.');
         }
@@ -5000,7 +5166,10 @@ const createWebBridge = () => ({
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
           deliveryDate,
-          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          logisticsMode,
+          deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
+          deliveryFeeReason: deliveryCharge.deliveryFeeReason,
           deliveryWindowStart,
           deliveryWindowEnd,
           pickupDate,
@@ -5019,6 +5188,7 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
             discountBs: Number(discountBs.toFixed(2)),
+            deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
             guaranteeBs: Number(guaranteeBs.toFixed(2)),
             totalBs: Number(totalBs.toFixed(2)),
           },
@@ -5122,18 +5292,28 @@ const createWebBridge = () => ({
         const subtotalBs = pricingPlan.chargeableSubtotalBs;
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
-        const totalBs = Math.max(0, subtotalBs - discountBs);
+        const deliveryCharge = normalizeDeliveryCharge({
+          logisticsMode: contract.logisticsMode,
+          deliveryChargeMode: payload?.deliveryChargeMode ?? contract?.deliveryChargeMode,
+          deliveryFeeBs: payload?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? contract?.totals?.deliveryFeeBs,
+          deliveryFeeReason: payload?.deliveryFeeReason ?? contract?.deliveryFeeReason,
+        });
+        const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const paidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? contract?.payment?.paidAtApprovalBs ?? 0));
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total del contrato.');
         }
 
+        contract.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
+        contract.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
+        contract.deliveryFeeReason = deliveryCharge.deliveryFeeReason;
         contract.totals = {
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
         };
@@ -5141,6 +5321,7 @@ const createWebBridge = () => ({
         contract.payment = {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
         };
         contract.updatedAt = new Date().toISOString();
         updated = deepClone(contract);
@@ -5579,8 +5760,30 @@ const createWebBridge = () => ({
         const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
         const subtotalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs));
         const discountBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountBs ?? 0));
-        const totalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.totalBs ?? subtotalBs - discountBs));
+        const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
+        const deliveryCharge = normalizeDeliveryCharge({
+          ...payload,
+          logisticsMode,
+          deliveryFeeBs: payload?.deliveryFeeBs ?? quotedTotals?.deliveryFeeBs,
+          totals: quotedTotals,
+        });
+        const totalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.totalBs ?? subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
+        const prepaidClientId = String(payload?.prepaidClientId ?? '').trim();
+        let prepaidAppliedBs = Math.max(0, toPositiveRoundedNumber(payload?.prepaidAppliedBs ?? 0));
+        let prepaidClient = null;
+        if (prepaidAppliedBs > 0) {
+          prepaidClient = state.clients.find((entry) => entry.id === prepaidClientId && !entry.deletedAt);
+          if (!prepaidClient || !prepaidClient.prepaidEnabled) {
+            throw new Error('El cliente no tiene una cuenta prepago activa.');
+          }
+          const availablePrepaidBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
+          if (prepaidAppliedBs > availablePrepaidBs) {
+            throw new Error(`Saldo prepago insuficiente. Disponible: Bs ${availablePrepaidBs.toFixed(2)}.`);
+          }
+          prepaidAppliedBs = Math.min(prepaidAppliedBs, totalBs);
+        }
         let paidAtRentalBs = toNumber(payload?.paidAtRentalBs ?? 0, 'pago inicial');
+        paidAtRentalBs = Math.max(paidAtRentalBs, prepaidAppliedBs);
 
         if (paymentMode === 'sin_pago') {
           paidAtRentalBs = 0;
@@ -5616,6 +5819,11 @@ const createWebBridge = () => ({
           pickupWindowEnd: String(payload?.pickupWindowEnd ?? '').trim() || dueTime,
           idCardHeld,
           depositBs: toPositiveRoundedNumber(depositBs),
+          deliveryChargeMode: deliveryCharge.deliveryChargeMode,
+          deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
+          deliveryFeeReason: deliveryCharge.deliveryFeeReason,
+          prepaidClientId: prepaidClientId || null,
+          prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
           items: rentalItems,
           pricingPlan,
           totals: {
@@ -5625,6 +5833,8 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: toPositiveRoundedNumber(quotedTotals?.theoreticalSubtotalBs ?? pricingPlan.theoreticalSubtotalBs),
             durationDiscountBs: toPositiveRoundedNumber(quotedTotals?.durationDiscountBs ?? pricingPlan.durationDiscountBs),
             discountBs: toPositiveRoundedNumber(discountBs),
+            deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
+            prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
             totalBs: toPositiveRoundedNumber(totalBs),
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
             pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
@@ -5634,10 +5844,12 @@ const createWebBridge = () => ({
             status: paymentStatus,
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
             pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
+            prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
+            cashCollectedBs: toPositiveRoundedNumber(Math.max(0, paidAtRentalBs - prepaidAppliedBs)),
           },
           notes,
           billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
-          logisticsMode: ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio',
+          logisticsMode,
           supplierFulfillmentPlan,
           inventoryAvailabilityAssumptions,
           status: 'active',
@@ -5663,6 +5875,26 @@ const createWebBridge = () => ({
         };
 
         state.rentals.push(createdRental);
+        if (prepaidClient && prepaidAppliedBs > 0) {
+          prepaidClient.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
+          prepaidClient.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidTotalUsedBs ?? 0));
+          prepaidClient.prepaidMovements = normalizePrepaidMovements(prepaidClient.prepaidMovements, prepaidClient.prepaidBalanceBs);
+          const nextBalance = Number((prepaidClient.prepaidBalanceBs - prepaidAppliedBs).toFixed(2));
+          prepaidClient.prepaidBalanceBs = nextBalance;
+          prepaidClient.prepaidTotalUsedBs = Number((prepaidClient.prepaidTotalUsedBs + prepaidAppliedBs).toFixed(2));
+          prepaidClient.prepaidMovements.push({
+            id: makeId('pre'),
+            type: 'charge',
+            amountBs: -prepaidAppliedBs,
+            description: `Consumo prepago ${orderCode}`,
+            sourceType: 'rental',
+            sourceId: createdRental.id,
+            orderCode,
+            balanceAfterBs: nextBalance,
+            createdAt: now.toISOString(),
+          });
+          prepaidClient.updatedAt = now.toISOString();
+        }
         state.inventoryMovements.push(...reservationMovements);
         if (createdRental.logisticsMode !== 'recojo') {
           createDeliveryFromRental(state, createdRental);

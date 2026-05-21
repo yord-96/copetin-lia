@@ -69,46 +69,6 @@ const buildReceiptsFromRentals = (rentals) => {
   return allReceipts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
-const DRIVER_LOGIN_LOCATION_SESSION_KEY = 'copetin-driver-login-location-session-v1';
-
-const isTransportDriverUser = (user) => {
-  const roleId = String(user?.roleId ?? '').trim().toLowerCase();
-  const role = String(user?.role ?? '').trim().toLowerCase();
-  return roleId === 'transporte' || role.includes('transporte') || role.includes('chofer');
-};
-
-const createLoginSessionId = (userId) => {
-  const randomPart =
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10);
-  return `${String(userId ?? 'user')}-${Date.now()}-${randomPart}`;
-};
-
-const getCurrentPositionSafe = () =>
-  new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          latitude: Number(position?.coords?.latitude ?? NaN),
-          longitude: Number(position?.coords?.longitude ?? NaN),
-          accuracyMeters: Number(position?.coords?.accuracy ?? NaN),
-        });
-      },
-      () => resolve(null),
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
-    );
-  });
-
 export const useAppController = () => {
   const [activeTab, setActiveTab] = useState('caja');
   const [authReady, setAuthReady] = useState(false);
@@ -131,8 +91,6 @@ export const useAppController = () => {
   const [cashSessions, setCashSessions] = useState([]);
   const [cashMovements, setCashMovements] = useState([]);
   const [userPresence, setUserPresence] = useState([]);
-  const [driverLoginLocations, setDriverLoginLocations] = useState([]);
-
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
@@ -184,7 +142,6 @@ export const useAppController = () => {
         settingsData,
         reportsData,
         presenceData,
-        driverLoginLocationsData,
       ] = await Promise.all([
         api.dashboard.get(),
         api.inventory.list(),
@@ -208,7 +165,6 @@ export const useAppController = () => {
         api.settings.get(),
         api.reports.listGenerated(),
         api.presence.listActive(),
-        api.auth.listDriverLoginLocations(),
       ]);
 
       setDashboard(dashboardData);
@@ -233,7 +189,6 @@ export const useAppController = () => {
       setSettingsBundle(settingsData);
       setGeneratedReports(reportsData);
       setUserPresence(presenceData);
-      setDriverLoginLocations(driverLoginLocationsData);
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -448,32 +403,6 @@ export const useAppController = () => {
       const session = await api.auth.login(payload);
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));
-      if (isTransportDriverUser(session)) {
-        const sessionId = createLoginSessionId(session.id);
-        if (typeof window !== 'undefined' && window.sessionStorage) {
-          window.sessionStorage.setItem(DRIVER_LOGIN_LOCATION_SESSION_KEY, sessionId);
-        }
-        window.setTimeout(async () => {
-          try {
-            const location = await getCurrentPositionSafe();
-            if (!location || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
-              return;
-            }
-            await api.auth.registerDriverLoginLocation({
-              userId: session.id,
-              fullName: session.fullName ?? session.username ?? 'Chofer',
-              roleId: session.roleId ?? 'transporte',
-              role: session.role ?? 'Transporte',
-              sessionId,
-              latitude: location.latitude,
-              longitude: location.longitude,
-              accuracyMeters: location.accuracyMeters,
-            });
-          } catch {
-            // La ubicacion de login es complementaria y no debe bloquear el acceso.
-          }
-        }, 100);
-      }
       return session;
     } catch (requestError) {
       setAuthError(requestError.message || 'No se pudo iniciar sesion.');
@@ -1057,6 +986,9 @@ export const useAppController = () => {
         city: quote.city,
         deliveryDate: quote.deliveryDate,
         logisticsMode: quote.logisticsMode ?? 'envio',
+        deliveryChargeMode: quote.deliveryChargeMode ?? (Number(quote?.totals?.deliveryFeeBs ?? 0) > 0 ? 'extra' : 'included'),
+        deliveryFeeBs: Number(quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0),
+        deliveryFeeReason: quote.deliveryFeeReason ?? (Number(quote?.totals?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
         deliveryWindowStart: quote.deliveryWindowStart,
         deliveryWindowEnd: quote.deliveryWindowEnd,
         pickupDate: quote.pickupDate,
@@ -1168,6 +1100,9 @@ export const useAppController = () => {
         city: deliveryOut?.city ?? '',
         deliveryDate: deliveryOut?.scheduledDate ?? baseEventDate,
         logisticsMode: rental.logisticsMode ?? 'envio',
+        deliveryChargeMode: rental.deliveryChargeMode ?? (Number(rental?.totals?.deliveryFeeBs ?? 0) > 0 ? 'extra' : 'included'),
+        deliveryFeeBs: Number(rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0),
+        deliveryFeeReason: rental.deliveryFeeReason ?? (Number(rental?.totals?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
         deliveryWindowStart: deliveryOut?.windowStart ?? '08:00',
         deliveryWindowEnd: deliveryOut?.windowEnd ?? '10:00',
         pickupDate: deliveryBack?.scheduledDate ?? rental.dueDate ?? baseEventDate,
@@ -1304,10 +1239,20 @@ export const useAppController = () => {
 
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const totalBs = Number(contract?.totals?.totalBs ?? 0);
+      const allClients = await api.clients.list();
+      const contractClient =
+        clients.find((entry) => entry.id === contract.clientId)
+        ?? allClients.find((entry) => entry.id === contract.clientId)
+        ?? allClients.find((entry) => String(entry.name ?? '').trim().toLowerCase() === String(contract.customerName ?? '').trim().toLowerCase());
+      const availablePrepaidBs = contractClient?.prepaidEnabled
+        ? Math.max(0, Number(contractClient.prepaidBalanceBs ?? 0))
+        : 0;
+      const prepaidAppliedBs = Math.min(availablePrepaidBs, Math.max(0, totalBs - paidAtApprovalBs));
+      const coveredAtApprovalBs = Number((paidAtApprovalBs + prepaidAppliedBs).toFixed(2));
       const paymentMode =
-        paidAtApprovalBs >= totalBs && totalBs > 0
+        coveredAtApprovalBs >= totalBs && totalBs > 0
           ? 'cancelado'
-          : paidAtApprovalBs > 0
+          : coveredAtApprovalBs > 0
           ? 'a_cuenta'
           : 'sin_pago';
 
@@ -1324,11 +1269,16 @@ export const useAppController = () => {
         pickupWindowStart: contract.pickupWindowStart || null,
         pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
         depositBs: Number(contract?.totals?.guaranteeBs ?? 0),
-        paidAtRentalBs: paidAtApprovalBs,
+        paidAtRentalBs: coveredAtApprovalBs,
         paymentMode,
+        prepaidClientId: prepaidAppliedBs > 0 ? contractClient.id : null,
+        prepaidAppliedBs,
         notes: contract.observations,
         billingMode: contract.billingMode ?? 'sin_factura',
         logisticsMode: contract.logisticsMode ?? 'envio',
+        deliveryChargeMode: contract.deliveryChargeMode ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'extra' : 'included'),
+        deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+        deliveryFeeReason: contract.deliveryFeeReason ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
         pricingPlan: contract.pricingPlan ?? null,
         supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
         quotedTotals: contract.totals ?? null,
@@ -1392,6 +1342,8 @@ export const useAppController = () => {
         rejectedAt: null,
         rentalId: createdRental.id,
         orderCode: createdRental.orderCode,
+        paidAtApprovalBs: coveredAtApprovalBs,
+        prepaidAppliedBs,
       });
 
       const supplierPlan = Array.isArray(contract.supplierFulfillmentPlan)
@@ -1586,7 +1538,6 @@ export const useAppController = () => {
     cashSessions,
     cashMovements,
     userPresence,
-    driverLoginLocations,
     activeCashSession,
     clients,
     users,

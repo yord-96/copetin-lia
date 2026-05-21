@@ -4,7 +4,7 @@ import { useAppController } from './hooks/useAppController';
 import { runtimeInfo } from './services/api';
 import { formatBs, formatDate, formatDateTime } from './utils/formatters';
 import TopBar from './components/layout/TopBar';
-import TabsNav from './components/layout/TabsNav';
+import TabsNav, { MobileNavigation } from './components/layout/TabsNav';
 import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
 import LoginScreen from './components/auth/LoginScreen';
@@ -71,6 +71,7 @@ function App() {
   const [resetDialogError, setResetDialogError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const [sidebarSeenCounts, setSidebarSeenCounts] = useState(readSidebarSeenCounts);
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const allowedTabRoots = useMemo(
     () => (controller.currentUser ? Array.from(getAllowedTabRoots(controller.currentUser)) : []),
     [controller.currentUser],
@@ -241,8 +242,6 @@ function App() {
             contracts={controller.contracts}
             deliveries={controller.deliveries}
             supplierBundle={controller.supplierBundle}
-            currentUser={controller.currentUser}
-            driverLoginLocations={controller.driverLoginLocations}
             onCreateEvent={controller.handleCreateCalendarEvent}
             onPrintContractDocument={controller.handlePrintContractDocument}
           />
@@ -489,6 +488,16 @@ function App() {
           </main>
         </section>
       </div>
+
+      <MobileNavigation
+        activeTab={controller.activeTab}
+        allowedTabs={allowedTabRoots}
+        notificationCounts={sidebarNotificationCounts}
+        isOpen={isMobileMoreOpen}
+        onToggleMore={() => setIsMobileMoreOpen((current) => !current)}
+        onCloseMore={() => setIsMobileMoreOpen(false)}
+        onChange={handleSidebarTabChange}
+      />
 
       <ImageModal imagePreview={controller.imagePreview} onClose={() => controller.setImagePreview(null)} />
 

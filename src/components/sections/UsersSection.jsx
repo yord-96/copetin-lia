@@ -1,5 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ROLE_OPTIONS, getRoleDefinition, getUserDisplayRole, isSuperAdmin, normalizeRoleId } from '../../utils/permissions';
+import {
+  ROLE_OPTIONS,
+  getUserRoleDefinitions,
+  getUserRoleIds,
+  isSuperAdmin,
+  normalizeRoleIds,
+} from '../../utils/permissions';
 
 const roleTone = (role) => {
   const value = String(role ?? '').toLowerCase();
@@ -22,7 +28,7 @@ const EMPTY_USER_FORM = {
   fullName: '',
   username: '',
   password: '',
-  roleId: 'ventas',
+  roleIds: ['ventas'],
   phone: '',
   status: 'active',
 };
@@ -111,9 +117,10 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
     const text = String(query ?? '').trim().toLowerCase();
     return users.filter((user) => {
       const role = String(user.role ?? '');
+      const roleIds = getUserRoleIds(user);
       const status = String(user.status ?? '');
       const statusMatch = statusFilter === 'all' || status === statusFilter;
-      const roleMatch = roleFilter === 'all' || role === roleFilter;
+      const roleMatch = roleFilter === 'all' || roleIds.includes(roleFilter);
       if (!statusMatch || !roleMatch) return false;
       if (!text) return true;
       return (
@@ -128,7 +135,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
     const active = users.filter((user) => user.status === 'active').length;
     const invited = users.filter((user) => user.status === 'invited').length;
     const suspended = users.filter((user) => user.status === 'suspended').length;
-    const roles = new Set(users.map((user) => normalizeRoleId(user.roleId ?? user.role))).size;
+    const roles = new Set(users.flatMap((user) => getUserRoleIds(user))).size;
     return [
       { tone: 'lilac', icon: 'users', value: String(active), label: 'Usuarios activos', link: 'Ver todos' },
       { tone: 'peach', icon: 'invite', value: String(invited), label: 'Usuarios pendientes', link: 'Ver pendientes' },
@@ -151,7 +158,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       fullName: user.fullName ?? '',
       username: user.username ?? '',
       password: '',
-      roleId: normalizeRoleId(user.roleId ?? user.role),
+      roleIds: getUserRoleIds(user),
       phone: user.phone ?? '',
       status: user.status ?? 'active',
     });
@@ -204,7 +211,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
         id: form.id || undefined,
         fullName: form.fullName.trim(),
         username: form.username.trim(),
-        roleId: form.roleId,
+        roleIds: normalizeRoleIds(form.roleIds),
         phone: form.phone.trim(),
         status: form.status,
       };
@@ -225,14 +232,27 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
 
   const renderUserModal = () => {
     if (!isModalOpen) return null;
-    const role = getRoleDefinition(form.roleId);
+    const selectedRoleIds = normalizeRoleIds(form.roleIds);
+    const selectedRoles = selectedRoleIds.map((roleId) => ROLE_OPTIONS.find((option) => option.id === roleId)).filter(Boolean);
+    const toggleRole = (roleId) => {
+      setForm((current) => {
+        const currentRoleIds = normalizeRoleIds(current.roleIds);
+        const nextRoleIds = currentRoleIds.includes(roleId)
+          ? currentRoleIds.filter((entry) => entry !== roleId)
+          : [...currentRoleIds, roleId];
+        return {
+          ...current,
+          roleIds: nextRoleIds.length > 0 ? nextRoleIds : [roleId],
+        };
+      });
+    };
     return (
       <div className="orders-modal-backdrop" onClick={closeModal}>
         <form className="orders-modal user-editor-modal" onSubmit={handleSubmit} onClick={(event) => event.stopPropagation()}>
           <header className="orders-modal-head">
             <div>
               <h3>{form.id ? 'Editar usuario' : 'Nuevo usuario'}</h3>
-              <p>Define su usuario, contrasena y la vista operativa permitida.</p>
+              <p>Define su usuario, contrasena y las areas operativas permitidas.</p>
             </div>
             <button type="button" className="orders-modal-close" onClick={closeModal}>x</button>
           </header>
@@ -259,14 +279,24 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
               Telefono
               <input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
             </label>
-            <label>
-              Rol operativo
-              <select value={form.roleId} onChange={(event) => setForm((current) => ({ ...current, roleId: event.target.value }))}>
+            <fieldset className="user-access-picker">
+              <legend>Accesos operativos</legend>
+              <div className="user-access-options">
                 {ROLE_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
+                  <label key={option.id} className="user-access-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedRoleIds.includes(option.id)}
+                      onChange={() => toggleRole(option.id)}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
                 ))}
-              </select>
-            </label>
+              </div>
+            </fieldset>
             <label>
               Estado
               <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
@@ -275,8 +305,8 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
               </select>
             </label>
             <article className="user-role-preview">
-              <strong>{role.label}</strong>
-              <span>{role.description}</span>
+              <strong>{selectedRoles.map((role) => role.label).join(' + ')}</strong>
+              <span>Este usuario podra entrar a las vistas combinadas de las areas seleccionadas.</span>
             </article>
             {formError ? <p className="status error user-editor-error">{formError}</p> : null}
           </div>
@@ -353,7 +383,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
             <option value="all">Rol: Todos</option>
             {availableRoles.map((role) => (
-              <option key={role.id} value={role.label}>{role.label}</option>
+              <option key={role.id} value={role.id}>{role.label}</option>
             ))}
           </select>
           <select defaultValue="all">
@@ -389,7 +419,11 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                   </td>
                   <td>{row.username}</td>
                   <td>
-                    <span className={`users-role-chip ${roleTone(getUserDisplayRole(row))}`}>{getUserDisplayRole(row)}</span>
+                    <div className="users-role-list">
+                      {getUserRoleDefinitions(row).map((role) => (
+                        <span key={role.label} className={`users-role-chip ${roleTone(role.label)}`}>{role.label}</span>
+                      ))}
+                    </div>
                   </td>
                   <td>
                     <span className={`users-status-chip ${statusTone(row.status)}`}>

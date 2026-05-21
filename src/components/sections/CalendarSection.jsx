@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { buildInventoryReturnRiskEvents } from '../../utils/availability';
-import { isSuperAdmin } from '../../utils/permissions';
 
 const EVENT_TYPE_META = {
   all: { label: 'Todos', className: 'all' },
@@ -167,13 +166,6 @@ const getOperationDetail = (eventType, logisticsMode) => {
   return getLogisticsMeta(logisticsMode).detail;
 };
 
-const buildMapEmbedUrl = (latitude, longitude) => {
-  const lat = Number(latitude);
-  const lng = Number(longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';
-  return `https://maps.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}&z=16&hl=es&output=embed`;
-};
-
 const initialsFromName = (name) =>
   String(name ?? '')
     .split(' ')
@@ -242,11 +234,7 @@ const EMPTY_EVENT_FORM = {
 
 function KpiIcon({ kind }) {
   if (kind === 'calendar') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
-      </svg>
-    );
+    return <img className="asset-icon calendar-asset-icon" src="/imagenes/calendario.png" alt="" aria-hidden="true" />;
   }
   if (kind === 'truck') {
     return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
@@ -293,8 +281,6 @@ function CalendarSection({
   contracts = [],
   deliveries = [],
   supplierBundle = null,
-  currentUser = null,
-  driverLoginLocations = [],
   onCreateEvent,
   onPrintContractDocument,
 }) {
@@ -303,25 +289,14 @@ function CalendarSection({
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('month');
+  const [viewMode, setViewMode] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? 'day' : 'month'
+  ));
   const [detailEvent, setDetailEvent] = useState(null);
   const [documentPreview, setDocumentPreview] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ ...EMPTY_EVENT_FORM, date: todayKey });
   const [formError, setFormError] = useState('');
-  const showDriverLocations = isSuperAdmin(currentUser);
-
-  const recentDriverLoginLocations = useMemo(() => {
-    return (driverLoginLocations ?? [])
-      .filter((entry) => Number.isFinite(Number(entry?.latitude)) && Number.isFinite(Number(entry?.longitude)))
-      .slice()
-      .sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt))
-      .slice(0, 6);
-  }, [driverLoginLocations]);
-  const latestDriverLocation = recentDriverLoginLocations[0] ?? null;
-  const latestDriverMapUrl = latestDriverLocation
-    ? buildMapEmbedUrl(latestDriverLocation.latitude, latestDriverLocation.longitude)
-    : '';
 
   const relationshipMaps = useMemo(() => {
     const contractByRentalId = new Map();
@@ -1302,42 +1277,6 @@ function CalendarSection({
             </div>
           </section>
 
-          {showDriverLocations ? (
-            <section className="calendar-driver-locations">
-              <h4>Ubicacion de choferes (inicio de sesion)</h4>
-              {latestDriverLocation && latestDriverMapUrl ? (
-                <div className="calendar-driver-map-wrap">
-                  <iframe
-                    title={`Mapa de ${latestDriverLocation.fullName || 'chofer'}`}
-                    src={latestDriverMapUrl}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
-              ) : null}
-              {latestDriverLocation ? (
-                <ul>
-                  <li key={latestDriverLocation.id || `${latestDriverLocation.userId}-${latestDriverLocation.sessionId}`}>
-                    <strong>{latestDriverLocation.fullName || 'Chofer'}</strong>
-                    <small>
-                      Lat {Number(latestDriverLocation.latitude).toFixed(6)} | Lng {Number(latestDriverLocation.longitude).toFixed(6)}
-                    </small>
-                    <small>
-                      {latestDriverLocation.accuracyMeters ? `Precision ~${Math.round(Number(latestDriverLocation.accuracyMeters))} m | ` : ''}
-                      {new Date(latestDriverLocation.capturedAt).toLocaleString('es-BO')}
-                    </small>
-                  </li>
-                </ul>
-              ) : (
-                <ul>
-                  <li className="empty">
-                    <strong>Sin ubicaciones registradas</strong>
-                    <small>Se mostrara cuando un chofer inicie sesion y permita ubicacion.</small>
-                  </li>
-                </ul>
-              )}
-            </section>
-          ) : null}
         </aside>
       </div>
 

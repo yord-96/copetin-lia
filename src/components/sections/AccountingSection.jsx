@@ -47,6 +47,10 @@ const isBigCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase(
 const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH';
 
 function CashIcon({ kind }) {
+  if (kind === 'safe') {
+    return <img className="asset-icon safe-asset-icon" src="/imagenes/caja-fuerte.png" alt="" aria-hidden="true" />;
+  }
+
   if (kind === 'petty') {
     return <img className="asset-icon wallet-asset-icon" src="/imagenes/billetera.png" alt="" aria-hidden="true" />;
   }
@@ -1404,7 +1408,7 @@ function AccountingSection({
       <section className="accounting-overview-topcards">
         <article className="box big">
           <div className="title-row">
-            <span className="icon-wrap big"><CashIcon kind="big" /></span>
+            <span className="icon-wrap big"><CashIcon kind="safe" /></span>
             <div>
               <strong>CAJA GRANDE</strong>
               <small>Saldo disponible</small>
@@ -1456,7 +1460,7 @@ function AccountingSection({
           <strong>FLUJO ENTRE CAJAS</strong>
         </header>
         <article className="flow-card flow-card-big">
-          <span className="icon-wrap big"><CashIcon kind="big" /></span>
+          <span className="icon-wrap big"><CashIcon kind="safe" /></span>
           <div>
             <strong>CAJA GRANDE</strong>
             <span>Solo recibe ingresos</span>

@@ -66,15 +66,35 @@ export const normalizeRoleId = (role) => {
   return ROLE_DEFINITIONS[normalized] ? normalized : 'ventas';
 };
 
+export const normalizeRoleIds = (roles) => {
+  const source = Array.isArray(roles) ? roles : [roles];
+  const normalized = source
+    .map((role) => normalizeRoleId(role))
+    .filter((roleId) => ROLE_DEFINITIONS[roleId]);
+  return [...new Set(normalized)].length > 0 ? [...new Set(normalized)] : ['ventas'];
+};
+
+export const getUserRoleIds = (user) => normalizeRoleIds(user?.roleIds ?? user?.roleId ?? user?.role);
+
+export const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? 'ventas';
+
 export const getRoleDefinition = (role) => ROLE_DEFINITIONS[normalizeRoleId(role)] ?? ROLE_DEFINITIONS.ventas;
 
-export const getUserDisplayRole = (user) => getRoleDefinition(user?.roleId ?? user?.role).label;
+export const getUserRoleDefinitions = (user) => getUserRoleIds(user).map((roleId) => ROLE_DEFINITIONS[roleId]);
 
-export const isSuperAdmin = (user) => normalizeRoleId(user?.roleId ?? user?.role) === 'super_admin';
+export const getUserDisplayRole = (user) => getUserRoleDefinitions(user).map((role) => role.label).join(', ');
 
-export const getDefaultTabForUser = (user) => getRoleDefinition(user?.roleId ?? user?.role).defaultTab;
+export const isSuperAdmin = (user) => getUserRoleIds(user).includes('super_admin');
 
-export const getAllowedTabRoots = (user) => new Set(getRoleDefinition(user?.roleId ?? user?.role).allowedTabs);
+export const getDefaultTabForUser = (user) => {
+  const roleIds = getUserRoleIds(user);
+  if (roleIds.includes('super_admin')) return ROLE_DEFINITIONS.super_admin.defaultTab;
+  return ROLE_DEFINITIONS[getPrimaryRoleId(user)]?.defaultTab ?? ROLE_DEFINITIONS.ventas.defaultTab;
+};
+
+export const getAllowedTabRoots = (user) => new Set(
+  getUserRoleIds(user).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
+);
 
 export const canAccessTab = (user, tabId) => {
   if (!user) return false;
