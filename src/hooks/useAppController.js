@@ -205,9 +205,11 @@ export const useAppController = () => {
     try {
       const active = await api.presence.heartbeat({
         userId: currentUser.id,
+        sessionId: currentUser.sessionId,
         fullName: currentUser.fullName ?? currentUser.username,
         role: getUserDisplayRole(currentUser),
         activeTab,
+        device: currentUser.device,
       });
       setUserPresence(active);
     } catch {
@@ -219,7 +221,14 @@ export const useAppController = () => {
     if (!authReady || !currentUser) return undefined;
     publishPresence();
     const intervalId = window.setInterval(publishPresence, 20000);
-    return () => window.clearInterval(intervalId);
+    const leavePresence = () => {
+      api.presence.leave({ userId: currentUser.id, sessionId: currentUser.sessionId }).catch(() => {});
+    };
+    window.addEventListener('pagehide', leavePresence);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('pagehide', leavePresence);
+    };
   }, [authReady, currentUser, publishPresence]);
 
   useEffect(() => {
@@ -415,7 +424,7 @@ export const useAppController = () => {
     setError('');
     try {
       if (currentUser?.id) {
-        await api.presence.leave({ userId: currentUser.id });
+        await api.presence.leave({ userId: currentUser.id, sessionId: currentUser.sessionId });
       }
       await api.auth.logout();
     } finally {

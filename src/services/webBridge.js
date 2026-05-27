@@ -2,8 +2,10 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validatePro
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
+const WEB_LEGACY_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
 const RESET_SECURITY_CODE = '1703';
 const PRESENCE_TTL_MS = 90 * 1000;
+const SESSION_TTL_MS = 10 * 60 * 60 * 1000;
 const USER_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
 
 const ROLE_DEFINITIONS = {
@@ -142,19 +144,125 @@ const sanitizeUserForSession = (user) => {
   };
 };
 
-const readSessionUserId = () => {
-  if (!canUseLocalStorage()) return null;
-  return window.localStorage.getItem(WEB_SESSION_STORAGE_KEY);
+const getBrowserName = (userAgent) => {
+  const ua = String(userAgent ?? '');
+  if (/Edg\//.test(ua)) return 'Edge';
+  if (/OPR\//.test(ua) || /Opera/.test(ua)) return 'Opera';
+  if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) return 'Chrome';
+  if (/Firefox\//.test(ua)) return 'Firefox';
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return 'Safari';
+  return 'Navegador';
 };
 
-const writeSessionUserId = (userId) => {
-  if (!canUseLocalStorage()) return;
-  window.localStorage.setItem(WEB_SESSION_STORAGE_KEY, userId);
+const getOsName = (userAgent, platform = '') => {
+  const source = `${userAgent ?? ''} ${platform ?? ''}`;
+  if (/Windows/i.test(source)) return 'Windows';
+  if (/Android/i.test(source)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(source)) return 'iOS';
+  if (/Mac/i.test(source)) return 'macOS';
+  if (/Linux/i.test(source)) return 'Linux';
+  return 'Equipo';
+};
+
+const detectDeviceInfo = () => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      type: 'desktop',
+      typeLabel: 'Computadora',
+      browser: 'Navegador',
+      os: 'Equipo',
+      label: 'Computadora',
+      screen: '',
+      userAgent: '',
+    };
+  }
+
+  const userAgent = navigator.userAgent ?? '';
+  const platform = navigator.platform ?? '';
+  const width = window.screen?.width ?? window.innerWidth ?? 0;
+  const height = window.screen?.height ?? window.innerHeight ?? 0;
+  const hasTouch = Number(navigator.maxTouchPoints ?? 0) > 0;
+  const isTablet = /iPad|Tablet/i.test(userAgent) || (hasTouch && Math.min(width, height) >= 700);
+  const isMobile = /Android|iPhone|iPod|Mobile/i.test(userAgent) && !isTablet;
+  const type = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop';
+  const typeLabel = type === 'mobile' ? 'Celular' : type === 'tablet' ? 'Tablet' : 'Computadora';
+  const browser = getBrowserName(userAgent);
+  const os = getOsName(userAgent, platform);
+
+  return {
+    type,
+    typeLabel,
+    browser,
+    os,
+    label: `${typeLabel} ${browser}`,
+    screen: width && height ? `${width}x${height}` : '',
+    userAgent,
+  };
+};
+
+const readSessionRecord = () => {
+  if (canUseLocalStorage()) {
+    window.localStorage.removeItem(WEB_LEGACY_SESSION_STORAGE_KEY);
+  }
+  if (!canUseSessionStorage()) return null;
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(WEB_SESSION_STORAGE_KEY) || 'null');
+    if (!parsed?.userId || !parsed?.sessionId) return null;
+    if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      window.sessionStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    window.sessionStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+    return null;
+  }
+};
+
+const writeSessionRecord = (record) => {
+  if (!canUseSessionStorage()) return;
+  window.sessionStorage.setItem(WEB_SESSION_STORAGE_KEY, JSON.stringify(record));
+};
+
+const createSessionRecord = (userId) => {
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  const record = {
+    userId,
+    sessionId: makeId('ses'),
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: new Date(nowMs + SESSION_TTL_MS).toISOString(),
+    device: detectDeviceInfo(),
+  };
+  writeSessionRecord(record);
+  return record;
+};
+
+const touchSessionRecord = () => {
+  const record = readSessionRecord();
+  if (!record) return null;
+  const nowMs = Date.now();
+  const nextRecord = {
+    ...record,
+    lastSeenAt: new Date(nowMs).toISOString(),
+    expiresAt: new Date(nowMs + SESSION_TTL_MS).toISOString(),
+  };
+  writeSessionRecord(nextRecord);
+  return nextRecord;
+};
+
+const readSessionUserId = () => {
+  const record = readSessionRecord();
+  return record?.userId ?? null;
 };
 
 const clearSessionUserId = () => {
-  if (!canUseLocalStorage()) return;
-  window.localStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+  if (canUseLocalStorage()) {
+    window.localStorage.removeItem(WEB_LEGACY_SESSION_STORAGE_KEY);
+  }
+  if (!canUseSessionStorage()) return;
+  window.sessionStorage.removeItem(WEB_SESSION_STORAGE_KEY);
 };
 
 const categoryRequiresCleaning = (category) => {
@@ -442,6 +550,14 @@ const normalizeTreasuryAccounts = (accounts = []) => {
 const canUseLocalStorage = () => {
   try {
     return typeof window !== 'undefined' && Boolean(window.localStorage);
+  } catch {
+    return false;
+  }
+};
+
+const canUseSessionStorage = () => {
+  try {
+    return typeof window !== 'undefined' && Boolean(window.sessionStorage);
   } catch {
     return false;
   }
@@ -1410,14 +1526,24 @@ const normalizeState = (state) => {
     : [];
   source.userPresence = Array.isArray(source.userPresence)
     ? source.userPresence.map((presence) => ({
+      sessionId: String(presence?.sessionId ?? presence?.id ?? presence?.userId ?? '').trim(),
       userId: String(presence?.userId ?? '').trim(),
       fullName: String(presence?.fullName ?? 'Usuario').trim() || 'Usuario',
       role: String(presence?.role ?? 'Operador').trim() || 'Operador',
       activeTab: String(presence?.activeTab ?? 'resumen').trim() || 'resumen',
       color: String(presence?.color ?? colorForUserId(presence?.userId)).trim() || colorForUserId(presence?.userId),
+      device: {
+        type: String(presence?.device?.type ?? presence?.deviceType ?? 'desktop').trim() || 'desktop',
+        typeLabel: String(presence?.device?.typeLabel ?? presence?.deviceLabel ?? 'Computadora').trim() || 'Computadora',
+        browser: String(presence?.device?.browser ?? presence?.browser ?? 'Navegador').trim() || 'Navegador',
+        os: String(presence?.device?.os ?? presence?.os ?? 'Equipo').trim() || 'Equipo',
+        label: String(presence?.device?.label ?? presence?.deviceName ?? presence?.deviceLabel ?? 'Computadora').trim() || 'Computadora',
+        screen: String(presence?.device?.screen ?? '').trim(),
+        userAgent: String(presence?.device?.userAgent ?? '').trim(),
+      },
       lastSeenAt: presence?.lastSeenAt ?? now,
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
-    })).filter((presence) => presence.userId)
+    })).filter((presence) => presence.userId && presence.sessionId)
     : [];
   return source;
 };
@@ -4934,15 +5060,24 @@ const createWebBridge = () => ({
 
   auth: {
     getSession: async () => {
-      const userId = readSessionUserId();
-      if (!userId) return null;
+      const sessionRecord = touchSessionRecord();
+      const userId = sessionRecord?.userId ?? null;
+      if (!userId) {
+        clearSessionUserId();
+        return null;
+      }
       const state = readState();
       const user = state.users.find((entry) => entry.id === userId && entry.status === 'active');
       if (!user) {
         clearSessionUserId();
         return null;
       }
-      return sanitizeUserForSession(user);
+      return {
+        ...sanitizeUserForSession(user),
+        sessionId: sessionRecord.sessionId,
+        device: sessionRecord.device ?? detectDeviceInfo(),
+        sessionExpiresAt: sessionRecord.expiresAt,
+      };
     },
     login: async (payload) => {
       const username = normalizeUsername(payload?.username);
@@ -4982,15 +5117,24 @@ const createWebBridge = () => ({
         return state;
       });
 
-      writeSessionUserId(sessionUser.id);
-      return sessionUser;
+      const sessionRecord = createSessionRecord(sessionUser.id);
+      return {
+        ...sessionUser,
+        sessionId: sessionRecord.sessionId,
+        device: sessionRecord.device,
+        sessionExpiresAt: sessionRecord.expiresAt,
+      };
     },
     logout: async () => {
+      const sessionRecord = readSessionRecord();
       clearSessionUserId();
       transaction((state) => {
         state.users.forEach((entry) => {
           entry.isCurrentUser = false;
         });
+        if (sessionRecord?.sessionId) {
+          state.userPresence = (state.userPresence ?? []).filter((presence) => presence.sessionId !== sessionRecord.sessionId);
+        }
         return state;
       });
       return { ok: true };
@@ -5008,21 +5152,34 @@ const createWebBridge = () => ({
     heartbeat: async (payload) => {
       const userId = String(payload?.userId ?? '').trim();
       if (!userId) return [];
+      const sessionRecord = touchSessionRecord();
+      const sessionId = String(payload?.sessionId ?? sessionRecord?.sessionId ?? userId).trim();
+      const device = payload?.device ?? sessionRecord?.device ?? detectDeviceInfo();
       let activePresence = [];
       transaction((state) => {
         if (!Array.isArray(state.userPresence)) state.userPresence = [];
         const now = new Date().toISOString();
         const threshold = Date.now() - PRESENCE_TTL_MS;
         state.userPresence = state.userPresence.filter((presence) => (
-          presence.userId === userId || new Date(presence.lastSeenAt).getTime() >= threshold
+          presence.sessionId === sessionId || new Date(presence.lastSeenAt).getTime() >= threshold
         ));
-        const existing = state.userPresence.find((presence) => presence.userId === userId);
+        const existing = state.userPresence.find((presence) => presence.sessionId === sessionId);
         const nextPresence = {
+          sessionId,
           userId,
           fullName: String(payload?.fullName ?? 'Usuario').trim() || 'Usuario',
           role: String(payload?.role ?? 'Operador').trim() || 'Operador',
           activeTab: String(payload?.activeTab ?? 'resumen').trim() || 'resumen',
           color: String(payload?.color ?? colorForUserId(userId)).trim() || colorForUserId(userId),
+          device: {
+            type: String(device?.type ?? 'desktop').trim() || 'desktop',
+            typeLabel: String(device?.typeLabel ?? 'Computadora').trim() || 'Computadora',
+            browser: String(device?.browser ?? 'Navegador').trim() || 'Navegador',
+            os: String(device?.os ?? 'Equipo').trim() || 'Equipo',
+            label: String(device?.label ?? device?.typeLabel ?? 'Computadora').trim() || 'Computadora',
+            screen: String(device?.screen ?? '').trim(),
+            userAgent: String(device?.userAgent ?? '').trim(),
+          },
           lastSeenAt: now,
           updatedAt: now,
         };
@@ -5040,9 +5197,13 @@ const createWebBridge = () => ({
     },
     leave: async (payload) => {
       const userId = String(payload?.userId ?? '').trim();
-      if (!userId) return { ok: true };
+      const sessionId = String(payload?.sessionId ?? readSessionRecord()?.sessionId ?? '').trim();
+      if (!userId && !sessionId) return { ok: true };
       transaction((state) => {
-        state.userPresence = (state.userPresence ?? []).filter((presence) => presence.userId !== userId);
+        state.userPresence = (state.userPresence ?? []).filter((presence) => {
+          if (sessionId) return presence.sessionId !== sessionId;
+          return presence.userId !== userId;
+        });
         return state;
       });
       return { ok: true };

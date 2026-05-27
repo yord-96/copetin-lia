@@ -125,8 +125,8 @@ html {
 }
 
 .presence-strip span {
-  min-width: 7.4rem;
-  height: 2.05rem;
+  min-width: 8.7rem;
+  height: 2.28rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--presence-color) 24%, #ffffff);
   background: #ffffff;
@@ -163,7 +163,7 @@ html {
 .presence-strip b,
 .presence-strip em {
   display: block;
-  max-width: 5.2rem;
+  max-width: 6.45rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -179,6 +179,19 @@ html {
   font-size: 0.62rem;
   font-style: normal;
   font-weight: 800;
+}
+
+.presence-strip em small {
+  display: inline;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 0;
+}
+
+.presence-strip em small + small::before {
+  content: " · ";
+  color: #b05a2c;
 }
 
 .presence-strip small {
