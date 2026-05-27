@@ -65,6 +65,7 @@ const businessCollections = [
   'reports',
   'cashSessions',
   'cashMovements',
+  'resetLogs',
   'inventoryMovements',
   'stockRecoveries',
 ];
@@ -426,6 +427,10 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   system: {
+    verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),
+    analyzeReset: (payload) => callBridge('system', 'analyzeReset', false, payload),
+    executeReset: (payload) => callBridge('system', 'executeReset', true, payload),
+    listResetLogs: () => callBridge('system', 'listResetLogs', false),
     reset: (payload) => callBridge('system', 'reset', true, payload),
   },
   printer: {

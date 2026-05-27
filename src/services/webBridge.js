@@ -2,19 +2,30 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validatePro
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
-const RESET_SECURITY_CODE = String(
-  import.meta.env?.RESET_SECURITY_CODE
-    ?? import.meta.env?.VITE_RESET_SECURITY_CODE
-    ?? '',
-).trim();
+const RESET_SECURITY_CODE = '1703';
 const PRESENCE_TTL_MS = 90 * 1000;
 const USER_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
 
 const ROLE_DEFINITIONS = {
+  developer: {
+    label: 'Developer',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias', 'contabilidad'],
+  },
   super_admin: {
     label: 'Super admin',
     defaultTab: 'caja',
     allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias'],
+  },
+  admin: {
+    label: 'Admin',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias', 'contabilidad'],
+  },
+  user: {
+    label: 'User',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'caja'],
   },
   ventas: {
     label: 'Ventas',
@@ -46,7 +57,10 @@ const normalizeText = (value) =>
 
 const normalizeRoleId = (role) => {
   const normalized = normalizeText(role).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  if (normalized.includes('admin')) return 'super_admin';
+  if (normalized === 'developer' || normalized === 'dev' || normalized.includes('desarrollador')) return 'developer';
+  if (normalized === 'super_admin' || normalized === 'superadmin' || normalized.includes('super')) return 'super_admin';
+  if (normalized === 'admin' || normalized === 'administrador') return 'admin';
+  if (normalized === 'user' || normalized === 'usuario') return 'user';
   if (normalized.includes('invent')) return 'inventario';
   if (normalized.includes('venta') || normalized.includes('comercial')) return 'ventas';
   if (normalized.includes('trans') || normalized.includes('chofer')) return 'transporte';
@@ -66,6 +80,8 @@ const normalizeRoleIds = (roles) => {
 const getUserRoleIds = (user) => normalizeRoleIds(user?.roleIds ?? user?.roleId ?? user?.role);
 
 const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? 'ventas';
+
+const isDeveloperUser = (user) => getUserRoleIds(user).includes('developer');
 
 const getAllowedTabsForRoles = (roleIds) => [...new Set(
   normalizeRoleIds(roleIds).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
@@ -106,7 +122,11 @@ const usernameFromName = (name) => {
 const sanitizeUserForSession = (user) => {
   if (!user) return null;
   const roleIds = getUserRoleIds(user);
-  const roleId = roleIds.includes('super_admin') ? 'super_admin' : getPrimaryRoleId(user);
+  const roleId = roleIds.includes('developer')
+    ? 'developer'
+    : roleIds.includes('super_admin')
+      ? 'super_admin'
+      : getPrimaryRoleId(user);
   const role = ROLE_DEFINITIONS[roleId] ?? ROLE_DEFINITIONS.ventas;
   return {
     id: user.id,
@@ -610,6 +630,7 @@ const createSeedData = () => {
     stockRecoveries: [],
     cashSessions: [],
     cashMovements: [],
+    resetLogs: [],
     userPresence: [],
   };
 };
@@ -722,7 +743,11 @@ const normalizeState = (state) => {
       ),
       passwordChangedAt: user?.passwordChangedAt ?? null,
       roleIds: getUserRoleIds(user),
-      roleId: getUserRoleIds(user).includes('super_admin') ? 'super_admin' : getPrimaryRoleId(user),
+      roleId: getUserRoleIds(user).includes('developer')
+        ? 'developer'
+        : getUserRoleIds(user).includes('super_admin')
+          ? 'super_admin'
+          : getPrimaryRoleId(user),
       role: getDisplayRoleForIds(getUserRoleIds(user)),
       status: String(user?.status ?? 'active').trim() || 'active',
       phone: String(user?.phone ?? '').trim(),
@@ -738,6 +763,23 @@ const normalizeState = (state) => {
   if (source.users.length === 0) {
     source.users = [createBootstrapSuperAdmin(now)];
   }
+
+  source.resetLogs = Array.isArray(source.resetLogs)
+    ? source.resetLogs.map((log) => ({
+      id: String(log?.id ?? makeId('rst')).trim(),
+      userId: String(log?.userId ?? '').trim(),
+      userName: String(log?.userName ?? '').trim(),
+      userRole: String(log?.userRole ?? '').trim(),
+      action: String(log?.action ?? 'execute').trim() || 'execute',
+      modules: Array.isArray(log?.modules) ? log.modules.map((entry) => String(entry)) : [],
+      summary: log?.summary && typeof log.summary === 'object' ? log.summary : {},
+      result: String(log?.result ?? 'unknown').trim() || 'unknown',
+      errors: Array.isArray(log?.errors) ? log.errors.map((entry) => String(entry)) : [],
+      observations: String(log?.observations ?? '').trim(),
+      ip: String(log?.ip ?? '').trim(),
+      createdAt: log?.createdAt ?? now,
+    }))
+    : [];
 
   source.vehicles = Array.isArray(source.vehicles)
     ? source.vehicles.map((vehicle) => ({
@@ -1425,6 +1467,689 @@ const transaction = (mutator) => {
   const toPersist = result ?? clone;
   writeState(toPersist);
   return toPersist;
+};
+
+const RESET_MODULES = [
+  {
+    id: 'calendar_events',
+    level: 'safe',
+    risk: 'bajo',
+    name: 'Eventos manuales de calendario',
+    description: 'Elimina eventos creados manualmente en agenda.',
+    deletes: ['calendarEvents'],
+    warnings: ['No elimina eventos calculados desde contratos, entregas o vencimientos.'],
+  },
+  {
+    id: 'generated_reports',
+    level: 'safe',
+    risk: 'bajo',
+    name: 'Reportes generados',
+    description: 'Elimina reportes exportados o generados desde el modulo de reportes.',
+    deletes: ['generatedReports'],
+    warnings: ['No elimina recibos reconstruidos desde ordenes o devoluciones.'],
+  },
+  {
+    id: 'clients',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Clientes',
+    description: 'Elimina clientes sin ordenes, contratos, pagos, saldos, documentos ni historial comercial.',
+    deletes: ['clients'],
+    warnings: ['Clientes con operaciones, saldos prepago, lista negra o documentos quedan bloqueados.'],
+  },
+  {
+    id: 'quotes',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Cotizaciones',
+    description: 'Elimina cotizaciones no comprometidas ni vinculadas a contratos u ordenes.',
+    deletes: ['quotes'],
+    warnings: ['Cotizaciones aprobadas o enlazadas quedan bloqueadas.'],
+  },
+  {
+    id: 'contracts',
+    level: 'validation',
+    risk: 'alto',
+    name: 'Contratos',
+    description: 'Elimina contratos sin aprobacion, pagos, garantia ni orden asociada.',
+    deletes: ['contracts'],
+    warnings: ['Contratos aprobados o con trazabilidad comercial quedan bloqueados.'],
+  },
+  {
+    id: 'service_orders',
+    level: 'validation',
+    risk: 'alto',
+    name: 'Ordenes de servicio',
+    description: 'Elimina ordenes de prueba sin pagos, garantias, contratos, movimientos, entregas ni devoluciones.',
+    deletes: ['rentals'],
+    warnings: ['Ordenes pagadas, activas, devueltas o con movimientos quedan bloqueadas.'],
+  },
+  {
+    id: 'deliveries',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Entregas y devoluciones programadas',
+    description: 'Elimina entregas sueltas sin orden, contrato, chofer ni vehiculo comprometido.',
+    deletes: ['deliveries'],
+    warnings: ['Entregas enlazadas a ordenes o rutas reales quedan bloqueadas.'],
+  },
+  {
+    id: 'categories',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Categorias',
+    description: 'Elimina categorias sin productos asociados.',
+    deletes: ['categories'],
+    warnings: ['Primero elimina o reasigna productos asociados.'],
+  },
+  {
+    id: 'items',
+    level: 'validation',
+    risk: 'alto',
+    name: 'Productos / Items',
+    description: 'Elimina items sin historial de alquiler, inventario, kardex, cotizaciones o contratos.',
+    deletes: ['items'],
+    warnings: ['Productos con historial operativo quedan bloqueados para conservar trazabilidad.'],
+  },
+  {
+    id: 'inventory_movements',
+    level: 'critical',
+    risk: 'critico',
+    name: 'Movimientos / Kardex',
+    description: 'Elimina movimientos de inventario solo si no existen ordenes, contratos, entregas o devoluciones vinculadas.',
+    deletes: ['inventoryMovements', 'stockRecoveries'],
+    warnings: ['Afecta trazabilidad historica de stock. Requiere confirmacion final.'],
+  },
+  {
+    id: 'cash_accounting',
+    level: 'critical',
+    risk: 'critico',
+    name: 'Caja / Contabilidad',
+    description: 'Elimina solo movimientos manuales no vinculados a ordenes, contratos, clientes ni devoluciones.',
+    deletes: ['cashMovements', 'cashSessions'],
+    warnings: ['Los movimientos contables vinculados a operaciones reales quedan bloqueados.'],
+  },
+  {
+    id: 'transport_fleet',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Transporte / Flota / Choferes',
+    description: 'Elimina vehiculos y choferes sin entregas ni historial de rutas.',
+    deletes: ['vehicles', 'drivers'],
+    warnings: ['Flota o choferes usados en entregas quedan bloqueados.'],
+  },
+  {
+    id: 'suppliers',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Proveedores',
+    description: 'Elimina proveedores sin cotizaciones ni prestamos/subalquileres asociados.',
+    deletes: ['suppliers'],
+    warnings: ['Proveedores con historial de cotizaciones o prestamos quedan bloqueados.'],
+  },
+  {
+    id: 'supplier_documents',
+    level: 'validation',
+    risk: 'alto',
+    name: 'Cotizaciones y prestamos de proveedores',
+    description: 'Elimina documentos de proveedor no aprobados ni activos.',
+    deletes: ['supplierQuotes', 'supplierLoans'],
+    warnings: ['Prestamos activos o completados quedan bloqueados.'],
+  },
+  {
+    id: 'personnel',
+    level: 'validation',
+    risk: 'medio',
+    name: 'Personal',
+    description: 'Elimina empleados sin asistencias ni incidentes asociados.',
+    deletes: ['personnelEmployees'],
+    warnings: ['Empleados con asistencia o incidentes quedan bloqueados.'],
+  },
+  {
+    id: 'personnel_history',
+    level: 'critical',
+    risk: 'alto',
+    name: 'Historial de personal',
+    description: 'Elimina registros de asistencia e incidentes.',
+    deletes: ['personnelAttendance', 'personnelIncidents'],
+    warnings: ['Afecta trazabilidad laboral. Requiere confirmacion final.'],
+  },
+  {
+    id: 'users',
+    level: 'critical',
+    risk: 'critico',
+    name: 'Usuarios',
+    description: 'Elimina usuarios secundarios suspendidos o invitados, nunca el developer actual ni el ultimo developer.',
+    deletes: ['users'],
+    warnings: ['No se permite dejar el sistema sin usuarios administrativos activos.'],
+  },
+  {
+    id: 'factory_reset',
+    level: 'critical',
+    risk: 'critico',
+    name: 'Reset total a cero',
+    description: 'Borra todo el estado operativo y reinicia el sistema desde cero conservando solamente usuarios developer.',
+    deletes: ['allBusinessData'],
+    warnings: ['Accion irreversible. Conserva developer y auditoria de reset; elimina clientes, ordenes, inventario, caja, usuarios no developer y configuracion operativa.'],
+  },
+];
+
+const RESET_MODULE_MAP = new Map(RESET_MODULES.map((module) => [module.id, module]));
+
+const FACTORY_RESET_COLLECTIONS = [
+  'categories',
+  'clients',
+  'items',
+  'quotes',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'vehicles',
+  'drivers',
+  'calendarEvents',
+  'generatedReports',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+  'personnelEmployees',
+  'personnelAttendance',
+  'personnelIncidents',
+  'inventoryMovements',
+  'stockRecoveries',
+  'cashSessions',
+  'cashMovements',
+  'userPresence',
+];
+
+const getCurrentSessionUser = (state) => {
+  const sessionUserId = readSessionUserId();
+  if (!sessionUserId) return null;
+  return (state.users ?? []).find((user) => user.id === sessionUserId && !user.deletedAt) ?? null;
+};
+
+const assertDeveloperResetAccess = (state, code) => {
+  const currentUser = getCurrentSessionUser(state);
+  if (!currentUser || !isDeveloperUser(currentUser)) {
+    throw new Error('Solo el rol developer puede acceder al Panel de Reset del Sistema.');
+  }
+  if (currentUser.status !== 'active') {
+    throw new Error('El usuario developer no esta activo.');
+  }
+  const cleanCode = String(code ?? '').trim();
+  if (!RESET_SECURITY_CODE || cleanCode !== RESET_SECURITY_CODE) {
+    throw new Error('Contrasena de seguridad incorrecta.');
+  }
+  return currentUser;
+};
+
+const recordLabel = (record, fallback = 'Registro') =>
+  String(record?.name ?? record?.fullName ?? record?.code ?? record?.orderCode ?? record?.contractCode ?? record?.quoteCode ?? record?.id ?? fallback);
+
+const activeRows = (rows) => (Array.isArray(rows) ? rows.filter((row) => !row?.deletedAt) : []);
+
+const linkedToRental = (entry, rental) =>
+  Boolean(
+    entry
+      && rental
+      && (
+        (entry.rentalId && entry.rentalId === rental.id)
+        || (entry.orderCode && rental.orderCode && entry.orderCode === rental.orderCode)
+        || (entry.reference && rental.orderCode && entry.reference === rental.orderCode)
+      ),
+  );
+
+const addBlocked = (target, record, reason) => {
+  target.blocked.push({
+    id: String(record?.id ?? record?.code ?? makeId('blocked')),
+    label: recordLabel(record),
+    reason,
+  });
+};
+
+const addDeletable = (target, record, collection, mode = 'delete') => {
+  target.deletable.push({
+    id: String(record?.id ?? record?.code ?? makeId('delete')),
+    label: recordLabel(record),
+    collection,
+    mode,
+  });
+};
+
+const analyzeFactoryReset = (state) => {
+  const module = RESET_MODULE_MAP.get('factory_reset');
+  const result = {
+    ...module,
+    total: 0,
+    deleteCount: 0,
+    blockedCount: 0,
+    dependencies: [],
+    records: {
+      deletable: [],
+      blocked: [],
+    },
+  };
+
+  FACTORY_RESET_COLLECTIONS.forEach((collection) => {
+    const rows = Array.isArray(state[collection]) ? state[collection] : [];
+    rows.forEach((row) => addDeletable(result.records, row, collection, 'factory-delete'));
+  });
+
+  activeRows(state.users).forEach((user) => {
+    if (isDeveloperUser(user)) {
+      addBlocked(result.records, user, 'Usuario developer preservado por seguridad.');
+      return;
+    }
+    addDeletable(result.records, user, 'users', 'factory-delete');
+  });
+
+  addDeletable(
+    result.records,
+    { id: 'settings', name: 'Configuracion y numeracion operativa' },
+    'settings',
+    'factory-reset-settings',
+  );
+
+  result.total = result.records.deletable.length + result.records.blocked.length;
+  result.deleteCount = result.records.deletable.length;
+  result.blockedCount = result.records.blocked.length;
+  result.dependencies = result.records.blocked.map((entry) => `${entry.label}: ${entry.reason}`);
+  return result;
+};
+
+const analyzeResetModule = (state, moduleId) => {
+  const module = RESET_MODULE_MAP.get(moduleId);
+  if (!module) return null;
+  const result = {
+    ...module,
+    total: 0,
+    deleteCount: 0,
+    blockedCount: 0,
+    dependencies: [],
+    records: {
+      deletable: [],
+      blocked: [],
+    },
+  };
+
+  const clients = activeRows(state.clients);
+  const quotes = activeRows(state.quotes);
+  const contracts = activeRows(state.contracts);
+  const rentals = activeRows(state.rentals);
+  const deliveries = activeRows(state.deliveries);
+  const items = activeRows(state.items);
+  const inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+  const cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+
+  if (moduleId === 'factory_reset') {
+    return analyzeFactoryReset(state);
+  }
+
+  if (moduleId === 'calendar_events') {
+    result.total = activeRows(state.calendarEvents).length;
+    activeRows(state.calendarEvents).forEach((event) => addDeletable(result.records, event, 'calendarEvents'));
+  }
+
+  if (moduleId === 'generated_reports') {
+    result.total = activeRows(state.generatedReports).length;
+    activeRows(state.generatedReports).forEach((report) => addDeletable(result.records, report, 'generatedReports'));
+  }
+
+  if (moduleId === 'clients') {
+    result.total = clients.length;
+    clients.forEach((client) => {
+      const hasOperations =
+        quotes.some((quote) => quote.clientId === client.id)
+        || contracts.some((contract) => contract.clientId === client.id)
+        || rentals.some((rental) => rental.clientId === client.id)
+        || deliveries.some((delivery) => delivery.clientId === client.id)
+        || cashMovements.some((movement) => movement.clientId === client.id || movement.reference === client.id);
+      const hasBalance = Number(client?.prepaidAccount?.balanceBs ?? client?.totalIncomeBs ?? 0) > 0;
+      const hasDocuments = Array.isArray(client?.attachments) && client.attachments.length > 0;
+      const isBlockedClient = Boolean(client?.blacklist?.isBlacklisted);
+      if (hasOperations || hasBalance || hasDocuments || isBlockedClient) {
+        addBlocked(
+          result.records,
+          client,
+          'Tiene historial comercial, saldos, documentos, lista negra u operaciones vinculadas.',
+        );
+        return;
+      }
+      addDeletable(result.records, client, 'clients');
+    });
+  }
+
+  if (moduleId === 'quotes') {
+    result.total = quotes.length;
+    quotes.forEach((quote) => {
+      const status = normalizeText(quote.status);
+      const linked = Boolean(quote.rentalId || quote.contractId || quote.orderCode)
+        || contracts.some((contract) => contract.quoteId === quote.id)
+        || rentals.some((rental) => rental.quoteId === quote.id);
+      if (linked || ['aprobada', 'approved', 'convertida'].includes(status)) {
+        addBlocked(result.records, quote, 'Esta aprobada o vinculada a contrato/orden.');
+        return;
+      }
+      addDeletable(result.records, quote, 'quotes', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'contracts') {
+    result.total = contracts.length;
+    contracts.forEach((contract) => {
+      const totalPaid = Number(contract?.payment?.paidAtApprovalBs ?? contract?.paidBs ?? 0);
+      const guarantee = Number(contract?.totals?.guaranteeBs ?? contract?.guaranteeBs ?? 0);
+      const linked = Boolean(contract.rentalId || contract.orderCode)
+        || rentals.some((rental) => rental.contractId === contract.id);
+      const status = normalizeText(contract.status);
+      if (linked || totalPaid > 0 || guarantee > 0 || ['approved', 'aprobado', 'activo', 'firmado'].includes(status)) {
+        addBlocked(result.records, contract, 'Tiene aprobacion, pago, garantia u orden asociada.');
+        return;
+      }
+      addDeletable(result.records, contract, 'contracts', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'service_orders') {
+    result.total = rentals.length;
+    rentals.forEach((rental) => {
+      const totalPaid = Number(rental?.payment?.paidAtApprovalBs ?? rental?.paidBs ?? 0);
+      const guarantee = Number(rental?.totals?.guaranteeBs ?? rental?.guaranteeBs ?? 0);
+      const hasContract = contracts.some((contract) => linkedToRental(contract, rental));
+      const hasDelivery = deliveries.some((delivery) => linkedToRental(delivery, rental));
+      const hasMovement = inventoryMovements.some((movement) => linkedToRental(movement, rental));
+      const hasCash = cashMovements.some((movement) => linkedToRental(movement, rental));
+      const status = normalizeRentalStatus(rental.status);
+      if (status !== 'cancelled' || totalPaid > 0 || guarantee > 0 || hasContract || hasDelivery || hasMovement || hasCash || Array.isArray(rental.returnReport)) {
+        addBlocked(result.records, rental, 'Tiene pagos, garantia, contrato, movimientos, entregas, devolucion o estado comprometido.');
+        return;
+      }
+      addDeletable(result.records, rental, 'rentals', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'deliveries') {
+    result.total = deliveries.length;
+    deliveries.forEach((delivery) => {
+      const linked = Boolean(delivery.rentalId || delivery.orderCode || delivery.contractId);
+      const hasRouteResource = Boolean(delivery.driverId || delivery.vehicleId);
+      if (linked || hasRouteResource || normalizeDeliveryStatus(delivery) !== 'programada') {
+        addBlocked(result.records, delivery, 'Esta vinculada a orden, contrato, chofer, vehiculo o ruta avanzada.');
+        return;
+      }
+      addDeletable(result.records, delivery, 'deliveries', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'categories') {
+    result.total = activeRows(state.categories).length;
+    activeRows(state.categories).forEach((category) => {
+      const linkedItems = items.filter((item) => item.category === category.name);
+      if (linkedItems.length > 0) {
+        addBlocked(result.records, category, `Tiene ${linkedItems.length} producto(s) asociado(s).`);
+        return;
+      }
+      addDeletable(result.records, category, 'categories');
+    });
+  }
+
+  if (moduleId === 'items') {
+    result.total = items.length;
+    items.forEach((item) => {
+      const hasHistory =
+        rentals.some((rental) => Array.isArray(rental.items) && rental.items.some((line) => line.itemId === item.id))
+        || quotes.some((quote) => Array.isArray(quote.items) && quote.items.some((line) => line.itemId === item.id))
+        || contracts.some((contract) => Array.isArray(contract.items) && contract.items.some((line) => line.itemId === item.id))
+        || inventoryMovements.some((movement) => movement.itemId === item.id)
+        || (state.stockRecoveries ?? []).some((entry) => entry.itemId === item.id)
+        || (state.supplierLoans ?? []).some((loan) => Array.isArray(loan.items) && loan.items.some((line) => line.itemId === item.id));
+      if (hasHistory || Number(item.availableStock ?? 0) < Number(item.totalStock ?? 0)) {
+        addBlocked(result.records, item, 'Tiene historial de alquiler, inventario, proveedor o stock comprometido.');
+        return;
+      }
+      addDeletable(result.records, item, 'items');
+    });
+  }
+
+  if (moduleId === 'inventory_movements') {
+    const recoveryRows = Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [];
+    result.total = inventoryMovements.length + recoveryRows.length;
+    const hasBusinessLinks = rentals.length > 0 || contracts.length > 0 || deliveries.length > 0;
+    if (hasBusinessLinks) {
+      [...inventoryMovements, ...recoveryRows].forEach((entry) =>
+        addBlocked(result.records, entry, 'Existen ordenes, contratos o entregas que requieren conservar kardex.'),
+      );
+    } else {
+      inventoryMovements.forEach((entry) => addDeletable(result.records, entry, 'inventoryMovements'));
+      recoveryRows.forEach((entry) => addDeletable(result.records, entry, 'stockRecoveries'));
+    }
+  }
+
+  if (moduleId === 'cash_accounting') {
+    result.total = cashMovements.length + (Array.isArray(state.cashSessions) ? state.cashSessions.length : 0);
+    cashMovements.forEach((movement) => {
+      const source = normalizeText(movement.sourceType ?? movement.type ?? movement.reason);
+      const linked = Boolean(movement.rentalId || movement.contractId || movement.clientId || movement.orderCode)
+        || ['rental', 'contract', 'return', 'client', 'prepaid'].some((token) => source.includes(token));
+      if (linked) {
+        addBlocked(result.records, movement, 'Movimiento contable vinculado a una operacion real.');
+        return;
+      }
+      addDeletable(result.records, movement, 'cashMovements');
+    });
+    activeRows(state.cashSessions).forEach((session) => {
+      if (session.status === 'open') {
+        addBlocked(result.records, session, 'No se puede borrar una caja abierta.');
+        return;
+      }
+      addDeletable(result.records, session, 'cashSessions');
+    });
+  }
+
+  if (moduleId === 'transport_fleet') {
+    const vehicles = activeRows(state.vehicles);
+    const drivers = activeRows(state.drivers);
+    result.total = vehicles.length + drivers.length;
+    vehicles.forEach((vehicle) => {
+      if (deliveries.some((delivery) => delivery.vehicleId === vehicle.id)) {
+        addBlocked(result.records, vehicle, 'Vehiculo usado en entregas o rutas.');
+        return;
+      }
+      addDeletable(result.records, vehicle, 'vehicles', 'soft-delete');
+    });
+    drivers.forEach((driver) => {
+      if (deliveries.some((delivery) => delivery.driverId === driver.id)) {
+        addBlocked(result.records, driver, 'Chofer usado en entregas o rutas.');
+        return;
+      }
+      addDeletable(result.records, driver, 'drivers', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'suppliers') {
+    const suppliers = activeRows(state.suppliers);
+    result.total = suppliers.length;
+    suppliers.forEach((supplier) => {
+      const linked = activeRows(state.supplierQuotes).some((quote) => quote.supplierId === supplier.id)
+        || activeRows(state.supplierLoans).some((loan) => loan.supplierId === supplier.id);
+      if (linked) {
+        addBlocked(result.records, supplier, 'Tiene cotizaciones o prestamos de proveedor asociados.');
+        return;
+      }
+      addDeletable(result.records, supplier, 'suppliers', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'supplier_documents') {
+    const supplierQuotes = activeRows(state.supplierQuotes);
+    const supplierLoans = activeRows(state.supplierLoans);
+    result.total = supplierQuotes.length + supplierLoans.length;
+    supplierQuotes.forEach((quote) => {
+      const status = normalizeText(quote.status);
+      if (['approved', 'aprobada', 'aceptada'].includes(status)) {
+        addBlocked(result.records, quote, 'Cotizacion de proveedor aprobada.');
+        return;
+      }
+      addDeletable(result.records, quote, 'supplierQuotes', 'soft-delete');
+    });
+    supplierLoans.forEach((loan) => {
+      const status = normalizeText(loan.status);
+      if (!['draft', 'borrador', 'cancelled', 'cancelado'].includes(status)) {
+        addBlocked(result.records, loan, 'Prestamo/subalquiler activo, completado o comprometido.');
+        return;
+      }
+      addDeletable(result.records, loan, 'supplierLoans', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'personnel') {
+    const employees = activeRows(state.personnelEmployees);
+    result.total = employees.length;
+    employees.forEach((employee) => {
+      const linked = (state.personnelAttendance ?? []).some((entry) => entry.employeeId === employee.id)
+        || (state.personnelIncidents ?? []).some((entry) => entry.employeeId === employee.id);
+      if (linked) {
+        addBlocked(result.records, employee, 'Tiene asistencia o incidentes registrados.');
+        return;
+      }
+      addDeletable(result.records, employee, 'personnelEmployees', 'soft-delete');
+    });
+  }
+
+  if (moduleId === 'personnel_history') {
+    const attendance = Array.isArray(state.personnelAttendance) ? state.personnelAttendance : [];
+    const incidents = Array.isArray(state.personnelIncidents) ? state.personnelIncidents : [];
+    result.total = attendance.length + incidents.length;
+    attendance.forEach((entry) => addDeletable(result.records, entry, 'personnelAttendance'));
+    incidents.forEach((entry) => addDeletable(result.records, entry, 'personnelIncidents'));
+  }
+
+  if (moduleId === 'users') {
+    const users = activeRows(state.users);
+    const currentUserId = readSessionUserId();
+    result.total = users.length;
+    users.forEach((user) => {
+      const wouldKeepAdmins = users.filter((entry) =>
+        entry.id !== user.id
+        && entry.status === 'active'
+        && getUserRoleIds(entry).some((roleId) => ['developer', 'super_admin', 'admin'].includes(roleId))
+      );
+      const activeDevelopers = users.filter((entry) => entry.status === 'active' && isDeveloperUser(entry));
+      if (user.id === currentUserId) {
+        addBlocked(result.records, user, 'No se puede borrar el usuario developer actual.');
+        return;
+      }
+      if (isDeveloperUser(user) && activeDevelopers.length <= 1) {
+        addBlocked(result.records, user, 'No se puede borrar el ultimo developer.');
+        return;
+      }
+      if (wouldKeepAdmins.length === 0) {
+        addBlocked(result.records, user, 'No se puede dejar el sistema sin usuarios administrativos activos.');
+        return;
+      }
+      if (!['suspended', 'invited'].includes(user.status)) {
+        addBlocked(result.records, user, 'Solo se eliminan usuarios secundarios suspendidos o invitados.');
+        return;
+      }
+      addDeletable(result.records, user, 'users', 'soft-delete');
+    });
+  }
+
+  result.deleteCount = result.records.deletable.length;
+  result.blockedCount = result.records.blocked.length;
+  result.dependencies = result.records.blocked.slice(0, 12).map((entry) => `${entry.label}: ${entry.reason}`);
+  return result;
+};
+
+const analyzeSystemReset = (state, selectedModuleIds) => {
+  const requested = [...new Set((Array.isArray(selectedModuleIds) ? selectedModuleIds : [])
+    .map((entry) => String(entry ?? '').trim())
+    .filter((entry) => RESET_MODULE_MAP.has(entry)))];
+  const selected = requested.includes('factory_reset') ? ['factory_reset'] : requested;
+
+  const modules = (selected.length > 0 ? selected : []).map((moduleId) => analyzeResetModule(state, moduleId)).filter(Boolean);
+  const summary = modules.reduce(
+    (acc, module) => {
+      acc.total += module.total;
+      acc.deletable += module.deleteCount;
+      acc.blocked += module.blockedCount;
+      if (module.level === 'critical') acc.critical += 1;
+      return acc;
+    },
+    { total: 0, deletable: 0, blocked: 0, critical: 0 },
+  );
+
+  return {
+    availableModules: RESET_MODULES,
+    selectedModules: selected,
+    modules,
+    summary,
+    canExecute: selected.length > 0 && summary.deletable > 0,
+  };
+};
+
+const applyFactoryReset = (state, analysis) => {
+  const preservedDevelopers = activeRows(state.users)
+    .filter((user) => isDeveloperUser(user))
+    .map((user) => ({
+      ...deepClone(user),
+      status: 'active',
+      deletedAt: null,
+      updatedAt: new Date().toISOString(),
+    }));
+  if (preservedDevelopers.length === 0) {
+    throw new Error('No se puede ejecutar reset total sin al menos un usuario developer para conservar.');
+  }
+
+  const currentUserId = readSessionUserId();
+  if (!preservedDevelopers.some((user) => user.id === currentUserId)) {
+    throw new Error('El usuario developer actual debe quedar preservado.');
+  }
+
+  const deletedByCollection = {};
+  const factoryModule = analysis.modules.find((module) => module.id === 'factory_reset');
+  factoryModule?.records?.deletable?.forEach((entry) => {
+    deletedByCollection[entry.collection] = (deletedByCollection[entry.collection] ?? 0) + 1;
+  });
+
+  const preservedResetLogs = Array.isArray(state.resetLogs) ? deepClone(state.resetLogs) : [];
+  const freshState = createSeedData();
+  freshState.users = preservedDevelopers;
+  freshState.resetLogs = preservedResetLogs;
+
+  Object.keys(state).forEach((key) => {
+    delete state[key];
+  });
+  Object.assign(state, freshState);
+  return deletedByCollection;
+};
+
+const applyResetAnalysis = (state, analysis) => {
+  if (analysis.selectedModules.includes('factory_reset')) {
+    return applyFactoryReset(state, analysis);
+  }
+
+  const deletedByCollection = {};
+  const now = new Date().toISOString();
+  analysis.modules.forEach((module) => {
+    module.records.deletable.forEach((entry) => {
+      const rows = state[entry.collection];
+      if (!Array.isArray(rows)) return;
+      const index = rows.findIndex((row) => String(row?.id ?? row?.code) === entry.id);
+      if (index < 0) return;
+      if (entry.mode === 'soft-delete') {
+        rows[index] = {
+          ...rows[index],
+          deletedAt: now,
+          status: rows[index].status === 'active' ? 'suspended' : rows[index].status,
+          updatedAt: now,
+        };
+      } else {
+        rows.splice(index, 1);
+      }
+      deletedByCollection[entry.collection] = (deletedByCollection[entry.collection] ?? 0) + 1;
+    });
+  });
+  return deletedByCollection;
 };
 
 const getActiveSession = (state) => state.cashSessions.find((session) => session.status === 'open') ?? null;
@@ -3626,7 +4351,11 @@ const createWebBridge = () => ({
       const username = normalizeUsername(payload?.username);
       const password = String(payload?.password ?? '').trim();
       const roleIds = normalizeRoleIds(payload?.roleIds ?? payload?.roleId ?? payload?.role ?? 'ventas');
-      const roleId = roleIds.includes('super_admin') ? 'super_admin' : roleIds[0];
+      const roleId = roleIds.includes('developer')
+        ? 'developer'
+        : roleIds.includes('super_admin')
+          ? 'super_admin'
+          : roleIds[0];
       if (!fullName) throw new Error('El nombre del usuario es obligatorio.');
       if (!username) throw new Error('El usuario de acceso es obligatorio.');
       if (!password || password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
@@ -3675,6 +4404,19 @@ const createWebBridge = () => ({
           throw new Error('No puedes suspender al usuario actual.');
         }
 
+        const activeDevelopersBefore = state.users.filter((entry) =>
+          !entry.deletedAt
+          && entry.status === 'active'
+          && isDeveloperUser(entry)
+        );
+        if (
+          isDeveloperUser(user)
+          && payload.status === 'suspended'
+          && activeDevelopersBefore.length <= 1
+        ) {
+          throw new Error('No puedes suspender al ultimo usuario developer.');
+        }
+
         if (payload.fullName !== undefined) user.fullName = String(payload.fullName ?? '').trim() || user.fullName;
         if (payload.username !== undefined) {
           const nextUsername = normalizeUsername(payload.username);
@@ -3692,7 +4434,19 @@ const createWebBridge = () => ({
         }
         if (payload.roleIds !== undefined || payload.role !== undefined || payload.roleId !== undefined) {
           const roleIds = normalizeRoleIds(payload.roleIds ?? payload.roleId ?? payload.role);
-          const roleId = roleIds.includes('super_admin') ? 'super_admin' : roleIds[0];
+          const activeDevelopers = state.users.filter((entry) =>
+            !entry.deletedAt
+            && entry.status === 'active'
+            && isDeveloperUser(entry)
+          );
+          if (isDeveloperUser(user) && !roleIds.includes('developer') && activeDevelopers.length <= 1) {
+            throw new Error('No puedes quitar el rol developer al ultimo usuario developer.');
+          }
+          const roleId = roleIds.includes('developer')
+            ? 'developer'
+            : roleIds.includes('super_admin')
+              ? 'super_admin'
+              : roleIds[0];
           user.roleId = roleId;
           user.roleIds = roleIds;
           user.role = getDisplayRoleForIds(roleIds);
@@ -3862,6 +4616,25 @@ const createWebBridge = () => ({
         if (!user) throw new Error('Usuario no encontrado.');
         if (readSessionUserId() === user.id) {
           throw new Error('No puedes eliminar al usuario actual.');
+        }
+        if (isDeveloperUser(user)) {
+          const activeDevelopers = state.users.filter((entry) =>
+            !entry.deletedAt
+            && entry.status === 'active'
+            && isDeveloperUser(entry)
+          );
+          if (activeDevelopers.length <= 1) {
+            throw new Error('No puedes eliminar al ultimo usuario developer.');
+          }
+        }
+        const activeAdminsAfter = state.users.filter((entry) =>
+          entry.id !== id
+          && !entry.deletedAt
+          && entry.status === 'active'
+          && getUserRoleIds(entry).some((roleId) => ['developer', 'super_admin', 'admin'].includes(roleId))
+        );
+        if (activeAdminsAfter.length === 0) {
+          throw new Error('No puedes dejar el sistema sin usuarios administrativos activos.');
         }
         user.deletedAt = new Date().toISOString();
         user.status = 'suspended';
@@ -6815,34 +7588,105 @@ const createWebBridge = () => ({
   },
 
   system: {
-    reset: async (payload) => {
-      if (!RESET_SECURITY_CODE) {
-        throw new Error('RESET_SECURITY_CODE no esta configurado.');
-      }
+    verifyResetAccess: async (payload) => {
+      const state = readState();
+      const currentUser = assertDeveloperResetAccess(state, payload?.code);
+      return {
+        ok: true,
+        user: sanitizeUserForSession(currentUser),
+        modules: RESET_MODULES,
+      };
+    },
+    analyzeReset: async (payload) => {
+      const state = readState();
+      assertDeveloperResetAccess(state, payload?.code);
+      return analyzeSystemReset(state, payload?.modules);
+    },
+    executeReset: async (payload) => {
       const code = String(payload?.code ?? '').trim();
-      if (code !== RESET_SECURITY_CODE) {
-        throw new Error('Codigo de seguridad incorrecto.');
+      const confirmation = String(payload?.confirmation ?? '').trim().toUpperCase();
+      const selectedModules = Array.isArray(payload?.modules) ? payload.modules : [];
+      if (!['CONFIRMAR', 'RESET'].includes(confirmation)) {
+        throw new Error('Debes escribir CONFIRMAR o RESET para ejecutar el reset seleccionado.');
       }
-      const currentState = readState();
-      const preservedUsers = Array.isArray(currentState.users)
-        ? currentState.users
-          .filter((user) => !user.deletedAt)
-          .map((user) => deepClone(user))
-        : [];
-      const preservedClients = Array.isArray(currentState.clients)
-        ? currentState.clients
-          .filter((client) => !client.deletedAt)
-          .map((client) => deepClone(client))
-        : [];
-      const nextState = createSeedData();
-      if (preservedUsers.length > 0) {
-        nextState.users = preservedUsers;
+
+      const preflightState = readState();
+      const preflightUser = assertDeveloperResetAccess(preflightState, code);
+      let response = null;
+      try {
+        transaction((state) => {
+          const currentUser = assertDeveloperResetAccess(state, code);
+          const analysis = analyzeSystemReset(state, selectedModules);
+          if (!analysis.canExecute) {
+            throw new Error('No hay registros seguros para eliminar con la seleccion actual.');
+          }
+
+          const deletedByCollection = applyResetAnalysis(state, analysis);
+          const deletedTotal = Object.values(deletedByCollection).reduce((sum, value) => sum + Number(value ?? 0), 0);
+          const resetLog = {
+            id: makeId('rst'),
+            userId: currentUser.id,
+            userName: currentUser.fullName,
+            userRole: getDisplayRoleForIds(getUserRoleIds(currentUser)),
+            action: 'execute',
+            modules: analysis.selectedModules,
+            summary: {
+              ...analysis.summary,
+              deletedTotal,
+              deletedByCollection,
+            },
+            result: analysis.summary.blocked > 0 ? 'partial' : 'success',
+            errors: [],
+            observations: String(payload?.observations ?? '').trim(),
+            ip: String(payload?.ip ?? '').trim(),
+            createdAt: new Date().toISOString(),
+          };
+          state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
+          state.resetLogs.unshift(resetLog);
+          response = {
+            ok: true,
+            log: resetLog,
+            analysis,
+            deletedByCollection,
+            deletedTotal,
+          };
+          return state;
+        });
+      } catch (error) {
+        transaction((state) => {
+          state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
+          state.resetLogs.unshift({
+            id: makeId('rst'),
+            userId: preflightUser.id,
+            userName: preflightUser.fullName,
+            userRole: getDisplayRoleForIds(getUserRoleIds(preflightUser)),
+            action: 'execute',
+            modules: selectedModules.map((moduleId) => String(moduleId ?? '').trim()).filter((moduleId) => RESET_MODULE_MAP.has(moduleId)),
+            summary: { total: 0, deletable: 0, blocked: 0, critical: 0, deletedTotal: 0 },
+            result: 'error',
+            errors: [error.message || 'Error desconocido al ejecutar reset.'],
+            observations: String(payload?.observations ?? '').trim(),
+            ip: String(payload?.ip ?? '').trim(),
+            createdAt: new Date().toISOString(),
+          });
+          return state;
+        });
+        throw error;
       }
-      if (preservedClients.length > 0) {
-        nextState.clients = preservedClients;
+      return response;
+    },
+    listResetLogs: async () => {
+      const state = readState();
+      const currentUser = getCurrentSessionUser(state);
+      if (!currentUser || !isDeveloperUser(currentUser)) {
+        throw new Error('Solo el rol developer puede ver la auditoria de reset.');
       }
-      writeState(nextState);
-      return { ok: true, preservedUsers: nextState.users.length, preservedClients: nextState.clients.length };
+      return (state.resetLogs ?? []).slice(0, 50);
+    },
+    reset: async (payload) => {
+      const state = readState();
+      assertDeveloperResetAccess(state, payload?.code);
+      throw new Error('El reset general fue deshabilitado. Usa el Panel de Reset del Sistema con analisis de impacto.');
     },
   },
 

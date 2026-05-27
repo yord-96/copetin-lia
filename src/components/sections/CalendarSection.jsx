@@ -205,6 +205,33 @@ const getResponsibleTrace = (...records) => {
   };
 };
 
+const compactUniqueParts = (parts = []) => {
+  const seen = new Set();
+  return parts
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = normalizeText(part);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const buildItemsSummary = (...records) => {
+  const source = records.find((record) => Array.isArray(record?.items) && record.items.length > 0);
+  if (!source) return '';
+  return source.items
+    .slice(0, 4)
+    .map((line) => {
+      const quantity = Number(line?.quantity ?? line?.qty ?? 0);
+      const name = String(line?.itemName ?? line?.name ?? line?.title ?? 'item').trim();
+      return `${quantity > 0 ? `${quantity} ` : ''}${name}`.trim();
+    })
+    .filter(Boolean)
+    .join(', ');
+};
+
 const isDeliveryReturnLeg = (delivery, contract, rental) => {
   if (!delivery) return false;
   const text = normalizeText([
@@ -297,6 +324,17 @@ function CalendarSection({
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [eventForm, setEventForm] = useState({ ...EMPTY_EVENT_FORM, date: todayKey });
   const [formError, setFormError] = useState('');
+  const [boardContextMenu, setBoardContextMenu] = useState(null);
+  const [boardNoteTarget, setBoardNoteTarget] = useState(null);
+  const [boardNoteText, setBoardNoteText] = useState('');
+  const [boardNotes, setBoardNotes] = useState(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return JSON.parse(window.localStorage.getItem('copetin-calendar-board-notes') || '{}');
+    } catch {
+      return {};
+    }
+  });
 
   const relationshipMaps = useMemo(() => {
     const contractByRentalId = new Map();
@@ -492,10 +530,21 @@ function CalendarSection({
         const logisticsMeta = logisticsMode ? getLogisticsMeta(logisticsMode) : null;
         const eventName = event.eventName ?? contract?.eventType ?? rental?.companyName ?? delivery?.companyName;
         const customerName = event.customerName ?? rental?.customerName ?? contract?.customerName ?? delivery?.customerName;
+        const address = event.address ?? delivery?.address ?? contract?.address ?? rental?.eventAddress ?? rental?.address ?? '';
+        const city = event.city ?? delivery?.city ?? contract?.city ?? rental?.city ?? '';
         const contractCode = event.contractCode ?? contract?.contractCode;
         const orderCode = event.orderCode ?? rental?.orderCode ?? delivery?.orderCode;
         const deliveryCode = event.deliveryCode ?? delivery?.deliveryCode ?? (rawType === 'delivery' ? event.title : undefined);
         const operationLabel = event.operationLabel ?? getOperationLabel(type, logisticsMode);
+        const itemsSummary = buildItemsSummary(event, delivery, rental, contract);
+        const notesLine = compactUniqueParts([
+          event.notes,
+          delivery?.notes,
+          event.detailLine,
+          itemsSummary,
+          event.logisticsLine,
+          delivery?.vehicleId ? 'Vehiculo asignado' : '',
+        ]).join(' | ');
         const referenceLine = [
           contractCode ? `Contrato ${contractCode}` : null,
           orderCode ? `Orden ${orderCode}` : null,
@@ -515,8 +564,12 @@ function CalendarSection({
           contractCode,
           customerName,
           eventName,
+          address,
+          city,
           deliveryCode,
           operationLabel,
+          notesLine,
+          itemsSummary,
           referenceLine,
           responsibleName: responsible.name,
           responsibleRole: responsible.role,
@@ -573,6 +626,39 @@ function CalendarSection({
 
   const selectedDate = dateFromKey(selectedDateKey);
   const selectedDayEvents = useMemo(() => eventMap[selectedDateKey] ?? [], [eventMap, selectedDateKey]);
+  const selectedDispatchRows = useMemo(() => {
+    const toRow = (event) => {
+      const addressLine = [event.address, event.city].filter(Boolean).join(', ');
+      const detailLine = compactUniqueParts([
+        event.customerName || event.subtitle,
+        event.eventName,
+        event.itemsSummary,
+        event.notesLine || event.detailLine,
+        event.referenceLine,
+      ]).join(' - ');
+      const destinationLine = addressLine || event.eventName || event.title || event.customerName || event.subtitle || 'Sin destino';
+      return {
+        id: event.id,
+        type: event.type,
+        time: event.startTime || '-',
+        code: event.orderCode ?? event.contractCode ?? event.deliveryCode ?? event.relatedId ?? event.title ?? '-',
+        responsible: event.responsibleName || 'Sistema',
+        title: destinationLine,
+        details: detailLine || event.title || 'Sin detalle adicional',
+        notes: event.notesLine || event.detailLine || event.itemsSummary || event.referenceLine || 'Sin notas',
+        date: formatShortDate(event.dateKey),
+        status: getStatusMeta(event.status),
+        event,
+      };
+    };
+
+    const rows = selectedDayEvents.map(toRow);
+    return {
+      deliveries: rows.filter((row) => row.type === 'delivery'),
+      returns: rows.filter((row) => row.type === 'return'),
+      other: rows.filter((row) => row.type !== 'delivery' && row.type !== 'return'),
+    };
+  }, [selectedDayEvents]);
 
   const selectedWeekDays = useMemo(() => {
     const startOffset = (selectedDate.getDay() + 6) % 7;
@@ -693,6 +779,51 @@ function CalendarSection({
     setSelectedDateKey(dateKey || event.dateKey);
     setFormError('');
     setDetailEvent(event);
+  };
+
+  const persistBoardNotes = (nextNotes) => {
+    setBoardNotes(nextNotes);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('copetin-calendar-board-notes', JSON.stringify(nextNotes));
+    }
+  };
+
+  const openBoardContextMenu = (contextEvent, row) => {
+    contextEvent.preventDefault();
+    contextEvent.stopPropagation();
+    const menuWidth = 238;
+    const menuHeight = 168;
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 720;
+    setBoardContextMenu({
+      row,
+      x: Math.min(contextEvent.clientX, viewportWidth - menuWidth - 14),
+      y: Math.min(contextEvent.clientY, viewportHeight - menuHeight - 14),
+    });
+  };
+
+  const openBoardNoteEditor = (row) => {
+    setBoardContextMenu(null);
+    setBoardNoteTarget(row);
+    setBoardNoteText(boardNotes[row.id]?.text ?? '');
+  };
+
+  const saveBoardNote = () => {
+    if (!boardNoteTarget) return;
+    const trimmed = boardNoteText.trim();
+    const nextNotes = { ...boardNotes };
+    if (trimmed) {
+      nextNotes[boardNoteTarget.id] = {
+        text: trimmed,
+        updatedAt: new Date().toISOString(),
+        dateKey: boardNoteTarget.event?.dateKey ?? selectedDateKey,
+      };
+    } else {
+      delete nextNotes[boardNoteTarget.id];
+    }
+    persistBoardNotes(nextNotes);
+    setBoardNoteTarget(null);
+    setBoardNoteText('');
   };
 
   const getEventProgress = (event) => {
@@ -879,6 +1010,48 @@ function CalendarSection({
     </div>
   );
 
+  const renderDispatchTable = (title, rows, kind) => (
+    <section className={`calendar-dispatch-column ${kind}`}>
+      <header>
+        <div>
+          <h4>{title}</h4>
+          <p>{rows.length} registros</p>
+        </div>
+      </header>
+      <div className="calendar-dispatch-table">
+        <div className="calendar-dispatch-row calendar-dispatch-row-head">
+          <span>Hora</span>
+          <span>Codigo</span>
+          <span>Responsable</span>
+          <span>Destino</span>
+        </div>
+        {rows.map((row) => (
+          <button
+            type="button"
+            key={row.id}
+            className={`calendar-dispatch-row ${row.status.className} ${boardNotes[row.id]?.text ? 'has-board-note' : ''}`}
+            onClick={() => handleEventClick(row.event, selectedDateKey)}
+            onContextMenu={(contextEvent) => openBoardContextMenu(contextEvent, row)}
+            title="Clic derecho para ver detalles, notas o recordatorios."
+          >
+            <strong>{row.time}</strong>
+            <span>{row.code}</span>
+            <span>{row.responsible}</span>
+            <span className="calendar-dispatch-detail">
+              <b>{row.title}</b>
+            </span>
+          </button>
+        ))}
+        {rows.length === 0 ? (
+          <div className="calendar-dispatch-empty">
+            <strong>Sin {kind === 'return' ? 'recojos' : 'entregas'}</strong>
+            <span>No hay registros para esta fecha.</span>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+
   const renderCreateModal = () => {
     if (!isCreateOpen) return null;
 
@@ -939,6 +1112,100 @@ function CalendarSection({
             <button type="submit" className="primary-button">Guardar evento</button>
           </footer>
         </form>
+      </div>
+    );
+  };
+
+  const renderBoardContextMenu = () => {
+    if (!boardContextMenu) return null;
+    const { row, x, y } = boardContextMenu;
+    const savedNote = boardNotes[row.id]?.text;
+    return (
+      <div className="calendar-context-backdrop" onClick={() => setBoardContextMenu(null)}>
+        <div className="calendar-board-context-menu" style={{ left: x, top: y }} onClick={(event) => event.stopPropagation()}>
+          <strong>{row.title}</strong>
+          <small>{row.time} | {row.code}</small>
+          <button
+            type="button"
+            onClick={() => {
+              setBoardContextMenu(null);
+              handleEventClick(row.event, selectedDateKey);
+            }}
+          >
+            Ver detalle completo
+          </button>
+          <button type="button" onClick={() => openBoardNoteEditor(row)}>
+            {savedNote ? 'Ver / editar notas y recordatorios' : 'Dejar nota o recordatorio'}
+          </button>
+          {savedNote ? <p>{savedNote}</p> : null}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBoardNoteModal = () => {
+    if (!boardNoteTarget) return null;
+    const savedNote = boardNotes[boardNoteTarget.id];
+    return (
+      <div className="orders-modal-backdrop" onClick={() => setBoardNoteTarget(null)}>
+        <section className="orders-modal calendar-board-note-modal" onClick={(event) => event.stopPropagation()}>
+          <header className="orders-modal-head">
+            <div>
+              <span className="calendar-board-note-kicker">Pizarra operativa</span>
+              <h3>Notas y recordatorios</h3>
+              <p>{boardNoteTarget.time} | {boardNoteTarget.code} | {boardNoteTarget.title}</p>
+            </div>
+            <button type="button" className="orders-modal-close" onClick={() => setBoardNoteTarget(null)}>x</button>
+          </header>
+          <div className="calendar-board-note-body">
+            <article>
+              <small>Responsable</small>
+              <strong>{boardNoteTarget.responsible}</strong>
+            </article>
+            <article>
+              <small>Destino</small>
+              <strong>{boardNoteTarget.title}</strong>
+            </article>
+            <article className="wide">
+              <small>Detalle del sistema</small>
+              <strong>{boardNoteTarget.details}</strong>
+              <span>{boardNoteTarget.notes}</span>
+            </article>
+            <label className="wide">
+              Nota o recordatorio
+              <textarea
+                value={boardNoteText}
+                onChange={(event) => setBoardNoteText(event.target.value)}
+                rows={5}
+                placeholder="Ej: confirmar vajilla antes de cargar, llamar al cliente, llevar mantel extra..."
+              />
+            </label>
+            {savedNote?.updatedAt ? (
+              <p className="calendar-board-note-updated">
+                Ultima actualizacion: {new Date(savedNote.updatedAt).toLocaleString('es-BO')}
+              </p>
+            ) : null}
+          </div>
+          <footer className="orders-modal-foot">
+            <button type="button" className="ghost-button" onClick={() => setBoardNoteTarget(null)}>Cancelar</button>
+            {boardNotes[boardNoteTarget.id]?.text ? (
+              <button
+                type="button"
+                className="ghost-button danger"
+                onClick={() => {
+                  const nextNotes = { ...boardNotes };
+                  delete nextNotes[boardNoteTarget.id];
+                  persistBoardNotes(nextNotes);
+                  setBoardNoteText('');
+                  setBoardNoteTarget(null);
+                }}
+              >
+                Quitar nota
+              </button>
+            ) : null}
+            <button type="button" className="primary-button" onClick={saveBoardNote}>Guardar</button>
+          </footer>
+        </section>
       </div>
     );
   };
@@ -1204,14 +1471,35 @@ function CalendarSection({
           </footer>
         </article>
 
-        <aside className="calendar-side-card">
+        <aside className="calendar-side-card calendar-board-card">
           <header>
             <div>
-              <h3>{selectedLabel}</h3>
-              <p>{formatLongDate(selectedDateKey)}</p>
+              <h3>Pizarra operativa</h3>
             </div>
-            <span>{selectedDayEvents.length} eventos</span>
+            <span className="calendar-board-date">
+              <KpiIcon kind="calendar" />
+              {formatLongDate(selectedDateKey)}
+            </span>
           </header>
+          <div className="calendar-dispatch-board">
+            {renderDispatchTable('Entregas', selectedDispatchRows.deliveries, 'delivery')}
+            {renderDispatchTable('Recojos', selectedDispatchRows.returns, 'return')}
+          </div>
+
+          {selectedDispatchRows.other.length > 0 ? (
+            <section className="calendar-board-other">
+              <h4>Otros eventos del dia</h4>
+              <div>
+                {selectedDispatchRows.other.map((row) => (
+                  <button type="button" key={row.id} onClick={() => handleEventClick(row.event, selectedDateKey)}>
+                    <strong>{row.time}</strong>
+                    <span>{row.title}</span>
+                    <small>{row.notes}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <ul>
             {selectedDayEvents.map((event) => {
               const statusMeta = getStatusMeta(event.status);
@@ -1255,8 +1543,14 @@ function CalendarSection({
           <section className="calendar-upcoming">
             <h4>Proximos eventos</h4>
             {upcomingEvents.slice(0, 4).map((event) => (
-              <button type="button" key={event.id} onClick={() => handleEventClick(event, event.dateKey)}>
-                <span>{formatShortDate(event.dateKey)}</span>
+              <button
+                type="button"
+                key={event.id}
+                className={`calendar-upcoming-item ${getTypeMeta(event.type).className}`}
+                onClick={() => handleEventClick(event, event.dateKey)}
+              >
+                <span className="calendar-upcoming-icon"><DayEventIcon kind={event.type} /></span>
+                <span className="calendar-upcoming-date">{formatShortDate(event.dateKey)}</span>
                 <strong>
                   {event.operationLabel || event.title}
                   <small>{event.customerName || event.subtitle}{event.eventName ? ` - ${event.eventName}` : ''}</small>
@@ -1277,12 +1571,15 @@ function CalendarSection({
             </div>
           </section>
 
+          <p className="calendar-board-signature">Organizados hoy, entregamos mejor :)</p>
         </aside>
       </div>
 
       {renderCreateModal()}
       {renderDetailModal()}
       {renderDocumentPreviewModal()}
+      {renderBoardContextMenu()}
+      {renderBoardNoteModal()}
     </section>
   );
 }

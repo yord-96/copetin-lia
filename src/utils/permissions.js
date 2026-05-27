@@ -1,7 +1,7 @@
 export const ROLE_DEFINITIONS = {
-  super_admin: {
-    label: 'Super admin',
-    description: 'Acceso total al sistema, usuarios y ajustes.',
+  developer: {
+    label: 'Developer',
+    description: 'Acceso tecnico superior, mantenimiento seguro y herramientas de reset.',
     defaultTab: 'caja',
     allowedTabs: [
       'resumen',
@@ -17,6 +17,49 @@ export const ROLE_DEFINITIONS = {
       'usuarios',
       'categorias',
     ],
+  },
+  super_admin: {
+    label: 'Super admin',
+    description: 'Acceso total operativo del negocio, usuarios y ajustes.',
+    defaultTab: 'caja',
+    allowedTabs: [
+      'resumen',
+      'items',
+      'alquiler',
+      'proveedores',
+      'personal',
+      'contabilidad',
+      'inventario',
+      'devolucion',
+      'caja',
+      'recibos',
+      'usuarios',
+      'categorias',
+    ],
+  },
+  admin: {
+    label: 'Admin',
+    description: 'Administracion operativa sin herramientas tecnicas de reset.',
+    defaultTab: 'caja',
+    allowedTabs: [
+      'resumen',
+      'items',
+      'alquiler',
+      'proveedores',
+      'personal',
+      'contabilidad',
+      'inventario',
+      'devolucion',
+      'caja',
+      'recibos',
+      'categorias',
+    ],
+  },
+  user: {
+    label: 'User',
+    description: 'Acceso basico de operacion diaria.',
+    defaultTab: 'caja',
+    allowedTabs: ['resumen', 'items', 'alquiler', 'caja'],
   },
   ventas: {
     label: 'Ventas',
@@ -58,7 +101,10 @@ export const normalizeRoleId = (role) => {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
-  if (normalized.includes('admin')) return 'super_admin';
+  if (normalized === 'developer' || normalized === 'dev' || normalized.includes('desarrollador')) return 'developer';
+  if (normalized === 'super_admin' || normalized === 'superadmin' || normalized.includes('super')) return 'super_admin';
+  if (normalized === 'admin' || normalized === 'administrador') return 'admin';
+  if (normalized === 'user' || normalized === 'usuario') return 'user';
   if (normalized.includes('invent')) return 'inventario';
   if (normalized.includes('venta') || normalized.includes('comercial')) return 'ventas';
   if (normalized.includes('trans') || normalized.includes('chofer')) return 'transporte';
@@ -84,10 +130,13 @@ export const getUserRoleDefinitions = (user) => getUserRoleIds(user).map((roleId
 
 export const getUserDisplayRole = (user) => getUserRoleDefinitions(user).map((role) => role.label).join(', ');
 
+export const isDeveloper = (user) => getUserRoleIds(user).includes('developer');
+
 export const isSuperAdmin = (user) => getUserRoleIds(user).includes('super_admin');
 
 export const getDefaultTabForUser = (user) => {
   const roleIds = getUserRoleIds(user);
+  if (roleIds.includes('developer')) return ROLE_DEFINITIONS.developer.defaultTab;
   if (roleIds.includes('super_admin')) return ROLE_DEFINITIONS.super_admin.defaultTab;
   return ROLE_DEFINITIONS[getPrimaryRoleId(user)]?.defaultTab ?? ROLE_DEFINITIONS.ventas.defaultTab;
 };

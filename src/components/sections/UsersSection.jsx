@@ -3,6 +3,7 @@ import {
   ROLE_OPTIONS,
   getUserRoleDefinitions,
   getUserRoleIds,
+  isDeveloper,
   isSuperAdmin,
   normalizeRoleIds,
 } from '../../utils/permissions';
@@ -111,7 +112,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openActionsUserId, setOpenActionsUserId] = useState(null);
 
-  const canManageUsers = isSuperAdmin(currentUser);
+  const canManageUsers = isDeveloper(currentUser) || isSuperAdmin(currentUser);
 
   const filteredRows = useMemo(() => {
     const text = String(query ?? '').trim().toLowerCase();

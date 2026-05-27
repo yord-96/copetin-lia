@@ -7,8 +7,9 @@ import TopBar from './components/layout/TopBar';
 import TabsNav, { MobileNavigation } from './components/layout/TabsNav';
 import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
+import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
-import { canAccessTab, getAllowedTabRoots, getDefaultTabForUser, isSuperAdmin } from './utils/permissions';
+import { canAccessTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
 const SIDEBAR_SEEN_STORAGE_KEY = 'copetin-sidebar-seen-counts-v3-empty';
 const DEFAULT_SIDEBAR_SEEN_COUNTS = { inventario: 0, devolucion: 0 };
@@ -67,9 +68,6 @@ const saveSidebarSeenCounts = (counts) => {
 function App() {
   const controller = useAppController();
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
-  const [resetCodeInput, setResetCodeInput] = useState('');
-  const [resetDialogError, setResetDialogError] = useState('');
-  const [isResetting, setIsResetting] = useState(false);
   const [sidebarSeenCounts, setSidebarSeenCounts] = useState(readSidebarSeenCounts);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const allowedTabRoots = useMemo(
@@ -161,34 +159,12 @@ function App() {
   };
 
   const openResetDialog = () => {
-    if (!isSuperAdmin(controller.currentUser)) return;
-    setResetDialogError('');
-    setResetCodeInput('');
+    if (!isDeveloper(controller.currentUser)) return;
     setIsResetDialogOpen(true);
   };
 
   const closeResetDialog = () => {
-    if (isResetting) {
-      return;
-    }
     setIsResetDialogOpen(false);
-    setResetDialogError('');
-    setResetCodeInput('');
-  };
-
-  const handleResetSubmit = async (event) => {
-    event.preventDefault();
-    setResetDialogError('');
-    setIsResetting(true);
-    const ok = await controller.handleSystemReset(resetCodeInput);
-    setIsResetting(false);
-
-    if (ok) {
-      closeResetDialog();
-      return;
-    }
-
-    setResetDialogError('No se pudo reiniciar la informacion.');
   };
 
   const renderWorkspaceContent = () => {
@@ -474,7 +450,7 @@ function App() {
             onOpenResetDialog={openResetDialog}
             currentUser={controller.currentUser}
             onLogout={controller.handleLogout}
-            canReset={isSuperAdmin(controller.currentUser)}
+            canReset={isDeveloper(controller.currentUser)}
             userPresence={controller.userPresence}
             activeTab={controller.activeTab}
           />
@@ -502,32 +478,12 @@ function App() {
       <ImageModal imagePreview={controller.imagePreview} onClose={() => controller.setImagePreview(null)} />
 
       {isResetDialogOpen && (
-        <div className="reset-modal-backdrop" onClick={closeResetDialog}>
-          <form className="reset-modal" onSubmit={handleResetSubmit} onClick={(event) => event.stopPropagation()}>
-            <h3>Reset general</h3>
-            <p>Ingresa el codigo de seguridad para borrar toda la informacion operativa y empezar desde cero. Se conservaran los usuarios de login y los datos de clientes.</p>
-            <label>
-              Codigo
-              <input
-                type="password"
-                value={resetCodeInput}
-                onChange={(event) => setResetCodeInput(event.target.value)}
-                placeholder="****"
-                autoFocus
-                required
-              />
-            </label>
-            {resetDialogError && <p className="status error reset-modal-error">{resetDialogError}</p>}
-            <div className="reset-modal-actions">
-              <button type="button" className="ghost-button" onClick={closeResetDialog} disabled={isResetting}>
-                Cancelar
-              </button>
-              <button type="submit" className="danger-button" disabled={isResetting}>
-                {isResetting ? 'Reseteando...' : 'Resetear'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <SystemResetPanel
+          onClose={closeResetDialog}
+          onVerify={controller.handleVerifyResetAccess}
+          onAnalyze={controller.handleAnalyzeSystemReset}
+          onExecute={controller.handleExecuteSystemReset}
+        />
       )}
     </div>
   );

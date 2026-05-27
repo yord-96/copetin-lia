@@ -1488,23 +1488,59 @@ export const useAppController = () => {
     }
   };
 
-  const handleSystemReset = async (securityCode) => {
-    const code = String(securityCode ?? '').trim();
-    if (!code) {
-      setError('Debes ingresar el codigo de seguridad.');
-      return false;
+  const handleVerifyResetAccess = async ({ code }) => {
+    const cleanCode = String(code ?? '').trim();
+    if (!cleanCode) {
+      setError('Debes ingresar la contrasena de seguridad.');
+      throw new Error('Debes ingresar la contrasena de seguridad.');
     }
 
     setError('');
     try {
-      await api.system.reset({ code });
+      return await api.system.verifyResetAccess({ code: cleanCode });
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo validar el acceso al reset.');
+      throw requestError;
+    }
+  };
+
+  const handleAnalyzeSystemReset = async ({ code, modules }) => {
+    const cleanCode = String(code ?? '').trim();
+    if (!cleanCode) {
+      setError('Debes ingresar la contrasena de seguridad.');
+      throw new Error('Debes ingresar la contrasena de seguridad.');
+    }
+    if (!Array.isArray(modules) || modules.length === 0) {
+      setError('Selecciona al menos un modulo para analizar.');
+      throw new Error('Selecciona al menos un modulo para analizar.');
+    }
+
+    setError('');
+    try {
+      return await api.system.analyzeReset({ code: cleanCode, modules });
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo analizar el impacto del reset.');
+      throw requestError;
+    }
+  };
+
+  const handleExecuteSystemReset = async ({ code, modules, confirmation, observations }) => {
+    const cleanCode = String(code ?? '').trim();
+    if (!cleanCode) {
+      setError('Debes ingresar la contrasena de seguridad.');
+      throw new Error('Debes ingresar la contrasena de seguridad.');
+    }
+
+    setError('');
+    try {
+      const result = await api.system.executeReset({ code: cleanCode, modules, confirmation, observations });
       setActiveTab('caja');
       setImagePreview(null);
       await loadData();
-      return true;
+      return result;
     } catch (requestError) {
-      setError(requestError.message || 'No se pudo reiniciar la informacion.');
-      return false;
+      setError(requestError.message || 'No se pudo ejecutar el reset seleccionado.');
+      throw requestError;
     }
   };
 
@@ -1612,6 +1648,8 @@ export const useAppController = () => {
     handlePrintRouteSheetDocument,
     handlePrintRentalReceipt,
     handlePrintReturnReceipt,
-    handleSystemReset,
+    handleVerifyResetAccess,
+    handleAnalyzeSystemReset,
+    handleExecuteSystemReset,
   };
 };

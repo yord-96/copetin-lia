@@ -66,9 +66,9 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
               type="button"
               className="admin-reset-button"
               onClick={onOpenResetDialog}
-              title="Reset general del sistema"
+              title="Panel de Reset del Sistema"
             >
-              Reset general
+              Panel Reset
             </button>
           ) : null}
           <div className="user-pill">
