@@ -20,7 +20,7 @@ export const ROLE_DEFINITIONS = {
   },
   super_admin: {
     label: 'Super admin',
-    description: 'Acceso total operativo del negocio, usuarios y ajustes.',
+    description: 'Acceso total operativo del negocio y ajustes, sin gestion tecnica de usuarios.',
     defaultTab: 'caja',
     allowedTabs: [
       'resumen',
@@ -33,7 +33,6 @@ export const ROLE_DEFINITIONS = {
       'devolucion',
       'caja',
       'recibos',
-      'usuarios',
       'categorias',
     ],
   },

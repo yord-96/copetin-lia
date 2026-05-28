@@ -17,7 +17,7 @@ const ROLE_DEFINITIONS = {
   super_admin: {
     label: 'Super admin',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias'],
   },
   admin: {
     label: 'Admin',
@@ -185,7 +185,7 @@ const detectDeviceInfo = () => {
   const isTablet = /iPad|Tablet/i.test(userAgent) || (hasTouch && Math.min(width, height) >= 700);
   const isMobile = /Android|iPhone|iPod|Mobile/i.test(userAgent) && !isTablet;
   const type = isTablet ? 'tablet' : isMobile ? 'mobile' : 'desktop';
-  const typeLabel = type === 'mobile' ? 'Celular' : type === 'tablet' ? 'Tablet' : 'Computadora';
+  const typeLabel = type === 'mobile' ? 'Celular' : type === 'tablet' ? 'Tablet' : 'PC';
   const browser = getBrowserName(userAgent);
   const os = getOsName(userAgent, platform);
 
@@ -1804,6 +1804,14 @@ const assertDeveloperResetAccess = (state, code) => {
   const cleanCode = String(code ?? '').trim();
   if (!RESET_SECURITY_CODE || cleanCode !== RESET_SECURITY_CODE) {
     throw new Error('Contrasena de seguridad incorrecta.');
+  }
+  return currentUser;
+};
+
+const assertDeveloperUserManagementAccess = (state) => {
+  const currentUser = getCurrentSessionUser(state);
+  if (!currentUser || !isDeveloperUser(currentUser) || currentUser.status !== 'active') {
+    throw new Error('Solo el rol developer puede gestionar usuarios.');
   }
   return currentUser;
 };
@@ -4488,6 +4496,7 @@ const createWebBridge = () => ({
 
       let created = null;
       transaction((state) => {
+        assertDeveloperUserManagementAccess(state);
         if (state.users.some((user) => user.username === username)) {
           throw new Error('Ya existe un usuario con ese nombre de usuario.');
         }
@@ -4524,6 +4533,7 @@ const createWebBridge = () => ({
 
       let updated = null;
       transaction((state) => {
+        assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id);
         if (!user) throw new Error('Usuario no encontrado.');
         if (readSessionUserId() === user.id && payload.status === 'suspended') {
@@ -4738,6 +4748,7 @@ const createWebBridge = () => ({
 
       let removed = null;
       transaction((state) => {
+        assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id && !entry.deletedAt);
         if (!user) throw new Error('Usuario no encontrado.');
         if (readSessionUserId() === user.id) {
@@ -4777,6 +4788,7 @@ const createWebBridge = () => ({
 
       let result = null;
       transaction((state) => {
+        assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id);
         if (!user) throw new Error('Usuario no encontrado.');
         user.status = 'invited';

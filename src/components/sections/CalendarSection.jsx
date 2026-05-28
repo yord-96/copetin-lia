@@ -327,6 +327,7 @@ function CalendarSection({
   const [boardContextMenu, setBoardContextMenu] = useState(null);
   const [boardNoteTarget, setBoardNoteTarget] = useState(null);
   const [boardNoteText, setBoardNoteText] = useState('');
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
   const [boardNotes, setBoardNotes] = useState(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -728,12 +729,38 @@ function CalendarSection({
 
   const selectedLabel = selectedDateKey ? formatShortDate(selectedDateKey) : '-';
   const monthTitle = `${monthNames[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
+  const pickerYears = useMemo(() => {
+    const currentYear = today.getFullYear();
+    return Array.from({ length: 7 }, (_, index) => currentYear - 3 + index);
+  }, [today]);
+
+  const getLinkedContext = (event) => {
+    if (!event) return { contract: null, rental: null };
+    const rental =
+      relationshipMaps.rentalById.get(event.rentalId)
+      ?? relationshipMaps.rentalByOrderCode.get(event.orderCode);
+    const contract =
+      relationshipMaps.contractById.get(event.contractId)
+      ?? relationshipMaps.contractByCode.get(event.contractCode)
+      ?? relationshipMaps.contractByRentalId.get(rental?.id)
+      ?? relationshipMaps.contractByOrderCode.get(rental?.orderCode ?? event.orderCode);
+
+    return { contract, rental };
+  };
 
   const goToday = () => {
     const now = new Date();
     const key = toDateKey(now);
     setMonthDate(new Date(now.getFullYear(), now.getMonth(), 1));
     setSelectedDateKey(key);
+    setIsMonthPickerOpen(false);
+  };
+
+  const jumpToMonth = (year, monthIndex) => {
+    const nextDate = new Date(year, monthIndex, 1);
+    setMonthDate(nextDate);
+    setSelectedDateKey(toDateKey(nextDate));
+    setIsMonthPickerOpen(false);
   };
 
   const openCreateModal = () => {
@@ -857,6 +884,125 @@ function CalendarSection({
     return statusProgress;
   };
 
+  const isEventCompleted = (event) => getStatusMeta(event?.status).className === 'done' || getEventProgress(event) >= 100;
+
+  const hasSameOperationalReference = (left, right) => Boolean(
+    (left?.rentalId && right?.rentalId && left.rentalId === right.rentalId)
+    || (left?.orderCode && right?.orderCode && left.orderCode === right.orderCode)
+    || (left?.contractId && right?.contractId && left.contractId === right.contractId)
+    || (left?.contractCode && right?.contractCode && left.contractCode === right.contractCode)
+  );
+
+  const getRelatedDeliveryEvent = (event) => {
+    const relatedDeliveries = normalizedEvents
+      .filter((candidate) => (
+        candidate.type === 'delivery'
+        && candidate.dateKey <= event.dateKey
+        && hasSameOperationalReference(candidate, event)
+      ))
+      .sort((left, right) => `${left.dateKey}T${left.startTime}`.localeCompare(`${right.dateKey}T${right.startTime}`, 'es'));
+    return relatedDeliveries[relatedDeliveries.length - 1] ?? null;
+  };
+
+  const getOperationalAlertForEvent = (event) => {
+    if (!event || !['delivery', 'return'].includes(event.type)) return null;
+    const eventDateKey = event.dateKey || toDateKey(event.date);
+    if (!eventDateKey || eventDateKey > todayKey) return null;
+
+    const { contract, rental } = getLinkedContext(event);
+    const logisticsMode = event.logisticsMode ?? contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
+    const operational = rental?.operational ?? {};
+    const blockers = [];
+    const progress = getEventProgress(event);
+    const severity = eventDateKey < todayKey ? 'critical' : 'warning';
+
+    if (event.type === 'delivery') {
+      if (isEventCompleted(event)) return null;
+
+      const inventoryProgress = getOperationalProgressValue(operational.inventoryStatus, { noAplicaComplete: false });
+      if (inventoryProgress < 100) {
+        blockers.push({
+          area: 'Inventario',
+          detail: getOperationalStatusMeta('inventory', operational.inventoryStatus).detail,
+        });
+      }
+
+      if (logisticsMode !== 'recojo') {
+        const transportProgress = getOperationalProgressValue(operational.transportStatus, { noAplicaComplete: false });
+        if (transportProgress < 100) {
+          blockers.push({
+            area: 'Transporte',
+            detail: getOperationalStatusMeta('transport', operational.transportStatus).detail,
+          });
+        }
+      }
+
+      if (!blockers.length) {
+        blockers.push({
+          area: 'Operacion',
+          detail: 'La entrega no fue marcada como completada.',
+        });
+      }
+
+      return {
+        id: `delivery-alert-${event.id}`,
+        event,
+        severity,
+        title: 'Entrega incompleta',
+        reason: 'No se completo antes del recojo o cierre del evento.',
+        blockers,
+        progress,
+        dateKey: eventDateKey,
+      };
+    }
+
+    const relatedDelivery = getRelatedDeliveryEvent(event);
+    const deliveryIsCompleted = relatedDelivery ? isEventCompleted(relatedDelivery) : false;
+    const returnIsCompleted = isEventCompleted(event);
+
+    if (!deliveryIsCompleted) {
+      blockers.push({
+        area: 'Entrega previa',
+        detail: relatedDelivery
+          ? `La entrega vinculada quedo en ${getEventProgress(relatedDelivery)}%.`
+          : 'No se encontro una entrega completada para este recojo.',
+      });
+    }
+
+    if (!returnIsCompleted && logisticsMode !== 'recojo') {
+      const transportProgress = getOperationalProgressValue(operational.transportStatus, { noAplicaComplete: false });
+      if (transportProgress < 100) {
+        blockers.push({
+          area: 'Transporte',
+          detail: getOperationalStatusMeta('transport', operational.transportStatus).detail,
+        });
+      }
+    }
+
+    if (!blockers.length) return null;
+
+    return {
+      id: `return-alert-${event.id}`,
+      event,
+      severity,
+      title: deliveryIsCompleted ? 'Recojo pendiente' : 'Recojo con entrega incompleta',
+      reason: deliveryIsCompleted
+        ? 'El recojo aun no fue confirmado.'
+        : 'Antes de recoger, confirma que realmente se entrego al cliente.',
+      blockers,
+      progress,
+      dateKey: eventDateKey,
+    };
+  };
+
+  const operationalAlerts = useMemo(() => (
+    normalizedEvents
+      .map(getOperationalAlertForEvent)
+      .filter(Boolean)
+      .sort((left, right) => `${right.dateKey}T${right.event.startTime}`.localeCompare(`${left.dateKey}T${left.event.startTime}`, 'es'))
+      .slice(0, 6)
+  ), [contracts, normalizedEvents, rentals, todayKey]);
+
   const getDaySummary = (dayEvents = []) => {
     const groupedByType = dayEvents.reduce(
       (acc, event) => {
@@ -918,15 +1064,23 @@ function CalendarSection({
       <div className="calendar-days">
         {monthGrid.map((cell) => {
           const summary = getDaySummary(cell.events);
+          const alertCount = normalizedEvents
+            .filter((event) => event.dateKey === cell.id)
+            .filter((event) => getOperationalAlertForEvent(event)).length;
 
           return (
             <button
               type="button"
               key={cell.id}
-              className={`calendar-day ${cell.inCurrentMonth ? '' : 'muted'} ${selectedDateKey === cell.id ? 'selected' : ''} ${cell.isToday ? 'today' : ''}`}
+              className={`calendar-day ${cell.inCurrentMonth ? '' : 'muted'} ${selectedDateKey === cell.id ? 'selected' : ''} ${cell.isToday ? 'today' : ''} ${alertCount ? 'has-operational-alert' : ''}`}
               onClick={() => setSelectedDateKey(cell.id)}
             >
               <span className="day-number">{cell.day}</span>
+              {alertCount ? (
+                <span className="calendar-day-alert-dot" title={`${alertCount} alerta${alertCount === 1 ? '' : 's'} operativa${alertCount === 1 ? '' : 's'}`}>
+                  {alertCount}
+                </span>
+              ) : null}
               {cell.events.length > 0 ? (
                 <div className="calendar-day-bubbles" aria-label={`${cell.events.length} eventos`}>
                   {summary.byType.map((item) => (
@@ -1025,23 +1179,27 @@ function CalendarSection({
           <span>Responsable</span>
           <span>Destino</span>
         </div>
-        {rows.map((row) => (
-          <button
-            type="button"
-            key={row.id}
-            className={`calendar-dispatch-row ${row.status.className} ${boardNotes[row.id]?.text ? 'has-board-note' : ''}`}
-            onClick={() => handleEventClick(row.event, selectedDateKey)}
-            onContextMenu={(contextEvent) => openBoardContextMenu(contextEvent, row)}
-            title="Clic derecho para ver detalles, notas o recordatorios."
-          >
-            <strong>{row.time}</strong>
-            <span>{row.code}</span>
-            <span>{row.responsible}</span>
-            <span className="calendar-dispatch-detail">
-              <b>{row.title}</b>
-            </span>
-          </button>
-        ))}
+        {rows.map((row) => {
+          const rowAlert = getOperationalAlertForEvent(row.event);
+          return (
+            <button
+              type="button"
+              key={row.id}
+              className={`calendar-dispatch-row ${row.status.className} ${boardNotes[row.id]?.text ? 'has-board-note' : ''} ${rowAlert ? `has-operational-alert ${rowAlert.severity}` : ''}`}
+              onClick={() => handleEventClick(row.event, selectedDateKey)}
+              onContextMenu={(contextEvent) => openBoardContextMenu(contextEvent, row)}
+              title="Clic derecho para ver detalles, notas o recordatorios."
+            >
+              <strong>{row.time}</strong>
+              <span>{row.code}</span>
+              <span>{row.responsible}</span>
+              <span className="calendar-dispatch-detail">
+                <b>{row.title}</b>
+                {rowAlert ? <small className="calendar-dispatch-warning">Alerta operativa</small> : null}
+              </span>
+            </button>
+          );
+        })}
         {rows.length === 0 ? (
           <div className="calendar-dispatch-empty">
             <strong>Sin {kind === 'return' ? 'recojos' : 'entregas'}</strong>
@@ -1210,19 +1368,71 @@ function CalendarSection({
     );
   };
 
-  const getLinkedContext = (event) => {
-    if (!event) return { contract: null, rental: null };
-    const rental =
-      relationshipMaps.rentalById.get(event.rentalId)
-      ?? relationshipMaps.rentalByOrderCode.get(event.orderCode);
-    const contract =
-      relationshipMaps.contractById.get(event.contractId)
-      ?? relationshipMaps.contractByCode.get(event.contractCode)
-      ?? relationshipMaps.contractByRentalId.get(rental?.id)
-      ?? relationshipMaps.contractByOrderCode.get(rental?.orderCode ?? event.orderCode);
+  const renderOperationalAlertsPanel = () => (
+    <section className={`calendar-main-alerts ${operationalAlerts.length ? 'has-alerts' : ''}`}>
+      <header>
+        <div>
+          <h4>Alertas operativas</h4>
+          <p>Entregas, recojos y responsables con pasos pendientes.</p>
+        </div>
+        <strong>{operationalAlerts.length} alerta{operationalAlerts.length === 1 ? '' : 's'}</strong>
+      </header>
+      <div>
+        {operationalAlerts.map((alert) => (
+          <button
+            type="button"
+            key={alert.id}
+            className={alert.severity}
+            onClick={() => handleEventClick(alert.event, alert.event.dateKey)}
+          >
+            <span>{alert.severity === 'critical' ? '!' : 'i'}</span>
+            <span>
+              <b>{alert.title}</b>
+              <small>{formatShortDate(alert.dateKey)} | {alert.event.startTime} | {alert.event.customerName || alert.event.subtitle || 'Cliente sin registrar'}</small>
+              <em>{alert.reason}</em>
+              <small className="calendar-alert-blockers">
+                {alert.blockers.map((blocker) => blocker.area).join(' / ')} | Avance {alert.progress}%
+              </small>
+            </span>
+          </button>
+        ))}
+        {operationalAlerts.length === 0 ? (
+          <article>
+            <strong>Sin pendientes operativos</strong>
+            <small>Si una entrega vence incompleta o un recojo depende de una entrega no realizada, aparecera aqui.</small>
+          </article>
+        ) : null}
+      </div>
+    </section>
+  );
 
-    return { contract, rental };
-  };
+  const renderOtherEventsPanel = () => (
+    <section className="calendar-main-other-events">
+      <header>
+        <div>
+          <h4>Otros eventos del dia</h4>
+          <p>{selectedLabel} | {selectedDispatchRows.other.length} registro{selectedDispatchRows.other.length === 1 ? '' : 's'}</p>
+        </div>
+      </header>
+      <div>
+        {selectedDispatchRows.other.map((row) => (
+          <button type="button" key={row.id} onClick={() => handleEventClick(row.event, selectedDateKey)}>
+            <strong>{row.time}</strong>
+            <span>
+              <b>{row.title}</b>
+              <small>{row.notes}</small>
+            </span>
+          </button>
+        ))}
+        {selectedDispatchRows.other.length === 0 ? (
+          <article>
+            <strong>Sin eventos adicionales</strong>
+            <small>Mantenimientos, vencimientos y recordatorios apareceran aqui al seleccionar una fecha.</small>
+          </article>
+        ) : null}
+      </div>
+    </section>
+  );
 
   const openLinkedContract = async (event) => {
     try {
@@ -1259,6 +1469,7 @@ function CalendarSection({
     const inventoryStatus = getOperationalStatusMeta('inventory', operational.inventoryStatus);
     const transportStatus = getOperationalStatusMeta('transport', operational.transportStatus);
     const detailProgress = getEventProgress(detailEvent);
+    const detailAlert = getOperationalAlertForEvent(detailEvent);
 
     return (
       <div className="orders-modal-backdrop" onClick={() => setDetailEvent(null)}>
@@ -1271,6 +1482,15 @@ function CalendarSection({
             <button type="button" className="orders-modal-close" onClick={() => setDetailEvent(null)}>x</button>
           </header>
           {formError ? <p className="status error calendar-detail-error">{formError}</p> : null}
+          {detailAlert ? (
+            <div className={`calendar-detail-operational-alert ${detailAlert.severity}`}>
+              <strong>{detailAlert.title}</strong>
+              <span>{detailAlert.reason}</span>
+              <small>
+                Pendiente: {detailAlert.blockers.map((blocker) => `${blocker.area}: ${blocker.detail}`).join(' | ')}
+              </small>
+            </div>
+          ) : null}
           <div className="calendar-detail-body">
             <article>
               <small>Horario</small>
@@ -1425,7 +1645,7 @@ function CalendarSection({
         </article>
         <article className="calendar-kpi-card peach">
           <span className="calendar-kpi-icon peach"><KpiIcon kind="clock" /></span>
-          <strong>{metrics.late}</strong>
+          <strong>{Math.max(metrics.late, operationalAlerts.length)}</strong>
           <p>Alertas retrasadas</p>
           <button type="button" onClick={() => setViewMode('day')}>Ver alertas {'->'}</button>
         </article>
@@ -1441,20 +1661,68 @@ function CalendarSection({
                 </button>
               ))}
             </div>
+          </header>
+
+          <div className="calendar-nav-strip">
+            <span className="calendar-nav-spacer" aria-hidden="true" />
+            <div className="calendar-month-bar">
+              <button type="button" onClick={() => {
+                setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1));
+                setIsMonthPickerOpen(false);
+              }}>{'<'}</button>
+              <div>
+                <button
+                  type="button"
+                  className="calendar-month-title-button"
+                  onClick={() => setIsMonthPickerOpen((current) => !current)}
+                  aria-expanded={isMonthPickerOpen}
+                >
+                  <h3>{monthTitle}</h3>
+                </button>
+                <p>{typeFilter === 'all' ? 'Todos los eventos' : EVENT_TYPE_META[typeFilter]?.label}</p>
+                {isMonthPickerOpen ? (
+                  <div className="calendar-month-picker">
+                    <header>
+                      <strong>Ir a mes</strong>
+                      <button type="button" onClick={goToday}>Hoy</button>
+                    </header>
+                    <div className="calendar-year-row">
+                      {pickerYears.map((year) => (
+                        <button
+                          type="button"
+                          key={year}
+                          className={monthDate.getFullYear() === year ? 'active' : ''}
+                          onClick={() => setMonthDate(new Date(year, monthDate.getMonth(), 1))}
+                        >
+                          {year}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="calendar-month-grid-picker">
+                      {monthNames.map((name, index) => (
+                        <button
+                          type="button"
+                          key={name}
+                          className={monthDate.getMonth() === index ? 'active' : ''}
+                          onClick={() => jumpToMonth(monthDate.getFullYear(), index)}
+                        >
+                          {name.slice(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <button type="button" onClick={() => {
+                setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1));
+                setIsMonthPickerOpen(false);
+              }}>{'>'}</button>
+            </div>
             <div className="calendar-view-toggle">
               <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mes</button>
               <button type="button" className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Semana</button>
               <button type="button" className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Dia</button>
             </div>
-          </header>
-
-          <div className="calendar-month-bar">
-            <button type="button" onClick={() => setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1))}>{'<'}</button>
-            <div>
-              <h3>{monthTitle}</h3>
-              <p>{typeFilter === 'all' ? 'Todos los eventos' : EVENT_TYPE_META[typeFilter]?.label}</p>
-            </div>
-            <button type="button" onClick={() => setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1))}>{'>'}</button>
           </div>
 
           {viewMode === 'month' ? renderMonthView() : viewMode === 'week' ? renderWeekView() : renderDayView()}
@@ -1469,6 +1737,9 @@ function CalendarSection({
             <span><i className="license" /> Vencimiento</span>
             <span><i className="other" /> Otro</span>
           </footer>
+
+          {renderOperationalAlertsPanel()}
+          {renderOtherEventsPanel()}
         </article>
 
         <aside className="calendar-side-card calendar-board-card">
@@ -1485,21 +1756,6 @@ function CalendarSection({
             {renderDispatchTable('Entregas', selectedDispatchRows.deliveries, 'delivery')}
             {renderDispatchTable('Recojos', selectedDispatchRows.returns, 'return')}
           </div>
-
-          {selectedDispatchRows.other.length > 0 ? (
-            <section className="calendar-board-other">
-              <h4>Otros eventos del dia</h4>
-              <div>
-                {selectedDispatchRows.other.map((row) => (
-                  <button type="button" key={row.id} onClick={() => handleEventClick(row.event, selectedDateKey)}>
-                    <strong>{row.time}</strong>
-                    <span>{row.title}</span>
-                    <small>{row.notes}</small>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
           <ul>
             {selectedDayEvents.map((event) => {
               const statusMeta = getStatusMeta(event.status);

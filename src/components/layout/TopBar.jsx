@@ -34,11 +34,14 @@ const PAGE_LABELS = {
 const shortName = (name) => String(name ?? 'Usuario').split(' ').filter(Boolean).slice(0, 2).join(' ') || 'Usuario';
 
 const deviceLabel = (device) =>
-  String(device?.label ?? device?.typeLabel ?? 'Dispositivo').trim() || 'Dispositivo';
+  String(device?.label ?? device?.typeLabel ?? 'Dispositivo')
+    .replace(/^Computadora\b/i, 'PC')
+    .trim() || 'Dispositivo';
 
 function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = false, userPresence = [], activeTab = '' }) {
   const activeUsersHere = userPresence.filter((entry) => entry.activeTab === activeTab);
   const currentDevice = deviceLabel(currentUser?.device);
+  const visiblePresence = userPresence.slice(0, 3);
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -48,25 +51,38 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
         </div>
         <div className="top-actions">
           <span className="mode-pill mode-pill-web">Modo Web</span>
-          <div className="presence-strip" title="Usuarios activos ahora">
-            <strong>Activos</strong>
-            {userPresence.length > 0 ? userPresence.slice(0, 4).map((entry) => (
-              <span
-                key={entry.sessionId ?? entry.userId}
-                className={entry.activeTab === activeTab ? 'active' : ''}
-                style={{ '--presence-color': entry.color }}
-                title={`${entry.fullName} - ${entry.role} - ${deviceLabel(entry.device)} - ${PAGE_LABELS[entry.activeTab] ?? entry.activeTab}`}
-              >
-                <i>{initialsFromName(entry.fullName)}</i>
-                <b>{shortName(entry.fullName)}</b>
-                <em>
+          <div className="presence-strip" aria-label="Sesiones activas ahora">
+            <div className="presence-summary">
+              <strong>Activos</strong>
+              <small>{userPresence.length || 1} sesion{(userPresence.length || 1) === 1 ? '' : 'es'}</small>
+            </div>
+            <div className="presence-session-list">
+              {visiblePresence.length > 0 ? visiblePresence.map((entry) => (
+                <span
+                  key={entry.sessionId ?? entry.userId}
+                  className={entry.activeTab === activeTab ? 'active' : ''}
+                  style={{ '--presence-color': entry.color }}
+                >
+                  <i>{initialsFromName(entry.fullName)}</i>
+                  <b>{shortName(entry.fullName)}</b>
+                  <em>{entry.role}</em>
                   <small>{deviceLabel(entry.device)}</small>
                   <small>{PAGE_LABELS[entry.activeTab] ?? entry.activeTab ?? 'Sistema'}</small>
-                </em>
-              </span>
-            )) : <small>Solo tu sesion</small>}
-            {userPresence.length > 4 ? <small>+{userPresence.length - 4}</small> : null}
-            {activeUsersHere.length > 0 ? <small>{activeUsersHere.length} aqui</small> : null}
+                </span>
+              )) : (
+                <span className="presence-empty">
+                  <i>{initialsFromName(currentUser?.fullName)}</i>
+                  <b>{shortName(currentUser?.fullName)}</b>
+                  <em>{currentUser?.role ?? 'Operador'}</em>
+                  <small>{currentDevice}</small>
+                  <small>{PAGE_LABELS[activeTab] ?? 'Sistema'}</small>
+                </span>
+              )}
+            </div>
+            <div className="presence-meta">
+              {userPresence.length > visiblePresence.length ? <small>+{userPresence.length - visiblePresence.length}</small> : null}
+              {activeUsersHere.length > 0 ? <small>{activeUsersHere.length} aqui</small> : null}
+            </div>
           </div>
           {canReset ? (
             <button
@@ -82,7 +98,7 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
             <span className="user-avatar">{initialsFromName(currentUser?.fullName)}</span>
             <div className="user-meta">
               <strong>{currentUser?.fullName ?? 'Usuario'}</strong>
-              <span>{currentUser?.role ?? 'Operador'} · {currentDevice}</span>
+              <span>{currentUser?.role ?? 'Operador'} - {currentDevice}</span>
             </div>
             <button type="button" className="top-logout-button" onClick={onLogout}>Salir</button>
           </div>
@@ -93,3 +109,4 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
 }
 
 export default TopBar;
+
