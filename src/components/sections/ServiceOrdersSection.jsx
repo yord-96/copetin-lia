@@ -2820,7 +2820,7 @@ function ServiceOrdersSection({
             </div>
 
             <div className="orders-table-wrap">
-              <table className="orders-table">
+              <table className="orders-table orders-commercial-table">
                 <thead>
                   <tr>
                     <th>Cotizacion</th>
@@ -2970,7 +2970,7 @@ function ServiceOrdersSection({
             </div>
 
             <div className="orders-table-wrap">
-              <table className="orders-table">
+              <table className="orders-table orders-commercial-table orders-contracts-table">
                 <thead>
                   <tr>
                     <th>Contrato</th>

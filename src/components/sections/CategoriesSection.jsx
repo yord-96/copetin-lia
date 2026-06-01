@@ -2,6 +2,34 @@ import { useEffect, useMemo, useState } from 'react';
 
 const settingsTabs = ['Empresa', 'Inventario', 'Transporte', 'Documentos', 'Notificaciones', 'Seguridad', 'Sistema'];
 
+const buildSettingsDraft = (settings) => ({
+  companyName: settings.companyName ?? '',
+  taxId: settings.taxId ?? '',
+  address: settings.address ?? '',
+  phone: settings.phone ?? '',
+  email: settings.email ?? '',
+  website: settings.website ?? '',
+  timezone: settings.timezone ?? 'America/Argentina/Buenos_Aires',
+  dateFormat: settings.dateFormat ?? 'DD/MM/YYYY',
+  timeFormat: settings.timeFormat ?? '24h',
+  language: settings.language ?? 'es',
+  currency: settings.currency ?? 'BOB',
+  fiscalCondition: settings.fiscalCondition ?? 'Responsable Inscripto',
+  activityStartDate: settings.activityStartDate ?? '',
+  contractCancellationPenaltyPercent: Number(settings.contractCancellationPenaltyPercent ?? 20),
+  numbering: {
+    serviceOrderPrefix: settings.numbering?.serviceOrderPrefix ?? 'OS-',
+    serviceOrderNext: settings.numbering?.serviceOrderNext ?? 1,
+    deliveryPrefix: settings.numbering?.deliveryPrefix ?? 'ENT-',
+    deliveryNext: settings.numbering?.deliveryNext ?? 1,
+    adjustmentPrefix: settings.numbering?.adjustmentPrefix ?? 'AJ-',
+    adjustmentNext: settings.numbering?.adjustmentNext ?? 1,
+    movementPrefix: settings.numbering?.movementPrefix ?? 'MOV-',
+    movementNext: settings.numbering?.movementNext ?? 1,
+  },
+  backupMode: settings.backupMode ?? 'automatico',
+});
+
 function SettingsIcon({ kind }) {
   if (kind === 'gear') {
     return (
@@ -42,39 +70,14 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
   const settings = settingsBundle?.settings ?? null;
   const categories = settingsBundle?.categories ?? [];
   const [form, setForm] = useState(null);
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
-    // Settings can be replaced by cross-tab sync, so the editable draft must follow the latest persisted version.
+    if (isDirty) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setForm({
-      companyName: settings.companyName ?? '',
-      taxId: settings.taxId ?? '',
-      address: settings.address ?? '',
-      phone: settings.phone ?? '',
-      email: settings.email ?? '',
-      website: settings.website ?? '',
-      timezone: settings.timezone ?? 'America/Argentina/Buenos_Aires',
-      dateFormat: settings.dateFormat ?? 'DD/MM/YYYY',
-      timeFormat: settings.timeFormat ?? '24h',
-      language: settings.language ?? 'es',
-      currency: settings.currency ?? 'BOB',
-      fiscalCondition: settings.fiscalCondition ?? 'Responsable Inscripto',
-      activityStartDate: settings.activityStartDate ?? '',
-      contractCancellationPenaltyPercent: Number(settings.contractCancellationPenaltyPercent ?? 20),
-      numbering: {
-        serviceOrderPrefix: settings.numbering?.serviceOrderPrefix ?? 'OS-',
-        serviceOrderNext: settings.numbering?.serviceOrderNext ?? 1,
-        deliveryPrefix: settings.numbering?.deliveryPrefix ?? 'ENT-',
-        deliveryNext: settings.numbering?.deliveryNext ?? 1,
-        adjustmentPrefix: settings.numbering?.adjustmentPrefix ?? 'AJ-',
-        adjustmentNext: settings.numbering?.adjustmentNext ?? 1,
-        movementPrefix: settings.numbering?.movementPrefix ?? 'MOV-',
-        movementNext: settings.numbering?.movementNext ?? 1,
-      },
-      backupMode: settings.backupMode ?? 'automatico',
-    });
-  }, [settings]);
+    setForm(buildSettingsDraft(settings));
+  }, [isDirty, settings]);
 
   const cards = useMemo(() => {
     return [
@@ -89,12 +92,17 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
     return null;
   }
 
-  const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-  const setNumbering = (key, value) =>
+  const setField = (key, value) => {
+    setIsDirty(true);
+    setForm((current) => ({ ...current, [key]: value }));
+  };
+  const setNumbering = (key, value) => {
+    setIsDirty(true);
     setForm((current) => ({
       ...current,
       numbering: { ...current.numbering, [key]: value },
     }));
+  };
 
   const handleSave = async () => {
     await onUpdateSettings?.({
@@ -124,6 +132,7 @@ function CategoriesSection({ settingsBundle, categoryItemCount, onUpdateSettings
         movementNext: Number(form.numbering.movementNext),
       },
     });
+    setIsDirty(false);
   };
 
   return (

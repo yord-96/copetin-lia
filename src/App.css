@@ -6664,6 +6664,51 @@ textarea:focus {
   min-width: 900px;
 }
 
+.orders-table.orders-commercial-table {
+  min-width: 1080px;
+  table-layout: fixed;
+}
+
+.orders-table.orders-contracts-table {
+  min-width: 1180px;
+}
+
+.orders-commercial-table th:nth-child(1),
+.orders-commercial-table td:nth-child(1) { width: 15%; }
+.orders-commercial-table th:nth-child(2),
+.orders-commercial-table td:nth-child(2) { width: 14%; }
+.orders-commercial-table th:nth-child(3),
+.orders-commercial-table td:nth-child(3) { width: 14%; }
+.orders-commercial-table th:nth-child(4),
+.orders-commercial-table td:nth-child(4) { width: 15%; }
+.orders-commercial-table th:nth-child(5),
+.orders-commercial-table td:nth-child(5) { width: 14%; }
+.orders-commercial-table th:nth-child(6),
+.orders-commercial-table td:nth-child(6) { width: 10%; }
+.orders-commercial-table th:nth-child(7),
+.orders-commercial-table td:nth-child(7) { width: 10%; }
+.orders-commercial-table th:nth-child(8),
+.orders-commercial-table td:nth-child(8) { width: 8%; }
+
+.orders-contracts-table th:nth-child(1),
+.orders-contracts-table td:nth-child(1) { width: 13%; }
+.orders-contracts-table th:nth-child(2),
+.orders-contracts-table td:nth-child(2) { width: 12%; }
+.orders-contracts-table th:nth-child(3),
+.orders-contracts-table td:nth-child(3) { width: 12%; }
+.orders-contracts-table th:nth-child(4),
+.orders-contracts-table td:nth-child(4) { width: 14%; }
+.orders-contracts-table th:nth-child(5),
+.orders-contracts-table td:nth-child(5) { width: 13%; }
+.orders-contracts-table th:nth-child(6),
+.orders-contracts-table td:nth-child(6) { width: 8%; }
+.orders-contracts-table th:nth-child(7),
+.orders-contracts-table td:nth-child(7) { width: 10%; }
+.orders-contracts-table th:nth-child(8),
+.orders-contracts-table td:nth-child(8) { width: 8%; }
+.orders-contracts-table th:nth-child(9),
+.orders-contracts-table td:nth-child(9) { width: 10%; }
+
 .orders-table th,
 .orders-table td {
   border-bottom: 1px solid #f0e8e1;
@@ -6711,6 +6756,16 @@ textarea:focus {
 .orders-cell-main {
   display: grid;
   gap: 0.08rem;
+  min-width: 0;
+}
+
+.orders-commercial-table .orders-cell-main strong,
+.orders-commercial-table .orders-cell-main span,
+.orders-commercial-table .orders-responsible-cell strong,
+.orders-commercial-table .orders-responsible-cell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .orders-cell-main strong {
@@ -23529,6 +23584,7 @@ button.calendar-dispatch-row:focus-visible {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.45rem;
   align-items: center;
+  min-width: 0;
 }
 
 .orders-responsible-cell > span {
