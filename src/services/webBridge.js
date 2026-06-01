@@ -2688,7 +2688,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
       <meta charset="utf-8" />
       <title>${escapeHtml(title)} ${escapeHtml(receiptCode)}</title>
       <style>
-        @page { size: 216mm 140mm; margin: 0; }
+        @page { size: letter portrait; margin: 0; }
         * { box-sizing: border-box; }
         html { background: #f4f4f4; }
         body {
@@ -2702,8 +2702,8 @@ const buildCashReceiptHtml = ({ state, movement }) => {
         }
         h1, h2, h3, p { margin: 0; }
         .cash-receipt-sheet {
-          width: 216mm;
-          height: 140mm;
+          width: 8.5in;
+          height: 5.5in;
           margin: 0 auto;
           padding: 4.6mm 6mm 3mm;
           background: #fff;
@@ -2851,8 +2851,23 @@ const buildCashReceiptHtml = ({ state, movement }) => {
         }
         .receipt-footer { margin-top: 1mm; text-align: center; font-size: 9.5px; }
         @media print {
-          html, body { width: 216mm; height: 140mm; background: #fff; padding: 0; overflow: hidden; }
-          .cash-receipt-sheet { box-shadow: none; margin: 0; transform: none; }
+          html, body {
+            width: 8.5in;
+            height: 11in;
+            background: #fff;
+            padding: 0;
+            overflow: hidden;
+          }
+          body {
+            display: block;
+          }
+          .cash-receipt-sheet {
+            box-shadow: none;
+            margin: 0;
+            transform: none;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
           .receipt-preview-actions { display: none !important; }
         }
         @media screen {
