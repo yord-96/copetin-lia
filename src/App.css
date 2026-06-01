@@ -27817,11 +27817,16 @@ button.calendar-dispatch-row:focus-visible {
 
 /* Topbar presence: readable active sessions */
 .top-actions {
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  overflow: visible;
 }
 
 .presence-strip {
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0 !important;
   border-radius: 1rem !important;
   padding: 0.32rem !important;
@@ -27829,7 +27834,9 @@ button.calendar-dispatch-row:focus-visible {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: stretch !important;
   gap: 0.38rem !important;
-  max-width: min(43vw, 560px);
+  width: min(100%, 640px);
+  max-width: clamp(25rem, 45vw, 640px);
+  overflow: hidden;
   background: rgba(255, 250, 246, 0.94) !important;
   box-shadow: 0 0.7rem 2rem rgba(138, 56, 4, 0.1) !important;
 }
@@ -27865,10 +27872,20 @@ button.calendar-dispatch-row:focus-visible {
   align-items: stretch;
   gap: 0.34rem;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  padding-bottom: 0.06rem;
+  scrollbar-width: none;
+}
+
+.presence-session-list::-webkit-scrollbar {
+  display: none;
 }
 
 .presence-strip .presence-session-list span {
-  min-width: min(12.6rem, 24vw) !important;
+  flex: 0 0 clamp(10rem, 13vw, 11.7rem);
+  min-width: 0 !important;
   height: auto !important;
   border-radius: 0.88rem !important;
   display: grid !important;
@@ -27890,9 +27907,9 @@ button.calendar-dispatch-row:focus-visible {
   grid-column: 2;
   grid-row: 1;
   max-width: none !important;
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   color: #071343;
   font-size: 0.74rem;
   line-height: 1.05;
@@ -27902,9 +27919,9 @@ button.calendar-dispatch-row:focus-visible {
   grid-column: 2;
   grid-row: 2;
   max-width: none !important;
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   color: #8c3a0b;
   font-size: 0.61rem;
   line-height: 1.05;
@@ -27915,7 +27932,7 @@ button.calendar-dispatch-row:focus-visible {
 .presence-strip .presence-session-list span > small {
   display: inline-flex;
   justify-self: end;
-  max-width: 6.6rem;
+  max-width: 4.95rem;
   border-radius: 999px;
   padding: 0.14rem 0.42rem !important;
   background: color-mix(in srgb, var(--presence-color) 10%, #ffffff);
@@ -27923,7 +27940,9 @@ button.calendar-dispatch-row:focus-visible {
   font-size: 0.58rem !important;
   font-weight: 900 !important;
   line-height: 1;
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .presence-strip .presence-session-list span > small:first-of-type {
@@ -27940,6 +27959,7 @@ button.calendar-dispatch-row:focus-visible {
   display: grid;
   align-content: center;
   gap: 0.18rem;
+  min-width: 2.7rem;
 }
 
 .presence-meta small {
@@ -27948,30 +27968,37 @@ button.calendar-dispatch-row:focus-visible {
   border: 1px solid #f0dfd3;
   padding: 0.18rem 0.42rem !important;
   text-align: center;
+  white-space: nowrap;
+}
+
+.admin-reset-button,
+.user-pill {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 2;
 }
 
 @media (max-width: 1380px) {
   .presence-strip {
-    max-width: min(54vw, 520px);
+    max-width: clamp(22rem, 42vw, 520px);
   }
 
   .presence-strip .presence-session-list span {
-    min-width: 12rem !important;
+    flex-basis: 10.7rem;
   }
 }
 
 @media (max-width: 1120px) {
   .presence-strip {
-    grid-template-columns: 1fr;
-    max-width: 100%;
+    max-width: min(100%, 25rem);
   }
 
   .presence-session-list {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .presence-strip .presence-session-list span {
-    min-width: 100% !important;
+    flex-basis: 10rem;
   }
 }
 
