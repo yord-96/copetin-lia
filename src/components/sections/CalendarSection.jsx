@@ -417,12 +417,51 @@ function CalendarSection({
 
     rentals.forEach((rental) => {
       const contract = relationshipMaps.contractByRentalId.get(rental.id) ?? relationshipMaps.contractByOrderCode.get(rental.orderCode);
+      const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
+      if (logisticsMode === 'recojo') {
+        const deliveryKey = toDateKey(contract?.deliveryDate || rental.rentalDate || rental.createdAt);
+        if (deliveryKey) {
+          const deliveryStart = contract?.deliveryWindowStart || rental.deliveryWindowStart || '08:00';
+          const deliveryEnd = contract?.deliveryWindowEnd && contract.deliveryWindowEnd !== deliveryStart
+            ? contract.deliveryWindowEnd
+            : rental.deliveryWindowEnd || addHoursToTime(deliveryStart, 2) || '10:00';
+          const inventoryStatus = rental.operational?.inventoryStatus ?? 'pendiente';
+          const inventoryDone = getOperationalProgressValue(inventoryStatus, { noAplicaComplete: false }) >= 100;
+          const deliveryDate = dateFromKey(deliveryKey);
+          const isLateDelivery = !inventoryDone && deliveryDate < todayDate;
+          rows.push({
+            id: `rental-customer-pickup-${rental.id}`,
+            title: `Alistamiento ${rental.orderCode}`,
+            subtitle: `${rental.customerName || 'Cliente'} - ${contract?.eventType || rental.companyName || 'sin evento'}`,
+            detailLine: `${rental.items?.length ?? 0} items | ${getOperationalStatusMeta('inventory', inventoryStatus).label}`,
+            type: 'delivery',
+            date: deliveryKey,
+            startTime: deliveryStart,
+            endTime: deliveryEnd,
+            status: inventoryDone ? 'completada' : isLateDelivery ? 'retrasado' : 'programada',
+            relatedType: 'orden',
+            relatedId: rental.orderCode,
+            contractId: contract?.id,
+            contractCode: contract?.contractCode,
+            rentalId: rental.id,
+            orderCode: rental.orderCode,
+            customerName: rental.customerName,
+            totalBs: Number(rental?.totals?.totalBs ?? 0),
+            itemsCount: rental.items?.length ?? 0,
+            logisticsMode,
+            eventName: contract?.eventType ?? rental.companyName,
+            operationLabel: 'Alistamiento para recojo',
+            logisticsLine: getLogisticsMeta(logisticsMode).label,
+            responsibleName: rental.createdByName ?? contract?.createdByName ?? rental.createdBy ?? contract?.createdBy ?? 'Sistema',
+            responsibleRole: rental.createdByRole ?? contract?.createdByRole ?? 'Operacion',
+          });
+        }
+      }
       const dueKey = toDateKey(rental.dueDate);
       if (!dueKey) return;
       const dueDate = dateFromKey(dueKey);
       const isReturned = rental.status === 'returned';
       const isLate = !isReturned && dueDate < todayDate;
-      const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
       const returnStart = contract?.pickupWindowStart || rental.dueTime || '20:00';
       const returnEnd = contract?.pickupWindowEnd && contract.pickupWindowEnd !== returnStart
         ? contract.pickupWindowEnd
@@ -642,7 +681,7 @@ function CalendarSection({
         id: event.id,
         type: event.type,
         time: event.startTime || '-',
-        code: event.orderCode ?? event.contractCode ?? event.deliveryCode ?? event.relatedId ?? event.title ?? '-',
+        code: event.contractCode ?? event.orderCode ?? event.deliveryCode ?? event.relatedId ?? event.title ?? '-',
         responsible: event.responsibleName || 'Sistema',
         title: destinationLine,
         details: detailLine || event.title || 'Sin detalle adicional',
@@ -960,7 +999,14 @@ function CalendarSection({
     const deliveryIsCompleted = relatedDelivery ? isEventCompleted(relatedDelivery) : false;
     const returnIsCompleted = isEventCompleted(event);
 
-    if (!deliveryIsCompleted) {
+    if (logisticsMode === 'recojo' && !deliveryIsCompleted) {
+      blockers.push({
+        area: 'Inventario',
+        detail: relatedDelivery
+          ? `El alistamiento para recojo quedo en ${getEventProgress(relatedDelivery)}%.`
+          : 'No se encontro el alistamiento de inventario para este recojo por cliente.',
+      });
+    } else if (!deliveryIsCompleted) {
       blockers.push({
         area: 'Entrega previa',
         detail: relatedDelivery
@@ -988,6 +1034,8 @@ function CalendarSection({
       title: deliveryIsCompleted ? 'Recojo pendiente' : 'Recojo con entrega incompleta',
       reason: deliveryIsCompleted
         ? 'El recojo aun no fue confirmado.'
+        : logisticsMode === 'recojo'
+        ? 'Antes de que el cliente recoja, inventario debe confirmar el alistamiento.'
         : 'Antes de recoger, confirma que realmente se entrego al cliente.',
       blockers,
       progress,

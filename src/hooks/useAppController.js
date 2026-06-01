@@ -1297,6 +1297,9 @@ export const useAppController = () => {
           itemId: line.itemId,
           quantity: line.quantity,
           unitPriceBs: line.unitPriceBs,
+          controlsStock: line.controlsStock,
+          verificationStatus: line.verificationStatus,
+          quickItem: line.quickItem ?? null,
         })),
       });
 

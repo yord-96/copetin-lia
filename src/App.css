@@ -8491,6 +8491,19 @@ textarea:focus {
   font-size: 0.72rem;
 }
 
+.orders-side-line > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.orders-side-line-details {
+  color: #7b84a8;
+  font-size: 0.62rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
 .orders-side-line:last-child {
   border-bottom: 0;
 }
@@ -21619,6 +21632,65 @@ button.calendar-dispatch-row:focus-visible {
   gap: 0.55rem;
 }
 
+.orders-quick-item-panel {
+  border: 1px solid #d9e3f3;
+  border-radius: 0.86rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.96)),
+    repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(74, 95, 150, 0.06) 24px),
+    repeating-linear-gradient(90deg, transparent, transparent 23px, rgba(74, 95, 150, 0.06) 24px);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.orders-quick-item-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.orders-quick-item-panel header > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.orders-quick-item-panel strong {
+  color: #0b1f4f;
+  font-size: 0.86rem;
+}
+
+.orders-quick-item-panel span {
+  color: #66739b;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.orders-quick-item-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.85fr) minmax(190px, 1.1fr) repeat(3, minmax(120px, 0.7fr));
+  gap: 0.52rem;
+}
+
+.orders-quick-item-grid label {
+  color: #5a3150;
+  font-size: 0.72rem;
+  font-weight: 850;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.orders-quick-item-grid input {
+  min-height: 2.2rem;
+  border: 1px solid #d8deef;
+  border-radius: 0.62rem;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0 0.68rem;
+  color: #0b163f;
+  font-weight: 750;
+}
+
 .orders-availability-strip {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.45fr) minmax(0, 0.9fr);
@@ -21736,6 +21808,7 @@ button.calendar-dispatch-row:focus-visible {
 .orders-product-row {
   min-height: 5.6rem;
   grid-template-columns: 3.8rem minmax(0, 1fr) minmax(84px, auto) 3.4rem 5.7rem;
+  align-items: center;
   gap: 0.7rem;
   padding: 0.66rem 0.72rem;
   border: 1px solid #ead8c9;
@@ -21748,6 +21821,11 @@ button.calendar-dispatch-row:focus-visible {
   border-bottom: 1px solid #ead8c9;
 }
 
+.orders-product-row.is-provisional {
+  border-color: #b9d2ff;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+}
+
 .orders-product-thumb {
   width: 3.3rem;
   height: 3.3rem;
@@ -21756,14 +21834,24 @@ button.calendar-dispatch-row:focus-visible {
 
 .orders-product-info {
   display: grid;
-  gap: 0.28rem;
+  grid-template-columns: minmax(0, 0.72fr) minmax(250px, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.7rem;
+  row-gap: 0.16rem;
+  align-items: center;
 }
 
 .orders-product-info strong {
+  grid-column: 1;
+  grid-row: 1;
   font-size: 0.88rem;
+  align-self: end;
 }
 
 .orders-product-info > span {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
   margin: 0;
   color: #7a658f;
   font-size: 0.7rem;
@@ -21771,20 +21859,29 @@ button.calendar-dispatch-row:focus-visible {
 }
 
 .orders-availability-metrics {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.38rem;
-  max-width: 440px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.orders-availability-metrics.is-provisional {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .orders-availability-metrics > span {
-  min-height: 2.55rem;
+  min-height: 2.38rem;
   border: 1px solid #e5d7cb;
   border-radius: 0.58rem;
   background: #fffaf6;
-  padding: 0.38rem 0.44rem;
+  padding: 0.32rem 0.44rem;
   display: grid;
   gap: 0.04rem;
+  align-content: center;
 }
 
 .orders-availability-metrics small {
@@ -21798,6 +21895,10 @@ button.calendar-dispatch-row:focus-visible {
   color: #223063;
   font-size: 1rem;
   line-height: 1;
+}
+
+.orders-availability-metrics.is-provisional strong {
+  font-size: 0.78rem;
 }
 
 .orders-availability-metrics .primary {
@@ -21879,11 +21980,39 @@ button.calendar-dispatch-row:focus-visible {
   font-size: 0.8rem;
 }
 
+.orders-item-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.34rem;
+}
+
+.orders-item-detail-chips span {
+  min-height: 1.55rem;
+  border: 1px solid #dce6f8;
+  border-radius: 0.52rem;
+  background: #f7faff;
+  padding: 0.22rem 0.46rem;
+  color: #203064;
+  font-size: 0.68rem;
+  font-weight: 850;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.orders-item-detail-chips small {
+  color: #7b87af;
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .orders-line-field {
   gap: 0.22rem;
 }
 
-.orders-line-field > .orders-selected-availability + .orders-available-note {
+.orders-line-field > .orders-selected-availability + .orders-available-note:not(.is-warning) {
   display: none;
 }
 
@@ -21932,12 +22061,18 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-availability-strip,
+  .orders-quick-item-grid,
   .orders-items-toolbar {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
+  .orders-quick-item-panel header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .orders-products-head,
   .orders-catalog-actions {
     align-items: stretch;
@@ -21947,6 +22082,18 @@ button.calendar-dispatch-row:focus-visible {
   .orders-product-row,
   .orders-selected-row {
     grid-template-columns: 1fr;
+  }
+
+  .orders-product-info {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+
+  .orders-product-info strong,
+  .orders-product-info > span,
+  .orders-availability-metrics {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .orders-availability-metrics {

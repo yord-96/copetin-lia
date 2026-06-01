@@ -86,13 +86,25 @@ const periodFromCommercialRecord = (record) =>
 
 const normalizeLineQuantity = (line) => Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
 
+const controlsStock = (item) =>
+  item?.controlsStock !== false
+  && String(item?.verificationStatus ?? '').trim() !== 'pending_verification'
+  && String(item?.adoptionSource ?? '').trim() !== 'service_order_quick_item'
+  && !(Number(item?.totalStock ?? 0) <= 0 && Number(item?.availableStock ?? 0) <= 0);
+
 const recordItemLines = (record) =>
   (Array.isArray(record?.items) ? record.items : [])
-    .map((line) => ({
-      itemId: String(line?.itemId ?? '').trim(),
-      quantity: normalizeLineQuantity(line),
-      itemName: String(line?.itemName ?? line?.name ?? '').trim(),
-    }))
+    .map((line) => {
+      const stockControlledLine = line?.controlsStock !== false
+        && String(line?.verificationStatus ?? '').trim() !== 'pending_verification';
+      if (!stockControlledLine) return null;
+      return {
+        itemId: String(line?.itemId ?? '').trim(),
+        quantity: normalizeLineQuantity(line),
+        itemName: String(line?.itemName ?? line?.name ?? '').trim(),
+      };
+    })
+    .filter(Boolean)
     .filter((line) => line.itemId && line.quantity > 0);
 
 const isActiveRental = (rental) => rental && !rental.deletedAt && rental.status !== 'returned' && rental.status !== 'cancelled';
@@ -133,11 +145,15 @@ export function getProjectedInventoryAvailability({
   const summaries = new Map();
 
   items.forEach((item) => {
+    const stockControlled = controlsStock(item);
+    const totalStock = stockControlled ? Math.max(0, Math.trunc(Number(item.totalStock ?? 0))) : 0;
+    const currentAvailable = stockControlled ? Math.max(0, Math.trunc(Number(item.availableStock ?? 0))) : 0;
     summaries.set(item.id, {
       itemId: item.id,
       itemName: item.name,
-      totalStock: Math.max(0, Math.trunc(Number(item.totalStock ?? 0))),
-      currentAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
+      stockControlled,
+      totalStock,
+      currentAvailable,
       unavailableOutsideRentals: 0,
       activeRentalQty: 0,
       hardReservedQty: 0,
@@ -146,8 +162,8 @@ export function getProjectedInventoryAvailability({
       returningBeforeStartQtyRecords: [],
       softReservedQty: 0,
       softReservedQtyRecords: [],
-      projectedAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
-      projectedAfterSoftAvailable: Math.max(0, Math.trunc(Number(item.availableStock ?? 0))),
+      projectedAvailable: currentAvailable,
+      projectedAfterSoftAvailable: currentAvailable,
     });
   });
 
@@ -201,6 +217,7 @@ export function getProjectedInventoryAvailability({
   });
 
   summaries.forEach((summary) => {
+    if (!summary.stockControlled) return;
     summary.unavailableOutsideRentals = Math.max(
       0,
       summary.totalStock - summary.currentAvailable - summary.activeRentalQty,
@@ -252,6 +269,7 @@ export function getProjectedInventoryAvailability({
   }
 
   summaries.forEach((summary) => {
+    if (!summary.stockControlled) return;
     summary.projectedAfterSoftAvailable = Math.max(0, summary.projectedAvailable - summary.softReservedQty);
   });
 
@@ -273,6 +291,7 @@ export function validateProjectedInventoryRequest({
       const itemId = String(line?.itemId ?? '').trim();
       const requestedQty = normalizeLineQuantity(line);
       const summary = availability.get(itemId);
+      if (summary && !summary.stockControlled) return null;
       if (!summary || requestedQty <= summary.projectedAvailable) return null;
       return {
         itemId,

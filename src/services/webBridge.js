@@ -3549,25 +3549,199 @@ const isInRange = (value, fromDate, toDate) => {
 const formatDocNumber = (value, size = 5) => String(Math.max(1, Number(value ?? 1))).padStart(size, '0');
 
 const consumeDocumentCode = (state, fieldPrefix, fieldNext, size = 5) => {
+  if (!state.settings) state.settings = {};
+  if (!state.settings.numbering) state.settings.numbering = {};
   const numbering = state.settings?.numbering ?? {};
   const prefix = String(numbering[fieldPrefix] ?? '');
   const next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
   state.settings.numbering[fieldNext] = next + 1;
-  return `${prefix}${formatDocNumber(next, size)}`;
+  return prefix ? `${prefix}${formatDocNumber(next, size)}` : String(next);
 };
 
-const resolveClientFromName = (state, customerName, customerPhone) => {
+const parseDocumentNumericPart = (code) => {
+  const match = String(code ?? '').trim().match(/(\d+)\s*$/);
+  return match ? Math.max(1, Math.trunc(Number(match[1]))) : null;
+};
+
+const parseDocumentPrefix = (code) => String(code ?? '').trim().replace(/\d+\s*$/, '');
+
+const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, collectionName, codeField, size = 5) => {
+  const codeMode = ['manual', 'current'].includes(payload?.documentCodeMode) ? payload.documentCodeMode : 'auto';
+  const manualCode = String(payload?.manualDocumentCode ?? '').trim();
+  if (codeMode === 'auto') {
+    return consumeDocumentCode(state, fieldPrefix, fieldNext, size);
+  }
+  if (!manualCode) {
+    throw new Error('Debes indicar el codigo del libro.');
+  }
+  const exists = (state[collectionName] ?? []).some((entry) => !entry.deletedAt && String(entry?.[codeField] ?? '').trim() === manualCode);
+  if (exists) {
+    throw new Error(`Ya existe un registro con el codigo ${manualCode}.`);
+  }
+  if (codeMode === 'current') {
+    const numericPart = parseDocumentNumericPart(manualCode);
+    if (!numericPart) throw new Error('El codigo actual debe terminar en un numero.');
+    if (!state.settings.numbering) state.settings.numbering = {};
+    state.settings.numbering[fieldPrefix] = parseDocumentPrefix(manualCode);
+    state.settings.numbering[fieldNext] = numericPart + 1;
+  }
+  return manualCode;
+};
+
+const findOrCreateCategoryByName = (state, categoryName) => {
+  const name = String(categoryName ?? '').trim() || 'Sin categoria';
+  const existing = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(name));
+  if (existing) return existing.name;
+  const now = new Date().toISOString();
+  state.categories.push({
+    id: makeId('cat'),
+    name,
+    description: 'Creada automaticamente desde orden de servicio.',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  });
+  return name;
+};
+
+const buildQuickItemName = (quickItem = {}) => [
+  quickItem.name,
+  quickItem.color,
+  quickItem.material,
+].map((part) => String(part ?? '').trim()).filter(Boolean).join(' ');
+
+const resolveOperationalItemFromLine = (state, line, now = new Date().toISOString()) => {
+  const explicitItemId = String(line?.itemId ?? '').trim();
+  const existing = state.items.find((entry) => entry.id === explicitItemId);
+  if (existing) return existing;
+
+  const quickItem = line?.quickItem && typeof line.quickItem === 'object' ? line.quickItem : null;
+  if (!quickItem) return null;
+
+  const name = buildQuickItemName(quickItem);
+  if (!name) throw new Error('El item rapido debe tener nombre o modelo.');
+  const category = findOrCreateCategoryByName(state, quickItem.category);
+  const brand = String(quickItem.material ?? quickItem.brand ?? '').trim();
+  const itemColor = String(quickItem.color ?? '').trim();
+  const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? quickItem.rentalPriceBs ?? 0));
+  const duplicate = state.items.find((entry) => (
+    normalizeText(entry.name) === normalizeText(name)
+    && normalizeText(entry.category) === normalizeText(category)
+    && normalizeText(entry.itemColor) === normalizeText(itemColor)
+  ));
+  if (duplicate) {
+    const looksOperational = duplicate.adoptionSource === 'service_order_quick_item'
+      || (Number(duplicate.totalStock ?? 0) <= 0 && Number(duplicate.availableStock ?? 0) <= 0);
+    if (looksOperational) {
+      duplicate.controlsStock = false;
+      duplicate.verificationStatus = 'pending_verification';
+      duplicate.adoptionSource = duplicate.adoptionSource || 'service_order_quick_item';
+      duplicate.updatedAt = now;
+    }
+    return duplicate;
+  }
+
+  const created = {
+    id: makeId('item'),
+    name,
+    category,
+    brand,
+    itemColor,
+    totalStock: 0,
+    availableStock: 0,
+    controlsStock: false,
+    verificationStatus: 'pending_verification',
+    adoptionSource: 'service_order_quick_item',
+    needsCleaningOnReturn: categoryRequiresCleaning(category),
+    rentalPriceBs,
+    damagedUnitChargeBs: Number((rentalPriceBs * Number(state.settings?.damageMultiplier ?? 1.2)).toFixed(2)),
+    missingUnitChargeBs: Number((rentalPriceBs * Number(state.settings?.missingMultiplier ?? 2)).toFixed(2)),
+    imageDataUrl: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.items.push(created);
+  return created;
+};
+
+const itemControlsStock = (item) =>
+  item?.controlsStock !== false
+  && String(item?.verificationStatus ?? '').trim() !== 'pending_verification'
+  && String(item?.adoptionSource ?? '').trim() !== 'service_order_quick_item'
+  && !(Number(item?.totalStock ?? 0) <= 0 && Number(item?.availableStock ?? 0) <= 0);
+
+const lineControlsStock = (line, item) =>
+  line?.controlsStock !== false
+  && String(line?.verificationStatus ?? '').trim() !== 'pending_verification'
+  && itemControlsStock(item);
+
+const addClientDeliveryAddressIfNeeded = (client, address, city, now = new Date().toISOString()) => {
+  const cleanAddress = String(address ?? '').trim();
+  const cleanCity = String(city ?? '').trim();
+  if (!cleanAddress && !cleanCity) return;
+  const addresses = Array.isArray(client.deliveryAddresses) ? client.deliveryAddresses : [];
+  const exists = addresses.some((entry) => (
+    normalizeText(entry?.address) === normalizeText(cleanAddress)
+    && normalizeText(entry?.city) === normalizeText(cleanCity)
+  ));
+  if (!exists) {
+    client.deliveryAddresses = [
+      ...addresses,
+      {
+        id: makeId('addr'),
+        label: cleanAddress ? 'Direccion operativa' : 'Ciudad operativa',
+        address: cleanAddress,
+        city: cleanCity,
+        notes: 'Creada desde orden de servicio.',
+        createdAt: now,
+      },
+    ];
+  }
+};
+
+const syncClientOperationalData = (state, clientId, { customerPhone, address, city } = {}) => {
+  const client = state.clients.find((entry) => entry.id === clientId && !entry.deletedAt);
+  if (!client) return;
+  const now = new Date().toISOString();
+  const phone = String(customerPhone ?? '').trim();
+  const cleanAddress = String(address ?? '').trim();
+  const cleanCity = String(city ?? '').trim();
+  let changed = false;
+  if (!client.phone && phone) {
+    client.phone = phone;
+    changed = true;
+  }
+  if (!client.whatsapp && phone) {
+    client.whatsapp = phone;
+    changed = true;
+  }
+  if (!client.address && cleanAddress) {
+    client.address = cleanAddress;
+    changed = true;
+  }
+  if (!client.city && cleanCity) {
+    client.city = cleanCity;
+    changed = true;
+  }
+  const beforeCount = Array.isArray(client.deliveryAddresses) ? client.deliveryAddresses.length : 0;
+  addClientDeliveryAddressIfNeeded(client, cleanAddress, cleanCity, now);
+  if ((Array.isArray(client.deliveryAddresses) ? client.deliveryAddresses.length : 0) !== beforeCount) {
+    changed = true;
+  }
+  if (changed) client.updatedAt = now;
+};
+
+const resolveClientFromName = (state, customerName, customerPhone, address = '', city = '') => {
   const normalizedTarget = normalizeText(customerName);
   const existing = state.clients.find((client) => normalizeText(client.name) === normalizedTarget);
   if (existing) {
-    if (!existing.phone && customerPhone) {
-      existing.phone = customerPhone;
-      existing.updatedAt = new Date().toISOString();
-    }
+    syncClientOperationalData(state, existing.id, { customerPhone, address, city });
     return existing.id;
   }
 
   const now = new Date().toISOString();
+  const cleanAddress = String(address ?? '').trim();
+  const cleanCity = String(city ?? '').trim();
   const created = {
     id: makeId('cli'),
     name: String(customerName ?? '').trim(),
@@ -3575,7 +3749,20 @@ const resolveClientFromName = (state, customerName, customerPhone) => {
     contactName: String(customerName ?? '').trim(),
     contactRole: 'Contacto',
     phone: String(customerPhone ?? '').trim(),
+    whatsapp: String(customerPhone ?? '').trim(),
     email: '',
+    address: cleanAddress,
+    city: cleanCity,
+    deliveryAddresses: cleanAddress || cleanCity
+      ? [{
+        id: makeId('addr'),
+        label: 'Direccion operativa',
+        address: cleanAddress,
+        city: cleanCity,
+        notes: 'Creada desde orden de servicio.',
+        createdAt: now,
+      }]
+      : [],
     isBlacklisted: false,
     blacklistReason: '',
     blacklistNotes: '',
@@ -5810,10 +5997,13 @@ const createWebBridge = () => ({
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId ?? resolveClientFromName(state, customerName, customerPhone);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
+        if (payload?.clientId) {
+          syncClientOperationalData(state, clientId, { customerPhone, address: payload?.address, city: payload?.city });
+        }
 
         const normalizedItems = requestedItems.map((line) => {
-          const item = state.items.find((entry) => entry.id === line.itemId);
+          const item = resolveOperationalItemFromLine(state, line, now);
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
           const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
@@ -5823,6 +6013,8 @@ const createWebBridge = () => ({
             quantity,
             unitPriceBs,
             lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            controlsStock: lineControlsStock(line, item),
+            verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
           };
         });
 
@@ -5838,7 +6030,7 @@ const createWebBridge = () => ({
 
         created = {
           id: makeId('quo'),
-          quoteCode: consumeDocumentCode(state, 'quotePrefix', 'quoteNext', 5),
+          quoteCode: consumeCommercialDocumentCode(state, payload, 'quotePrefix', 'quoteNext', 'quotes', 'quoteCode', 5),
           clientId,
           customerName,
           customerPhone,
@@ -5952,7 +6144,7 @@ const createWebBridge = () => ({
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
           if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
           quote.items = requestedItems.map((line) => {
-            const item = state.items.find((entry) => entry.id === line.itemId);
+            const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
@@ -5962,6 +6154,8 @@ const createWebBridge = () => ({
               quantity,
               unitPriceBs,
               lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              controlsStock: lineControlsStock(line, item),
+              verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
             };
           });
         }
@@ -6070,11 +6264,13 @@ const createWebBridge = () => ({
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId ?? resolveClientFromName(state, customerName, customerPhone);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
+        if (payload?.clientId) {
+          syncClientOperationalData(state, clientId, { customerPhone, address: payload?.address, city: payload?.city });
+        }
 
         const normalizedItems = requestedItems.map((line) => {
-          const itemId = String(line?.itemId ?? '').trim();
-          const item = state.items.find((entry) => entry.id === itemId);
+          const item = resolveOperationalItemFromLine(state, line, now);
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
 
           const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
@@ -6085,6 +6281,8 @@ const createWebBridge = () => ({
             quantity,
             unitPriceBs,
             lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            controlsStock: lineControlsStock(line, item),
+            verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
           };
         });
 
@@ -6100,7 +6298,7 @@ const createWebBridge = () => ({
 
         created = {
           id: makeId('con'),
-          contractCode: consumeDocumentCode(state, 'contractPrefix', 'contractNext', 5),
+          contractCode: consumeCommercialDocumentCode(state, payload, 'contractPrefix', 'contractNext', 'contracts', 'contractCode', 5),
           quoteId: String(payload?.quoteId ?? '').trim() || null,
           clientId,
           customerName,
@@ -6213,8 +6411,7 @@ const createWebBridge = () => ({
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
           if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
           const normalizedItems = requestedItems.map((line) => {
-            const itemId = String(line?.itemId ?? '').trim();
-            const item = state.items.find((entry) => entry.id === itemId);
+            const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
@@ -6224,6 +6421,8 @@ const createWebBridge = () => ({
               quantity,
               unitPriceBs,
               lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              controlsStock: lineControlsStock(line, item),
+              verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
             };
           });
           contract.items = normalizedItems;
@@ -6557,7 +6756,7 @@ const createWebBridge = () => ({
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
-        const clientId = resolveClientFromName(state, customerName, customerPhone);
+        const clientId = resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
         const orderCode = consumeDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
         const reservationMovements = [];
         const userId = payload?.userId ?? payload?.createdById ?? null;
@@ -6568,10 +6767,25 @@ const createWebBridge = () => ({
           const current = Number(supplierSupportByItem.get(line.itemId) ?? 0);
           supplierSupportByItem.set(line.itemId, current + Math.max(0, Number(line.neededQty ?? 0)));
         });
-        const adjustedRequestedItems = requestedItems
+        const operationalRequestedItems = requestedItems.map((line) => {
+          const item = resolveOperationalItemFromLine(state, line, now.toISOString());
+          if (!item) throw new Error('Uno de los items seleccionados ya no existe.');
+          return {
+            ...line,
+            itemId: item.id,
+            _resolvedItem: item,
+          };
+        });
+        const adjustedRequestedItems = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
+            if (!lineControlsStock(line, line._resolvedItem)) {
+              return {
+                ...line,
+                quantity: 0,
+              };
+            }
             const internalQty = Math.max(0, requestedQty - supportedQty);
             return {
               ...line,
@@ -6605,7 +6819,7 @@ const createWebBridge = () => ({
           contracts: state.contracts,
           period: availabilityPeriod,
         });
-        const inventoryAvailabilityAssumptions = requestedItems
+        const inventoryAvailabilityAssumptions = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
@@ -6616,7 +6830,8 @@ const createWebBridge = () => ({
           })
           .filter((line) => Number(line.quantity ?? 0) > 0)
           .map((line) => {
-            const item = state.items.find((entry) => entry.id === line.itemId);
+            const item = line._resolvedItem ?? state.items.find((entry) => entry.id === line.itemId);
+            if (!lineControlsStock(line, item)) return null;
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const summary = availabilityAtApproval.get(line.itemId);
             const currentAvailable = Math.max(0, Number(item?.availableStock ?? 0));
@@ -6633,8 +6848,8 @@ const createWebBridge = () => ({
           })
           .filter(Boolean);
 
-        const rentalItems = requestedItems.map((line) => {
-          const item = state.items.find((entry) => entry.id === line.itemId);
+        const rentalItems = operationalRequestedItems.map((line) => {
+          const item = line._resolvedItem ?? state.items.find((entry) => entry.id === line.itemId);
           if (!item) {
             throw new Error('Uno de los items seleccionados ya no existe.');
           }
@@ -6647,7 +6862,7 @@ const createWebBridge = () => ({
             quantity,
             Math.max(0, Math.trunc(Number(supplierSupportByItem.get(item.id) ?? 0))),
           );
-          const internalReservationQty = Math.max(0, quantity - supplierBackedQty);
+          const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
           const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
 
           if (internalReservationQty > 0) {
@@ -6690,6 +6905,8 @@ const createWebBridge = () => ({
             quantity,
             supplierBackedQty,
             internalReservedQty: internalReservationQty,
+            controlsStock: lineControlsStock(line, item),
+            verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
             lineTotalBs: quantity * rentalPriceBs,
           };
         });
