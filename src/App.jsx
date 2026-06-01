@@ -319,6 +319,7 @@ function App() {
             onCloseCashSession={controller.handleCloseCashSession}
             onCreateCashMovement={controller.handleCreateCashMovement}
             onCollectReceivable={controller.handleCollectReceivable}
+            onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}
           />
         )}
 

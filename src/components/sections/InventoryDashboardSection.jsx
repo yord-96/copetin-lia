@@ -641,8 +641,12 @@ function InventoryDashboardSection({
     return items.map((item) => {
       const reserved = Number(reservedByItem[item.id] ?? 0);
       const maintenance = Number(maintenanceByItem[item.id] ?? 0);
+      const stockControlled = item.controlsStock !== false
+        && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
+        && String(item.adoptionSource ?? '').trim() !== 'service_order_quick_item'
+        && Number(item.totalStock ?? 0) > 0;
       const lowThreshold = Math.max(3, Math.ceil(Number(item.totalStock ?? 0) * 0.15));
-      const lowAvailability = Number(item.availableStock ?? 0) <= lowThreshold;
+      const lowAvailability = stockControlled && Number(item.availableStock ?? 0) <= lowThreshold;
       return {
         id: item.id,
         name: item.name,
@@ -655,6 +659,9 @@ function InventoryDashboardSection({
         reserved,
         maintenance,
         total: Number(item.totalStock ?? 0),
+        controlsStock: stockControlled,
+        verificationStatus: item.verificationStatus ?? (stockControlled ? 'verified' : 'pending_verification'),
+        adoptionSource: item.adoptionSource ?? '',
         lowAvailability,
         price: Number(item.rentalPriceBs ?? 0),
         damagedUnitChargeBs: Number(item.damagedUnitChargeBs ?? 0),
@@ -1363,6 +1370,49 @@ function InventoryDashboardSection({
     }
   };
 
+  const handleValidateProductStock = async (row) => {
+    if (Number(row.total ?? 0) <= 0) {
+      showMessage('Antes de validar este item, registra su stock total real con un ajuste o editando el producto.', 'error');
+      setRowMenuOpenId(null);
+      return;
+    }
+    const shouldValidate = window.confirm(
+      `Se validara "${row.name}" con stock total ${row.total} y disponible ${row.available}. Desde ahora descontara stock en nuevas ordenes. Continuar?`,
+    );
+    if (!shouldValidate) return;
+    try {
+      await onUpdateInventoryItem?.({
+        id: row.id,
+        controlsStock: true,
+        verificationStatus: 'verified',
+        adoptionSource: 'inventory_verified',
+      });
+      showMessage('Item validado. Desde ahora controla y descuenta stock en nuevas ordenes.');
+      setRowMenuOpenId(null);
+    } catch (error) {
+      showMessage(error?.message || 'No se pudo validar el item.', 'error');
+    }
+  };
+
+  const handlePauseProductStockControl = async (row) => {
+    const shouldPause = window.confirm(
+      `Se desactivara el control de stock para "${row.name}". Seguira disponible para ordenes, pero no descontara cantidades nuevas hasta volver a validarlo. Continuar?`,
+    );
+    if (!shouldPause) return;
+    try {
+      await onUpdateInventoryItem?.({
+        id: row.id,
+        controlsStock: false,
+        verificationStatus: 'pending_verification',
+        adoptionSource: 'manual_inventory_pending',
+      });
+      showMessage('Control de stock pausado para este item.');
+      setRowMenuOpenId(null);
+    } catch (error) {
+      showMessage(error?.message || 'No se pudo pausar el control del item.', 'error');
+    }
+  };
+
   const openCreateCategoryModal = () => {
     setCategoryModalMode('create');
     setCategoryForm(EMPTY_CATEGORY_FORM);
@@ -1629,6 +1679,15 @@ function InventoryDashboardSection({
       <button type="button" onClick={() => { openMovementModal(row, 'ajuste'); setRowMenuOpenId(null); }}>
         Ajuste rapido
       </button>
+      {row.controlsStock ? (
+        <button type="button" onClick={() => handlePauseProductStockControl(row)}>
+          Pausar control de stock
+        </button>
+      ) : (
+        <button type="button" onClick={() => handleValidateProductStock(row)}>
+          Validar item y controlar stock
+        </button>
+      )}
       <button type="button" className="danger" onClick={() => { handleDeleteProduct(row); }}>
         Eliminar
       </button>
@@ -2402,14 +2461,17 @@ function InventoryDashboardSection({
                         {isProductsModule ? <td className="inventory-attribute-cell">{row.itemColor || '-'}</td> : null}
                         {isProductsModule ? <td>Unidad</td> : null}
                         {isProductsModule ? <td>{row.total}</td> : null}
-                        <td className={row.lowAvailability ? 'bad' : 'good'}>{row.available}</td>
+                        <td className={!row.controlsStock ? 'muted' : row.lowAvailability ? 'bad' : 'good'}>
+                          {row.controlsStock ? row.available : 'No controla'}
+                        </td>
                         {!isProductsModule ? <td className="warn">{row.reserved}</td> : null}
                         {!isProductsModule ? <td className="bad">{row.maintenance}</td> : null}
                         {!isProductsModule ? <td>{row.total}</td> : null}
                         <td>
-                          <span className={row.lowAvailability ? 'inventory-status low' : 'inventory-status ok'}>
-                            {row.lowAvailability ? 'Stock Bajo' : 'Disponible'}
+                          <span className={!row.controlsStock ? 'inventory-status pending' : row.lowAvailability ? 'inventory-status low' : 'inventory-status ok'}>
+                            {!row.controlsStock ? 'Por validar' : row.lowAvailability ? 'Stock Bajo' : 'Controlado'}
                           </span>
+                          {!row.controlsStock ? <small className="inventory-stock-mode-note">No descuenta</small> : null}
                         </td>
                         <td className="inventory-row-menu">
                           <div className="inventory-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>

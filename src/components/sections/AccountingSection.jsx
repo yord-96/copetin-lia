@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import { api } from '../../services/api';
 
 const getInputDate = (baseDate = new Date()) => {
   const cloned = new Date(baseDate);
@@ -189,6 +190,7 @@ function AccountingSection({
   onCloseCashSession,
   onCreateCashMovement,
   onCollectReceivable,
+  onPrintCashMovementReceipt,
 }) {
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
@@ -568,6 +570,64 @@ function AccountingSection({
     setCashActionError('');
   };
 
+  const resolvePrintableCashMovementId = (result, preferredCashBoxType = '') => {
+    if (!result) return '';
+    if (result.id) return result.id;
+    if (result.movement?.id) return result.movement.id;
+    const rows = Array.isArray(result.movements) ? result.movements : [];
+    if (rows.length === 0) return '';
+    const preferred = rows.find((movement) => {
+      if (preferredCashBoxType === 'BIG_CASH') return isBigCash(movement);
+      if (preferredCashBoxType === 'PETTY_CASH') return isPettyCash(movement);
+      return false;
+    });
+    return preferred?.id || rows[0]?.id || '';
+  };
+
+  const openReceiptWindow = () => {
+    const printWindow = window.open('', '_blank', 'width=1120,height=760');
+    if (!printWindow) {
+      throw new Error('Chrome bloqueo la ventana del recibo. Habilita ventanas emergentes para este sitio.');
+    }
+    printWindow.document.open();
+    printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Generando recibo</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#111827;"><strong>Generando recibo...</strong></body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    return printWindow;
+  };
+
+  const writeReceiptWindow = (printWindow, result) => {
+    if (!result?.html) {
+      throw new Error('No se pudo generar el contenido del recibo.');
+    }
+    printWindow.document.open();
+    printWindow.document.write(result.html);
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
+  const printCashReceipt = async (movementId) => {
+    if (!movementId) return;
+    let printWindow = null;
+    try {
+      printWindow = openReceiptWindow();
+      let result = onPrintCashMovementReceipt
+        ? await onPrintCashMovementReceipt(movementId)
+        : null;
+      if (!result?.html) {
+        result = await api.printer.printCashMovementReceipt({ movementId });
+      }
+      writeReceiptWindow(printWindow, result);
+    } catch (error) {
+      if (printWindow && !printWindow.closed) {
+        printWindow.close();
+      }
+      setCashActionError(error.message || 'No se pudo abrir el recibo de caja.');
+    }
+  };
+
+  const canPrintCashMovement = (movement) => Math.abs(toNumber(movement?.amountBs)) > 0;
+
   const handleSubmitCashAction = async (event) => {
     event.preventDefault();
     if (!cashModal) return;
@@ -576,15 +636,16 @@ function AccountingSection({
     try {
       const amountBs = Math.max(0, toNumber(cashForm.amountBs));
       if (cashModal === 'openPetty') {
-        await onOpenCashSession?.({
+        const created = await onOpenCashSession?.({
           openingBigCashBs: 0,
           openingPettyCashBs: amountBs,
           openedBy: currentUserName,
           notes: cashForm.notes || cashForm.description || 'Apertura diaria de caja chica',
         });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Caja Chica aperturada desde Caja Grande.');
       } else if (cashModal === 'transfer') {
-        await onCreateCashMovement?.({
+        const created = await onCreateCashMovement?.({
           type: 'transferencia',
           amountBs,
           description: cashForm.description || 'Reposicion de Caja Chica',
@@ -592,11 +653,13 @@ function AccountingSection({
           paymentMethod: cashForm.paymentMethod,
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
+          notes: cashForm.notes,
           createdBy: currentUserName,
         });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
         setCashActionFeedback('Reposicion registrada en Caja Grande y Caja Chica.');
       } else if (cashModal === 'expense') {
-        await onCreateCashMovement?.({
+        const created = await onCreateCashMovement?.({
           type: 'egreso',
           cashBoxType: 'PETTY_CASH',
           amountBs,
@@ -605,11 +668,13 @@ function AccountingSection({
           paymentMethod: cashForm.paymentMethod,
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
+          notes: cashForm.notes,
           createdBy: currentUserName,
         });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
       } else if (cashModal === 'income') {
-        await onCreateCashMovement?.({
+        const created = await onCreateCashMovement?.({
           type: 'ingreso',
           cashBoxType: 'BIG_CASH',
           amountBs,
@@ -618,8 +683,10 @@ function AccountingSection({
           paymentMethod: cashForm.paymentMethod,
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
+          notes: cashForm.notes,
           createdBy: currentUserName,
         });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
         setCashActionFeedback('Ingreso registrado en Caja Grande.');
       } else if (cashModal === 'closePetty') {
         await onCloseCashSession?.({
@@ -644,7 +711,7 @@ function AccountingSection({
     setIsSubmittingCash(true);
     setCashActionError('');
     try {
-      await onCollectReceivable?.({
+      const result = await onCollectReceivable?.({
         rentalId: collectModal.id,
         amountBs: Math.max(0, toNumber(collectForm.amountBs)),
         paymentMethod: collectForm.paymentMethod,
@@ -652,6 +719,7 @@ function AccountingSection({
         note: collectForm.note,
         createdBy: currentUserName,
       });
+      await printCashReceipt(resolvePrintableCashMovementId(result, 'BIG_CASH'));
       setCashActionFeedback('Cobro registrado en Caja Grande.');
       closeCollectAction();
     } catch (error) {
@@ -663,7 +731,7 @@ function AccountingSection({
 
   const getCashModalTitle = () => {
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
-    if (cashModal === 'transfer') return 'Reponer Caja Chica';
+    if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
     if (cashModal === 'expense') return 'Registrar gasto de Caja Chica';
     if (cashModal === 'income') return 'Registrar ingreso de Caja Grande';
     if (cashModal === 'closePetty') return 'Cerrar Caja Chica';
@@ -673,6 +741,7 @@ function AccountingSection({
   const renderCashModals = () => (
     <>
       {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
+      {cashActionError && !cashModal && !collectModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
       {cashModal ? (
         <div className="accounting-modal-backdrop" onClick={closeCashAction}>
           <form className="accounting-modal accounting-movement-form" onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
@@ -686,7 +755,7 @@ function AccountingSection({
                     ? 'Los gastos salen de la Caja Chica abierta.'
                     : cashModal === 'closePetty'
                     ? 'El saldo contado vuelve a Caja Grande al cerrar.'
-                    : 'El dinero sale de Caja Grande y entra a Caja Chica.'}
+                    : 'Se descuenta de Caja Grande, se registra recibo de egreso y el monto queda disponible en Caja Chica.'}
                 </small>
               </div>
               <button type="button" className="orders-modal-close" onClick={closeCashAction}>x</button>
@@ -722,7 +791,13 @@ function AccountingSection({
                   <input
                     value={cashForm.description}
                     onChange={(event) => setCashForm((current) => ({ ...current, description: event.target.value }))}
-                    placeholder={cashModal === 'expense' ? 'Ej: almuerzo, taxi, reparacion, sueldo...' : 'Detalle del movimiento'}
+                    placeholder={
+                      cashModal === 'expense'
+                        ? 'Ej: almuerzo, taxi, reparacion, sueldo...'
+                        : cashModal === 'transfer'
+                        ? 'Ej: reposicion para gastos operativos'
+                        : 'Detalle del movimiento'
+                    }
                     required={cashModal !== 'openPetty'}
                   />
                 </label>
@@ -738,6 +813,12 @@ function AccountingSection({
                           <option value="compras">Compras</option>
                           <option value="sueldos">Pago de sueldos</option>
                           <option value="varios">Varios</option>
+                        </>
+                      ) : cashModal === 'transfer' ? (
+                        <>
+                          <option value="reposicion_caja_chica">Reposicion caja chica</option>
+                          <option value="fondo_operativo">Fondo operativo</option>
+                          <option value="ajuste_caja_chica">Ajuste caja chica</option>
                         </>
                       ) : (
                         <>
@@ -887,11 +968,23 @@ function AccountingSection({
               <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               <span className="date-icon"><MiniIcon kind="calendar" /></span>
             </label>
-            <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('income', { category: 'ingreso_manual' })}>
-              <span>+ Registrar ingreso</span>
-              <span className="divider" />
-              <MiniIcon kind="chevron" />
-            </button>
+            <div className="accounting-bigcash-action-group" aria-label="Movimientos de Caja Grande">
+              <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('income', { category: 'ingreso_manual' })}>
+                <span>+ Ingreso</span>
+              </button>
+              <button
+                type="button"
+                className="accounting-overview-secondary danger"
+                onClick={() => openCashAction('transfer', {
+                  description: 'Reposicion a caja chica',
+                  category: 'reposicion_caja_chica',
+                  responsible: currentUserName,
+                })}
+              >
+                <MiniIcon kind="down" />
+                <span>Egreso a caja chica</span>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -999,7 +1092,18 @@ function AccountingSection({
                         <td className="negative amount">{meta.withdrawal}</td>
                         <td>{formatBs(runningBigCashBalance(index))}</td>
                         <td>{movement.responsible || movement.createdBy || '-'}</td>
-                        <td><span className="bigcash-more"><MiniIcon kind="more" /></span></td>
+                        <td>
+                          {canPrintCashMovement(movement) ? (
+                            <button
+                              type="button"
+                              className="cash-receipt-action"
+                              onClick={() => printCashReceipt(movement.id)}
+                              title="Imprimir recibo"
+                            >
+                              Recibo
+                            </button>
+                          ) : <span className="cash-receipt-muted">Sin recibo</span>}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1117,7 +1221,6 @@ function AccountingSection({
     const openingRow = dayPettyOpeningRows[0] ?? null;
     const openingSource = selectedDayPettyRepositions[0] ?? openingRow;
     const pettyOpenedBy = openingRow?.responsible || openingRow?.createdBy || activeCashSession?.openedBy || '-';
-    const isPettySessionOpen = String(activeCashSession?.status ?? '').toLowerCase() === 'open';
 
     return (
       <section className="panel accounting-pettycash-view">
@@ -1131,16 +1234,6 @@ function AccountingSection({
               <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               <span className="date-icon"><MiniIcon kind="calendar" /></span>
             </label>
-            <button
-              type="button"
-              className="petty-primary-button"
-              onClick={() => openCashAction(isPettySessionOpen ? 'transfer' : 'openPetty', {
-                description: isPettySessionOpen ? 'Reposicion de Caja Chica' : 'Apertura diaria de Caja Chica',
-                category: isPettySessionOpen ? 'reposicion_caja_chica' : 'apertura_caja_chica',
-              })}
-            >
-              <span>{isPettySessionOpen ? '+ Reponer caja chica' : '+ Aperturar caja chica'}</span>
-            </button>
           </div>
         </header>
 
@@ -1149,12 +1242,12 @@ function AccountingSection({
             <div className="petty-opening-head">
               <span className="petty-hero-icon violet"><CashIcon kind="big" /></span>
               <div>
-                <strong>APERTURA DEL DÍA</strong>
+                <strong>FONDO RECIBIDO</strong>
                 <span>{formatDate(openingRow?.createdAt ?? selectedDate)} - {getLongHourLabel(openingRow?.createdAt ?? activeCashSession?.openedAt)}</span>
                 <small>Por: {pettyOpenedBy}</small>
               </div>
             </div>
-            <h3 className="value-blue">{formatBs(dayPettyOpeningBs)}</h3>
+            <h3 className="value-blue">{formatBs(dayPettyOpeningBs + dayPettyRepositionBs)}</h3>
             <div className="petty-opening-note">
               <span>Desde Caja Grande</span>
               <b>{openingSource?.receipt || openingSource?.id ? `Ingreso N° ${String(openingSource?.receipt || openingSource?.id).slice(0, 12)}` : 'Sin referencia registrada'}</b>
@@ -1195,23 +1288,16 @@ function AccountingSection({
 
           <article className="petty-kpi-card closing">
             <div className="petty-card-title">
-              <span className="petty-hero-icon blue"><MiniIcon kind="lock" /></span>
+              <span className="petty-hero-icon blue"><MiniIcon kind="chart" /></span>
               <div>
-                <strong>CIERRE DEL DÍA</strong>
-                <p>{isPettySessionOpen ? 'Aún no se ha cerrado la caja chica del día.' : 'Caja chica cerrada para la fecha seleccionada.'}</p>
+                <strong>CONTROL DEL FONDO</strong>
+                <p>La reposicion solo se registra desde Caja Grande. Aqui se controlan gastos, saldos y comprobantes.</p>
               </div>
             </div>
-            <button
-              type="button"
-              className="petty-close-button"
-              disabled={!isPettySessionOpen}
-              onClick={() => openCashAction('closePetty', {
-                amountBs: String(Math.max(0, pettyCashBalanceBs)),
-                description: 'Cierre diario de Caja Chica',
-              })}
-            >
-              Cerrar caja chica
-            </button>
+            <div className="petty-balance-list compact">
+              <span><small>Reposiciones</small><b>{formatBs(dayPettyRepositionBs)}</b></span>
+              <span><small>Gastos</small><b className="value-orange">- {formatBs(dayPettyExpenseBs)}</b></span>
+            </div>
           </article>
         </section>
 
@@ -1223,7 +1309,7 @@ function AccountingSection({
                 type="button"
                 className="petty-primary-button small"
                 onClick={() => openCashAction('expense', { category: 'varios' })}
-                disabled={!isPettySessionOpen}
+                disabled={pettyCashBalanceBs <= 0}
               >
                 + Registrar gasto
               </button>
@@ -1275,7 +1361,18 @@ function AccountingSection({
                         <td>{formatBs(Math.abs(movement.amountBs))}</td>
                         <td>{movement.receipt || '-'}</td>
                         <td>{movement.createdBy || movement.responsible || '-'}</td>
-                        <td><span className="bigcash-more"><MiniIcon kind="more" /></span></td>
+                        <td>
+                          {canPrintCashMovement(movement) ? (
+                            <button
+                              type="button"
+                              className="cash-receipt-action"
+                              onClick={() => printCashReceipt(movement.id)}
+                              title="Imprimir recibo"
+                            >
+                              Recibo
+                            </button>
+                          ) : <span className="cash-receipt-muted">Sin recibo</span>}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1308,7 +1405,7 @@ function AccountingSection({
               <span><MiniIcon kind="info" /></span>
               <div>
                 <strong>Importante</strong>
-                <p>La caja chica se repone desde Caja Grande según sea necesario. Asegúrate de cerrar la caja al final del día.</p>
+                <p>La caja chica solo recibe fondos desde Caja Grande. Desde esta vista registra gastos, filtra movimientos y conserva comprobantes.</p>
               </div>
             </article>
 
@@ -1328,58 +1425,6 @@ function AccountingSection({
             </article>
           </aside>
         </section>
-
-        <section className="petty-bottom-grid">
-          <article className="bigcash-card petty-flow-card">
-            <h3>FLUJO DE CAJA CHICA</h3>
-            <div className="petty-flow">
-              <span className="flow-node source"><b>CAJA GRANDE</b><small>Origen de fondos</small></span>
-              <i>Se transfiere /<br />repone fondos</i>
-              <span className="flow-node petty"><b>CAJA CHICA</b><small>Gastos menores del día</small></span>
-              <i>Se devuelve<br />el saldo</i>
-              <span className="flow-node return"><b>CAJA GRANDE</b><small>Devolución de saldo no utilizado</small></span>
-            </div>
-          </article>
-
-          <article className="bigcash-card petty-history-card">
-            <h3><span className="bigcash-title-icon neutral"><MiniIcon kind="lock" /></span>HISTÓRICO DE CAJAS CHICAS</h3>
-            <div className="petty-history-table-wrap">
-              <table className="accounting-table petty-history-table">
-                <thead><tr><th>Fecha</th><th>Apertura</th><th>Gastos</th><th>Saldo devuelto</th><th>Estado</th></tr></thead>
-                <tbody>
-                  {pettySessionHistory.map((session) => {
-                    const dateKey = getDateKey(session.openedAt);
-                    const sessionPettyRows = sortedMovements.filter((movement) => movement.sessionId === session.id && isPettyCash(movement));
-                    const opening = sumBy(
-                      sessionPettyRows.filter((movement) => toNumber(movement.amountBs) > 0),
-                      (movement) => movement.amountBs,
-                    );
-                    const expenses = Math.abs(sumBy(
-                      sessionPettyRows.filter((movement) => toNumber(movement.amountBs) < 0 && !movement.isInternalTransfer),
-                      (movement) => movement.amountBs,
-                    ));
-                    const returned = Math.abs(sumBy(
-                      sessionPettyRows.filter((movement) => String(movement.type ?? '') === 'devolucion_saldo_caja_chica'),
-                      (movement) => movement.amountBs,
-                    ));
-                    const closed = String(session.status ?? '').toLowerCase() !== 'open';
-                    return (
-                      <tr key={session.id}>
-                        <td>{formatDate(dateKey || session.openedAt)}</td>
-                        <td>{formatBs(opening)}</td>
-                        <td>{formatBs(expenses)}</td>
-                        <td>{formatBs(returned)}</td>
-                        <td><span className={`petty-history-state ${closed ? 'closed' : 'open'}`}>{closed ? 'Cerrada' : 'Abierta'}</span></td>
-                      </tr>
-                    );
-                  })}
-                  {pettySessionHistory.length === 0 ? <tr><td colSpan={5}><p className="status">Sin cajas chicas registradas.</p></td></tr> : null}
-                </tbody>
-              </table>
-            </div>
-            <button type="button" className="section-link blue">Ver todas las cajas chicas</button>
-          </article>
-        </section>
         {renderCashModals()}
       </section>
     );
@@ -1397,8 +1442,8 @@ function AccountingSection({
             <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
             <span className="date-icon"><MiniIcon kind="calendar" /></span>
           </label>
-          <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('transfer', { description: 'Reposicion de Caja Chica' })}>
-            <span>+ Nueva operación</span>
+          <button type="button" className="accounting-overview-primary" onClick={() => openCashAction('income', { category: 'ingreso_manual' })}>
+            <span>+ Registrar ingreso</span>
             <span className="divider" />
             <MiniIcon kind="chevron" />
           </button>

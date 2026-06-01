@@ -24078,6 +24078,44 @@ button.calendar-dispatch-row:focus-visible {
   height: 0.95rem;
 }
 
+.accounting-bigcash-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.accounting-overview-secondary {
+  min-height: 2.65rem;
+  border: 1px solid #fed7aa;
+  border-radius: 0.48rem;
+  background: #fff7ed;
+  color: #c2410c;
+  padding: 0.54rem 0.78rem;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 850;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  white-space: nowrap;
+}
+
+.accounting-overview-secondary svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.accounting-overview-secondary:hover {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
+
+.accounting-overview-secondary.danger {
+  box-shadow: 0 10px 22px rgba(234, 88, 12, 0.08);
+}
+
 .accounting-date-control {
   position: relative;
   display: inline-flex;
@@ -25062,6 +25100,37 @@ button.calendar-dispatch-row:focus-visible {
   color: #64748b;
   display: inline-grid;
   place-items: center;
+}
+
+.cash-receipt-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cash-receipt-action:hover {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
+
+.cash-receipt-muted {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .bigcash-side {
@@ -26159,7 +26228,16 @@ button.calendar-dispatch-row:focus-visible {
     font-size: 0.88rem;
   }
 
-  :is(.primary-button, .ghost-button, .link-button, .clients-export-btn, .orders-export-btn, .users-new-button, .orders-new-btn, .transport-schedule-btn, .accounting-overview-primary) {
+  .accounting-bigcash-action-group {
+    width: 100%;
+  }
+
+  .accounting-bigcash-action-group > button {
+    flex: 1 1 12rem;
+    justify-content: center;
+  }
+
+  :is(.primary-button, .ghost-button, .link-button, .clients-export-btn, .orders-export-btn, .users-new-button, .orders-new-btn, .transport-schedule-btn, .accounting-overview-primary, .accounting-overview-secondary) {
     min-height: 2.65rem;
   }
 
@@ -28431,4 +28509,157 @@ button.calendar-dispatch-row:focus-visible {
   .calendar-main-other-events > div {
     grid-template-columns: 1fr;
   }
+}
+
+.inventory-status.pending {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.inventory-stock-mode-note {
+  display: block;
+  margin-top: 0.16rem;
+  color: #9a6b4f;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.inventory-table-modern td.muted {
+  color: #8a6a5a;
+  font-weight: 800;
+}
+
+.inventory-product-cell {
+  min-width: 0;
+}
+
+.inventory-product-cell > div:last-child,
+.orders-product-info {
+  min-width: 0;
+}
+
+.inventory-product-cell strong,
+.orders-product-info strong {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+
+.inventory-product-cell span,
+.orders-product-info > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.22;
+}
+
+.orders-product-info {
+  grid-template-rows: auto auto auto;
+}
+
+.orders-product-info .orders-availability-metrics {
+  grid-row: 1 / span 3;
+}
+
+.orders-product-detail-line {
+  grid-column: 1;
+  grid-row: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.12rem;
+}
+
+.orders-product-detail-line span {
+  border: 1px solid #ead8c9;
+  border-radius: 999px;
+  background: #fffaf6;
+  color: #7a4c32;
+  padding: 0.12rem 0.34rem;
+  font-size: 0.62rem;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.orders-product-list .orders-product-row {
+  min-height: auto;
+  grid-template-columns: 3.4rem minmax(0, 1fr) minmax(72px, auto) 2.6rem 5.4rem;
+  align-items: center;
+  gap: 0.58rem;
+  padding: 0.54rem 0.62rem;
+}
+
+.orders-product-list .orders-product-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  gap: 0.14rem;
+  align-items: start;
+}
+
+.orders-product-list .orders-product-info strong,
+.orders-product-list .orders-product-info > span,
+.orders-product-list .orders-product-detail-line,
+.orders-product-list .orders-availability-metrics {
+  grid-column: 1;
+  grid-row: auto;
+}
+
+.orders-product-list .orders-product-info strong {
+  align-self: auto;
+  font-size: 0.82rem;
+  line-height: 1.14;
+}
+
+.orders-product-list .orders-product-info > span {
+  align-self: auto;
+  margin: 0;
+}
+
+.orders-product-list .orders-product-detail-line {
+  margin-top: 0.04rem;
+}
+
+.orders-product-list .orders-product-detail-line span {
+  padding: 0.08rem 0.28rem;
+  font-size: 0.58rem;
+}
+
+.orders-product-list .orders-availability-metrics,
+.orders-product-list .orders-availability-metrics.is-provisional {
+  width: 100%;
+  max-width: none;
+  margin-top: 0.1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.22rem;
+}
+
+.orders-product-list .orders-availability-metrics:not(.is-provisional) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.orders-product-list .orders-availability-metrics > span {
+  min-height: 1.72rem;
+  padding: 0.18rem 0.28rem;
+  border-radius: 0.44rem;
+}
+
+.orders-product-list .orders-availability-metrics small {
+  font-size: 0.5rem;
+}
+
+.orders-product-list .orders-availability-metrics strong,
+.orders-product-list .orders-availability-metrics.is-provisional strong {
+  font-size: 0.68rem;
+  line-height: 1.05;
+}
+
+.orders-product-list .orders-product-price {
+  align-self: center;
+}
+
+.orders-product-list .orders-product-row .primary-button {
+  align-self: center;
 }

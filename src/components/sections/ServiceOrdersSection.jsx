@@ -4110,6 +4110,7 @@ function ServiceOrdersSection({
                         const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
                         const returningQty = Math.max(0, Number(availability?.returningBeforeStartQty ?? 0));
                         const softQty = Math.max(0, Number(availability?.softReservedQty ?? 0));
+                        const detailParts = getOperationalItemDetails({ item });
                         return (
                         <article
                           key={item.id}
@@ -4131,11 +4132,18 @@ function ServiceOrdersSection({
                             )}
                           </div>
                           <div className="orders-product-info">
-                            <strong>{item.name}</strong>
+                            <strong title={item.name}>{item.name}</strong>
                             <span>
                               {item.category || 'Sin categoria'}
                               {isProvisionalCatalogItem ? ' | Pendiente de inventario' : ''}
                             </span>
+                            {detailParts.length > 0 ? (
+                              <div className="orders-product-detail-line">
+                                {detailParts.map((part) => (
+                                  <span key={`${item.id}-${part.label}`}>{part.label}: {part.value}</span>
+                                ))}
+                              </div>
+                            ) : null}
                             {isProvisionalCatalogItem ? (
                               <div className="orders-availability-metrics is-provisional">
                                 <span className="primary">

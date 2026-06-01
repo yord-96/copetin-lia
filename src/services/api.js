@@ -436,6 +436,7 @@ export const api = {
   printer: {
     printRentalReceipt: (payload) => callBridge('printer', 'printRentalReceipt', false, payload),
     printReturnReceipt: (payload) => callBridge('printer', 'printReturnReceipt', false, payload),
+    printCashMovementReceipt: (payload) => callBridge('printer', 'printCashMovementReceipt', false, payload),
     printContract: (payload) => callBridge('printer', 'printContract', false, payload),
     printInventoryOrder: (payload) => callBridge('printer', 'printInventoryOrder', false, payload),
     printRouteSheet: (payload) => callBridge('printer', 'printRouteSheet', false, payload),

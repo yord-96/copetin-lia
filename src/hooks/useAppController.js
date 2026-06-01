@@ -1500,6 +1500,22 @@ export const useAppController = () => {
     }
   };
 
+  const handlePrintCashMovementReceipt = async (movementId) => {
+    if (!movementId) {
+      setError('No se pudo identificar el movimiento de caja.');
+      return;
+    }
+
+    setError('');
+    try {
+      return await api.printer.printCashMovementReceipt({ movementId });
+    } catch (requestError) {
+      if (isPrintCanceledError(requestError)) return;
+      setError(requestError.message || 'No se pudo imprimir el recibo de caja.');
+      throw requestError;
+    }
+  };
+
   const handleVerifyResetAccess = async ({ code }) => {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) {
@@ -1660,6 +1676,7 @@ export const useAppController = () => {
     handlePrintRouteSheetDocument,
     handlePrintRentalReceipt,
     handlePrintReturnReceipt,
+    handlePrintCashMovementReceipt,
     handleVerifyResetAccess,
     handleAnalyzeSystemReset,
     handleExecuteSystemReset,

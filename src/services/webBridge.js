@@ -946,6 +946,23 @@ const normalizeState = (state) => {
         ? Number(item.missingUnitChargeBs)
         : Number((rentalPriceBs * 2).toFixed(2));
 
+      const rawVerificationStatus = String(item?.verificationStatus ?? '').trim();
+      const adoptionSource = String(item?.adoptionSource ?? '').trim();
+      const legacyControlsStock = typeof item?.controlsStock === 'boolean' ? item.controlsStock : null;
+      const isPendingOperationalItem =
+        rawVerificationStatus === 'pending_verification'
+        || adoptionSource === 'service_order_quick_item'
+        || (totalStock <= 0 && availableStock <= 0);
+      const controlsStock =
+        legacyControlsStock !== null
+          ? legacyControlsStock
+          : rawVerificationStatus === 'verified'
+          ? true
+          : false;
+      const verificationStatus =
+        rawVerificationStatus
+        || (controlsStock && !isPendingOperationalItem ? 'verified' : 'pending_verification');
+
       return {
         id: item?.id ?? makeId('item'),
         name: String(item?.name ?? '').trim(),
@@ -954,6 +971,9 @@ const normalizeState = (state) => {
         itemColor: String(item?.itemColor ?? item?.colorDescription ?? '').trim(),
         totalStock,
         availableStock,
+        controlsStock: controlsStock && !isPendingOperationalItem,
+        verificationStatus: controlsStock && !isPendingOperationalItem ? 'verified' : verificationStatus,
+        adoptionSource,
         needsCleaningOnReturn: categoryRequiresCleaning(item?.category)
           ? true
           : Boolean(item?.needsCleaningOnReturn),
@@ -1520,6 +1540,8 @@ const normalizeState = (state) => {
       paymentMethod: String(movement?.paymentMethod ?? '').trim(),
       responsible: String(movement?.responsible ?? movement?.createdBy ?? '').trim(),
       receipt: String(movement?.receipt ?? '').trim(),
+      receiptCode: String(movement?.receiptCode ?? '').trim(),
+      notes: String(movement?.notes ?? '').trim(),
       isInternalTransfer: Boolean(movement?.isInternalTransfer),
       transferGroupId: movement?.transferGroupId ?? null,
     }))
@@ -2327,6 +2349,8 @@ const buildCashMovement = ({
   paymentMethod = '',
   responsible = '',
   receipt = '',
+  receiptCode = '',
+  notes = '',
   isInternalTransfer = false,
   transferGroupId = null,
 }) => ({
@@ -2343,10 +2367,31 @@ const buildCashMovement = ({
   paymentMethod: String(paymentMethod ?? '').trim(),
   responsible: String(responsible ?? createdBy ?? '').trim(),
   receipt: String(receipt ?? '').trim(),
+  receiptCode: String(receiptCode ?? '').trim(),
+  notes: String(notes ?? '').trim(),
   isInternalTransfer: Boolean(isInternalTransfer),
   transferGroupId,
   createdAt: new Date().toISOString(),
 });
+
+const getCashReceiptCode = (state, movement) => {
+  const persisted = String(movement?.receiptCode ?? '').trim();
+  if (persisted) return persisted;
+  const index = (state.cashMovements ?? [])
+    .slice()
+    .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0))
+    .findIndex((entry) => entry.id === movement?.id);
+  return `RC-${String(index >= 0 ? index + 1 : (state.cashMovements?.length ?? 0) + 1).padStart(4, '0')}`;
+};
+
+const nextCashReceiptCode = (state) => {
+  const maxPersisted = (state.cashMovements ?? []).reduce((max, movement) => {
+    const match = String(movement?.receiptCode ?? '').match(/^RC-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  const next = maxPersisted > 0 ? maxPersisted + 1 : (state.cashMovements?.length ?? 0) + 1;
+  return `RC-${String(next).padStart(4, '0')}`;
+};
 
 const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
   const balance = state.cashMovements
@@ -2562,6 +2607,379 @@ const openPrintWindow = (html) => {
   setTimeout(() => {
     printWindow.print();
   }, 120);
+};
+
+const cashReceiptIcon = (fileName) =>
+  `<img class="cash-receipt-icon" src="${escapeHtml(`/imagenes/pdf contrato/${fileName}`)}" alt="" />`;
+
+const numberToSpanish = (value) => {
+  const n = Math.max(0, Math.floor(Number(value) || 0));
+  const units = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
+  const specials = {
+    10: 'diez',
+    11: 'once',
+    12: 'doce',
+    13: 'trece',
+    14: 'catorce',
+    15: 'quince',
+    20: 'veinte',
+  };
+  const tens = ['', '', 'veinti', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+  const hundreds = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+  if (n < 10) return units[n];
+  if (specials[n]) return specials[n];
+  if (n < 20) return `dieci${units[n - 10]}`;
+  if (n < 30) return n === 21 ? 'veintiuno' : `${tens[2]}${units[n - 20]}`;
+  if (n < 100) {
+    const ten = Math.floor(n / 10);
+    const unit = n % 10;
+    return unit ? `${tens[ten]} y ${units[unit]}` : tens[ten];
+  }
+  if (n === 100) return 'cien';
+  if (n < 1000) {
+    const hundred = Math.floor(n / 100);
+    const rest = n % 100;
+    return rest ? `${hundreds[hundred]} ${numberToSpanish(rest)}` : hundreds[hundred];
+  }
+  if (n < 1000000) {
+    const thousand = Math.floor(n / 1000);
+    const rest = n % 1000;
+    const prefix = thousand === 1 ? 'mil' : `${numberToSpanish(thousand)} mil`;
+    return rest ? `${prefix} ${numberToSpanish(rest)}` : prefix;
+  }
+  const million = Math.floor(n / 1000000);
+  const rest = n % 1000000;
+  const prefix = million === 1 ? 'un millon' : `${numberToSpanish(million)} millones`;
+  return rest ? `${prefix} ${numberToSpanish(rest)}` : prefix;
+};
+
+const amountToBolivianosText = (value) => {
+  const amount = Math.abs(Number(value ?? 0));
+  const whole = Math.floor(amount);
+  const cents = Math.round((amount - whole) * 100);
+  return `${numberToSpanish(whole)} ${String(cents).padStart(2, '0')}/100 bolivianos`;
+};
+
+const buildCashReceiptHtml = ({ state, movement }) => {
+  const company = getDocumentCompany(state.settings ?? {});
+  const cashBoxType = normalizeCashBoxType(movement.cashBoxType);
+  const amount = Math.abs(Number(movement.amountBs ?? 0));
+  const isOut = Number(movement.amountBs ?? 0) < 0
+    || String(movement.type ?? '').toLowerCase().includes('salida')
+    || String(movement.type ?? '').toLowerCase().includes('egreso');
+  const cashBoxLabel = cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
+  const movementLabel = isOut ? 'Egreso' : 'Ingreso';
+  const title = `RECIBO DE ${movementLabel.toUpperCase()} DE ${cashBoxLabel.toUpperCase()}`;
+  const totalLabel = isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
+  const partyLabel = isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
+  const cashBoxRoleLabel = isOut ? 'Caja origen' : 'Caja destino';
+  const createdAt = movement.createdAt ? new Date(movement.createdAt) : new Date();
+  const dateLabel = formatDate(createdAt);
+  const timeLabel = createdAt.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const receiptCode = getCashReceiptCode(state, movement);
+  const reference = movement.receipt || movement.sourceId || receiptCode;
+  const responsible = movement.responsible || movement.createdBy || 'Administracion';
+  const detail = movement.description || movement.category || 'Movimiento de caja';
+  const observation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
+
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>${escapeHtml(title)} ${escapeHtml(receiptCode)}</title>
+      <style>
+        @page { size: 216mm 140mm; margin: 0; }
+        * { box-sizing: border-box; }
+        html { background: #f4f4f4; }
+        body {
+          margin: 0;
+          padding: 8px 8px 12px;
+          color: #111827;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 10px;
+          line-height: 1.16;
+          overflow: auto;
+        }
+        h1, h2, h3, p { margin: 0; }
+        .cash-receipt-sheet {
+          width: 216mm;
+          height: 140mm;
+          margin: 0 auto;
+          padding: 4.6mm 6mm 3mm;
+          background: #fff;
+          border: 2px solid #f04b10;
+          outline: 1px solid #f04b10;
+          outline-offset: -3px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+        .receipt-top {
+          display: grid;
+          grid-template-columns: 74mm minmax(0, 1fr) 41mm;
+          gap: 4.2mm;
+          align-items: center;
+          padding: 0 3mm 3mm;
+          border-bottom: 2px solid #f04b10;
+        }
+        .receipt-brand { display: grid; grid-template-columns: 23mm minmax(0, 1fr); gap: 4mm; align-items: center; min-width: 0; }
+        .brand-stamp {
+          display: grid;
+          place-items: center;
+          width: 24mm;
+          height: 24mm;
+          color: #f04b10;
+        }
+        .brand-stamp svg {
+          width: 24mm;
+          height: 24mm;
+          display: block;
+        }
+        .brand-name {
+          font-family: Georgia, "Times New Roman", serif;
+          font-size: 27px;
+          font-style: italic;
+          font-weight: 800;
+          letter-spacing: 0;
+          color: #111;
+          white-space: nowrap;
+        }
+        .brand-subtitle { margin-top: 2px; color: #f04b10; font-size: 9px; font-weight: 900; line-height: 1.2; text-transform: uppercase; }
+        .receipt-title {
+          min-width: 0;
+          text-align: center;
+          border-left: 2px solid #111;
+          border-right: 2px solid #111;
+          padding: 1mm 3mm 0;
+        }
+        .receipt-title h1 {
+          font-size: 14.5px;
+          font-weight: 900;
+          letter-spacing: 0;
+          line-height: 1.02;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+        .receipt-code { display: inline-block; margin-top: 2.2mm; padding: 1.1mm 7mm; border: 1.5px solid #f04b10; border-radius: 4px; color: #f04b10; font-size: 16px; font-weight: 900; }
+        .receipt-datebox { display: grid; gap: 3.4mm; font-size: 11.5px; min-width: 0; }
+        .receipt-datebox span { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+        .receipt-datebox strong { font-size: 11px; font-weight: 900; }
+        .receipt-contact {
+          display: grid;
+          grid-template-columns: 1fr 1.25fr 1.7fr;
+          gap: 3mm;
+          align-items: center;
+          padding: 1.8mm 7mm;
+          border-bottom: 1.5px solid #111;
+          color: #111;
+          font-size: 9.5px;
+          text-align: center;
+        }
+        .receipt-contact span {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+          border-right: 1.5px solid #111;
+        }
+        .receipt-contact span:last-child { border-right: 0; }
+        .cash-receipt-icon {
+          width: 14px;
+          height: 14px;
+          object-fit: contain;
+          flex: 0 0 auto;
+        }
+        .receipt-info {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 4mm;
+          padding: 2.6mm 4mm;
+          border: 1.4px solid #111;
+          margin-top: 2.6mm;
+          height: 25mm;
+          overflow: hidden;
+        }
+        .info-col + .info-col { border-left: 1.4px solid #111; padding-left: 4mm; }
+        .info-line { display: grid; grid-template-columns: 31mm 4mm minmax(0, 1fr); gap: 1.6mm; margin-bottom: 1.35mm; font-size: 10px; line-height: 1.1; }
+        .info-line strong { text-transform: uppercase; font-weight: 900; }
+        .info-line span { max-height: 7.4mm; overflow: hidden; overflow-wrap: anywhere; }
+        table { width: 100%; border-collapse: collapse; margin-top: 2.6mm; table-layout: fixed; }
+        th, td { border: 1.4px solid #111; padding: 2.35mm 2.6mm; text-align: center; font-size: 10.2px; line-height: 1.12; overflow-wrap: anywhere; }
+        th { background: #fff4ed; font-size: 10.5px; letter-spacing: 0.035em; text-transform: uppercase; font-weight: 900; }
+        td.detail { text-align: left; max-height: 11mm; overflow: hidden; }
+        .receipt-total-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 63mm;
+          gap: 6mm;
+          align-items: center;
+          margin-top: 2.2mm;
+        }
+        .amount-words { display: flex; gap: 3mm; justify-content: flex-end; align-items: flex-end; font-size: 9.5px; min-width: 0; }
+        .amount-words span { min-width: 66mm; border-bottom: 1.4px solid #111; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .total-box {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          border: 1.4px solid #111;
+          padding: 1.8mm 4.8mm;
+          font-size: 12.5px;
+          font-weight: 900;
+          gap: 4mm;
+        }
+        .total-box span { white-space: nowrap; }
+        .total-box b { white-space: nowrap; }
+        .receipt-signatures {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 24mm;
+          margin: auto 17mm 3mm;
+          padding-top: 7mm;
+          text-align: center;
+        }
+        .signature-line { border-top: 1.4px solid #111; padding-top: 1.6mm; }
+        .signature-line strong { display: block; font-size: 10.5px; }
+        .signature-line span { font-size: 9px; }
+        .receipt-warning {
+          margin-top: 0;
+          border-bottom: 1.5px solid #f04b10;
+          padding-bottom: 1.2mm;
+          text-align: center;
+          color: #f04b10;
+          font-weight: 800;
+          font-size: 10.5px;
+        }
+        .receipt-footer { margin-top: 1mm; text-align: center; font-size: 9.5px; }
+        @media print {
+          html, body { width: 216mm; height: 140mm; background: #fff; padding: 0; overflow: hidden; }
+          .cash-receipt-sheet { box-shadow: none; margin: 0; transform: none; }
+          .receipt-preview-actions { display: none !important; }
+        }
+        @media screen {
+          .cash-receipt-sheet {
+            transform: scale(0.96);
+            transform-origin: top center;
+            margin-bottom: -5mm;
+            box-shadow: 0 10px 36px rgba(17, 24, 39, 0.16);
+          }
+        }
+        .receipt-preview-actions {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+          margin: 0 auto 10px;
+          padding: 10px;
+          background: rgba(255, 255, 255, 0.92);
+          border-bottom: 1px solid #fed7aa;
+          backdrop-filter: blur(10px);
+        }
+        .receipt-preview-actions button {
+          min-height: 34px;
+          padding: 0 14px;
+          border: 1px solid #fed7aa;
+          border-radius: 999px;
+          background: #fff7ed;
+          color: #c2410c;
+          font: 800 12px Arial, sans-serif;
+          cursor: pointer;
+        }
+        .receipt-preview-actions button.primary {
+          background: #f04b10;
+          border-color: #f04b10;
+          color: #fff;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="receipt-preview-actions">
+        <button type="button" class="primary" onclick="window.print()">Imprimir / guardar PDF</button>
+        <button type="button" onclick="window.close()">Cerrar</button>
+      </div>
+      <main class="cash-receipt-sheet">
+        <section class="receipt-top">
+          <div class="receipt-brand">
+            <span class="brand-stamp">
+              <svg viewBox="0 0 64 64" role="img" aria-label="El Copetin">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="#f04b10" stroke-width="4" />
+                <path d="M18 18h28L33 34v13" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M24 47h18" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" />
+                <path d="M33 34l14-21" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" />
+              </svg>
+            </span>
+            <div>
+              <div class="brand-name">El Copet&iacute;n</div>
+              <p class="brand-subtitle">Alquiler de mobiliario, cristaler&iacute;a y equipos para eventos</p>
+            </div>
+          </div>
+          <div class="receipt-title">
+            <h1>${escapeHtml(title)}</h1>
+            <span class="receipt-code">${escapeHtml(receiptCode)}</span>
+          </div>
+          <div class="receipt-datebox">
+            <span><strong>FECHA:</strong> ${escapeHtml(dateLabel)}</span>
+            <span><strong>HORA:</strong> ${escapeHtml(timeLabel)}</span>
+          </div>
+        </section>
+
+        <section class="receipt-contact">
+          <span>${cashReceiptIcon('llamada-telefonica.png')} ${escapeHtml(company.phone)}</span>
+          <span>${cashReceiptIcon('documento.png')} ${escapeHtml(company.email || 'Sin correo')}</span>
+          <span>${cashReceiptIcon('ubicacion.png')} ${escapeHtml(company.address)}</span>
+        </section>
+
+        <section class="receipt-info">
+          <div class="info-col">
+            <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
+            <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
+            <p class="info-line"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(responsible)}</span></p>
+            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(movement.paymentMethod || 'Efectivo')}</span></p>
+          </div>
+          <div class="info-col">
+            <p class="info-line"><strong>Referencia</strong><b>:</b><span>${escapeHtml(reference)}</span></p>
+            <p class="info-line"><strong>Concepto</strong><b>:</b><span>${escapeHtml(detail)}</span></p>
+            <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
+          </div>
+        </section>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 13mm;">Nro</th>
+              <th>Detalle</th>
+              <th style="width: 40mm;">Caja</th>
+              <th style="width: 48mm;">Responsable</th>
+              <th style="width: 42mm;">${escapeHtml(totalLabel)}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td class="detail">${escapeHtml(detail)}</td>
+              <td>${escapeHtml(cashBoxLabel)}</td>
+              <td>${escapeHtml(responsible)}</td>
+              <td>${formatBs(amount)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <section class="receipt-total-row">
+          <p class="amount-words"><strong>Son:</strong><span>${escapeHtml(amountToBolivianosText(amount))}</span></p>
+          <div class="total-box"><span>TOTAL ${isOut ? 'ENTREGADO' : 'RECIBIDO'}</span><b>${formatBs(amount)}</b></div>
+        </section>
+
+        <section class="receipt-signatures">
+          <div class="signature-line"><strong>Entregue</strong><span>(Nombre y Firma)</span></div>
+          <div class="signature-line"><strong>Recibi</strong><span>(Nombre y Firma)</span></div>
+        </section>
+
+        <p class="receipt-warning">Comprobante interno de ${isOut ? 'egreso' : 'ingreso'}. Conserve este recibo para control de caja.</p>
+        <p class="receipt-footer">Documento generado por ${escapeHtml(company.name)}</p>
+      </main>
+    </body>
+  </html>`;
 };
 
 const buildRentalReceiptHtml = (rental) => {
@@ -4442,6 +4860,7 @@ const createWebBridge = () => ({
       const missingUnitChargeBs = toNumber(payload?.missingUnitChargeBs, 'cargo por perdida');
       const requestedNeedsCleaningOnReturn = Boolean(payload?.needsCleaningOnReturn);
       const imageDataUrl = payload?.imageDataUrl ?? null;
+      const controlsStock = payload?.controlsStock === true;
 
       if (!name) {
         throw new Error('El nombre es obligatorio.');
@@ -4477,6 +4896,9 @@ const createWebBridge = () => ({
           itemColor,
           totalStock,
           availableStock: totalStock,
+          controlsStock,
+          verificationStatus: controlsStock ? 'verified' : 'pending_verification',
+          adoptionSource: controlsStock ? 'inventory_verified' : 'manual_inventory_pending',
           needsCleaningOnReturn: categoryRequiresCleaning(category)
             ? true
             : requestedNeedsCleaningOnReturn,
@@ -4582,6 +5004,26 @@ const createWebBridge = () => ({
             throw new Error('La imagen enviada no es valida.');
           }
           item.imageDataUrl = payload.imageDataUrl;
+        }
+
+        if (payload.controlsStock !== undefined) {
+          const nextControlsStock = Boolean(payload.controlsStock);
+          if (nextControlsStock && item.totalStock <= 0) {
+            throw new Error('Para validar el item primero registra un stock total mayor a 0.');
+          }
+          item.controlsStock = nextControlsStock;
+          item.verificationStatus = nextControlsStock ? 'verified' : 'pending_verification';
+          item.adoptionSource = nextControlsStock ? 'inventory_verified' : 'manual_inventory_pending';
+          item.verifiedAt = nextControlsStock ? new Date().toISOString() : null;
+        }
+
+        if (payload.verificationStatus !== undefined && payload.controlsStock === undefined) {
+          const status = String(payload.verificationStatus ?? '').trim();
+          item.verificationStatus = status || item.verificationStatus || 'pending_verification';
+        }
+
+        if (payload.adoptionSource !== undefined && payload.controlsStock === undefined) {
+          item.adoptionSource = String(payload.adoptionSource ?? '').trim();
         }
 
         item.updatedAt = new Date().toISOString();
@@ -8056,6 +8498,7 @@ const createWebBridge = () => ({
       }
 
       let createdSession = null;
+      const createdMovements = [];
       transaction((state) => {
         if (getActiveSession(state)) {
           throw new Error('Ya existe una caja abierta. Debes cerrarla antes de abrir otra.');
@@ -8081,7 +8524,8 @@ const createWebBridge = () => ({
 
         state.cashSessions.push(createdSession);
         if (openingBigCashBs > 0) {
-          state.cashMovements.push(buildCashMovement({
+          const receiptCode = nextCashReceiptCode(state);
+          const openingBigCashMovement = buildCashMovement({
             sessionId: createdSession.id,
             type: 'apertura',
             amountBs: openingBigCashBs,
@@ -8092,11 +8536,16 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.BIG_CASH,
             category: 'apertura',
             responsible: openedBy,
-          }));
+            receiptCode,
+            notes,
+          });
+          state.cashMovements.push(openingBigCashMovement);
+          createdMovements.push(openingBigCashMovement);
         }
         if (openingPettyCashBs > 0) {
           const transferGroupId = makeId('trf');
-          state.cashMovements.push(buildCashMovement({
+          const receiptCode = nextCashReceiptCode(state);
+          const openingPettyOutputMovement = buildCashMovement({
             sessionId: createdSession.id,
             type: 'transferencia_salida_caja_chica',
             amountBs: -openingPettyCashBs,
@@ -8107,10 +8556,12 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.BIG_CASH,
             category: 'apertura_caja_chica',
             responsible: openedBy,
+            receiptCode,
+            notes,
             isInternalTransfer: true,
             transferGroupId,
-          }));
-          state.cashMovements.push(buildCashMovement({
+          });
+          const openingPettyInputMovement = buildCashMovement({
             sessionId: createdSession.id,
             type: 'apertura',
             amountBs: openingPettyCashBs,
@@ -8121,14 +8572,21 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
             category: 'apertura_caja_chica',
             responsible: openedBy,
+            receiptCode,
+            notes,
             isInternalTransfer: true,
             transferGroupId,
-          }));
+          });
+          state.cashMovements.push(openingPettyOutputMovement, openingPettyInputMovement);
+          createdMovements.push(openingPettyOutputMovement, openingPettyInputMovement);
         }
         return state;
       });
 
-      return createdSession;
+      return {
+        ...createdSession,
+        movements: createdMovements.map((movement) => deepClone(movement)),
+      };
     },
     closeSession: async (payload) => {
       const countedBigCashBs = toNumber(payload?.countedBigCashBs ?? payload?.countedAmountBs ?? 0, 'monto contado caja grande');
@@ -8256,6 +8714,7 @@ const createWebBridge = () => ({
       const paymentMethod = String(payload?.paymentMethod ?? '').trim();
       const responsible = String(payload?.responsible ?? createdBy).trim() || createdBy;
       const receipt = String(payload?.receipt ?? '').trim();
+      const notes = String(payload?.notes ?? '').trim();
       const cashBoxType = inferCashBoxType({ movementType, category, cashBoxType: payload?.cashBoxType });
 
       if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
@@ -8270,8 +8729,24 @@ const createWebBridge = () => ({
 
       let createdMovement = null;
       transaction((state) => {
-        const activeSession = getActiveSession(state);
-        const requiresPettySession = movementType === 'transferencia' || cashBoxType === CASH_BOX_TYPES.PETTY_CASH;
+        let activeSession = getActiveSession(state);
+        if (!activeSession && movementType === 'transferencia') {
+          activeSession = {
+            id: makeId('cash'),
+            status: 'open',
+            openingAmountBs: 0,
+            openingBigCashBs: 0,
+            openingPettyCashBs: 0,
+            openedBy: createdBy,
+            openedAt: new Date().toISOString(),
+            openNotes: `Apertura automatica por reposicion a caja chica: ${description}`,
+            treasuryAccounts: normalizeTreasuryAccounts([]),
+            treasuryUpdatedAt: null,
+            treasuryUpdatedBy: '',
+          };
+          state.cashSessions.push(activeSession);
+        }
+        const requiresPettySession = cashBoxType === CASH_BOX_TYPES.PETTY_CASH;
         if (requiresPettySession && !activeSession) {
           throw new Error('Debes abrir caja chica antes de registrar este movimiento.');
         }
@@ -8292,6 +8767,7 @@ const createWebBridge = () => ({
 
         if (movementType === 'transferencia') {
           const transferGroupId = makeId('trf');
+          const receiptCode = nextCashReceiptCode(state);
           const fromMovement = buildCashMovement({
             sessionId,
             type: 'transferencia_salida_caja_chica',
@@ -8305,6 +8781,8 @@ const createWebBridge = () => ({
             paymentMethod,
             responsible,
             receipt,
+            receiptCode,
+            notes,
             isInternalTransfer: true,
             transferGroupId,
           });
@@ -8321,6 +8799,8 @@ const createWebBridge = () => ({
             paymentMethod,
             responsible,
             receipt,
+            receiptCode,
+            notes,
             isInternalTransfer: true,
             transferGroupId,
           });
@@ -8331,6 +8811,7 @@ const createWebBridge = () => ({
           };
         } else {
           const signedAmount = movementType === 'ingreso' ? amountRaw : -amountRaw;
+          const receiptCode = nextCashReceiptCode(state);
           createdMovement = buildCashMovement({
             sessionId,
             type: movementType === 'ingreso' ? 'ingreso_manual' : 'egreso_manual',
@@ -8344,6 +8825,8 @@ const createWebBridge = () => ({
             paymentMethod,
             responsible,
             receipt,
+            receiptCode,
+            notes,
           });
           state.cashMovements.push(createdMovement);
         }
@@ -8468,6 +8951,8 @@ const createWebBridge = () => ({
           paymentMethod: String(payload?.paymentMethod ?? '').trim(),
           responsible: createdBy,
           receipt: String(payload?.receipt ?? '').trim(),
+          receiptCode: nextCashReceiptCode(state),
+          notes: note,
         });
         state.cashMovements.push(movement);
 
@@ -8665,6 +9150,27 @@ const createWebBridge = () => ({
 
       openPrintWindow(buildReturnReceiptHtml(rental));
       return { ok: true };
+    },
+    printCashMovementReceipt: async (payload) => {
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      if (!movementId) {
+        throw new Error('Debes indicar el movimiento de caja para imprimir recibo.');
+      }
+
+      const state = readState();
+      const movement = state.cashMovements.find((entry) => entry.id === movementId);
+      if (!movement) {
+        throw new Error('No se encontro el movimiento de caja para imprimir.');
+      }
+      if (Number(movement.amountBs ?? 0) === 0) {
+        throw new Error('Este movimiento no tiene importe y no requiere recibo.');
+      }
+
+      return {
+        ok: true,
+        title: `Recibo ${getCashReceiptCode(state, movement)}`,
+        html: buildCashReceiptHtml({ state, movement }),
+      };
     },
     printContract: async (payload) => {
       const state = readState();
