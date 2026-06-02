@@ -770,6 +770,18 @@ export const useAppController = () => {
     }
   };
 
+  const handleVoidAndReplaceCashMovementReceipt = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.voidAndReplaceMovementReceipt(payload);
+      await loadData();
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo anular y reemplazar el recibo.');
+      throw requestError;
+    }
+  };
+
   const handleCollectReceivable = async (payload) => {
     setError('');
     try {
@@ -1293,6 +1305,8 @@ export const useAppController = () => {
         quotedTotals: contract.totals ?? null,
         eventType: contract.eventType,
         eventAddress: contract.address,
+        contractId: contract.id,
+        contractCode: contract.contractCode,
         items: (contract.items ?? []).map((line) => ({
           itemId: line.itemId,
           quantity: line.quantity,
@@ -1647,6 +1661,7 @@ export const useAppController = () => {
     handleCloseCashSession,
     handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
+    handleVoidAndReplaceCashMovementReceipt,
     handleCollectReceivable,
     handleReceiveReturnedOrder,
     handleCreateCategory,

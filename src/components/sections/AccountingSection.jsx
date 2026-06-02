@@ -46,6 +46,9 @@ const getMonthStartInput = (dateKey) => {
 
 const isBigCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH';
 const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH';
+const isVoidedCashMovement = (movement) =>
+  String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
+  || Boolean(movement?.voidedAt);
 
 function CashIcon({ kind }) {
   if (kind === 'safe') {
@@ -189,6 +192,7 @@ function AccountingSection({
   onOpenCashSession,
   onCloseCashSession,
   onCreateCashMovement,
+  onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
 }) {
@@ -201,6 +205,19 @@ function AccountingSection({
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyCashVisibleRows, setPettyCashVisibleRows] = useState(5);
   const [cashModal, setCashModal] = useState(null);
+  const [voidReceiptModal, setVoidReceiptModal] = useState(null);
+  const [voidReceiptStep, setVoidReceiptStep] = useState('reason');
+  const [voidReceiptReason, setVoidReceiptReason] = useState('');
+  const [voidReceiptForm, setVoidReceiptForm] = useState({
+    amountBs: '',
+    description: '',
+    category: '',
+    paymentMethod: 'efectivo',
+    responsible: '',
+    receipt: '',
+    notes: '',
+    linkedRentalId: '',
+  });
   const [cashForm, setCashForm] = useState({
     amountBs: '',
     description: '',
@@ -209,6 +226,7 @@ function AccountingSection({
     responsible: '',
     receipt: '',
     notes: '',
+    linkedRentalId: '',
   });
   const [collectModal, setCollectModal] = useState(null);
   const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', receipt: '', note: '' });
@@ -225,14 +243,39 @@ function AccountingSection({
     return map;
   }, [contracts]);
 
+  const transportContractOptions = useMemo(
+    () => rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() !== 'cancelled')
+      .map((rental) => {
+        const contract = contractByRentalId.get(rental.id);
+        const deliveryFeeBs = toNumber(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
+        return {
+          rentalId: rental.id,
+          contractId: rental.contractId ?? contract?.id ?? '',
+          orderCode: rental.orderCode ?? rental.id,
+          contractCode: rental.contractCode ?? contract?.contractCode ?? '',
+          customerName: rental.customerName ?? 'Cliente',
+          eventType: rental.eventType ?? contract?.eventType ?? '',
+          deliveryFeeBs,
+        };
+      })
+      .sort((a, b) => new Date(rentalById.get(b.rentalId)?.createdAt ?? 0) - new Date(rentalById.get(a.rentalId)?.createdAt ?? 0)),
+    [contractByRentalId, rentalById, rentals],
+  );
+
   const sortedMovements = useMemo(
     () => [...cashMovements].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
     [cashMovements],
   );
 
-  const bigCashPositiveRows = useMemo(
-    () => sortedMovements.filter((movement) => isBigCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
+  const postedMovements = useMemo(
+    () => sortedMovements.filter((movement) => !isVoidedCashMovement(movement)),
     [sortedMovements],
+  );
+
+  const bigCashPositiveRows = useMemo(
+    () => postedMovements.filter((movement) => isBigCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
+    [postedMovements],
   );
 
   const bigCashGuaranteeRows = useMemo(
@@ -246,11 +289,16 @@ function AccountingSection({
   );
 
   const pettyTransfersRows = useMemo(
-    () => sortedMovements.filter((movement) => isBigCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
-    [sortedMovements],
+    () => postedMovements.filter((movement) => isBigCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
+    [postedMovements],
   );
 
   const pettyExpenseRows = useMemo(
+    () => postedMovements.filter((movement) => isPettyCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
+    [postedMovements],
+  );
+
+  const visiblePettyExpenseRows = useMemo(
     () => sortedMovements.filter((movement) => isPettyCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
     [sortedMovements],
   );
@@ -271,31 +319,31 @@ function AccountingSection({
   );
 
   const dayPettyExpensesRows = useMemo(
-    () => pettyExpenseRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
-    [pettyExpenseRows, selectedDate],
+    () => visiblePettyExpenseRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
+    [visiblePettyExpenseRows, selectedDate],
   );
 
   const dayPettyExpenseBs = useMemo(
-    () => Math.abs(sumBy(dayPettyExpensesRows, (movement) => movement.amountBs)),
+    () => Math.abs(sumBy(dayPettyExpensesRows.filter((movement) => !isVoidedCashMovement(movement)), (movement) => movement.amountBs)),
     [dayPettyExpensesRows],
   );
 
   const dayPettyOpeningBs = useMemo(() => {
-    const openingRows = sortedMovements.filter(
+    const openingRows = postedMovements.filter(
       (movement) => isPettyCash(movement)
         && String(movement.type ?? '').toLowerCase() === 'apertura'
         && getDateKey(movement.createdAt) === selectedDate,
     );
     return sumBy(openingRows, (movement) => movement.amountBs);
-  }, [selectedDate, sortedMovements]);
+  }, [postedMovements, selectedDate]);
 
   const dayPettyOpeningRows = useMemo(
-    () => sortedMovements.filter(
+    () => postedMovements.filter(
       (movement) => isPettyCash(movement)
         && String(movement.type ?? '').toLowerCase() === 'apertura'
         && getDateKey(movement.createdAt) === selectedDate,
     ),
-    [selectedDate, sortedMovements],
+    [postedMovements, selectedDate],
   );
 
   const selectedDayPettyRepositions = useMemo(
@@ -320,9 +368,59 @@ function AccountingSection({
     () => Math.abs(sumBy(pettyTransfersRows.filter((movement) => getMonthKey(movement.createdAt) === selectedMonthKey), (movement) => movement.amountBs)),
     [pettyTransfersRows, selectedMonthKey],
   );
+  const monthTransportRevenueRows = useMemo(
+    () => postedMovements.filter(
+      (movement) => getMonthKey(movement.createdAt) === selectedMonthKey
+        && (
+          toNumber(movement?.transportRevenueBs) > 0
+          ||
+          String(movement?.accountingTag ?? '') === 'transport_revenue'
+          || String(movement?.category ?? '').toLowerCase() === 'transporte_cobrado'
+          || String(movement?.type ?? '').toLowerCase() === 'ingreso_transporte_cliente'
+        ),
+    ),
+    [postedMovements, selectedMonthKey],
+  );
+  const monthTransportExpenseRows = useMemo(
+    () => postedMovements.filter(
+      (movement) => getMonthKey(movement.createdAt) === selectedMonthKey
+        && isPettyCash(movement)
+        && toNumber(movement.amountBs) < 0
+        && (
+          toNumber(movement?.transportExpenseBs) > 0
+          ||
+          String(movement?.accountingTag ?? '') === 'transport_expense'
+          || (
+            Boolean(movement?.linkedRentalId || movement?.linkedOrderCode || movement?.linkedContractId)
+            && ['movilidad', 'transporte'].includes(String(movement?.category ?? '').toLowerCase())
+          )
+        ),
+    ),
+    [postedMovements, selectedMonthKey],
+  );
+  const monthTransportRevenueBs = useMemo(
+    () => sumBy(monthTransportRevenueRows, (movement) => toNumber(movement.transportRevenueBs) > 0 ? movement.transportRevenueBs : movement.amountBs),
+    [monthTransportRevenueRows],
+  );
+  const monthTransportExpenseBs = useMemo(
+    () => sumBy(monthTransportExpenseRows, (movement) => toNumber(movement.transportExpenseBs) > 0 ? movement.transportExpenseBs : Math.abs(toNumber(movement.amountBs))),
+    [monthTransportExpenseRows],
+  );
+  const monthTransportMarginBs = Number((monthTransportRevenueBs - monthTransportExpenseBs).toFixed(2));
   const bigCashMonthOpeningBs = bigCashBalanceBs - monthBigCashIncomeBs + monthBigCashTransferBs;
 
   const getMovementReference = useCallback((movement) => {
+    if (movement?.linkedOrderCode) return movement.linkedOrderCode;
+    if (movement?.linkedRentalId) {
+      const linkedRental = rentalById.get(movement.linkedRentalId);
+      const linkedContract = contractByRentalId.get(movement.linkedRentalId);
+      if (linkedContract?.contractCode) return `${linkedRental?.orderCode ?? movement.linkedOrderCode ?? ''} | ${linkedContract.contractCode}`.trim();
+      if (linkedRental?.orderCode) return linkedRental.orderCode;
+    }
+    if (movement?.linkedContractId) {
+      const linkedContract = contracts.find((contract) => contract.id === movement.linkedContractId);
+      if (linkedContract?.contractCode) return linkedContract.contractCode;
+    }
     const sourceId = String(movement?.sourceId ?? '').trim();
     if (!sourceId) return movement?.receipt || '-';
     const rental = rentalById.get(sourceId);
@@ -330,7 +428,7 @@ function AccountingSection({
     if (contract?.contractCode) return contract.contractCode;
     if (rental?.orderCode) return rental.orderCode;
     return movement?.receipt || sourceId;
-  }, [contractByRentalId, rentalById]);
+  }, [contractByRentalId, contracts, rentalById]);
 
   const filteredBigCashRows = useMemo(() => {
     const text = bigCashQuery.trim().toLowerCase();
@@ -338,8 +436,8 @@ function AccountingSection({
       const amount = toNumber(movement.amountBs);
       const matchesType =
         bigCashTypeFilter === 'all'
-        || (bigCashTypeFilter === 'income' && !movement.isInternalTransfer && amount > 0)
-        || (bigCashTypeFilter === 'transfer' && movement.isInternalTransfer && amount < 0);
+        || (bigCashTypeFilter === 'income' && !movement.isInternalTransfer && amount > 0 && !isVoidedCashMovement(movement))
+        || (bigCashTypeFilter === 'transfer' && movement.isInternalTransfer && amount < 0 && !isVoidedCashMovement(movement));
       if (!matchesType) return false;
       if (!text) return true;
       return [
@@ -372,7 +470,9 @@ function AccountingSection({
     const text = pettyCashQuery.trim().toLowerCase();
     return dayPettyExpensesRows.filter((movement) => {
       const category = getPettyExpenseCategory(movement);
-      const matchesType = pettyCashTypeFilter === 'all' || category.className === pettyCashTypeFilter;
+      const matchesType =
+        pettyCashTypeFilter === 'all'
+        || (!isVoidedCashMovement(movement) && category.className === pettyCashTypeFilter);
       if (!matchesType) return false;
       if (!text) return true;
       return [
@@ -380,10 +480,11 @@ function AccountingSection({
         movement.receipt,
         movement.responsible,
         movement.createdBy,
+        getMovementReference(movement),
         category.label,
       ].some((value) => String(value ?? '').toLowerCase().includes(text));
     });
-  }, [dayPettyExpensesRows, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
+  }, [dayPettyExpensesRows, getMovementReference, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
 
   const activeCashSession = useMemo(
     () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
@@ -521,7 +622,9 @@ function AccountingSection({
   };
 
   const runningBigCashBalance = (index) => {
-    const laterMovements = filteredBigCashRows.slice(index + 1);
+    const laterMovements = filteredBigCashRows
+      .slice(index + 1)
+      .filter((movement) => !isVoidedCashMovement(movement));
     const laterDelta = sumBy(laterMovements, (movement) => movement.amountBs);
     return bigCashBalanceBs - laterDelta;
   };
@@ -535,6 +638,7 @@ function AccountingSection({
       responsible: currentUserName,
       receipt: '',
       notes: '',
+      linkedRentalId: '',
       ...patch,
     });
     setCashActionError('');
@@ -626,7 +730,83 @@ function AccountingSection({
     }
   };
 
-  const canPrintCashMovement = (movement) => Math.abs(toNumber(movement?.amountBs)) > 0;
+  const canPrintCashMovement = (movement) => Math.abs(toNumber(movement?.amountBs)) > 0 && !isVoidedCashMovement(movement);
+  const canVoidCashMovement = (movement) => canPrintCashMovement(movement);
+
+  const closeVoidReceiptAction = () => {
+    setVoidReceiptModal(null);
+    setVoidReceiptStep('reason');
+    setVoidReceiptReason('');
+    setCashActionError('');
+  };
+
+  const openVoidReceiptAction = (movement) => {
+    if (!movement || !canVoidCashMovement(movement)) return;
+    setVoidReceiptModal(movement);
+    setVoidReceiptStep('reason');
+    setVoidReceiptReason('');
+    setVoidReceiptForm({
+      amountBs: String(Math.abs(toNumber(movement.amountBs)) || ''),
+      description: String(movement.description ?? '').replace(/^Reposicion caja chica:\s*/i, ''),
+      category: movement.category || (movement.isInternalTransfer ? 'reposicion_caja_chica' : 'varios'),
+      paymentMethod: movement.paymentMethod || 'efectivo',
+      responsible: movement.responsible || movement.createdBy || currentUserName,
+      receipt: movement.receipt || '',
+      notes: movement.notes || '',
+      linkedRentalId: movement.linkedRentalId || movement.sourceId || '',
+    });
+    setCashActionError('');
+    setCashActionFeedback('');
+  };
+
+  const handleConfirmVoidReason = (event) => {
+    event.preventDefault();
+    if (!voidReceiptReason.trim()) {
+      setCashActionError('Debes indicar el motivo de anulacion.');
+      return;
+    }
+    setCashActionError('');
+    setVoidReceiptStep('edit');
+  };
+
+  const handleSubmitVoidReplacement = async (event) => {
+    event.preventDefault();
+    if (!voidReceiptModal) return;
+    setIsSubmittingCash(true);
+    setCashActionError('');
+    try {
+      const linkedTransportOption = transportContractOptions.find((entry) => entry.rentalId === voidReceiptForm.linkedRentalId) ?? null;
+      const isTransportExpense = isPettyCash(voidReceiptModal)
+        && (Boolean(linkedTransportOption) || String(voidReceiptForm.category ?? '').toLowerCase() === 'transporte');
+      const result = await onVoidAndReplaceCashMovementReceipt?.({
+        movementId: voidReceiptModal.id,
+        reason: voidReceiptReason,
+        createdBy: currentUserName,
+        replacement: {
+          amountBs: Math.max(0, toNumber(voidReceiptForm.amountBs)),
+          description: voidReceiptForm.description,
+          category: voidReceiptForm.category,
+          paymentMethod: voidReceiptForm.paymentMethod,
+          responsible: voidReceiptForm.responsible || currentUserName,
+          receipt: voidReceiptForm.receipt,
+          notes: voidReceiptForm.notes,
+          linkedRentalId: linkedTransportOption?.rentalId ?? '',
+          linkedContractId: linkedTransportOption?.contractId ?? '',
+          linkedOrderCode: linkedTransportOption?.orderCode ?? '',
+          accountingTag: isTransportExpense ? 'transport_expense' : '',
+          transportExpenseBs: isTransportExpense ? Math.max(0, toNumber(voidReceiptForm.amountBs)) : 0,
+          createdBy: currentUserName,
+        },
+      });
+      await printCashReceipt(resolvePrintableCashMovementId(result, isPettyCash(voidReceiptModal) ? 'PETTY_CASH' : 'BIG_CASH'));
+      setCashActionFeedback('Recibo anterior anulado y nuevo recibo generado.');
+      closeVoidReceiptAction();
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo anular y reemplazar el recibo.');
+    } finally {
+      setIsSubmittingCash(false);
+    }
+  };
 
   const handleSubmitCashAction = async (event) => {
     event.preventDefault();
@@ -659,6 +839,8 @@ function AccountingSection({
         await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
         setCashActionFeedback('Reposicion registrada en Caja Grande y Caja Chica.');
       } else if (cashModal === 'expense') {
+        const linkedTransportOption = transportContractOptions.find((entry) => entry.rentalId === cashForm.linkedRentalId) ?? null;
+        const isTransportExpense = Boolean(linkedTransportOption) || String(cashForm.category ?? '').toLowerCase() === 'transporte';
         const created = await onCreateCashMovement?.({
           type: 'egreso',
           cashBoxType: 'PETTY_CASH',
@@ -669,6 +851,11 @@ function AccountingSection({
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
           notes: cashForm.notes,
+          linkedRentalId: linkedTransportOption?.rentalId ?? '',
+          linkedContractId: linkedTransportOption?.contractId ?? '',
+          linkedOrderCode: linkedTransportOption?.orderCode ?? '',
+          accountingTag: isTransportExpense ? 'transport_expense' : '',
+          transportExpenseBs: isTransportExpense ? amountBs : 0,
           createdBy: currentUserName,
         });
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
@@ -738,10 +925,175 @@ function AccountingSection({
     return 'Movimiento de caja';
   };
 
+  const renderReceiptActions = (movement) => {
+    if (isVoidedCashMovement(movement)) {
+      return (
+        <div className="cash-receipt-status">
+          <span className="cash-receipt-voided">Anulado</span>
+          {movement.voidReason ? <small title={movement.voidReason}>{movement.voidReason}</small> : null}
+        </div>
+      );
+    }
+    if (!canPrintCashMovement(movement)) {
+      return <span className="cash-receipt-muted">Sin recibo</span>;
+    }
+    return (
+      <div className="cash-receipt-actions">
+        <button
+          type="button"
+          className="cash-receipt-action"
+          onClick={() => printCashReceipt(movement.id)}
+          title="Previsualizar recibo"
+        >
+          Recibo
+        </button>
+        <button
+          type="button"
+          className="cash-receipt-action danger"
+          onClick={() => openVoidReceiptAction(movement)}
+          title="Anular recibo y generar reemplazo"
+        >
+          Anular
+        </button>
+      </div>
+    );
+  };
+
   const renderCashModals = () => (
     <>
       {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
-      {cashActionError && !cashModal && !collectModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
+      {cashActionError && !cashModal && !collectModal && !voidReceiptModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
+      {voidReceiptModal ? (
+        <div className="accounting-modal-backdrop" onClick={closeVoidReceiptAction}>
+          {voidReceiptStep === 'reason' ? (
+            <form className="accounting-modal accounting-void-receipt-modal" onSubmit={handleConfirmVoidReason} onClick={(event) => event.stopPropagation()}>
+              <header>
+                <div>
+                  <h3>Anular recibo {voidReceiptModal.receiptCode || ''}</h3>
+                  <small>El recibo anterior quedara visible como anulado con su motivo.</small>
+                </div>
+                <button type="button" className="orders-modal-close" onClick={closeVoidReceiptAction}>x</button>
+              </header>
+              <section className="accounting-void-summary">
+                <span><small>Concepto</small><strong>{voidReceiptModal.description}</strong></span>
+                <span><small>Monto</small><strong>{formatBs(Math.abs(toNumber(voidReceiptModal.amountBs)))}</strong></span>
+              </section>
+              <label>
+                Motivo de anulacion
+                <textarea
+                  rows={4}
+                  value={voidReceiptReason}
+                  onChange={(event) => setVoidReceiptReason(event.target.value)}
+                  placeholder="Ej: error en monto, referencia incorrecta, responsable equivocado..."
+                  required
+                />
+              </label>
+              {cashActionError ? <p className="status error">{cashActionError}</p> : null}
+              <footer>
+                <button type="button" className="ghost-button" onClick={closeVoidReceiptAction}>Cancelar</button>
+                <button type="submit" className="primary-button">Continuar a editar</button>
+              </footer>
+            </form>
+          ) : (
+            <form className="accounting-modal accounting-movement-form accounting-void-receipt-modal" onSubmit={handleSubmitVoidReplacement} onClick={(event) => event.stopPropagation()}>
+              <header>
+                <div>
+                  <h3>Nuevo recibo de reemplazo</h3>
+                  <small>Se generara con nueva serie. El anterior conserva su numero y anulacion.</small>
+                </div>
+                <button type="button" className="orders-modal-close" onClick={closeVoidReceiptAction}>x</button>
+              </header>
+              <div className="accounting-form-grid two">
+                <label>
+                  Monto (Bs)
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={voidReceiptForm.amountBs}
+                    onChange={(event) => setVoidReceiptForm((current) => ({ ...current, amountBs: event.target.value }))}
+                    required
+                  />
+                </label>
+                <label>
+                  Metodo
+                  <select value={voidReceiptForm.paymentMethod} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="qr">QR</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Concepto
+                <input
+                  value={voidReceiptForm.description}
+                  onChange={(event) => setVoidReceiptForm((current) => ({ ...current, description: event.target.value }))}
+                  required
+                />
+              </label>
+              <div className="accounting-form-grid two">
+                <label>
+                  Categoria
+                  <input
+                    value={voidReceiptForm.category}
+                    onChange={(event) => setVoidReceiptForm((current) => ({ ...current, category: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  Responsable / destino
+                  <input
+                    value={voidReceiptForm.responsible}
+                    onChange={(event) => setVoidReceiptForm((current) => ({ ...current, responsible: event.target.value }))}
+                    placeholder="Persona, proveedor o destino"
+                  />
+                </label>
+              </div>
+              <label>
+                Comprobante / referencia
+                <input
+                  value={voidReceiptForm.receipt}
+                  onChange={(event) => setVoidReceiptForm((current) => ({ ...current, receipt: event.target.value }))}
+                  placeholder="Recibo, factura, QR, nota interna..."
+                />
+              </label>
+              {isPettyCash(voidReceiptModal) ? (
+                <label>
+                  Enlazar gasto de transporte
+                  <select
+                    value={voidReceiptForm.linkedRentalId}
+                    onChange={(event) => setVoidReceiptForm((current) => ({ ...current, linkedRentalId: event.target.value }))}
+                  >
+                    <option value="">Sin enlace a contrato</option>
+                    {transportContractOptions.map((option) => (
+                      <option key={option.rentalId} value={option.rentalId}>
+                        {option.orderCode}{option.contractCode ? ` | ${option.contractCode}` : ''} - {option.customerName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label>
+                Nota
+                <textarea
+                  rows={3}
+                  value={voidReceiptForm.notes}
+                  onChange={(event) => setVoidReceiptForm((current) => ({ ...current, notes: event.target.value }))}
+                />
+              </label>
+              <p className="accounting-void-reason-note"><strong>Motivo de anulacion:</strong> {voidReceiptReason}</p>
+              {cashActionError ? <p className="status error">{cashActionError}</p> : null}
+              <footer>
+                <button type="button" className="ghost-button" onClick={() => setVoidReceiptStep('reason')}>Volver</button>
+                <button type="submit" className="primary-button" disabled={isSubmittingCash}>
+                  {isSubmittingCash ? 'Generando...' : 'Anular y generar nuevo'}
+                </button>
+              </footer>
+            </form>
+          )}
+        </div>
+      ) : null}
       {cashModal ? (
         <div className="accounting-modal-backdrop" onClick={closeCashAction}>
           <form className="accounting-modal accounting-movement-form" onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
@@ -838,6 +1190,24 @@ function AccountingSection({
                     />
                   </label>
                 </div>
+                {cashModal === 'expense' ? (
+                  <label>
+                    Enlazar gasto de transporte
+                    <select
+                      value={cashForm.linkedRentalId}
+                      onChange={(event) => setCashForm((current) => ({ ...current, linkedRentalId: event.target.value }))}
+                    >
+                      <option value="">Sin enlace a contrato</option>
+                      {transportContractOptions.map((option) => (
+                        <option key={option.rentalId} value={option.rentalId}>
+                          {option.orderCode}{option.contractCode ? ` | ${option.contractCode}` : ''} - {option.customerName}
+                          {option.deliveryFeeBs > 0 ? ` - envio ${formatBs(option.deliveryFeeBs)}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <small>Usalo para taxis, fletes o envios externos asociados a un contrato.</small>
+                  </label>
+                ) : null}
                 <label>
                   Comprobante / referencia
                   <input
@@ -1082,28 +1452,28 @@ function AccountingSection({
                 <tbody>
                   {filteredBigCashRows.slice(0, bigCashVisibleRows).map((movement, index) => {
                     const meta = getBigCashMovementType(movement);
+                    const hasTransportRevenue = toNumber(movement?.transportRevenueBs) > 0
+                      || String(movement?.accountingTag ?? '') === 'transport_revenue'
+                      || String(movement?.category ?? '').toLowerCase() === 'transporte_cobrado'
+                      || String(movement?.type ?? '').toLowerCase() === 'ingreso_transporte_cliente';
                     return (
-                      <tr key={movement.id}>
+                      <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
                         <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
                         <td><span className={`bigcash-type-icon ${meta.className}`}><MiniIcon kind={meta.icon} /></span></td>
-                        <td>{movement.description}</td>
+                        <td>
+                          <strong>{movement.description}</strong>
+                          {hasTransportRevenue ? (
+                            <small className="cash-linked-reference">
+                              Transporte cobrado en {getMovementReference(movement)}
+                            </small>
+                          ) : null}
+                        </td>
                         <td>{getMovementReference(movement)}</td>
                         <td className="amount">{meta.income}</td>
                         <td className="negative amount">{meta.withdrawal}</td>
                         <td>{formatBs(runningBigCashBalance(index))}</td>
                         <td>{movement.responsible || movement.createdBy || '-'}</td>
-                        <td>
-                          {canPrintCashMovement(movement) ? (
-                            <button
-                              type="button"
-                              className="cash-receipt-action"
-                              onClick={() => printCashReceipt(movement.id)}
-                              title="Imprimir recibo"
-                            >
-                              Recibo
-                            </button>
-                          ) : <span className="cash-receipt-muted">Sin recibo</span>}
-                        </td>
+                        <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
                   })}
@@ -1144,6 +1514,25 @@ function AccountingSection({
                   <small>Saldo actual</small>
                   <b className="value-blue">{formatBs(bigCashBalanceBs)}</b>
                   <em>{formatDate(selectedDate)}</em>
+                </span>
+              </div>
+            </section>
+
+            <section className="bigcash-card transport-margin-card">
+              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="chart" /></span>RENDICION DE TRANSPORTE</h3>
+              <p>Ingresos por envio cobrados al cliente contra gastos de taxis, fletes o movilidad enlazados desde Caja Chica.</p>
+              <div className="transport-margin-grid">
+                <span>
+                  <small>Cobrado este mes</small>
+                  <b className="value-green">{formatBs(monthTransportRevenueBs)}</b>
+                </span>
+                <span>
+                  <small>Gastado en envios</small>
+                  <b className="value-orange">{formatBs(monthTransportExpenseBs)}</b>
+                </span>
+                <span className={monthTransportMarginBs >= 0 ? 'positive' : 'negative'}>
+                  <small>Resultado transporte</small>
+                  <b>{formatBs(monthTransportMarginBs)}</b>
                 </span>
               </div>
             </section>
@@ -1281,7 +1670,7 @@ function AccountingSection({
               </div>
             </div>
             <div className="petty-expense-foot">
-              <b>N° de gastos: {dayPettyExpensesRows.length}</b>
+              <b>N° de gastos: {dayPettyExpensesRows.filter((movement) => !isVoidedCashMovement(movement)).length}</b>
               <button type="button">Ver detalles</button>
             </div>
           </article>
@@ -1352,27 +1741,29 @@ function AccountingSection({
                 <tbody>
                   {filteredPettyExpenseRows.slice(0, pettyCashVisibleRows).map((movement) => {
                     const category = getPettyExpenseCategory(movement);
+                    const hasTransportExpense = toNumber(movement?.transportExpenseBs) > 0
+                      || String(movement?.accountingTag ?? '') === 'transport_expense'
+                      || (
+                        Boolean(movement?.linkedRentalId || movement?.linkedOrderCode || movement?.linkedContractId)
+                        && ['movilidad', 'transporte'].includes(String(movement?.category ?? '').toLowerCase())
+                      );
                     return (
-                      <tr key={movement.id}>
+                      <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
                         <td>{getLongHourLabel(movement.createdAt)}</td>
-                        <td>{movement.description}</td>
+                        <td>
+                          <strong>{movement.description}</strong>
+                          {hasTransportExpense ? (
+                            <small className="cash-linked-reference">
+                              Transporte ligado a {getMovementReference(movement)}
+                            </small>
+                          ) : null}
+                        </td>
                         <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
                         <td><span className={`petty-category ${category.className}`}>{category.label}</span></td>
                         <td>{formatBs(Math.abs(movement.amountBs))}</td>
                         <td>{movement.receipt || '-'}</td>
                         <td>{movement.createdBy || movement.responsible || '-'}</td>
-                        <td>
-                          {canPrintCashMovement(movement) ? (
-                            <button
-                              type="button"
-                              className="cash-receipt-action"
-                              onClick={() => printCashReceipt(movement.id)}
-                              title="Imprimir recibo"
-                            >
-                              Recibo
-                            </button>
-                          ) : <span className="cash-receipt-muted">Sin recibo</span>}
-                        </td>
+                        <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
                   })}

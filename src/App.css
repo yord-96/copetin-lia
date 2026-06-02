@@ -25123,6 +25123,69 @@ button.calendar-dispatch-row:focus-visible {
   background: #ffedd5;
 }
 
+.cash-receipt-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.cash-receipt-action.danger {
+  min-width: 60px;
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.cash-receipt-action.danger:hover {
+  border-color: #fb7185;
+  background: #ffe4e6;
+}
+
+.cash-row-voided {
+  background: #fff1f2 !important;
+  color: #8a3a45;
+}
+
+.cash-row-voided td:not(:last-child) {
+  opacity: 0.72;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(190, 18, 60, 0.45);
+}
+
+.cash-receipt-status {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  min-width: 92px;
+}
+
+.cash-receipt-voided {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid #fecdd3;
+  border-radius: 999px;
+  background: #ffe4e6;
+  color: #be123c;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cash-receipt-status small {
+  max-width: 12rem;
+  color: #9f1239;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cash-receipt-muted {
   display: inline-flex;
   align-items: center;
@@ -25131,6 +25194,50 @@ button.calendar-dispatch-row:focus-visible {
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.accounting-void-receipt-modal {
+  width: min(620px, calc(100vw - 2rem));
+}
+
+.accounting-void-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  padding: 0.78rem;
+  border: 1px solid #fecdd3;
+  border-radius: 0.55rem;
+  background: #fff7f8;
+}
+
+.accounting-void-summary span {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.accounting-void-summary small {
+  color: #9f1239;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.accounting-void-summary strong {
+  color: #17214d;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.accounting-void-reason-note {
+  margin: 0;
+  border: 1px solid #fed7aa;
+  border-radius: 0.5rem;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .bigcash-side {
@@ -25295,6 +25402,64 @@ button.calendar-dispatch-row:focus-visible {
   background: linear-gradient(140deg, #eff5ff, #ffffff);
   padding: 0.62rem 0.72rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.transport-margin-card {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.transport-margin-card > p {
+  margin: 0;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.transport-margin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.transport-margin-grid span {
+  border: 1px solid #e8edf5;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  padding: 0.74rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.transport-margin-grid small {
+  color: #667085;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.transport-margin-grid b {
+  color: #111827;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.transport-margin-grid .positive {
+  border-color: #bfe8cf;
+  background: #f2fbf5;
+}
+
+.transport-margin-grid .negative {
+  border-color: #ffd0d0;
+  background: #fff5f5;
+}
+
+.cash-linked-reference {
+  display: block;
+  margin-top: 0.18rem;
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1.25;
 }
 
 .accounting-pettycash-view {

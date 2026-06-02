@@ -993,6 +993,8 @@ const normalizeState = (state) => {
       const deliveryCharge = normalizeDeliveryCharge({ ...rental, logisticsMode });
       const totalBs = Number(rental?.totals?.totalBs ?? 0);
       const prepaidAppliedBs = Number(rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0);
+      const deliveryFeeCollectedBs = Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0);
+      const rentalCollectedBs = Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0);
       const paidAtRentalBs = Number(
         rental?.payment?.paidAtRentalBs
         ?? rental?.totals?.paidAtRentalBs
@@ -1007,6 +1009,8 @@ const normalizeState = (state) => {
       return {
         ...rental,
         id: rental?.id ?? makeId('rent'),
+        contractId: String(rental?.contractId ?? '').trim() || null,
+        contractCode: String(rental?.contractCode ?? '').trim() || null,
         customerName: String(rental?.customerName ?? '').trim(),
         customerPhone: String(rental?.customerPhone ?? '').trim(),
         items: Array.isArray(rental?.items) ? rental.items : [],
@@ -1053,6 +1057,8 @@ const normalizeState = (state) => {
           paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
           pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
+          deliveryFeeCollectedBs: Number(deliveryFeeCollectedBs.toFixed(2)),
+          rentalCollectedBs: Number(rentalCollectedBs.toFixed(2)),
           cashCollectedBs: Number(Math.max(0, paidAtRentalBs - prepaidAppliedBs).toFixed(2)),
         },
         createdById: rental?.createdById ?? rental?.userId ?? null,
@@ -1544,6 +1550,18 @@ const normalizeState = (state) => {
       notes: String(movement?.notes ?? '').trim(),
       isInternalTransfer: Boolean(movement?.isInternalTransfer),
       transferGroupId: movement?.transferGroupId ?? null,
+      receiptStatus: String(movement?.receiptStatus ?? movement?.statusReceipt ?? '').trim(),
+      voidedAt: movement?.voidedAt ?? null,
+      voidedBy: String(movement?.voidedBy ?? '').trim(),
+      voidReason: String(movement?.voidReason ?? '').trim(),
+      replacedByMovementId: movement?.replacedByMovementId ?? null,
+      replacementOfMovementId: movement?.replacementOfMovementId ?? null,
+      linkedRentalId: String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim() || null,
+      linkedContractId: String(movement?.linkedContractId ?? movement?.contractId ?? '').trim() || null,
+      linkedOrderCode: String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim() || null,
+      accountingTag: String(movement?.accountingTag ?? '').trim(),
+      transportRevenueBs: Number(movement?.transportRevenueBs ?? 0),
+      transportExpenseBs: Number(movement?.transportExpenseBs ?? 0),
     }))
     : [];
   source.userPresence = Array.isArray(source.userPresence)
@@ -2353,6 +2371,18 @@ const buildCashMovement = ({
   notes = '',
   isInternalTransfer = false,
   transferGroupId = null,
+  receiptStatus = '',
+  voidedAt = null,
+  voidedBy = '',
+  voidReason = '',
+  replacedByMovementId = null,
+  replacementOfMovementId = null,
+  linkedRentalId = null,
+  linkedContractId = null,
+  linkedOrderCode = null,
+  accountingTag = '',
+  transportRevenueBs = 0,
+  transportExpenseBs = 0,
 }) => ({
   id: makeId('mov'),
   sessionId,
@@ -2371,8 +2401,24 @@ const buildCashMovement = ({
   notes: String(notes ?? '').trim(),
   isInternalTransfer: Boolean(isInternalTransfer),
   transferGroupId,
+  receiptStatus: String(receiptStatus ?? '').trim(),
+  voidedAt,
+  voidedBy: String(voidedBy ?? '').trim(),
+  voidReason: String(voidReason ?? '').trim(),
+  replacedByMovementId,
+  replacementOfMovementId,
+  linkedRentalId: String(linkedRentalId ?? '').trim() || null,
+  linkedContractId: String(linkedContractId ?? '').trim() || null,
+  linkedOrderCode: String(linkedOrderCode ?? '').trim() || null,
+  accountingTag: String(accountingTag ?? '').trim(),
+  transportRevenueBs: Number(Number(transportRevenueBs ?? 0).toFixed(2)),
+  transportExpenseBs: Number(Number(transportExpenseBs ?? 0).toFixed(2)),
   createdAt: new Date().toISOString(),
 });
+
+const isVoidedCashMovement = (movement) =>
+  String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
+  || Boolean(movement?.voidedAt);
 
 const getCashReceiptCode = (state, movement) => {
   const persisted = String(movement?.receiptCode ?? '').trim();
@@ -2395,6 +2441,7 @@ const nextCashReceiptCode = (state) => {
 
 const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
   const balance = state.cashMovements
+    .filter((movement) => !isVoidedCashMovement(movement))
     .filter((movement) => movement.sessionId === sessionId)
     .filter((movement) => !cashBoxType || normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
     .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0);
@@ -2403,6 +2450,7 @@ const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
 
 const calculateCashBoxBalance = (state, cashBoxType) => Number(
   state.cashMovements
+    .filter((movement) => !isVoidedCashMovement(movement))
     .filter((movement) => normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
     .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0)
     .toFixed(2),
@@ -2427,19 +2475,53 @@ const addRentalCashMovements = (state, rental) => {
   );
   const prepaidAppliedBs = Number(rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0);
   const cashCollectedBs = Math.max(0, Number((paidAtRentalBs - prepaidAppliedBs).toFixed(2)));
+  const deliveryFeeBs = Math.max(0, Number(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0));
+  const storedDeliveryFeeCollectedBs = Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? NaN);
+  const deliveryFeeCollectedBs = Math.min(
+    deliveryFeeBs,
+    Number.isFinite(storedDeliveryFeeCollectedBs)
+      ? storedDeliveryFeeCollectedBs
+      : Math.min(cashCollectedBs, deliveryFeeBs),
+  );
+  const rentalCashCollectedBs = Math.max(0, Number((cashCollectedBs - deliveryFeeCollectedBs).toFixed(2)));
   const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
   const depositBs = Number(rental?.depositBs ?? 0);
 
-  if (cashCollectedBs > 0) {
+  if (rentalCashCollectedBs > 0) {
     state.cashMovements.push(
       buildCashMovement({
         sessionId,
         type: 'ingreso_alquiler',
-        amountBs: cashCollectedBs,
+        amountBs: rentalCashCollectedBs,
         description: `Cobro inicial alquiler: ${customerName}`,
         sourceType: 'rental',
         sourceId: rental.id,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+        category: 'cobro_contrato',
+        linkedRentalId: rental.id,
+        linkedContractId: rental.contractId,
+        linkedOrderCode: rental.orderCode,
+      }),
+    );
+  }
+
+  if (deliveryFeeCollectedBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'ingreso_transporte_cliente',
+        amountBs: deliveryFeeCollectedBs,
+        description: `Transporte cobrado al cliente: ${customerName}`,
+        sourceType: 'rental',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+        category: 'transporte_cobrado',
+        linkedRentalId: rental.id,
+        linkedContractId: rental.contractId,
+        linkedOrderCode: rental.orderCode,
+        accountingTag: 'transport_revenue',
+        transportRevenueBs: deliveryFeeCollectedBs,
+        notes: `Costo extra de envio ${rental.orderCode ?? ''}`.trim(),
       }),
     );
   }
@@ -7973,10 +8055,21 @@ const createWebBridge = () => ({
         const pendingPaymentBs = Number((totalBs - paidAtRentalBs).toFixed(2));
         const paymentStatus =
           paymentMode === 'cancelado' ? 'cancelado' : paymentMode === 'a_cuenta' ? 'a_cuenta' : 'sin_pago';
+        const cashCollectedAtApprovalBs = Math.max(0, Number((paidAtRentalBs - prepaidAppliedBs).toFixed(2)));
+        const deliveryFeeCollectedAtApprovalBs = Math.min(
+          toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
+          cashCollectedAtApprovalBs,
+        );
+        const rentalCollectedAtApprovalBs = Math.max(
+          0,
+          Number((cashCollectedAtApprovalBs - deliveryFeeCollectedAtApprovalBs).toFixed(2)),
+        );
 
         createdRental = {
           id: makeId('rent'),
           clientId,
+          contractId: String(payload?.contractId ?? '').trim() || null,
+          contractCode: String(payload?.contractCode ?? '').trim() || null,
           orderCode,
           customerName,
           customerPhone,
@@ -8006,6 +8099,7 @@ const createWebBridge = () => ({
             durationDiscountBs: toPositiveRoundedNumber(quotedTotals?.durationDiscountBs ?? pricingPlan.durationDiscountBs),
             discountBs: toPositiveRoundedNumber(discountBs),
             deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
+            deliveryFeeCollectedBs: toPositiveRoundedNumber(deliveryFeeCollectedAtApprovalBs),
             prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
             totalBs: toPositiveRoundedNumber(totalBs),
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
@@ -8017,7 +8111,9 @@ const createWebBridge = () => ({
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
             pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
             prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
-            cashCollectedBs: toPositiveRoundedNumber(Math.max(0, paidAtRentalBs - prepaidAppliedBs)),
+            deliveryFeeCollectedBs: toPositiveRoundedNumber(deliveryFeeCollectedAtApprovalBs),
+            rentalCollectedBs: toPositiveRoundedNumber(rentalCollectedAtApprovalBs),
+            cashCollectedBs: toPositiveRoundedNumber(cashCollectedAtApprovalBs),
           },
           notes,
           billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
@@ -8410,7 +8506,7 @@ const createWebBridge = () => ({
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
       const todayMovements = state.cashMovements.filter(
-        (movement) => new Date(movement.createdAt).getTime() >= startOfDay,
+        (movement) => !isVoidedCashMovement(movement) && new Date(movement.createdAt).getTime() >= startOfDay,
       );
       const realTodayMovements = todayMovements.filter((movement) => !movement.isInternalTransfer);
       const sumMovements = (rows, predicate) => Number(
@@ -8730,6 +8826,11 @@ const createWebBridge = () => ({
       const responsible = String(payload?.responsible ?? createdBy).trim() || createdBy;
       const receipt = String(payload?.receipt ?? '').trim();
       const notes = String(payload?.notes ?? '').trim();
+      const linkedRentalId = String(payload?.linkedRentalId ?? '').trim() || null;
+      const linkedContractId = String(payload?.linkedContractId ?? '').trim() || null;
+      const linkedOrderCode = String(payload?.linkedOrderCode ?? '').trim() || null;
+      const accountingTag = String(payload?.accountingTag ?? '').trim();
+      const transportExpenseBs = Math.max(0, Number(payload?.transportExpenseBs ?? 0));
       const cashBoxType = inferCashBoxType({ movementType, category, cashBoxType: payload?.cashBoxType });
 
       if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
@@ -8798,6 +8899,11 @@ const createWebBridge = () => ({
             receipt,
             receiptCode,
             notes,
+            linkedRentalId,
+            linkedContractId,
+            linkedOrderCode,
+            accountingTag,
+            transportExpenseBs,
             isInternalTransfer: true,
             transferGroupId,
           });
@@ -8816,6 +8922,11 @@ const createWebBridge = () => ({
             receipt,
             receiptCode,
             notes,
+            linkedRentalId,
+            linkedContractId,
+            linkedOrderCode,
+            accountingTag,
+            transportExpenseBs,
             isInternalTransfer: true,
             transferGroupId,
           });
@@ -8842,6 +8953,11 @@ const createWebBridge = () => ({
             receipt,
             receiptCode,
             notes,
+            linkedRentalId,
+            linkedContractId,
+            linkedOrderCode,
+            accountingTag,
+            transportExpenseBs: accountingTag === 'transport_expense' ? amountRaw : transportExpenseBs,
           });
           state.cashMovements.push(createdMovement);
         }
@@ -8849,6 +8965,161 @@ const createWebBridge = () => ({
       });
 
       return createdMovement;
+    },
+    voidAndReplaceMovementReceipt: async (payload) => {
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      const reason = String(payload?.reason ?? payload?.voidReason ?? '').trim();
+      const replacement = payload?.replacement ?? {};
+      const createdBy = String(payload?.createdBy ?? replacement?.createdBy ?? '').trim() || 'Contabilidad';
+      const amountRaw = toNumber(replacement?.amountBs ?? 0, 'monto');
+      const description = String(replacement?.description ?? '').trim();
+      const category = String(replacement?.category ?? '').trim();
+      const paymentMethod = String(replacement?.paymentMethod ?? '').trim();
+      const responsible = String(replacement?.responsible ?? createdBy).trim() || createdBy;
+      const receipt = String(replacement?.receipt ?? '').trim();
+      const notes = String(replacement?.notes ?? '').trim();
+      const replacementLinkedRentalId = String(replacement?.linkedRentalId ?? '').trim() || null;
+      const replacementLinkedContractId = String(replacement?.linkedContractId ?? '').trim() || null;
+      const replacementLinkedOrderCode = String(replacement?.linkedOrderCode ?? '').trim() || null;
+      const replacementAccountingTag = String(replacement?.accountingTag ?? '').trim();
+      const replacementTransportExpenseBs = Math.max(0, Number(replacement?.transportExpenseBs ?? 0));
+      const replacementTransportRevenueBs = Math.max(0, Number(replacement?.transportRevenueBs ?? 0));
+
+      if (!movementId) {
+        throw new Error('Debes indicar el movimiento a anular.');
+      }
+      if (!reason) {
+        throw new Error('Debes indicar el motivo de anulacion.');
+      }
+      if (amountRaw <= 0) {
+        throw new Error('El monto del nuevo recibo debe ser mayor a 0.');
+      }
+      if (!description) {
+        throw new Error('Debes escribir el concepto del nuevo recibo.');
+      }
+
+      let result = null;
+      transaction((state) => {
+        const original = state.cashMovements.find((movement) => movement.id === movementId);
+        if (!original) {
+          throw new Error('No se encontro el movimiento de caja seleccionado.');
+        }
+        if (isVoidedCashMovement(original)) {
+          throw new Error('Este recibo ya fue anulado.');
+        }
+        if (Number(original.amountBs ?? 0) === 0) {
+          throw new Error('Este movimiento no tiene importe y no requiere recibo.');
+        }
+
+        const now = new Date().toISOString();
+        const originalGroup = original.isInternalTransfer && original.transferGroupId
+          ? state.cashMovements.filter((movement) => movement.transferGroupId === original.transferGroupId)
+          : [original];
+        const activeSession = getActiveSession(state);
+        const sessionId = original.sessionId ?? activeSession?.id ?? null;
+        const receiptCode = nextCashReceiptCode(state);
+
+        originalGroup.forEach((movement) => {
+          movement.receiptStatus = 'anulado';
+          movement.voidedAt = now;
+          movement.voidedBy = createdBy;
+          movement.voidReason = reason;
+        });
+
+        if (original.isInternalTransfer) {
+          const transferGroupId = makeId('trf');
+          const fromMovement = buildCashMovement({
+            sessionId,
+            type: 'transferencia_salida_caja_chica',
+            amountBs: -amountRaw,
+            description: `Reposicion caja chica: ${description}`,
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
+            createdBy,
+            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+            category: category || original.category || 'reposicion_caja_chica',
+            paymentMethod,
+            responsible,
+            receipt,
+            receiptCode,
+            notes,
+            linkedRentalId: replacementLinkedRentalId ?? original.linkedRentalId,
+            linkedContractId: replacementLinkedContractId ?? original.linkedContractId,
+            linkedOrderCode: replacementLinkedOrderCode ?? original.linkedOrderCode,
+            accountingTag: replacementAccountingTag || original.accountingTag,
+            transportRevenueBs: replacementTransportRevenueBs || original.transportRevenueBs,
+            transportExpenseBs: replacementTransportExpenseBs || original.transportExpenseBs,
+            isInternalTransfer: true,
+            transferGroupId,
+            replacementOfMovementId: original.id,
+          });
+          const toMovement = buildCashMovement({
+            sessionId,
+            type: 'transferencia_entrada_caja_chica',
+            amountBs: amountRaw,
+            description: `Reposicion caja chica: ${description}`,
+            sourceType: 'transferencia',
+            sourceId: transferGroupId,
+            createdBy,
+            cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
+            category: category || original.category || 'reposicion_caja_chica',
+            paymentMethod,
+            responsible,
+            receipt,
+            receiptCode,
+            notes,
+            linkedRentalId: replacementLinkedRentalId ?? original.linkedRentalId,
+            linkedContractId: replacementLinkedContractId ?? original.linkedContractId,
+            linkedOrderCode: replacementLinkedOrderCode ?? original.linkedOrderCode,
+            accountingTag: replacementAccountingTag || original.accountingTag,
+            transportRevenueBs: replacementTransportRevenueBs || original.transportRevenueBs,
+            transportExpenseBs: replacementTransportExpenseBs || original.transportExpenseBs,
+            isInternalTransfer: true,
+            transferGroupId,
+            replacementOfMovementId: original.id,
+          });
+          state.cashMovements.push(fromMovement, toMovement);
+          originalGroup.forEach((movement) => {
+            movement.replacedByMovementId = fromMovement.id;
+          });
+          result = { original, movements: [fromMovement, toMovement], replacement: fromMovement };
+        } else {
+          const originalAmount = Number(original.amountBs ?? 0);
+          const signedAmount = originalAmount < 0 ? -amountRaw : amountRaw;
+          const replacementMovement = buildCashMovement({
+            sessionId,
+            type: original.type || (signedAmount < 0 ? 'egreso_manual' : 'ingreso_manual'),
+            amountBs: signedAmount,
+            description,
+            sourceType: original.sourceType ?? 'manual',
+            sourceId: original.sourceId ?? null,
+            createdBy,
+            cashBoxType: original.cashBoxType,
+            category: category || original.category,
+            paymentMethod,
+            responsible,
+            receipt,
+            receiptCode,
+            notes,
+            linkedRentalId: replacementLinkedRentalId ?? original.linkedRentalId,
+            linkedContractId: replacementLinkedContractId ?? original.linkedContractId,
+            linkedOrderCode: replacementLinkedOrderCode ?? original.linkedOrderCode,
+            accountingTag: replacementAccountingTag || original.accountingTag,
+            transportRevenueBs: replacementTransportRevenueBs || original.transportRevenueBs,
+            transportExpenseBs: replacementTransportExpenseBs || original.transportExpenseBs,
+            isInternalTransfer: false,
+            transferGroupId: null,
+            replacementOfMovementId: original.id,
+          });
+          state.cashMovements.push(replacementMovement);
+          original.replacedByMovementId = replacementMovement.id;
+          result = { original, movement: replacementMovement, replacement: replacementMovement };
+        }
+
+        return state;
+      });
+
+      return result;
     },
     collectReceivable: async (payload) => {
       const rentalId = String(payload?.rentalId ?? '').trim();
@@ -8888,12 +9159,21 @@ const createWebBridge = () => ({
         const amountBs = Number(amountRaw.toFixed(2));
         const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
         const previousPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
+        const deliveryFeeBs = !isReturned
+          ? Math.max(0, Number(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0))
+          : 0;
+        const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
+        const remainingDeliveryFeeBs = Math.max(0, Number((deliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
+        const transportCollectedNowBs = Math.min(amountBs, remainingDeliveryFeeBs);
+        const rentalCollectedNowBs = Math.max(0, Number((amountBs - transportCollectedNowBs).toFixed(2)));
         const now = new Date().toISOString();
 
         rental.payment = {
           ...(rental.payment ?? {}),
           paidAtRentalBs: Number((previousPaidBs + amountBs).toFixed(2)),
           pendingPaymentBs: remainingBs,
+          deliveryFeeCollectedBs: Number((previousDeliveryFeeCollectedBs + transportCollectedNowBs).toFixed(2)),
+          rentalCollectedBs: Number((Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0) + rentalCollectedNowBs).toFixed(2)),
           status: remainingBs > 0
             ? 'saldo_pendiente'
             : isReturned
@@ -8908,6 +9188,8 @@ const createWebBridge = () => ({
           ...(rental.totals ?? {}),
           paidAtRentalBs: rental.payment.paidAtRentalBs,
           pendingPaymentBs: remainingBs,
+          deliveryFeeCollectedBs: rental.payment.deliveryFeeCollectedBs,
+          rentalCollectedBs: rental.payment.rentalCollectedBs,
         };
 
         if (isReturned) {
@@ -8953,27 +9235,47 @@ const createWebBridge = () => ({
             ? `Cobro saldo liquidacion: ${rental.customerName}`
             : `Cobro saldo alquiler: ${rental.customerName}`);
 
-        const movement = buildCashMovement({
+        const receiptCode = nextCashReceiptCode(state);
+        const commonMovementPayload = {
           sessionId: activeSession?.id ?? null,
-          type: movementType,
-          amountBs,
-          description,
           sourceType,
           sourceId: rental.id,
           createdBy,
           cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-          category: isReturned ? 'cobro_liquidacion' : 'cobro_contrato',
           paymentMethod: String(payload?.paymentMethod ?? '').trim(),
           responsible: createdBy,
           receipt: String(payload?.receipt ?? '').trim(),
-          receiptCode: nextCashReceiptCode(state),
+          receiptCode,
           notes: note,
-        });
-        state.cashMovements.push(movement);
+          linkedRentalId: rental.id,
+          linkedContractId: rental.contractId,
+          linkedOrderCode: rental.orderCode,
+        };
+        const createdMovements = [
+          buildCashMovement({
+            ...commonMovementPayload,
+            type: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'ingreso_transporte_cliente' : movementType,
+            amountBs,
+            description: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0
+              ? `Transporte cobrado al cliente: ${rental.customerName}`
+              : transportCollectedNowBs > 0
+              ? `${description} | Transporte incluido: Bs ${transportCollectedNowBs.toFixed(2)}`
+              : description,
+            category: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0
+              ? 'transporte_cobrado'
+              : isReturned
+              ? 'cobro_liquidacion'
+              : 'cobro_contrato',
+            accountingTag: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'transport_revenue' : '',
+            transportRevenueBs: transportCollectedNowBs,
+          }),
+        ];
+        state.cashMovements.push(...createdMovements);
 
         result = {
           rental: deepClone(rental),
-          movement: deepClone(movement),
+          movement: deepClone(createdMovements[0]),
+          movements: deepClone(createdMovements),
         };
         return state;
       });
@@ -9179,6 +9481,9 @@ const createWebBridge = () => ({
       }
       if (Number(movement.amountBs ?? 0) === 0) {
         throw new Error('Este movimiento no tiene importe y no requiere recibo.');
+      }
+      if (isVoidedCashMovement(movement)) {
+        throw new Error('Este recibo fue anulado. Usa el recibo de reemplazo.');
       }
 
       return {

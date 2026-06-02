@@ -423,6 +423,7 @@ export const api = {
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
     createManualMovement: (payload) => callBridge('cash', 'createManualMovement', true, payload),
+    voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
     collectReceivable: (payload) => callBridge('cash', 'collectReceivable', true, payload),
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
