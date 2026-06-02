@@ -1861,6 +1861,12 @@ const FACTORY_RESET_COLLECTIONS = [
   'userPresence',
 ];
 
+const DATABASE_BACKUP_COLLECTIONS = [
+  ...FACTORY_RESET_COLLECTIONS,
+  'users',
+  'resetLogs',
+];
+
 const getCurrentSessionUser = (state) => {
   const sessionUserId = readSessionUserId();
   if (!sessionUserId) return null;
@@ -1889,6 +1895,39 @@ const assertDeveloperUserManagementAccess = (state) => {
   }
   return currentUser;
 };
+
+const extractBackupState = (payload) => {
+  const candidate = payload?.state ?? payload?.database ?? payload?.backup ?? payload;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('El archivo importado no contiene una base de datos valida.');
+  }
+  return candidate;
+};
+
+const countBackupRows = (state) =>
+  DATABASE_BACKUP_COLLECTIONS.reduce((summary, key) => {
+    const count = Array.isArray(state?.[key]) ? state[key].filter((entry) => !entry?.deletedAt).length : 0;
+    return {
+      ...summary,
+      [key]: count,
+      total: summary.total + count,
+    };
+  }, { total: 0 });
+
+const buildDatabaseBackup = ({ state, currentUser, action = 'export' }) => ({
+  app: 'el-copetin',
+  kind: 'database-backup',
+  schemaVersion: state?.schemaVersion ?? 3,
+  exportedAt: new Date().toISOString(),
+  exportedBy: {
+    id: currentUser?.id ?? null,
+    name: currentUser?.fullName ?? currentUser?.username ?? 'Developer',
+    role: getDisplayRoleForIds(getUserRoleIds(currentUser)),
+  },
+  action,
+  summary: countBackupRows(state),
+  state: deepClone(state),
+});
 
 const recordLabel = (record, fallback = 'Registro') =>
   String(record?.name ?? record?.fullName ?? record?.code ?? record?.orderCode ?? record?.contractCode ?? record?.quoteCode ?? record?.id ?? fallback);
@@ -3227,13 +3266,25 @@ const buildReturnReceiptHtml = (rental) => {
 const resolveRentalForPrinting = (state, payload) => {
   const rentalId = String(payload?.rentalId ?? '').trim();
   const orderCode = String(payload?.orderCode ?? '').trim();
-  return (
-    state.rentals.find(
-      (entry) =>
-        (rentalId && entry.id === rentalId)
-        || (orderCode && entry.orderCode === orderCode),
-    ) ?? null
+  const contractId = String(payload?.contractId ?? '').trim();
+  const contractCode = String(payload?.contractCode ?? '').trim();
+  const linkedRental = state.rentals.find(
+    (entry) =>
+      (rentalId && entry.id === rentalId)
+      || (orderCode && entry.orderCode === orderCode),
   );
+  if (linkedRental) return linkedRental;
+
+  const linkedContract = state.contracts.find(
+    (entry) =>
+      !entry.deletedAt
+      && (
+        (contractId && entry.id === contractId)
+        || (contractCode && entry.contractCode === contractCode)
+        || (orderCode && entry.orderCode === orderCode)
+      ),
+  );
+  return linkedContract ? buildRentalSnapshotFromContract(linkedContract) : null;
 };
 
 const resolveDeliveriesForRental = (state, rental) =>
@@ -9618,6 +9669,104 @@ const createWebBridge = () => ({
       }
       return response;
     },
+    exportDatabase: async (payload) => {
+      let backup = null;
+      transaction((state) => {
+        const currentUser = assertDeveloperResetAccess(state, payload?.code);
+        const log = {
+          id: makeId('rst'),
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          userRole: getDisplayRoleForIds(getUserRoleIds(currentUser)),
+          action: 'database_export',
+          modules: ['database_backup'],
+          summary: {
+            ...countBackupRows(state),
+            exportedCollections: DATABASE_BACKUP_COLLECTIONS.length,
+          },
+          result: 'success',
+          errors: [],
+          observations: String(payload?.observations ?? 'Descarga completa de base de datos.').trim(),
+          ip: String(payload?.ip ?? '').trim(),
+          createdAt: new Date().toISOString(),
+        };
+        state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
+        state.resetLogs.unshift(log);
+        backup = buildDatabaseBackup({ state, currentUser, action: 'export' });
+        return state;
+      });
+      return backup;
+    },
+    importDatabase: async (payload) => {
+      const code = String(payload?.code ?? '').trim();
+      const confirmation = String(payload?.confirmation ?? '').trim().toUpperCase();
+      if (confirmation !== 'IMPORTAR') {
+        throw new Error('Debes escribir IMPORTAR para reemplazar la base local.');
+      }
+
+      const preflightState = readState();
+      const currentUser = assertDeveloperResetAccess(preflightState, code);
+      const importedState = normalizeState(extractBackupState(payload?.backup ?? payload?.database ?? payload?.state ?? payload));
+      const importedDevelopers = (importedState.users ?? []).filter((user) => !user.deletedAt && user.status === 'active' && isDeveloperUser(user));
+      if (importedDevelopers.length === 0) {
+        throw new Error('La base importada no tiene ningun usuario developer activo.');
+      }
+
+      const preservedLogs = [
+        ...(Array.isArray(importedState.resetLogs) ? importedState.resetLogs : []),
+        ...(Array.isArray(preflightState.resetLogs) ? preflightState.resetLogs : []),
+      ];
+      const uniqueLogs = [];
+      const seenLogIds = new Set();
+      preservedLogs.forEach((log) => {
+        const id = String(log?.id ?? '').trim();
+        if (id && seenLogIds.has(id)) return;
+        if (id) seenLogIds.add(id);
+        uniqueLogs.push(log);
+      });
+
+      const hasCurrentDeveloper = importedState.users.some((user) => user.id === currentUser.id && isDeveloperUser(user));
+      if (!hasCurrentDeveloper) {
+        importedState.users.push({
+          ...deepClone(currentUser),
+          status: 'active',
+          deletedAt: null,
+          isCurrentUser: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      importedState.users = importedState.users.map((user) => ({
+        ...user,
+        isCurrentUser: user.id === currentUser.id,
+      }));
+
+      const importLog = {
+        id: makeId('rst'),
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        userRole: getDisplayRoleForIds(getUserRoleIds(currentUser)),
+        action: 'database_import',
+        modules: ['database_backup'],
+        summary: {
+          ...countBackupRows(importedState),
+          importedCollections: DATABASE_BACKUP_COLLECTIONS.length,
+        },
+        result: 'success',
+        errors: [],
+        observations: String(payload?.observations ?? 'Importacion completa de base de datos.').trim(),
+        ip: String(payload?.ip ?? '').trim(),
+        createdAt: new Date().toISOString(),
+      };
+      importedState.resetLogs = [importLog, ...uniqueLogs].slice(0, 500);
+      writeState(importedState);
+
+      return {
+        ok: true,
+        log: importLog,
+        summary: importLog.summary,
+        message: 'Base de datos importada correctamente.',
+      };
+    },
     listResetLogs: async () => {
       const state = readState();
       const currentUser = getCurrentSessionUser(state);
@@ -9694,8 +9843,16 @@ const createWebBridge = () => ({
     printContract: async (payload) => {
       const state = readState();
       const contractId = String(payload?.contractId ?? '').trim();
-      const contractById = contractId
-        ? state.contracts.find((entry) => entry.id === contractId && !entry.deletedAt)
+      const contractCode = String(payload?.contractCode ?? '').trim();
+      const contractById = contractId || contractCode
+        ? state.contracts.find(
+          (entry) =>
+            !entry.deletedAt
+            && (
+              (contractId && entry.id === contractId)
+              || (contractCode && entry.contractCode === contractCode)
+            ),
+        )
         : null;
       const linkedRental = resolveRentalForPrinting(state, payload);
       const rental = linkedRental ?? (contractById ? buildRentalSnapshotFromContract(contractById) : null);

@@ -2654,6 +2654,103 @@ textarea:focus {
   font-size: 0.88rem;
 }
 
+.system-database-panel {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, #f8fbff 0%, #fff 62%, #fff7ed 100%);
+  border-radius: 0.86rem;
+  padding: 0.9rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.system-database-copy {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.system-database-copy span {
+  width: max-content;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.16rem 0.5rem;
+  text-transform: uppercase;
+}
+
+.system-database-copy strong {
+  color: var(--c900);
+  font-size: 1rem;
+}
+
+.system-database-copy p {
+  color: var(--c700);
+  font-size: 0.84rem;
+  max-width: 720px;
+}
+
+.system-database-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.system-database-actions > button,
+.system-database-actions > input,
+.system-database-file {
+  min-height: 42px;
+}
+
+.system-database-file {
+  border: 1px dashed rgba(37, 99, 235, 0.34);
+  border-radius: 0.68rem;
+  background: #fff;
+  color: var(--c700);
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.system-database-file input {
+  display: none;
+}
+
+.system-database-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-database-result {
+  grid-column: 1 / -1;
+  border-radius: 0.7rem;
+  padding: 0.62rem 0.75rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.system-database-result.success {
+  border: 1px solid rgba(22, 163, 74, 0.24);
+  background: #ecfdf5;
+}
+
+.system-database-result strong {
+  color: #166534;
+}
+
+.system-database-result p {
+  color: #246647;
+  font-size: 0.82rem;
+}
+
 .system-reset-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -2835,6 +2932,11 @@ textarea:focus {
 
   .system-reset-impact {
     position: static;
+  }
+
+  .system-database-panel,
+  .system-database-actions {
+    grid-template-columns: 1fr;
   }
 }
 

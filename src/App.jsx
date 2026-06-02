@@ -488,6 +488,8 @@ function App() {
           onVerify={controller.handleVerifyResetAccess}
           onAnalyze={controller.handleAnalyzeSystemReset}
           onExecute={controller.handleExecuteSystemReset}
+          onExportDatabase={controller.handleExportSystemDatabase}
+          onImportDatabase={controller.handleImportSystemDatabase}
         />
       )}
     </div>

@@ -435,6 +435,8 @@ export const api = {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),
     analyzeReset: (payload) => callBridge('system', 'analyzeReset', false, payload),
     executeReset: (payload) => callBridge('system', 'executeReset', true, payload),
+    exportDatabase: (payload) => callBridge('system', 'exportDatabase', true, payload),
+    importDatabase: (payload) => callBridge('system', 'importDatabase', true, payload),
     listResetLogs: () => callBridge('system', 'listResetLogs', false),
     reset: (payload) => callBridge('system', 'reset', true, payload),
   },

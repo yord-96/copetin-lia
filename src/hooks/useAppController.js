@@ -1076,9 +1076,22 @@ export const useAppController = () => {
     }
   };
 
-  const resolveRentalForDocumentFlow = async ({ rentalId, orderCode }) => {
+  const buildRentalSnapshotFromContractForFlow = (contract) => ({
+    id: contract?.rentalId ?? `contract-${contract?.id ?? 'sin-id'}`,
+    orderCode: contract?.orderCode ?? contract?.contractCode ?? 'SIN-ORDEN',
+    customerName: contract?.customerName ?? '',
+    customerPhone: contract?.customerPhone ?? '',
+    rentalDate: contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
+    dueDate: contract?.pickupDate || contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
+    createdAt: contract?.createdAt,
+    items: contract?.items ?? [],
+  });
+
+  const resolveRentalForDocumentFlow = async ({ rentalId, orderCode, contractId, contractCode }) => {
     const normalizedRentalId = String(rentalId ?? '').trim();
     const normalizedOrderCode = String(orderCode ?? '').trim();
+    const normalizedContractId = String(contractId ?? '').trim();
+    const normalizedContractCode = String(contractCode ?? '').trim();
     const localRental = rentals.find(
       (row) =>
         (normalizedRentalId && row.id === normalizedRentalId)
@@ -1086,14 +1099,30 @@ export const useAppController = () => {
     );
     if (localRental) return localRental;
 
-    const allRentals = await api.rentals.list();
-    return (
-      allRentals.find(
-        (row) =>
-          (normalizedRentalId && row.id === normalizedRentalId)
-          || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
-      ) ?? null
+    const localContract = contracts.find(
+      (row) =>
+        (normalizedContractId && row.id === normalizedContractId)
+        || (normalizedContractCode && row.contractCode === normalizedContractCode)
+        || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
     );
+    if (localContract) return buildRentalSnapshotFromContractForFlow(localContract);
+
+    const allRentals = await api.rentals.list();
+    const rentalFromApi = allRentals.find(
+      (row) =>
+        (normalizedRentalId && row.id === normalizedRentalId)
+        || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
+    );
+    if (rentalFromApi) return rentalFromApi;
+
+    const allContracts = await api.contracts.list();
+    const contractFromApi = allContracts.find(
+      (row) =>
+        (normalizedContractId && row.id === normalizedContractId)
+        || (normalizedContractCode && row.contractCode === normalizedContractCode)
+        || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
+    );
+    return contractFromApi ? buildRentalSnapshotFromContractForFlow(contractFromApi) : null;
   };
 
   const resolveDeliveriesForDocumentFlow = async (rental) => {
@@ -1192,8 +1221,8 @@ export const useAppController = () => {
     }
   };
 
-  const handleGenerateOrderDocuments = async ({ rentalId, orderCode }) => {
-    const rental = await resolveRentalForDocumentFlow({ rentalId, orderCode });
+  const handleGenerateOrderDocuments = async ({ rentalId, orderCode, contractId, contractCode }) => {
+    const rental = await resolveRentalForDocumentFlow({ rentalId, orderCode, contractId, contractCode });
     if (!rental) {
       throw new Error('No se pudo identificar la orden de servicio para generar documentos.');
     }
@@ -1238,10 +1267,10 @@ export const useAppController = () => {
     ]);
   };
 
-  const handlePrintContractDocument = async ({ rentalId, orderCode, contractId }) => {
+  const handlePrintContractDocument = async ({ rentalId, orderCode, contractId, contractCode }) => {
     setError('');
     try {
-      return await api.printer.printContract({ rentalId, orderCode, contractId });
+      return await api.printer.printContract({ rentalId, orderCode, contractId, contractCode });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir el contrato.');
@@ -1249,10 +1278,10 @@ export const useAppController = () => {
     }
   };
 
-  const handlePrintInventoryOrderDocument = async ({ rentalId, orderCode }) => {
+  const handlePrintInventoryOrderDocument = async ({ rentalId, orderCode, contractId, contractCode }) => {
     setError('');
     try {
-      return await api.printer.printInventoryOrder({ rentalId, orderCode });
+      return await api.printer.printInventoryOrder({ rentalId, orderCode, contractId, contractCode });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir la orden de inventario.');
@@ -1260,10 +1289,10 @@ export const useAppController = () => {
     }
   };
 
-  const handlePrintRouteSheetDocument = async ({ rentalId, orderCode }) => {
+  const handlePrintRouteSheetDocument = async ({ rentalId, orderCode, contractId, contractCode }) => {
     setError('');
     try {
-      return await api.printer.printRouteSheet({ rentalId, orderCode });
+      return await api.printer.printRouteSheet({ rentalId, orderCode, contractId, contractCode });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir la hoja de ruta.');
@@ -1614,6 +1643,40 @@ export const useAppController = () => {
     }
   };
 
+  const handleExportSystemDatabase = async ({ code, observations }) => {
+    const cleanCode = String(code ?? '').trim();
+    if (!cleanCode) {
+      setError('Debes ingresar la contrasena de seguridad.');
+      throw new Error('Debes ingresar la contrasena de seguridad.');
+    }
+
+    setError('');
+    try {
+      return await api.system.exportDatabase({ code: cleanCode, observations });
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo exportar la base de datos.');
+      throw requestError;
+    }
+  };
+
+  const handleImportSystemDatabase = async ({ code, backup, confirmation, observations }) => {
+    const cleanCode = String(code ?? '').trim();
+    if (!cleanCode) {
+      setError('Debes ingresar la contrasena de seguridad.');
+      throw new Error('Debes ingresar la contrasena de seguridad.');
+    }
+
+    setError('');
+    try {
+      const result = await api.system.importDatabase({ code: cleanCode, backup, confirmation, observations });
+      await loadData();
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo importar la base de datos.');
+      throw requestError;
+    }
+  };
+
   return {
     activeTab,
     setActiveTab,
@@ -1726,5 +1789,7 @@ export const useAppController = () => {
     handleVerifyResetAccess,
     handleAnalyzeSystemReset,
     handleExecuteSystemReset,
+    handleExportSystemDatabase,
+    handleImportSystemDatabase,
   };
 };

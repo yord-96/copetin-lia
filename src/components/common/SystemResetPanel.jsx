@@ -13,13 +13,43 @@ const RISK_LABELS = {
   critico: 'Critico',
 };
 
-function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute }) {
+function readJsonFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result ?? '{}')));
+      } catch {
+        reject(new Error('El archivo seleccionado no es un JSON valido.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
+    reader.readAsText(file);
+  });
+}
+
+function downloadJson(payload, filename) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDatabase, onImportDatabase }) {
   const [code, setCode] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [modules, setModules] = useState([]);
   const [selectedModules, setSelectedModules] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [result, setResult] = useState(null);
+  const [dbTransferResult, setDbTransferResult] = useState(null);
+  const [importFile, setImportFile] = useState(null);
+  const [importConfirmation, setImportConfirmation] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [observations, setObservations] = useState('');
   const [error, setError] = useState('');
@@ -58,6 +88,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute }) {
       setModules(availableModules);
       setSelectedModules(availableModules.filter((module) => module.level === 'safe').map((module) => module.id));
       setIsUnlocked(true);
+      setDbTransferResult(null);
     } catch (requestError) {
       setError(requestError.message || 'No se pudo validar la contrasena.');
     } finally {
@@ -100,11 +131,62 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute }) {
     }
   };
 
+  const handleExportDatabase = async () => {
+    setError('');
+    setDbTransferResult(null);
+    setLoadingAction('export');
+    try {
+      const response = await onExportDatabase?.({ code, observations });
+      const exportedAt = String(response?.exportedAt ?? new Date().toISOString()).replace(/[:.]/g, '-');
+      downloadJson(response, `copetin-base-datos-${exportedAt}.json`);
+      setDbTransferResult({
+        tone: 'success',
+        title: 'Base descargada',
+        message: `Registros incluidos: ${response?.summary?.total ?? 0}. Usa este archivo para importarlo en tu sistema local.`,
+      });
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo descargar la base de datos.');
+    } finally {
+      setLoadingAction('');
+    }
+  };
+
+  const handleImportDatabase = async () => {
+    setError('');
+    setDbTransferResult(null);
+    if (!importFile) {
+      setError('Selecciona primero un archivo JSON de base de datos.');
+      return;
+    }
+    setLoadingAction('import');
+    try {
+      const backup = await readJsonFile(importFile);
+      const response = await onImportDatabase?.({
+        code,
+        backup,
+        confirmation: importConfirmation,
+        observations,
+      });
+      setDbTransferResult({
+        tone: 'success',
+        title: 'Base importada',
+        message: `${response?.message ?? 'Importacion completa.'} Registros activos: ${response?.summary?.total ?? 0}.`,
+      });
+      setImportConfirmation('');
+      setImportFile(null);
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo importar la base de datos.');
+    } finally {
+      setLoadingAction('');
+    }
+  };
+
   const canExecute = analysis?.canExecute && (
     requiresResetWord
       ? confirmation.trim().toUpperCase() === 'RESET'
       : ['CONFIRMAR', 'RESET'].includes(confirmation.trim().toUpperCase())
   );
+  const canImportDatabase = importFile && importConfirmation.trim().toUpperCase() === 'IMPORTAR';
 
   return (
     <div className="reset-modal-backdrop" onClick={onClose}>
@@ -151,6 +233,53 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute }) {
               <strong>Zona critica</strong>
               <p>El backend volvera a validar rol, contrasena, dependencias y confirmacion antes de borrar. Los bloqueos se respetan aunque esten seleccionados.</p>
             </div>
+
+            <section className="system-database-panel">
+              <div className="system-database-copy">
+                <span>Base de datos developer</span>
+                <strong>Exportar e importar respaldo completo</strong>
+                <p>Descarga la base actual del sistema o importa una copia JSON en tu entorno local. La importacion reemplaza la base activa y conserva el developer actual para no perder acceso.</p>
+              </div>
+              <div className="system-database-actions">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={handleExportDatabase}
+                  disabled={loadingAction === 'export' || loadingAction === 'import'}
+                >
+                  {loadingAction === 'export' ? 'Descargando...' : 'Descargar base'}
+                </button>
+                <label className="system-database-file">
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+                    disabled={loadingAction === 'import'}
+                  />
+                  <span>{importFile?.name ?? 'Seleccionar JSON'}</span>
+                </label>
+                <input
+                  value={importConfirmation}
+                  onChange={(event) => setImportConfirmation(event.target.value)}
+                  placeholder="Escribe IMPORTAR"
+                  disabled={loadingAction === 'import'}
+                />
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={handleImportDatabase}
+                  disabled={!canImportDatabase || loadingAction === 'import'}
+                >
+                  {loadingAction === 'import' ? 'Importando...' : 'Importar base'}
+                </button>
+              </div>
+              {dbTransferResult ? (
+                <div className={`system-database-result ${dbTransferResult.tone}`}>
+                  <strong>{dbTransferResult.title}</strong>
+                  <p>{dbTransferResult.message}</p>
+                </div>
+              ) : null}
+            </section>
 
             <div className="system-reset-layout">
               <div className="system-reset-modules">

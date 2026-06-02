@@ -943,8 +943,24 @@ function ServiceOrdersSection({
 
   const documentsForSelectedOrder = useMemo(() => {
     if (!documentsOrder) return [];
-    return documentsByOrderId.get(documentsOrder.id) ?? [];
-  }, [documentsByOrderId, documentsOrder]);
+    const directDocs = documentsByOrderId.get(documentsOrder.id) ?? [];
+    if (directDocs.length) return directDocs;
+
+    const tokens = [
+      documentsOrder.rentalId,
+      documentsOrder.orderCode,
+      documentsOrder.contractId,
+      documentsOrder.contractCode,
+    ].map((entry) => String(entry ?? '').trim()).filter(Boolean);
+    const normalizedTokens = tokens.map(normalizeText).filter(Boolean);
+    return generatedReports
+      .filter((report) => {
+        const sourceId = String(report?.sourceId ?? '').trim();
+        const reportName = normalizeText(report?.name ?? '');
+        return tokens.includes(sourceId) || normalizedTokens.some((token) => reportName.includes(token));
+      })
+      .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+  }, [documentsByOrderId, documentsOrder, generatedReports]);
 
   const documentOverviewRows = useMemo(() => {
     if (!documentsOrder) return [];
@@ -2266,11 +2282,26 @@ function ServiceOrdersSection({
     try {
       let preview = null;
       if (kind === 'contract') {
-        preview = await onPrintContractDocument?.({ rentalId: orderRow.rentalId, orderCode: orderRow.orderCode });
+        preview = await onPrintContractDocument?.({
+          rentalId: orderRow.rentalId,
+          orderCode: orderRow.orderCode,
+          contractId: orderRow.contractId,
+          contractCode: orderRow.contractCode,
+        });
       } else if (kind === 'inventory') {
-        preview = await onPrintInventoryOrderDocument?.({ rentalId: orderRow.rentalId, orderCode: orderRow.orderCode });
+        preview = await onPrintInventoryOrderDocument?.({
+          rentalId: orderRow.rentalId,
+          orderCode: orderRow.orderCode,
+          contractId: orderRow.contractId,
+          contractCode: orderRow.contractCode,
+        });
       } else if (kind === 'route') {
-        preview = await onPrintRouteSheetDocument?.({ rentalId: orderRow.rentalId, orderCode: orderRow.orderCode });
+        preview = await onPrintRouteSheetDocument?.({
+          rentalId: orderRow.rentalId,
+          orderCode: orderRow.orderCode,
+          contractId: orderRow.contractId,
+          contractCode: orderRow.contractCode,
+        });
       }
       if (preview?.html) {
         setDocumentPreview({
@@ -2448,7 +2479,12 @@ function ServiceOrdersSection({
 
   const handleGenerateDocuments = async (orderRow) => {
     try {
-      await onGenerateOrderDocuments({ rentalId: orderRow.rentalId, orderCode: orderRow.orderCode });
+      await onGenerateOrderDocuments({
+        rentalId: orderRow.rentalId,
+        orderCode: orderRow.orderCode,
+        contractId: orderRow.contractId,
+        contractCode: orderRow.contractCode,
+      });
       setActionFeedback(`Documentos generados para ${orderRow.orderCode}.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudieron generar los documentos.');
