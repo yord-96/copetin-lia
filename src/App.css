@@ -25978,6 +25978,122 @@ button.calendar-dispatch-row:focus-visible {
   background: #eeeaff;
 }
 
+.petty-history-modal {
+  width: min(1180px, calc(100vw - 2rem));
+  max-height: min(86vh, 820px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.petty-history-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0.85rem 0;
+}
+
+.petty-history-summary-strip article {
+  border: 1px solid #ead8cc;
+  border-radius: 8px;
+  background: #fffaf7;
+  padding: 0.75rem;
+}
+
+.petty-history-summary-strip small {
+  display: block;
+  color: #697399;
+  font-weight: 800;
+  margin-bottom: 0.3rem;
+}
+
+.petty-history-summary-strip strong {
+  color: #071a42;
+  font-size: 1.1rem;
+}
+
+.petty-history-filters {
+  display: grid;
+  grid-template-columns: 140px 140px 160px 160px minmax(220px, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+  margin-bottom: 0.85rem;
+}
+
+.petty-history-filters label {
+  display: grid;
+  gap: 0.25rem;
+  color: #5f6a91;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.petty-history-filters input,
+.petty-history-filters select {
+  min-height: 40px;
+  border: 1px solid #dfe6f3;
+  border-radius: 8px;
+  background: #fff;
+  color: #071a42;
+  padding: 0.5rem 0.65rem;
+  font-weight: 700;
+}
+
+.petty-history-modal-table-wrap {
+  min-height: 260px;
+  overflow: auto;
+  border: 1px solid #e8edf5;
+  border-radius: 8px;
+}
+
+.petty-history-modal-table {
+  min-width: 980px;
+}
+
+.petty-history-modal-table td small {
+  display: block;
+  color: #7c86a8;
+  margin-top: 0.15rem;
+}
+
+.petty-history-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.petty-history-kind.reposition {
+  background: #e8f8ef;
+  color: #0f8a4b;
+}
+
+.petty-history-kind.expense {
+  background: #fff1e8;
+  color: #e54b00;
+}
+
+.petty-category.reposition {
+  background: #eef8ff;
+  color: #2563eb;
+}
+
+.petty-history-modal > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.85rem;
+}
+
+.petty-history-modal > footer small {
+  color: #697399;
+  font-weight: 700;
+}
+
 @media (max-width: 1220px) {
   .accounting-overview-topcards,
   .accounting-overview-tables,
@@ -25993,6 +26109,11 @@ button.calendar-dispatch-row:focus-visible {
   .petty-bottom-grid,
   .petty-flow {
     grid-template-columns: 1fr;
+  }
+
+  .petty-history-summary-strip,
+  .petty-history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .accounting-daily-balance,
@@ -26024,6 +26145,18 @@ button.calendar-dispatch-row:focus-visible {
 
   .bigcash-summary-formula i {
     display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .petty-history-summary-strip,
+  .petty-history-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .petty-history-modal > footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
@@ -28854,4 +28987,555 @@ button.calendar-dispatch-row:focus-visible {
 
 .orders-product-list .orders-product-row .primary-button {
   align-self: center;
+}
+
+.transport-planner {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.transport-planner-card {
+  background: #fff;
+  border: 1px solid #ead8cc;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(44, 24, 12, 0.07);
+}
+
+.transport-planner-controls {
+  padding: 0.9rem;
+}
+
+.transport-planner-tabs,
+.transport-planner-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.transport-planner-tabs {
+  margin-bottom: 0.8rem;
+}
+
+.transport-planner-tabs button {
+  border: 1px solid #dfe6f3;
+  background: #f7f9fc;
+  color: #122356;
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.transport-planner-tabs button.active {
+  border-color: #ee4d09;
+  background: #fff4ee;
+  color: #dd3f00;
+}
+
+.transport-planner-toolbar label,
+.transport-planner-form-grid label,
+.transport-route-stop-fields label {
+  display: grid;
+  gap: 0.25rem;
+  color: #5f6a91;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.transport-planner-toolbar input,
+.transport-planner-toolbar select,
+.transport-planner-form-grid input,
+.transport-planner-form-grid select,
+.transport-route-stop-fields input {
+  border: 1px solid #dfe6f3;
+  border-radius: 8px;
+  background: #fff;
+  color: #071a42;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 0.55rem 0.75rem;
+}
+
+.transport-planner-toolbar label {
+  min-width: 190px;
+}
+
+.transport-date-picker {
+  position: relative;
+  min-width: 220px;
+}
+
+.transport-date-trigger {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #dfe6f3;
+  border-radius: 8px;
+  background: #fff;
+  color: #071a42;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.transport-date-trigger span {
+  font-weight: 900;
+}
+
+.transport-date-trigger small {
+  color: #e34b08;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.transport-mini-calendar {
+  position: absolute;
+  z-index: 45;
+  left: 0;
+  top: calc(100% + 0.4rem);
+  width: 292px;
+  padding: 0.75rem;
+  border: 1px solid #f1c6ad;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 22px 48px rgba(44, 24, 12, 0.18);
+}
+
+.transport-mini-calendar header,
+.transport-mini-calendar footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.transport-mini-calendar header {
+  margin-bottom: 0.55rem;
+}
+
+.transport-mini-calendar header strong {
+  color: #071a42;
+  font-size: 0.88rem;
+  text-transform: capitalize;
+}
+
+.transport-mini-calendar header button,
+.transport-mini-calendar footer button {
+  border: 1px solid #ead8cc;
+  background: #fff8f3;
+  color: #e34b08;
+  border-radius: 8px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.transport-mini-calendar header button {
+  width: 30px;
+  height: 30px;
+  font-size: 1.05rem;
+}
+
+.transport-mini-calendar-weekdays,
+.transport-mini-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.transport-mini-calendar-weekdays {
+  margin-bottom: 0.25rem;
+}
+
+.transport-mini-calendar-weekdays span {
+  color: #5f6a91;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.transport-mini-calendar-grid button {
+  position: relative;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #071a42;
+  display: grid;
+  place-items: center;
+  gap: 0.05rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.transport-mini-calendar-grid button:hover,
+.transport-mini-calendar-grid button:focus-visible {
+  background: #fff4ee;
+  border-color: #ffd7c1;
+  outline: none;
+}
+
+.transport-mini-calendar-grid button.muted {
+  color: #a9b0c7;
+}
+
+.transport-mini-calendar-grid button.today {
+  color: #e34b08;
+}
+
+.transport-mini-calendar-grid button.selected {
+  background: #e84a00;
+  border-color: #e84a00;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(232, 74, 0, 0.22);
+}
+
+.transport-mini-calendar-grid button.has-envio:not(.selected) {
+  background: #fff7ed;
+}
+
+.transport-mini-calendar-grid button.has-recojo:not(.selected) {
+  background: #f0fbf5;
+}
+
+.transport-mini-calendar-grid button.has-envio.has-recojo:not(.selected) {
+  background: linear-gradient(135deg, #fff7ed 0 50%, #f0fbf5 50% 100%);
+}
+
+.transport-mini-calendar-grid small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 5px;
+}
+
+.transport-mini-calendar i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.transport-mini-calendar i.envio {
+  background: #f97316;
+}
+
+.transport-mini-calendar i.recojo {
+  background: #22c55e;
+}
+
+.transport-mini-calendar-grid button.selected i {
+  background: #fff;
+}
+
+.transport-mini-calendar footer {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid #f3e4da;
+  color: #5f6a91;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.transport-mini-calendar footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.transport-mini-calendar footer button {
+  min-height: 28px;
+  padding: 0 0.55rem;
+  font-size: 0.72rem;
+}
+
+.transport-planner-route-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  color: #48547c;
+  font-size: 0.85rem;
+}
+
+.transport-planner-route-meta strong {
+  color: #071a42;
+  font-size: 1rem;
+}
+
+.transport-planner-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.78fr) minmax(360px, 1.35fr) minmax(280px, 0.95fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.transport-planner-pending,
+.transport-planner-route,
+.transport-planner-map {
+  padding: 0.9rem;
+}
+
+.transport-planner-pending header,
+.transport-planner-route header,
+.transport-planner-map header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.8rem;
+}
+
+.transport-planner-pending h3,
+.transport-planner-route h3,
+.transport-planner-map h3 {
+  margin: 0;
+  color: #071a42;
+  font-size: 1rem;
+}
+
+.transport-planner-pending p,
+.transport-planner-route p,
+.transport-planner-map p {
+  margin: 0.15rem 0 0;
+  color: #6e789f;
+  font-size: 0.78rem;
+}
+
+.transport-planner-list,
+.transport-route-stops {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.transport-planner-stop-card,
+.transport-route-stop {
+  border: 1px solid #e7dfd7;
+  border-radius: 8px;
+  background: #fffaf7;
+}
+
+.transport-planner-stop-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.65rem;
+}
+
+.transport-planner-stop-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.transport-planner-time {
+  color: #e54400;
+  font-weight: 900;
+  min-width: 46px;
+}
+
+.transport-planner-stop-card strong,
+.transport-route-stop strong {
+  color: #071a42;
+  display: block;
+}
+
+.transport-planner-stop-card small,
+.transport-route-stop small {
+  color: #6e789f;
+  display: block;
+  line-height: 1.25;
+}
+
+.transport-route-stop {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  padding: 0.7rem;
+  background: #fff;
+  border-color: #d9e5ff;
+}
+
+.transport-route-sequence {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #ee4d09;
+  color: #fff;
+  font-weight: 900;
+}
+
+.transport-route-stop-fields {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
+.transport-route-stop-actions {
+  display: grid;
+  gap: 0.35rem;
+  align-self: start;
+}
+
+.transport-route-stop-actions button {
+  border: 1px solid #dfe6f3;
+  background: #f7f9fc;
+  border-radius: 7px;
+  color: #122356;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 0.38rem 0.55rem;
+  cursor: pointer;
+}
+
+.transport-route-stop-actions button.danger {
+  color: #c33131;
+  border-color: #f3c8c8;
+  background: #fff6f6;
+}
+
+.transport-planner-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.transport-planner-form-grid .full-width {
+  grid-column: 1 / -1;
+}
+
+.transport-map-free {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid #dfe6f3;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(75, 101, 140, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(75, 101, 140, 0.08) 1px, transparent 1px),
+    #f8fbff;
+  background-size: 26px 26px;
+}
+
+.transport-map-grid-lines::before,
+.transport-map-grid-lines::after {
+  content: '';
+  position: absolute;
+  background: rgba(38, 62, 102, 0.18);
+  border-radius: 999px;
+}
+
+.transport-map-grid-lines::before {
+  left: 9%;
+  right: 10%;
+  top: 49%;
+  height: 4px;
+  transform: rotate(-6deg);
+}
+
+.transport-map-grid-lines::after {
+  top: 9%;
+  bottom: 10%;
+  left: 51%;
+  width: 4px;
+  transform: rotate(8deg);
+}
+
+.transport-map-stop {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  margin-top: -17px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #ee4d09;
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(238, 77, 9, 0.28);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.transport-map-stop.pickup {
+  background: #2067f4;
+  box-shadow: 0 10px 26px rgba(32, 103, 244, 0.24);
+}
+
+.transport-map-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #6e789f;
+  font-weight: 800;
+  text-align: center;
+  padding: 1rem;
+}
+
+.transport-map-note {
+  margin-top: 0.55rem !important;
+}
+
+.transport-empty-list {
+  border: 1px dashed #dfe6f3;
+  border-radius: 8px;
+  color: #6e789f;
+  font-weight: 800;
+  padding: 1rem;
+  text-align: center;
+}
+
+.transport-form-error {
+  border: 1px solid #ffc7cf;
+  background: #fff1f4;
+  color: #c1344c;
+  border-radius: 8px;
+  font-weight: 800;
+  margin: 0.8rem 0 0;
+  padding: 0.65rem 0.75rem;
+}
+
+@media (max-width: 1380px) {
+  .transport-planner-grid {
+    grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.2fr);
+  }
+
+  .transport-planner-map {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .transport-planner-grid,
+  .transport-planner-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transport-route-stop {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .transport-route-stop-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+  }
 }

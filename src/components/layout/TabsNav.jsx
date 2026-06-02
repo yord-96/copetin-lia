@@ -25,6 +25,7 @@ const operationTabs = [
     icon: 'truck',
     hint: '',
     children: [
+      { id: 'transporte_planificador', label: 'Planificador', targetId: 'devolucion_planificador' },
       { id: 'transporte_entregas', label: 'Entregas', targetId: 'devolucion_entregas' },
       { id: 'transporte_recojos', label: 'Recojos', targetId: 'devolucion_recojos' },
       { id: 'transporte_flota', label: 'Flota y Choferes', targetId: 'devolucion_rutas' },

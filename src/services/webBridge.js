@@ -1090,6 +1090,9 @@ const normalizeState = (state) => {
       scheduledDate: String(delivery?.scheduledDate ?? '').trim(),
       driverId: String(delivery?.driverId ?? '').trim() || null,
       vehicleId: String(delivery?.vehicleId ?? '').trim() || null,
+      routeId: String(delivery?.routeId ?? '').trim() || null,
+      routeType: ['envio', 'recojo'].includes(delivery?.routeType) ? delivery.routeType : null,
+      routeSequence: Number.isFinite(Number(delivery?.routeSequence)) ? Math.max(0, Math.trunc(Number(delivery.routeSequence))) : null,
       status: String(delivery?.status ?? 'programada').trim() || 'programada',
       progress: Math.max(0, Math.min(100, Math.trunc(Number(delivery?.progress ?? 0)))),
       notes: String(delivery?.notes ?? '').trim(),
@@ -1097,6 +1100,37 @@ const normalizeState = (state) => {
       updatedAt: delivery?.updatedAt ?? delivery?.createdAt ?? now,
       deletedAt: delivery?.deletedAt ?? null,
     })).filter((delivery) => delivery.deliveryCode && delivery.customerName)
+    : [];
+
+  source.transportRoutes = Array.isArray(source.transportRoutes)
+    ? source.transportRoutes.map((route) => ({
+      id: String(route?.id ?? makeId('troute')).trim() || makeId('troute'),
+      routeCode: String(route?.routeCode ?? '').trim(),
+      type: ['envio', 'recojo'].includes(route?.type) ? route.type : 'envio',
+      date: String(route?.date ?? '').trim(),
+      driverId: String(route?.driverId ?? '').trim() || null,
+      vehicleId: String(route?.vehicleId ?? '').trim() || null,
+      status: ['borrador', 'planificada', 'en_ruta', 'completada', 'cancelada'].includes(route?.status)
+        ? route.status
+        : 'borrador',
+      notes: String(route?.notes ?? '').trim(),
+      stops: Array.isArray(route?.stops)
+        ? route.stops
+          .map((stop, index) => ({
+            id: String(stop?.id ?? makeId('stop')).trim() || makeId('stop'),
+            deliveryId: String(stop?.deliveryId ?? '').trim(),
+            sequence: Math.max(1, Math.trunc(Number(stop?.sequence ?? index + 1))),
+            eta: String(stop?.eta ?? '').trim(),
+            notes: String(stop?.notes ?? '').trim(),
+          }))
+          .filter((stop) => stop.deliveryId)
+          .sort((a, b) => a.sequence - b.sequence)
+          .map((stop, index) => ({ ...stop, sequence: index + 1 }))
+        : [],
+      createdAt: route?.createdAt ?? now,
+      updatedAt: route?.updatedAt ?? route?.createdAt ?? now,
+      deletedAt: route?.deletedAt ?? null,
+    })).filter((route) => route.routeCode && route.date)
     : [];
 
   source.rentals.forEach((rental) => syncRentalTransportStatus(source, rental, now));
@@ -4930,6 +4964,83 @@ const getStatusFromDelivery = (delivery) => {
   return normalizeDeliveryStatus(delivery);
 };
 
+const isPickupDeliveryRecord = (delivery) => {
+  const note = normalizeText(delivery?.notes);
+  return note.includes('recojo') || note.includes('recog') || note.includes('devolucion');
+};
+
+const normalizeRouteStopsPayload = (stops) => {
+  if (!Array.isArray(stops)) return [];
+  return stops
+    .map((stop, index) => ({
+      id: String(stop?.id ?? makeId('stop')).trim() || makeId('stop'),
+      deliveryId: String(stop?.deliveryId ?? '').trim(),
+      sequence: Math.max(1, Math.trunc(Number(stop?.sequence ?? index + 1))),
+      eta: String(stop?.eta ?? '').trim(),
+      notes: String(stop?.notes ?? '').trim(),
+    }))
+    .filter((stop) => stop.deliveryId)
+    .sort((a, b) => a.sequence - b.sequence)
+    .map((stop, index) => ({ ...stop, sequence: index + 1 }));
+};
+
+const hydrateTransportRoute = (state, route) => {
+  const driver = state.drivers.find((entry) => entry.id === route.driverId) ?? null;
+  const vehicle = state.vehicles.find((entry) => entry.id === route.vehicleId) ?? null;
+  const stops = (route.stops ?? [])
+    .map((stop) => {
+      const delivery = state.deliveries.find((entry) => entry.id === stop.deliveryId && !entry.deletedAt) ?? null;
+      if (!delivery) return null;
+      const stopDriver = state.drivers.find((entry) => entry.id === delivery.driverId) ?? driver ?? null;
+      const stopVehicle = state.vehicles.find((entry) => entry.id === delivery.vehicleId) ?? vehicle ?? null;
+      return {
+        ...stop,
+        delivery: {
+          ...delivery,
+          status: getStatusFromDelivery(delivery),
+          driverName: stopDriver?.fullName ?? driver?.fullName ?? 'Sin chofer',
+          vehicleCode: stopVehicle?.code ?? vehicle?.code ?? 'SIN-VEH',
+          vehicleType: stopVehicle?.type ?? vehicle?.type ?? '-',
+        },
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.sequence - b.sequence);
+
+  return {
+    ...route,
+    driverName: driver?.fullName ?? 'Sin chofer',
+    vehicleCode: vehicle?.code ?? 'SIN-VEH',
+    vehicleName: vehicle?.name ?? 'Sin vehiculo',
+    vehicleType: vehicle?.type ?? '-',
+    stops,
+  };
+};
+
+const syncRouteStopsToDeliveries = (state, route) => {
+  const routeStopIds = new Set((route.stops ?? []).map((stop) => stop.deliveryId));
+  state.deliveries.forEach((delivery) => {
+    if (delivery.routeId === route.id && !routeStopIds.has(delivery.id)) {
+      delivery.routeId = null;
+      delivery.routeType = null;
+      delivery.routeSequence = null;
+      delivery.updatedAt = new Date().toISOString();
+    }
+  });
+
+  (route.stops ?? []).forEach((stop, index) => {
+    const delivery = state.deliveries.find((entry) => entry.id === stop.deliveryId && !entry.deletedAt);
+    if (!delivery) return;
+    const sequence = index + 1;
+    delivery.routeId = route.id;
+    delivery.routeType = route.type;
+    delivery.routeSequence = sequence;
+    delivery.driverId = route.driverId ?? delivery.driverId ?? null;
+    delivery.vehicleId = route.vehicleId ?? delivery.vehicleId ?? null;
+    delivery.updatedAt = new Date().toISOString();
+  });
+};
+
 const createWebBridge = () => ({
   inventory: {
     list: async () => {
@@ -6530,6 +6641,17 @@ const createWebBridge = () => ({
         })
         .sort((a, b) => new Date(b.scheduledDate) - new Date(a.scheduledDate));
     },
+    listRoutes: async () => {
+      const state = readState();
+      return (state.transportRoutes ?? [])
+        .filter((route) => !route.deletedAt)
+        .map((route) => hydrateTransportRoute(state, route))
+        .sort((a, b) => {
+          const dateOrder = String(b.date ?? '').localeCompare(String(a.date ?? ''), 'es');
+          if (dateOrder !== 0) return dateOrder;
+          return String(a.routeCode ?? '').localeCompare(String(b.routeCode ?? ''), 'es');
+        });
+    },
     createDelivery: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
       const address = String(payload?.address ?? '').trim();
@@ -6575,6 +6697,83 @@ const createWebBridge = () => ({
       });
 
       return created;
+    },
+    createRoute: async (payload) => {
+      const type = ['envio', 'recojo'].includes(payload?.type) ? payload.type : 'envio';
+      const date = String(payload?.date ?? '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('Debes indicar la fecha de la ruta.');
+      }
+
+      let created = null;
+      transaction((state) => {
+        state.transportRoutes = Array.isArray(state.transportRoutes) ? state.transportRoutes : [];
+        const now = new Date().toISOString();
+        const routeNumber = state.transportRoutes.filter((route) => !route.deletedAt && route.date === date && route.type === type).length + 1;
+        const routeCode = String(payload?.routeCode ?? '').trim()
+          || `${type === 'recojo' ? 'RR' : 'RE'}-${date.replaceAll('-', '')}-${String(routeNumber).padStart(2, '0')}`;
+        const stops = normalizeRouteStopsPayload(payload?.stops);
+        created = {
+          id: makeId('troute'),
+          routeCode,
+          type,
+          date,
+          driverId: String(payload?.driverId ?? '').trim() || null,
+          vehicleId: String(payload?.vehicleId ?? '').trim() || null,
+          status: ['borrador', 'planificada', 'en_ruta', 'completada'].includes(payload?.status) ? payload.status : 'borrador',
+          notes: String(payload?.notes ?? '').trim(),
+          stops,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        };
+        state.transportRoutes.push(created);
+        syncRouteStopsToDeliveries(state, created);
+        return state;
+      });
+
+      return created;
+    },
+    updateRoute: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar la ruta.');
+
+      let updated = null;
+      transaction((state) => {
+        state.transportRoutes = Array.isArray(state.transportRoutes) ? state.transportRoutes : [];
+        const route = state.transportRoutes.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!route) throw new Error('Ruta no encontrada.');
+
+        if (payload.type !== undefined && ['envio', 'recojo'].includes(payload.type)) route.type = payload.type;
+        if (payload.date !== undefined) {
+          const date = String(payload.date ?? '').trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Debes indicar una fecha valida.');
+          route.date = date;
+        }
+        if (payload.driverId !== undefined) route.driverId = String(payload.driverId ?? '').trim() || null;
+        if (payload.vehicleId !== undefined) route.vehicleId = String(payload.vehicleId ?? '').trim() || null;
+        if (payload.status !== undefined && ['borrador', 'planificada', 'en_ruta', 'completada', 'cancelada'].includes(payload.status)) {
+          route.status = payload.status;
+        }
+        if (payload.notes !== undefined) route.notes = String(payload.notes ?? '').trim();
+        if (payload.stops !== undefined) {
+          const stops = normalizeRouteStopsPayload(payload.stops);
+          const seen = new Set();
+          route.stops = stops.filter((stop) => {
+            if (seen.has(stop.deliveryId)) return false;
+            const delivery = state.deliveries.find((entry) => entry.id === stop.deliveryId && !entry.deletedAt);
+            if (!delivery) return false;
+            const deliveryType = isPickupDeliveryRecord(delivery) ? 'recojo' : 'envio';
+            return deliveryType === route.type;
+          }).map((stop, index) => ({ ...stop, sequence: index + 1 }));
+        }
+        route.updatedAt = new Date().toISOString();
+        syncRouteStopsToDeliveries(state, route);
+        updated = deepClone(route);
+        return state;
+      });
+
+      return updated;
     },
     updateDelivery: async (payload) => {
       const id = String(payload?.id ?? '').trim();

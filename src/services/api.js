@@ -59,6 +59,7 @@ const businessCollections = [
   'personnelIncidents',
   'rentals',
   'deliveries',
+  'transportRoutes',
   'vehicles',
   'drivers',
   'calendarEvents',
@@ -382,8 +383,11 @@ export const api = {
   },
   transport: {
     listDeliveries: () => callBridge('transport', 'listDeliveries', false),
+    listRoutes: () => callBridge('transport', 'listRoutes', false),
     createDelivery: (payload) => callBridge('transport', 'createDelivery', true, payload),
     updateDelivery: (payload) => callBridge('transport', 'updateDelivery', true, payload),
+    createRoute: (payload) => callBridge('transport', 'createRoute', true, payload),
+    updateRoute: (payload) => callBridge('transport', 'updateRoute', true, payload),
     registerPickupChecklist: (payload) =>
       callBridge('transport', 'registerPickupChecklist', true, payload),
     listVehicles: () => callBridge('transport', 'listVehicles', false),

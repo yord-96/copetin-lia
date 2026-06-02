@@ -204,6 +204,14 @@ function AccountingSection({
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyCashVisibleRows, setPettyCashVisibleRows] = useState(5);
+  const [isPettyHistoryOpen, setIsPettyHistoryOpen] = useState(false);
+  const [pettyHistoryFilters, setPettyHistoryFilters] = useState({
+    dateFrom: '',
+    dateTo: '',
+    movement: 'all',
+    category: 'all',
+    query: '',
+  });
   const [cashModal, setCashModal] = useState(null);
   const [voidReceiptModal, setVoidReceiptModal] = useState(null);
   const [voidReceiptStep, setVoidReceiptStep] = useState('reason');
@@ -486,6 +494,87 @@ function AccountingSection({
     });
   }, [dayPettyExpensesRows, getMovementReference, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
 
+  const pettyHistoryRows = useMemo(() => {
+    const rows = [];
+
+    sortedMovements.forEach((movement) => {
+      const amount = toNumber(movement.amountBs);
+      const type = String(movement.type ?? '').toLowerCase();
+      const isOpening = isPettyCash(movement) && type === 'apertura' && amount > 0;
+      const isReposition = isBigCash(movement) && movement.isInternalTransfer && amount < 0;
+      const isExpense = isPettyCash(movement) && !movement.isInternalTransfer && amount < 0;
+
+      if (!isOpening && !isReposition && !isExpense) return;
+
+      const category = isExpense ? getPettyExpenseCategory(movement) : { label: isOpening ? 'Apertura' : 'Reposicion', className: 'reposition' };
+      rows.push({
+        ...movement,
+        historyKind: isExpense ? 'expense' : 'reposition',
+        historyLabel: isExpense ? 'Gasto' : isOpening ? 'Apertura' : 'Reposicion',
+        historyAmountBs: Math.abs(amount),
+        historySignedBs: isExpense ? -Math.abs(amount) : Math.abs(amount),
+        historyCategory: category,
+        historyReference: getMovementReference(movement),
+      });
+    });
+
+    return rows.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+  }, [getMovementReference, getPettyExpenseCategory, sortedMovements]);
+
+  const filteredPettyHistoryRows = useMemo(() => {
+    const text = pettyHistoryFilters.query.trim().toLowerCase();
+    return pettyHistoryRows.filter((movement) => {
+      const dateKey = getDateKey(movement.createdAt);
+      if (pettyHistoryFilters.dateFrom && dateKey < pettyHistoryFilters.dateFrom) return false;
+      if (pettyHistoryFilters.dateTo && dateKey > pettyHistoryFilters.dateTo) return false;
+
+      const isVoided = isVoidedCashMovement(movement);
+      const hasTransportLink = toNumber(movement?.transportExpenseBs) > 0
+        || String(movement?.accountingTag ?? '') === 'transport_expense'
+        || (
+          Boolean(movement?.linkedRentalId || movement?.linkedOrderCode || movement?.linkedContractId)
+          && ['movilidad', 'transporte'].includes(String(movement?.category ?? '').toLowerCase())
+        );
+
+      const matchesMovement =
+        pettyHistoryFilters.movement === 'all'
+        || (pettyHistoryFilters.movement === 'reposition' && movement.historyKind === 'reposition')
+        || (pettyHistoryFilters.movement === 'expense' && movement.historyKind === 'expense' && !isVoided)
+        || (pettyHistoryFilters.movement === 'voided' && isVoided)
+        || (pettyHistoryFilters.movement === 'transport' && hasTransportLink && !isVoided);
+      if (!matchesMovement) return false;
+
+      const matchesCategory =
+        pettyHistoryFilters.category === 'all'
+        || (movement.historyKind === 'expense' && movement.historyCategory.className === pettyHistoryFilters.category);
+      if (!matchesCategory) return false;
+
+      if (!text) return true;
+      return [
+        movement.description,
+        movement.receipt,
+        movement.responsible,
+        movement.createdBy,
+        movement.historyLabel,
+        movement.historyCategory.label,
+        movement.historyReference,
+        movement.voidReason,
+      ].some((value) => String(value ?? '').toLowerCase().includes(text));
+    });
+  }, [pettyHistoryFilters, pettyHistoryRows]);
+
+  const pettyHistorySummary = useMemo(() => {
+    const validRows = filteredPettyHistoryRows.filter((movement) => !isVoidedCashMovement(movement));
+    const repositionsBs = sumBy(validRows.filter((movement) => movement.historyKind === 'reposition'), (movement) => movement.historyAmountBs);
+    const expensesBs = sumBy(validRows.filter((movement) => movement.historyKind === 'expense'), (movement) => movement.historyAmountBs);
+    return {
+      repositionsBs,
+      expensesBs,
+      netBs: Number((repositionsBs - expensesBs).toFixed(2)),
+      voidedCount: filteredPettyHistoryRows.filter((movement) => isVoidedCashMovement(movement)).length,
+    };
+  }, [filteredPettyHistoryRows]);
+
   const activeCashSession = useMemo(
     () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
     [cashSessions],
@@ -648,6 +737,17 @@ function AccountingSection({
   const openCashAction = (type, patch = {}) => {
     resetCashForm(patch);
     setCashModal(type);
+  };
+
+  const openPettyHistory = (movement = 'all') => {
+    setPettyHistoryFilters((current) => ({
+      ...current,
+      movement,
+      dateFrom: '',
+      dateTo: '',
+      query: '',
+    }));
+    setIsPettyHistoryOpen(true);
   };
 
   const closeCashAction = () => {
@@ -959,8 +1059,162 @@ function AccountingSection({
     );
   };
 
+  const renderPettyHistoryModal = () => {
+    if (!isPettyHistoryOpen) return null;
+    return (
+      <div className="accounting-modal-backdrop" onClick={() => setIsPettyHistoryOpen(false)}>
+        <section className="accounting-modal petty-history-modal" onClick={(event) => event.stopPropagation()}>
+          <header>
+            <div>
+              <h3>Historial completo de Caja Chica</h3>
+              <small>Reposiciones, gastos, recibos anulados y movimientos vinculados.</small>
+            </div>
+            <button type="button" className="orders-modal-close" onClick={() => setIsPettyHistoryOpen(false)}>x</button>
+          </header>
+
+          <div className="petty-history-summary-strip">
+            <article>
+              <small>Reposiciones validas</small>
+              <strong className="value-green">{formatBs(pettyHistorySummary.repositionsBs)}</strong>
+            </article>
+            <article>
+              <small>Gastos validos</small>
+              <strong className="value-orange">- {formatBs(pettyHistorySummary.expensesBs)}</strong>
+            </article>
+            <article>
+              <small>Neto del filtro</small>
+              <strong className={pettyHistorySummary.netBs < 0 ? 'value-orange' : 'value-blue'}>{formatBs(pettyHistorySummary.netBs)}</strong>
+            </article>
+            <article>
+              <small>Anulados visibles</small>
+              <strong>{pettyHistorySummary.voidedCount}</strong>
+            </article>
+          </div>
+
+          <div className="petty-history-filters">
+            <label>
+              Desde
+              <input
+                type="date"
+                value={pettyHistoryFilters.dateFrom}
+                onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, dateFrom: event.target.value }))}
+              />
+            </label>
+            <label>
+              Hasta
+              <input
+                type="date"
+                value={pettyHistoryFilters.dateTo}
+                onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, dateTo: event.target.value }))}
+              />
+            </label>
+            <label>
+              Movimiento
+              <select
+                value={pettyHistoryFilters.movement}
+                onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, movement: event.target.value }))}
+              >
+                <option value="all">Todos</option>
+                <option value="reposition">Reposiciones</option>
+                <option value="expense">Gastos</option>
+                <option value="transport">Gastos de transporte</option>
+                <option value="voided">Anulados</option>
+              </select>
+            </label>
+            <label>
+              Tipo de gasto
+              <select
+                value={pettyHistoryFilters.category}
+                onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, category: event.target.value }))}
+              >
+                <option value="all">Todos</option>
+                <option value="office">Oficina</option>
+                <option value="mobility">Movilidad</option>
+                <option value="food">Alimentacion</option>
+                <option value="other">Varios</option>
+              </select>
+            </label>
+            <label className="petty-history-search">
+              Buscar
+              <input
+                value={pettyHistoryFilters.query}
+                onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, query: event.target.value }))}
+                placeholder="Concepto, proveedor, recibo, contrato..."
+              />
+            </label>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => setPettyHistoryFilters({ dateFrom: '', dateTo: '', movement: 'all', category: 'all', query: '' })}
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="petty-history-modal-table-wrap">
+            <table className="accounting-table petty-history-modal-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Movimiento</th>
+                  <th>Concepto</th>
+                  <th>Proveedor / destino</th>
+                  <th>Tipo</th>
+                  <th>Referencia</th>
+                  <th>Monto</th>
+                  <th>Recibo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPettyHistoryRows.map((movement) => {
+                  const isVoided = isVoidedCashMovement(movement);
+                  return (
+                    <tr key={`petty-history-${movement.id}`} className={isVoided ? 'cash-row-voided' : ''}>
+                      <td>
+                        <strong>{formatDate(movement.createdAt)}</strong>
+                        <small>{getLongHourLabel(movement.createdAt)}</small>
+                      </td>
+                      <td>
+                        <span className={`petty-history-kind ${movement.historyKind}`}>
+                          {movement.historyLabel}
+                        </span>
+                      </td>
+                      <td>
+                        <strong>{movement.description || '-'}</strong>
+                        {isVoided && movement.voidReason ? <small>Anulado: {movement.voidReason}</small> : null}
+                      </td>
+                      <td>{movement.responsible || movement.createdBy || '-'}</td>
+                      <td><span className={`petty-category ${movement.historyCategory.className}`}>{movement.historyCategory.label}</span></td>
+                      <td>{movement.historyReference}</td>
+                      <td>
+                        <b className={movement.historyKind === 'expense' ? 'value-orange' : 'value-green'}>
+                          {movement.historyKind === 'expense' ? '- ' : '+ '}
+                          {formatBs(movement.historyAmountBs)}
+                        </b>
+                      </td>
+                      <td>{renderReceiptActions(movement)}</td>
+                    </tr>
+                  );
+                })}
+                {filteredPettyHistoryRows.length === 0 ? (
+                  <tr><td colSpan={8}><p className="status">No hay movimientos con esos filtros.</p></td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <footer>
+            <small>Mostrando {filteredPettyHistoryRows.length} de {pettyHistoryRows.length} movimientos historicos.</small>
+            <button type="button" className="primary-button" onClick={() => setIsPettyHistoryOpen(false)}>Cerrar</button>
+          </footer>
+        </section>
+      </div>
+    );
+  };
+
   const renderCashModals = () => (
     <>
+      {renderPettyHistoryModal()}
       {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
       {cashActionError && !cashModal && !collectModal && !voidReceiptModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
       {voidReceiptModal ? (
@@ -1775,9 +2029,9 @@ function AccountingSection({
             <button
               type="button"
               className="section-link blue"
-              onClick={() => setPettyCashVisibleRows((current) => (current >= filteredPettyExpenseRows.length ? 5 : current + 5))}
+              onClick={() => openPettyHistory('all')}
             >
-              {pettyCashVisibleRows >= filteredPettyExpenseRows.length && pettyCashVisibleRows > 5 ? 'Ver menos' : 'Ver todos los gastos'}
+              Ver historial completo
             </button>
           </article>
 
@@ -1812,7 +2066,7 @@ function AccountingSection({
                 ))}
                 {pettyTransfersRows.length === 0 ? <p className="status">Sin reposiciones registradas.</p> : null}
               </div>
-              <button type="button" className="section-link blue">Ver todas</button>
+              <button type="button" className="section-link blue" onClick={() => openPettyHistory('reposition')}>Ver todas</button>
             </article>
           </aside>
         </section>

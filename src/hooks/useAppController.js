@@ -94,6 +94,7 @@ export const useAppController = () => {
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [transportRoutes, setTransportRoutes] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
 
@@ -136,6 +137,7 @@ export const useAppController = () => {
         clientsData,
         usersData,
         deliveriesData,
+        transportRoutesData,
         vehiclesData,
         driversData,
         calendarEventsData,
@@ -159,6 +161,7 @@ export const useAppController = () => {
         api.clients.list(),
         api.users.list(),
         api.transport.listDeliveries(),
+        api.transport.listRoutes(),
         api.transport.listVehicles(),
         api.transport.listDrivers(),
         api.calendar.listEvents(),
@@ -183,6 +186,7 @@ export const useAppController = () => {
       setClients(clientsData);
       setUsers(usersData);
       setDeliveries(deliveriesData);
+      setTransportRoutes(transportRoutesData);
       setVehicles(vehiclesData);
       setDrivers(driversData);
       setCalendarEvents(calendarEventsData);
@@ -545,6 +549,30 @@ export const useAppController = () => {
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la entrega.');
+      throw requestError;
+    }
+  };
+
+  const handleCreateTransportRoute = async (payload) => {
+    setError('');
+    try {
+      const created = await api.transport.createRoute(payload);
+      await loadData();
+      return created;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo crear la ruta.');
+      throw requestError;
+    }
+  };
+
+  const handleUpdateTransportRoute = async (payload) => {
+    setError('');
+    try {
+      const updated = await api.transport.updateRoute(payload);
+      await loadData();
+      return updated;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo actualizar la ruta.');
       throw requestError;
     }
   };
@@ -1620,6 +1648,7 @@ export const useAppController = () => {
     clients,
     users,
     deliveries,
+    transportRoutes,
     vehicles,
     drivers,
     calendarEvents,
@@ -1643,6 +1672,8 @@ export const useAppController = () => {
     handleImportPersonnelAttendance,
     handleCreateDelivery,
     handleUpdateDelivery,
+    handleCreateTransportRoute,
+    handleUpdateTransportRoute,
     handleRegisterPickupChecklist,
     handleCreateVehicle,
     handleUpdateVehicle,

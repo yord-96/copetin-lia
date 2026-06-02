@@ -403,11 +403,14 @@ function App() {
             activeModule={controller.activeTab}
             onSwitchTransportModule={controller.setActiveTab}
             deliveries={controller.deliveries}
+            transportRoutes={controller.transportRoutes}
             rentals={controller.rentals}
             vehicles={controller.vehicles}
             drivers={controller.drivers}
             onCreateDelivery={controller.handleCreateDelivery}
             onUpdateDelivery={controller.handleUpdateDelivery}
+            onCreateTransportRoute={controller.handleCreateTransportRoute}
+            onUpdateTransportRoute={controller.handleUpdateTransportRoute}
             onRegisterPickupChecklist={controller.handleRegisterPickupChecklist}
             onCreateVehicle={controller.handleCreateVehicle}
             onUpdateVehicle={controller.handleUpdateVehicle}
