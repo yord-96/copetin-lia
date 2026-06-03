@@ -426,6 +426,119 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
     </html>`;
 };
 
+const buildSupplierInternalDocumentHtml = ({ order, contract, formatDate, formatBs }) => {
+  const plan = Array.isArray(contract?.supplierFulfillmentPlan)
+    ? contract.supplierFulfillmentPlan
+    : Array.isArray(order?.supplierFulfillmentPlan)
+      ? order.supplierFulfillmentPlan
+      : [];
+  const rows = plan.map((line) => {
+    const quantity = Math.max(0, Number(line.neededQty ?? line.quantity ?? 0));
+    const cost = Math.max(0, Number(line.supplierUnitCostBs ?? 0));
+    const sale = Math.max(0, Number(line.saleUnitPriceBs ?? 0));
+    const costTotal = quantity * cost;
+    const saleTotal = quantity * sale;
+    return {
+      supplierName: String(line.supplierName ?? 'Proveedor').trim() || 'Proveedor',
+      itemName: String(line.itemName ?? 'Item').trim() || 'Item',
+      quantity,
+      cost,
+      sale,
+      costTotal,
+      saleTotal,
+      margin: saleTotal - costTotal,
+      quoteCode: String(line.supplierQuoteCode ?? '').trim(),
+    };
+  });
+  const totals = rows.reduce((acc, row) => ({
+    quantity: acc.quantity + row.quantity,
+    costTotal: acc.costTotal + row.costTotal,
+    saleTotal: acc.saleTotal + row.saleTotal,
+    margin: acc.margin + row.margin,
+  }), { quantity: 0, costTotal: 0, saleTotal: 0, margin: 0 });
+
+  const tableRows = rows.map((row) => `
+    <tr>
+      <td>
+        <strong>${escapeDocText(row.itemName)}</strong>
+        ${row.quoteCode ? `<small>Cotizacion proveedor: ${escapeDocText(row.quoteCode)}</small>` : ''}
+      </td>
+      <td>${escapeDocText(row.supplierName)}</td>
+      <td>${row.quantity}</td>
+      <td>${formatBs(row.cost)}</td>
+      <td>${formatBs(row.sale)}</td>
+      <td>${formatBs(row.costTotal)}</td>
+      <td>${formatBs(row.saleTotal)}</td>
+      <td class="${row.margin >= 0 ? 'positive' : 'negative'}">${formatBs(row.margin)}</td>
+    </tr>
+  `).join('');
+
+  return `<!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 32px; color: #101828; font-family: Inter, Arial, sans-serif; background: #f6f8fc; }
+          .page { max-width: 980px; margin: 0 auto; background: #fff; border: 1px solid #dbe3f1; border-radius: 18px; padding: 30px; box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08); }
+          header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #f05a00; padding-bottom: 18px; margin-bottom: 20px; }
+          h1 { margin: 0; color: #0b1f4f; font-size: 28px; }
+          h2 { margin: 24px 0 10px; color: #0b1f4f; font-size: 16px; }
+          p { margin: 4px 0; color: #667085; }
+          .badge { display: inline-block; border: 1px solid #fed7aa; border-radius: 999px; background: #fff7ed; color: #c2410c; padding: 7px 12px; font-weight: 800; }
+          .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+          .metric { border: 1px solid #e4eaf5; border-radius: 12px; background: #fbfcff; padding: 12px; display: grid; gap: 4px; }
+          .metric small { color: #667085; font-weight: 700; }
+          .metric strong { color: #0b1f4f; font-size: 18px; }
+          table { width: 100%; border-collapse: collapse; border: 1px solid #e4eaf5; border-radius: 12px; overflow: hidden; }
+          th { background: #fff3e8; color: #9a3412; text-align: left; font-size: 11px; text-transform: uppercase; }
+          th, td { border-bottom: 1px solid #e4eaf5; padding: 10px; font-size: 13px; vertical-align: top; }
+          td:nth-child(n+3), th:nth-child(n+3) { text-align: right; }
+          td strong { display: block; color: #0b1f4f; }
+          td small { display: block; margin-top: 3px; color: #667085; }
+          .positive { color: #047857; font-weight: 900; }
+          .negative { color: #b42318; font-weight: 900; }
+          .empty { border: 1px dashed #dbe3f1; border-radius: 12px; padding: 18px; color: #667085; background: #fbfcff; }
+          footer { margin-top: 22px; border-top: 1px solid #e4eaf5; padding-top: 12px; color: #667085; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header>
+            <div>
+              <span class="badge">Documento interno</span>
+              <h1>Resumen administrativo de proveedor</h1>
+              <p>No entregar al cliente. Controla costo, venta y margen de items externos.</p>
+            </div>
+            <div>
+              <p><strong>Contrato:</strong> ${escapeDocText(contract?.contractCode ?? order?.contractCode ?? order?.orderCode ?? '-')}</p>
+              <p><strong>Orden:</strong> ${escapeDocText(order?.orderCode ?? contract?.orderCode ?? '-')}</p>
+              <p><strong>Fecha:</strong> ${formatDate(contract?.createdAt ?? order?.createdAt ?? new Date().toISOString())}</p>
+            </div>
+          </header>
+          <section class="grid">
+            <article class="metric"><small>Proveedor cubre</small><strong>${totals.quantity} u.</strong></article>
+            <article class="metric"><small>Costo proveedor</small><strong>${formatBs(totals.costTotal)}</strong></article>
+            <article class="metric"><small>Venta al cliente</small><strong>${formatBs(totals.saleTotal)}</strong></article>
+            <article class="metric"><small>Margen estimado</small><strong>${formatBs(totals.margin)}</strong></article>
+          </section>
+          <h2>Items externos</h2>
+          ${rows.length ? `
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th><th>Proveedor</th><th>Cant.</th><th>Costo unit.</th><th>Venta unit.</th><th>Costo total</th><th>Venta total</th><th>Margen</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          ` : '<div class="empty">Este contrato no tiene items cubiertos por proveedor.</div>'}
+          <footer>Generado por El Copetin para control administrativo interno.</footer>
+        </main>
+      </body>
+    </html>`;
+};
+
 const buildEmptyDraft = (mode = 'quote') => {
   const now = new Date();
   const deliveryDate = getInputDate(now);
@@ -481,6 +594,23 @@ const buildEmptyQuickItemDraft = () => ({
   color: '',
   material: '',
   rentalPriceBs: '0',
+});
+
+const buildEmptySupplierCoverageDraft = () => ({
+  supplierMode: 'existing',
+  supplierId: '',
+  supplierName: '',
+  contactName: '',
+  phone: '',
+  whatsapp: '',
+  itemName: '',
+  category: '',
+  color: '',
+  material: '',
+  quantity: '1',
+  supplierUnitCostBs: '0',
+  saleUnitPriceBs: '0',
+  notes: '',
 });
 
 const getOperationalItemDetails = (line) => {
@@ -595,6 +725,8 @@ function ServiceOrdersSection({
   onCreateContractFromOrder,
   onApproveContract,
   onGenerateOrderDocuments,
+  onCreateSupplier,
+  onCreateSupplierQuote,
   onOpenTransportModule,
   onOpenInventoryModule,
   onOpenReportsModule,
@@ -633,6 +765,10 @@ function ServiceOrdersSection({
   const [documentPreview, setDocumentPreview] = useState(null);
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
+  const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
+  const [supplierCoverageDraft, setSupplierCoverageDraft] = useState(buildEmptySupplierCoverageDraft);
+  const [supplierCoverageError, setSupplierCoverageError] = useState('');
+  const [isSavingSupplierCoverage, setIsSavingSupplierCoverage] = useState(false);
 
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
@@ -975,6 +1111,16 @@ function ServiceOrdersSection({
       .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
   }, [documentsByOrderId, documentsOrder, generatedReports]);
 
+  const selectedDocumentsContract = useMemo(() => {
+    if (!documentsOrder) return null;
+    return contracts.find((contract) =>
+      (documentsOrder.contractId && String(contract.id) === String(documentsOrder.contractId))
+      || (documentsOrder.contractCode && String(contract.contractCode) === String(documentsOrder.contractCode))
+      || (documentsOrder.rentalId && String(contract.rentalId) === String(documentsOrder.rentalId))
+      || (documentsOrder.orderCode && String(contract.orderCode) === String(documentsOrder.orderCode)),
+    ) ?? null;
+  }, [contracts, documentsOrder]);
+
   const documentOverviewRows = useMemo(() => {
     if (!documentsOrder) return [];
 
@@ -986,8 +1132,9 @@ function ServiceOrdersSection({
     const contractReport = findLatestReport('contrato', 'contrato');
     const inventoryReport = findLatestReport('orden_inventario', 'inventario');
     const routeReport = findLatestReport('hoja_ruta', 'ruta');
+    const supplierPlan = selectedDocumentsContract?.supplierFulfillmentPlan ?? documentsOrder.supplierFulfillmentPlan ?? [];
 
-    return [
+    const rows = [
       {
         id: 'contract',
         kind: 'contract',
@@ -1022,7 +1169,23 @@ function ServiceOrdersSection({
         latestReportId: routeReport?.id ?? null,
       },
     ];
-  }, [documentsForSelectedOrder, documentsOrder]);
+
+    if (supplierPlan.length > 0) {
+      rows.push({
+        id: 'supplier-internal',
+        kind: 'supplier-internal',
+        title: `Resumen proveedor ${documentsOrder.contractCode || documentsOrder.orderCode}`,
+        description: 'Vista interna con proveedor, costo, venta y margen. No entregar al cliente.',
+        status: 'Interno',
+        statusClass: 'quote-sent',
+        generatedAt: null,
+        format: 'INT',
+        latestReportId: null,
+      });
+    }
+
+    return rows;
+  }, [documentsForSelectedOrder, documentsOrder, selectedDocumentsContract]);
 
   const historicalDocumentsForSelectedOrder = useMemo(() => {
     if (!documentsOrder) return [];
@@ -1651,6 +1814,10 @@ function ServiceOrdersSection({
     setQuickItemDraft(buildEmptyQuickItemDraft());
     setCurrentStep(0);
     setSupplierFulfillmentDraftByItem({});
+    setSupplierCoverageModal(null);
+    setSupplierCoverageDraft(buildEmptySupplierCoverageDraft());
+    setSupplierCoverageError('');
+    setIsSavingSupplierCoverage(false);
     setDraft(buildEmptyDraft('quote'));
   };
 
@@ -1699,6 +1866,133 @@ function ServiceOrdersSection({
         },
       };
     });
+  };
+
+  const setSupplierCoverageDraftField = (field, value) => {
+    setSupplierCoverageDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const openSupplierCoverageModal = (line, availableStock) => {
+    const shortageQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)) - Math.max(0, Number(availableStock ?? 0)));
+    const currentCoverage = supplierFulfillmentDraftByItem[line.itemId] ?? {};
+    const details = getOperationalItemDetails(line);
+    const detailValue = (label) => details.find((entry) => entry.label === label)?.value ?? '';
+    const hasSuppliers = (supplierBundle?.suppliers ?? []).length > 0;
+    setSupplierCoverageModal({
+      itemId: line.itemId,
+      itemName: line.item.name,
+      availableStock,
+      shortageQty,
+    });
+    setSupplierCoverageDraft({
+      ...buildEmptySupplierCoverageDraft(),
+      supplierMode: currentCoverage.supplierId || hasSuppliers ? 'existing' : 'new',
+      supplierId: currentCoverage.supplierId ?? '',
+      supplierName: currentCoverage.supplierName ?? '',
+      itemName: line.item.name,
+      category: detailValue('Categoria') || line.item.category || '',
+      color: detailValue('Color'),
+      material: detailValue('Material'),
+      quantity: String(Math.max(1, Math.trunc(Number(currentCoverage.neededQty ?? shortageQty)))),
+      supplierUnitCostBs: String(Math.max(0, Number(currentCoverage.supplierUnitCostBs ?? 0))),
+      saleUnitPriceBs: String(Math.max(0, Number(line.unitPriceBs ?? line.item.rentalPriceBs ?? 0))),
+    });
+    setSupplierCoverageError('');
+  };
+
+  const closeSupplierCoverageModal = (force = false) => {
+    if (isSavingSupplierCoverage && !force) return;
+    setSupplierCoverageModal(null);
+    setSupplierCoverageDraft(buildEmptySupplierCoverageDraft());
+    setSupplierCoverageError('');
+  };
+
+  const saveSupplierCoverageFromModal = async () => {
+    if (!supplierCoverageModal) return;
+    setSupplierCoverageError('');
+    const shortageQty = Math.max(1, Math.trunc(Number(supplierCoverageModal.shortageQty ?? 1)));
+    const requestedQty = Math.max(1, Math.min(shortageQty, Math.trunc(Number(supplierCoverageDraft.quantity || 1))));
+    const supplierCost = Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs ?? 0));
+    const salePrice = Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs ?? 0));
+    const itemName = String(supplierCoverageDraft.itemName ?? '').trim();
+    const category = String(supplierCoverageDraft.category ?? '').trim();
+    const color = String(supplierCoverageDraft.color ?? '').trim();
+    const material = String(supplierCoverageDraft.material ?? '').trim();
+    const notes = String(supplierCoverageDraft.notes ?? '').trim();
+
+    if (!itemName || !category) {
+      setSupplierCoverageError('Indica nombre/modelo y categoria del item que prestara el proveedor.');
+      return;
+    }
+    if (supplierCost <= 0) {
+      setSupplierCoverageError('Indica el costo unitario que te cobrara el proveedor.');
+      return;
+    }
+    if (salePrice <= 0) {
+      setSupplierCoverageError('Indica el precio unitario que se cobrara al cliente.');
+      return;
+    }
+
+    setIsSavingSupplierCoverage(true);
+    try {
+      let supplier = null;
+      const selectedSupplierId = String(supplierCoverageDraft.supplierId ?? '').trim();
+      if (supplierCoverageDraft.supplierMode === 'existing') {
+        supplier = (supplierBundle?.suppliers ?? []).find((entry) => String(entry.id) === selectedSupplierId) ?? null;
+        if (!supplier) throw new Error('Selecciona un proveedor existente o crea uno nuevo.');
+      } else {
+        const supplierName = String(supplierCoverageDraft.supplierName ?? '').trim();
+        if (!supplierName) throw new Error('Indica el nombre del proveedor.');
+        const existingByName = (supplierBundle?.suppliers ?? []).find((entry) => normalizeText(entry.name) === normalizeText(supplierName));
+        supplier = existingByName ?? await onCreateSupplier?.({
+          name: supplierName,
+          contactName: String(supplierCoverageDraft.contactName ?? '').trim(),
+          phone: String(supplierCoverageDraft.phone ?? '').trim(),
+          whatsapp: String(supplierCoverageDraft.whatsapp ?? supplierCoverageDraft.phone ?? '').trim(),
+          paymentTerms: 'Segun acuerdo operativo',
+          notes: notes ? `Creado desde orden de servicio. ${notes}` : 'Creado desde orden de servicio.',
+        });
+      }
+
+      if (!supplier?.id) throw new Error('No se pudo determinar el proveedor.');
+
+      const quote = await onCreateSupplierQuote?.({
+        supplierId: supplier.id,
+        title: `Cobertura para ${supplierCoverageModal.itemName}`,
+        validFrom: draft.deliveryDate,
+        validUntil: draft.pickupDate || draft.eventDate,
+        notes: [
+          `Cobertura creada desde ${draft.entityType === 'contract' ? 'contrato' : 'cotizacion'} en ordenes de servicio.`,
+          color ? `Color: ${color}` : '',
+          material ? `Material: ${material}` : '',
+          notes,
+        ].filter(Boolean).join(' | '),
+        items: [{
+          itemId: String(supplierCoverageModal.itemId).startsWith('quick-') ? '' : supplierCoverageModal.itemId,
+          itemName,
+          category,
+          quantity: requestedQty,
+          unitPriceBs: supplierCost,
+          unit: 'unidad',
+        }],
+      });
+
+      setDraftItemPrice(supplierCoverageModal.itemId, salePrice);
+      setSupplierCoverageField(supplierCoverageModal.itemId, {
+        supplierId: supplier.id,
+        supplierName: supplier.name,
+        supplierQuoteId: quote?.id ?? null,
+        supplierQuoteCode: quote?.quoteCode ?? null,
+        neededQty: requestedQty,
+        supplierUnitCostBs: supplierCost,
+      });
+      setActionFeedback(`Proveedor ${supplier.name} vinculado al faltante de ${supplierCoverageModal.itemName}.`);
+      closeSupplierCoverageModal(true);
+    } catch (requestError) {
+      setSupplierCoverageError(requestError.message || 'No se pudo registrar la cobertura del proveedor.');
+    } finally {
+      setIsSavingSupplierCoverage(false);
+    }
   };
 
   const setDraftEventDate = (value) => {
@@ -2325,16 +2619,28 @@ function ServiceOrdersSection({
           contractId: orderRow.contractId,
           contractCode: orderRow.contractCode,
         });
+      } else if (kind === 'supplier-internal') {
+        const contract = selectedDocumentsContract
+          ?? contracts.find((entry) =>
+            (orderRow.contractId && String(entry.id) === String(orderRow.contractId))
+            || (orderRow.contractCode && String(entry.contractCode) === String(orderRow.contractCode))
+            || (orderRow.orderCode && String(entry.orderCode) === String(orderRow.orderCode)),
+          )
+          ?? null;
+        preview = {
+          title: `Resumen proveedor ${contract?.contractCode ?? orderRow.contractCode ?? orderRow.orderCode}`,
+          html: buildSupplierInternalDocumentHtml({ order: orderRow, contract, formatDate, formatBs }),
+        };
       }
       if (preview?.html) {
         setDocumentPreview({
           kind,
           orderCode: orderRow.orderCode,
-          title: preview.title ?? `${kind === 'contract' ? 'Contrato' : kind === 'inventory' ? 'Orden de inventario' : 'Hoja de ruta'} ${orderRow.orderCode}`,
+          title: preview.title ?? `${kind === 'contract' ? 'Contrato' : kind === 'inventory' ? 'Orden de inventario' : kind === 'route' ? 'Hoja de ruta' : 'Resumen proveedor'} ${orderRow.orderCode}`,
           html: preview.html,
         });
       }
-      setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : 'de ruta'} cargado para ${orderRow.orderCode}.`);
+      setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para ${orderRow.orderCode}.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo abrir el documento seleccionado.');
     } finally {
@@ -3334,6 +3640,154 @@ function ServiceOrdersSection({
               <button type="button" className="whatsapp-send-button" onClick={sendWhatsAppMessage}>
                 <WhatsAppGlyph />
                 Abrir WhatsApp
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {supplierCoverageModal ? (
+        <div className="orders-modal-backdrop supplier-coverage-backdrop" onClick={() => closeSupplierCoverageModal()}>
+          <section className="orders-modal supplier-coverage-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Cobertura con proveedor</h3>
+                <p>
+                  {supplierCoverageModal.itemName} tiene faltante de {supplierCoverageModal.shortageQty} u.
+                  Registra proveedor y precio sin salir del contrato.
+                </p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => closeSupplierCoverageModal()}>
+                x
+              </button>
+            </header>
+
+            <div className="supplier-coverage-body">
+              <div className="supplier-coverage-switch">
+                <button
+                  type="button"
+                  className={supplierCoverageDraft.supplierMode === 'existing' ? 'active' : ''}
+                  onClick={() => setSupplierCoverageDraftField('supplierMode', 'existing')}
+                >
+                  Buscar existente
+                </button>
+                <button
+                  type="button"
+                  className={supplierCoverageDraft.supplierMode === 'new' ? 'active' : ''}
+                  onClick={() => setSupplierCoverageDraftField('supplierMode', 'new')}
+                >
+                  Crear proveedor
+                </button>
+              </div>
+
+              {supplierCoverageDraft.supplierMode === 'existing' ? (
+                <label className="supplier-coverage-field wide">
+                  Proveedor
+                  <select
+                    value={supplierCoverageDraft.supplierId}
+                    onChange={(event) => {
+                      const supplierId = event.target.value;
+                      const supplier = (supplierBundle?.suppliers ?? []).find((entry) => String(entry.id) === supplierId);
+                      setSupplierCoverageDraft((current) => ({
+                        ...current,
+                        supplierId,
+                        supplierName: supplier?.name ?? '',
+                      }));
+                    }}
+                  >
+                    <option value="">Seleccionar proveedor...</option>
+                    {(supplierBundle?.suppliers ?? []).map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.name}{supplier.phone ? ` - ${supplier.phone}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {(supplierBundle?.suppliers ?? []).length === 0 ? (
+                    <small>No hay proveedores creados todavia. Cambia a "Crear proveedor".</small>
+                  ) : null}
+                </label>
+              ) : (
+                <div className="supplier-coverage-grid">
+                  <label className="supplier-coverage-field">
+                    Nombre del proveedor *
+                    <input value={supplierCoverageDraft.supplierName} onChange={(event) => setSupplierCoverageDraftField('supplierName', event.target.value)} placeholder="Ej. Sillas Don Luis" />
+                  </label>
+                  <label className="supplier-coverage-field">
+                    Contacto
+                    <input value={supplierCoverageDraft.contactName} onChange={(event) => setSupplierCoverageDraftField('contactName', event.target.value)} placeholder="Persona de contacto" />
+                  </label>
+                  <label className="supplier-coverage-field">
+                    Celular
+                    <input value={supplierCoverageDraft.phone} onChange={(event) => setSupplierCoverageDraftField('phone', event.target.value)} placeholder="Numero" />
+                  </label>
+                  <label className="supplier-coverage-field">
+                    WhatsApp
+                    <input value={supplierCoverageDraft.whatsapp} onChange={(event) => setSupplierCoverageDraftField('whatsapp', event.target.value)} placeholder="Opcional" />
+                  </label>
+                </div>
+              )}
+
+              <div className="supplier-coverage-grid">
+                <label className="supplier-coverage-field">
+                  Categoria *
+                  <input value={supplierCoverageDraft.category} onChange={(event) => setSupplierCoverageDraftField('category', event.target.value)} placeholder="Sillas, mesas..." />
+                </label>
+                <label className="supplier-coverage-field">
+                  Nombre / modelo *
+                  <input value={supplierCoverageDraft.itemName} onChange={(event) => setSupplierCoverageDraftField('itemName', event.target.value)} placeholder="Tiffany, Crossback..." />
+                </label>
+                <label className="supplier-coverage-field">
+                  Color
+                  <input value={supplierCoverageDraft.color} onChange={(event) => setSupplierCoverageDraftField('color', event.target.value)} placeholder="Blanco, dorado..." />
+                </label>
+                <label className="supplier-coverage-field">
+                  Material
+                  <input value={supplierCoverageDraft.material} onChange={(event) => setSupplierCoverageDraftField('material', event.target.value)} placeholder="Madera, metal..." />
+                </label>
+                <label className="supplier-coverage-field">
+                  Cantidad a cubrir
+                  <input type="number" min="1" max={supplierCoverageModal.shortageQty} value={supplierCoverageDraft.quantity} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
+                  <small>Faltante maximo: {supplierCoverageModal.shortageQty} u.</small>
+                </label>
+                <label className="supplier-coverage-field">
+                  Costo proveedor Bs *
+                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.supplierUnitCostBs} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
+                </label>
+                <label className="supplier-coverage-field">
+                  Precio cliente Bs *
+                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.saleUnitPriceBs} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
+                  <small>Este precio queda en el item del contrato.</small>
+                </label>
+                <label className="supplier-coverage-field wide">
+                  Notas internas
+                  <input value={supplierCoverageDraft.notes} onChange={(event) => setSupplierCoverageDraftField('notes', event.target.value)} placeholder="Condiciones, entrega, pago al proveedor..." />
+                </label>
+              </div>
+
+              <div className="supplier-coverage-summary">
+                <article>
+                  <span>Costo proveedor</span>
+                  <strong>{formatBs(Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs || 0)))}</strong>
+                </article>
+                <article>
+                  <span>Venta al cliente</span>
+                  <strong>{formatBs(Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs || 0)))}</strong>
+                </article>
+                <article>
+                  <span>Margen estimado</span>
+                  <strong>{formatBs((Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs || 0))) - (Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs || 0))))}</strong>
+                </article>
+              </div>
+
+              {supplierCoverageError ? <p className="orders-modal-error">{supplierCoverageError}</p> : null}
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => closeSupplierCoverageModal()}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={saveSupplierCoverageFromModal} disabled={isSavingSupplierCoverage}>
+                {isSavingSupplierCoverage ? 'Guardando...' : 'Guardar y cubrir faltante'}
               </button>
             </footer>
           </section>
@@ -4393,6 +4847,13 @@ function ServiceOrdersSection({
                                     No hay cotizacion de proveedor para este item. Registra precios en Proveedores.
                                   </small>
                                 ) : null}
+                                <button
+                                  type="button"
+                                  className="orders-inline-link"
+                                  onClick={() => openSupplierCoverageModal(line, availableStock)}
+                                >
+                                  + Registrar proveedor
+                                </button>
                               </label>
                             ) : null}
                             {isOverAvailable ? (

@@ -380,6 +380,8 @@ function App() {
             onCreateContractFromOrder={controller.handleCreateContractFromOrder}
             onApproveContract={controller.handleApproveContract}
             onGenerateOrderDocuments={controller.handleGenerateOrderDocuments}
+            onCreateSupplier={controller.handleCreateSupplier}
+            onCreateSupplierQuote={controller.handleCreateSupplierQuote}
             onOpenTransportModule={() => {
               markSidebarModuleAsSeen('devolucion_entregas');
               controller.setActiveTab('devolucion_entregas');
