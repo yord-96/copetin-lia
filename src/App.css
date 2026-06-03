@@ -10410,6 +10410,90 @@ textarea:focus {
   font-size: 0.8rem;
 }
 
+.inventory-categories-more {
+  width: 100%;
+  border: 1px dashed #f0b996;
+  background: #fff7f1;
+  color: #e95000;
+  border-radius: 0.6rem;
+  padding: 0.58rem 0.7rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.inventory-categories-more span {
+  min-width: 1.8rem;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #ffd7bd;
+  color: #9f3b00;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.76rem;
+}
+
+.inventory-categories-more:hover {
+  border-color: #ec5a11;
+  box-shadow: 0 10px 24px rgba(233, 80, 0, 0.12);
+}
+
+.inventory-all-categories-modal {
+  width: min(820px, calc(100vw - 2rem));
+  max-height: min(760px, calc(100vh - 2rem));
+  padding: 1rem;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.86rem;
+}
+
+.inventory-all-categories-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #edf1fa;
+}
+
+.inventory-all-categories-header h3 {
+  margin: 0.15rem 0 0.18rem;
+  color: #08143d;
+  font-size: 1.28rem;
+}
+
+.inventory-all-categories-header p {
+  margin: 0;
+  color: #6f779d;
+}
+
+.inventory-all-categories-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
+  gap: 0.6rem;
+  padding: 0.1rem 0.15rem 0.2rem;
+}
+
+.inventory-all-categories-list .inventory-category-action {
+  min-height: 4.2rem;
+  border: 1px solid #edf1fa;
+  background: #fbfcff;
+  border-radius: 0.72rem;
+  padding: 0.58rem;
+}
+
+.inventory-all-categories-list .inventory-category-action:hover {
+  border-color: #f0b996;
+  background: #fffaf6;
+}
+
 .inventory-activity-card ul {
   gap: 0.42rem;
 }

@@ -3780,7 +3780,7 @@ const buildDocumentShell = ({
 
 const getContractDocumentStyles = () => `
   ${getProfessionalDocumentStyles()}
-  @page { size: A4; margin: 7mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   body {
     background: #f3f4f7;
     color: #10131f;
@@ -3792,9 +3792,10 @@ const getContractDocumentStyles = () => `
     width: 210mm;
     min-height: 297mm;
     margin: 0 auto;
-    padding: 9mm 8mm 6mm;
+    padding: 8mm 8mm 6mm;
     background: #fff;
-    border: 2px solid #151515;
+    border: 1px solid #eadfd9;
+    border-radius: 3px;
     box-shadow: 0 18px 50px rgba(16, 19, 31, 0.14);
   }
   .contract-hero {
@@ -3883,13 +3884,15 @@ const getContractDocumentStyles = () => `
     display: grid;
     grid-template-columns: 1.22fr 1.5fr 1.15fr 0.95fr;
     gap: 0;
-    margin-top: 13mm;
+    margin-top: 10mm;
     border: 1px solid #e3dedb;
     border-radius: 8px;
     overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .contract-company-item {
-    min-height: 22mm;
+    min-height: 20mm;
     display: grid;
     grid-template-columns: 8mm minmax(0, 1fr);
     gap: 6px;
@@ -3941,7 +3944,7 @@ const getContractDocumentStyles = () => `
     font-size: 10.5px;
   }
   .contract-section-title {
-    margin: 7mm 0 3mm;
+    margin: 5.5mm 0 2.5mm;
     color: #111522;
     font-size: 13px;
     font-weight: 950;
@@ -3954,27 +3957,32 @@ const getContractDocumentStyles = () => `
     border: 1px solid #e1dcd8;
     border-radius: 8px;
     overflow: hidden;
+    break-inside: avoid;
     page-break-inside: avoid;
   }
   .contract-data-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .contract-data-col {
-    padding: 9px 13px;
+    display: contents;
   }
   .contract-data-col + .contract-data-col {
-    border-left: 1px solid #e5e0dc;
+    border-left: 0;
   }
   .contract-field {
     display: grid;
-    grid-template-columns: 9mm minmax(0, 1fr);
-    gap: 8px;
+    grid-template-columns: 7mm minmax(0, 1fr);
+    gap: 6px;
     align-items: center;
-    min-height: 13mm;
+    min-height: 11.5mm;
+    padding: 6px 8px;
     border-bottom: 1px solid #ebe6e2;
+    border-right: 1px solid #ebe6e2;
   }
-  .contract-field:last-child { border-bottom: 0; }
+  .contract-data-grid > .contract-field:nth-child(3n) { border-right: 0; }
+  .contract-data-grid > .contract-field:nth-last-child(-n + 2) { border-bottom: 0; }
+  .contract-data-grid > .contract-field:last-child { border-right: 0; }
   .contract-field-icon {
     display: grid;
     place-items: center;
@@ -3983,25 +3991,27 @@ const getContractDocumentStyles = () => `
   .contract-schedule {
     display: grid;
     grid-template-columns: 0.95fr 0.95fr 1.2fr;
-    min-height: 33mm;
+    min-height: 29mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .contract-schedule-main {
     display: grid;
     grid-template-columns: 10mm minmax(0, 1fr);
     gap: 9px;
     align-items: center;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border-right: 1px solid #e5e0dc;
   }
   .contract-schedule-value {
     display: block;
-    margin-top: 6px;
+    margin-top: 4px;
     color: #10131f;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.45;
   }
   .contract-schedule-note {
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: linear-gradient(135deg, #fff7f1, #fff);
     border-left: 1px solid #ffd8c4;
   }
@@ -4022,6 +4032,8 @@ const getContractDocumentStyles = () => `
     grid-template-columns: minmax(0, 1fr) 65mm;
     gap: 5mm;
     align-items: start;
+    break-inside: auto;
+    page-break-inside: auto;
   }
   .contract-items-table {
     width: 100%;
@@ -4031,10 +4043,17 @@ const getContractDocumentStyles = () => `
     border: 1px solid #e1dcd8;
     border-radius: 8px;
   }
+  .contract-items-table thead {
+    display: table-header-group;
+  }
+  .contract-items-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .contract-items-table th {
     background: linear-gradient(135deg, #ef4d04, #ff6a00);
     color: #fff;
-    padding: 8px 9px;
+    padding: 6px 8px;
     font-size: 10px;
     font-weight: 950;
     text-align: left;
@@ -4043,7 +4062,7 @@ const getContractDocumentStyles = () => `
   .contract-items-table th.number,
   .contract-items-table td.number { text-align: right; white-space: nowrap; }
   .contract-items-table td {
-    padding: 7px 9px;
+    padding: 6px 8px;
     border-bottom: 1px solid #eee8e2;
     border-right: 1px solid #eee8e2;
     vertical-align: middle;
@@ -4098,6 +4117,8 @@ const getContractDocumentStyles = () => `
     border-radius: 8px;
     padding: 10px 12px;
     background: linear-gradient(135deg, #fff7f1, #fff);
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .contract-money-card h3 {
     color: #e84a00;
@@ -4109,12 +4130,12 @@ const getContractDocumentStyles = () => `
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    padding: 7px 0;
+    padding: 5px 0;
     border-bottom: 1px solid #eeded4;
   }
   .contract-money-line:last-child { border-bottom: 0; }
   .contract-money-total {
-    margin-top: 7px;
+    margin-top: 6px;
     border-radius: 6px;
     padding: 9px 10px;
     background: #ffe2cf;
@@ -4126,14 +4147,16 @@ const getContractDocumentStyles = () => `
     display: grid;
     grid-template-columns: minmax(0, 1fr) 53mm;
     gap: 8mm;
-    padding: 10px 12px;
+    padding: 8px 10px;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .contract-terms-list {
     margin: 0;
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 6px;
+    gap: 4px;
   }
   .contract-terms-list li {
     display: grid;
@@ -4154,7 +4177,7 @@ const getContractDocumentStyles = () => `
   .contract-important {
     border: 1px solid #e7ded8;
     border-radius: 8px;
-    padding: 12px;
+    padding: 10px;
     display: grid;
     grid-template-columns: 10mm 1fr;
     gap: 9px;
@@ -4164,11 +4187,18 @@ const getContractDocumentStyles = () => `
     color: #e84a00;
     text-transform: uppercase;
   }
+  .contract-closing {
+    margin-top: 5mm;
+    padding-top: 4mm;
+    border-top: 1px solid #f04b0b;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .contract-signatures {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10mm;
-    margin-top: 7mm;
+    margin-top: 0;
     text-align: center;
   }
   .contract-signature-label {
@@ -4178,7 +4208,7 @@ const getContractDocumentStyles = () => `
     text-transform: uppercase;
   }
   .contract-signature-script {
-    min-height: 14mm;
+    min-height: 10mm;
     display: grid;
     place-items: end center;
     color: #252525;
@@ -4198,8 +4228,8 @@ const getContractDocumentStyles = () => `
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 10px;
-    margin-top: 6mm;
-    padding-top: 4mm;
+    margin-top: 4mm;
+    padding-top: 2mm;
     border-top: 1px solid #f04b0b;
     color: #111522;
     font-size: 10px;
@@ -4209,7 +4239,34 @@ const getContractDocumentStyles = () => `
     font-weight: 800;
   }
   .contract-footer span:last-child { text-align: right; }
+  @media screen {
+    .contract-items-layout {
+      display: block;
+    }
+    .contract-items-table th {
+      font-size: 11px;
+    }
+    .contract-items-table td {
+      font-size: 11.5px;
+      line-height: 1.36;
+    }
+    .contract-item-desc strong {
+      font-size: 12.5px;
+      line-height: 1.24;
+    }
+    .contract-item-desc small {
+      font-size: 10px;
+      line-height: 1.3;
+    }
+    .contract-money-card {
+      width: 72mm;
+      margin: 5mm 0 0 auto;
+    }
+  }
   @media print {
+    html, body {
+      background: #ffffff;
+    }
     body {
       padding: 0;
       font-size: 9.8px;
@@ -4219,28 +4276,54 @@ const getContractDocumentStyles = () => `
     }
     .contract-sheet {
       width: auto;
-      min-height: calc(297mm - 14mm);
+      min-height: 0;
       margin: 0;
       padding: 0;
-      border: 1.2px solid #151515;
+      border: 0;
+      border-radius: 0;
       box-shadow: none;
     }
+    .contract-hero,
+    .contract-company-strip,
+    .contract-panel,
+    .contract-schedule,
+    .contract-money-card,
+    .contract-terms-panel,
+    .contract-closing {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
     .contract-brand h1 { font-size: 24px; }
-    .contract-company-strip { margin-top: 9mm; }
-    .contract-section-title { margin-top: 5mm; }
+    .contract-company-strip { margin-top: 8mm; }
+    .contract-section-title {
+      margin-top: 4mm;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
     .contract-field { min-height: 10.5mm; }
-    .contract-schedule { min-height: 29mm; }
-    .contract-signatures { margin-top: 5mm; }
-    .contract-signature-script { min-height: 11mm; font-size: 18px; }
-    .contract-footer { margin-top: 4mm; padding-top: 3mm; }
+    .contract-schedule { min-height: 26mm; }
+    .contract-items-layout {
+      display: block;
+    }
+    .contract-items-table {
+      border-collapse: collapse;
+      border-radius: 0;
+    }
+    .contract-items-table th,
+    .contract-items-table td {
+      padding: 5px 7px;
+    }
+    .contract-money-card {
+      width: 68mm;
+      margin: 4mm 0 0 auto;
+    }
+    .contract-signature-script { min-height: 9mm; font-size: 16px; }
+    .contract-footer { margin-top: 3mm; padding-top: 2mm; }
   }
 `;
 
 const getContractItemMeta = (line, item) => [
   item?.category ? `Categoria: ${item.category}` : '',
-  item?.itemColor ? `Color: ${item.itemColor}` : '',
-  item?.brand ? `Material: ${item.brand}` : '',
-  line?.verificationStatus === 'pending_verification' ? 'Pendiente de verificacion' : '',
 ].filter(Boolean).join(' | ');
 
 const contractPdfIcon = (fileName) =>
@@ -4376,18 +4459,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
       <h3 class="contract-section-title"><span class="number">1.</span> Datos del cliente y evento</h3>
       <section class="contract-panel contract-data-grid">
-        <div class="contract-data-col">
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Cliente</strong><span>${escapeHtml(rental.customerName)}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Telefono</strong><span>${escapeHtml(rental.customerPhone || '-')}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('calendario.png')}</span><div><strong>Evento</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Direccion del servicio</strong><span>${escapeHtml(eventAddress)}</span></div></div>
-        </div>
-        <div class="contract-data-col">
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Facturacion</strong><span>${escapeHtml(billingLabel)}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('etiqueta-de-precio.png')}</span><div><strong>Tarifa</strong><span>${escapeHtml(durationLabel)}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('camion.png')}</span><div><strong>Logistica</strong><span>${escapeHtml(logisticsLabel)}</span></div></div>
-          <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('enlace.png')}</span><div><strong>Orden vinculada</strong><span>${escapeHtml(linkedOrderCode)}</span></div></div>
-        </div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Cliente</strong><span>${escapeHtml(rental.customerName)}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Telefono</strong><span>${escapeHtml(rental.customerPhone || '-')}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('calendario.png')}</span><div><strong>Evento</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Direccion del servicio</strong><span>${escapeHtml(eventAddress)}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Facturacion</strong><span>${escapeHtml(billingLabel)}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('etiqueta-de-precio.png')}</span><div><strong>Tarifa</strong><span>${escapeHtml(durationLabel)}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('camion.png')}</span><div><strong>Logistica</strong><span>${escapeHtml(logisticsLabel)}</span></div></div>
+        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('enlace.png')}</span><div><strong>Orden vinculada</strong><span>${escapeHtml(linkedOrderCode)}</span></div></div>
       </section>
 
       <h3 class="contract-section-title"><span class="number">2.</span> Cronograma operativo</h3>
@@ -4448,32 +4527,34 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </aside>
       </section>
 
-      <section class="contract-signatures">
-        <div>
-          <p class="contract-signature-label">Firma cliente</p>
-          <div class="contract-signature-script"></div>
-          <div class="contract-signature-line"></div>
-          <p class="contract-signature-name">${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</p>
+      <section class="contract-closing">
+        <div class="contract-signatures">
+          <div>
+            <p class="contract-signature-label">Firma cliente</p>
+            <div class="contract-signature-script"></div>
+            <div class="contract-signature-line"></div>
+            <p class="contract-signature-name">${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</p>
+          </div>
+          <div>
+            <p class="contract-signature-label">Responsable comercial</p>
+            <div class="contract-signature-script"></div>
+            <div class="contract-signature-line"></div>
+            <p class="contract-signature-name">${escapeHtml(company.name)}</p>
+          </div>
+          <div>
+            <p class="contract-signature-label">Administracion</p>
+            <div class="contract-signature-script"></div>
+            <div class="contract-signature-line"></div>
+            <p class="contract-signature-name">${escapeHtml(company.name)}</p>
+          </div>
         </div>
-        <div>
-          <p class="contract-signature-label">Responsable comercial</p>
-          <div class="contract-signature-script"></div>
-          <div class="contract-signature-line"></div>
-          <p class="contract-signature-name">${escapeHtml(company.name)}</p>
-        </div>
-        <div>
-          <p class="contract-signature-label">Administracion</p>
-          <div class="contract-signature-script"></div>
-          <div class="contract-signature-line"></div>
-          <p class="contract-signature-name">${escapeHtml(company.name)}</p>
-        </div>
-      </section>
 
-      <footer class="contract-footer">
-        <span>Documento generado por ${escapeHtml(company.name)}</span>
-        <span>${escapeHtml(company.website || 'www.copetin.com')}</span>
-        <span>Pagina 1 de 1</span>
-      </footer>
+        <footer class="contract-footer">
+          <span>Documento generado por ${escapeHtml(company.name)}</span>
+          <span>${escapeHtml(company.website || 'www.copetin.com')}</span>
+          <span>Contrato ${escapeHtml(mainCode)}</span>
+        </footer>
+      </section>
     </main>
   </body>
 </html>`;

@@ -25,6 +25,7 @@ let syncChannel = null;
 let syncListenersReady = false;
 let syncPollTimer = null;
 const syncSubscribers = new Set();
+const inFlightMutations = new Map();
 
 const getBridge = () => getWebBridge();
 
@@ -220,6 +221,30 @@ const announceDataChange = ({ domain, method }) => {
   }
 };
 
+const normalizeForMutationKey = (value) => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map(normalizeForMutationKey);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((accumulator, key) => {
+        const normalized = normalizeForMutationKey(value[key]);
+        if (typeof normalized !== 'undefined') {
+          accumulator[key] = normalized;
+        }
+        return accumulator;
+      }, {});
+  }
+  return value;
+};
+
+const getMutationKey = (domain, method, args) =>
+  `${domain}.${method}:${JSON.stringify(normalizeForMutationKey(args))}`;
+
 const pollRemoteRevision = async () => {
   if (!shouldUseSharedDemoDb() || syncSubscribers.size === 0) return;
 
@@ -288,13 +313,30 @@ const subscribeToDataChanges = (callback) => {
 };
 
 const callBridge = async (domain, method, mutates, ...args) => {
-  await syncSharedState({ force: mutates });
-  const result = await getBridge()[domain][method](...args);
-  if (mutates) {
-    await pushSharedState();
-    announceDataChange({ domain, method });
+  const mutationKey = mutates ? getMutationKey(domain, method, args) : '';
+  if (mutationKey && inFlightMutations.has(mutationKey)) {
+    return inFlightMutations.get(mutationKey);
   }
-  return result;
+
+  const request = (async () => {
+    await syncSharedState({ force: mutates });
+    const result = await getBridge()[domain][method](...args);
+    if (mutates) {
+      await pushSharedState();
+      announceDataChange({ domain, method });
+    }
+    return result;
+  })();
+
+  if (mutationKey) {
+    inFlightMutations.set(mutationKey, request);
+    request.then(
+      () => inFlightMutations.delete(mutationKey),
+      () => inFlightMutations.delete(mutationKey),
+    );
+  }
+
+  return request;
 };
 
 export const runtimeInfo =

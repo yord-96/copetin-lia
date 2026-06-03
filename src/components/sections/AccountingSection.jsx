@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 
 const getInputDate = (baseDate = new Date()) => {
@@ -241,6 +241,19 @@ function AccountingSection({
   const [isSubmittingCash, setIsSubmittingCash] = useState(false);
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
+  const cashSubmitLockRef = useRef(false);
+
+  const beginCashSubmit = () => {
+    if (cashSubmitLockRef.current) return false;
+    cashSubmitLockRef.current = true;
+    setIsSubmittingCash(true);
+    return true;
+  };
+
+  const endCashSubmit = () => {
+    cashSubmitLockRef.current = false;
+    setIsSubmittingCash(false);
+  };
 
   const rentalById = useMemo(() => new Map(rentals.map((rental) => [rental.id, rental])), [rentals]);
   const contractByRentalId = useMemo(() => {
@@ -872,7 +885,7 @@ function AccountingSection({
   const handleSubmitVoidReplacement = async (event) => {
     event.preventDefault();
     if (!voidReceiptModal) return;
-    setIsSubmittingCash(true);
+    if (!beginCashSubmit()) return;
     setCashActionError('');
     try {
       const linkedTransportOption = transportContractOptions.find((entry) => entry.rentalId === voidReceiptForm.linkedRentalId) ?? null;
@@ -904,14 +917,14 @@ function AccountingSection({
     } catch (error) {
       setCashActionError(error.message || 'No se pudo anular y reemplazar el recibo.');
     } finally {
-      setIsSubmittingCash(false);
+      endCashSubmit();
     }
   };
 
   const handleSubmitCashAction = async (event) => {
     event.preventDefault();
     if (!cashModal) return;
-    setIsSubmittingCash(true);
+    if (!beginCashSubmit()) return;
     setCashActionError('');
     try {
       const amountBs = Math.max(0, toNumber(cashForm.amountBs));
@@ -988,14 +1001,14 @@ function AccountingSection({
     } catch (error) {
       setCashActionError(error.message || 'No se pudo completar la operacion.');
     } finally {
-      setIsSubmittingCash(false);
+      endCashSubmit();
     }
   };
 
   const handleSubmitCollectAction = async (event) => {
     event.preventDefault();
     if (!collectModal) return;
-    setIsSubmittingCash(true);
+    if (!beginCashSubmit()) return;
     setCashActionError('');
     try {
       const result = await onCollectReceivable?.({
@@ -1012,7 +1025,7 @@ function AccountingSection({
     } catch (error) {
       setCashActionError(error.message || 'No se pudo registrar el cobro.');
     } finally {
-      setIsSubmittingCash(false);
+      endCashSubmit();
     }
   };
 

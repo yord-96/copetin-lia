@@ -636,7 +636,20 @@ function ServiceOrdersSection({
 
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
+  const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
+
+  const beginSubmit = () => {
+    if (submitLockRef.current) return false;
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+    return true;
+  };
+
+  const endSubmit = () => {
+    submitLockRef.current = false;
+    setIsSubmitting(false);
+  };
 
   useEffect(() => {
     setCatalogVisibleCount(CATALOG_PAGE_SIZE);
@@ -2032,7 +2045,7 @@ function ServiceOrdersSection({
   };
 
   const handleSaveQuote = async ({ approveNow }) => {
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setFormError('');
     setActionFeedback('');
     try {
@@ -2082,7 +2095,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo guardar la cotizacion.');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -2093,8 +2106,8 @@ function ServiceOrdersSection({
 
   const confirmApproveQuoteClick = async () => {
     if (!quoteApprovalPreview) return;
+    if (!beginSubmit()) return;
     const quote = quoteApprovalPreview;
-    setIsSubmitting(true);
     setFormError('');
     try {
       const contract = await onApproveQuote?.({ quoteId: quote.id });
@@ -2108,11 +2121,12 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo aprobar la cotizacion.');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
   const handleRejectQuoteClick = async (quote) => {
+    if (!beginSubmit()) return;
     try {
       await onUpdateQuote({
         id: quote.id,
@@ -2124,6 +2138,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo actualizar la cotizacion.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
@@ -2145,7 +2160,7 @@ function ServiceOrdersSection({
 
   const confirmDeleteQuote = async () => {
     if (!quoteToDelete) return;
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setFormError('');
     try {
       await onRemoveQuote?.({ id: quoteToDelete.id });
@@ -2154,11 +2169,12 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo eliminar la cotizacion.');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
   const handleApproveContractClick = async (contract) => {
+    if (!beginSubmit()) return;
     try {
       await onApproveContract?.({ contractId: contract.id });
       setActiveView('contracts');
@@ -2166,11 +2182,13 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo aprobar el contrato.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
 
   const handleRejectContractClick = async (contract) => {
+    if (!beginSubmit()) return;
     try {
       await onUpdateContract?.({
         id: contract.id,
@@ -2182,17 +2200,20 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo actualizar el contrato.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
 
   const handleDeleteContractClick = async (contract) => {
+    if (!beginSubmit()) return;
     try {
       await onRemoveContract?.({ id: contract.id });
       setActionFeedback(`Contrato ${contract.contractCode} eliminado.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo eliminar el contrato.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
@@ -2229,6 +2250,7 @@ function ServiceOrdersSection({
   };
 
   const handleCreateContractFromOrderClick = async (orderRow) => {
+    if (!beginSubmit()) return;
     try {
       const contract = await onCreateContractFromOrder?.({ rentalId: orderRow.rentalId, orderCode: orderRow.orderCode });
       if (!contract) {
@@ -2241,6 +2263,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo generar el contrato desde la orden.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
@@ -2478,6 +2501,7 @@ function ServiceOrdersSection({
   };
 
   const handleGenerateDocuments = async (orderRow) => {
+    if (!beginSubmit()) return;
     try {
       await onGenerateOrderDocuments({
         rentalId: orderRow.rentalId,
@@ -2489,6 +2513,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudieron generar los documentos.');
     } finally {
+      endSubmit();
       setMenuState(null);
     }
   };
@@ -2515,7 +2540,7 @@ function ServiceOrdersSection({
   const handleUpdateOperationalStatus = async (target, status) => {
     const orderRow = selectedOperationalOrder;
     if (!orderRow) return;
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setFormError('');
     try {
       const payload = {
@@ -2532,7 +2557,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo actualizar la orden operativa.');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -2550,7 +2575,7 @@ function ServiceOrdersSection({
 
   const confirmCancelOrder = async () => {
     if (!orderToCancel) return;
-    setIsSubmitting(true);
+    if (!beginSubmit()) return;
     setFormError('');
     try {
       const cancelled = await onCancelOrderContract?.({
@@ -2567,7 +2592,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo anular el contrato.');
     } finally {
-      setIsSubmitting(false);
+      endSubmit();
     }
   };
 
@@ -2595,19 +2620,6 @@ function ServiceOrdersSection({
           </button>
         </div>
       </header>
-
-      <div className={`orders-kpi-grid ${isCommercialCompactView ? 'is-two-up' : ''}`}>
-        {metrics.map((card) => (
-          <article key={card.label} className={`orders-kpi-card ${card.tone} ${activeView === card.view && (card.filter === 'all' || (card.view === 'orders' && orderFilter === card.filter)) ? 'is-active' : ''}`}>
-            <span className={`orders-kpi-icon ${card.tone}`}>
-              <OrdersKpiIcon kind={card.icon ?? 'orders'} />
-            </span>
-            <strong>{card.value}</strong>
-            <p>{card.label}</p>
-            <button type="button" onClick={() => handleMetricClick(card)}>{card.link} {'->'}</button>
-          </article>
-        ))}
-      </div>
 
       <article className="orders-table-card">
         <div className="orders-board-head">

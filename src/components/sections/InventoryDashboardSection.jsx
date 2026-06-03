@@ -21,6 +21,7 @@ const toCategoryClass = (category) => {
 };
 
 const DEFAULT_CATEGORY_COLOR = '#5d59e0';
+const SIDEBAR_CATEGORY_LIMIT = 5;
 
 const CATEGORY_ICON_OPTIONS = [
   { value: 'box', label: 'Caja' },
@@ -430,6 +431,7 @@ function InventoryDashboardSection({
   const [movementError, setMovementError] = useState('');
   const [movementItemQuery, setMovementItemQuery] = useState('');
   const [categoryModalMode, setCategoryModalMode] = useState(null);
+  const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
   const [categoryForm, setCategoryForm] = useState(EMPTY_CATEGORY_FORM);
   const [categoryError, setCategoryError] = useState('');
   const [detailRow, setDetailRow] = useState(null);
@@ -1281,6 +1283,7 @@ function InventoryDashboardSection({
     setCategoryFilter(categoryName);
     setShowFilters(true);
     setQuery('');
+    setShowAllCategoriesModal(false);
   };
 
   const handleOpenImagePreview = (imageDataUrl, itemName) => {
@@ -1292,6 +1295,11 @@ function InventoryDashboardSection({
   };
 
   const handleViewAllCategories = () => {
+    setShowAllCategoriesModal(true);
+  };
+
+  const handleManageCategories = () => {
+    setShowAllCategoriesModal(false);
     onSwitchInventoryModule?.('inventario_categorias');
     setCategoryUsageFilter('all');
     setQuery('');
@@ -2530,7 +2538,7 @@ function InventoryDashboardSection({
                 </button>
               </header>
               <ul>
-                {categoriesList.map((category) => (
+                {categoriesList.slice(0, SIDEBAR_CATEGORY_LIMIT).map((category) => (
                   <li key={category.name}>
                     <button type="button" className="inventory-category-action" onClick={() => handleSelectCategory(category.name)}>
                       <span
@@ -2552,6 +2560,12 @@ function InventoryDashboardSection({
                   </li>
                 ))}
               </ul>
+              {categoriesList.length > SIDEBAR_CATEGORY_LIMIT ? (
+                <button type="button" className="inventory-categories-more" onClick={handleViewAllCategories}>
+                  Ver todas las categorias
+                  <span>{categoriesList.length}</span>
+                </button>
+              ) : null}
             </aside>
 
             <aside className="inventory-activity-card">
@@ -2590,6 +2604,52 @@ function InventoryDashboardSection({
           </div>
         ) : null}
       </div>
+
+      {showAllCategoriesModal ? (
+        <div className="reset-modal-backdrop" onClick={() => setShowAllCategoriesModal(false)}>
+          <section className="reset-modal inventory-all-categories-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="inventory-all-categories-header">
+              <div>
+                <span className="inventory-detail-kicker">Catalogo completo</span>
+                <h3>Todas las categorias</h3>
+                <p>Selecciona una categoria para filtrar productos o entra a gestionarlas.</p>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setShowAllCategoriesModal(false)}>
+                Cerrar
+              </button>
+            </header>
+            <div className="inventory-all-categories-list">
+              {categoriesList.map((category) => (
+                <button key={category.name} type="button" className="inventory-category-action" onClick={() => handleSelectCategory(category.name)}>
+                  <span
+                    className={`inventory-category-icon ${toCategoryClass(category.name)}`}
+                    style={{
+                      color: normalizeHexColor(category.color, DEFAULT_CATEGORY_COLOR),
+                      borderColor: withHexAlpha(category.color, '66'),
+                      backgroundColor: withHexAlpha(category.color, '1A'),
+                    }}
+                  >
+                    <CategoryIcon category={category.name} iconKey={category.icon} />
+                  </span>
+                  <div>
+                    <strong>{category.name}</strong>
+                    <span>{category.count} productos</span>
+                  </div>
+                  <span className="inventory-category-arrow">{'>'}</span>
+                </button>
+              ))}
+            </div>
+            <div className="reset-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setShowAllCategoriesModal(false)}>
+                Cerrar
+              </button>
+              <button type="button" className="primary-button" onClick={handleManageCategories}>
+                Gestionar categorias
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {productModalMode ? (
         <div className="reset-modal-backdrop" onClick={() => setProductModalMode(null)}>
