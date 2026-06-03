@@ -1,10 +1,14 @@
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
 
-const SHARED_DEMO_DB_ENDPOINT = '/__copetin_db';
+const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
-const SYNC_THROTTLE_MS = 900;
-const REMOTE_POLL_MS = 3500;
-const REMOTE_POLL_HIDDEN_MS = 12000;
+const SYNC_THROTTLE_MS = 2000;
+const REMOTE_POLL_MS = 30000;
+const REMOTE_POLL_HIDDEN_MS = 120000;
+const REMOTE_POLL_TICK_MS = 5000;
+const REMOTE_BACKOFF_BASE_MS = 30000;
+const REMOTE_BACKOFF_MAX_MS = 180000;
+const MUTATION_CONFLICT_RETRIES = 3;
 const REMOTE_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_KEY = String(
   import.meta.env?.VITE_APP_INTERNAL_KEY
@@ -21,6 +25,8 @@ let sharedSyncPromise = null;
 let lastSharedSyncAt = 0;
 let lastSharedRevision = null;
 let lastRemotePollAt = 0;
+let remotePollBackoffUntil = 0;
+let remotePollBackoffMs = 0;
 let syncChannel = null;
 let syncListenersReady = false;
 let syncPollTimer = null;
@@ -29,10 +35,10 @@ const inFlightMutations = new Map();
 
 const getBridge = () => getWebBridge();
 
-const getSharedDbUrl = (suffix = '') =>
+const getServerStateUrl = (suffix = '') =>
   REMOTE_API_BASE_URL
-    ? `${REMOTE_API_BASE_URL}${SHARED_DEMO_DB_ENDPOINT}${suffix}`
-    : `${SHARED_DEMO_DB_ENDPOINT}${suffix}`;
+    ? `${REMOTE_API_BASE_URL}${SERVER_STATE_ENDPOINT}${suffix}`
+    : `${SERVER_STATE_ENDPOINT}${suffix}`;
 
 const getInternalHeaders = (extraHeaders = {}) => {
   const headers = { ...extraHeaders };
@@ -42,8 +48,29 @@ const getInternalHeaders = (extraHeaders = {}) => {
   return headers;
 };
 
-const shouldUseSharedDemoDb = () =>
+const shouldUseServerState = () =>
   typeof window !== 'undefined' && window.location.protocol !== 'file:';
+
+const createServerStateError = async (response, fallbackMessage) => {
+  const payload = await response.json().catch(() => null);
+  const error = new Error(payload?.error || fallbackMessage);
+  error.status = response.status;
+  error.payload = payload;
+  return error;
+};
+
+const resetRemoteBackoff = () => {
+  remotePollBackoffUntil = 0;
+  remotePollBackoffMs = 0;
+};
+
+const applyRemoteBackoff = (error) => {
+  if (error?.status !== 429) return;
+  remotePollBackoffMs = remotePollBackoffMs
+    ? Math.min(remotePollBackoffMs * 2, REMOTE_BACKOFF_MAX_MS)
+    : REMOTE_BACKOFF_BASE_MS;
+  remotePollBackoffUntil = Date.now() + remotePollBackoffMs;
+};
 
 const businessCollections = [
   'categories',
@@ -95,13 +122,13 @@ const exportLocalState = async () => {
   return storage.exportState();
 };
 
-const fetchSharedState = async () => {
-  const response = await fetch(getSharedDbUrl(), {
+const fetchServerState = async () => {
+  const response = await fetch(getServerStateUrl(), {
     cache: 'no-store',
     headers: getInternalHeaders(),
   });
   if (!response.ok) {
-    throw new Error('No se pudo leer la base demo compartida.');
+    throw await createServerStateError(response, 'No se pudo leer la base de datos del sistema.');
   }
   const payload = await response.json();
   if (payload && Object.prototype.hasOwnProperty.call(payload, 'revision')) {
@@ -110,19 +137,19 @@ const fetchSharedState = async () => {
   return payload;
 };
 
-const fetchSharedMeta = async () => {
-  const response = await fetch(getSharedDbUrl('?meta=1'), {
+const fetchServerMeta = async () => {
+  const response = await fetch(getServerStateUrl('?meta=1'), {
     cache: 'no-store',
     headers: getInternalHeaders(),
   });
   if (!response.ok) {
-    throw new Error('No se pudo consultar la revision demo.');
+    throw await createServerStateError(response, 'No se pudo consultar la version del servidor.');
   }
   return response.json();
 };
 
-const pushSharedState = async () => {
-  if (!shouldUseSharedDemoDb()) {
+const pushServerState = async () => {
+  if (!shouldUseServerState()) {
     return;
   }
 
@@ -131,7 +158,7 @@ const pushSharedState = async () => {
     return;
   }
 
-  const response = await fetch(getSharedDbUrl(), {
+  const response = await fetch(getServerStateUrl(), {
     method: 'PUT',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
@@ -139,27 +166,27 @@ const pushSharedState = async () => {
       revision: lastSharedRevision ?? null,
     }),
   });
-  const payload = await response.json().catch(() => null);
 
   if (response.status === 409) {
-    throw new Error(
-      payload?.error
-        || 'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
+    throw await createServerStateError(
+      response,
+      'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
     );
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || 'No se pudo guardar la base compartida.');
+    throw await createServerStateError(response, 'No se pudo guardar en el servidor.');
   }
 
+  const payload = await response.json().catch(() => null);
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
   }
   return payload;
 };
 
-const syncSharedState = async ({ force = false } = {}) => {
-  if (!shouldUseSharedDemoDb()) {
+const syncServerState = async ({ force = false } = {}) => {
+  if (!shouldUseServerState()) {
     return;
   }
 
@@ -173,7 +200,8 @@ const syncSharedState = async ({ force = false } = {}) => {
 
   sharedSyncPromise = (async () => {
   try {
-    const payload = await fetchSharedState();
+    const payload = await fetchServerState();
+    resetRemoteBackoff();
     if (payload?.initialized && payload.state) {
       await replaceLocalState(payload.state);
       lastSharedSyncAt = Date.now();
@@ -182,11 +210,11 @@ const syncSharedState = async ({ force = false } = {}) => {
 
     const localState = await exportLocalState();
     if (hasBusinessData(localState)) {
-      await pushSharedState();
+      await pushServerState();
     }
     lastSharedSyncAt = Date.now();
   } catch (error) {
-    // In production builds or offline demos the endpoint may not exist.
+    // In local/offline runs the endpoint may not exist.
     // The app can keep working with browser storage in that case.
     console.warn(error);
   } finally {
@@ -246,15 +274,18 @@ const getMutationKey = (domain, method, args) =>
   `${domain}.${method}:${JSON.stringify(normalizeForMutationKey(args))}`;
 
 const pollRemoteRevision = async () => {
-  if (!shouldUseSharedDemoDb() || syncSubscribers.size === 0) return;
+  if (!shouldUseServerState() || syncSubscribers.size === 0) return;
 
   const now = Date.now();
+  if (remotePollBackoffUntil && now < remotePollBackoffUntil) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   const interval = document.visibilityState === 'hidden' ? REMOTE_POLL_HIDDEN_MS : REMOTE_POLL_MS;
   if (now - lastRemotePollAt < interval) return;
   lastRemotePollAt = now;
 
   try {
-    const meta = await fetchSharedMeta();
+    const meta = await fetchServerMeta();
+    resetRemoteBackoff();
     const remoteRevision = meta?.revision ?? null;
     if (!remoteRevision) return;
     if (!lastSharedRevision) {
@@ -262,17 +293,18 @@ const pollRemoteRevision = async () => {
       return;
     }
     if (remoteRevision !== lastSharedRevision) {
-      await syncSharedState({ force: true });
+      await syncServerState({ force: true });
       notifySubscribers({ source: 'remote', reason: 'remote-revision', revision: remoteRevision });
     }
-  } catch {
-    // The revision endpoint exists only in the local shared demo server.
+  } catch (error) {
+    applyRemoteBackoff(error);
+    // Production can temporarily throttle polling when several users share IP.
   }
 };
 
 const startSyncPoll = () => {
   if (typeof window === 'undefined' || syncPollTimer) return;
-  syncPollTimer = window.setInterval(pollRemoteRevision, 1000);
+  syncPollTimer = window.setInterval(pollRemoteRevision, REMOTE_POLL_TICK_MS);
 };
 
 const ensureSyncListeners = () => {
@@ -314,17 +346,43 @@ const subscribeToDataChanges = (callback) => {
 
 const callBridge = async (domain, method, mutates, ...args) => {
   const mutationKey = mutates ? getMutationKey(domain, method, args) : '';
+  const isPresenceMutation = domain === 'presence';
   if (mutationKey && inFlightMutations.has(mutationKey)) {
     return inFlightMutations.get(mutationKey);
   }
 
   const request = (async () => {
-    await syncSharedState({ force: mutates });
-    const result = await getBridge()[domain][method](...args);
+    const runMutationAttempt = async (attempt = 0) => {
+      await syncServerState({ force: !isPresenceMutation });
+      const result = await getBridge()[domain][method](...args);
+      try {
+        await pushServerState();
+        announceDataChange({ domain, method });
+        return result;
+      } catch (error) {
+        if (isPresenceMutation) {
+          applyRemoteBackoff(error);
+          if (error?.status === 409) {
+            await syncServerState({ force: true });
+          }
+          return result;
+        }
+
+        if (error?.status === 409 && attempt < MUTATION_CONFLICT_RETRIES) {
+          await syncServerState({ force: true });
+          return runMutationAttempt(attempt + 1);
+        }
+
+        throw error;
+      }
+    };
+
     if (mutates) {
-      await pushSharedState();
-      announceDataChange({ domain, method });
+      return runMutationAttempt();
     }
+
+    await syncServerState({ force: false });
+    const result = await getBridge()[domain][method](...args);
     return result;
   })();
 
@@ -344,8 +402,8 @@ export const runtimeInfo =
     ...getWebRuntimeInfo(),
     storage: REMOTE_API_BASE_URL
       ? 'remote-api'
-      : shouldUseSharedDemoDb()
-        ? 'shared-demo-db'
+      : shouldUseServerState()
+        ? 'server-state'
         : getWebRuntimeInfo().storage,
     apiBaseUrl: REMOTE_API_BASE_URL || 'same-origin',
   };
@@ -353,8 +411,8 @@ export const runtimeInfo =
 export const api = {
   sync: {
     subscribe: subscribeToDataChanges,
-    pullLatest: () => syncSharedState({ force: true }),
-    getRevision: fetchSharedMeta,
+    pullLatest: () => syncServerState({ force: true }),
+    getRevision: fetchServerMeta,
   },
   inventory: {
     list: () => callBridge('inventory', 'list', false),

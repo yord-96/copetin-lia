@@ -206,6 +206,7 @@ export const useAppController = () => {
 
   const publishPresence = useCallback(async () => {
     if (!currentUser) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     try {
       const active = await api.presence.heartbeat({
         userId: currentUser.id,
@@ -224,13 +225,20 @@ export const useAppController = () => {
   useEffect(() => {
     if (!authReady || !currentUser) return undefined;
     publishPresence();
-    const intervalId = window.setInterval(publishPresence, 20000);
+    const intervalId = window.setInterval(publishPresence, 60000);
+    const publishWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        publishPresence();
+      }
+    };
     const leavePresence = () => {
       api.presence.leave({ userId: currentUser.id, sessionId: currentUser.sessionId }).catch(() => {});
     };
+    document.addEventListener('visibilitychange', publishWhenVisible);
     window.addEventListener('pagehide', leavePresence);
     return () => {
       window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', publishWhenVisible);
       window.removeEventListener('pagehide', leavePresence);
     };
   }, [authReady, currentUser, publishPresence]);

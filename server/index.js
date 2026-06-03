@@ -49,10 +49,11 @@ const generalLimiter = rateLimit({
   max: isProduction ? 900 : 3000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/__copetin_db'),
 });
 const stateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: isProduction ? 120 : 600,
+  max: isProduction ? 900 : 1200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes al estado del sistema. Intenta nuevamente en un momento.' },

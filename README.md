@@ -14,7 +14,7 @@ Aplicacion para un negocio que alquila vajilla, mesas, sillas, manteleria y deco
 - Usuarios (alta, edicion, estado y reenvio de invitaciones).
 - Ajustes globales (empresa, regionalizacion y numeracion).
 - Contabilidad (caja, cobros, garantias, saldos por cobrar y liquidaciones).
-- Persistencia web en localStorage/base demo durante desarrollo.
+- Persistencia web con estado local en desarrollo y sincronizacion en servidor para despliegue.
 - Backend Node/Express preparado para VPS/cPanel con persistencia inicial en archivo del servidor.
 
 ## Arquitectura
@@ -23,7 +23,7 @@ Aplicacion para un negocio que alquila vajilla, mesas, sillas, manteleria y deco
 - `src/` (React): interfaz de usuario.
 
 ### Datos y servicios
-- `src/services/webBridge.js`: bridge web con persistencia local/demo.
+- `src/services/webBridge.js`: bridge web con persistencia local del navegador.
 - `src/services/api.js`: capa de acceso usada por la app.
 - `src/hooks/useAppController.js`: orquestacion de vistas, permisos y operaciones.
 - `server/`: API Node/Express para sincronizar estado desde el servidor.
@@ -55,7 +55,7 @@ npm run dev:server
 
 ## Modos de ejecucion
 
-- `Web local`: usa `localStorage` del navegador o base demo compartida en desarrollo.
+- `Web local`: usa `localStorage` del navegador para pruebas sin servidor.
 - `VPS/cPanel`: si defines `VITE_API_URL`, el frontend sincroniza contra el backend Node desplegado en el servidor.
 
 ## Siguientes mejoras sugeridas

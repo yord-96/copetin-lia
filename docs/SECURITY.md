@@ -58,7 +58,7 @@ Los datos fueron actualizados por otro usuario. Recarga la pagina antes de conti
 
 ## Base inicial limpia
 
-El estado inicial definido en `src/services/webBridge.js` no carga clientes, inventario, vehiculos, choferes, ordenes, calendario ni movimientos demo. Si `app-state.json` no existe, el sistema arranca con configuracion base y solo un usuario `super_admin` de bootstrap.
+El estado inicial definido en `src/services/webBridge.js` no carga clientes, inventario, vehiculos, choferes, ordenes, calendario ni movimientos de ejemplo. Si `app-state.json` no existe, el sistema arranca con configuracion base y solo un usuario `super_admin` de bootstrap.
 
 El usuario bootstrap no tiene una contrasena conocida hardcodeada. En una base nueva, el primer ingreso de `admin` define la contrasena inicial si tiene al menos 8 caracteres; luego se guarda como hash y el login vuelve al flujo normal.
 
@@ -76,7 +76,7 @@ El usuario bootstrap no tiene una contrasena conocida hardcodeada. En una base n
    - Middleware de sesión antes de permitir leer/escribir datos.
 
 4. Migrar contraseñas a `bcrypt` o `argon2`.
-   - El hash actual tipo `fnv1a:*` es débil y solo sirve para demo/local.
+   - El hash actual tipo `fnv1a:*` es débil y solo sirve para entorno local o transitorio.
    - Plan compatible:
      - Al hacer login, si el usuario tiene hash `fnv1a:*` y la contraseña coincide, rehashear con bcrypt/argon2.
      - Guardar `passwordHash` nuevo.

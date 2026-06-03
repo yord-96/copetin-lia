@@ -5,7 +5,7 @@
 **Validez de la oferta:** 15 dias calendario  
 
 ## 1. DATOS DEL PROVEEDOR
-**Nombre comercial:** Alquiler demo - Software de Control de Alquileres  
+**Nombre comercial:** El Copetin - Software de Control de Alquileres  
 **Responsable:** [Tu nombre completo]  
 **Celular/WhatsApp:** [Tu numero]  
 **Correo:** [Tu correo]  

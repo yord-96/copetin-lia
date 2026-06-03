@@ -32,7 +32,7 @@
 - Auditoria de operaciones clave (`auditLogs`) en clientes, usuarios, inventario, ordenes, caja y transporte.
 - Soft delete en entidades relevantes mediante `deletedAt` (sin borrado fisico para datos criticos).
 - Validacion de conflictos de agenda para chofer/vehiculo al crear o actualizar entregas.
-- Persistencia web local/demo unificada para todos los modulos mientras se migra a backend.
+- Persistencia web local para desarrollo y sincronizacion de estado desde el servidor en despliegue.
 
 ## Nota de evolucion
 

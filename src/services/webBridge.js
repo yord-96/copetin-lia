@@ -3184,7 +3184,7 @@ const buildRentalReceiptHtml = (rental) => {
     <body>
       <div class="head">
         <h1>Recibo de Alquiler</h1>
-        <p>Alquiler demo | ${escapeHtml(formatDateTime(rental.createdAt || rental.rentalAt))}</p>
+        <p>El Copetin | ${escapeHtml(formatDateTime(rental.createdAt || rental.rentalAt))}</p>
       </div>
       <section class="box grid">
         <p><strong>Cliente:</strong> ${escapeHtml(rental.customerName)}</p>
@@ -3241,7 +3241,7 @@ const buildReturnReceiptHtml = (rental) => {
     <body>
       <div class="head">
         <h1>Recibo de Devolucion</h1>
-        <p>Alquiler demo | ${escapeHtml(formatDateTime(rental.returnedAt))}</p>
+        <p>El Copetin | ${escapeHtml(formatDateTime(rental.returnedAt))}</p>
       </div>
       <section class="box">
         <p><strong>Cliente:</strong> ${escapeHtml(rental.customerName)}</p>
