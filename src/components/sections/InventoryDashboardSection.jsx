@@ -151,6 +151,11 @@ const parseInventoryCsv = (text, allowedCategories) => {
       row.cargo_perdida
       || row.perdida
       || '';
+    const sku =
+      row.codigo
+      || row.code
+      || row.sku
+      || '';
 
     const normalizedCategory = categoriesByNormalized.get(normalizeText(categoryRaw));
     const totalStock = Number(totalStockRaw);
@@ -169,6 +174,7 @@ const parseInventoryCsv = (text, allowedCategories) => {
 
     parsedRows.push({
       name: name.trim(),
+      sku: String(sku ?? '').trim(),
       category: normalizedCategory,
       brand: String(brand ?? '').trim(),
       itemColor: String(itemColor ?? '').trim(),
@@ -355,6 +361,7 @@ function KpiIcon({ kind }) {
 const EMPTY_PRODUCT_FORM = {
   id: '',
   name: '',
+  sku: '',
   category: '',
   brand: '',
   itemColor: '',
@@ -657,7 +664,9 @@ function InventoryDashboardSection({
         brand: String(item.brand ?? '').trim(),
         itemColor: String(item.itemColor ?? '').trim(),
         imageDataUrl: item.imageDataUrl,
-        sku: String(item.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'GEN',
+        sku: String(item.sku ?? '').trim()
+          || String(item.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase()
+          || 'GEN',
         available: Number(item.availableStock ?? 0),
         reserved,
         maintenance,
@@ -1335,6 +1344,7 @@ function InventoryDashboardSection({
     setProductForm({
       id: row.id,
       name: row.name,
+      sku: row.sku ?? '',
       category: row.category,
       brand: row.brand ?? '',
       itemColor: row.itemColor ?? '',
@@ -1504,6 +1514,7 @@ function InventoryDashboardSection({
     const payload = {
       id: productForm.id,
       name: String(productForm.name ?? '').trim(),
+      sku: String(productForm.sku ?? '').trim(),
       category: String(productForm.category ?? '').trim(),
       brand: String(productForm.brand ?? '').trim(),
       itemColor: String(productForm.itemColor ?? '').trim(),
@@ -2665,6 +2676,14 @@ function InventoryDashboardSection({
               <label>
                 Nombre
                 <input value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} required />
+              </label>
+              <label>
+                Codigo del item (opcional)
+                <input
+                  value={productForm.sku}
+                  onChange={(event) => setProductForm((current) => ({ ...current, sku: event.target.value }))}
+                  placeholder="Ej: SILLA-001"
+                />
               </label>
               <label>
                 Categoria

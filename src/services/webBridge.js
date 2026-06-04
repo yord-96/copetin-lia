@@ -57,6 +57,71 @@ const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
+const toBusinessUppercase = (value) =>
+  String(value ?? '').trim().toLocaleUpperCase('es-BO');
+
+const BUSINESS_UPPERCASE_KEYS = new Set([
+  'name',
+  'fullName',
+  'companyName',
+  'contactName',
+  'contactRole',
+  'businessName',
+  'customerName',
+  'supplierName',
+  'providerName',
+  'driverName',
+  'vehicleName',
+  'itemName',
+  'category',
+  'brand',
+  'itemColor',
+  'colorDescription',
+  'color',
+  'material',
+  'sku',
+  'title',
+  'description',
+  'detail',
+  'concept',
+  'reason',
+  'reference',
+  'observations',
+  'notes',
+  'note',
+  'blacklistNotes',
+  'address',
+  'city',
+  'deliveryAddress',
+  'returnAddress',
+  'serviceAddress',
+  'destination',
+  'eventName',
+  'eventType',
+  'routeName',
+  'department',
+  'position',
+  'conditions',
+]);
+
+const normalizeBusinessTextInState = (value, key = '') => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeBusinessTextInState(entry));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        normalizeBusinessTextInState(entryValue, entryKey),
+      ]),
+    );
+  }
+  if (typeof value === 'string' && BUSINESS_UPPERCASE_KEYS.has(key)) {
+    return toBusinessUppercase(value);
+  }
+  return value;
+};
+
 const normalizeRoleId = (role) => {
   const normalized = normalizeText(role).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   if (normalized === 'developer' || normalized === 'dev' || normalized.includes('desarrollador')) return 'developer';
@@ -771,7 +836,7 @@ const normalizeState = (state) => {
     source.categories = source.categories
       .map((category) => ({
         id: category?.id ?? makeId('cat'),
-        name: String(category?.name ?? '').trim(),
+        name: toBusinessUppercase(category?.name ?? ''),
         icon: String(category?.icon ?? 'box').trim() || 'box',
         color: String(category?.color ?? '#5d59e0').trim() || '#5d59e0',
         status: String(category?.status ?? 'active').trim() || 'active',
@@ -780,6 +845,16 @@ const normalizeState = (state) => {
       }))
       .filter((category) => category.name);
   }
+
+  const uniqueCategories = [];
+  const seenCategoryNames = new Set();
+  source.categories.forEach((category) => {
+    const key = normalizeText(category.name);
+    if (seenCategoryNames.has(key)) return;
+    seenCategoryNames.add(key);
+    uniqueCategories.push(category);
+  });
+  source.categories = uniqueCategories;
 
   const defaultCategory = source.categories[0]?.name ?? 'General';
 
@@ -962,13 +1037,19 @@ const normalizeState = (state) => {
       const verificationStatus =
         rawVerificationStatus
         || (controlsStock && !isPendingOperationalItem ? 'verified' : 'pending_verification');
+      const rawCategoryName = toBusinessUppercase(item?.category ?? '');
+      const categoryName =
+        source.categories.find((entry) => normalizeText(entry.name) === normalizeText(rawCategoryName))?.name
+        || rawCategoryName
+        || defaultCategory;
 
       return {
         id: item?.id ?? makeId('item'),
-        name: String(item?.name ?? '').trim(),
-        category: String(item?.category ?? '').trim() || defaultCategory,
-        brand: String(item?.brand ?? '').trim(),
-        itemColor: String(item?.itemColor ?? item?.colorDescription ?? '').trim(),
+        name: toBusinessUppercase(item?.name ?? ''),
+        category: categoryName,
+        brand: toBusinessUppercase(item?.brand ?? ''),
+        itemColor: toBusinessUppercase(item?.itemColor ?? item?.colorDescription ?? ''),
+        sku: toBusinessUppercase(item?.sku ?? item?.code ?? ''),
         totalStock,
         availableStock,
         controlsStock: controlsStock && !isPendingOperationalItem,
@@ -1619,7 +1700,7 @@ const normalizeState = (state) => {
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
     })).filter((presence) => presence.userId && presence.sessionId)
     : [];
-  return source;
+  return normalizeBusinessTextInState(source);
 };
 
 let inMemoryState = createSeedData();
@@ -4822,7 +4903,7 @@ const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, c
 };
 
 const findOrCreateCategoryByName = (state, categoryName) => {
-  const name = String(categoryName ?? '').trim() || 'Sin categoria';
+  const name = toBusinessUppercase(categoryName ?? '') || 'SIN CATEGORIA';
   const existing = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(name));
   if (existing) return existing.name;
   const now = new Date().toISOString();
@@ -4841,7 +4922,7 @@ const buildQuickItemName = (quickItem = {}) => [
   quickItem.name,
   quickItem.color,
   quickItem.material,
-].map((part) => String(part ?? '').trim()).filter(Boolean).join(' ');
+].map((part) => toBusinessUppercase(part ?? '')).filter(Boolean).join(' ');
 
 const resolveOperationalItemFromLine = (state, line, now = new Date().toISOString()) => {
   const explicitItemId = String(line?.itemId ?? '').trim();
@@ -4854,8 +4935,8 @@ const resolveOperationalItemFromLine = (state, line, now = new Date().toISOStrin
   const name = buildQuickItemName(quickItem);
   if (!name) throw new Error('El item rapido debe tener nombre o modelo.');
   const category = findOrCreateCategoryByName(state, quickItem.category);
-  const brand = String(quickItem.material ?? quickItem.brand ?? '').trim();
-  const itemColor = String(quickItem.color ?? '').trim();
+  const brand = toBusinessUppercase(quickItem.material ?? quickItem.brand ?? '');
+  const itemColor = toBusinessUppercase(quickItem.color ?? '');
   const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? quickItem.rentalPriceBs ?? 0));
   const duplicate = state.items.find((entry) => (
     normalizeText(entry.name) === normalizeText(name)
@@ -5190,10 +5271,11 @@ const createWebBridge = () => ({
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
     create: async (payload) => {
-      const name = String(payload?.name ?? '').trim();
-      const category = String(payload?.category ?? '').trim();
-      const brand = String(payload?.brand ?? '').trim();
-      const itemColor = String(payload?.itemColor ?? '').trim();
+      const name = toBusinessUppercase(payload?.name ?? '');
+      const requestedCategory = toBusinessUppercase(payload?.category ?? '');
+      const brand = toBusinessUppercase(payload?.brand ?? '');
+      const itemColor = toBusinessUppercase(payload?.itemColor ?? '');
+      const sku = toBusinessUppercase(payload?.sku ?? payload?.code ?? '');
       const totalStock = Math.trunc(toNumber(payload?.totalStock, 'stock total'));
       const rentalPriceBs = toNumber(payload?.rentalPriceBs, 'precio');
       const damagedUnitChargeBs = toNumber(payload?.damagedUnitChargeBs, 'cargo por danio');
@@ -5205,7 +5287,7 @@ const createWebBridge = () => ({
       if (!name) {
         throw new Error('El nombre es obligatorio.');
       }
-      if (!category) {
+      if (!requestedCategory) {
         throw new Error('La categoria es obligatoria.');
       }
       if (totalStock <= 0) {
@@ -5223,9 +5305,12 @@ const createWebBridge = () => ({
 
       let createdItem = null;
       transaction((state) => {
-        const categoryExists = state.categories.some((entry) => entry.name === category);
-        if (!categoryExists) {
+        const category = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(requestedCategory))?.name;
+        if (!category) {
           throw new Error('La categoria seleccionada no existe.');
+        }
+        if (sku && state.items.some((entry) => normalizeText(entry.sku) === normalizeText(sku))) {
+          throw new Error('Ya existe un item con ese codigo.');
         }
 
         createdItem = {
@@ -5234,6 +5319,7 @@ const createWebBridge = () => ({
           category,
           brand,
           itemColor,
+          sku,
           totalStock,
           availableStock: totalStock,
           controlsStock,
@@ -5270,7 +5356,7 @@ const createWebBridge = () => ({
         const reservedStock = item.totalStock - item.availableStock;
 
         if (typeof payload.name === 'string') {
-          const nextName = payload.name.trim();
+          const nextName = toBusinessUppercase(payload.name);
           if (!nextName) {
             throw new Error('El nombre no puede estar vacio.');
           }
@@ -5278,23 +5364,34 @@ const createWebBridge = () => ({
         }
 
         if (typeof payload.category === 'string') {
-          const nextCategory = payload.category.trim();
-          if (!nextCategory) {
+          const requestedCategory = toBusinessUppercase(payload.category);
+          if (!requestedCategory) {
             throw new Error('La categoria no puede estar vacia.');
           }
-          const categoryExists = state.categories.some((entry) => entry.name === nextCategory);
-          if (!categoryExists) {
+          const nextCategory = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(requestedCategory))?.name;
+          if (!nextCategory) {
             throw new Error('La categoria seleccionada no existe.');
           }
           item.category = nextCategory;
         }
 
         if (payload.brand !== undefined) {
-          item.brand = String(payload.brand ?? '').trim();
+          item.brand = toBusinessUppercase(payload.brand ?? '');
         }
 
         if (payload.itemColor !== undefined) {
-          item.itemColor = String(payload.itemColor ?? '').trim();
+          item.itemColor = toBusinessUppercase(payload.itemColor ?? '');
+        }
+
+        if (payload.sku !== undefined || payload.code !== undefined) {
+          const nextSku = toBusinessUppercase(payload.sku ?? payload.code ?? '');
+          if (
+            nextSku
+            && state.items.some((entry) => entry.id !== id && normalizeText(entry.sku) === normalizeText(nextSku))
+          ) {
+            throw new Error('Ya existe otro item con ese codigo.');
+          }
+          item.sku = nextSku;
         }
 
         if (payload.totalStock !== undefined) {
@@ -5611,7 +5708,7 @@ const createWebBridge = () => ({
       return categories.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
     create: async (payload) => {
-      const name = String(payload?.name ?? '').trim();
+      const name = toBusinessUppercase(payload?.name ?? '');
       const icon = String(payload?.icon ?? 'box').trim() || 'box';
       const color = String(payload?.color ?? '#5d59e0').trim() || '#5d59e0';
       if (!name) {
@@ -5621,7 +5718,7 @@ const createWebBridge = () => ({
       let createdCategory = null;
       transaction((state) => {
         const exists = state.categories.some(
-          (category) => category.name.trim().toLowerCase() === name.toLowerCase(),
+          (category) => normalizeText(category.name) === normalizeText(name),
         );
 
         if (exists) {
@@ -5645,7 +5742,7 @@ const createWebBridge = () => ({
     },
     update: async (payload) => {
       const categoryId = String(payload?.id ?? '').trim();
-      const name = String(payload?.name ?? '').trim();
+      const name = toBusinessUppercase(payload?.name ?? '');
       const icon = String(payload?.icon ?? 'box').trim() || 'box';
       const color = String(payload?.color ?? '#5d59e0').trim() || '#5d59e0';
 
@@ -5666,7 +5763,7 @@ const createWebBridge = () => ({
         const exists = state.categories.some(
           (entry, entryIndex) =>
             entryIndex !== index
-            && String(entry.name ?? '').trim().toLowerCase() === name.toLowerCase(),
+            && normalizeText(entry.name) === normalizeText(name),
         );
         if (exists) {
           throw new Error('Ya existe otra categoria con ese nombre.');
