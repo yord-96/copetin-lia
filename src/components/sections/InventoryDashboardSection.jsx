@@ -22,6 +22,44 @@ const toCategoryClass = (category) => {
 
 const DEFAULT_CATEGORY_COLOR = '#5d59e0';
 const SIDEBAR_CATEGORY_LIMIT = 5;
+const PRODUCT_FILTERS_STORAGE_KEY = 'copetin.inventory.productFilters';
+
+const DEFAULT_PRODUCT_FILTERS = {
+  query: '',
+  page: 1,
+  pageSize: 8,
+  showFilters: false,
+  categoryFilter: 'all',
+  stockFilter: 'all',
+};
+
+const readStoredProductFilters = () => {
+  if (typeof window === 'undefined') return DEFAULT_PRODUCT_FILTERS;
+  try {
+    const rawValue = window.sessionStorage.getItem(PRODUCT_FILTERS_STORAGE_KEY);
+    if (!rawValue) return DEFAULT_PRODUCT_FILTERS;
+    const parsed = JSON.parse(rawValue);
+    return {
+      query: typeof parsed.query === 'string' ? parsed.query : DEFAULT_PRODUCT_FILTERS.query,
+      page: Number.isFinite(Number(parsed.page)) && Number(parsed.page) > 0 ? Number(parsed.page) : DEFAULT_PRODUCT_FILTERS.page,
+      pageSize: Number.isFinite(Number(parsed.pageSize)) && Number(parsed.pageSize) > 0 ? Number(parsed.pageSize) : DEFAULT_PRODUCT_FILTERS.pageSize,
+      showFilters: Boolean(parsed.showFilters),
+      categoryFilter: typeof parsed.categoryFilter === 'string' ? parsed.categoryFilter : DEFAULT_PRODUCT_FILTERS.categoryFilter,
+      stockFilter: typeof parsed.stockFilter === 'string' ? parsed.stockFilter : DEFAULT_PRODUCT_FILTERS.stockFilter,
+    };
+  } catch {
+    return DEFAULT_PRODUCT_FILTERS;
+  }
+};
+
+const writeStoredProductFilters = (filters) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(PRODUCT_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // El filtro es comodidad de UI; si el navegador no permite guardarlo, el sistema sigue funcionando.
+  }
+};
 
 const CATEGORY_ICON_OPTIONS = [
   { value: 'box', label: 'Caja' },
@@ -414,16 +452,20 @@ function InventoryDashboardSection({
   onReceiveReturnedOrder,
   onPrintInventoryOrderDocument,
 }) {
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
-  const [showFilters, setShowFilters] = useState(false);
+  const initialProductFiltersRef = useRef(null);
+  if (!initialProductFiltersRef.current) {
+    initialProductFiltersRef.current = readStoredProductFilters();
+  }
+  const [query, setQuery] = useState(initialProductFiltersRef.current.query);
+  const [page, setPage] = useState(initialProductFiltersRef.current.page);
+  const [pageSize, setPageSize] = useState(initialProductFiltersRef.current.pageSize);
+  const [showFilters, setShowFilters] = useState(initialProductFiltersRef.current.showFilters);
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('ok');
   const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
   const [rowMenuPosition, setRowMenuPosition] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [stockFilter, setStockFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState(initialProductFiltersRef.current.categoryFilter);
+  const [stockFilter, setStockFilter] = useState(initialProductFiltersRef.current.stockFilter);
   const [movementTypeFilter, setMovementTypeFilter] = useState('all');
   const [movementUserFilter, setMovementUserFilter] = useState('all');
   const [adjustStatusFilter, setAdjustStatusFilter] = useState('all');
@@ -509,6 +551,28 @@ function InventoryDashboardSection({
     : isAdjustModule
     ? 'Correcciones de stock segun conteo fisico'
     : 'Controla tu stock en tiempo real';
+
+  useEffect(() => {
+    if (isMovementsModule || isAdjustModule || isCategoriesModule) return;
+    writeStoredProductFilters({
+      query,
+      page,
+      pageSize,
+      showFilters,
+      categoryFilter,
+      stockFilter,
+    });
+  }, [
+    query,
+    page,
+    pageSize,
+    showFilters,
+    categoryFilter,
+    stockFilter,
+    isMovementsModule,
+    isAdjustModule,
+    isCategoriesModule,
+  ]);
 
   useEffect(() => {
     if (!rowMenuOpenId) return undefined;
