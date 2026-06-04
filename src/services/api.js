@@ -9,6 +9,8 @@ const REMOTE_POLL_TICK_MS = 5000;
 const REMOTE_BACKOFF_BASE_MS = 30000;
 const REMOTE_BACKOFF_MAX_MS = 180000;
 const MUTATION_CONFLICT_RETRIES = 3;
+const MUTATION_TRANSIENT_RETRIES = 4;
+const SAVE_TRANSIENT_RETRIES = 4;
 const REMOTE_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_KEY = String(
   import.meta.env?.VITE_APP_INTERNAL_KEY
@@ -32,6 +34,7 @@ let syncListenersReady = false;
 let syncPollTimer = null;
 const syncSubscribers = new Set();
 const inFlightMutations = new Map();
+let mutationQueue = Promise.resolve();
 
 const getBridge = () => getWebBridge();
 
@@ -51,12 +54,43 @@ const getInternalHeaders = (extraHeaders = {}) => {
 const shouldUseServerState = () =>
   typeof window !== 'undefined' && window.location.protocol !== 'file:';
 
+const isLocalHost = () => {
+  if (typeof window === 'undefined') return false;
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+};
+
 const createServerStateError = async (response, fallbackMessage) => {
   const payload = await response.json().catch(() => null);
   const error = new Error(payload?.error || fallbackMessage);
   error.status = response.status;
   error.payload = payload;
+  const retryAfterSeconds = Number(response.headers.get('Retry-After') ?? 0);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    error.retryAfterMs = retryAfterSeconds * 1000;
+  }
   return error;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientServerError = (error) =>
+  error?.status === 429 || error?.status === 503 || error?.status === 504;
+
+const getRetryDelayMs = (error, attempt) => {
+  if (error?.retryAfterMs) {
+    return Math.min(Math.max(error.retryAfterMs, 500), 8000);
+  }
+  return Math.min(700 * (attempt + 1), 3500);
+};
+
+const getSaveErrorMessage = (error, fallback) => {
+  if (error?.status === 429) {
+    return 'El servidor esta recibiendo muchas operaciones al mismo tiempo. Espera unos segundos e intenta guardar otra vez.';
+  }
+  if (error?.status === 409) {
+    return 'Otro usuario actualizo datos al mismo tiempo. Vuelve a intentar para guardar con la informacion mas reciente.';
+  }
+  return error?.message || fallback;
 };
 
 const resetRemoteBackoff = () => {
@@ -148,7 +182,7 @@ const fetchServerMeta = async () => {
   return response.json();
 };
 
-const pushServerState = async () => {
+const pushServerState = async ({ attempt = 0 } = {}) => {
   if (!shouldUseServerState()) {
     return;
   }
@@ -175,7 +209,13 @@ const pushServerState = async () => {
   }
 
   if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo guardar en el servidor.');
+    const error = await createServerStateError(response, 'No se pudo guardar en el servidor.');
+    if (isTransientServerError(error) && attempt < SAVE_TRANSIENT_RETRIES) {
+      applyRemoteBackoff(error);
+      await sleep(getRetryDelayMs(error, attempt));
+      return pushServerState({ attempt: attempt + 1 });
+    }
+    throw error;
   }
 
   const payload = await response.json().catch(() => null);
@@ -185,12 +225,65 @@ const pushServerState = async () => {
   return payload;
 };
 
-const syncServerState = async ({ force = false } = {}) => {
+const fetchServerPresence = async () => {
+  const response = await fetch(getServerStateUrl('/presence'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo leer las sesiones activas.');
+  }
+
+  return response.json();
+};
+
+const postServerPresence = async (action, payload) => {
+  const response = await fetch(getServerStateUrl(`/presence/${action}`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload ?? {}),
+  });
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar las sesiones activas.');
+  }
+
+  return response.json();
+};
+
+const callServerPresence = async (action, payload) => {
+  if (!shouldUseServerState()) {
+    return null;
+  }
+
+  try {
+    if (action === 'listActive') {
+      return await fetchServerPresence();
+    }
+
+    const result = await postServerPresence(action, payload);
+    announceDataChange({ domain: 'presence', method: action });
+    return action === 'leave' ? result?.active ?? [] : result;
+  } catch (error) {
+    applyRemoteBackoff(error);
+    if (isLocalHost()) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const syncServerState = async ({ force = false, required = false } = {}) => {
   if (!shouldUseServerState()) {
     return;
   }
 
   const now = Date.now();
+  if (required && sharedSyncPromise) {
+    await sharedSyncPromise.catch(() => {});
+  }
   if (sharedSyncPromise) {
     return sharedSyncPromise;
   }
@@ -214,6 +307,10 @@ const syncServerState = async ({ force = false } = {}) => {
     }
     lastSharedSyncAt = Date.now();
   } catch (error) {
+    applyRemoteBackoff(error);
+    if (required) {
+      throw error;
+    }
     // In local/offline runs the endpoint may not exist.
     // The app can keep working with browser storage in that case.
     console.warn(error);
@@ -272,6 +369,12 @@ const normalizeForMutationKey = (value) => {
 
 const getMutationKey = (domain, method, args) =>
   `${domain}.${method}:${JSON.stringify(normalizeForMutationKey(args))}`;
+
+const enqueueMutation = (operation) => {
+  const request = mutationQueue.then(operation, operation);
+  mutationQueue = request.catch(() => {});
+  return request;
+};
 
 const pollRemoteRevision = async () => {
   if (!shouldUseServerState() || syncSubscribers.size === 0) return;
@@ -353,7 +456,16 @@ const callBridge = async (domain, method, mutates, ...args) => {
 
   const request = (async () => {
     const runMutationAttempt = async (attempt = 0) => {
-      await syncServerState({ force: !isPresenceMutation });
+      try {
+        await syncServerState({ force: !isPresenceMutation, required: !isPresenceMutation });
+      } catch (error) {
+        if (isTransientServerError(error) && attempt < MUTATION_TRANSIENT_RETRIES) {
+          await sleep(getRetryDelayMs(error, attempt));
+          return runMutationAttempt(attempt + 1);
+        }
+        throw new Error(getSaveErrorMessage(error, 'No se pudo sincronizar la informacion antes de guardar.'));
+      }
+
       const result = await getBridge()[domain][method](...args);
       try {
         await pushServerState();
@@ -369,16 +481,22 @@ const callBridge = async (domain, method, mutates, ...args) => {
         }
 
         if (error?.status === 409 && attempt < MUTATION_CONFLICT_RETRIES) {
-          await syncServerState({ force: true });
+          await syncServerState({ force: true, required: true });
+          await sleep(getRetryDelayMs(error, attempt));
           return runMutationAttempt(attempt + 1);
         }
 
-        throw error;
+        if (isTransientServerError(error) && attempt < MUTATION_TRANSIENT_RETRIES) {
+          await sleep(getRetryDelayMs(error, attempt));
+          return runMutationAttempt(attempt + 1);
+        }
+
+        throw new Error(getSaveErrorMessage(error, 'No se pudo guardar en el servidor.'));
       }
     };
 
     if (mutates) {
-      return runMutationAttempt();
+      return enqueueMutation(() => runMutationAttempt());
     }
 
     await syncServerState({ force: false });
@@ -477,9 +595,21 @@ export const api = {
     logout: () => callBridge('auth', 'logout', true),
   },
   presence: {
-    listActive: () => callBridge('presence', 'listActive', false),
-    heartbeat: (payload) => callBridge('presence', 'heartbeat', true, payload),
-    leave: (payload) => callBridge('presence', 'leave', true, payload),
+    listActive: async () => {
+      const active = await callServerPresence('listActive');
+      if (active) return active;
+      return callBridge('presence', 'listActive', false);
+    },
+    heartbeat: async (payload) => {
+      const active = await callServerPresence('heartbeat', payload);
+      if (active) return active;
+      return callBridge('presence', 'heartbeat', true, payload);
+    },
+    leave: async (payload) => {
+      const active = await callServerPresence('leave', payload);
+      if (active) return active;
+      return callBridge('presence', 'leave', true, payload);
+    },
   },
   transport: {
     listDeliveries: () => callBridge('transport', 'listDeliveries', false),

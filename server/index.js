@@ -46,16 +46,24 @@ app.use(
 );
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isProduction ? 900 : 3000,
+  max: Number(process.env.GENERAL_RATE_LIMIT_MAX ?? (isProduction ? 6000 : 12000)),
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.path.startsWith('/__copetin_db'),
 });
-const stateLimiter = rateLimit({
+const presenceLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: isProduction ? 900 : 1200,
+  max: Number(process.env.PRESENCE_RATE_LIMIT_MAX ?? (isProduction ? 3000 : 6000)),
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Demasiadas actualizaciones de sesiones activas. Intenta nuevamente en un momento.' },
+});
+const stateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.STATE_RATE_LIMIT_MAX ?? (isProduction ? 6000 : 12000)),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/presence'),
   message: { error: 'Demasiadas solicitudes al estado del sistema. Intenta nuevamente en un momento.' },
 });
 app.use(generalLimiter);
@@ -86,6 +94,7 @@ app.get('/health', async (_req, res, next) => {
   }
 });
 
+app.use('/__copetin_db/presence', presenceLimiter);
 app.use('/__copetin_db', stateLimiter);
 app.use(stateRoutes);
 

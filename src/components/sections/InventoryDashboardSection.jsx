@@ -426,6 +426,7 @@ function InventoryDashboardSection({
   const [productModalMode, setProductModalMode] = useState(null);
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [productError, setProductError] = useState('');
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [movementModalOpen, setMovementModalOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(EMPTY_MOVEMENT_FORM);
   const [movementError, setMovementError] = useState('');
@@ -1497,6 +1498,7 @@ function InventoryDashboardSection({
 
   const handleSubmitProduct = async (event) => {
     event.preventDefault();
+    if (isSavingProduct) return;
     setProductError('');
 
     const payload = {
@@ -1531,6 +1533,7 @@ function InventoryDashboardSection({
     }
 
     try {
+      setIsSavingProduct(true);
       if (productModalMode === 'edit') {
         await onUpdateInventoryItem?.(payload);
         showMessage('Producto actualizado correctamente.');
@@ -1542,6 +1545,8 @@ function InventoryDashboardSection({
       setProductForm(EMPTY_PRODUCT_FORM);
     } catch (error) {
       setProductError(error?.message || 'No se pudo guardar el producto.');
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -2727,11 +2732,15 @@ function InventoryDashboardSection({
             </div>
             {productError ? <p className="status error reset-modal-error">{productError}</p> : null}
             <div className="reset-modal-actions">
-              <button type="button" className="ghost-button" onClick={() => setProductModalMode(null)}>
+              <button type="button" className="ghost-button" onClick={() => setProductModalMode(null)} disabled={isSavingProduct}>
                 Cancelar
               </button>
-              <button type="submit" className="primary-button">
-                {productModalMode === 'edit' ? 'Guardar cambios' : 'Crear producto'}
+              <button type="submit" className="primary-button" disabled={isSavingProduct}>
+                {isSavingProduct
+                  ? 'Guardando...'
+                  : productModalMode === 'edit'
+                    ? 'Guardar cambios'
+                    : 'Crear producto'}
               </button>
             </div>
           </form>
