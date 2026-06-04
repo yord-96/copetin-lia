@@ -31,6 +31,8 @@ const DEFAULT_PRODUCT_FILTERS = {
   showFilters: false,
   categoryFilter: 'all',
   stockFilter: 'all',
+  controlFilter: 'all',
+  sortFilter: 'default',
 };
 
 const readStoredProductFilters = () => {
@@ -46,6 +48,8 @@ const readStoredProductFilters = () => {
       showFilters: Boolean(parsed.showFilters),
       categoryFilter: typeof parsed.categoryFilter === 'string' ? parsed.categoryFilter : DEFAULT_PRODUCT_FILTERS.categoryFilter,
       stockFilter: typeof parsed.stockFilter === 'string' ? parsed.stockFilter : DEFAULT_PRODUCT_FILTERS.stockFilter,
+      controlFilter: typeof parsed.controlFilter === 'string' ? parsed.controlFilter : DEFAULT_PRODUCT_FILTERS.controlFilter,
+      sortFilter: typeof parsed.sortFilter === 'string' ? parsed.sortFilter : DEFAULT_PRODUCT_FILTERS.sortFilter,
     };
   } catch {
     return DEFAULT_PRODUCT_FILTERS;
@@ -466,6 +470,9 @@ function InventoryDashboardSection({
   const [rowMenuPosition, setRowMenuPosition] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState(initialProductFiltersRef.current.categoryFilter);
   const [stockFilter, setStockFilter] = useState(initialProductFiltersRef.current.stockFilter);
+  const [controlFilter, setControlFilter] = useState(initialProductFiltersRef.current.controlFilter);
+  const [sortFilter, setSortFilter] = useState(initialProductFiltersRef.current.sortFilter);
+  const [productFilterMenu, setProductFilterMenu] = useState(null);
   const [movementTypeFilter, setMovementTypeFilter] = useState('all');
   const [movementUserFilter, setMovementUserFilter] = useState('all');
   const [adjustStatusFilter, setAdjustStatusFilter] = useState('all');
@@ -492,6 +499,7 @@ function InventoryDashboardSection({
   const [isReceiving, setIsReceiving] = useState(false);
 
   const rowMenuRef = useRef(null);
+  const productFilterRef = useRef(null);
 
   const openInventoryOrderDocument = async (row) => {
     try {
@@ -561,6 +569,8 @@ function InventoryDashboardSection({
       showFilters,
       categoryFilter,
       stockFilter,
+      controlFilter,
+      sortFilter,
     });
   }, [
     query,
@@ -569,6 +579,8 @@ function InventoryDashboardSection({
     showFilters,
     categoryFilter,
     stockFilter,
+    controlFilter,
+    sortFilter,
     isMovementsModule,
     isAdjustModule,
     isCategoriesModule,
@@ -585,6 +597,17 @@ function InventoryDashboardSection({
     document.addEventListener('mousedown', closeOnOutside);
     return () => document.removeEventListener('mousedown', closeOnOutside);
   }, [rowMenuOpenId]);
+
+  useEffect(() => {
+    if (!productFilterMenu) return undefined;
+    const closeOnOutside = (event) => {
+      if (productFilterRef.current && !productFilterRef.current.contains(event.target)) {
+        setProductFilterMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, [productFilterMenu]);
 
   const reservedByItem = useMemo(() => {
     const map = {};
@@ -743,6 +766,8 @@ function InventoryDashboardSection({
         damagedUnitChargeBs: Number(item.damagedUnitChargeBs ?? 0),
         missingUnitChargeBs: Number(item.missingUnitChargeBs ?? 0),
         needsCleaningOnReturn: Boolean(item.needsCleaningOnReturn),
+        createdAt: item.createdAt ?? item.updatedAt ?? null,
+        updatedAt: item.updatedAt ?? null,
       };
     });
   }, [items, maintenanceByItem, reservedByItem]);
@@ -1033,7 +1058,25 @@ function InventoryDashboardSection({
       if (stockFilter === 'low') {
         base = base.filter((row) => row.lowAvailability);
       } else if (stockFilter === 'ok') {
-        base = base.filter((row) => !row.lowAvailability);
+        base = base.filter((row) => row.controlsStock && !row.lowAvailability);
+      } else if (stockFilter === 'untracked') {
+        base = base.filter((row) => !row.controlsStock);
+      }
+      if (controlFilter === 'controlled') {
+        base = base.filter((row) => row.controlsStock);
+      } else if (controlFilter === 'pending') {
+        base = base.filter((row) => !row.controlsStock);
+      }
+      if (sortFilter !== 'default') {
+        const timestamp = (row) => {
+          const value = new Date(row.createdAt ?? row.updatedAt ?? 0).getTime();
+          return Number.isFinite(value) ? value : 0;
+        };
+        base = [...base].sort((a, b) =>
+          sortFilter === 'oldest'
+            ? timestamp(a) - timestamp(b)
+            : timestamp(b) - timestamp(a),
+        );
       }
     }
 
@@ -1089,6 +1132,8 @@ function InventoryDashboardSection({
     query,
     categoryFilter,
     stockFilter,
+    controlFilter,
+    sortFilter,
     movementTypeFilter,
     movementUserFilter,
     adjustStatusFilter,
@@ -1112,6 +1157,9 @@ function InventoryDashboardSection({
   const resetAdvancedFilters = () => {
     setCategoryFilter('all');
     setStockFilter('all');
+    setControlFilter('all');
+    setSortFilter('default');
+    setProductFilterMenu(null);
     setMovementTypeFilter('all');
     setMovementUserFilter('all');
     setAdjustStatusFilter('all');
@@ -1119,6 +1167,88 @@ function InventoryDashboardSection({
     setDateFrom('');
     setDateTo('');
   };
+
+  const categoryFilterOptions = useMemo(() => [
+    {
+      value: 'all',
+      label: 'Todas las categorias',
+      meta: `${inventoryRows.length} productos`,
+      color: DEFAULT_CATEGORY_COLOR,
+    },
+    ...categoriesList.map((entry) => ({
+      value: entry.name,
+      label: entry.name,
+      meta: `${Number(entry.count ?? 0)} productos`,
+      color: entry.color ?? DEFAULT_CATEGORY_COLOR,
+    })),
+  ], [categoriesList, inventoryRows.length]);
+
+  const stockFilterOptions = [
+    { value: 'all', label: 'Todo el stock', meta: 'Disponible, bajo y por validar' },
+    { value: 'ok', label: 'Stock disponible', meta: 'Controlados sin alerta' },
+    { value: 'low', label: 'Stock bajo', meta: 'Requiere revision' },
+    { value: 'untracked', label: 'No descuenta stock', meta: 'Pendientes de verificacion' },
+  ];
+
+  const controlFilterOptions = [
+    { value: 'all', label: 'Todos los estados', meta: 'Controlados y por validar' },
+    { value: 'controlled', label: 'Controlados', meta: 'Ya descuentan inventario' },
+    { value: 'pending', label: 'Por validar', meta: 'No descuentan inventario' },
+  ];
+
+  const sortFilterOptions = [
+    { value: 'default', label: 'Orden actual', meta: 'Como viene del sistema' },
+    { value: 'recent', label: 'Recientes primero', meta: 'Ultimos agregados arriba' },
+    { value: 'oldest', label: 'Antiguos primero', meta: 'Primeros registros arriba' },
+  ];
+
+  const getFilterLabel = (options, value) =>
+    options.find((option) => option.value === value)?.label ?? options[0]?.label ?? '';
+
+  const renderProductFilterDropdown = ({ id, label, value, options, onChange, wide = false }) => (
+    <div className={`inventory-filter-select-wrap ${wide ? 'wide' : ''}`}>
+      <button
+        type="button"
+        className={`inventory-filter-trigger ${productFilterMenu === id ? 'open' : ''}`}
+        onClick={() => setProductFilterMenu((current) => (current === id ? null : id))}
+        aria-expanded={productFilterMenu === id}
+      >
+        <span>
+          <small>{label}</small>
+          <strong>{getFilterLabel(options, value)}</strong>
+        </span>
+        <span className="inventory-filter-chevron">v</span>
+      </button>
+      {productFilterMenu === id ? (
+        <div className={`inventory-filter-popover ${wide ? 'wide' : ''}`}>
+          {options.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              className={`inventory-filter-option ${option.value === value ? 'active' : ''}`}
+              onClick={() => {
+                onChange(option.value);
+                setProductFilterMenu(null);
+              }}
+            >
+              {option.color ? (
+                <span
+                  className="inventory-filter-dot"
+                  style={{ background: option.color }}
+                  aria-hidden="true"
+                />
+              ) : null}
+              <span className="inventory-filter-option-copy">
+                <strong>{option.label}</strong>
+                {option.meta ? <small>{option.meta}</small> : null}
+              </span>
+              {option.value === value ? <span className="inventory-filter-check">OK</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const handleHeaderAdjustClick = () => {
     onSwitchInventoryModule?.('inventario_ajustes');
@@ -2146,24 +2276,53 @@ function InventoryDashboardSection({
             </header>
 
             {showFilters ? (
-              <div className="inventory-filter-line">
+              <div
+                className={`inventory-filter-line ${!isMovementsModule && !isAdjustModule && !isCategoriesModule ? 'product-filter-line' : ''}`}
+                ref={!isMovementsModule && !isAdjustModule && !isCategoriesModule ? productFilterRef : null}
+              >
                 {!isMovementsModule && !isAdjustModule && !isCategoriesModule ? (
                   <>
-                    <select className="ghost-button inventory-filter-btn" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                      <option value="all">Todas las categorias</option>
-                      {categoriesList.map((entry) => (
-                        <option key={entry.name} value={entry.name}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select className="ghost-button inventory-filter-btn" value={stockFilter} onChange={(event) => setStockFilter(event.target.value)}>
-                      <option value="all">Todo el stock</option>
-                      <option value="low">Solo stock bajo</option>
-                      <option value="ok">Solo disponible</option>
-                    </select>
-                    <button type="button" className="inventory-clear-chip" onClick={() => { setCategoryFilter('all'); setStockFilter('all'); }}>
-                      Limpiar seleccion
+                    {renderProductFilterDropdown({
+                      id: 'category',
+                      label: 'Categoria',
+                      value: categoryFilter,
+                      options: categoryFilterOptions,
+                      onChange: setCategoryFilter,
+                      wide: true,
+                    })}
+                    {renderProductFilterDropdown({
+                      id: 'stock',
+                      label: 'Stock',
+                      value: stockFilter,
+                      options: stockFilterOptions,
+                      onChange: setStockFilter,
+                    })}
+                    {renderProductFilterDropdown({
+                      id: 'control',
+                      label: 'Estado',
+                      value: controlFilter,
+                      options: controlFilterOptions,
+                      onChange: setControlFilter,
+                    })}
+                    {renderProductFilterDropdown({
+                      id: 'sort',
+                      label: 'Orden',
+                      value: sortFilter,
+                      options: sortFilterOptions,
+                      onChange: setSortFilter,
+                    })}
+                    <button
+                      type="button"
+                      className="inventory-clear-chip inventory-clear-filter-button"
+                      onClick={() => {
+                        setCategoryFilter('all');
+                        setStockFilter('all');
+                        setControlFilter('all');
+                        setSortFilter('default');
+                        setProductFilterMenu(null);
+                      }}
+                    >
+                      Limpiar filtros
                     </button>
                   </>
                 ) : null}

@@ -51,12 +51,22 @@ const getInternalHeaders = (extraHeaders = {}) => {
   return headers;
 };
 
-const shouldUseServerState = () =>
-  typeof window !== 'undefined' && window.location.protocol !== 'file:';
-
 const isLocalHost = () => {
   if (typeof window === 'undefined') return false;
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+};
+
+const shouldUseServerState = () => {
+  if (typeof window === 'undefined' || window.location.protocol === 'file:') return false;
+  if (isLocalHost() && !REMOTE_API_BASE_URL) return false;
+  return true;
+};
+
+const normalizePresenceList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.active)) return value.active;
+  if (Array.isArray(value?.presence)) return value.presence;
+  return [];
 };
 
 const createServerStateError = async (response, fallbackMessage) => {
@@ -597,18 +607,18 @@ export const api = {
   presence: {
     listActive: async () => {
       const active = await callServerPresence('listActive');
-      if (active) return active;
-      return callBridge('presence', 'listActive', false);
+      if (active) return normalizePresenceList(active);
+      return normalizePresenceList(await callBridge('presence', 'listActive', false));
     },
     heartbeat: async (payload) => {
       const active = await callServerPresence('heartbeat', payload);
-      if (active) return active;
-      return callBridge('presence', 'heartbeat', true, payload);
+      if (active) return normalizePresenceList(active);
+      return normalizePresenceList(await callBridge('presence', 'heartbeat', true, payload));
     },
     leave: async (payload) => {
       const active = await callServerPresence('leave', payload);
-      if (active) return active;
-      return callBridge('presence', 'leave', true, payload);
+      if (active) return normalizePresenceList(active);
+      return normalizePresenceList(await callBridge('presence', 'leave', true, payload));
     },
   },
   transport: {

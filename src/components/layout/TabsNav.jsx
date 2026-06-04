@@ -1,5 +1,18 @@
 import { useState } from 'react';
 
+const PRESENCE_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
+
+const colorForPresence = (entry = {}) => {
+  const existing = String(entry.color ?? '').trim();
+  if (existing) return existing;
+  const input = String(entry.userId ?? entry.sessionId ?? entry.fullName ?? 'user');
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return PRESENCE_COLORS[hash % PRESENCE_COLORS.length];
+};
+
 const operationTabs = [
   { id: 'resumen', label: 'Dashboard', icon: 'dashboardPanel', hint: '' },
   { id: 'caja', label: 'Calendario', icon: 'calendar', hint: '' },
@@ -334,7 +347,8 @@ export function MobileNavigation({
 function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, allowedTabs = [], userPresence = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({ inventario: false, devolucion: false, contabilidad: false });
   const allowedSet = new Set(allowedTabs);
-  const presenceByRoot = userPresence.reduce((map, entry) => {
+  const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
+  const presenceByRoot = safeUserPresence.reduce((map, entry) => {
     const root = getTabRoot(entry.activeTab);
     if (!map.has(root)) map.set(root, []);
     map.get(root).push(entry);
@@ -390,7 +404,7 @@ function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, 
               {tabPresence.length > 0 ? (
                 <span className="sidebar-presence-dots" aria-label={`${tabPresence.length} usuarios activos`}>
                   {tabPresence.slice(0, 3).map((entry) => (
-                    <i key={entry.userId} style={{ '--presence-color': entry.color }} title={entry.fullName} />
+                    <i key={entry.userId} style={{ '--presence-color': colorForPresence(entry) }} title={entry.fullName} />
                   ))}
                 </span>
               ) : null}

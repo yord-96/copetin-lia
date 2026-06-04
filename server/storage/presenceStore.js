@@ -8,6 +8,7 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 const defaultPresenceFile = path.join(projectRoot, 'data', 'presence-state.json');
 const presenceFilePath = path.resolve(process.env.APP_PRESENCE_FILE || defaultPresenceFile);
 const PRESENCE_TTL_MS = Number(process.env.APP_PRESENCE_TTL_MS ?? 2.5 * 60 * 1000);
+const USER_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
 
 let writeQueue = Promise.resolve();
 
@@ -59,6 +60,15 @@ const cleanText = (value, fallback = '') => {
   return text || fallback;
 };
 
+const colorForPresenceId = (value) => {
+  const input = cleanText(value, 'user');
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return USER_COLORS[hash % USER_COLORS.length];
+};
+
 const normalizeDevice = (device = {}) => ({
   type: cleanText(device.type, 'desktop'),
   typeLabel: cleanText(device.typeLabel, 'PC'),
@@ -81,7 +91,7 @@ const normalizePresence = (presence) => {
     fullName: cleanText(presence?.fullName, 'Usuario'),
     role: cleanText(presence?.role, 'Operador'),
     activeTab: cleanText(presence?.activeTab, 'resumen'),
-    color: cleanText(presence?.color),
+    color: cleanText(presence?.color, colorForPresenceId(userId || sessionId)),
     device: normalizeDevice(presence?.device),
     lastSeenAt: cleanText(presence?.lastSeenAt, now),
     updatedAt: cleanText(presence?.updatedAt ?? presence?.lastSeenAt, now),

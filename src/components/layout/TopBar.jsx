@@ -7,6 +7,19 @@ const initialsFromName = (name) =>
     .join('')
     .toUpperCase() || 'US';
 
+const PRESENCE_COLORS = ['#df3f05', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04', '#dc2626'];
+
+const colorForPresence = (entry = {}) => {
+  const existing = String(entry.color ?? '').trim();
+  if (existing) return existing;
+  const input = String(entry.userId ?? entry.sessionId ?? entry.fullName ?? 'user');
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return PRESENCE_COLORS[hash % PRESENCE_COLORS.length];
+};
+
 const PAGE_LABELS = {
   resumen: 'Dashboard',
   caja: 'Calendario',
@@ -39,9 +52,10 @@ const deviceLabel = (device) =>
     .trim() || 'Dispositivo';
 
 function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = false, userPresence = [], activeTab = '' }) {
-  const activeUsersHere = userPresence.filter((entry) => entry.activeTab === activeTab);
+  const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
+  const activeUsersHere = safeUserPresence.filter((entry) => entry.activeTab === activeTab);
   const currentDevice = deviceLabel(currentUser?.device);
-  const visiblePresence = userPresence.slice(0, 3);
+  const visiblePresence = safeUserPresence.slice(0, 3);
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -54,14 +68,14 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
           <div className="presence-strip" aria-label="Sesiones activas ahora">
             <div className="presence-summary">
               <strong>Activos</strong>
-              <small>{userPresence.length || 1} sesion{(userPresence.length || 1) === 1 ? '' : 'es'}</small>
+              <small>{safeUserPresence.length || 1} sesion{(safeUserPresence.length || 1) === 1 ? '' : 'es'}</small>
             </div>
             <div className="presence-session-list">
               {visiblePresence.length > 0 ? visiblePresence.map((entry) => (
                 <span
                   key={entry.sessionId ?? entry.userId}
                   className={entry.activeTab === activeTab ? 'active' : ''}
-                  style={{ '--presence-color': entry.color }}
+                  style={{ '--presence-color': colorForPresence(entry) }}
                 >
                   <i>{initialsFromName(entry.fullName)}</i>
                   <b>{shortName(entry.fullName)}</b>
@@ -80,7 +94,7 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
               )}
             </div>
             <div className="presence-meta">
-              {userPresence.length > visiblePresence.length ? <small>+{userPresence.length - visiblePresence.length}</small> : null}
+              {safeUserPresence.length > visiblePresence.length ? <small>+{safeUserPresence.length - visiblePresence.length}</small> : null}
               {activeUsersHere.length > 0 ? <small>{activeUsersHere.length} aqui</small> : null}
             </div>
           </div>

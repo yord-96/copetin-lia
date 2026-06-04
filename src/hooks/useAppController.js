@@ -7,6 +7,13 @@ const isPrintCanceledError = (error) => {
   return message.includes('print job canceled') || message.includes('cancel');
 };
 
+const normalizePresenceList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.active)) return value.active;
+  if (Array.isArray(value?.presence)) return value.presence;
+  return [];
+};
+
 const buildReceiptsFromRentals = (rentals) => {
   const allReceipts = [];
 
@@ -192,7 +199,7 @@ export const useAppController = () => {
       setCalendarEvents(calendarEventsData);
       setSettingsBundle(settingsData);
       setGeneratedReports(reportsData);
-      setUserPresence(presenceData);
+      setUserPresence(normalizePresenceList(presenceData));
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -216,7 +223,7 @@ export const useAppController = () => {
         activeTab,
         device: currentUser.device,
       });
-      setUserPresence(active);
+      setUserPresence(normalizePresenceList(active));
     } catch {
       // Presence is supportive; the app should keep working if the heartbeat fails.
     }
@@ -254,7 +261,7 @@ export const useAppController = () => {
       try {
         const active = await api.presence.listActive();
         if (!disposed) {
-          setUserPresence(active);
+          setUserPresence(normalizePresenceList(active));
         }
       } catch {
         // Presence should never block the main workflow.
