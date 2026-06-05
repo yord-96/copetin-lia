@@ -1648,7 +1648,7 @@ export const useAppController = () => {
     setError('');
     try {
       const result = await api.system.executeReset({ code: cleanCode, modules, confirmation, observations });
-      setActiveTab('caja');
+      setActiveTab('inventario');
       setImagePreview(null);
       await loadData();
       return result;

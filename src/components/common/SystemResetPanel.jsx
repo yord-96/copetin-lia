@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 
 const LEVEL_LABELS = {
-  safe: 'A) Reset seguro',
-  validation: 'B) Reset con validacion',
-  critical: 'C) Reset critico',
+  safe: 'Limpieza rapida',
+  validation: 'Limpieza de pruebas',
+  critical: 'Reset critico',
 };
 
 const RISK_LABELS = {
@@ -61,7 +61,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
       const level = groups[module.level] ? module.level : 'validation';
       groups[level].push(module);
     });
-    return groups;
+    return Object.fromEntries(Object.entries(groups).filter(([, rows]) => rows.length > 0));
   }, [modules]);
 
   const selectedSet = useMemo(() => new Set(selectedModules), [selectedModules]);
@@ -86,7 +86,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
       const response = await onVerify?.({ code });
       const availableModules = response?.modules ?? [];
       setModules(availableModules);
-      setSelectedModules(availableModules.filter((module) => module.level === 'safe').map((module) => module.id));
+      setSelectedModules([]);
       setIsUnlocked(true);
       setDbTransferResult(null);
     } catch (requestError) {
@@ -194,8 +194,8 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
         <header className="system-reset-head">
           <div>
             <span>Herramienta developer</span>
-            <h3>Panel de Reset del Sistema</h3>
-            <p>Reset selectivo con analisis de dependencias, transaccion y auditoria.</p>
+            <h3>Panel de Limpieza</h3>
+            <p>Limpia datos de prueba sin borrar inventario, clientes, personal ni usuarios.</p>
           </div>
           <button type="button" className="orders-modal-close" onClick={onClose}>x</button>
         </header>
@@ -231,14 +231,14 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
           <>
             <div className="system-reset-danger">
               <strong>Zona critica</strong>
-              <p>El backend volvera a validar rol, contrasena, dependencias y confirmacion antes de borrar. Los bloqueos se respetan aunque esten seleccionados.</p>
+              <p>El backend volvera a validar rol, contrasena y confirmacion antes de borrar. Esta limpieza conserva catalogo de inventario, clientes, personal, usuarios y auditoria.</p>
             </div>
 
             <section className="system-database-panel">
               <div className="system-database-copy">
                 <span>Base de datos developer</span>
                 <strong>Exportar e importar respaldo completo</strong>
-                <p>Descarga la base actual del sistema o importa una copia JSON en tu entorno local. La importacion reemplaza la base activa y conserva el developer actual para no perder acceso.</p>
+                <p>Descarga una copia antes de limpiar. La importacion reemplaza la base activa y conserva el developer actual para no perder acceso.</p>
               </div>
               <div className="system-database-actions">
                 <button
@@ -332,7 +332,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
                     ))}
                   </div>
                 ) : (
-                  <p className="system-reset-muted">Selecciona modulos y analiza el impacto antes de ejecutar.</p>
+                  <p className="system-reset-muted">Selecciona la limpieza y analiza el impacto antes de ejecutar.</p>
                 )}
               </aside>
             </div>
@@ -343,7 +343,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
                 <textarea
                   value={observations}
                   onChange={(event) => setObservations(event.target.value)}
-                  placeholder="Motivo del reset o alcance de limpieza..."
+                  placeholder="Motivo o alcance de la limpieza..."
                   rows={2}
                 />
               </label>
@@ -359,7 +359,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
 
             {result ? (
               <div className="system-reset-result">
-                <strong>Reset ejecutado</strong>
+                <strong>Limpieza ejecutada</strong>
                 <p>Registros eliminados: {result.deletedTotal ?? 0}. Auditoria: {result.log?.id ?? 'registrada'}.</p>
               </div>
             ) : null}
@@ -383,7 +383,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
                 onClick={handleExecute}
                 disabled={!canExecute || loadingAction === 'execute'}
               >
-                {loadingAction === 'execute' ? 'Ejecutando...' : 'Ejecutar reset seleccionado'}
+                {loadingAction === 'execute' ? 'Ejecutando...' : 'Ejecutar limpieza'}
               </button>
             </div>
           </>

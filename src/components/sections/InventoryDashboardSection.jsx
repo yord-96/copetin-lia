@@ -5,6 +5,8 @@ const normalizeText = (value) =>
   String(value ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
 
@@ -1042,7 +1044,7 @@ function InventoryDashboardSection({
   }, [inventoryRows]);
 
   const filteredRows = useMemo(() => {
-    const text = String(query ?? '').trim().toLowerCase();
+    const text = normalizeText(query);
     let base = isMovementsModule
       ? movementRows
       : isAdjustModule
@@ -1111,15 +1113,15 @@ function InventoryDashboardSection({
 
     if (!text) return base;
     return base.filter((row) =>
-      String(row.name ?? row.itemName ?? '').toLowerCase().includes(text)
-      || String(row.category ?? '').toLowerCase().includes(text)
-      || String(row.brand ?? '').toLowerCase().includes(text)
-      || String(row.itemColor ?? '').toLowerCase().includes(text)
-      || String(row.sku ?? '').toLowerCase().includes(text)
-      || String(row.reference ?? '').toLowerCase().includes(text)
-      || String(row.userName ?? '').toLowerCase().includes(text)
-      || String(row.registeredByName ?? '').toLowerCase().includes(text)
-      || String(row.reason ?? '').toLowerCase().includes(text),
+      normalizeText(row.name ?? row.itemName).includes(text)
+      || normalizeText(row.category).includes(text)
+      || normalizeText(row.brand).includes(text)
+      || normalizeText(row.itemColor).includes(text)
+      || normalizeText(row.sku).includes(text)
+      || normalizeText(row.reference).includes(text)
+      || normalizeText(row.userName).includes(text)
+      || normalizeText(row.registeredByName).includes(text)
+      || normalizeText(row.reason).includes(text),
     );
   }, [
     adjustRows,

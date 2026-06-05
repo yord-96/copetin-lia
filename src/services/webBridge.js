@@ -797,6 +797,7 @@ const createSeedData = () => {
     contracts: [],
     rentals: [],
     deliveries: [],
+    transportRoutes: [],
     vehicles: [],
     drivers: [],
     calendarEvents: [],
@@ -1752,170 +1753,44 @@ const transaction = (mutator) => {
 
 const RESET_MODULES = [
   {
-    id: 'calendar_events',
-    level: 'safe',
-    risk: 'bajo',
-    name: 'Eventos manuales de calendario',
-    description: 'Elimina eventos creados manualmente en agenda.',
-    deletes: ['calendarEvents'],
-    warnings: ['No elimina eventos calculados desde contratos, entregas o vencimientos.'],
-  },
-  {
-    id: 'generated_reports',
-    level: 'safe',
-    risk: 'bajo',
-    name: 'Reportes generados',
-    description: 'Elimina reportes exportados o generados desde el modulo de reportes.',
-    deletes: ['generatedReports'],
-    warnings: ['No elimina recibos reconstruidos desde ordenes o devoluciones.'],
-  },
-  {
-    id: 'clients',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Clientes',
-    description: 'Elimina clientes sin ordenes, contratos, pagos, saldos, documentos ni historial comercial.',
-    deletes: ['clients'],
-    warnings: ['Clientes con operaciones, saldos prepago, lista negra o documentos quedan bloqueados.'],
-  },
-  {
-    id: 'quotes',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Cotizaciones',
-    description: 'Elimina cotizaciones no comprometidas ni vinculadas a contratos u ordenes.',
-    deletes: ['quotes'],
-    warnings: ['Cotizaciones aprobadas o enlazadas quedan bloqueadas.'],
-  },
-  {
-    id: 'contracts',
+    id: 'trial_cleanup',
     level: 'validation',
     risk: 'alto',
-    name: 'Contratos',
-    description: 'Elimina contratos sin aprobacion, pagos, garantia ni orden asociada.',
-    deletes: ['contracts'],
-    warnings: ['Contratos aprobados o con trazabilidad comercial quedan bloqueados.'],
-  },
-  {
-    id: 'service_orders',
-    level: 'validation',
-    risk: 'alto',
-    name: 'Ordenes de servicio',
-    description: 'Elimina ordenes de prueba sin pagos, garantias, contratos, movimientos, entregas ni devoluciones.',
-    deletes: ['rentals'],
-    warnings: ['Ordenes pagadas, activas, devueltas o con movimientos quedan bloqueadas.'],
-  },
-  {
-    id: 'deliveries',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Entregas y devoluciones programadas',
-    description: 'Elimina entregas sueltas sin orden, contrato, chofer ni vehiculo comprometido.',
-    deletes: ['deliveries'],
-    warnings: ['Entregas enlazadas a ordenes o rutas reales quedan bloqueadas.'],
-  },
-  {
-    id: 'categories',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Categorias',
-    description: 'Elimina categorias sin productos asociados.',
-    deletes: ['categories'],
-    warnings: ['Primero elimina o reasigna productos asociados.'],
-  },
-  {
-    id: 'items',
-    level: 'validation',
-    risk: 'alto',
-    name: 'Productos / Items',
-    description: 'Elimina items sin historial de alquiler, inventario, kardex, cotizaciones o contratos.',
-    deletes: ['items'],
-    warnings: ['Productos con historial operativo quedan bloqueados para conservar trazabilidad.'],
-  },
-  {
-    id: 'inventory_movements',
-    level: 'critical',
-    risk: 'critico',
-    name: 'Movimientos / Kardex',
-    description: 'Elimina movimientos de inventario solo si no existen ordenes, contratos, entregas o devoluciones vinculadas.',
-    deletes: ['inventoryMovements', 'stockRecoveries'],
-    warnings: ['Afecta trazabilidad historica de stock. Requiere confirmacion final.'],
-  },
-  {
-    id: 'cash_accounting',
-    level: 'critical',
-    risk: 'critico',
-    name: 'Caja / Contabilidad',
-    description: 'Elimina solo movimientos manuales no vinculados a ordenes, contratos, clientes ni devoluciones.',
-    deletes: ['cashMovements', 'cashSessions'],
-    warnings: ['Los movimientos contables vinculados a operaciones reales quedan bloqueados.'],
-  },
-  {
-    id: 'transport_fleet',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Transporte / Flota / Choferes',
-    description: 'Elimina vehiculos y choferes sin entregas ni historial de rutas.',
-    deletes: ['vehicles', 'drivers'],
-    warnings: ['Flota o choferes usados en entregas quedan bloqueados.'],
-  },
-  {
-    id: 'suppliers',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Proveedores',
-    description: 'Elimina proveedores sin cotizaciones ni prestamos/subalquileres asociados.',
-    deletes: ['suppliers'],
-    warnings: ['Proveedores con historial de cotizaciones o prestamos quedan bloqueados.'],
-  },
-  {
-    id: 'supplier_documents',
-    level: 'validation',
-    risk: 'alto',
-    name: 'Cotizaciones y prestamos de proveedores',
-    description: 'Elimina documentos de proveedor no aprobados ni activos.',
-    deletes: ['supplierQuotes', 'supplierLoans'],
-    warnings: ['Prestamos activos o completados quedan bloqueados.'],
-  },
-  {
-    id: 'personnel',
-    level: 'validation',
-    risk: 'medio',
-    name: 'Personal',
-    description: 'Elimina empleados sin asistencias ni incidentes asociados.',
-    deletes: ['personnelEmployees'],
-    warnings: ['Empleados con asistencia o incidentes quedan bloqueados.'],
-  },
-  {
-    id: 'personnel_history',
-    level: 'critical',
-    risk: 'alto',
-    name: 'Historial de personal',
-    description: 'Elimina registros de asistencia e incidentes.',
-    deletes: ['personnelAttendance', 'personnelIncidents'],
-    warnings: ['Afecta trazabilidad laboral. Requiere confirmacion final.'],
-  },
-  {
-    id: 'users',
-    level: 'critical',
-    risk: 'critico',
-    name: 'Usuarios',
-    description: 'Elimina usuarios secundarios suspendidos o invitados, nunca el developer actual ni el ultimo developer.',
-    deletes: ['users'],
-    warnings: ['No se permite dejar el sistema sin usuarios administrativos activos.'],
-  },
-  {
-    id: 'factory_reset',
-    level: 'critical',
-    risk: 'critico',
-    name: 'Reset total a cero',
-    description: 'Borra todo el estado operativo y reinicia el sistema desde cero conservando solamente usuarios developer.',
-    deletes: ['allBusinessData'],
-    warnings: ['Accion irreversible. Conserva developer y auditoria de reset; elimina clientes, ordenes, inventario, caja, usuarios no developer y configuracion operativa.'],
+    name: 'Limpiar datos de prueba',
+    description: 'Borra operaciones, caja, transporte, proveedores, calendario y reportes. Conserva inventario, clientes, personal y usuarios.',
+    deletes: ['quotes', 'contracts', 'rentals', 'deliveries', 'transportRoutes', 'cashMovements', 'cashSessions', 'vehicles', 'drivers', 'suppliers', 'supplierQuotes', 'supplierLoans', 'calendarEvents', 'generatedReports'],
+    warnings: ['Tambien libera disponibilidad del inventario para quitar reservas de prueba, sin borrar productos ni categorias.'],
   },
 ];
 
 const RESET_MODULE_MAP = new Map(RESET_MODULES.map((module) => [module.id, module]));
+
+const TRIAL_CLEANUP_COLLECTIONS = [
+  'quotes',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'vehicles',
+  'drivers',
+  'calendarEvents',
+  'generatedReports',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+  'cashSessions',
+  'cashMovements',
+  'userPresence',
+];
+
+const TRIAL_CLEANUP_NUMBERING_RESETS = {
+  quoteNext: 1,
+  contractNext: 1,
+  serviceOrderNext: 1,
+  deliveryNext: 1,
+  supplierQuoteNext: 1,
+  supplierLoanNext: 1,
+};
 
 const FACTORY_RESET_COLLECTIONS = [
   'categories',
@@ -1925,6 +1800,7 @@ const FACTORY_RESET_COLLECTIONS = [
   'contracts',
   'rentals',
   'deliveries',
+  'transportRoutes',
   'vehicles',
   'drivers',
   'calendarEvents',
@@ -2043,6 +1919,35 @@ const addDeletable = (target, record, collection, mode = 'delete') => {
   });
 };
 
+const analyzeTrialCleanup = (state) => {
+  const module = RESET_MODULE_MAP.get('trial_cleanup');
+  const result = {
+    ...module,
+    total: 0,
+    deleteCount: 0,
+    blockedCount: 0,
+    dependencies: [
+      'Preserva inventario: productos, categorias, kardex manual y stock fisico.',
+      'Preserva clientes, personal, usuarios developer/administrativos y auditoria.',
+      'Libera stock disponible para quitar reservas generadas por operaciones de prueba.',
+      'Reinicia numeracion de cotizaciones, contratos, ordenes, entregas y documentos de proveedor.',
+    ],
+    records: {
+      deletable: [],
+      blocked: [],
+    },
+  };
+
+  TRIAL_CLEANUP_COLLECTIONS.forEach((collection) => {
+    const rows = Array.isArray(state[collection]) ? state[collection] : [];
+    rows.forEach((row) => addDeletable(result.records, row, collection, 'trial-delete'));
+  });
+
+  result.total = result.records.deletable.length;
+  result.deleteCount = result.records.deletable.length;
+  return result;
+};
+
 const analyzeFactoryReset = (state) => {
   const module = RESET_MODULE_MAP.get('factory_reset');
   const result = {
@@ -2107,6 +2012,10 @@ const analyzeResetModule = (state, moduleId) => {
   const items = activeRows(state.items);
   const inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
   const cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+
+  if (moduleId === 'trial_cleanup') {
+    return analyzeTrialCleanup(state);
+  }
 
   if (moduleId === 'factory_reset') {
     return analyzeFactoryReset(state);
@@ -2415,6 +2324,44 @@ const analyzeSystemReset = (state, selectedModuleIds) => {
   };
 };
 
+const applyTrialCleanup = (state) => {
+  const deletedByCollection = {};
+
+  TRIAL_CLEANUP_COLLECTIONS.forEach((collection) => {
+    const rows = Array.isArray(state[collection]) ? state[collection] : [];
+    if (rows.length > 0) {
+      deletedByCollection[collection] = rows.length;
+    }
+    state[collection] = [];
+  });
+
+  const now = new Date().toISOString();
+  state.items = Array.isArray(state.items)
+    ? state.items.map((item) => {
+      if (item?.deletedAt) return item;
+      const totalStock = Math.max(0, Math.trunc(Number(item?.totalStock ?? 0)));
+      return {
+        ...item,
+        totalStock,
+        availableStock: totalStock,
+        updatedAt: now,
+      };
+    })
+    : [];
+
+  state.settings = {
+    ...createDefaultSettings(),
+    ...(state.settings ?? {}),
+    numbering: {
+      ...createDefaultSettings().numbering,
+      ...(state.settings?.numbering ?? {}),
+      ...TRIAL_CLEANUP_NUMBERING_RESETS,
+    },
+  };
+
+  return deletedByCollection;
+};
+
 const applyFactoryReset = (state, analysis) => {
   const preservedDevelopers = activeRows(state.users)
     .filter((user) => isDeveloperUser(user))
@@ -2452,6 +2399,10 @@ const applyFactoryReset = (state, analysis) => {
 };
 
 const applyResetAnalysis = (state, analysis) => {
+  if (analysis.selectedModules.includes('trial_cleanup')) {
+    return applyTrialCleanup(state);
+  }
+
   if (analysis.selectedModules.includes('factory_reset')) {
     return applyFactoryReset(state, analysis);
   }
