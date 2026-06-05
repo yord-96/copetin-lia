@@ -555,6 +555,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     clientId: '',
     customerName: '',
     customerPhone: '',
+    customerReferencePhone: '',
     companyName: '',
     eventType: 'social',
     eventDate: deliveryDate,
@@ -989,6 +990,8 @@ function ServiceOrdersSection({
       return (
         normalizeText(row.quoteCode).includes(text)
         || normalizeText(row.customerName).includes(text)
+        || normalizeText(row.customerPhone).includes(text)
+        || normalizeText(row.customerReferencePhone).includes(text)
         || normalizeText(row.eventType).includes(text)
       );
     });
@@ -1024,6 +1027,8 @@ function ServiceOrdersSection({
       return (
         normalizeText(row.contractCode).includes(text)
         || normalizeText(row.customerName).includes(text)
+        || normalizeText(row.customerPhone).includes(text)
+        || normalizeText(row.customerReferencePhone).includes(text)
         || normalizeText(row.eventType).includes(text)
         || normalizeText(row.orderCode).includes(text)
       );
@@ -1719,6 +1724,7 @@ function ServiceOrdersSection({
     clientId: record?.clientId ?? '',
     customerName: record?.customerName ?? '',
     customerPhone: record?.customerPhone ?? '',
+    customerReferencePhone: record?.customerReferencePhone ?? '',
     companyName: record?.companyName ?? '',
     eventType: record?.eventType ?? 'social',
     eventDate: record?.eventDate ?? getInputDate(new Date()),
@@ -2027,6 +2033,7 @@ function ServiceOrdersSection({
       clientId: selected.id,
       customerName: selected.name,
       customerPhone: selected.whatsapp || selected.phone,
+      customerReferencePhone: selected.referencePhone || '',
       companyName: selected.companyName || selected.name,
       address: firstAddress?.address || selected.address || current.address,
       addressSource: firstAddress?.id || 'manual',
@@ -2297,6 +2304,7 @@ function ServiceOrdersSection({
       clientId: draft.clientId || null,
       customerName: draft.customerName.trim(),
       customerPhone: draft.customerPhone.trim(),
+      customerReferencePhone: draft.customerReferencePhone.trim(),
       companyName: draft.companyName.trim() || draft.customerName.trim(),
       eventType: draft.eventType,
       eventDate: draft.eventDate,
@@ -3202,6 +3210,7 @@ function ServiceOrdersSection({
                           <div className="orders-cell-main">
                             <strong>{row.customerName}</strong>
                             <span>{row.customerPhone || 'Sin WhatsApp/celular'}</span>
+                            {row.customerReferencePhone ? <span>Ref: {row.customerReferencePhone}</span> : null}
                           </div>
                         </td>
                         <td>
@@ -3353,6 +3362,7 @@ function ServiceOrdersSection({
                           <div className="orders-cell-main">
                             <strong>{row.customerName}</strong>
                             <span>{row.customerPhone || 'Sin WhatsApp/celular'}</span>
+                            {row.customerReferencePhone ? <span>Ref: {row.customerReferencePhone}</span> : null}
                           </div>
                         </td>
                         <td>
@@ -4266,6 +4276,10 @@ function ServiceOrdersSection({
                       <label>
                         WhatsApp / Celular *
                         <input value={draft.customerPhone} onChange={(event) => setDraftField('customerPhone', event.target.value)} />
+                      </label>
+                      <label>
+                        Telefono de referencia
+                        <input value={draft.customerReferencePhone} onChange={(event) => setDraftField('customerReferencePhone', event.target.value)} />
                       </label>
                       <label>
                         Ciudad

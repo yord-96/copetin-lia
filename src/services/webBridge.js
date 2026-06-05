@@ -875,6 +875,7 @@ const normalizeState = (state) => {
       nitCi: String(client?.nitCi ?? '').trim(),
       phone: String(client?.phone ?? '').trim(),
       whatsapp: String(client?.whatsapp ?? client?.phone ?? '').trim(),
+      referencePhone: String(client?.referencePhone ?? client?.telefonoReferencia ?? client?.alternatePhone ?? '').trim(),
       email: String(client?.email ?? '').trim().toLowerCase(),
       address: String(client?.address ?? '').trim(),
       city: String(client?.city ?? '').trim(),
@@ -1283,6 +1284,7 @@ const normalizeState = (state) => {
         clientId: quote?.clientId ?? null,
         customerName: String(quote?.customerName ?? '').trim(),
         customerPhone: String(quote?.customerPhone ?? '').trim(),
+        customerReferencePhone: String(quote?.customerReferencePhone ?? quote?.referencePhone ?? '').trim(),
         companyName: String(quote?.companyName ?? '').trim(),
         eventType: String(quote?.eventType ?? 'general').trim() || 'general',
         eventDate: String(quote?.eventDate ?? '').trim(),
@@ -1373,6 +1375,7 @@ const normalizeState = (state) => {
         clientId: contract?.clientId ?? null,
         customerName: String(contract?.customerName ?? '').trim(),
         customerPhone: String(contract?.customerPhone ?? '').trim(),
+        customerReferencePhone: String(contract?.customerReferencePhone ?? contract?.referencePhone ?? '').trim(),
         companyName: String(contract?.companyName ?? '').trim(),
         eventType: String(contract?.eventType ?? 'general').trim() || 'general',
         eventDate: String(contract?.eventDate ?? '').trim(),
@@ -4175,6 +4178,30 @@ const getContractDocumentStyles = () => `
     font-size: 14px;
     font-weight: 950;
   }
+  .contract-money-managed {
+    margin-top: 6px;
+    border: 1px solid #ffb98f;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #fff7ed;
+    color: #111522;
+  }
+  .contract-money-managed div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: #bf3d00;
+    font-size: 13px;
+    font-weight: 950;
+  }
+  .contract-money-managed small {
+    display: block;
+    margin-top: 3px;
+    color: #7a5b4c;
+    font-size: 8.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
   .contract-terms-panel {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 53mm;
@@ -4381,6 +4408,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const deliveryFeeBs = contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0;
   const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
   const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
+  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
   const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
   const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
@@ -4542,6 +4570,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <div class="contract-money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
           <div class="contract-money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
           <div class="contract-money-total"><span>Total contrato</span><strong style="float:right">${formatBs(totalBs)}</strong></div>
+          <div class="contract-money-managed">
+            <div><span>Monto manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
+            <small>Total contrato + garantia, solo para este documento</small>
+          </div>
         </aside>
       </section>
 
@@ -4964,11 +4996,12 @@ const addClientDeliveryAddressIfNeeded = (client, address, city, now = new Date(
   }
 };
 
-const syncClientOperationalData = (state, clientId, { customerPhone, address, city } = {}) => {
+const syncClientOperationalData = (state, clientId, { customerPhone, customerReferencePhone, address, city } = {}) => {
   const client = state.clients.find((entry) => entry.id === clientId && !entry.deletedAt);
   if (!client) return;
   const now = new Date().toISOString();
   const phone = String(customerPhone ?? '').trim();
+  const referencePhone = String(customerReferencePhone ?? '').trim();
   const cleanAddress = String(address ?? '').trim();
   const cleanCity = String(city ?? '').trim();
   let changed = false;
@@ -4978,6 +5011,10 @@ const syncClientOperationalData = (state, clientId, { customerPhone, address, ci
   }
   if (!client.whatsapp && phone) {
     client.whatsapp = phone;
+    changed = true;
+  }
+  if (!client.referencePhone && referencePhone) {
+    client.referencePhone = referencePhone;
     changed = true;
   }
   if (!client.address && cleanAddress) {
@@ -4996,11 +5033,11 @@ const syncClientOperationalData = (state, clientId, { customerPhone, address, ci
   if (changed) client.updatedAt = now;
 };
 
-const resolveClientFromName = (state, customerName, customerPhone, address = '', city = '') => {
+const resolveClientFromName = (state, customerName, customerPhone, address = '', city = '', customerReferencePhone = '') => {
   const normalizedTarget = normalizeText(customerName);
   const existing = state.clients.find((client) => normalizeText(client.name) === normalizedTarget);
   if (existing) {
-    syncClientOperationalData(state, existing.id, { customerPhone, address, city });
+    syncClientOperationalData(state, existing.id, { customerPhone, customerReferencePhone, address, city });
     return existing.id;
   }
 
@@ -5015,6 +5052,7 @@ const resolveClientFromName = (state, customerName, customerPhone, address = '',
     contactRole: 'Contacto',
     phone: String(customerPhone ?? '').trim(),
     whatsapp: String(customerPhone ?? '').trim(),
+    referencePhone: String(customerReferencePhone ?? '').trim(),
     email: '',
     address: cleanAddress,
     city: cleanCity,
@@ -5843,6 +5881,7 @@ const createWebBridge = () => ({
           nitCi,
           phone,
           whatsapp: String(payload?.whatsapp ?? phone).trim(),
+          referencePhone: String(payload?.referencePhone ?? '').trim(),
           email,
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
@@ -5934,6 +5973,9 @@ const createWebBridge = () => ({
         }
         if (payload.whatsapp !== undefined) {
           client.whatsapp = String(payload.whatsapp ?? '').trim();
+        }
+        if (payload.referencePhone !== undefined) {
+          client.referencePhone = String(payload.referencePhone ?? '').trim();
         }
         if (payload.email !== undefined) {
           const nextEmail = String(payload.email ?? '').trim().toLowerCase();
@@ -7442,6 +7484,7 @@ const createWebBridge = () => ({
     create: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
       const customerPhone = String(payload?.customerPhone ?? '').trim();
+      const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
       const eventDate = String(payload?.eventDate ?? '').trim();
       const eventTime = String(payload?.eventTime ?? '').trim();
       const deliveryDate = String(payload?.deliveryDate ?? eventDate).trim();
@@ -7469,9 +7512,9 @@ const createWebBridge = () => ({
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
-          syncClientOperationalData(state, clientId, { customerPhone, address: payload?.address, city: payload?.city });
+          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
         }
 
         const normalizedItems = requestedItems.map((line) => {
@@ -7506,6 +7549,7 @@ const createWebBridge = () => ({
           clientId,
           customerName,
           customerPhone,
+          customerReferencePhone,
           companyName: String(payload?.companyName ?? customerName).trim(),
           eventType: String(payload?.eventType ?? 'general').trim() || 'general',
           eventDate,
@@ -7578,6 +7622,7 @@ const createWebBridge = () => ({
 
         if (payload.customerName !== undefined) quote.customerName = String(payload.customerName ?? '').trim() || quote.customerName;
         if (payload.customerPhone !== undefined) quote.customerPhone = String(payload.customerPhone ?? '').trim() || quote.customerPhone;
+        if (payload.customerReferencePhone !== undefined) quote.customerReferencePhone = String(payload.customerReferencePhone ?? '').trim();
         if (payload.companyName !== undefined) quote.companyName = String(payload.companyName ?? '').trim() || quote.companyName;
         if (payload.eventType !== undefined) quote.eventType = String(payload.eventType ?? '').trim() || quote.eventType;
         if (payload.eventDate !== undefined) quote.eventDate = String(payload.eventDate ?? '').trim() || quote.eventDate;
@@ -7709,6 +7754,7 @@ const createWebBridge = () => ({
     create: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
       const customerPhone = String(payload?.customerPhone ?? '').trim();
+      const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
       const eventDate = String(payload?.eventDate ?? '').trim();
       const eventTime = String(payload?.eventTime ?? '').trim();
       const deliveryDate = String(payload?.deliveryDate ?? eventDate).trim();
@@ -7736,9 +7782,9 @@ const createWebBridge = () => ({
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
-          syncClientOperationalData(state, clientId, { customerPhone, address: payload?.address, city: payload?.city });
+          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
         }
 
         const normalizedItems = requestedItems.map((line) => {
@@ -7775,6 +7821,7 @@ const createWebBridge = () => ({
           clientId,
           customerName,
           customerPhone,
+          customerReferencePhone,
           companyName: String(payload?.companyName ?? customerName).trim(),
           eventType: String(payload?.eventType ?? 'general').trim() || 'general',
           eventDate,
@@ -7846,6 +7893,7 @@ const createWebBridge = () => ({
 
         if (payload.customerName !== undefined) contract.customerName = String(payload.customerName ?? '').trim() || contract.customerName;
         if (payload.customerPhone !== undefined) contract.customerPhone = String(payload.customerPhone ?? '').trim() || contract.customerPhone;
+        if (payload.customerReferencePhone !== undefined) contract.customerReferencePhone = String(payload.customerReferencePhone ?? '').trim();
         if (payload.companyName !== undefined) contract.companyName = String(payload.companyName ?? '').trim() || contract.companyName;
         if (payload.eventType !== undefined) contract.eventType = String(payload.eventType ?? '').trim() || contract.eventType;
         if (payload.eventDate !== undefined) contract.eventDate = String(payload.eventDate ?? '').trim() || contract.eventDate;

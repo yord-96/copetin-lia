@@ -1042,6 +1042,7 @@ export const useAppController = () => {
         clientId: quote.clientId ?? null,
         customerName: quote.customerName,
         customerPhone: quote.customerPhone,
+        customerReferencePhone: quote.customerReferencePhone ?? '',
         companyName: quote.companyName || quote.customerName,
         eventType: quote.eventType,
         eventDate: quote.eventDate,

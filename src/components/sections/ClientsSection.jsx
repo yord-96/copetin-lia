@@ -178,6 +178,7 @@ const EMPTY_FORM = {
   nitCi: '',
   phone: '',
   whatsapp: '',
+  referencePhone: '',
   email: '',
   address: '',
   city: '',
@@ -226,6 +227,7 @@ const parseCsvToClients = (text) => {
 
     const name = payload.nombre || payload.nombre_completo || payload.name || '';
     const phone = payload.telefono || payload.phone || '';
+    const referencePhone = payload.telefono_referencia || payload.reference_phone || payload.telefono_alterno || payload.alternate_phone || '';
     const nitCi = payload.nit_ci || payload.nit || payload.ci || '';
     if (!name || !phone || !nitCi) continue;
 
@@ -244,6 +246,7 @@ const parseCsvToClients = (text) => {
       nitCi,
       phone,
       whatsapp: payload.whatsapp || phone,
+      referencePhone,
       email: payload.email || '',
       address,
       city,
@@ -274,6 +277,7 @@ const buildCsvFromClients = (rows) => {
     'nit_ci',
     'telefono',
     'whatsapp',
+    'telefono_referencia',
     'email',
     'direccion',
     'ciudad',
@@ -301,6 +305,7 @@ const buildCsvFromClients = (rows) => {
       row.nitCi || '',
       row.phone || '',
       row.whatsapp || '',
+      row.referencePhone || '',
       row.email || '',
       firstAddress?.address ?? row.address ?? '',
       firstAddress?.city ?? row.city ?? '',
@@ -445,6 +450,7 @@ function ClientsSection({
         || String(client.companyName).toLowerCase().includes(text)
         || String(client.contactName).toLowerCase().includes(text)
         || String(client.phone).toLowerCase().includes(text)
+        || String(client.referencePhone).toLowerCase().includes(text)
         || String(client.email).toLowerCase().includes(text)
         || String(client.nitCi).toLowerCase().includes(text)
         || String(client.blacklistReason).toLowerCase().includes(text)
@@ -681,6 +687,7 @@ function ClientsSection({
       nitCi: client.nitCi || '',
       phone: client.phone || '',
       whatsapp: client.whatsapp || '',
+      referencePhone: client.referencePhone || '',
       email: client.email || '',
       address: client.address || '',
       city: client.city || '',
@@ -828,6 +835,7 @@ function ClientsSection({
       nitCi: String(form.nitCi ?? '').trim(),
       phone: contactNumber,
       whatsapp: contactNumber,
+      referencePhone: String(form.referencePhone ?? '').trim(),
       email: String(form.email ?? '').trim().toLowerCase(),
       address: mainAddress,
       city: mainCity,
@@ -1329,6 +1337,15 @@ function ClientsSection({
                     </label>
 
                     <label>
+                      Telefono de referencia
+                      <input
+                        value={form.referencePhone}
+                        onChange={(event) => setField('referencePhone', event.target.value)}
+                      />
+                      <small>Alternativo si el cliente no contesta.</small>
+                    </label>
+
+                    <label>
                       Email
                       <input type="email" value={form.email} onChange={(event) => setField('email', event.target.value)} />
                       <small>Se usa para envio de documentos y reportes.</small>
@@ -1683,6 +1700,7 @@ function ClientsSection({
                 <li>Tipo: {detailClient.customerType || 'persona'}</li>
                 <li>NIT/CI: {detailClient.nitCi || '-'}</li>
                 <li>WhatsApp / Celular: {detailClient.whatsapp || detailClient.phone || '-'}</li>
+                <li>Telefono de referencia: {detailClient.referencePhone || '-'}</li>
                 <li>Email: {detailClient.email || '-'}</li>
                 <li>Ciudad: {detailClient.city || '-'}</li>
               </ul>
@@ -2189,7 +2207,7 @@ function ClientsSection({
             </span>
             <input
               type="search"
-              placeholder="Buscar por nombre, empresa, email, WhatsApp/celular o NIT/CI..."
+              placeholder="Buscar por nombre, empresa, email, telefonos o NIT/CI..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -2217,6 +2235,7 @@ function ClientsSection({
                 <th>Cliente</th>
                 <th>Contacto</th>
                 <th>WhatsApp / Celular</th>
+                <th>Referencia</th>
                 <th>Email</th>
                 <th>Ordenes</th>
                 <th>Ultima Orden</th>
@@ -2262,6 +2281,7 @@ function ClientsSection({
                       </button>
                     </div>
                   </td>
+                  <td>{row.referencePhone || '-'}</td>
                   <td>{row.email || '-'}</td>
                   <td>
                     <button
@@ -2362,7 +2382,7 @@ function ClientsSection({
               ))}
               {pagedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <p className="status">No hay clientes con esos filtros.</p>
                   </td>
                 </tr>
