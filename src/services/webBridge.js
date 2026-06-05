@@ -1188,7 +1188,7 @@ const normalizeState = (state) => {
     ? source.transportRoutes.map((route) => ({
       id: String(route?.id ?? makeId('troute')).trim() || makeId('troute'),
       routeCode: String(route?.routeCode ?? '').trim(),
-      type: ['envio', 'recojo'].includes(route?.type) ? route.type : 'envio',
+      type: ['envio', 'recojo', 'mixta'].includes(route?.type) ? route.type : 'envio',
       date: String(route?.date ?? '').trim(),
       driverId: String(route?.driverId ?? '').trim() || null,
       vehicleId: String(route?.vehicleId ?? '').trim() || null,
@@ -5197,7 +5197,9 @@ const syncRouteStopsToDeliveries = (state, route) => {
     if (!delivery) return;
     const sequence = index + 1;
     delivery.routeId = route.id;
-    delivery.routeType = route.type;
+    delivery.routeType = route.type === 'mixta'
+      ? isPickupDeliveryRecord(delivery) ? 'recojo' : 'envio'
+      : route.type;
     delivery.routeSequence = sequence;
     delivery.driverId = route.driverId ?? delivery.driverId ?? null;
     delivery.vehicleId = route.vehicleId ?? delivery.vehicleId ?? null;
@@ -6879,7 +6881,7 @@ const createWebBridge = () => ({
       return created;
     },
     createRoute: async (payload) => {
-      const type = ['envio', 'recojo'].includes(payload?.type) ? payload.type : 'envio';
+      const type = ['envio', 'recojo', 'mixta'].includes(payload?.type) ? payload.type : 'envio';
       const date = String(payload?.date ?? '').trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         throw new Error('Debes indicar la fecha de la ruta.');
@@ -6891,7 +6893,7 @@ const createWebBridge = () => ({
         const now = new Date().toISOString();
         const routeNumber = state.transportRoutes.filter((route) => !route.deletedAt && route.date === date && route.type === type).length + 1;
         const routeCode = String(payload?.routeCode ?? '').trim()
-          || `${type === 'recojo' ? 'RR' : 'RE'}-${date.replaceAll('-', '')}-${String(routeNumber).padStart(2, '0')}`;
+          || `${type === 'recojo' ? 'RR' : type === 'mixta' ? 'RM' : 'RE'}-${date.replaceAll('-', '')}-${String(routeNumber).padStart(2, '0')}`;
         const stops = normalizeRouteStopsPayload(payload?.stops);
         created = {
           id: makeId('troute'),
@@ -6924,7 +6926,7 @@ const createWebBridge = () => ({
         const route = state.transportRoutes.find((entry) => entry.id === id && !entry.deletedAt);
         if (!route) throw new Error('Ruta no encontrada.');
 
-        if (payload.type !== undefined && ['envio', 'recojo'].includes(payload.type)) route.type = payload.type;
+        if (payload.type !== undefined && ['envio', 'recojo', 'mixta'].includes(payload.type)) route.type = payload.type;
         if (payload.date !== undefined) {
           const date = String(payload.date ?? '').trim();
           if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Debes indicar una fecha valida.');
@@ -6944,7 +6946,7 @@ const createWebBridge = () => ({
             const delivery = state.deliveries.find((entry) => entry.id === stop.deliveryId && !entry.deletedAt);
             if (!delivery) return false;
             const deliveryType = isPickupDeliveryRecord(delivery) ? 'recojo' : 'envio';
-            return deliveryType === route.type;
+            return route.type === 'mixta' || deliveryType === route.type;
           }).map((stop, index) => ({ ...stop, sequence: index + 1 }));
         }
         route.updatedAt = new Date().toISOString();

@@ -151,9 +151,10 @@ const getDeliveryRouteType = (delivery) => (isPickupDelivery(delivery) ? 'recojo
 const getStopAddress = (delivery) =>
   [delivery?.address, delivery?.city].map((part) => String(part ?? '').trim()).filter(Boolean).join(', ');
 
-const buildOpenStreetMapUrl = (delivery) => {
-  const query = getStopAddress(delivery) || delivery?.customerName || '';
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(query)}`;
+const buildOpenStreetMapSearchUrl = (query) => {
+  const cleanQuery = String(query ?? '').trim();
+  if (!cleanQuery) return 'https://www.openstreetmap.org/';
+  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(cleanQuery)}`;
 };
 
 const pseudoMapPoint = (text, index) => {
@@ -335,10 +336,15 @@ function ReturnSection({
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryPageSize, setDeliveryPageSize] = useState(10);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState(deliveries[0]?.id ?? '');
-  const [plannerType, setPlannerType] = useState('envio');
+  const plannerType = 'mixta';
   const [plannerDate, setPlannerDate] = useState(getTodayKey());
   const [isPlannerCalendarOpen, setIsPlannerCalendarOpen] = useState(false);
   const [plannerCalendarMonth, setPlannerCalendarMonth] = useState(() => getMonthStartFromKey(getTodayKey()));
+  const [plannerSearch, setPlannerSearch] = useState('');
+  const [plannerStopFilter, setPlannerStopFilter] = useState('all');
+  const [plannerPanelView, setPlannerPanelView] = useState('day');
+  const [plannerMapSearch, setPlannerMapSearch] = useState('');
+  const [selectedPlannerDeliveryId, setSelectedPlannerDeliveryId] = useState('');
   const [selectedRouteId, setSelectedRouteId] = useState('');
   const [routeDraft, setRouteDraft] = useState({
     driverId: '',
@@ -522,22 +528,92 @@ function ReturnSection({
     [selectedRoute],
   );
 
+  const plannerDayDeliveries = useMemo(() => {
+    return deliveries
+      .filter((delivery) => String(delivery.scheduledDate ?? '').slice(0, 10) === plannerDate)
+      .filter((delivery) => !['cancelada'].includes(delivery.status))
+      .sort((a, b) => getDeliveryScheduleTime(a) - getDeliveryScheduleTime(b));
+  }, [deliveries, plannerDate]);
+
+  const plannerDayStats = useMemo(() => {
+    const envios = plannerDayDeliveries.filter((delivery) => getDeliveryRouteType(delivery) === 'envio').length;
+    const recojos = plannerDayDeliveries.filter((delivery) => getDeliveryRouteType(delivery) === 'recojo').length;
+    const planned = plannerDayDeliveries.filter((delivery) => delivery.routeId || selectedRouteStopIds.has(delivery.id)).length;
+    return {
+      envios,
+      recojos,
+      total: plannerDayDeliveries.length,
+      planned,
+      unplanned: Math.max(0, plannerDayDeliveries.length - planned),
+    };
+  }, [plannerDayDeliveries, selectedRouteStopIds]);
+
   const plannerPendingDeliveries = useMemo(() => {
+    const text = String(plannerSearch ?? '').trim().toLowerCase();
     return deliveries
       .filter((delivery) => {
         if (String(delivery.scheduledDate ?? '').slice(0, 10) !== plannerDate) return false;
-        if (getDeliveryRouteType(delivery) !== plannerType) return false;
+        const routeType = getDeliveryRouteType(delivery);
+        if (plannerStopFilter !== 'all' && routeType !== plannerStopFilter) return false;
         if (delivery.routeId && delivery.routeId !== selectedRoute?.id) return false;
         if (selectedRouteStopIds.has(delivery.id)) return false;
-        return !['completada', 'cancelada'].includes(delivery.status);
+        if (['completada', 'cancelada'].includes(delivery.status)) return false;
+        if (!text) return true;
+        return (
+          String(delivery.orderCode ?? '').toLowerCase().includes(text)
+          || String(delivery.deliveryCode ?? '').toLowerCase().includes(text)
+          || String(delivery.customerName ?? '').toLowerCase().includes(text)
+          || String(delivery.companyName ?? '').toLowerCase().includes(text)
+          || String(delivery.address ?? '').toLowerCase().includes(text)
+          || String(delivery.city ?? '').toLowerCase().includes(text)
+        );
       })
       .sort((a, b) => getDeliveryScheduleTime(a) - getDeliveryScheduleTime(b));
-  }, [deliveries, plannerDate, plannerType, selectedRoute?.id, selectedRouteStopIds]);
+  }, [deliveries, plannerDate, plannerSearch, plannerStopFilter, selectedRoute?.id, selectedRouteStopIds]);
 
   const plannerStops = useMemo(
     () => (selectedRoute?.stops ?? []).slice().sort((a, b) => a.sequence - b.sequence),
     [selectedRoute],
   );
+
+  const plannerMapStops = useMemo(() => {
+    if (plannerStops.length > 0) {
+      return plannerStops.map((stop, index) => ({
+        id: stop.deliveryId,
+        delivery: stop.delivery,
+        sequence: index + 1,
+        routeType: getDeliveryRouteType(stop.delivery),
+        planned: true,
+      }));
+    }
+    return plannerPendingDeliveries.map((delivery, index) => ({
+      id: delivery.id,
+      delivery,
+      sequence: index + 1,
+      routeType: getDeliveryRouteType(delivery),
+      planned: false,
+    }));
+  }, [plannerPendingDeliveries, plannerStops]);
+
+  const selectedPlannerDelivery = useMemo(() => {
+    const allPlannerDeliveries = [
+      ...plannerStops.map((stop) => stop.delivery).filter(Boolean),
+      ...plannerPendingDeliveries,
+    ];
+    return allPlannerDeliveries.find((delivery) => delivery.id === selectedPlannerDeliveryId)
+      ?? allPlannerDeliveries[0]
+      ?? null;
+  }, [plannerPendingDeliveries, plannerStops, selectedPlannerDeliveryId]);
+
+  useEffect(() => {
+    if (!selectedPlannerDelivery) {
+      setSelectedPlannerDeliveryId('');
+      return;
+    }
+    if (selectedPlannerDelivery.id !== selectedPlannerDeliveryId) {
+      setSelectedPlannerDeliveryId(selectedPlannerDelivery.id);
+    }
+  }, [selectedPlannerDelivery, selectedPlannerDeliveryId]);
 
   const stats = useMemo(() => {
     const todayKey = getTodayKey();
@@ -673,6 +749,10 @@ function ReturnSection({
       ];
     }
 
+    if (currentView === 'planificador') {
+      return [];
+    }
+
     return [
       { key: 'all', tone: 'lilac', icon: 'truck', value: stats.deliveriesToday, label: 'Entregas hoy', link: 'Ver todas' },
       { key: 'route', tone: 'peach', icon: 'clock', value: stats.inRoute, label: 'En ruta', link: 'Ver en ruta' },
@@ -778,7 +858,7 @@ function ReturnSection({
     setIsSavingRoute(true);
     try {
       const created = await onCreateTransportRoute?.({
-        type: plannerType,
+        type: 'mixta',
         date: plannerDate,
         driverId: routeDraft.driverId || activeDriverId || null,
         vehicleId: routeDraft.vehicleId || activeVehicleId || null,
@@ -801,7 +881,7 @@ function ReturnSection({
     const payload = {
       id: selectedRoute.id,
       date: plannerDate,
-      type: plannerType,
+      type: 'mixta',
       driverId: routeDraft.driverId || null,
       vehicleId: routeDraft.vehicleId || null,
       notes: routeDraft.notes,
@@ -1407,44 +1487,181 @@ function ReturnSection({
     frame?.contentWindow?.print();
   };
 
+  const openPlannerRouteSheet = () => {
+    if (!selectedRoute || plannerStops.length === 0) {
+      setRouteSaveError('Arma una ruta con paradas antes de imprimir.');
+      return;
+    }
+
+    const esc = (value) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+    const rows = plannerStops.map((stop, index) => {
+      const delivery = stop.delivery ?? {};
+      const routeType = getDeliveryRouteType(delivery);
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${routeType === 'recojo' ? 'Recojo' : 'Envio'}</td>
+          <td>${esc(stop.eta || delivery.windowStart || '--:--')}</td>
+          <td>${esc(delivery.orderCode || delivery.deliveryCode || '-')}</td>
+          <td>${esc(delivery.customerName || '-')}</td>
+          <td>${esc(getStopAddress(delivery) || '-')}</td>
+          <td>${esc(stop.notes || delivery.notes || '-')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Hoja de ruta ${esc(selectedRoute.routeCode)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 28px; }
+            header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #e84a00; padding-bottom: 16px; }
+            h1 { margin: 0; color: #e84a00; font-size: 26px; }
+            p { margin: 4px 0; color: #4b5563; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+            .summary div { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+            .summary span { display: block; color: #6b7280; font-size: 12px; }
+            .summary strong { display: block; margin-top: 4px; font-size: 16px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th { background: #fff7ed; color: #9a3412; text-align: left; font-size: 12px; }
+            th, td { border: 1px solid #e5e7eb; padding: 9px; vertical-align: top; font-size: 12px; }
+            footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+            footer div { border-top: 1px solid #9ca3af; padding-top: 8px; color: #4b5563; text-align: center; }
+            @media print { body { margin: 18px; } }
+          </style>
+        </head>
+        <body>
+          <header>
+            <div>
+              <h1>El Copetin - Hoja de ruta</h1>
+              <p>${esc(formatDate(plannerDate))} | ${esc(selectedRoute.routeCode)}</p>
+            </div>
+            <div>
+              <p><strong>Chofer:</strong> ${esc(selectedRoute.driverName || 'Sin chofer asignado')}</p>
+              <p><strong>Vehiculo:</strong> ${esc(selectedRoute.vehicleCode || 'Sin vehiculo asignado')}</p>
+            </div>
+          </header>
+          <section class="summary">
+            <div><span>Paradas</span><strong>${plannerStops.length}</strong></div>
+            <div><span>Envios</span><strong>${plannerStops.filter((stop) => getDeliveryRouteType(stop.delivery) === 'envio').length}</strong></div>
+            <div><span>Recojos</span><strong>${plannerStops.filter((stop) => getDeliveryRouteType(stop.delivery) === 'recojo').length}</strong></div>
+            <div><span>Salida sugerida</span><strong>${plannerStops[0]?.eta || plannerStops[0]?.delivery?.windowStart || '--:--'}</strong></div>
+          </section>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Tipo</th>
+                <th>Hora</th>
+                <th>Contrato</th>
+                <th>Cliente</th>
+                <th>Direccion</th>
+                <th>Nota</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <footer>
+            <div>Administracion</div>
+            <div>Chofer</div>
+            <div>Recepcion / Cliente</div>
+          </footer>
+        </body>
+      </html>
+    `;
+
+    setDocumentPreview({
+      title: `Hoja de ruta ${selectedRoute.routeCode}`,
+      html,
+    });
+  };
+
   const renderPlannerMap = () => {
-    const stops = plannerStops;
     return (
       <article className="transport-planner-map">
         <header>
           <div>
-            <h3>Mapa de apoyo</h3>
-            <p>Uso interno para trazar la secuencia. No se envia al transportista.</p>
+            <h3>Mapa de la ruta</h3>
+            <p>Busca direcciones y valida zonas antes de ordenar.</p>
           </div>
-          <span>{stops.length} paradas</span>
+          <span>{plannerMapStops.length} paradas</span>
         </header>
+        <form
+          className="transport-map-search-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            window.open(buildOpenStreetMapSearchUrl(plannerMapSearch), '_blank', 'noopener,noreferrer');
+          }}
+        >
+          <input
+            value={plannerMapSearch}
+            onChange={(event) => setPlannerMapSearch(event.target.value)}
+            placeholder="Buscar dirección en el mapa..."
+          />
+          <button
+            type="submit"
+            className="ghost-button"
+          >
+            Buscar
+          </button>
+        </form>
         <div className="transport-map-free">
           <div className="transport-map-grid-lines" />
-          {stops.length === 0 ? (
+          {plannerMapStops.length === 0 ? (
             <div className="transport-map-empty">
-              Agrega paradas para visualizar puntos de referencia.
+              No hay paradas para visualizar en esta fecha.
             </div>
           ) : null}
-          {stops.map((stop, index) => {
+          <svg className="transport-map-route-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {plannerStops.length > 1 ? (
+              <polyline
+                points={plannerMapStops.map((stop, index) => {
+                  const point = pseudoMapPoint(getStopAddress(stop.delivery), index);
+                  return `${point.left},${point.top}`;
+                }).join(' ')}
+              />
+            ) : null}
+          </svg>
+          {plannerMapStops.map((stop, index) => {
             const point = pseudoMapPoint(getStopAddress(stop.delivery), index);
+            const isSelected = selectedPlannerDelivery?.id === stop.delivery?.id;
             return (
-              <a
-                key={`map-${stop.deliveryId}`}
-                className={`transport-map-stop ${plannerType === 'recojo' ? 'pickup' : 'delivery'}`}
-                href={buildOpenStreetMapUrl(stop.delivery)}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                key={`map-${stop.id}`}
+                type="button"
+                className={`transport-map-stop ${stop.routeType === 'recojo' ? 'pickup' : 'delivery'} ${isSelected ? 'selected' : ''}`}
                 style={{ left: `${point.left}%`, top: `${point.top}%` }}
                 title={getStopAddress(stop.delivery)}
+                onClick={() => setSelectedPlannerDeliveryId(stop.delivery?.id ?? '')}
               >
-                {index + 1}
-              </a>
+                {stop.sequence}
+              </button>
             );
           })}
         </div>
-        <p className="transport-map-note">
-          Clic en un punto para buscar su direccion en OpenStreetMap.
-        </p>
+        {selectedPlannerDelivery ? (
+          <div className="transport-map-selected-card">
+            <div>
+              <span className={`planner-type-pill ${getDeliveryRouteType(selectedPlannerDelivery)}`}>
+                {getDeliveryRouteType(selectedPlannerDelivery) === 'recojo' ? 'Recojo' : 'Envio'}
+              </span>
+              <strong>{selectedPlannerDelivery.customerName}</strong>
+              <small>{selectedPlannerDelivery.orderCode || selectedPlannerDelivery.deliveryCode}</small>
+            </div>
+            <p>{getStopAddress(selectedPlannerDelivery) || 'Direccion pendiente'}</p>
+            <p>{selectedPlannerDelivery.notes || 'Sin observaciones registradas.'}</p>
+          </div>
+        ) : null}
       </article>
     );
   };
@@ -1461,7 +1678,7 @@ function ReturnSection({
         >
           <span>{plannerDate}</span>
           <small>
-            {selectedActivity.envio} envio{selectedActivity.envio === 1 ? '' : 's'} · {selectedActivity.recojo} recojo{selectedActivity.recojo === 1 ? '' : 's'}
+            {selectedActivity.envio} envio{selectedActivity.envio === 1 ? '' : 's'} | {selectedActivity.recojo} recojo{selectedActivity.recojo === 1 ? '' : 's'}
           </small>
         </button>
         {isPlannerCalendarOpen ? (
@@ -1472,7 +1689,7 @@ function ReturnSection({
                 aria-label="Mes anterior"
                 onClick={() => setPlannerCalendarMonth((current) => shiftMonth(current, -1))}
               >
-                ‹
+                {'<'}
               </button>
               <strong>{formatPlannerMonth(plannerCalendarMonth)}</strong>
               <button
@@ -1480,7 +1697,7 @@ function ReturnSection({
                 aria-label="Mes siguiente"
                 onClick={() => setPlannerCalendarMonth((current) => shiftMonth(current, 1))}
               >
-                ›
+                {'>'}
               </button>
             </header>
             <div className="transport-mini-calendar-weekdays">
@@ -1542,42 +1759,113 @@ function ReturnSection({
 
   const renderPlannerView = () => {
     const routeStatus = transportRouteStateMap[selectedRoute?.status] ?? transportRouteStateMap.borrador;
+    const plannedEnvios = plannerStops.filter((stop) => getDeliveryRouteType(stop.delivery) === 'envio').length;
+    const plannedRecojos = plannerStops.filter((stop) => getDeliveryRouteType(stop.delivery) === 'recojo').length;
+    const plannerRows = plannerPanelView === 'route'
+      ? plannerStops.map((stop, index) => ({
+        id: stop.deliveryId,
+        delivery: stop.delivery,
+        sequence: index + 1,
+        eta: stop.eta || stop.delivery?.windowStart || '',
+        notes: stop.notes ?? '',
+        isPlanned: true,
+      }))
+      : plannerDayDeliveries
+        .filter((delivery) => {
+          if (plannerStopFilter !== 'all' && getDeliveryRouteType(delivery) !== plannerStopFilter) return false;
+          const text = String(plannerSearch ?? '').trim().toLowerCase();
+          if (!text) return true;
+          return (
+            String(delivery.orderCode ?? '').toLowerCase().includes(text)
+            || String(delivery.deliveryCode ?? '').toLowerCase().includes(text)
+            || String(delivery.customerName ?? '').toLowerCase().includes(text)
+            || String(delivery.companyName ?? '').toLowerCase().includes(text)
+            || String(delivery.address ?? '').toLowerCase().includes(text)
+            || String(delivery.city ?? '').toLowerCase().includes(text)
+          );
+        })
+        .map((delivery) => {
+          const plannedIndex = plannerStops.findIndex((stop) => stop.deliveryId === delivery.id);
+          const stop = plannedIndex >= 0 ? plannerStops[plannedIndex] : null;
+          return {
+            id: delivery.id,
+            delivery,
+            sequence: plannedIndex >= 0 ? plannedIndex + 1 : null,
+            eta: stop?.eta || delivery.windowStart || '',
+            notes: stop?.notes ?? '',
+            isPlanned: plannedIndex >= 0,
+          };
+        });
+
     return (
       <div className="transport-planner">
-        <article className="transport-planner-card transport-planner-controls">
-          <div className="transport-planner-tabs">
+        <article className="transport-planner-card transport-planner-controls transport-planner-topbar">
+          <div className="transport-planner-toolbar">
+            {renderPlannerDatePicker()}
             <button
               type="button"
-              className={plannerType === 'envio' ? 'active' : ''}
-              onClick={() => setPlannerType('envio')}
+              className="ghost-button"
+              onClick={() => setPlannerDate(getTodayKey())}
             >
-              Rutas de envio
-            </button>
-            <button
-              type="button"
-              className={plannerType === 'recojo' ? 'active' : ''}
-              onClick={() => setPlannerType('recojo')}
-            >
-              Rutas de recojo
+              Hoy
             </button>
           </div>
 
-          <div className="transport-planner-toolbar">
-            <label>
-              <span>Fecha</span>
-              {renderPlannerDatePicker()}
-            </label>
+          <div className="transport-planner-day-metrics">
+            <article>
+              <strong>{plannerDayStats.envios}</strong>
+              <span>Envios</span>
+            </article>
+            <article>
+              <strong>{plannerDayStats.recojos}</strong>
+              <span>Recojos</span>
+            </article>
+            <article>
+              <strong>{plannerDayStats.total}</strong>
+              <span>Paradas</span>
+            </article>
+            <article className={plannerDayStats.unplanned > 0 ? 'warning' : 'ready'}>
+              <strong>{plannerDayStats.unplanned}</strong>
+              <span>Sin planificar</span>
+            </article>
+          </div>
+
+          <div className="transport-planner-toolbar transport-planner-route-toolbar">
             <label>
               <span>Ruta</span>
               <select value={selectedRoute?.id ?? ''} onChange={(event) => setSelectedRouteId(event.target.value)}>
-                <option value="">Sin ruta seleccionada</option>
+                <option value="">Sin ruta planificada</option>
                 {plannerRoutes.map((route) => (
                   <option key={route.id} value={route.id}>{route.routeCode}</option>
                 ))}
               </select>
             </label>
-            <button type="button" className="primary-button transport-schedule-btn" onClick={handleCreatePlannerRoute} disabled={isSavingRoute}>
+            <label>
+              <span>Chofer</span>
+              <select value={routeDraft.driverId} onChange={(event) => setRouteDraft((current) => ({ ...current, driverId: event.target.value }))}>
+                <option value="">Sin chofer</option>
+                {drivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>{driver.fullName}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Vehiculo</span>
+              <select value={routeDraft.vehicleId} onChange={(event) => setRouteDraft((current) => ({ ...current, vehicleId: event.target.value }))}>
+                <option value="">Sin vehiculo</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>{vehicle.code} - {vehicle.name}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="ghost-button" onClick={handleCreatePlannerRoute} disabled={isSavingRoute}>
               + Crear ruta
+            </button>
+            <button type="button" className="primary-button transport-schedule-btn" onClick={() => saveSelectedRoute({ status: 'planificada' })} disabled={!selectedRoute || isSavingRoute}>
+              Guardar planificacion
+            </button>
+            <button type="button" className="primary-button transport-schedule-btn" onClick={openPlannerRouteSheet} disabled={!selectedRoute || plannerStops.length === 0}>
+              Imprimir hoja de ruta
             </button>
           </div>
 
@@ -1586,8 +1874,8 @@ function ReturnSection({
               <strong>{selectedRoute.routeCode}</strong>
               <span className={`transport-status-pill ${routeStatus.className}`}>{routeStatus.label}</span>
               <span>{formatDate(selectedRoute.date)}</span>
-              <span>{selectedRoute.driverName}</span>
-              <span>{selectedRoute.vehicleCode}</span>
+              <span>{plannedEnvios} envios</span>
+              <span>{plannedRecojos} recojos</span>
             </div>
           ) : (
             <p className="transport-form-note">
@@ -1597,122 +1885,144 @@ function ReturnSection({
           )}
         </article>
 
-        <div className="transport-planner-grid">
-          <article className="transport-planner-card transport-planner-pending">
+        <div className="transport-planner-board">
+          <article className="transport-planner-card transport-planner-table-card">
             <header>
-              <div>
-                <h3>Pendientes de {plannerType === 'recojo' ? 'recojo' : 'envio'}</h3>
-                <p>{plannerPendingDeliveries.length} sin asignar para esta fecha.</p>
+              <div className="transport-planner-tabs">
+                <button
+                  type="button"
+                  className={plannerPanelView === 'day' ? 'active' : ''}
+                  onClick={() => setPlannerPanelView('day')}
+                >
+                  Paradas del dia
+                </button>
+                <button
+                  type="button"
+                  className={plannerPanelView === 'route' ? 'active' : ''}
+                  onClick={() => setPlannerPanelView('route')}
+                >
+                  Ruta planificada ({plannerStops.length})
+                </button>
+              </div>
+              <div className="transport-planner-table-tools">
+                <input
+                  type="search"
+                  value={plannerSearch}
+                  onChange={(event) => setPlannerSearch(event.target.value)}
+                  placeholder="Buscar por cliente, direccion o contrato..."
+                />
+                <select value={plannerStopFilter} onChange={(event) => setPlannerStopFilter(event.target.value)}>
+                  <option value="all">Todos ({plannerDayStats.total})</option>
+                  <option value="envio">Envios ({plannerDayStats.envios})</option>
+                  <option value="recojo">Recojos ({plannerDayStats.recojos})</option>
+                </select>
               </div>
             </header>
-            <div className="transport-planner-list">
-              {plannerPendingDeliveries.map((delivery) => (
-                <div key={`pending-${delivery.id}`} className="transport-planner-stop-card">
-                  <div className="transport-planner-stop-main">
-                    <span className="transport-planner-time">{delivery.windowStart || '--:--'}</span>
-                    <div>
-                      <strong>{delivery.orderCode || delivery.deliveryCode}</strong>
-                      <p>{delivery.customerName}</p>
-                      <small>{getStopAddress(delivery) || 'Direccion pendiente'}</small>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => addStopToSelectedRoute(delivery)}
-                    disabled={!selectedRoute || isSavingRoute}
-                  >
-                    Agregar
-                  </button>
-                </div>
-              ))}
-              {plannerPendingDeliveries.length === 0 ? (
-                <p className="transport-empty-list">No hay tareas pendientes para esta fecha.</p>
-              ) : null}
+
+            <div className="transport-planner-table-wrap">
+              <table className="transport-planner-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Tipo</th>
+                    <th>Hora</th>
+                    <th>Contrato</th>
+                    <th>Cliente</th>
+                    <th>Direccion</th>
+                    <th>Referencia</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plannerRows.map((row, index) => {
+                    const delivery = row.delivery ?? {};
+                    const routeType = getDeliveryRouteType(delivery);
+                    const state = deliveryStateMap[delivery.status] ?? deliveryStateMap.programada;
+                    return (
+                      <tr
+                        key={`planner-row-${row.id}`}
+                        className={`${selectedPlannerDelivery?.id === delivery.id ? 'selected' : ''} ${row.isPlanned ? 'planned' : ''}`}
+                        onClick={() => setSelectedPlannerDeliveryId(delivery.id)}
+                      >
+                        <td>{row.sequence ?? '-'}</td>
+                        <td>
+                          <span className={`planner-type-pill ${routeType}`}>
+                            {routeType === 'recojo' ? 'Recojo' : 'Envio'}
+                          </span>
+                        </td>
+                        <td>
+                          {row.isPlanned ? (
+                            <input
+                              type="time"
+                              value={row.eta}
+                              onChange={(event) => updateRouteStopField(row.id, 'eta', event.target.value)}
+                              onClick={(event) => event.stopPropagation()}
+                            />
+                          ) : (
+                            <strong>{delivery.windowStart || '--:--'}</strong>
+                          )}
+                        </td>
+                        <td>{delivery.orderCode || delivery.deliveryCode || '-'}</td>
+                        <td>
+                          <strong>{delivery.customerName || '-'}</strong>
+                          <span>{delivery.companyName || ''}</span>
+                        </td>
+                        <td>{getStopAddress(delivery) || 'Direccion pendiente'}</td>
+                        <td>{delivery.notes || row.notes || '-'}</td>
+                        <td>
+                          <span className={`transport-status-pill ${row.isPlanned ? 'done' : state.className}`}>
+                            {row.isPlanned ? 'Planificado' : state.label}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="transport-planner-row-actions">
+                            {row.isPlanned ? (
+                              <>
+                                <button type="button" onClick={(event) => { event.stopPropagation(); moveRouteStop(row.id, -1); }} disabled={index === 0 || isSavingRoute}>Subir</button>
+                                <button type="button" onClick={(event) => { event.stopPropagation(); moveRouteStop(row.id, 1); }} disabled={index === plannerRows.length - 1 || isSavingRoute}>Bajar</button>
+                                <button type="button" className="danger" onClick={(event) => { event.stopPropagation(); removeStopFromRoute(row.id); }} disabled={isSavingRoute}>Quitar</button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); addStopToSelectedRoute(delivery); }}
+                                disabled={!selectedRoute || isSavingRoute}
+                              >
+                                Agregar
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {plannerRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={9}>
+                        <p className="transport-empty-list">No hay paradas para esta vista.</p>
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
-          </article>
 
-          <article className="transport-planner-card transport-planner-route">
-            <header>
-              <div>
-                <h3>Ruta armada</h3>
-                <p>{plannerStops.length} paradas en orden operativo.</p>
-              </div>
-              <button type="button" className="link-button" onClick={() => saveSelectedRoute()} disabled={!selectedRoute || isSavingRoute}>
-                Guardar ruta
-              </button>
-            </header>
-
-            <div className="transport-planner-form-grid">
+            <div className="transport-planner-bottom">
               <label>
-                <span>Chofer</span>
-                <select value={routeDraft.driverId} onChange={(event) => setRouteDraft((current) => ({ ...current, driverId: event.target.value }))}>
-                  <option value="">Sin chofer</option>
-                  {drivers.map((driver) => (
-                    <option key={driver.id} value={driver.id}>{driver.fullName}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Vehiculo</span>
-                <select value={routeDraft.vehicleId} onChange={(event) => setRouteDraft((current) => ({ ...current, vehicleId: event.target.value }))}>
-                  <option value="">Sin vehiculo</option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>{vehicle.code} - {vehicle.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="full-width">
-                <span>Notas internas</span>
+                <span>Observaciones para transporte</span>
                 <input
                   type="text"
                   value={routeDraft.notes}
                   onChange={(event) => setRouteDraft((current) => ({ ...current, notes: event.target.value }))}
-                  placeholder="Ej. Cercado primero, luego Quillacollo y Vinto"
+                  placeholder="Ej. Revisar mercaderia fragil, confirmar punto 6 antes de salir"
                 />
               </label>
+              <div>
+                <strong>Resumen del dia</strong>
+                <span>{plannerDayStats.envios} envios | {plannerDayStats.recojos} recojos | {plannerStops.length} en ruta</span>
+              </div>
             </div>
-
-            <div className="transport-route-stops">
-              {plannerStops.map((stop, index) => (
-                <div key={`route-stop-${stop.deliveryId}`} className="transport-route-stop">
-                  <span className="transport-route-sequence">{index + 1}</span>
-                  <div className="transport-route-stop-info">
-                    <strong>{stop.delivery?.orderCode || stop.delivery?.deliveryCode}</strong>
-                    <p>{stop.delivery?.customerName}</p>
-                    <small>{getStopAddress(stop.delivery) || 'Direccion pendiente'}</small>
-                    <div className="transport-route-stop-fields">
-                      <label>
-                        <span>Hora</span>
-                        <input
-                          type="time"
-                          value={stop.eta || stop.delivery?.windowStart || ''}
-                          onChange={(event) => updateRouteStopField(stop.deliveryId, 'eta', event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        <span>Nota</span>
-                        <input
-                          type="text"
-                          value={stop.notes ?? ''}
-                          onChange={(event) => updateRouteStopField(stop.deliveryId, 'notes', event.target.value)}
-                          placeholder="Indicacion de ruta"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                  <div className="transport-route-stop-actions">
-                    <button type="button" onClick={() => moveRouteStop(stop.deliveryId, -1)} disabled={index === 0 || isSavingRoute}>Subir</button>
-                    <button type="button" onClick={() => moveRouteStop(stop.deliveryId, 1)} disabled={index === plannerStops.length - 1 || isSavingRoute}>Bajar</button>
-                    <button type="button" className="danger" onClick={() => removeStopFromRoute(stop.deliveryId)} disabled={isSavingRoute}>Quitar</button>
-                  </div>
-                </div>
-              ))}
-              {plannerStops.length === 0 ? (
-                <p className="transport-empty-list">Agrega paradas desde pendientes para armar esta ruta.</p>
-              ) : null}
-            </div>
-
             {routeSaveError ? <p className="transport-form-error">{routeSaveError}</p> : null}
           </article>
 
@@ -1941,20 +2251,22 @@ function ReturnSection({
         </div>
       </header>
 
-      <div className={`transport-kpis ${currentView === 'flota' ? 'fleet' : ''}`}>
-        {kpiCards.map((card) => (
-          <article key={card.key} className={`transport-kpi-card ${card.tone}`}>
-            <span className={`transport-kpi-icon ${card.tone}`}>
-              <KpiIcon kind={card.icon} />
-            </span>
-            <strong>{card.value}</strong>
-            <p>{card.label}</p>
-            <button type="button" onClick={() => handleCardAction(card.key)}>
-              {card.link} {'->'}
-            </button>
-          </article>
-        ))}
-      </div>
+      {kpiCards.length > 0 ? (
+        <div className={`transport-kpis ${currentView === 'flota' ? 'fleet' : ''}`}>
+          {kpiCards.map((card) => (
+            <article key={card.key} className={`transport-kpi-card ${card.tone}`}>
+              <span className={`transport-kpi-icon ${card.tone}`}>
+                <KpiIcon kind={card.icon} />
+              </span>
+              <strong>{card.value}</strong>
+              <p>{card.label}</p>
+              <button type="button" onClick={() => handleCardAction(card.key)}>
+                {card.link} {'->'}
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
 
       {currentView === 'planificador' ? (
         renderPlannerView()
@@ -3225,3 +3537,4 @@ function ReturnSection({
 }
 
 export default ReturnSection;
+
