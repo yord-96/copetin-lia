@@ -11,6 +11,7 @@ import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import { canAccessTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
+const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
 const SIDEBAR_SEEN_STORAGE_KEY = 'copetin-sidebar-seen-counts-v3-empty';
 const DEFAULT_SIDEBAR_SEEN_COUNTS = { inventario: 0, devolucion: 0 };
 const SummarySection = lazy(() => import('./components/sections/SummarySection'));
@@ -25,6 +26,7 @@ const InventoryDashboardSection = lazy(() => import('./components/sections/Inven
 const SuppliersSection = lazy(() => import('./components/sections/SuppliersSection'));
 const PersonnelSection = lazy(() => import('./components/sections/PersonnelSection'));
 const AccountingSection = lazy(() => import('./components/sections/AccountingSection'));
+const LinconWorkspaceSection = lazy(() => import('./components/sections/LinconWorkspaceSection'));
 
 const prefetchersByTab = {
   resumen: () => import('./components/sections/SummarySection'),
@@ -39,6 +41,16 @@ const prefetchersByTab = {
   contabilidad: () => import('./components/sections/AccountingSection'),
   usuarios: () => import('./components/sections/UsersSection'),
   categorias: () => import('./components/sections/CategoriesSection'),
+};
+
+const readDeveloperCompanyChoice = () => {
+  if (typeof window === 'undefined') return '';
+  return window.sessionStorage.getItem(DEVELOPER_COMPANY_STORAGE_KEY) || '';
+};
+
+const saveDeveloperCompanyChoice = (choice) => {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DEVELOPER_COMPANY_STORAGE_KEY, choice);
 };
 
 const readSidebarSeenCounts = () => {
@@ -65,11 +77,110 @@ const saveSidebarSeenCounts = (counts) => {
   window.localStorage.setItem(SIDEBAR_SEEN_STORAGE_KEY, JSON.stringify(counts));
 };
 
+function DeveloperCompanyIcon({ type }) {
+  if (type === 'salon') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 20h16" />
+        <path d="M5 20V9l7-4 7 4v11" />
+        <path d="M9 20v-7h6v7" />
+        <path d="M8 10h8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 7h16v12H4z" />
+      <path d="M8 7V5h8v2" />
+      <path d="M4 12h16" />
+      <path d="M9 12v2h6v-2" />
+    </svg>
+  );
+}
+
+function DeveloperCompanyModal({ onSelect }) {
+  const companies = [
+    {
+      id: 'copetin',
+      title: 'El Copetin',
+      eyebrow: 'Sistema principal',
+      description: 'Administracion, inventario, contratos, transporte y caja del negocio.',
+      tags: ['Inventario', 'Contratos', 'Clientes', 'Caja'],
+      type: 'main',
+    },
+    {
+      id: 'lincon',
+      title: 'Lincon',
+      eyebrow: 'Salon de eventos',
+      description: 'Reservas, ambientes, paquetes y agenda operativa del salon.',
+      tags: ['Reservas', 'Ambientes', 'Paquetes', 'Eventos'],
+      type: 'salon',
+    },
+  ];
+
+  return (
+    <div className="developer-company-backdrop" role="presentation">
+      <section className="developer-company-modal" role="dialog" aria-modal="true" aria-labelledby="developer-company-title">
+        <header className="developer-company-header">
+          <div className="developer-company-brand">
+            <span className="developer-company-brand-mark" aria-hidden="true">
+              EC
+            </span>
+            <div>
+              <span>Acceso developer</span>
+              <strong>El Copetin</strong>
+            </div>
+          </div>
+          <h2 id="developer-company-title">Elige tu espacio de trabajo</h2>
+          <p>Selecciona el entorno que quieres abrir ahora. La eleccion se mantiene solo durante esta sesion.</p>
+        </header>
+        <div className="developer-company-options">
+          {companies.map((company) => (
+            <button
+              key={company.id}
+              type="button"
+              className={`developer-company-card developer-company-card--${company.type}`}
+              onClick={() => onSelect(company.id)}
+            >
+              <span className="developer-company-card-top">
+                <span className="developer-company-icon">
+                  <DeveloperCompanyIcon type={company.type} />
+                </span>
+                <span className="developer-company-eyebrow">{company.eyebrow}</span>
+              </span>
+              <strong>{company.title}</strong>
+              <span className="developer-company-description">{company.description}</span>
+              <span className="developer-company-tags">
+                {company.tags.map((tag) => (
+                  <em key={tag}>{tag}</em>
+                ))}
+              </span>
+              <span className="developer-company-action">
+                Ingresar
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </span>
+            </button>
+          ))}
+        </div>
+        <footer className="developer-company-footer">
+          <span>Sesion developer</span>
+          <strong>El sistema abrira la operacion seleccionada sin mezclar datos.</strong>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const controller = useAppController();
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [sidebarSeenCounts, setSidebarSeenCounts] = useState(readSidebarSeenCounts);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
+  const [developerCompanyChoice, setDeveloperCompanyChoice] = useState(readDeveloperCompanyChoice);
   const allowedTabRoots = useMemo(
     () => (controller.currentUser ? Array.from(getAllowedTabRoots(controller.currentUser)) : []),
     [controller.currentUser],
@@ -85,6 +196,17 @@ function App() {
     }, 1400);
     return () => window.clearTimeout(timer);
   }, [allowedTabRoots, controller.currentUser]);
+
+  useEffect(() => {
+    if (!controller.currentUser || !isDeveloper(controller.currentUser)) {
+      if (typeof window !== 'undefined' && !controller.currentUser) {
+        window.sessionStorage.removeItem(DEVELOPER_COMPANY_STORAGE_KEY);
+      }
+      setDeveloperCompanyChoice('');
+      return;
+    }
+    setDeveloperCompanyChoice(readDeveloperCompanyChoice());
+  }, [controller.currentUser]);
 
   useEffect(() => {
     if (!controller.currentUser || canAccessTab(controller.currentUser, controller.activeTab)) return;
@@ -165,6 +287,11 @@ function App() {
 
   const closeResetDialog = () => {
     setIsResetDialogOpen(false);
+  };
+
+  const handleDeveloperCompanySelect = (choice) => {
+    saveDeveloperCompanyChoice(choice);
+    setDeveloperCompanyChoice(choice);
   };
 
   const renderWorkspaceContent = () => {
@@ -364,6 +491,9 @@ function App() {
             items={controller.items}
             vehicles={controller.vehicles}
             drivers={controller.drivers}
+            users={controller.users}
+            personnelBundle={controller.personnelBundle}
+            currentUser={controller.currentUser}
             formatDate={formatDate}
             formatDateTime={formatDateTime}
             formatBs={formatBs}
@@ -438,6 +568,22 @@ function App() {
     );
   }
 
+  const shouldShowDeveloperCompanyModal =
+    isDeveloper(controller.currentUser)
+    && !developerCompanyChoice;
+
+  if (isDeveloper(controller.currentUser) && developerCompanyChoice === 'lincon') {
+    return (
+      <Suspense fallback={<p className="status">Preparando Lincoln...</p>}>
+        <LinconWorkspaceSection
+          currentUser={controller.currentUser}
+          onSwitchWorkspace={handleDeveloperCompanySelect}
+          onLogout={controller.handleLogout}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <div className={`app-frame app-runtime-${runtimeInfo.mode}`}>
       <div className="app-layout">
@@ -494,6 +640,10 @@ function App() {
           onImportDatabase={controller.handleImportSystemDatabase}
         />
       )}
+
+      {shouldShowDeveloperCompanyModal ? (
+        <DeveloperCompanyModal onSelect={handleDeveloperCompanySelect} />
+      ) : null}
     </div>
   );
 }

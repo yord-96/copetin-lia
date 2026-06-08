@@ -385,6 +385,7 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
       const type = movement?.type === 'charge' ? 'charge' : 'deposit';
       const signedAmountBs = type === 'charge' ? -Math.abs(amountBs) : Math.abs(amountBs);
       runningBalance = Number((runningBalance + signedAmountBs).toFixed(2));
+
       return {
         id: String(movement?.id ?? makeId('pre')).trim() || makeId('pre'),
         type,
@@ -430,6 +431,41 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
       };
     })
     .filter(Boolean);
+};
+
+const normalizeRecordResponsibles = (payload = {}) => {
+  const source = Array.isArray(payload?.responsibles) ? payload.responsibles : [];
+  const normalized = source
+    .map((entry) => {
+      const name = String(entry?.name ?? entry?.fullName ?? '').trim();
+      if (!name) return null;
+      return {
+        id: String(entry?.id ?? entry?.userId ?? entry?.employeeId ?? name).trim() || name,
+        name,
+        role: String(entry?.role ?? entry?.position ?? entry?.department ?? 'Operacion').trim() || 'Operacion',
+        source: String(entry?.source ?? '').trim() || null,
+      };
+    })
+    .filter(Boolean);
+
+  if (normalized.length > 0) {
+    const seen = new Set();
+    return normalized.filter((entry) => {
+      const key = normalizeText(entry.id || entry.name);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  const fallbackName = String(payload?.createdByName ?? payload?.userName ?? payload?.createdBy ?? '').trim();
+  if (!fallbackName) return [];
+  return [{
+    id: String(payload?.createdById ?? payload?.userId ?? fallbackName).trim() || fallbackName,
+    name: fallbackName,
+    role: String(payload?.createdByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion',
+    source: 'trace',
+  }];
 };
 
 const timeToMinutes = (value) => {
@@ -1277,6 +1313,8 @@ const normalizeState = (state) => {
       const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
       const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+      const responsibles = normalizeRecordResponsibles(quote);
+      const primaryResponsible = responsibles[0] ?? null;
 
       return {
         id: quote?.id ?? makeId('quo'),
@@ -1329,9 +1367,10 @@ const normalizeState = (state) => {
         rentalId: quote?.rentalId ?? null,
         orderCode: quote?.orderCode ?? null,
         createdBy: String(quote?.createdBy ?? 'system').trim() || 'system',
-        createdById: quote?.createdById ?? quote?.userId ?? null,
-        createdByName: String(quote?.createdByName ?? quote?.userName ?? quote?.createdBy ?? 'Sistema').trim() || 'Sistema',
-        createdByRole: String(quote?.createdByRole ?? quote?.userRole ?? 'Sistema').trim() || 'Sistema',
+        createdById: quote?.createdById ?? quote?.userId ?? primaryResponsible?.id ?? null,
+        createdByName: String(quote?.createdByName ?? quote?.userName ?? primaryResponsible?.name ?? quote?.createdBy ?? 'Sistema').trim() || 'Sistema',
+        createdByRole: String(quote?.createdByRole ?? quote?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
+        responsibles,
         createdAt: quote?.createdAt ?? now,
         updatedAt: quote?.updatedAt ?? quote?.createdAt ?? now,
         deletedAt: quote?.deletedAt ?? null,
@@ -1367,6 +1406,8 @@ const normalizeState = (state) => {
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(contract?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
       const prepaidAppliedBs = Number(contract?.payment?.prepaidAppliedBs ?? contract?.totals?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0);
+      const responsibles = normalizeRecordResponsibles(contract);
+      const primaryResponsible = responsibles[0] ?? null;
 
       return {
         id: contract?.id ?? makeId('con'),
@@ -1421,9 +1462,10 @@ const normalizeState = (state) => {
         rentalId: contract?.rentalId ?? null,
         orderCode: contract?.orderCode ?? null,
         createdBy: String(contract?.createdBy ?? 'system').trim() || 'system',
-        createdById: contract?.createdById ?? contract?.userId ?? null,
-        createdByName: String(contract?.createdByName ?? contract?.userName ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
-        createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? 'Sistema').trim() || 'Sistema',
+        createdById: contract?.createdById ?? contract?.userId ?? primaryResponsible?.id ?? null,
+        createdByName: String(contract?.createdByName ?? contract?.userName ?? primaryResponsible?.name ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
+        createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
+        responsibles,
         cancelledAt: contract?.cancelledAt ?? null,
         cancellationPenaltyPercent: Number(contract?.cancellationPenaltyPercent ?? 0),
         cancellationPenaltyBs: Number(contract?.cancellationPenaltyBs ?? 0),
@@ -7542,6 +7584,8 @@ const createWebBridge = () => ({
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total de la cotizacion.');
         }
+        const responsibles = normalizeRecordResponsibles(payload);
+        const primaryResponsible = responsibles[0] ?? null;
 
         created = {
           id: makeId('quo'),
@@ -7594,10 +7638,11 @@ const createWebBridge = () => ({
           rejectedAt: null,
           rentalId: null,
           orderCode: null,
-          createdBy: String(payload?.createdBy ?? 'system').trim() || 'system',
-          createdById: payload?.createdById ?? payload?.userId ?? null,
-          createdByName: String(payload?.createdByName ?? payload?.userName ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
-          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? 'Sistema').trim() || 'Sistema',
+          createdBy: String(payload?.createdBy ?? primaryResponsible?.name ?? 'system').trim() || 'system',
+          createdById: payload?.createdById ?? payload?.userId ?? primaryResponsible?.id ?? null,
+          createdByName: String(payload?.createdByName ?? payload?.userName ?? primaryResponsible?.name ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
+          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
+          responsibles,
           createdAt: now,
           updatedAt: now,
           deletedAt: null,
@@ -7716,6 +7761,17 @@ const createWebBridge = () => ({
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
         };
+        if (payload.responsibles !== undefined) {
+          const responsibles = normalizeRecordResponsibles(payload);
+          const primaryResponsible = responsibles[0] ?? null;
+          quote.responsibles = responsibles;
+          if (primaryResponsible) {
+            quote.createdBy = primaryResponsible.name;
+            quote.createdById = primaryResponsible.id;
+            quote.createdByName = primaryResponsible.name;
+            quote.createdByRole = primaryResponsible.role;
+          }
+        }
         quote.updatedAt = new Date().toISOString();
 
         updated = deepClone(quote);
@@ -7813,6 +7869,8 @@ const createWebBridge = () => ({
         if (paidAtApprovalBs > totalBs) {
           throw new Error('El pago inicial no puede superar el total del contrato.');
         }
+        const responsibles = normalizeRecordResponsibles(payload);
+        const primaryResponsible = responsibles[0] ?? null;
 
         created = {
           id: makeId('con'),
@@ -7865,10 +7923,11 @@ const createWebBridge = () => ({
           rejectedAt: null,
           rentalId: null,
           orderCode: null,
-          createdBy: String(payload?.createdBy ?? 'system').trim() || 'system',
-          createdById: payload?.createdById ?? payload?.userId ?? null,
-          createdByName: String(payload?.createdByName ?? payload?.userName ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
-          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? 'Sistema').trim() || 'Sistema',
+          createdBy: String(payload?.createdBy ?? primaryResponsible?.name ?? 'system').trim() || 'system',
+          createdById: payload?.createdById ?? payload?.userId ?? primaryResponsible?.id ?? null,
+          createdByName: String(payload?.createdByName ?? payload?.userName ?? primaryResponsible?.name ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
+          createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
+          responsibles,
           createdAt: now,
           updatedAt: now,
           deletedAt: null,
@@ -7988,6 +8047,17 @@ const createWebBridge = () => ({
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
         };
+        if (payload.responsibles !== undefined) {
+          const responsibles = normalizeRecordResponsibles(payload);
+          const primaryResponsible = responsibles[0] ?? null;
+          contract.responsibles = responsibles;
+          if (primaryResponsible) {
+            contract.createdBy = primaryResponsible.name;
+            contract.createdById = primaryResponsible.id;
+            contract.createdByName = primaryResponsible.name;
+            contract.createdByRole = primaryResponsible.role;
+          }
+        }
         contract.updatedAt = new Date().toISOString();
         updated = deepClone(contract);
         return state;

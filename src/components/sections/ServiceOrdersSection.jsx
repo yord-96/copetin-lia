@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
+import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 
 const ORDER_STATUS_META = {
   pending: { label: 'Pendiente', className: 'pending' },
@@ -145,6 +146,31 @@ const normalizeWhatsAppNumber = (value) => {
   if (digits.startsWith('00')) return digits.slice(2);
   if (digits.length === 8) return `591${digits}`;
   return digits;
+};
+
+const getResponsibleDisplayName = (record) => {
+  const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.name) : [];
+  if (responsibles.length > 1) return `${responsibles[0].name} + ${responsibles.length - 1} mas`;
+  if (responsibles.length === 1) return responsibles[0].name;
+  return record?.createdByName ?? record?.userName ?? record?.createdBy ?? 'Sistema';
+};
+
+const getResponsibleDisplayRole = (record) => {
+  const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.role) : [];
+  if (responsibles.length > 1) return 'Responsables multiples';
+  if (responsibles.length === 1) return responsibles[0].role;
+  return record?.createdByRole ?? record?.userRole ?? 'Operacion';
+};
+
+const buildResponsibleOption = ({ id, name, role, source }) => {
+  const normalizedName = String(name ?? '').trim();
+  if (!normalizedName) return null;
+  return {
+    id: String(id ?? normalizedName).trim() || normalizedName,
+    name: normalizedName,
+    role: String(role ?? 'Operacion').trim() || 'Operacion',
+    source,
+  };
 };
 
 const openWhatsAppComposer = ({ phone, message }) => {
@@ -584,6 +610,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     pricingTiers: DURATION_PRICING_DEFAULT_TIERS,
     validUntil: pickupDate,
     observations: '',
+    responsibleIds: [],
     items: [],
     supplierFulfillmentPlan: [],
   };
@@ -711,6 +738,9 @@ function ServiceOrdersSection({
   items = [],
   vehicles = [],
   drivers = [],
+  users = [],
+  personnelBundle = { employees: [] },
+  currentUser = null,
   formatDate,
   formatDateTime,
   formatBs,
@@ -775,6 +805,56 @@ function ServiceOrdersSection({
   const menuRef = useRef(null);
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
+  const canChooseResponsibles = isDeveloper(currentUser);
+
+  const responsibleOptions = useMemo(() => {
+    const entries = [];
+    const addOption = (option) => {
+      if (!option) return;
+      const duplicateKey = normalizeText(option.id || option.name);
+      const duplicateName = normalizeText(option.name);
+      if (entries.some((entry) => normalizeText(entry.id) === duplicateKey || normalizeText(entry.name) === duplicateName)) return;
+      entries.push(option);
+    };
+
+    addOption(buildResponsibleOption({
+      id: currentUser?.id ?? currentUser?.username,
+      name: currentUser?.fullName ?? currentUser?.name ?? currentUser?.username,
+      role: currentUser ? getUserDisplayRole(currentUser) : 'Operacion',
+      source: 'current',
+    }));
+
+    users
+      .filter((user) => String(user?.status ?? 'active') !== 'suspended')
+      .forEach((user) => addOption(buildResponsibleOption({
+        id: user.id ?? user.username,
+        name: user.fullName ?? user.name ?? user.username,
+        role: getUserDisplayRole(user),
+        source: 'user',
+      })));
+
+    (personnelBundle?.employees ?? [])
+      .filter((employee) => String(employee?.status ?? 'active') === 'active')
+      .forEach((employee) => addOption(buildResponsibleOption({
+        id: employee.id ?? employee.employeeCode ?? employee.fullName,
+        name: employee.fullName ?? employee.name,
+        role: employee.position || employee.department || 'Personal',
+        source: 'personnel',
+      })));
+
+    return entries.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  }, [currentUser, personnelBundle?.employees, users]);
+
+  const fallbackResponsibleId = responsibleOptions[0]?.id ?? '';
+
+  useEffect(() => {
+    if (!modalOpen || !canChooseResponsibles) return;
+    setDraft((current) => {
+      if (Array.isArray(current.responsibleIds) && current.responsibleIds.length > 0) return current;
+      if (!fallbackResponsibleId) return current;
+      return { ...current, responsibleIds: [fallbackResponsibleId] };
+    });
+  }, [canChooseResponsibles, fallbackResponsibleId, modalOpen]);
 
   const beginSubmit = () => {
     if (submitLockRef.current) return false;
@@ -862,8 +942,8 @@ function ServiceOrdersSection({
         rentalId: rental.id,
         orderCode,
         createdAt: rental.createdAt ?? rental.rentalAt,
-        responsibleName: rental.createdByName ?? linkedContract?.createdByName ?? rental.createdBy ?? 'Sistema',
-        responsibleRole: rental.createdByRole ?? linkedContract?.createdByRole ?? 'Operacion',
+        responsibleName: getResponsibleDisplayName(linkedContract ?? rental),
+        responsibleRole: getResponsibleDisplayRole(linkedContract ?? rental),
         client: rental.customerName,
         customerPhone: rental.customerPhone ?? rental.phone ?? '',
         clientMeta: rental.customerPhone ? `Cel: ${rental.customerPhone}` : 'Sin telefono',
@@ -967,8 +1047,8 @@ function ServiceOrdersSection({
         ...quote,
         status,
         itemsCount,
-        responsibleName: quote.createdByName ?? quote.userName ?? quote.createdBy ?? 'Sistema',
-        responsibleRole: quote.createdByRole ?? quote.userRole ?? 'Operacion',
+        responsibleName: getResponsibleDisplayName(quote),
+        responsibleRole: getResponsibleDisplayRole(quote),
         totalBs: Number(quote?.totals?.totalBs ?? 0),
       };
     });
@@ -1005,8 +1085,8 @@ function ServiceOrdersSection({
         ...contract,
         status,
         itemsCount,
-        responsibleName: contract.createdByName ?? contract.userName ?? contract.createdBy ?? 'Sistema',
-        responsibleRole: contract.createdByRole ?? contract.userRole ?? 'Operacion',
+        responsibleName: getResponsibleDisplayName(contract),
+        responsibleRole: getResponsibleDisplayRole(contract),
         totalBs: Number(contract?.totals?.totalBs ?? 0),
       };
     });
@@ -1764,6 +1844,9 @@ function ServiceOrdersSection({
     billingMode: record?.billingMode ?? 'sin_factura',
     validUntil: entityType === 'contract' ? '' : record?.validUntil ?? '',
     observations: record?.observations ?? '',
+    responsibleIds: Array.isArray(record?.responsibles) && record.responsibles.length > 0
+      ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
+      : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
     items: (record?.items ?? []).map((line) => ({
       itemId: line.itemId,
       quantity: line.quantity,
@@ -2252,6 +2335,29 @@ function ServiceOrdersSection({
     setCurrentStep((step) => Math.max(0, step - 1));
   };
 
+  const toggleDraftResponsible = (responsibleId) => {
+    setDraft((current) => {
+      const currentIds = Array.isArray(current.responsibleIds) ? current.responsibleIds : [];
+      const exists = currentIds.includes(responsibleId);
+      const nextIds = exists
+        ? currentIds.filter((id) => id !== responsibleId)
+        : [...currentIds, responsibleId];
+      return {
+        ...current,
+        responsibleIds: nextIds.length > 0 ? nextIds : currentIds,
+      };
+    });
+  };
+
+  const getSelectedResponsibles = () => {
+    const selectedIds = Array.isArray(draft.responsibleIds) ? draft.responsibleIds : [];
+    const selected = responsibleOptions.filter((option) => selectedIds.includes(option.id));
+    if (selected.length > 0) return selected;
+    return fallbackResponsibleId
+      ? responsibleOptions.filter((option) => option.id === fallbackResponsibleId)
+      : [];
+  };
+
   const createQuotePayload = () => {
     if (!draft.customerName.trim()) throw new Error('Debes indicar el cliente para la cotizacion.');
     if (!draft.customerPhone.trim()) throw new Error('Debes indicar el WhatsApp o celular del cliente.');
@@ -2295,6 +2401,8 @@ function ServiceOrdersSection({
         supplierUnitCostBs: line.supplierUnitCostBs,
         saleUnitPriceBs: line.saleUnitPriceBs,
       }));
+    const selectedResponsibles = getSelectedResponsibles();
+    const primaryResponsible = selectedResponsibles[0] ?? null;
 
     return {
       id: draft.recordId || undefined,
@@ -2342,7 +2450,11 @@ function ServiceOrdersSection({
         quickItem: line.quickItem ?? null,
       })),
       supplierFulfillmentPlan,
-      createdBy: 'maria.gonzalez',
+      responsibles: selectedResponsibles,
+      createdBy: primaryResponsible?.name ?? undefined,
+      createdById: primaryResponsible?.id ?? undefined,
+      createdByName: primaryResponsible?.name ?? undefined,
+      createdByRole: primaryResponsible?.role ?? undefined,
     };
   };
 
@@ -4308,6 +4420,35 @@ function ServiceOrdersSection({
                         </>
                       ) : null}
                     </div>
+                    {canChooseResponsibles ? (
+                      <section className="orders-responsible-picker">
+                        <header>
+                          <div>
+                            <strong>Responsable(s) del registro</strong>
+                            <span>Solo Developer: usa esto para cargar contratos o cotizaciones antiguas del cuaderno.</span>
+                          </div>
+                          <em>{(draft.responsibleIds ?? []).length || 1} seleccionado(s)</em>
+                        </header>
+                        <div className="orders-responsible-options">
+                          {responsibleOptions.map((responsible) => {
+                            const checked = (draft.responsibleIds ?? []).includes(responsible.id);
+                            return (
+                              <label key={responsible.id} className={checked ? 'is-selected' : ''}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleDraftResponsible(responsible.id)}
+                                />
+                                <span>
+                                  <strong>{responsible.name}</strong>
+                                  <small>{responsible.role}</small>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ) : null}
                     <div className="orders-form-note">
                       Estos datos se usaran en contrato, orden de servicio y hoja de ruta.
                     </div>

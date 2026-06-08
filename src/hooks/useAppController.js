@@ -851,7 +851,7 @@ export const useAppController = () => {
   const handleCreateQuote = async (payload) => {
     setError('');
     try {
-      const created = await api.quotes.create({ ...payload, ...getCurrentUserTrace() });
+      const created = await api.quotes.create({ ...getCurrentUserTrace(), ...payload });
       await loadData();
       return created;
     } catch (requestError) {
@@ -929,7 +929,7 @@ export const useAppController = () => {
   const handleCreateContract = async (payload) => {
     setError('');
     try {
-      const created = await api.contracts.create({ ...payload, ...getCurrentUserTrace() });
+      const created = await api.contracts.create({ ...getCurrentUserTrace(), ...payload });
       await loadData();
       return created;
     } catch (requestError) {
@@ -1038,6 +1038,7 @@ export const useAppController = () => {
       }
 
       const createdContract = await api.contracts.create({
+        ...getCurrentUserTrace(),
         quoteId: quote.id,
         clientId: quote.clientId ?? null,
         customerName: quote.customerName,
@@ -1070,12 +1071,16 @@ export const useAppController = () => {
         guaranteeBs: Number(quote?.totals?.guaranteeBs ?? 0),
         paidAtApprovalBs: Number(quote?.payment?.paidAtApprovalBs ?? 0),
         status: 'pendiente',
+        responsibles: quote.responsibles ?? [],
+        createdBy: quote.createdBy ?? quote.createdByName ?? undefined,
+        createdById: quote.createdById ?? undefined,
+        createdByName: quote.createdByName ?? undefined,
+        createdByRole: quote.createdByRole ?? undefined,
         items: (quote.items ?? []).map((line) => ({
           itemId: line.itemId,
           quantity: line.quantity,
           unitPriceBs: line.unitPriceBs,
         })),
-        ...getCurrentUserTrace(),
       });
 
       await api.quotes.update({

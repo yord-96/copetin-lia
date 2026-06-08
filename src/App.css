@@ -30411,3 +30411,3727 @@ button.calendar-dispatch-row:focus-visible {
     justify-items: start;
   }
 }
+.developer-company-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.22), transparent 34rem),
+    rgba(15, 23, 42, 0.64);
+  backdrop-filter: blur(9px) saturate(0.92);
+}
+
+.developer-company-modal {
+  width: min(780px, 100%);
+  border: 1px solid rgba(255, 225, 207, 0.96);
+  border-radius: 8px;
+  background: #fffdfb;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.36);
+  overflow: hidden;
+}
+
+.developer-company-header {
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.35rem 1.45rem 1.15rem;
+  border-bottom: 1px solid #f2dfd3;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(255, 253, 251, 0.96)),
+    #fff7ed;
+}
+
+.developer-company-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.developer-company-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e84a00, #ff7a1a);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(232, 74, 0, 0.22);
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.developer-company-brand div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.developer-company-brand span:not(.developer-company-brand-mark) {
+  display: inline-flex;
+  width: fit-content;
+  color: #8a3b18;
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.developer-company-brand strong {
+  color: #111827;
+  font-size: 1rem;
+}
+
+.developer-company-modal h2 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(1.55rem, 3vw, 2.05rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.developer-company-modal p {
+  max-width: 590px;
+  margin: -0.55rem 0 0;
+  color: #6b5a50;
+  line-height: 1.5;
+}
+
+.developer-company-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.95rem;
+  padding: 1rem 1.45rem 1.2rem;
+}
+
+.developer-company-card {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  min-height: 220px;
+  border: 1px solid #f0ddd2;
+  border-radius: 8px;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 248, 0.92)),
+    #ffffff;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+
+.developer-company-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: #e84a00;
+  opacity: 0.9;
+  z-index: -1;
+}
+
+.developer-company-card--salon::before {
+  background: #0f9f7a;
+}
+
+.developer-company-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(232, 74, 0, 0.48);
+  box-shadow: 0 18px 42px rgba(78, 37, 16, 0.14);
+}
+
+.developer-company-card--salon:hover {
+  border-color: rgba(15, 159, 122, 0.48);
+}
+
+.developer-company-card:focus-visible {
+  outline: 3px solid rgba(232, 74, 0, 0.26);
+  outline-offset: 3px;
+}
+
+.developer-company-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.developer-company-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #ffd3bd;
+  border-radius: 8px;
+  background: #fff3eb;
+  color: #d93d00;
+}
+
+.developer-company-card--salon .developer-company-icon {
+  border-color: #b7eadf;
+  background: #effcf8;
+  color: #0f8f70;
+}
+
+.developer-company-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.85;
+}
+
+.developer-company-eyebrow {
+  display: inline-flex;
+  max-width: 150px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  color: #a43e08;
+  background: #fff7ed;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.developer-company-card--salon .developer-company-eyebrow {
+  border-color: #b7eadf;
+  color: #047857;
+  background: #effcf8;
+}
+
+.developer-company-card > strong {
+  color: #172033;
+  font-size: 1.3rem;
+  line-height: 1.15;
+}
+
+.developer-company-description {
+  min-height: 3rem;
+  margin: 0;
+  color: #5f4d44;
+  line-height: 1.45;
+}
+
+.developer-company-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-self: end;
+}
+
+.developer-company-tags em {
+  border: 1px solid #ead9cf;
+  border-radius: 999px;
+  padding: 0.24rem 0.48rem;
+  color: #6b5a50;
+  background: #fffdfb;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.developer-company-action {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.45rem;
+  margin-top: 0.1rem;
+  color: #e84a00;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.developer-company-card--salon .developer-company-action {
+  color: #0f8f70;
+}
+
+.developer-company-action svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  transition: transform 0.16s ease;
+}
+
+.developer-company-card:hover .developer-company-action svg {
+  transform: translateX(3px);
+}
+
+.developer-company-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.9rem 1.45rem;
+  border-top: 1px solid #f2dfd3;
+  background: #fffaf6;
+}
+
+.developer-company-footer span {
+  color: #a43e08;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.developer-company-footer strong {
+  color: #6b5a50;
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+@media (max-width: 680px) {
+  .developer-company-backdrop {
+    padding: 1rem;
+  }
+
+  .developer-company-options {
+    grid-template-columns: 1fr;
+  }
+
+  .developer-company-header,
+  .developer-company-options,
+  .developer-company-footer {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .developer-company-card {
+    min-height: auto;
+  }
+
+  .developer-company-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .developer-company-footer strong {
+    text-align: left;
+  }
+}
+
+.lincon-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  background: #fbf5ee;
+  color: #321314;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.lincon-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.55rem 1.45rem;
+  background:
+    linear-gradient(180deg, rgba(98, 9, 16, 0.96), rgba(117, 15, 24, 0.96)),
+    #6d1018;
+  color: #fff8f1;
+  overflow-y: auto;
+}
+
+.lincon-logo {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+  padding: 0.55rem 0 0.8rem;
+  text-align: center;
+}
+
+.lincon-logo span {
+  width: 92px;
+  height: 10px;
+  border-top: 2px solid rgba(255, 232, 204, 0.9);
+  border-bottom: 2px solid rgba(255, 232, 204, 0.55);
+}
+
+.lincon-logo small,
+.lincon-workspace-select span,
+.lincon-switcher span {
+  color: rgba(255, 235, 221, 0.82);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lincon-logo strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #ffffff;
+  font-size: 2.45rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.lincon-workspace-select {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.lincon-workspace-select select {
+  width: 100%;
+  border: 1px solid rgba(255, 234, 220, 0.22);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff8f1;
+  font-weight: 800;
+}
+
+.lincon-user-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.lincon-user-card > span,
+.lincon-account > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #bf3943;
+  color: #ffffff;
+  font-weight: 950;
+}
+
+.lincon-user-card div,
+.lincon-account div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.lincon-user-card strong,
+.lincon-account strong {
+  color: inherit;
+  font-size: 0.92rem;
+}
+
+.lincon-user-card small,
+.lincon-account small {
+  color: rgba(255, 235, 221, 0.72);
+  font-size: 0.78rem;
+}
+
+.lincon-nav {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 236, 224, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lincon-nav button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.74rem 0.8rem;
+  background: transparent;
+  color: rgba(255, 248, 241, 0.9);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lincon-nav button.is-active,
+.lincon-nav button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.lincon-nav svg,
+.lincon-topbar svg,
+.lincon-icon-button svg,
+.lincon-kpis svg,
+.lincon-pending-item svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.85;
+}
+
+.lincon-switcher {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: auto;
+  border: 1px solid rgba(255, 236, 224, 0.18);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lincon-switcher p {
+  margin: 0;
+  color: rgba(255, 235, 221, 0.75);
+  font-size: 0.78rem;
+}
+
+.lincon-switcher div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.lincon-switcher button {
+  border: 1px solid rgba(255, 235, 221, 0.26);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: #d76a12;
+  color: #ffffff;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.lincon-switcher button.is-current {
+  background: #8d1721;
+}
+
+.lincon-main {
+  min-width: 0;
+  padding: 0 2rem 2rem;
+}
+
+.lincon-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1.1rem;
+  min-height: 76px;
+  padding: 0.75rem 0;
+  background: rgba(251, 245, 238, 0.9);
+  backdrop-filter: blur(12px);
+}
+
+.lincon-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-right: auto;
+  color: #7a121b;
+  font-size: 0.9rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.lincon-topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0 1.1rem;
+  border-left: 1px solid #ead8cb;
+  border-right: 1px solid #ead8cb;
+}
+
+.lincon-topbar-status > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #48b56a;
+}
+
+.lincon-topbar-status div {
+  display: grid;
+}
+
+.lincon-topbar-status strong {
+  color: #7a121b;
+  font-size: 0.82rem;
+}
+
+.lincon-topbar-status small {
+  color: #7c6359;
+}
+
+.lincon-icon-button,
+.lincon-logout {
+  display: grid;
+  place-items: center;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  background: #fffaf5;
+  color: #7a121b;
+  cursor: pointer;
+}
+
+.lincon-icon-button {
+  width: 42px;
+  height: 42px;
+}
+
+.lincon-account {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.lincon-account strong {
+  color: #391617;
+}
+
+.lincon-account small {
+  color: #9a1b24;
+  font-weight: 850;
+}
+
+.lincon-logout {
+  padding: 0.65rem 0.95rem;
+  font-weight: 900;
+}
+
+.lincon-new-record {
+  border: 1px solid #7a121b;
+  border-radius: 8px;
+  padding: 0.72rem 1rem;
+  background: #7a121b;
+  color: #ffffff;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(122, 18, 27, 0.16);
+}
+
+.lincon-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 410px;
+  gap: 1.2rem;
+  min-height: 300px;
+  border-radius: 8px;
+  padding: 2rem;
+  background:
+    linear-gradient(90deg, rgba(90, 7, 12, 0.96), rgba(104, 18, 16, 0.76)),
+    repeating-linear-gradient(115deg, rgba(255, 244, 225, 0.12) 0 1px, transparent 1px 24px),
+    radial-gradient(circle at 70% 42%, rgba(245, 178, 105, 0.36), transparent 22rem),
+    #6f1118;
+  color: #fff6ea;
+  overflow: hidden;
+}
+
+.lincon-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 43%;
+  background:
+    linear-gradient(90deg, rgba(95, 10, 13, 0.58), rgba(95, 10, 13, 0.12)),
+    repeating-linear-gradient(90deg, rgba(255, 225, 182, 0.16) 0 2px, transparent 2px 56px);
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.lincon-hero-copy,
+.lincon-hero-panels {
+  position: relative;
+  z-index: 1;
+}
+
+.lincon-hero-copy > span,
+.lincon-panel h2,
+.lincon-kpis small {
+  color: #7b1b20;
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lincon-hero-copy > span {
+  color: #ffe9d0;
+}
+
+.lincon-hero h1 {
+  max-width: 720px;
+  margin: 0.55rem 0 0.55rem;
+  color: #ffffff;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(2.2rem, 5vw, 3.55rem);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.lincon-hero p {
+  margin: 0;
+  color: rgba(255, 246, 234, 0.86);
+}
+
+.lincon-progress {
+  display: grid;
+  gap: 0.55rem;
+  width: min(680px, 100%);
+  margin: 1.75rem 0 1.5rem;
+}
+
+.lincon-progress div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #ffe9d0;
+  font-weight: 850;
+}
+
+.lincon-progress strong {
+  color: #ffffff;
+  font-size: 1.6rem;
+}
+
+.lincon-progress progress {
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.lincon-progress progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.lincon-progress progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: #f6d9a9;
+}
+
+.lincon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.lincon-actions button {
+  border: 1px solid rgba(255, 238, 220, 0.16);
+  border-radius: 8px;
+  padding: 0.82rem 1.1rem;
+  background: rgba(255, 255, 255, 0.11);
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.lincon-hero-panels {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.lincon-hero-panels article {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 236, 224, 0.24);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(65, 6, 10, 0.42);
+}
+
+.lincon-hero-panels span {
+  color: #ffe9d0;
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-hero-panels strong {
+  color: #ffffff;
+  font-size: 1.65rem;
+}
+
+.lincon-hero-panels small {
+  color: rgba(255, 246, 234, 0.78);
+}
+
+.lincon-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.lincon-kpis article,
+.lincon-panel {
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  background: rgba(255, 252, 248, 0.92);
+  box-shadow: 0 16px 34px rgba(82, 35, 20, 0.08);
+}
+
+.lincon-kpis article {
+  display: flex;
+  gap: 0.9rem;
+  min-height: 126px;
+  padding: 1.05rem;
+}
+
+.lincon-kpis article > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #a71928;
+  color: #ffffff;
+}
+
+.lincon-kpis div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.lincon-kpis strong {
+  color: #5f171b;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.65rem;
+}
+
+.lincon-kpis p {
+  margin: 0;
+  color: #7f6a5f;
+  font-size: 0.78rem;
+}
+
+.lincon-kpis button,
+.lincon-panel header button,
+.lincon-agenda > button,
+.lincon-pending-item button {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  color: #9a1b24;
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lincon-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr) minmax(300px, 0.65fr);
+  gap: 0.9rem;
+}
+
+.lincon-panel {
+  min-width: 0;
+  padding: 1.15rem;
+}
+
+.lincon-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.85rem;
+}
+
+.lincon-panel h2 {
+  margin: 0;
+}
+
+.lincon-table {
+  display: grid;
+  overflow-x: auto;
+}
+
+.lincon-table-head,
+.lincon-table-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.95fr 0.85fr 1fr 0.75fr;
+  min-width: 720px;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.lincon-table-head {
+  padding: 0.65rem 0.2rem;
+  border-bottom: 1px solid #ead8cb;
+  color: #7f6a5f;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-table-row {
+  padding: 0.82rem 0.2rem;
+  border-bottom: 1px solid #f0e2d8;
+  color: #513436;
+  font-size: 0.86rem;
+}
+
+.lincon-table-row span {
+  min-width: 0;
+}
+
+.lincon-table-row span:nth-child(3) {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.lincon-table-row small {
+  color: #8f7569;
+}
+
+.lincon-status {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.32rem 0.55rem;
+  background: #e7f7df;
+  color: #27721f;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-status--opcion {
+  background: #fff2d7;
+  color: #a55b09;
+}
+
+.lincon-status--pendiente {
+  background: #ffe4e7;
+  color: #a71928;
+}
+
+.lincon-agenda,
+.lincon-pending {
+  display: grid;
+  align-content: start;
+  gap: 0.85rem;
+}
+
+.lincon-agenda-item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.lincon-agenda-item time {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  padding: 0.5rem 0.25rem;
+  background: #fff4eb;
+  color: #9a1b24;
+  line-height: 1;
+}
+
+.lincon-agenda-item time strong {
+  font-size: 1.05rem;
+}
+
+.lincon-agenda-item time span {
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.lincon-agenda-item div {
+  display: grid;
+  gap: 0.2rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid #b1222e;
+}
+
+.lincon-agenda-item div strong {
+  color: #4a1e20;
+}
+
+.lincon-agenda-item div span {
+  color: #7f6a5f;
+  font-size: 0.82rem;
+}
+
+.lincon-pending-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  border: 1px solid #f0e2d8;
+  border-radius: 8px;
+  padding: 0.85rem;
+  background: #ffffff;
+}
+
+.lincon-pending-item > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #a71928;
+  color: #ffffff;
+}
+
+.lincon-pending-item--warning > span,
+.lincon-pending-item--money > span,
+.lincon-pending-item--docs > span {
+  background: #c97825;
+}
+
+.lincon-pending-item div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.lincon-pending-item strong {
+  color: #4a1e20;
+}
+
+.lincon-pending-item small {
+  color: #7f6a5f;
+}
+
+.lincon-shell--agenda {
+  background:
+    linear-gradient(135deg, rgba(214, 230, 211, 0.9), rgba(235, 242, 230, 0.94)),
+    repeating-linear-gradient(45deg, rgba(47, 85, 63, 0.05) 0 1px, transparent 1px 18px);
+  color: #274a36;
+}
+
+.lincon-shell--agenda .lincon-sidebar {
+  background:
+    linear-gradient(180deg, rgba(218, 231, 213, 0.92), rgba(229, 238, 224, 0.88)),
+    #dfeadc;
+  color: #2e513d;
+  box-shadow: inset -1px 0 0 rgba(57, 93, 68, 0.12);
+}
+
+.lincon-shell--agenda .lincon-logo strong,
+.lincon-shell--agenda .lincon-user-card strong,
+.lincon-shell--agenda .lincon-account strong {
+  color: #2c503a;
+}
+
+.lincon-shell--agenda .lincon-logo small,
+.lincon-shell--agenda .lincon-workspace-select span,
+.lincon-shell--agenda .lincon-switcher span,
+.lincon-shell--agenda .lincon-user-card small {
+  color: #607862;
+}
+
+.lincon-shell--agenda .lincon-logo span {
+  border-color: rgba(47, 85, 63, 0.45);
+}
+
+.lincon-shell--agenda .lincon-workspace-select select,
+.lincon-shell--agenda .lincon-nav,
+.lincon-shell--agenda .lincon-switcher {
+  border-color: rgba(58, 89, 70, 0.16);
+  background: rgba(255, 255, 255, 0.38);
+  color: #2e513d;
+}
+
+.lincon-shell--agenda .lincon-nav button {
+  color: #2e513d;
+}
+
+.lincon-shell--agenda .lincon-nav button.is-active,
+.lincon-shell--agenda .lincon-nav button:hover {
+  background: #2d5a3e;
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(33, 73, 48, 0.16);
+}
+
+.lincon-shell--agenda .lincon-user-card > span,
+.lincon-shell--agenda .lincon-account > span {
+  background: #2d5a3e;
+}
+
+.lincon-shell--agenda .lincon-switcher button {
+  background: #d2771f;
+}
+
+.lincon-shell--agenda .lincon-switcher button.is-current {
+  background: #2d5a3e;
+}
+
+.lincon-shell--agenda .lincon-main {
+  padding-bottom: 2.4rem;
+}
+
+.lincon-shell--agenda .lincon-topbar {
+  background: rgba(228, 238, 224, 0.88);
+}
+
+.lincon-shell--agenda .lincon-topbar-brand,
+.lincon-shell--agenda .lincon-topbar-status strong,
+.lincon-shell--agenda .lincon-icon-button,
+.lincon-shell--agenda .lincon-logout {
+  color: #2d5a3e;
+}
+
+.lincon-shell--agenda .lincon-topbar-status {
+  border-color: rgba(58, 89, 70, 0.16);
+}
+
+.lincon-shell--agenda .lincon-icon-button,
+.lincon-shell--agenda .lincon-logout {
+  border-color: rgba(58, 89, 70, 0.18);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.lincon-agenda-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.lincon-agenda-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.lincon-agenda-kpis article,
+.lincon-green-panel {
+  border: 1px solid rgba(70, 104, 78, 0.15);
+  border-radius: 8px;
+  background: rgba(230, 240, 225, 0.72);
+  box-shadow: 0 18px 38px rgba(47, 73, 55, 0.08);
+}
+
+.lincon-agenda-kpis article {
+  display: grid;
+  gap: 0.45rem;
+  min-height: 124px;
+  padding: 1rem;
+}
+
+.lincon-agenda-kpis span,
+.lincon-green-panel-head > span,
+.lincon-pipeline-metrics span,
+.lincon-global-grid span {
+  color: #607a8c;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.lincon-agenda-kpis strong {
+  color: #274a36;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2.15rem;
+  line-height: 1;
+}
+
+.lincon-agenda-kpis p {
+  margin: 0;
+  color: #647d6b;
+}
+
+.lincon-green-panel {
+  padding: 1rem;
+}
+
+.lincon-green-panel-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.95rem;
+}
+
+.lincon-green-panel-head h1 {
+  margin: 0;
+  color: #274a36;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.45rem, 2vw, 1.95rem);
+  line-height: 1.05;
+}
+
+.lincon-radar-layout {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.7fr) minmax(360px, 1.1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.lincon-month-radar {
+  position: relative;
+  width: min(520px, 100%);
+  aspect-ratio: 1;
+  border: 1px solid rgba(72, 105, 79, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  margin-inline: auto;
+  padding: 1rem;
+}
+
+.lincon-month-radar svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lincon-month-radar circle,
+.lincon-month-radar line {
+  fill: none;
+  stroke: rgba(55, 93, 66, 0.18);
+  stroke-width: 1;
+}
+
+.lincon-month-radar .lincon-radar-line {
+  fill: none;
+  stroke: #2e6bbf;
+  stroke-width: 2.4;
+}
+
+.lincon-month-radar .lincon-radar-dot {
+  fill: #ffffff;
+  stroke: #2d5a3e;
+  stroke-width: 2;
+}
+
+.lincon-month-radar .lincon-radar-end {
+  fill: #2e6bbf;
+  stroke: #2e6bbf;
+}
+
+.lincon-month-radar > span {
+  position: absolute;
+  display: grid;
+  transform: translate(-50%, -50%);
+  justify-items: center;
+  min-width: 44px;
+  color: #2f5940;
+  line-height: 1.05;
+}
+
+.lincon-month-radar > span strong {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.lincon-month-radar > span em {
+  color: #2e6bbf;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.lincon-month-summary {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.lincon-month-summary p {
+  margin: 0;
+  color: #627b69;
+}
+
+.lincon-radar-tabs {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.lincon-radar-tabs button {
+  border: 1px solid rgba(58, 89, 70, 0.14);
+  border-radius: 999px;
+  padding: 0.4rem 1rem;
+  background: #ffffff;
+  color: #4f674d;
+  font-weight: 950;
+}
+
+.lincon-radar-tabs button.is-active {
+  background: #2f70bf;
+  color: #ffffff;
+}
+
+.lincon-month-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.lincon-month-list article {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(58, 89, 70, 0.14);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.lincon-month-list strong {
+  color: #2f513c;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.lincon-month-list span {
+  color: #2f70bf;
+  font-weight: 900;
+}
+
+.lincon-month-list em {
+  color: #50754a;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.lincon-calendar-panel label {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  color: #355942;
+  font-weight: 800;
+}
+
+.lincon-calendar-panel select,
+.lincon-calendar-controls button,
+.lincon-followup-form input,
+.lincon-followup-form select,
+.lincon-followup-form textarea,
+.lincon-month-events select {
+  border: 1px solid rgba(66, 99, 79, 0.2);
+  border-radius: 8px;
+  padding: 0.78rem 0.9rem;
+  background: rgba(255, 255, 255, 0.76);
+  color: #264735;
+  font: inherit;
+}
+
+.lincon-calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.lincon-calendar-controls button {
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-calendar-weekdays,
+.lincon-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  gap: 0.45rem;
+}
+
+.lincon-calendar-weekdays {
+  margin: 1.1rem 0 0.3rem;
+}
+
+.lincon-calendar-weekdays span {
+  color: #5f7d8f;
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.lincon-calendar-grid {
+  overflow-x: auto;
+}
+
+.lincon-calendar-grid article {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 126px;
+  border: 1px solid rgba(58, 89, 70, 0.16);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.lincon-calendar-grid article.is-muted {
+  background: rgba(237, 244, 240, 0.78);
+  color: #74887d;
+}
+
+.lincon-calendar-grid header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #214765;
+}
+
+.lincon-calendar-grid header span {
+  color: #607a8c;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.lincon-calendar-grid small,
+.lincon-calendar-grid button {
+  color: #406d4e;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-calendar-grid button {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.lincon-calendar-event {
+  border: 1px solid #e5bf77;
+  border-radius: 6px;
+  padding: 0.34rem 0.42rem;
+  background: #fff5dd;
+  color: #9a6221;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-calendar-event--lead {
+  border-color: #97c3ef;
+  background: #eaf4ff;
+  color: #2f70bf;
+  text-transform: none;
+}
+
+.lincon-pipeline-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.lincon-pipeline-metrics article,
+.lincon-global-grid article {
+  border: 1px solid rgba(58, 89, 70, 0.14);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.lincon-pipeline-metrics strong,
+.lincon-global-grid strong {
+  display: block;
+  color: #274a36;
+  font-size: 1.25rem;
+}
+
+.lincon-pipeline-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.lincon-pipeline-columns h2 {
+  margin: 0 0 0.45rem;
+  color: #31533e;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+}
+
+.lincon-pipeline-columns p {
+  margin: 0;
+  color: #6f8575;
+}
+
+.lincon-pipeline-columns div:nth-child(2) p {
+  border: 1px dashed rgba(68, 102, 80, 0.24);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.lincon-followup-card {
+  border: 1px solid rgba(58, 89, 70, 0.14);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.lincon-followup-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.lincon-followup-card h2,
+.lincon-followup-card p {
+  margin: 0;
+}
+
+.lincon-followup-card h2 {
+  color: #20496a;
+}
+
+.lincon-followup-card span,
+.lincon-followup-card p {
+  color: #607a8c;
+}
+
+.lincon-followup-card em {
+  height: fit-content;
+  border: 1px solid #97c3ef;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: #eaf4ff;
+  color: #2f70bf;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.lincon-followup-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.lincon-followup-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: #355942;
+}
+
+.lincon-followup-form .is-wide {
+  grid-column: 1 / -1;
+}
+
+.lincon-followup-actions {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.lincon-followup-actions button,
+.lincon-month-events button,
+.lincon-global-row button {
+  border: 1px solid rgba(58, 89, 70, 0.12);
+  border-radius: 8px;
+  padding: 0.7rem 0.95rem;
+  background: rgba(255, 255, 255, 0.45);
+  color: #2d5a3e;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.lincon-followup-actions .is-danger {
+  justify-self: start;
+  border-color: #f0b2a8;
+  background: #ffe6e1;
+  color: #b54a3a;
+}
+
+.lincon-agenda-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.75fr);
+  gap: 1rem;
+}
+
+.lincon-month-events {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 0.8rem;
+}
+
+.lincon-month-events .lincon-green-panel-head {
+  grid-column: 1 / -1;
+}
+
+.lincon-month-events strong,
+.lincon-global-row strong {
+  color: #274a36;
+}
+
+.lincon-month-events p,
+.lincon-month-events small,
+.lincon-global-row p,
+.lincon-global-row small {
+  margin: 0.15rem 0 0;
+  color: #627b69;
+}
+
+.lincon-month-events aside {
+  display: grid;
+  gap: 0.5rem;
+  align-self: start;
+}
+
+.lincon-global-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.lincon-global-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.8rem;
+  align-items: center;
+  border-top: 1px dashed rgba(58, 89, 70, 0.18);
+  padding: 0.85rem 0;
+}
+
+.lincon-global-row time {
+  color: #31533e;
+}
+
+.lincon-shell--agenda {
+  background:
+    linear-gradient(180deg, rgba(255, 249, 243, 0.98), rgba(250, 239, 229, 0.96)),
+    #fbf5ee;
+  color: #321314;
+}
+
+.lincon-shell--agenda .lincon-sidebar {
+  background:
+    linear-gradient(180deg, rgba(116, 9, 18, 0.98), rgba(133, 25, 35, 0.98)),
+    #7a121b;
+  color: #fff8f1;
+  box-shadow: inset -1px 0 0 rgba(255, 226, 206, 0.18);
+}
+
+.lincon-shell--agenda .lincon-logo strong,
+.lincon-shell--agenda .lincon-user-card strong {
+  color: #ffffff;
+}
+
+.lincon-shell--agenda .lincon-logo small,
+.lincon-shell--agenda .lincon-workspace-select span,
+.lincon-shell--agenda .lincon-switcher span,
+.lincon-shell--agenda .lincon-user-card small {
+  color: rgba(255, 235, 221, 0.78);
+}
+
+.lincon-shell--agenda .lincon-logo span {
+  border-color: rgba(255, 232, 204, 0.74);
+}
+
+.lincon-shell--agenda .lincon-workspace-select select,
+.lincon-shell--agenda .lincon-nav,
+.lincon-shell--agenda .lincon-switcher {
+  border-color: rgba(255, 236, 224, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff8f1;
+}
+
+.lincon-shell--agenda .lincon-nav button {
+  color: rgba(255, 248, 241, 0.9);
+}
+
+.lincon-shell--agenda .lincon-nav button.is-active,
+.lincon-shell--agenda .lincon-nav button:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(60, 7, 12, 0.18);
+}
+
+.lincon-shell--agenda .lincon-user-card > span,
+.lincon-shell--agenda .lincon-account > span {
+  background: #c43a46;
+}
+
+.lincon-shell--agenda .lincon-switcher button {
+  background: #d76a12;
+}
+
+.lincon-shell--agenda .lincon-switcher button.is-current {
+  background: #9b1a25;
+}
+
+.lincon-shell--agenda .lincon-topbar {
+  background: rgba(253, 242, 232, 0.92);
+  border-bottom: 1px solid rgba(130, 55, 30, 0.12);
+}
+
+.lincon-shell--agenda .lincon-topbar-brand,
+.lincon-shell--agenda .lincon-topbar-status strong,
+.lincon-shell--agenda .lincon-icon-button,
+.lincon-shell--agenda .lincon-logout {
+  color: #7a121b;
+}
+
+.lincon-shell--agenda .lincon-topbar-status {
+  border-color: rgba(130, 55, 30, 0.16);
+}
+
+.lincon-shell--agenda .lincon-icon-button,
+.lincon-shell--agenda .lincon-logout {
+  border-color: #ead8cb;
+  background: #fffaf5;
+}
+
+.lincon-agenda-kpis article,
+.lincon-green-panel {
+  border-color: #ead8cb;
+  background: rgba(255, 252, 248, 0.94);
+  box-shadow: 0 16px 34px rgba(82, 35, 20, 0.08);
+}
+
+.lincon-agenda-kpis span,
+.lincon-green-panel-head > span,
+.lincon-pipeline-metrics span,
+.lincon-global-grid span {
+  color: #8a4d37;
+}
+
+.lincon-agenda-kpis strong,
+.lincon-green-panel-head h1,
+.lincon-pipeline-metrics strong,
+.lincon-global-grid strong,
+.lincon-month-events strong,
+.lincon-global-row strong {
+  color: #5f171b;
+}
+
+.lincon-agenda-kpis p,
+.lincon-month-summary p,
+.lincon-pipeline-columns p,
+.lincon-followup-card span,
+.lincon-followup-card p,
+.lincon-month-events p,
+.lincon-month-events small,
+.lincon-global-row p,
+.lincon-global-row small {
+  color: #7f6a5f;
+}
+
+.lincon-month-radar {
+  border-color: #ead8cb;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(250, 230, 204, 0.42), transparent 12rem),
+    rgba(255, 255, 255, 0.72);
+}
+
+.lincon-month-radar circle,
+.lincon-month-radar line {
+  stroke: rgba(122, 18, 27, 0.14);
+}
+
+.lincon-month-radar .lincon-radar-line {
+  stroke: #b7192a;
+}
+
+.lincon-month-radar .lincon-radar-dot {
+  stroke: #7a121b;
+}
+
+.lincon-month-radar .lincon-radar-end {
+  fill: #b7192a;
+  stroke: #b7192a;
+}
+
+.lincon-month-radar > span {
+  color: #6b1a22;
+}
+
+.lincon-month-radar > span em,
+.lincon-month-list span,
+.lincon-followup-card h2 {
+  color: #b7192a;
+}
+
+.lincon-radar-tabs button {
+  border-color: #ead8cb;
+  background: #fffaf5;
+  color: #7a121b;
+}
+
+.lincon-radar-tabs button.is-active {
+  background: #b7192a;
+  color: #ffffff;
+}
+
+.lincon-month-list article,
+.lincon-pipeline-metrics article,
+.lincon-global-grid article,
+.lincon-followup-card {
+  border-color: #ead8cb;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.lincon-month-list strong,
+.lincon-month-list em,
+.lincon-pipeline-columns h2,
+.lincon-global-row time {
+  color: #5f171b;
+}
+
+.lincon-calendar-panel label,
+.lincon-followup-form label {
+  color: #5f2a1f;
+}
+
+.lincon-calendar-panel select,
+.lincon-calendar-controls button,
+.lincon-followup-form input,
+.lincon-followup-form select,
+.lincon-followup-form textarea,
+.lincon-month-events select {
+  border-color: #ead8cb;
+  background: #fffdfb;
+  color: #321314;
+}
+
+.lincon-calendar-weekdays span,
+.lincon-calendar-grid header span {
+  color: #8a4d37;
+}
+
+.lincon-calendar-grid article {
+  border-color: #ead8cb;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.lincon-calendar-grid article.is-muted {
+  background: rgba(246, 237, 229, 0.72);
+  color: #9b8074;
+}
+
+.lincon-calendar-grid header {
+  color: #5f171b;
+}
+
+.lincon-calendar-grid small,
+.lincon-calendar-grid button {
+  color: #7a121b;
+}
+
+.lincon-calendar-event {
+  border-color: #e6bf86;
+  background: #fff3df;
+  color: #a55b09;
+}
+
+.lincon-calendar-event--lead {
+  border-color: #f0b8b2;
+  background: #fff0ed;
+  color: #b7192a;
+}
+
+.lincon-pipeline-columns div:nth-child(2) p {
+  border-color: rgba(122, 18, 27, 0.2);
+  background: rgba(255, 250, 245, 0.8);
+}
+
+.lincon-followup-card em {
+  border-color: #f0b8b2;
+  background: #fff0ed;
+  color: #b7192a;
+}
+
+.lincon-followup-actions button,
+.lincon-month-events button,
+.lincon-global-row button {
+  border-color: #ead8cb;
+  background: #fffaf5;
+  color: #7a121b;
+}
+
+.lincon-followup-actions .is-danger {
+  border-color: #efb0a7;
+  background: #ffe8e2;
+  color: #ad3f31;
+}
+
+.lincon-agenda-view {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr);
+  grid-template-areas:
+    "kpis kpis"
+    "radar calendar"
+    "pipeline calendar"
+    "followups bottom";
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.lincon-agenda-kpis {
+  grid-area: kpis;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.lincon-agenda-radar {
+  grid-area: radar;
+}
+
+.lincon-calendar-panel {
+  grid-area: calendar;
+}
+
+.lincon-agenda-pipeline {
+  grid-area: pipeline;
+}
+
+.lincon-followups {
+  grid-area: followups;
+}
+
+.lincon-agenda-bottom {
+  grid-area: bottom;
+}
+
+.lincon-agenda-kpis article {
+  min-height: 88px;
+  padding: 0.75rem 0.85rem;
+  gap: 0.28rem;
+}
+
+.lincon-agenda-kpis span,
+.lincon-green-panel-head > span,
+.lincon-pipeline-metrics span,
+.lincon-global-grid span {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.lincon-agenda-kpis strong {
+  font-size: 1.55rem;
+}
+
+.lincon-agenda-kpis p {
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.lincon-green-panel {
+  padding: 0.78rem;
+}
+
+.lincon-green-panel-head {
+  align-items: center;
+  margin-bottom: 0.58rem;
+}
+
+.lincon-green-panel-head h1 {
+  font-size: clamp(1.18rem, 1.55vw, 1.45rem);
+}
+
+.lincon-radar-layout {
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.lincon-month-radar {
+  width: min(238px, 100%);
+  padding: 0.45rem;
+}
+
+.lincon-month-radar > span {
+  min-width: 34px;
+}
+
+.lincon-month-radar > span strong,
+.lincon-month-radar > span em {
+  font-size: 0.62rem;
+}
+
+.lincon-month-summary {
+  gap: 0.48rem;
+}
+
+.lincon-month-summary p {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.lincon-radar-tabs button {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.lincon-month-list {
+  gap: 0.34rem;
+}
+
+.lincon-month-list article {
+  grid-template-columns: minmax(96px, 1fr) auto;
+  gap: 0.35rem;
+  padding: 0.42rem 0.5rem;
+}
+
+.lincon-month-list strong {
+  font-size: 0.82rem;
+}
+
+.lincon-month-list span,
+.lincon-month-list em {
+  font-size: 0.76rem;
+}
+
+.lincon-month-list em {
+  justify-self: end;
+}
+
+.lincon-calendar-panel .lincon-green-panel-head {
+  align-items: end;
+}
+
+.lincon-calendar-panel label {
+  margin-top: 0.5rem;
+  gap: 0.32rem;
+  font-size: 0.82rem;
+}
+
+.lincon-calendar-panel select,
+.lincon-calendar-controls button,
+.lincon-followup-form input,
+.lincon-followup-form select,
+.lincon-followup-form textarea,
+.lincon-month-events select {
+  min-height: 0;
+  padding: 0.52rem 0.68rem;
+  font-size: 0.86rem;
+}
+
+.lincon-calendar-controls {
+  gap: 0.38rem;
+}
+
+.lincon-calendar-controls button {
+  font-size: 0.72rem;
+}
+
+.lincon-calendar-weekdays,
+.lincon-calendar-grid {
+  grid-template-columns: repeat(7, minmax(82px, 1fr));
+  gap: 0.32rem;
+}
+
+.lincon-calendar-weekdays {
+  margin: 0.62rem 0 0.18rem;
+}
+
+.lincon-calendar-weekdays span {
+  font-size: 0.66rem;
+}
+
+.lincon-calendar-grid article {
+  min-height: 82px;
+  gap: 0.25rem;
+  padding: 0.42rem;
+}
+
+.lincon-calendar-grid header strong {
+  font-size: 0.86rem;
+}
+
+.lincon-calendar-grid header span {
+  font-size: 0.58rem;
+}
+
+.lincon-calendar-grid small,
+.lincon-calendar-grid button {
+  font-size: 0.58rem;
+}
+
+.lincon-calendar-event {
+  padding: 0.22rem 0.3rem;
+  font-size: 0.58rem;
+  line-height: 1.12;
+}
+
+.lincon-pipeline-metrics {
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.lincon-pipeline-metrics article,
+.lincon-global-grid article {
+  padding: 0.48rem 0.55rem;
+}
+
+.lincon-pipeline-metrics strong,
+.lincon-global-grid strong {
+  font-size: 1rem;
+}
+
+.lincon-pipeline-columns {
+  gap: 0.65rem;
+}
+
+.lincon-pipeline-columns h2 {
+  margin-bottom: 0.3rem;
+  font-size: 0.86rem;
+}
+
+.lincon-pipeline-columns p,
+.lincon-pipeline-columns strong {
+  font-size: 0.82rem;
+}
+
+.lincon-pipeline-columns div:nth-child(2) p {
+  padding: 0.65rem;
+}
+
+.lincon-followup-card {
+  padding: 0.7rem;
+}
+
+.lincon-followup-card header {
+  margin-bottom: 0.55rem;
+}
+
+.lincon-followup-card h2 {
+  font-size: 1rem;
+}
+
+.lincon-followup-card p,
+.lincon-followup-card span,
+.lincon-followup-form label {
+  font-size: 0.8rem;
+}
+
+.lincon-followup-form {
+  gap: 0.5rem;
+}
+
+.lincon-followup-form textarea {
+  min-height: 54px;
+}
+
+.lincon-followup-actions {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 0.55rem;
+}
+
+.lincon-followup-actions button,
+.lincon-month-events button,
+.lincon-global-row button {
+  padding: 0.52rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.lincon-agenda-bottom {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 0.75rem;
+}
+
+.lincon-month-events {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.55rem;
+}
+
+.lincon-month-events aside {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.lincon-month-events p,
+.lincon-month-events small,
+.lincon-global-row p,
+.lincon-global-row small {
+  font-size: 0.78rem;
+}
+
+.lincon-global-grid {
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.lincon-global-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  padding: 0.58rem 0;
+}
+
+.lincon-global-row button {
+  grid-column: 2;
+}
+
+@media (max-width: 1240px) {
+  .lincon-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .lincon-hero,
+  .lincon-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lincon-agenda-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lincon-agenda-view {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "kpis"
+      "radar"
+      "calendar"
+      "pipeline"
+      "followups"
+      "bottom";
+  }
+
+  .lincon-radar-layout,
+  .lincon-agenda-bottom {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .lincon-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-sidebar {
+    position: relative;
+    height: auto;
+  }
+
+  .lincon-main {
+    padding: 0 1rem 1rem;
+  }
+
+  .lincon-topbar {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .lincon-topbar-brand {
+    width: 100%;
+  }
+
+  .lincon-hero {
+    padding: 1.35rem;
+  }
+
+  .lincon-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-agenda-kpis,
+  .lincon-month-list,
+  .lincon-pipeline-metrics,
+  .lincon-pipeline-columns,
+  .lincon-followup-form,
+  .lincon-month-events,
+  .lincon-global-grid,
+  .lincon-global-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-green-panel-head,
+  .lincon-followup-card header {
+    flex-direction: column;
+  }
+
+  .lincon-calendar-weekdays,
+  .lincon-calendar-grid {
+    grid-template-columns: repeat(7, minmax(130px, 1fr));
+  }
+}
+
+.lincon-agenda-view {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "kpis"
+    "core"
+    "detail";
+  gap: 0.8rem;
+}
+
+.lincon-agenda-kpis {
+  grid-area: kpis;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.lincon-agenda-kpis article {
+  display: flex;
+  align-items: center;
+  min-height: 108px;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+}
+
+.lincon-agenda-kpis i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  background: #fbefe3;
+  color: #b7192a;
+}
+
+.lincon-agenda-kpis i svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.lincon-agenda-kpis div {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.lincon-agenda-kpis strong {
+  font-size: 1.65rem;
+}
+
+.lincon-agenda-kpis article:last-child strong {
+  font-size: 1.45rem;
+}
+
+.lincon-agenda-core {
+  grid-area: core;
+  display: grid;
+  grid-template-columns: minmax(430px, 0.84fr) minmax(520px, 1fr);
+  gap: 0.8rem;
+}
+
+.lincon-agenda-radar,
+.lincon-calendar-panel,
+.lincon-day-detail {
+  min-width: 0;
+}
+
+.lincon-green-panel-head p {
+  margin: 0.18rem 0 0;
+  color: #7f6a5f;
+  font-size: 0.86rem;
+}
+
+.lincon-radar-legend {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+  color: #5f2a1f;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.lincon-radar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.lincon-radar-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #9b1a25;
+}
+
+.lincon-radar-legend span:nth-child(2) i {
+  background: #d28a23;
+}
+
+.lincon-radar-layout {
+  grid-template-columns: minmax(230px, 0.9fr) minmax(250px, 1fr);
+  gap: 0.75rem;
+}
+
+.lincon-month-radar {
+  width: min(280px, 100%);
+}
+
+.lincon-month-table {
+  display: grid;
+  align-content: start;
+}
+
+.lincon-month-table header,
+.lincon-month-table article {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) 82px 82px;
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 24px;
+  border-bottom: 1px solid #ead8cb;
+  color: #4a1e20;
+  font-size: 0.78rem;
+}
+
+.lincon-month-table header {
+  color: #8a4d37;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lincon-month-table article {
+  padding: 0.12rem 0.2rem;
+}
+
+.lincon-month-table article.is-selected {
+  background: #fff2e5;
+}
+
+.lincon-month-table strong {
+  color: #5f171b;
+}
+
+.lincon-month-table span {
+  color: #9b1a25;
+  text-align: center;
+}
+
+.lincon-month-table em {
+  color: #c9771f;
+  font-style: normal;
+  text-align: center;
+}
+
+.lincon-calendar-panel .lincon-green-panel-head {
+  align-items: start;
+}
+
+.lincon-calendar-panel .lincon-green-panel-head h1 {
+  padding-top: 0.25rem;
+}
+
+.lincon-calendar-controls {
+  display: grid;
+  grid-template-columns: 40px minmax(150px, 1fr) 40px minmax(170px, 1fr);
+  align-items: center;
+  width: min(100%, 520px);
+}
+
+.lincon-calendar-controls button {
+  min-height: 38px;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.lincon-calendar-weekdays,
+.lincon-calendar-grid {
+  grid-template-columns: repeat(7, minmax(64px, 1fr));
+  gap: 0.32rem;
+}
+
+.lincon-calendar-grid article {
+  min-height: 58px;
+  border-radius: 6px;
+}
+
+.lincon-calendar-grid article.is-selected {
+  border-color: #b7192a;
+  box-shadow: inset 0 0 0 1px rgba(183, 25, 42, 0.38);
+}
+
+.lincon-calendar-event {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 6px;
+  font-size: 0.58rem;
+}
+
+.lincon-calendar-event--reserved {
+  border-color: #e6bf86;
+  background: #fff3df;
+  color: #a55b09;
+}
+
+.lincon-day-detail {
+  grid-area: detail;
+}
+
+.lincon-day-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.85rem;
+}
+
+.lincon-day-actions,
+.lincon-day-card {
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.lincon-day-actions {
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+  padding: 1rem;
+}
+
+.lincon-day-date {
+  display: grid;
+  justify-items: center;
+  gap: 0.26rem;
+  padding: 0.45rem 0 0.65rem;
+  color: #5f171b;
+  text-align: center;
+}
+
+.lincon-day-date span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #fff0ed;
+  color: #b7192a;
+}
+
+.lincon-day-date svg,
+.lincon-day-actions button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.lincon-day-date small {
+  color: #7f6a5f;
+}
+
+.lincon-day-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.72rem;
+  background: #9b1a25;
+  color: #ffffff;
+  font-weight: 950;
+}
+
+.lincon-day-actions button:last-child {
+  background: #d28a23;
+}
+
+.lincon-day-card {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.85rem;
+}
+
+.lincon-day-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-bottom: 0.35rem;
+}
+
+.lincon-day-card h2 {
+  margin: 0;
+  color: #5f171b;
+  font-size: 0.96rem;
+}
+
+.lincon-day-card header span {
+  height: fit-content;
+  border: 1px solid #f0b8b2;
+  border-radius: 8px;
+  padding: 0.25rem 0.55rem;
+  background: #fff0ed;
+  color: #b7192a;
+  font-size: 0.68rem;
+  font-weight: 950;
+}
+
+.lincon-day-card--reserved header span {
+  border-color: #bee5c5;
+  background: #effaf1;
+  color: #208a3d;
+}
+
+.lincon-day-card > strong {
+  color: #321314;
+}
+
+.lincon-day-card p {
+  margin: 0;
+  color: #6f594f;
+  font-size: 0.78rem;
+}
+
+.lincon-day-card > button {
+  justify-self: end;
+  border: 1px solid #efb0a7;
+  border-radius: 8px;
+  padding: 0.52rem 0.74rem;
+  background: #fffaf5;
+  color: #9b1a25;
+  font-weight: 950;
+}
+
+.lincon-day-card--reserved > button {
+  border-color: #e6bf86;
+  color: #b56c13;
+}
+
+.lincon-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 0.75rem 0 0.4rem;
+}
+
+.lincon-progress-steps span {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.22rem;
+  color: #b5aaa5;
+  font-size: 0.64rem;
+  text-align: center;
+}
+
+.lincon-progress-steps span::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: #ead8cb;
+  z-index: 0;
+}
+
+.lincon-progress-steps span:first-child::before {
+  content: none;
+}
+
+.lincon-progress-steps i {
+  position: relative;
+  z-index: 1;
+  width: 15px;
+  height: 15px;
+  border: 2px solid #ead8cb;
+  border-radius: 999px;
+  background: #fffdfb;
+}
+
+.lincon-progress-steps span.is-done {
+  color: #9b1a25;
+  font-weight: 850;
+}
+
+.lincon-progress-steps span.is-done::before,
+.lincon-progress-steps span.is-done i {
+  border-color: #9b1a25;
+  background: #9b1a25;
+}
+
+.lincon-progress-steps--green span.is-done {
+  color: #208a3d;
+}
+
+.lincon-progress-steps--green span.is-done::before,
+.lincon-progress-steps--green span.is-done i {
+  border-color: #39ad58;
+  background: #39ad58;
+}
+
+@media (max-width: 1380px) {
+  .lincon-agenda-core,
+  .lincon-day-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .lincon-agenda-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-calendar-controls,
+  .lincon-radar-layout,
+  .lincon-day-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lincon-shell--agenda .lincon-main {
+  padding-inline: 1.75rem;
+}
+
+.lincon-agenda-view {
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+.lincon-agenda-core > .lincon-agenda-radar,
+.lincon-agenda-core > .lincon-calendar-panel {
+  grid-area: auto;
+}
+
+.lincon-agenda-core {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.08fr);
+  align-items: stretch;
+}
+
+.lincon-agenda-radar,
+.lincon-calendar-panel,
+.lincon-day-detail {
+  width: 100%;
+}
+
+.lincon-radar-layout {
+  grid-template-columns: minmax(250px, 0.92fr) minmax(260px, 1fr);
+  align-items: center;
+}
+
+.lincon-month-radar {
+  width: min(330px, 100%);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 246, 234, 0.96), rgba(255, 250, 245, 0.72)),
+    #fffdfb;
+}
+
+.lincon-month-radar .lincon-radar-fill {
+  stroke: none;
+}
+
+.lincon-month-radar .lincon-radar-fill--interested {
+  fill: rgba(155, 26, 37, 0.12);
+}
+
+.lincon-month-radar .lincon-radar-fill--reserved {
+  fill: rgba(210, 138, 35, 0.14);
+}
+
+.lincon-month-radar .lincon-radar-line {
+  fill: none;
+  stroke-width: 2.2;
+}
+
+.lincon-month-radar .lincon-radar-line--interested {
+  stroke: #9b1a25;
+}
+
+.lincon-month-radar .lincon-radar-line--reserved {
+  stroke: #d28a23;
+}
+
+.lincon-month-radar .lincon-radar-end {
+  fill: #9b1a25;
+  stroke: #fffdfb;
+  stroke-width: 1.5;
+}
+
+.lincon-month-radar .lincon-radar-end--reserved {
+  fill: #d28a23;
+}
+
+.lincon-month-table header,
+.lincon-month-table article {
+  grid-template-columns: minmax(100px, 1fr) 88px 88px;
+}
+
+.lincon-calendar-panel .lincon-green-panel-head {
+  display: grid;
+  grid-template-columns: minmax(180px, auto) minmax(360px, 1fr);
+  gap: 1rem;
+}
+
+.lincon-calendar-controls {
+  justify-self: end;
+  width: min(100%, 560px);
+}
+
+.lincon-calendar-grid article {
+  min-height: 64px;
+}
+
+.lincon-day-layout {
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1380px) {
+  .lincon-agenda-core,
+  .lincon-day-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-calendar-panel .lincon-green-panel-head {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-calendar-controls {
+    justify-self: start;
+  }
+}
+
+.lincon-reservas-view {
+  display: grid;
+  gap: 0.8rem;
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+.lincon-reserva-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.lincon-reserva-kpis article {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 104px;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 1rem 1.15rem;
+  background: rgba(255, 252, 248, 0.94);
+  box-shadow: 0 16px 34px rgba(82, 35, 20, 0.08);
+}
+
+.lincon-reserva-kpis i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: #fbefe3;
+  color: #b7192a;
+}
+
+.lincon-reserva-kpis i svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.lincon-reserva-kpis div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.lincon-reserva-kpis span,
+.lincon-reserva-pipeline > article > span {
+  color: #8a4d37;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lincon-reserva-kpis strong {
+  color: #5f171b;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.lincon-reserva-kpis p,
+.lincon-reserva-pipeline p {
+  margin: 0;
+  color: #7f6a5f;
+  font-size: 0.78rem;
+}
+
+.lincon-reservas-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.55fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.lincon-reserva-tools {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 180px;
+  gap: 0.55rem;
+  width: min(100%, 620px);
+}
+
+.lincon-reserva-tools input,
+.lincon-reserva-tools select {
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.68rem 0.78rem;
+  background: #fffdfb;
+  color: #321314;
+  font: inherit;
+}
+
+.lincon-reserva-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.lincon-reserva-tabs button {
+  border: 1px solid #ead8cb;
+  border-radius: 999px;
+  padding: 0.38rem 0.78rem;
+  background: #fffaf5;
+  color: #7a121b;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.lincon-reserva-tabs button.is-active {
+  background: #9b1a25;
+  color: #ffffff;
+}
+
+.lincon-reserva-table {
+  display: grid;
+  overflow-x: auto;
+}
+
+.lincon-reserva-table header,
+.lincon-reserva-table button {
+  display: grid;
+  grid-template-columns: 1.05fr 1.35fr 0.7fr 0.95fr 0.9fr 0.72fr;
+  min-width: 940px;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.lincon-reserva-table header {
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid #ead8cb;
+  color: #8a4d37;
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-reserva-table button {
+  border: 0;
+  border-bottom: 1px solid #f0e2d8;
+  padding: 0.72rem 0.4rem;
+  background: transparent;
+  color: #321314;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lincon-reserva-table button.is-selected {
+  border-radius: 8px;
+  background: #fff2e5;
+}
+
+.lincon-reserva-table button span {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.lincon-reserva-table strong {
+  color: #321314;
+}
+
+.lincon-reserva-table small {
+  color: #7f6a5f;
+}
+
+.lincon-reserva-state {
+  width: fit-content;
+  border: 1px solid #f0b8b2;
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  background: #fff0ed;
+  color: #b7192a;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.lincon-reserva-state--confirmado {
+  border-color: #bee5c5;
+  background: #effaf1;
+  color: #208a3d;
+}
+
+.lincon-reserva-state--opcion {
+  border-color: #e6bf86;
+  background: #fff3df;
+  color: #a55b09;
+}
+
+.lincon-reserva-state--pendiente {
+  border-color: #f0d0a6;
+  background: #fff8ed;
+  color: #b56c13;
+}
+
+.lincon-reserva-detail > .lincon-green-panel-head > span {
+  border: 1px solid #f0b8b2;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  background: #fff0ed;
+  color: #b7192a;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.lincon-reserva-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.lincon-reserva-detail-grid article,
+.lincon-reserva-money div {
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.62rem;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.lincon-reserva-detail-grid span,
+.lincon-reserva-money span {
+  color: #8a4d37;
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.lincon-reserva-detail-grid strong,
+.lincon-reserva-money strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: #5f171b;
+}
+
+.lincon-reserva-money {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.lincon-reserva-checklist {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.lincon-reserva-checklist h2 {
+  margin: 0;
+  color: #5f171b;
+  font-size: 0.95rem;
+}
+
+.lincon-reserva-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(255, 255, 255, 0.58);
+  color: #4a1e20;
+  font-size: 0.84rem;
+}
+
+.lincon-reserva-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.lincon-reserva-actions button {
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.68rem;
+  background: #fffaf5;
+  color: #7a121b;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.lincon-reserva-actions button:first-child {
+  background: #9b1a25;
+  color: #ffffff;
+}
+
+.lincon-reserva-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.lincon-reserva-pipeline > article {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.lincon-reserva-pipeline strong {
+  color: #5f171b;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.45rem;
+}
+
+@media (max-width: 1380px) {
+  .lincon-reservas-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .lincon-reserva-kpis,
+  .lincon-reserva-pipeline,
+  .lincon-reserva-tools,
+  .lincon-reserva-detail-grid,
+  .lincon-reserva-money {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lincon-reservas-view--list {
+  gap: 0.85rem;
+}
+
+.lincon-reserva-kpis--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.lincon-reserva-kpis--five article {
+  min-height: 96px;
+  padding: 0.86rem 0.92rem;
+}
+
+.lincon-reserva-kpis--five i {
+  width: 50px;
+  height: 50px;
+  color: #b7192a;
+}
+
+.lincon-reserva-kpis--five strong {
+  font-size: clamp(1.22rem, 1.35vw, 1.72rem);
+}
+
+.lincon-reservas-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(500px, 0.96fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.lincon-reservas-list--wide,
+.lincon-reserva-detail--profile,
+.lincon-reserva-history {
+  padding: 1rem;
+}
+
+.lincon-reservas-list--wide .lincon-green-panel-head,
+.lincon-reserva-history .lincon-green-panel-head {
+  margin-bottom: 0.7rem;
+}
+
+.lincon-reserva-tabs--boxed {
+  flex-wrap: nowrap;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.25rem;
+  overflow-x: auto;
+  background: #fffdfb;
+}
+
+.lincon-reserva-tabs--boxed button {
+  min-width: 112px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4e2224;
+}
+
+.lincon-reserva-tabs--boxed button.is-active {
+  background: #780814;
+  color: #ffffff;
+  box-shadow: 0 10px 22px rgba(120, 8, 20, 0.18);
+}
+
+.lincon-reserva-filters {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) 108px 108px 128px 96px;
+  gap: 0.55rem;
+  align-items: end;
+  margin: 0.65rem 0 0.78rem;
+}
+
+.lincon-reserva-search,
+.lincon-reserva-filter-field,
+.lincon-reserva-filter-button {
+  min-width: 0;
+}
+
+.lincon-reserva-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.lincon-reserva-search svg {
+  position: absolute;
+  left: 0.75rem;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #9b7a6d;
+  stroke-width: 1.8;
+}
+
+.lincon-reserva-search input,
+.lincon-reserva-filter-field select,
+.lincon-reserva-filter-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  background: #fffdfb;
+  color: #321314;
+  font: inherit;
+}
+
+.lincon-reserva-search input {
+  padding: 0.64rem 0.75rem 0.64rem 2.25rem;
+}
+
+.lincon-reserva-filter-field {
+  display: grid;
+  gap: 0.24rem;
+}
+
+.lincon-reserva-filter-field span {
+  color: #6f3429;
+  font-size: 0.66rem;
+  font-weight: 950;
+}
+
+.lincon-reserva-filter-field select {
+  padding: 0 0.58rem;
+}
+
+.lincon-reserva-filter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.72rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.lincon-reserva-filter-button svg,
+.lincon-reserva-actions--inline svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.lincon-reserva-table--full header,
+.lincon-reserva-table--full button {
+  grid-template-columns: minmax(190px, 1.25fr) 0.72fr 0.66fr 0.68fr 0.68fr 0.76fr 0.45fr;
+  min-width: 980px;
+}
+
+.lincon-reserva-table--full header {
+  padding: 0.48rem 0.38rem;
+}
+
+.lincon-reserva-table--full button {
+  position: relative;
+  min-height: 64px;
+  padding: 0.62rem 0.38rem;
+}
+
+.lincon-reserva-table--full button.is-selected {
+  border-left: 3px solid #780814;
+  background: linear-gradient(90deg, #fff2e5 0%, #fffaf6 100%);
+}
+
+.lincon-reserva-state--confirmada {
+  border-color: #f0b8b2;
+  background: #fff0ed;
+  color: #b7192a;
+}
+
+.lincon-payment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: #4a302a;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.lincon-payment::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #cf851c;
+}
+
+.lincon-payment.is-empty::before {
+  background: #c8b8b1;
+}
+
+.lincon-payment.is-full::before {
+  background: #087a3a;
+}
+
+.lincon-reserva-actions-dot {
+  justify-self: center;
+  color: #3b1c1c;
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.lincon-reserva-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  color: #7f6a5f;
+  font-size: 0.78rem;
+}
+
+.lincon-reserva-pagination div {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.lincon-reserva-pagination button {
+  min-width: 34px;
+  height: 34px;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  background: #fffdfb;
+  color: #321314;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.lincon-reserva-pagination button.is-active {
+  background: #780814;
+  color: #ffffff;
+}
+
+.lincon-reserva-side {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.lincon-reserva-profile-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid #ead8cb;
+}
+
+.lincon-reserva-detail-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-bottom: 0.7rem;
+}
+
+.lincon-reserva-detail-title h1 {
+  margin: 0;
+  color: #5f171b;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.2rem;
+}
+
+.lincon-reserva-profile-head h1 {
+  margin: 0;
+  color: #321314;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.42rem;
+}
+
+.lincon-reserva-profile-head p,
+.lincon-reserva-profile-head small {
+  margin: 0;
+  color: #6f5148;
+}
+
+.lincon-reserva-profile-head > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+}
+
+.lincon-reserva-avatar {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: #fbefe3;
+  color: #b7192a;
+}
+
+.lincon-reserva-avatar svg {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.lincon-reserva-detail-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem 0.75rem;
+  padding: 0.85rem 0;
+}
+
+.lincon-reserva-detail-matrix article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.42rem 0;
+}
+
+.lincon-reserva-detail-matrix i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #fbefe3;
+  color: #b7192a;
+}
+
+.lincon-reserva-detail-matrix svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.lincon-reserva-detail-matrix span {
+  color: #8a4d37;
+  font-size: 0.66rem;
+  font-weight: 950;
+}
+
+.lincon-reserva-detail-matrix strong,
+.lincon-reserva-detail-matrix small {
+  display: block;
+}
+
+.lincon-reserva-detail-matrix strong {
+  margin-top: 0.12rem;
+  color: #321314;
+  font-size: 0.84rem;
+}
+
+.lincon-reserva-detail-matrix small {
+  margin-top: 0.08rem;
+  color: #7f6a5f;
+  font-size: 0.72rem;
+}
+
+.lincon-reserva-money-cell strong {
+  color: #5f171b;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+}
+
+.lincon-reserva-money-cell--debt strong {
+  color: #b7192a;
+}
+
+.lincon-reserva-detail-timeline {
+  margin: 0.3rem 0 0.85rem;
+}
+
+.lincon-reserva-detail-timeline span small {
+  margin-top: 0.24rem;
+  color: #9b8378;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.lincon-reserva-actions--inline {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.lincon-reserva-actions--inline button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 42px;
+}
+
+.lincon-reserva-actions--inline button:first-child {
+  border-color: #780814;
+  background: #780814;
+}
+
+.lincon-reserva-history-list {
+  display: grid;
+  gap: 0;
+}
+
+.lincon-reserva-history-list article {
+  display: grid;
+  grid-template-columns: 78px 20px minmax(0, 1fr) 96px;
+  gap: 0.65rem;
+  align-items: start;
+  min-height: 62px;
+  position: relative;
+}
+
+.lincon-reserva-history-list article::before {
+  content: "";
+  position: absolute;
+  left: 86px;
+  top: 18px;
+  bottom: -8px;
+  width: 1px;
+  background: #d8b5a8;
+}
+
+.lincon-reserva-history-list article:last-child::before {
+  display: none;
+}
+
+.lincon-reserva-history-list time {
+  display: grid;
+  color: #6f5148;
+  font-size: 0.72rem;
+}
+
+.lincon-reserva-history-list time strong {
+  color: #6c191d;
+}
+
+.lincon-reserva-history-list i {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  background: #9b1a25;
+  box-shadow: 0 0 0 5px #fff7f1;
+}
+
+.lincon-reserva-history-list article.is-pending i {
+  background: #d98b1a;
+}
+
+.lincon-reserva-history-list p {
+  margin: 0.12rem 0 0;
+  color: #7f6a5f;
+  font-size: 0.76rem;
+}
+
+.lincon-reserva-history-list small {
+  justify-self: end;
+  color: #7f6a5f;
+  font-size: 0.72rem;
+}
+
+.lincon-history-more {
+  width: fit-content;
+  margin-top: 0.4rem;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.58rem 0.8rem;
+  background: #fffaf5;
+  color: #7a121b;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+@media (max-width: 1500px) {
+  .lincon-reservas-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-reserva-side {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 1180px) {
+  .lincon-reserva-kpis--five {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lincon-reserva-side,
+  .lincon-reserva-detail-matrix {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-reserva-filters,
+  .lincon-reserva-actions--inline {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-reserva-profile-head,
+  .lincon-reserva-history-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .lincon-reserva-profile-head > div:last-child,
+  .lincon-reserva-history-list small {
+    justify-items: start;
+    justify-self: start;
+  }
+
+.lincon-reserva-history-list article::before {
+    display: none;
+  }
+}
+
+.orders-responsible-picker {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  margin-top: 0.85rem;
+  border: 1px solid rgba(232, 74, 0, 0.22);
+  border-radius: 8px;
+  padding: 0.85rem;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 237, 0.92), rgba(255, 253, 251, 0.96)),
+    #fffaf6;
+}
+
+.orders-responsible-picker header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.orders-responsible-picker header div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.orders-responsible-picker header strong {
+  color: #7a1f0a;
+  font-size: 0.92rem;
+}
+
+.orders-responsible-picker header span {
+  color: #7c6359;
+  font-size: 0.78rem;
+}
+
+.orders-responsible-picker header em {
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.orders-responsible-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.5rem;
+  max-height: 178px;
+  overflow: auto;
+}
+
+.orders-responsible-options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  border: 1px solid #ead8cb;
+  border-radius: 8px;
+  padding: 0.58rem;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.orders-responsible-options label.is-selected {
+  border-color: rgba(232, 74, 0, 0.58);
+  background: #fff3eb;
+  box-shadow: 0 10px 22px rgba(232, 74, 0, 0.09);
+}
+
+.orders-responsible-options input {
+  width: 16px;
+  height: 16px;
+  accent-color: #e84a00;
+}
+
+.orders-responsible-options span {
+  display: grid;
+  min-width: 0;
+}
+
+.orders-responsible-options strong {
+  color: #321314;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-responsible-options small {
+  color: #7f6a5f;
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
