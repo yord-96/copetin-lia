@@ -829,6 +829,7 @@ const createSeedData = () => {
     clients: [],
     users: [createBootstrapSuperAdmin(createdAt)],
     items: [],
+    inventoryCombos: [],
     quotes: [],
     contracts: [],
     rentals: [],
@@ -917,9 +918,9 @@ const normalizeState = (state) => {
       city: String(client?.city ?? '').trim(),
       observations: String(client?.observations ?? '').trim(),
       isBlacklisted: Boolean(client?.isBlacklisted),
-      blacklistReason: Boolean(client?.isBlacklisted) ? normalizeBlacklistReason(client?.blacklistReason) : '',
-      blacklistNotes: Boolean(client?.isBlacklisted) ? String(client?.blacklistNotes ?? '').trim() : '',
-      blacklistedAt: Boolean(client?.isBlacklisted) ? client?.blacklistedAt ?? client?.updatedAt ?? now : null,
+      blacklistReason: client?.isBlacklisted ? normalizeBlacklistReason(client?.blacklistReason) : '',
+      blacklistNotes: client?.isBlacklisted ? String(client?.blacklistNotes ?? '').trim() : '',
+      blacklistedAt: client?.isBlacklisted ? client?.blacklistedAt ?? client?.updatedAt ?? now : null,
       prepaidEnabled,
       prepaidBalanceBs,
       prepaidTotalDepositedBs: Math.max(0, toPositiveRoundedNumber(client?.prepaidTotalDepositedBs ?? prepaidMovements.filter((entry) => entry.amountBs > 0).reduce((sum, entry) => sum + entry.amountBs, 0))),
@@ -1104,6 +1105,53 @@ const normalizeState = (state) => {
         updatedAt: item?.updatedAt,
       };
     }).filter((item) => item.name)
+    : [];
+
+  const normalizeComboIngredients = (ingredients) => {
+    const itemById = new Map(source.items.map((item) => [String(item.id), item]));
+    return (Array.isArray(ingredients) ? ingredients : [])
+      .map((line) => {
+        const itemId = String(line?.itemId ?? '').trim();
+        const item = itemById.get(itemId);
+        const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+        if (!item || quantity <= 0) return null;
+        const controlsStock =
+          item.controlsStock !== false
+          && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
+          && Number(item.totalStock ?? 0) > 0;
+        return {
+          itemId: item.id,
+          itemName: item.name,
+          quantity,
+          unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
+          controlsStock,
+          verificationStatus: controlsStock ? 'verified' : 'pending_verification',
+        };
+      })
+      .filter(Boolean);
+  };
+
+  source.inventoryCombos = Array.isArray(source.inventoryCombos)
+    ? source.inventoryCombos.map((combo) => {
+      const ingredients = normalizeComboIngredients(combo?.ingredients ?? combo?.items ?? []);
+      const rawCategoryName = toBusinessUppercase(combo?.category ?? 'COMBOS');
+      const categoryName =
+        source.categories.find((entry) => normalizeText(entry.name) === normalizeText(rawCategoryName))?.name
+        || rawCategoryName
+        || 'COMBOS';
+      return {
+        id: combo?.id ?? makeId('combo'),
+        name: toBusinessUppercase(combo?.name ?? ''),
+        category: categoryName,
+        rentalPriceBs: Math.max(0, toPositiveRoundedNumber(combo?.rentalPriceBs ?? combo?.priceBs ?? 0)),
+        notes: String(combo?.notes ?? '').trim(),
+        ingredients,
+        status: String(combo?.status ?? 'active').trim() || 'active',
+        createdAt: combo?.createdAt ?? now,
+        updatedAt: combo?.updatedAt ?? combo?.createdAt ?? now,
+        deletedAt: combo?.deletedAt ?? null,
+      };
+    }).filter((combo) => combo.name && combo.ingredients.length > 0)
     : [];
 
   source.rentals = Array.isArray(source.rentals)
@@ -1296,6 +1344,12 @@ const normalizeState = (state) => {
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
             unitPriceBs: Number(line?.unitPriceBs ?? 0),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
+            comboId: String(line?.comboId ?? '').trim() || null,
+            comboName: String(line?.comboName ?? '').trim(),
+            comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+            comboComponentName: String(line?.comboComponentName ?? '').trim(),
+            comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId && line.itemName)
         : [];
@@ -1388,6 +1442,12 @@ const normalizeState = (state) => {
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
             unitPriceBs: Number(line?.unitPriceBs ?? 0),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
+            comboId: String(line?.comboId ?? '').trim() || null,
+            comboName: String(line?.comboName ?? '').trim(),
+            comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+            comboComponentName: String(line?.comboComponentName ?? '').trim(),
+            comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId)
         : [];
@@ -3877,8 +3937,8 @@ const getContractDocumentStyles = () => `
   }
   .contract-hero {
     display: grid;
-    grid-template-columns: 1.15fr 0.9fr 42mm;
-    gap: 10mm;
+    grid-template-columns: 1.15fr 1fr 39mm;
+    gap: 8mm;
     align-items: center;
   }
   .contract-brand {
@@ -3915,6 +3975,9 @@ const getContractDocumentStyles = () => `
     line-height: 1.35;
     text-transform: uppercase;
   }
+  .contract-title {
+    text-align: center;
+  }
   .contract-title h2 {
     color: #111522;
     font-size: 22px;
@@ -3928,31 +3991,43 @@ const getContractDocumentStyles = () => `
     font-weight: 500;
     text-transform: uppercase;
   }
+  .contract-title::after {
+    content: "";
+    display: block;
+    width: 22mm;
+    height: 2px;
+    margin: 5px auto 0;
+    border-radius: 999px;
+    background: #f04b0b;
+  }
   .contract-code-card {
-    border: 1px solid #eadfd9;
+    border: 1px solid #ffb98f;
     border-radius: 7px;
-    padding: 8px 10px;
+    padding: 7px 9px;
     text-align: center;
     box-shadow: 0 8px 22px rgba(232, 74, 0, 0.1);
   }
-  .contract-code-card strong {
+  .contract-code-label {
     display: block;
     color: #df4305;
-    font-size: 26px;
+    font-size: 22px;
+    font-weight: 950;
     line-height: 1;
   }
-  .contract-code-card span {
+  .contract-code-date {
+    display: block;
+    margin-top: 5px;
     color: #4d4f59;
-    font-size: 10px;
-    font-weight: 700;
+    font-size: 10.5px;
+    font-weight: 800;
   }
   .contract-status {
-    margin-top: 8px;
+    margin-top: 7px;
     border-radius: 999px;
-    padding: 7px 10px;
+    padding: 6px 9px;
     background: linear-gradient(135deg, #ef4d04, #ff7b20);
     color: #fff;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 950;
     text-align: center;
     text-transform: uppercase;
@@ -4039,7 +4114,7 @@ const getContractDocumentStyles = () => `
   }
   .contract-data-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .contract-data-col {
     display: contents;
@@ -4057,8 +4132,8 @@ const getContractDocumentStyles = () => `
     border-bottom: 1px solid #ebe6e2;
     border-right: 1px solid #ebe6e2;
   }
-  .contract-data-grid > .contract-field:nth-child(3n) { border-right: 0; }
-  .contract-data-grid > .contract-field:nth-last-child(-n + 2) { border-bottom: 0; }
+  .contract-data-grid > .contract-field:nth-child(4n) { border-right: 0; }
+  .contract-data-grid > .contract-field:nth-last-child(-n + 4) { border-bottom: 0; }
   .contract-data-grid > .contract-field:last-child { border-right: 0; }
   .contract-field-icon {
     display: grid;
@@ -4067,8 +4142,8 @@ const getContractDocumentStyles = () => `
   }
   .contract-schedule {
     display: grid;
-    grid-template-columns: 0.95fr 0.95fr 1.2fr;
-    min-height: 29mm;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 24mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -4080,6 +4155,7 @@ const getContractDocumentStyles = () => `
     padding: 8px 10px;
     border-right: 1px solid #e5e0dc;
   }
+  .contract-schedule-main:last-child { border-right: 0; }
   .contract-schedule-value {
     display: block;
     margin-top: 4px;
@@ -4087,28 +4163,8 @@ const getContractDocumentStyles = () => `
     font-size: 12px;
     line-height: 1.45;
   }
-  .contract-schedule-note {
-    padding: 8px 10px;
-    background: linear-gradient(135deg, #fff7f1, #fff);
-    border-left: 1px solid #ffd8c4;
-  }
-  .contract-schedule-note strong {
-    display: block;
-    color: #e84a00;
-    font-size: 10px;
-    font-weight: 950;
-    text-transform: uppercase;
-  }
-  .contract-schedule-note p {
-    margin-top: 6px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #eeded4;
-  }
   .contract-items-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 65mm;
-    gap: 5mm;
-    align-items: start;
+    display: block;
     break-inside: auto;
     page-break-inside: auto;
   }
@@ -4122,6 +4178,9 @@ const getContractDocumentStyles = () => `
   }
   .contract-items-table thead {
     display: table-header-group;
+  }
+  .contract-items-table tfoot {
+    display: table-row-group;
   }
   .contract-items-table tr {
     break-inside: avoid;
@@ -4189,60 +4248,50 @@ const getContractDocumentStyles = () => `
     color: #f04b0b;
     margin-right: 7px;
   }
-  .contract-money-card {
-    border: 1px solid #f2d1be;
-    border-radius: 8px;
-    padding: 10px 12px;
-    background: linear-gradient(135deg, #fff7f1, #fff);
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .contract-money-card h3 {
+  .contract-summary-title-row td {
+    padding-top: 9px;
+    background: #fff7f1;
     color: #e84a00;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 950;
     text-transform: uppercase;
   }
-  .contract-money-line {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 5px 0;
-    border-bottom: 1px solid #eeded4;
+  .contract-summary-row td {
+    background: #fffdfb;
+    padding-top: 5px;
+    padding-bottom: 5px;
   }
-  .contract-money-line:last-child { border-bottom: 0; }
-  .contract-money-total {
-    margin-top: 6px;
-    border-radius: 6px;
-    padding: 9px 10px;
+  .contract-summary-label {
+    color: #4b4f5c;
+    font-weight: 800;
+    text-align: right;
+  }
+  .contract-summary-value {
+    color: #10131f;
+    font-weight: 950;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .contract-summary-total td {
     background: #ffe2cf;
     color: #e84a00;
-    font-size: 14px;
     font-weight: 950;
   }
-  .contract-money-managed {
-    margin-top: 6px;
-    border: 1px solid #ffb98f;
-    border-radius: 6px;
-    padding: 8px 10px;
+  .contract-summary-total .contract-summary-label,
+  .contract-summary-total .contract-summary-value {
+    color: #e84a00;
+    font-size: 12.5px;
+  }
+  .contract-summary-managed td {
     background: #fff7ed;
-    color: #111522;
+    border-top: 1px solid #ffb98f;
+    border-bottom: 1px solid #ffb98f;
   }
-  .contract-money-managed div {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
+  .contract-summary-managed .contract-summary-label,
+  .contract-summary-managed .contract-summary-value {
     color: #bf3d00;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 950;
-  }
-  .contract-money-managed small {
-    display: block;
-    margin-top: 3px;
-    color: #7a5b4c;
-    font-size: 8.5px;
-    font-weight: 800;
-    text-transform: uppercase;
   }
   .contract-terms-panel {
     display: grid;
@@ -4359,10 +4408,6 @@ const getContractDocumentStyles = () => `
       font-size: 10px;
       line-height: 1.3;
     }
-    .contract-money-card {
-      width: 72mm;
-      margin: 5mm 0 0 auto;
-    }
   }
   @media print {
     html, body {
@@ -4388,7 +4433,6 @@ const getContractDocumentStyles = () => `
     .contract-company-strip,
     .contract-panel,
     .contract-schedule,
-    .contract-money-card,
     .contract-terms-panel,
     .contract-closing {
       break-inside: avoid;
@@ -4403,9 +4447,6 @@ const getContractDocumentStyles = () => `
     }
     .contract-field { min-height: 10.5mm; }
     .contract-schedule { min-height: 26mm; }
-    .contract-items-layout {
-      display: block;
-    }
     .contract-items-table {
       border-collapse: collapse;
       border-radius: 0;
@@ -4413,10 +4454,6 @@ const getContractDocumentStyles = () => `
     .contract-items-table th,
     .contract-items-table td {
       padding: 5px 7px;
-    }
-    .contract-money-card {
-      width: 68mm;
-      margin: 4mm 0 0 auto;
     }
     .contract-signature-script { min-height: 9mm; font-size: 16px; }
     .contract-footer { margin-top: 3mm; padding-top: 2mm; }
@@ -4472,14 +4509,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const durationLabel = hasDurationPricing
     ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
     : 'Precio unico';
-  const tierRows = hasDurationPricing
-    ? (pricingPlan.tiers ?? [])
-      .map((tier) => {
-        const range = tier.toDay > 0 ? `${tier.fromDay} - ${tier.toDay}` : `${tier.fromDay}+`;
-        return `<li>Dia ${escapeHtml(range)}: ${escapeHtml(tier.percent)}%</li>`;
-      })
-      .join('')
-    : '';
   const cancellationPenaltyPercent = Number(settings?.contractCancellationPenaltyPercent ?? 20);
   const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
 
@@ -4545,18 +4574,18 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </section>
         <section>
           <div class="contract-code-card">
-            <strong>${escapeHtml(mainCode)}</strong>
-            <span>N&deg; de Orden</span>
+            <span class="contract-code-label">N&deg; ${escapeHtml(mainCode)}</span>
+            <span class="contract-code-date">${escapeHtml(issuedAt)}</span>
+            <div class="contract-status"><img class="contract-status-icon" src="/imagenes/pdf%20contrato/verificado.png" alt="" />${escapeHtml(statusLabel)}</div>
           </div>
-          <div class="contract-status"><img class="contract-status-icon" src="/imagenes/pdf%20contrato/verificado.png" alt="" />${escapeHtml(statusLabel)}</div>
         </section>
       </header>
 
       <section class="contract-company-strip">
         <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('edificio-de-pisos.png')}</span><div><strong>${escapeHtml(company.name)}</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Domicilio fiscal</strong><span>${escapeHtml(company.address)}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Contacto</strong><span>${escapeHtml([company.phone, company.email].filter(Boolean).join(' | ') || '-')}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('calendario.png')}</span><div><strong>Fecha emision</strong><span>${escapeHtml(issuedAt)}</span></div></div>
+        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Direccion</strong><span>${escapeHtml(company.address)}</span></div></div>
+        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Telefono</strong><span>${escapeHtml(company.phone || '-')}</span></div></div>
+        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('documento.png')}</span><div><strong>Email</strong><span>${escapeHtml(company.email || '-')}</span></div></div>
       </section>
 
       <h3 class="contract-section-title"><span class="number">1.</span> Datos del cliente y evento</h3>
@@ -4574,18 +4603,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       <h3 class="contract-section-title"><span class="number">2.</span> Cronograma operativo</h3>
       <section class="contract-panel contract-schedule">
         <div class="contract-schedule-main">
-          <span class="contract-icon">${contractPdfIcon('reloj.png')}</span>
+          <span class="contract-icon">${contractPdfIcon('camion.png')}</span>
           <div><strong class="contract-schedule-label">${isCustomerPickup ? 'Alistamiento para recojo' : 'Entrega programada'}</strong><span class="contract-schedule-value">${escapeHtml(deliverySchedule)}</span></div>
         </div>
         <div class="contract-schedule-main">
           <span class="contract-icon">${contractPdfIcon('flechas-circulares.png')}</span>
           <div><strong class="contract-schedule-label">${isCustomerPickup ? 'Devolucion por cliente' : 'Recojo programado'}</strong><span class="contract-schedule-value">${escapeHtml(pickupSchedule)}</span></div>
         </div>
-        <div class="contract-schedule-note">
-          <strong>Modalidad acordada</strong>
-          <p>${escapeHtml(logisticsLabel)}</p>
-          <strong>Responsable operativo</strong>
-          <p>${escapeHtml(logisticsResponsibility)}</p>
+        <div class="contract-schedule-main">
+          <span class="contract-icon">${contractPdfIcon('documento.png')}</span>
+          <div><strong class="contract-schedule-label">Modalidad acordada</strong><span class="contract-schedule-value">${escapeHtml(logisticsLabel)}</span></div>
+        </div>
+        <div class="contract-schedule-main">
+          <span class="contract-icon">${contractPdfIcon('documento.png')}</span>
+          <div><strong class="contract-schedule-label">Responsable operativo</strong><span class="contract-schedule-value">${escapeHtml(logisticsResponsibility)}</span></div>
         </div>
       </section>
 
@@ -4599,24 +4630,21 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             ${rows || '<tr><td colspan="4">Sin items registrados</td></tr>'}
             <tr class="contract-observation-row"><td colspan="4"><strong>Observaciones</strong>${escapeHtml(observations)}</td></tr>
           </tbody>
+          <tfoot>
+            <tr class="contract-summary-title-row"><td colspan="4">Resumen economico</td></tr>
+            ${hasDurationPricing ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Base por dia</td><td class="contract-summary-value">${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</td></tr>` : ''}
+            ${hasDurationPricing ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Promocion duracion</td><td class="contract-summary-value">${formatBs(contract?.totals?.durationDiscountBs ?? pricingPlan.durationDiscountBs ?? 0)}</td></tr>` : ''}
+            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Subtotal</td><td class="contract-summary-value">${formatBs(subtotalBs)}</td></tr>
+            ${hasManualDiscount ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Descuento</td><td class="contract-summary-value">${formatBs(discountBs)}</td></tr>` : ''}
+            ${!isCustomerPickup ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Envio por equipo</td><td class="contract-summary-value">${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</td></tr>` : ''}
+            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Garantia</td><td class="contract-summary-value">${formatBs(guaranteeBs)}</td></tr>
+            ${Number(prepaidAppliedBs ?? 0) > 0 ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Saldo prepago aplicado</td><td class="contract-summary-value">${formatBs(prepaidAppliedBs)}</td></tr>` : ''}
+            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Pagado</td><td class="contract-summary-value">${formatBs(paidBs)}</td></tr>
+            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Saldo</td><td class="contract-summary-value">${formatBs(pendingBs)}</td></tr>
+            <tr class="contract-summary-row contract-summary-total"><td colspan="3" class="contract-summary-label">Total contrato</td><td class="contract-summary-value">${formatBs(totalBs)}</td></tr>
+            <tr class="contract-summary-row contract-summary-managed"><td colspan="3" class="contract-summary-label">Monto manejado</td><td class="contract-summary-value">${formatBs(documentManagedBs)}</td></tr>
+          </tfoot>
         </table>
-        <aside class="contract-money-card">
-          <h3>Resumen economico</h3>
-          ${hasDurationPricing ? `<div class="contract-money-line"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
-          ${hasDurationPricing ? `<div class="contract-money-line"><span>Promocion duracion</span><strong>${formatBs(contract?.totals?.durationDiscountBs ?? pricingPlan.durationDiscountBs ?? 0)}</strong></div>` : ''}
-          <div class="contract-money-line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
-          ${hasManualDiscount ? `<div class="contract-money-line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>` : ''}
-          ${!isCustomerPickup ? `<div class="contract-money-line"><span>Envio por equipo</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
-          <div class="contract-money-line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
-          ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="contract-money-line"><span>Saldo prepago aplicado</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
-          <div class="contract-money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
-          <div class="contract-money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
-          <div class="contract-money-total"><span>Total contrato</span><strong style="float:right">${formatBs(totalBs)}</strong></div>
-          <div class="contract-money-managed">
-            <div><span>Monto manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
-            <small>Total contrato + garantia, solo para este documento</small>
-          </div>
-        </aside>
       </section>
 
       <h3 class="contract-section-title"><span class="number">4.</span> Condiciones del servicio</h3>
@@ -5293,6 +5321,13 @@ const createWebBridge = () => ({
       const { items } = readState();
       return items.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
+    listCombos: async () => {
+      const { inventoryCombos } = readState();
+      return (inventoryCombos ?? [])
+        .filter((combo) => !combo.deletedAt && String(combo.status ?? 'active') !== 'deleted')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    },
     listMovements: async () => {
       const { inventoryMovements } = readState();
       return inventoryMovements.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -5543,6 +5578,155 @@ const createWebBridge = () => ({
       });
 
       return deletedItem;
+    },
+    createCombo: async (payload) => {
+      const name = toBusinessUppercase(payload?.name ?? '');
+      const category = toBusinessUppercase(payload?.category ?? 'COMBOS') || 'COMBOS';
+      const rentalPriceBs = toNumber(payload?.rentalPriceBs ?? payload?.priceBs ?? 0, 'precio del combo');
+      const notes = String(payload?.notes ?? '').trim();
+
+      if (!name) {
+        throw new Error('El nombre del combo es obligatorio.');
+      }
+      if (rentalPriceBs < 0) {
+        throw new Error('El precio del combo no puede ser negativo.');
+      }
+
+      let createdCombo = null;
+      transaction((state) => {
+        if ((state.inventoryCombos ?? []).some((entry) => !entry.deletedAt && normalizeText(entry.name) === normalizeText(name))) {
+          throw new Error('Ya existe un combo con ese nombre.');
+        }
+        const itemById = new Map(state.items.map((item) => [String(item.id), item]));
+        const ingredients = (Array.isArray(payload?.ingredients) ? payload.ingredients : [])
+          .map((line) => {
+            const item = itemById.get(String(line?.itemId ?? '').trim());
+            const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+            if (!item || quantity <= 0) return null;
+            const controlsStock =
+              item.controlsStock !== false
+              && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
+              && Number(item.totalStock ?? 0) > 0;
+            return {
+              itemId: item.id,
+              itemName: item.name,
+              quantity,
+              unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
+              controlsStock,
+              verificationStatus: controlsStock ? 'verified' : 'pending_verification',
+            };
+          })
+          .filter(Boolean);
+        if (ingredients.length === 0) {
+          throw new Error('Agrega al menos un producto existente al combo.');
+        }
+
+        createdCombo = {
+          id: makeId('combo'),
+          name,
+          category,
+          rentalPriceBs,
+          notes,
+          ingredients,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          deletedAt: null,
+        };
+        state.inventoryCombos = Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [];
+        state.inventoryCombos.push(createdCombo);
+        return state;
+      });
+
+      return createdCombo;
+    },
+    updateCombo: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) {
+        throw new Error('Debe enviar el id del combo.');
+      }
+
+      let updatedCombo = null;
+      transaction((state) => {
+        state.inventoryCombos = Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [];
+        const combo = state.inventoryCombos.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!combo) {
+          throw new Error('No se encontro el combo seleccionado.');
+        }
+
+        if (payload.name !== undefined) {
+          const nextName = toBusinessUppercase(payload.name);
+          if (!nextName) throw new Error('El nombre del combo no puede estar vacio.');
+          if (state.inventoryCombos.some((entry) => entry.id !== id && !entry.deletedAt && normalizeText(entry.name) === normalizeText(nextName))) {
+            throw new Error('Ya existe otro combo con ese nombre.');
+          }
+          combo.name = nextName;
+        }
+        if (payload.category !== undefined) {
+          combo.category = toBusinessUppercase(payload.category ?? 'COMBOS') || 'COMBOS';
+        }
+        if (payload.rentalPriceBs !== undefined || payload.priceBs !== undefined) {
+          const nextPrice = toNumber(payload.rentalPriceBs ?? payload.priceBs ?? 0, 'precio del combo');
+          if (nextPrice < 0) throw new Error('El precio del combo no puede ser negativo.');
+          combo.rentalPriceBs = nextPrice;
+        }
+        if (payload.notes !== undefined) {
+          combo.notes = String(payload.notes ?? '').trim();
+        }
+        if (payload.ingredients !== undefined) {
+          const itemById = new Map(state.items.map((item) => [String(item.id), item]));
+          const ingredients = (Array.isArray(payload.ingredients) ? payload.ingredients : [])
+            .map((line) => {
+              const item = itemById.get(String(line?.itemId ?? '').trim());
+              const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+              if (!item || quantity <= 0) return null;
+              const controlsStock =
+                item.controlsStock !== false
+                && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
+                && Number(item.totalStock ?? 0) > 0;
+              return {
+                itemId: item.id,
+                itemName: item.name,
+                quantity,
+                unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
+                controlsStock,
+                verificationStatus: controlsStock ? 'verified' : 'pending_verification',
+              };
+            })
+            .filter(Boolean);
+          if (ingredients.length === 0) {
+            throw new Error('Agrega al menos un producto existente al combo.');
+          }
+          combo.ingredients = ingredients;
+        }
+        combo.updatedAt = new Date().toISOString();
+        updatedCombo = deepClone(combo);
+        return state;
+      });
+
+      return updatedCombo;
+    },
+    removeCombo: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) {
+        throw new Error('Debe enviar el id del combo.');
+      }
+
+      let deletedCombo = null;
+      transaction((state) => {
+        state.inventoryCombos = Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [];
+        const combo = state.inventoryCombos.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!combo) {
+          throw new Error('No se encontro el combo seleccionado.');
+        }
+        combo.deletedAt = new Date().toISOString();
+        combo.status = 'deleted';
+        combo.updatedAt = combo.deletedAt;
+        deletedCombo = deepClone(combo);
+        return state;
+      });
+
+      return deletedCombo;
     },
     createMovement: async (payload) => {
       const itemId = payload?.itemId;
@@ -5929,9 +6113,9 @@ const createWebBridge = () => ({
           city: String(payload?.city ?? '').trim(),
           observations: String(payload?.observations ?? '').trim(),
           isBlacklisted: Boolean(payload?.isBlacklisted),
-          blacklistReason: Boolean(payload?.isBlacklisted) ? normalizeBlacklistReason(payload?.blacklistReason) : '',
-          blacklistNotes: Boolean(payload?.isBlacklisted) ? String(payload?.blacklistNotes ?? '').trim() : '',
-          blacklistedAt: Boolean(payload?.isBlacklisted) ? now : null,
+          blacklistReason: payload?.isBlacklisted ? normalizeBlacklistReason(payload?.blacklistReason) : '',
+          blacklistNotes: payload?.isBlacklisted ? String(payload?.blacklistNotes ?? '').trim() : '',
+          blacklistedAt: payload?.isBlacklisted ? now : null,
           prepaidEnabled,
           prepaidBalanceBs: prepaidOpeningBs,
           prepaidTotalDepositedBs: prepaidOpeningBs,
@@ -7564,14 +7748,23 @@ const createWebBridge = () => ({
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
           const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+            : Number((quantity * unitPriceBs).toFixed(2));
           return {
             itemId: item.id,
             itemName: item.name,
             quantity,
             unitPriceBs,
-            lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            lineTotalBs,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
+            comboId: String(line?.comboId ?? '').trim() || null,
+            comboName: String(line?.comboName ?? '').trim(),
+            comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+            comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
+            comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
 
@@ -7710,14 +7903,23 @@ const createWebBridge = () => ({
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+              ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+              : Number((quantity * unitPriceBs).toFixed(2));
             return {
               itemId: item.id,
               itemName: item.name,
               quantity,
               unitPriceBs,
-              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              lineTotalBs,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
+              comboId: String(line?.comboId ?? '').trim() || null,
+              comboName: String(line?.comboName ?? '').trim(),
+              comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+              comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
+              comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+              comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
         }
@@ -7849,14 +8051,23 @@ const createWebBridge = () => ({
 
           const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
           const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+            : Number((quantity * unitPriceBs).toFixed(2));
           return {
             itemId: item.id,
             itemName: item.name,
             quantity,
             unitPriceBs,
-            lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            lineTotalBs,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
+            comboId: String(line?.comboId ?? '').trim() || null,
+            comboName: String(line?.comboName ?? '').trim(),
+            comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+            comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
+            comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
 
@@ -7994,14 +8205,23 @@ const createWebBridge = () => ({
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+              ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+              : Number((quantity * unitPriceBs).toFixed(2));
             return {
               itemId: item.id,
               itemName: item.name,
               quantity,
               unitPriceBs,
-              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+              lineTotalBs,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
+              comboId: String(line?.comboId ?? '').trim() || null,
+              comboName: String(line?.comboName ?? '').trim(),
+              comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+              comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
+              comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+              comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
           contract.items = normalizedItems;
@@ -8454,6 +8674,9 @@ const createWebBridge = () => ({
           );
           const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
           const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+            : null;
 
           if (internalReservationQty > 0) {
             const beforeTotalStock = item.totalStock;
@@ -8497,7 +8720,13 @@ const createWebBridge = () => ({
             internalReservedQty: internalReservationQty,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
-            lineTotalBs: quantity * rentalPriceBs,
+            comboId: String(line?.comboId ?? '').trim() || null,
+            comboName: String(line?.comboName ?? '').trim(),
+            comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
+            comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
+            comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * rentalPriceBs,
           };
         });
 

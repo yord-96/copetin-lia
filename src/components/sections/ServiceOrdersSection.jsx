@@ -736,6 +736,7 @@ function ServiceOrdersSection({
   generatedReports = [],
   clients = [],
   items = [],
+  combos = [],
   vehicles = [],
   drivers = [],
   users = [],
@@ -768,7 +769,7 @@ function ServiceOrdersSection({
   canAccessInventory = true,
   canAccessTransport = true,
 }) {
-  const [activeView, setActiveView] = useState('quotes');
+  const [activeView, setActiveView] = useState('contracts');
   const [orderFilter, setOrderFilter] = useState('all');
   const [orderQuery, setOrderQuery] = useState('');
   const [quoteFilter, setQuoteFilter] = useState('all');
@@ -1368,12 +1369,6 @@ function ServiceOrdersSection({
     [contractNotificationCount, contractRows.length, quoteNotificationCount, quoteRows.length],
   );
 
-  const handleMetricClick = (card) => {
-    setActiveView(card.view || 'quotes');
-    if (card.view === 'quotes') setQuoteFilter(card.filter || 'all');
-    if (card.view === 'contracts') setContractFilter(card.filter || 'all');
-  };
-
   const draftAvailabilityPeriod = useMemo(
     () => buildAvailabilityPeriod({
       deliveryDate: draft.deliveryDate || draft.eventDate,
@@ -1430,25 +1425,38 @@ function ServiceOrdersSection({
         const availability = availabilityByItemId.get(line.itemId) ?? null;
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
         const unitPriceBs = Math.max(0, Number(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+        const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
+        const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
         return {
           ...line,
+          lineKey,
           quantity,
           unitPriceBs,
           item,
           availability,
-          lineTotalBs: quantity * unitPriceBs,
+          lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs,
         };
       })
       .filter(Boolean);
   }, [availabilityByItemId, draft.items, items]);
 
+  const selectedDemandByItemId = useMemo(() => {
+    const map = new Map();
+    selectedItems.forEach((line) => {
+      if (isDetachedFromInventory(line)) return;
+      map.set(line.itemId, (map.get(line.itemId) ?? 0) + Math.max(0, Number(line.quantity ?? 0)));
+    });
+    return map;
+  }, [selectedItems]);
+
   const stockIssues = useMemo(
     () => selectedItems.filter((line) => {
       if (isDetachedFromInventory(line)) return false;
       const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
-      return line.quantity > available;
+      const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+      return requestedForItem > available;
     }),
-    [selectedItems],
+    [selectedDemandByItemId, selectedItems],
   );
 
   const supplierOffersByItemId = useMemo(() => {
@@ -1577,11 +1585,16 @@ function ServiceOrdersSection({
   }, [modalOpen, selectedItems, supplierOffersByItemId]);
 
   const supplierCoverageRows = useMemo(
-    () => selectedItems
-      .map((line) => {
+    () => {
+      const processedItemIds = new Set();
+      return selectedItems
+        .map((line) => {
         if (isDetachedFromInventory(line)) return null;
+        if (processedItemIds.has(line.itemId)) return null;
+        processedItemIds.add(line.itemId);
         const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
-        const shortageQty = Math.max(0, line.quantity - available);
+        const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+        const shortageQty = Math.max(0, requestedForItem - available);
         if (shortageQty <= 0) return null;
         const draftLine = supplierFulfillmentDraftByItem[line.itemId] ?? null;
         const hasSupplier = Boolean(String(draftLine?.supplierId ?? '').trim());
@@ -1602,8 +1615,9 @@ function ServiceOrdersSection({
           supplierUnitCostBs: Math.max(0, Number(draftLine?.supplierUnitCostBs ?? 0)),
         };
       })
-      .filter(Boolean),
-    [selectedItems, supplierFulfillmentDraftByItem],
+        .filter(Boolean);
+    },
+    [selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
 
   const uncoveredStockIssues = useMemo(
@@ -1757,20 +1771,34 @@ function ServiceOrdersSection({
   const selectedClientPrepaidPendingBs = Math.max(0, quoteTotalBs - selectedClientPrepaidCoverageBs);
 
   const itemCategoryOptions = useMemo(
-    () => Array.from(new Set(items.map((item) => item.category).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
-    [items],
+    () => Array.from(new Set([
+      ...items.map((item) => item.category).filter(Boolean),
+      ...(combos.length ? ['COMBOS'] : []),
+    ])).sort((a, b) => a.localeCompare(b, 'es')),
+    [combos, items],
   );
 
   const filteredCatalog = useMemo(() => {
     const text = normalizeText(itemSearch);
-    return items
+    const productEntries = items
       .filter((item) => {
         if (itemCategoryFilter !== 'all' && item.category !== itemCategoryFilter) return false;
         if (!text) return true;
         return normalizeText(item.name).includes(text) || normalizeText(item.category).includes(text);
       })
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  }, [itemCategoryFilter, itemSearch, items]);
+      .map((item) => ({ type: 'product', id: item.id, item, name: item.name }));
+    const comboEntries = (combos ?? [])
+      .filter((combo) => {
+        if (itemCategoryFilter !== 'all' && itemCategoryFilter !== 'COMBOS') return false;
+        if (!text) return true;
+        const ingredientsText = (combo.ingredients ?? []).map((line) => line.itemName).join(' ');
+        return normalizeText(combo.name).includes(text)
+          || normalizeText(combo.category).includes(text)
+          || normalizeText(ingredientsText).includes(text);
+      })
+      .map((combo) => ({ type: 'combo', id: combo.id, combo, name: combo.name }));
+    return [...productEntries, ...comboEntries].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  }, [combos, itemCategoryFilter, itemSearch, items]);
 
   const visibleCatalog = useMemo(
     () => filteredCatalog.slice(0, catalogVisibleCount),
@@ -1847,13 +1875,21 @@ function ServiceOrdersSection({
     responsibleIds: Array.isArray(record?.responsibles) && record.responsibles.length > 0
       ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
       : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
-    items: (record?.items ?? []).map((line) => ({
+    items: (record?.items ?? []).map((line, index) => ({
+      lineKey: line.lineKey ?? (line.comboLineKey ? `${line.comboLineKey}-${line.itemId}-${index}` : undefined),
       itemId: line.itemId,
       quantity: line.quantity,
       unitPriceBs: line.unitPriceBs,
+      lineTotalBs: line.lineTotalBs,
       controlsStock: line.controlsStock,
       verificationStatus: line.verificationStatus,
       quickItem: line.quickItem ?? null,
+      comboId: line.comboId ?? null,
+      comboName: line.comboName ?? '',
+      comboLineKey: line.comboLineKey ?? null,
+      comboComponentName: line.comboComponentName ?? '',
+      comboQuantity: line.comboQuantity ?? 1,
+      comboPricingRole: line.comboPricingRole ?? '',
     })),
     supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
       ? record.supplierFulfillmentPlan.map((line) => ({
@@ -2149,19 +2185,52 @@ function ServiceOrdersSection({
     const item = items.find((entry) => entry.id === itemId);
     if (!item) return;
     setDraft((current) => {
-      const already = current.items.find((line) => line.itemId === itemId);
+      const already = current.items.find((line) => line.itemId === itemId && !line.comboId);
       if (already) {
         const nextQty = Math.max(1, Number(already.quantity ?? 1) + 1);
         return {
           ...current,
-          items: current.items.map((line) => (line.itemId === itemId ? { ...line, quantity: nextQty } : line)),
+          items: current.items.map((line) => ((line.lineKey ?? line.itemId) === (already.lineKey ?? already.itemId) ? { ...line, quantity: nextQty } : line)),
         };
       }
       return {
         ...current,
-        items: [...current.items, { itemId, quantity: 1, unitPriceBs: Number(item.rentalPriceBs ?? 0) }],
+        items: [...current.items, { lineKey: `item-${itemId}-${Date.now()}`, itemId, quantity: 1, unitPriceBs: Number(item.rentalPriceBs ?? 0) }],
       };
     });
+  };
+
+  const addDraftCombo = (comboId) => {
+    const combo = (combos ?? []).find((entry) => entry.id === comboId);
+    if (!combo) return;
+    const comboLineKey = `combo-${combo.id}-${Date.now()}`;
+    const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+    setDraft((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        ...ingredients.map((line, index) => {
+          const item = items.find((entry) => entry.id === line.itemId);
+          const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+          const comboPrice = Math.max(0, Number(combo.rentalPriceBs ?? 0));
+          return {
+            lineKey: `${comboLineKey}-${line.itemId}-${index}`,
+            itemId: line.itemId,
+            quantity,
+            unitPriceBs: index === 0 ? comboPrice : 0,
+            lineTotalBs: index === 0 ? comboPrice : 0,
+            comboId: combo.id,
+            comboName: combo.name,
+            comboLineKey,
+            comboComponentName: item?.name ?? line.itemName ?? '',
+            comboQuantity: 1,
+            comboPricingRole: index === 0 ? 'price' : 'component',
+            controlsStock: item?.controlsStock ?? line.controlsStock,
+            verificationStatus: item?.verificationStatus ?? line.verificationStatus,
+          };
+        }),
+      ],
+    }));
   };
 
   const setQuickItemField = (field, value) => {
@@ -2198,25 +2267,39 @@ function ServiceOrdersSection({
     setFormError('');
   };
 
-  const setDraftItemQuantity = (itemId, quantityValue) => {
-    const item = items.find((entry) => entry.id === itemId) ?? draft.items.find((line) => line.itemId === itemId && line.quickItem);
+  const setDraftItemQuantity = (lineKeyOrItemId, quantityValue) => {
+    const draftLine = draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId);
+    const itemId = draftLine?.itemId ?? lineKeyOrItemId;
+    const item = items.find((entry) => entry.id === itemId) ?? draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId && line.quickItem);
     if (!item) return;
     const parsed = Math.max(1, Math.trunc(Number(quantityValue ?? 1)));
     setDraft((current) => ({
       ...current,
-      items: current.items.map((line) => (line.itemId === itemId ? { ...line, quantity: parsed } : line)),
+      items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
+        ? {
+          ...line,
+          quantity: parsed,
+          lineTotalBs: line.comboId ? Number(line.lineTotalBs ?? 0) : undefined,
+        }
+        : line)),
     }));
   };
 
-  const removeDraftItem = (itemId) => {
-    setDraft((current) => ({ ...current, items: current.items.filter((line) => line.itemId !== itemId) }));
+  const removeDraftItem = (lineKeyOrItemId) => {
+    setDraft((current) => ({ ...current, items: current.items.filter((line) => (line.lineKey ?? line.itemId) !== lineKeyOrItemId) }));
   };
 
-  const setDraftItemPrice = (itemId, value) => {
+  const setDraftItemPrice = (lineKeyOrItemId, value) => {
     const parsed = Math.max(0, Number(value ?? 0));
     setDraft((current) => ({
       ...current,
-      items: current.items.map((line) => (line.itemId === itemId ? { ...line, unitPriceBs: parsed } : line)),
+      items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
+        ? {
+          ...line,
+          unitPriceBs: parsed,
+          lineTotalBs: line.comboId ? parsed : undefined,
+        }
+        : line)),
     }));
   };
 
@@ -2442,12 +2525,20 @@ function ServiceOrdersSection({
       pricingPlan: quotePricingPlan,
       status: draft.mode === 'order' ? 'enviada' : 'borrador',
       items: selectedItems.map((line) => ({
+        lineKey: line.lineKey,
         itemId: String(line.itemId).startsWith('quick-') ? '' : line.itemId,
         quantity: line.quantity,
         unitPriceBs: line.unitPriceBs,
+        lineTotalBs: line.lineTotalBs,
         controlsStock: line.controlsStock,
         verificationStatus: line.verificationStatus,
         quickItem: line.quickItem ?? null,
+        comboId: line.comboId ?? null,
+        comboName: line.comboName ?? '',
+        comboLineKey: line.comboLineKey ?? null,
+        comboComponentName: line.comboComponentName ?? '',
+        comboQuantity: line.comboQuantity ?? 1,
+        comboPricingRole: line.comboPricingRole ?? '',
       })),
       supplierFulfillmentPlan,
       responsibles: selectedResponsibles,
@@ -3293,7 +3384,7 @@ function ServiceOrdersSection({
               </div>
             </div>
 
-            <div className="orders-table-wrap">
+            <div className="orders-table-wrap orders-commercial-table-wrap">
               <table className="orders-table orders-commercial-table">
                 <thead>
                   <tr>
@@ -3394,6 +3485,58 @@ function ServiceOrdersSection({
               </table>
             </div>
 
+            <div className="orders-mobile-commercial-list">
+              {filteredQuotes.map((row) => {
+                const statusMeta = QUOTE_STATUS_META[row.status] ?? QUOTE_STATUS_META.borrador;
+                return (
+                  <article key={row.id} className={`orders-mobile-contract-card quote-${row.status}`}>
+                    <header>
+                      <strong>{row.quoteCode}</strong>
+                      <span className={`orders-status-badge quote-${statusMeta.className}`}>{statusMeta.label}</span>
+                      <b>{formatBs(row.totalBs)}</b>
+                    </header>
+                    <div className="orders-mobile-contract-main">
+                      <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
+                      <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
+                    </div>
+                    <div className="orders-mobile-contract-meta">
+                      <span className="orders-mobile-date-line">Fecha: {formatDate(row.deliveryDate)} - {formatDate(row.pickupDate)}</span>
+                      <span>{LOGISTICS_MODE_META[row.logisticsMode] ?? 'Entrega / recojo'}</span>
+                    </div>
+                    <div className="orders-mobile-contract-bottom">
+                      <div className="orders-responsible-cell">
+                        <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
+                        <div>
+                          <strong>{row.responsibleName}</strong>
+                          <small>{row.responsibleRole}</small>
+                        </div>
+                      </div>
+                      <div className="orders-row-actions">
+                        <button type="button" className="orders-open-btn" onClick={() => handleEditQuoteClick(row)}>
+                          Abrir
+                        </button>
+                        <button
+                          type="button"
+                          className="whatsapp-bubble-button"
+                          onClick={() => openWhatsAppModal('quote', row)}
+                          aria-label={`Enviar cotizacion ${row.quoteCode} por WhatsApp`}
+                        >
+                          <WhatsAppGlyph />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {filteredQuotes.length === 0 ? (
+                <div className="orders-empty-state">
+                  <span className="orders-empty-icon"><OrdersKpiIcon kind="quote" /></span>
+                  <strong>No hay cotizaciones con esos filtros</strong>
+                  <p>Crea una cotizacion o limpia los filtros para revisar propuestas anteriores.</p>
+                </div>
+              ) : null}
+            </div>
+
             <footer className="orders-footer">
               <span>Mostrando {filteredQuotes.length} de {quoteRows.length} cotizaciones</span>
             </footer>
@@ -3444,7 +3587,7 @@ function ServiceOrdersSection({
               </div>
             </div>
 
-            <div className="orders-table-wrap">
+            <div className="orders-table-wrap orders-commercial-table-wrap">
               <table className="orders-table orders-commercial-table orders-contracts-table">
                 <thead>
                   <tr>
@@ -3542,6 +3685,70 @@ function ServiceOrdersSection({
                   ) : null}
                 </tbody>
               </table>
+            </div>
+
+            <div className="orders-mobile-commercial-list">
+              {filteredContracts.map((row) => {
+                const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
+                return (
+                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}`}>
+                    <header>
+                      <strong>{row.contractCode}</strong>
+                      <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
+                      <b>{formatBs(row.totalBs)}</b>
+                    </header>
+                    <div className="orders-mobile-contract-main">
+                      <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
+                      <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
+                    </div>
+                    <div className="orders-mobile-contract-bottom">
+                      <div className="orders-responsible-cell">
+                        <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
+                        <div>
+                          <strong>{row.responsibleName}</strong>
+                          <small>{row.responsibleRole}</small>
+                        </div>
+                      </div>
+                      <div className="orders-mobile-contract-order">
+                        <span>Orden:</span>
+                        <strong>{row.orderCode || '-'}</strong>
+                      </div>
+                    </div>
+                    <div className="orders-mobile-contract-meta">
+                      <span className="orders-mobile-date-line">Fecha: {[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</span>
+                      <span>Entrega / recojo</span>
+                    </div>
+                    <div className="orders-mobile-contract-actions">
+                      <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
+                        Abrir
+                      </button>
+                      <button
+                        type="button"
+                        className="whatsapp-bubble-button"
+                        onClick={() => openWhatsAppModal('contract', row)}
+                        aria-label={`Enviar contrato ${row.contractCode} por WhatsApp`}
+                      >
+                        <WhatsAppGlyph />
+                      </button>
+                      <button
+                        type="button"
+                        className="transport-row-menu-button"
+                        onClick={(event) => toggleActionsMenu('contract', row.id, event)}
+                        aria-label={`Mas acciones para ${row.contractCode}`}
+                      >
+                        {'\u22ee'}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+              {filteredContracts.length === 0 ? (
+                <div className="orders-empty-state">
+                  <span className="orders-empty-icon"><OrdersKpiIcon kind="contract" /></span>
+                  <strong>No hay contratos con esos filtros</strong>
+                  <p>Los contratos apareceran aqui cuando una cotizacion sea aprobada o registres un contrato manual.</p>
+                </div>
+              ) : null}
             </div>
 
             <footer className="orders-footer">
@@ -4753,7 +4960,7 @@ function ServiceOrdersSection({
 
                     <div className="orders-products-head">
                       <span>
-                        {visibleCatalog.length} visibles de {filteredCatalog.length} productos
+                        {visibleCatalog.length} visibles de {filteredCatalog.length} productos y combos
                       </span>
                       {remainingCatalogCount > 0 ? (
                         <span>Lista paginada para trabajar comodo con inventarios grandes.</span>
@@ -4761,7 +4968,57 @@ function ServiceOrdersSection({
                     </div>
 
                     <div className="orders-product-list">
-                      {visibleCatalog.map((item) => {
+                      {visibleCatalog.map((entry) => {
+                        if (entry.type === 'combo') {
+                          const combo = entry.combo;
+                          const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+                          const allVerified = ingredients.every((line) => {
+                            const item = items.find((candidate) => candidate.id === line.itemId);
+                            return item?.controlsStock !== false && String(item?.verificationStatus ?? '').trim() !== 'pending_verification';
+                          });
+                          return (
+                            <article key={`combo-${combo.id}`} className="orders-product-row orders-combo-catalog-row">
+                              <div className="orders-product-thumb orders-combo-thumb">
+                                <span>CB</span>
+                              </div>
+                              <div className="orders-product-info">
+                                <strong title={combo.name}>{combo.name}</strong>
+                                <span>Combo - {ingredients.length} productos</span>
+                                <div className="orders-product-detail-line">
+                                  {ingredients.slice(0, 4).map((line) => (
+                                    <span key={`${combo.id}-${line.itemId}`}>{line.quantity}x {line.itemName}</span>
+                                  ))}
+                                  {ingredients.length > 4 ? <span>+{ingredients.length - 4} mas</span> : null}
+                                </div>
+                                <div className="orders-availability-metrics">
+                                  <span className="primary">
+                                    <small>Stock</small>
+                                    <strong>{allVerified ? 'Verificado' : 'Parcial'}</strong>
+                                  </span>
+                                  <span>
+                                    <small>Componentes</small>
+                                    <strong>{ingredients.length}</strong>
+                                  </span>
+                                  <span className={allVerified ? 'positive' : 'warning'}>
+                                    <small>Descuento</small>
+                                    <strong>{allVerified ? 'Activo' : 'Pendiente'}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                              <strong className="orders-product-price">{formatBs(combo.rentalPriceBs)}</strong>
+                              <span className="orders-catalog-card-chip">Combo</span>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() => addDraftCombo(combo.id)}
+                                disabled={ingredients.length === 0}
+                              >
+                                Agregar
+                              </button>
+                            </article>
+                          );
+                        }
+                        const item = entry.item;
                         const availability = availabilityByItemId.get(item.id) ?? null;
                         const isProvisionalCatalogItem = isDetachedFromInventory(item);
                         const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
@@ -4855,12 +5112,12 @@ function ServiceOrdersSection({
                         </article>
                         );
                       })}
-                      {filteredCatalog.length === 0 ? <p className="status">No hay items para esta busqueda.</p> : null}
+                      {filteredCatalog.length === 0 ? <p className="status">No hay productos o combos para esta busqueda.</p> : null}
                     </div>
                     {remainingCatalogCount > 0 ? (
                       <div className="orders-catalog-actions">
                         <span>
-                          Quedan {remainingCatalogCount} productos. Busca por nombre, SKU o categoria para llegar mas rapido.
+                          Quedan {remainingCatalogCount} opciones. Busca por nombre, SKU, combo o categoria para llegar mas rapido.
                         </span>
                         <button
                           type="button"
@@ -4886,14 +5143,19 @@ function ServiceOrdersSection({
                           const isProvisionalItem = isDetachedFromInventory(line);
                           const detailParts = getOperationalItemDetails(line);
                           const availableStock = Math.max(0, Number(availability?.projectedAvailable ?? line.item.availableStock ?? 0));
-                          const isOverAvailable = !isProvisionalItem && line.quantity > availableStock;
+                          const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+                          const shortageForItem = Math.max(0, requestedForItem - availableStock);
+                          const isOverAvailable = !isProvisionalItem && shortageForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
                           return (
-                          <div key={line.itemId} className={`orders-selected-row${isOverAvailable ? ' stock-warning' : ''}`}>
+                          <div key={line.lineKey} className={`orders-selected-row${isOverAvailable ? ' stock-warning' : ''}`}>
                             <div>
                               <strong>{line.item.name}</strong>
+                              {line.comboName ? (
+                                <p className="orders-combo-line-note">Combo: {line.comboName}</p>
+                              ) : null}
                               {detailParts.length > 0 ? (
                                 <div className="orders-item-detail-chips">
                                   {detailParts.map((part) => (
@@ -4915,7 +5177,7 @@ function ServiceOrdersSection({
                                 type="number"
                                 min="1"
                                 value={line.quantity}
-                                onChange={(event) => setDraftItemQuantity(line.itemId, event.target.value)}
+                                onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
                                 aria-label={`Cantidad de ${line.item.name}`}
                                 aria-invalid={isOverAvailable ? 'true' : 'false'}
                               />
@@ -4948,7 +5210,7 @@ function ServiceOrdersSection({
                                 </small>
                               ) : null}
                               {isOverAvailable ? (
-                                <small className="orders-stock-error">Faltan {line.quantity - availableStock}. Coordinar proveedor.</small>
+                                <small className="orders-stock-error">Faltan {shortageForItem}. Coordinar proveedor.</small>
                               ) : null}
                             </label>
                             {isOverAvailable ? (
@@ -4973,15 +5235,15 @@ function ServiceOrdersSection({
                                       });
                                       return;
                                     }
-                                    setSupplierCoverageField(line.itemId, {
-                                      supplierId: selectedOffer.supplierId,
-                                      supplierName: selectedOffer.supplierName,
-                                      supplierQuoteId: selectedOffer.supplierQuoteId,
-                                      supplierQuoteCode: selectedOffer.supplierQuoteCode,
-                                      supplierUnitCostBs: selectedOffer.supplierUnitCostBs,
-                                      neededQty: Math.max(1, Math.min(
-                                        line.quantity - availableStock,
-                                        Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? line.quantity - availableStock)),
+                                      setSupplierCoverageField(line.itemId, {
+                                        supplierId: selectedOffer.supplierId,
+                                        supplierName: selectedOffer.supplierName,
+                                        supplierQuoteId: selectedOffer.supplierQuoteId,
+                                        supplierQuoteCode: selectedOffer.supplierQuoteCode,
+                                        supplierUnitCostBs: selectedOffer.supplierUnitCostBs,
+                                        neededQty: Math.max(1, Math.min(
+                                        shortageForItem,
+                                        Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? shortageForItem)),
                                       )),
                                     });
                                   }}
@@ -5018,15 +5280,15 @@ function ServiceOrdersSection({
                                   type="number"
                                   min="1"
                                   step="1"
-                                  value={Math.max(1, Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? (line.quantity - availableStock))))}
+                                  value={Math.max(1, Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? shortageForItem)))}
                                   onChange={(event) => {
-                                    const shortage = Math.max(1, line.quantity - availableStock);
+                                    const shortage = Math.max(1, shortageForItem);
                                     const nextQty = Math.max(1, Math.min(shortage, Math.trunc(Number(event.target.value || 1))));
                                     setSupplierCoverageField(line.itemId, { neededQty: nextQty });
                                   }}
                                 />
                                 <small className="orders-available-note">
-                                  Faltante total: {Math.max(0, line.quantity - availableStock)} unidades
+                                  Faltante total: {shortageForItem} unidades
                                 </small>
                               </label>
                             ) : null}
@@ -5052,12 +5314,12 @@ function ServiceOrdersSection({
                                 min="0"
                                 step="0.01"
                                 value={line.unitPriceBs}
-                                onChange={(event) => setDraftItemPrice(line.itemId, event.target.value)}
+                                onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
                                 aria-label={`Precio unitario de ${line.item.name}`}
                               />
                             </label>
                             <strong>{formatBs(line.lineTotalBs)}</strong>
-                            <button type="button" className="danger-button" onClick={() => removeDraftItem(line.itemId)}>
+                            <button type="button" className="danger-button" onClick={() => removeDraftItem(line.lineKey)}>
                               Quitar
                             </button>
                           </div>
@@ -5355,7 +5617,7 @@ function ServiceOrdersSection({
                     selectedItems.slice(0, 6).map((line) => {
                       const detailParts = getOperationalItemDetails(line);
                       return (
-                        <div key={line.itemId} className="orders-side-line">
+                        <div key={line.lineKey} className="orders-side-line">
                           <span>
                             {line.quantity}x {line.item.name} - {formatBs(line.unitPriceBs)} c/u
                             {detailParts.length > 0 ? (

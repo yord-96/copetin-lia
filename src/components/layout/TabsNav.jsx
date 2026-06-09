@@ -27,6 +27,7 @@ const operationTabs = [
     hint: '',
     children: [
       { id: 'inventario_productos', label: 'Productos', targetId: 'inventario_productos' },
+      { id: 'inventario_combos', label: 'Combos', targetId: 'inventario_combos' },
       { id: 'inventario_categorias', label: 'Categorias', targetId: 'inventario_categorias' },
       { id: 'inventario_movimientos', label: 'Movimientos', targetId: 'inventario_movimientos' },
       { id: 'inventario_ajustes', label: 'Ajustes de Stock', targetId: 'inventario_ajustes' },

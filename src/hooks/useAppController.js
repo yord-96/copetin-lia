@@ -86,6 +86,7 @@ export const useAppController = () => {
 
   const [dashboard, setDashboard] = useState(null);
   const [items, setItems] = useState([]);
+  const [inventoryCombos, setInventoryCombos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [contracts, setContracts] = useState([]);
@@ -130,6 +131,7 @@ export const useAppController = () => {
       const [
         dashboardData,
         inventoryData,
+        inventoryCombosData,
         categoriesData,
         quotesData,
         contractsData,
@@ -154,6 +156,7 @@ export const useAppController = () => {
       ] = await Promise.all([
         api.dashboard.get(),
         api.inventory.list(),
+        api.inventory.listCombos(),
         api.categories.list(),
         api.quotes.list(),
         api.contracts.list(),
@@ -179,6 +182,7 @@ export const useAppController = () => {
 
       setDashboard(dashboardData);
       setItems(inventoryData);
+      setInventoryCombos(inventoryCombosData);
       setCategories(categoriesData);
       setQuotes(quotesData);
       setContracts(contractsData);
@@ -747,6 +751,39 @@ export const useAppController = () => {
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el producto de inventario.');
+      throw requestError;
+    }
+  };
+
+  const handleCreateInventoryCombo = async (payload) => {
+    setError('');
+    try {
+      await api.inventory.createCombo(payload);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo crear el combo de inventario.');
+      throw requestError;
+    }
+  };
+
+  const handleUpdateInventoryCombo = async (payload) => {
+    setError('');
+    try {
+      await api.inventory.updateCombo(payload);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo actualizar el combo de inventario.');
+      throw requestError;
+    }
+  };
+
+  const handleRemoveInventoryCombo = async (payload) => {
+    setError('');
+    try {
+      await api.inventory.removeCombo(payload);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo eliminar el combo de inventario.');
       throw requestError;
     }
   };
@@ -1712,6 +1749,7 @@ export const useAppController = () => {
     isCatalogView,
     subtitleText,
     items,
+    inventoryCombos,
     categories,
     quotes,
     contracts,
@@ -1771,6 +1809,9 @@ export const useAppController = () => {
     handleCreateInventoryItem,
     handleUpdateInventoryItem,
     handleRemoveInventoryItem,
+    handleCreateInventoryCombo,
+    handleUpdateInventoryCombo,
+    handleRemoveInventoryCombo,
     handleCreateInventoryMovement,
     handleOpenCashSession,
     handleCloseCashSession,

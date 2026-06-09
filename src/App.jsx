@@ -202,6 +202,8 @@ function App() {
       if (typeof window !== 'undefined' && !controller.currentUser) {
         window.sessionStorage.removeItem(DEVELOPER_COMPANY_STORAGE_KEY);
       }
+      // Keep the in-memory selection aligned with the session storage lifecycle.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeveloperCompanyChoice('');
       return;
     }
@@ -455,6 +457,7 @@ function App() {
           <InventoryDashboardSection
             activeModule={controller.activeTab}
             items={controller.items}
+            combos={controller.inventoryCombos}
             categories={controller.categories}
             activeRentals={controller.activeRentals}
             cancelledRentals={controller.cancelledRentals}
@@ -467,6 +470,9 @@ function App() {
             onCreateInventoryItem={controller.handleCreateInventoryItem}
             onUpdateInventoryItem={controller.handleUpdateInventoryItem}
             onRemoveInventoryItem={controller.handleRemoveInventoryItem}
+            onCreateInventoryCombo={controller.handleCreateInventoryCombo}
+            onUpdateInventoryCombo={controller.handleUpdateInventoryCombo}
+            onRemoveInventoryCombo={controller.handleRemoveInventoryCombo}
             onCreateInventoryMovement={controller.handleCreateInventoryMovement}
             onCreateCategory={controller.handleCreateCategory}
             onUpdateCategory={controller.handleUpdateCategory}
@@ -489,6 +495,7 @@ function App() {
             generatedReports={controller.generatedReports}
             clients={controller.clients}
             items={controller.items}
+            combos={controller.inventoryCombos}
             vehicles={controller.vehicles}
             drivers={controller.drivers}
             users={controller.users}

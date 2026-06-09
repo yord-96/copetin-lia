@@ -418,6 +418,15 @@ const EMPTY_PRODUCT_FORM = {
   imageFileName: '',
 };
 
+const EMPTY_COMBO_FORM = {
+  id: '',
+  name: '',
+  category: 'COMBOS',
+  rentalPriceBs: '0',
+  notes: '',
+  ingredients: [],
+};
+
 const EMPTY_MOVEMENT_FORM = {
   itemId: '',
   type: 'ajuste',
@@ -436,6 +445,7 @@ const EMPTY_CATEGORY_FORM = {
 function InventoryDashboardSection({
   activeModule = 'inventario',
   items = [],
+  combos = [],
   categories = [],
   activeRentals = [],
   cancelledRentals = [],
@@ -448,6 +458,9 @@ function InventoryDashboardSection({
   onCreateInventoryItem,
   onUpdateInventoryItem,
   onRemoveInventoryItem,
+  onCreateInventoryCombo,
+  onUpdateInventoryCombo,
+  onRemoveInventoryCombo,
   onCreateInventoryMovement,
   onCreateCategory,
   onUpdateCategory,
@@ -485,6 +498,11 @@ function InventoryDashboardSection({
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [productError, setProductError] = useState('');
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [comboModalMode, setComboModalMode] = useState(null);
+  const [comboForm, setComboForm] = useState(EMPTY_COMBO_FORM);
+  const [comboError, setComboError] = useState('');
+  const [isSavingCombo, setIsSavingCombo] = useState(false);
+  const [comboIngredientQuery, setComboIngredientQuery] = useState('');
   const [movementModalOpen, setMovementModalOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(EMPTY_MOVEMENT_FORM);
   const [movementError, setMovementError] = useState('');
@@ -527,15 +545,18 @@ function InventoryDashboardSection({
   const productImageInputRef = useRef(null);
 
   const isProductsModule = activeModule === 'inventario_productos';
+  const isCombosModule = activeModule === 'inventario_combos';
   const isCategoriesModule = activeModule === 'inventario_categorias';
   const isMovementsModule = activeModule === 'inventario_movimientos';
   const isAdjustModule = activeModule === 'inventario_ajustes';
-  const isOverviewModule = !isProductsModule && !isCategoriesModule && !isMovementsModule && !isAdjustModule;
+  const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isAdjustModule;
 
   const moduleViewClass = isMovementsModule
     ? 'inventory-view-movements'
     : isAdjustModule
     ? 'inventory-view-adjust'
+    : isCombosModule
+    ? 'inventory-view-combos'
     : isCategoriesModule
     ? 'inventory-view-categories'
     : isProductsModule
@@ -544,6 +565,8 @@ function InventoryDashboardSection({
 
   const moduleTitle = isProductsModule
     ? 'Productos'
+    : isCombosModule
+    ? 'Combos'
     : isCategoriesModule
     ? 'Categorias'
     : isMovementsModule
@@ -554,6 +577,8 @@ function InventoryDashboardSection({
 
   const moduleSubtitle = isProductsModule
     ? 'Gestiona el catalogo de items alquilables'
+    : isCombosModule
+    ? 'Arma paquetes con productos existentes, precio propio y control de stock por ingrediente'
     : isCategoriesModule
     ? 'Administra categorias de inventario con icono, color y estado'
     : isMovementsModule
@@ -563,7 +588,7 @@ function InventoryDashboardSection({
     : 'Controla tu stock en tiempo real';
 
   useEffect(() => {
-    if (isMovementsModule || isAdjustModule || isCategoriesModule) return;
+    if (isMovementsModule || isAdjustModule || isCategoriesModule || isCombosModule) return;
     writeStoredProductFilters({
       query,
       page,
@@ -586,6 +611,7 @@ function InventoryDashboardSection({
     isMovementsModule,
     isAdjustModule,
     isCategoriesModule,
+    isCombosModule,
   ]);
 
   useEffect(() => {
@@ -773,6 +799,50 @@ function InventoryDashboardSection({
       };
     });
   }, [items, maintenanceByItem, reservedByItem]);
+
+  const comboRows = useMemo(() => {
+    const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
+    return (combos ?? []).map((combo) => {
+      const ingredients = (Array.isArray(combo.ingredients) ? combo.ingredients : [])
+        .map((line) => {
+          const item = itemById.get(String(line?.itemId ?? ''));
+          const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+          return {
+            itemId: line?.itemId ?? '',
+            itemName: item?.name ?? line?.itemName ?? 'Producto',
+            category: item?.category ?? '',
+            quantity,
+            unitPriceBs: Number(item?.price ?? line?.unitPriceBs ?? 0),
+            controlsStock: item ? item.controlsStock : Boolean(line?.controlsStock),
+            available: Number(item?.available ?? 0),
+          };
+        })
+        .filter((line) => line.itemId);
+      const catalogValue = ingredients.reduce((sum, line) => sum + (line.quantity * line.unitPriceBs), 0);
+      const allVerified = ingredients.length > 0 && ingredients.every((line) => line.controlsStock);
+      const minAvailable = ingredients.reduce((min, line) => {
+        if (!line.controlsStock) return min;
+        const possible = Math.floor(line.available / Math.max(1, line.quantity));
+        return Math.min(min, possible);
+      }, Number.POSITIVE_INFINITY);
+      return {
+        id: combo.id,
+        name: combo.name,
+        category: combo.category || 'COMBOS',
+        sku: String(combo.id ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COMBO',
+        price: Number(combo.rentalPriceBs ?? 0),
+        catalogValue,
+        ingredients,
+        ingredientsCount: ingredients.length,
+        totalUnits: ingredients.reduce((sum, line) => sum + line.quantity, 0),
+        controlsStock: allVerified,
+        availableCombos: Number.isFinite(minAvailable) ? Math.max(0, minAvailable) : 0,
+        notes: combo.notes ?? '',
+        createdAt: combo.createdAt ?? combo.updatedAt ?? null,
+        updatedAt: combo.updatedAt ?? null,
+      };
+    });
+  }, [combos, inventoryRows]);
 
   const movementRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
@@ -1001,13 +1071,25 @@ function InventoryDashboardSection({
       ];
     }
 
+    if (isCombosModule) {
+      const controlled = comboRows.filter((row) => row.controlsStock).length;
+      const units = comboRows.reduce((sum, row) => sum + row.totalUnits, 0);
+      const value = comboRows.reduce((sum, row) => sum + row.price, 0);
+      return [
+        { tone: 'lilac', icon: 'box', value: comboRows.length, label: 'Combos creados', link: 'Ver catalogo' },
+        { tone: 'mint', icon: 'check', value: controlled, label: 'Listos para descontar', link: 'Ver controlados' },
+        { tone: 'sky', icon: 'bag', value: units, label: 'Productos vinculados', link: 'Revisar ingredientes' },
+        { tone: 'peach', icon: 'tag', value: formatBs(value), label: 'Valor de combos', link: 'Ver precios' },
+      ];
+    }
+
     return [
       { tone: 'lilac', icon: 'box', value: totals.totalUnits, label: 'Total de items', link: 'Ver detalles' },
       { tone: 'mint', icon: 'check', value: `${totals.availability.toFixed(1)}%`, label: 'Disponibilidad promedio', link: 'Ver reporte' },
       { tone: 'sky', icon: 'bag', value: totals.lowStockCount, label: 'Stock bajo minimo', link: 'Revisar alertas' },
       { tone: 'peach', icon: 'tag', value: formatBs(totals.value), label: 'Valor total del inventario', link: 'Ver valuacion' },
     ];
-  }, [adjustRows, categoriesList, formatBs, isAdjustModule, isCategoriesModule, isMovementsModule, movementRows, totals]);
+  }, [adjustRows, categoriesList, comboRows, formatBs, isAdjustModule, isCategoriesModule, isCombosModule, isMovementsModule, movementRows, totals]);
 
   const recentActivity = useMemo(() => {
     return movementRows.slice(0, 4).map((movement) => ({
@@ -1049,11 +1131,13 @@ function InventoryDashboardSection({
       ? movementRows
       : isAdjustModule
       ? adjustRows
+      : isCombosModule
+      ? comboRows
       : isCategoriesModule
       ? categoriesList
       : inventoryRows;
 
-    if (!isMovementsModule && !isAdjustModule && !isCategoriesModule) {
+    if (!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule) {
       if (categoryFilter !== 'all') {
         base = base.filter((row) => normalizeText(row.category) === normalizeText(categoryFilter));
       }
@@ -1121,15 +1205,18 @@ function InventoryDashboardSection({
       || normalizeText(row.reference).includes(text)
       || normalizeText(row.userName).includes(text)
       || normalizeText(row.registeredByName).includes(text)
-      || normalizeText(row.reason).includes(text),
+      || normalizeText(row.reason).includes(text)
+      || normalizeText((row.ingredients ?? []).map((line) => line.itemName).join(' ')).includes(text),
     );
   }, [
     adjustRows,
     categoriesList,
+    comboRows,
     inventoryRows,
     movementRows,
     isCategoriesModule,
     isAdjustModule,
+    isCombosModule,
     isMovementsModule,
     query,
     categoryFilter,
@@ -1327,6 +1414,36 @@ function InventoryDashboardSection({
       return;
     }
 
+    if (isCombosModule) {
+      const lines = [
+        [
+          'combo',
+          'categoria',
+          'precio_combo_bs',
+          'precio_componentes_bs',
+          'ingredientes',
+          'unidades',
+          'estado_stock',
+          'notas',
+        ].join(','),
+        ...filteredRows.map((row) =>
+          [
+            csvEscape(row.name),
+            csvEscape(row.category),
+            csvEscape(Number(row.price ?? 0).toFixed(2)),
+            csvEscape(Number(row.catalogValue ?? 0).toFixed(2)),
+            csvEscape(row.ingredients.map((line) => `${line.quantity}x ${line.itemName}`).join(' | ')),
+            csvEscape(row.totalUnits),
+            csvEscape(row.controlsStock ? 'Listo para descontar' : 'Con productos por validar'),
+            csvEscape(row.notes),
+          ].join(','),
+        ),
+      ];
+      downloadCsv(`inventario-combos-${new Date().toISOString().slice(0, 10)}.csv`, lines);
+      showMessage('Exportacion de combos completada.');
+      return;
+    }
+
     if (isMovementsModule) {
       const lines = [
         [
@@ -1453,7 +1570,7 @@ function InventoryDashboardSection({
       return;
     }
 
-    if (!isMovementsModule && !isAdjustModule) {
+    if (!isMovementsModule && !isAdjustModule && !isCombosModule) {
       if (card.label === 'Total de items') {
         onSwitchInventoryModule?.('inventario_productos');
       } else if (card.label === 'Stock bajo minimo') {
@@ -1552,6 +1669,81 @@ function InventoryDashboardSection({
       imageDataUrl: row.imageDataUrl ?? null,
       imageFileName: '',
     });
+  };
+
+  const openCreateComboModal = () => {
+    setComboModalMode('create');
+    setComboError('');
+    setComboIngredientQuery('');
+    setComboForm({
+      ...EMPTY_COMBO_FORM,
+      category: categories.find((entry) => normalizeText(entry.name) === 'combos')?.name ?? 'COMBOS',
+    });
+  };
+
+  const openEditComboModal = (row) => {
+    setComboModalMode('edit');
+    setComboError('');
+    setComboIngredientQuery('');
+    setComboForm({
+      id: row.id,
+      name: row.name,
+      category: row.category || 'COMBOS',
+      rentalPriceBs: String(row.price ?? 0),
+      notes: row.notes ?? '',
+      ingredients: row.ingredients.map((line) => ({
+        itemId: line.itemId,
+        quantity: String(line.quantity),
+      })),
+    });
+  };
+
+  const addComboIngredient = (itemId) => {
+    setComboForm((current) => {
+      const exists = current.ingredients.some((line) => line.itemId === itemId);
+      if (exists) {
+        return {
+          ...current,
+          ingredients: current.ingredients.map((line) => (
+            line.itemId === itemId
+              ? { ...line, quantity: String(Math.max(1, Math.trunc(Number(line.quantity ?? 1))) + 1) }
+              : line
+          )),
+        };
+      }
+      return {
+        ...current,
+        ingredients: [...current.ingredients, { itemId, quantity: '1' }],
+      };
+    });
+  };
+
+  const updateComboIngredientQuantity = (itemId, value) => {
+    setComboForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((line) => (
+        line.itemId === itemId ? { ...line, quantity: value } : line
+      )),
+    }));
+  };
+
+  const removeComboIngredient = (itemId) => {
+    setComboForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.filter((line) => line.itemId !== itemId),
+    }));
+  };
+
+  const handleDeleteCombo = async (row) => {
+    const shouldDelete = window.confirm(`Se eliminara el combo "${row.name}". Deseas continuar?`);
+    if (!shouldDelete) return;
+    try {
+      await onRemoveInventoryCombo?.({ id: row.id });
+      showMessage('Combo eliminado correctamente.');
+      setRowMenuOpenId(null);
+    } catch (error) {
+      showMessage(error?.message || 'No se pudo eliminar el combo.', 'error');
+    }
   };
 
   const handleProductImageChange = async (event) => {
@@ -1757,6 +1949,54 @@ function InventoryDashboardSection({
     }
   };
 
+  const handleSubmitCombo = async (event) => {
+    event.preventDefault();
+    if (isSavingCombo) return;
+    setComboError('');
+
+    const payload = {
+      id: comboForm.id,
+      name: String(comboForm.name ?? '').trim(),
+      category: String(comboForm.category ?? 'COMBOS').trim() || 'COMBOS',
+      rentalPriceBs: Number(comboForm.rentalPriceBs ?? 0),
+      notes: String(comboForm.notes ?? '').trim(),
+      ingredients: comboForm.ingredients.map((line) => ({
+        itemId: line.itemId,
+        quantity: Math.max(1, Math.trunc(Number(line.quantity ?? 1))),
+      })),
+    };
+
+    if (!payload.name) {
+      setComboError('El nombre del combo es obligatorio.');
+      return;
+    }
+    if (!Number.isFinite(payload.rentalPriceBs) || payload.rentalPriceBs < 0) {
+      setComboError('El precio del combo no es valido.');
+      return;
+    }
+    if (payload.ingredients.length === 0) {
+      setComboError('Agrega al menos un producto existente al combo.');
+      return;
+    }
+
+    try {
+      setIsSavingCombo(true);
+      if (comboModalMode === 'edit') {
+        await onUpdateInventoryCombo?.(payload);
+        showMessage('Combo actualizado correctamente.');
+      } else {
+        await onCreateInventoryCombo?.(payload);
+        showMessage('Combo creado correctamente.');
+      }
+      setComboModalMode(null);
+      setComboForm(EMPTY_COMBO_FORM);
+    } catch (error) {
+      setComboError(error?.message || 'No se pudo guardar el combo.');
+    } finally {
+      setIsSavingCombo(false);
+    }
+  };
+
   const handleSubmitMovement = async (event) => {
     event.preventDefault();
     setMovementError('');
@@ -1888,6 +2128,46 @@ function InventoryDashboardSection({
         }
       : undefined;
 
+  const comboIngredientRows = comboForm.ingredients
+    .map((line) => {
+      const item = inventoryRows.find((row) => row.id === line.itemId);
+      if (!item) return null;
+      const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+      return {
+        ...line,
+        quantity,
+        item,
+        lineValue: quantity * Number(item.price ?? 0),
+      };
+    })
+    .filter(Boolean);
+
+  const comboIngredientValue = comboIngredientRows.reduce((sum, line) => sum + line.lineValue, 0);
+
+  const comboSelectableRows = inventoryRows
+    .filter((row) => {
+      const text = normalizeText(comboIngredientQuery);
+      if (!text) return true;
+      return normalizeText(row.name).includes(text)
+        || normalizeText(row.category).includes(text)
+        || normalizeText(row.sku).includes(text);
+    })
+    .slice(0, 10);
+
+  const renderComboRowMenu = (row, openUp = false) => (
+    <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()}>
+      <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); }}>
+        Ver detalle
+      </button>
+      <button type="button" onClick={() => { openEditComboModal(row); setRowMenuOpenId(null); }}>
+        Editar combo
+      </button>
+      <button type="button" className="danger" onClick={() => handleDeleteCombo(row)}>
+        Eliminar combo
+      </button>
+    </div>
+  );
+
   const renderProductRowMenu = (row, openUp = false) => (
     <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()}>
       <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); }}>
@@ -2016,6 +2296,9 @@ function InventoryDashboardSection({
               <button type="button" className="ghost-button" onClick={() => onSwitchInventoryModule?.('inventario_productos')}>
                 Ir a Productos
               </button>
+              <button type="button" className="ghost-button" onClick={() => onSwitchInventoryModule?.('inventario_combos')}>
+                Ir a Combos
+              </button>
               <button type="button" className="ghost-button" onClick={() => onSwitchInventoryModule?.('inventario_categorias')}>
                 Ir a Categorias
               </button>
@@ -2030,11 +2313,28 @@ function InventoryDashboardSection({
               <button type="button" className="link-button" onClick={handleHeaderAdjustClick}>
                 Ajuste de Stock
               </button>
+              <button type="button" className="ghost-button" onClick={() => onSwitchInventoryModule?.('inventario_combos')}>
+                Ver Combos
+              </button>
               <button type="button" className="ghost-button" onClick={handleHeaderImportClick}>
                 Importar Inventario
               </button>
               <button type="button" className="primary-button" onClick={handleHeaderNewClick}>
                 + Nuevo Producto
+              </button>
+            </>
+          ) : null}
+
+          {isCombosModule ? (
+            <>
+              <button type="button" className="link-button" onClick={() => onSwitchInventoryModule?.('inventario_productos')}>
+                Ir a Productos
+              </button>
+              <button type="button" className="ghost-button" onClick={handleExport}>
+                Exportar Combos
+              </button>
+              <button type="button" className="primary-button" onClick={openCreateComboModal}>
+                + Nuevo Combo
               </button>
             </>
           ) : null}
@@ -2244,6 +2544,8 @@ function InventoryDashboardSection({
                       ? 'Buscar por producto, referencia o responsable...'
                       : isAdjustModule
                       ? 'Buscar por numero, producto o motivo...'
+                      : isCombosModule
+                      ? 'Buscar combos o ingredientes...'
                       : isCategoriesModule
                       ? 'Buscar categorias por nombre o icono...'
                       : 'Buscar productos, codigo o categoria...'
@@ -2272,17 +2574,17 @@ function InventoryDashboardSection({
                 </>
               ) : (
                 <button type="button" className="link-button inventory-export-btn" onClick={handleExport}>
-                  {isCategoriesModule ? 'Exportar categorias' : 'Exportar'}
+                  {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar'}
                 </button>
               )}
             </header>
 
             {showFilters ? (
               <div
-                className={`inventory-filter-line ${!isMovementsModule && !isAdjustModule && !isCategoriesModule ? 'product-filter-line' : ''}`}
-                ref={!isMovementsModule && !isAdjustModule && !isCategoriesModule ? productFilterRef : null}
+                className={`inventory-filter-line ${!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule ? 'product-filter-line' : ''}`}
+                ref={!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule ? productFilterRef : null}
               >
-                {!isMovementsModule && !isAdjustModule && !isCategoriesModule ? (
+                {!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule ? (
                   <>
                     {renderProductFilterDropdown({
                       id: 'category',
@@ -2585,6 +2887,80 @@ function InventoryDashboardSection({
                   </tbody>
                 </table>
               </div>
+            ) : isCombosModule ? (
+              <div className="inventory-table-wrap-modern">
+                <table className="inventory-table-modern">
+                  <thead>
+                    <tr>
+                      <th>Combo</th>
+                      <th>Componentes</th>
+                      <th>Precio combo</th>
+                      <th>Precio separado</th>
+                      <th>Disponibles</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.map((row, rowIndex) => (
+                      <tr key={row.id}>
+                        <td>
+                          <div className="inventory-product-cell">
+                            <div className="inventory-product-thumb">
+                              <span className="inventory-thumb-fallback">CB</span>
+                            </div>
+                            <div>
+                              <strong>{row.name}</strong>
+                              <span>{row.notes || `Codigo: ${row.sku}`}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="inventory-combo-components">
+                            {row.ingredients.slice(0, 4).map((line) => (
+                              <span key={`${row.id}-${line.itemId}`}>
+                                {line.quantity}x {line.itemName}
+                              </span>
+                            ))}
+                            {row.ingredients.length > 4 ? <span>+{row.ingredients.length - 4} mas</span> : null}
+                          </div>
+                        </td>
+                        <td><strong>{formatBs(row.price)}</strong></td>
+                        <td>{formatBs(row.catalogValue)}</td>
+                        <td className={row.controlsStock ? 'good' : 'muted'}>
+                          {row.controlsStock ? row.availableCombos : 'Pendiente'}
+                        </td>
+                        <td>
+                          <span className={row.controlsStock ? 'inventory-status ok' : 'inventory-status pending'}>
+                            {row.controlsStock ? 'Descuenta stock' : 'Revisar ingredientes'}
+                          </span>
+                          {!row.controlsStock ? <small className="inventory-stock-mode-note">Hay productos por validar</small> : null}
+                        </td>
+                        <td className="inventory-row-menu">
+                          <div className="inventory-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
+                            <button
+                              type="button"
+                              className={`inventory-row-menu-button ${rowMenuOpenId && rowMenuOpenId !== row.id ? 'is-hidden-while-menu-open' : ''}`}
+                              aria-label={`Acciones para ${row.name}`}
+                              onClick={(event) => toggleRowMenu(row.id, event, shouldOpenMenuUp(rowIndex, pagedRows.length))}
+                            >
+                              {'\u22ee'}
+                            </button>
+                            {rowMenuOpenId === row.id
+                              ? renderComboRowMenu(row, shouldOpenMenuUp(rowIndex, pagedRows.length))
+                              : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {pagedRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7}><p className="status">No hay combos para los filtros actuales.</p></td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
             ) : isCategoriesModule ? (
               <div className="inventory-table-wrap-modern">
                 <table className="inventory-table-modern categories-table-modern">
@@ -2753,7 +3129,7 @@ function InventoryDashboardSection({
 
             <footer className="inventory-table-footer-modern">
               <span>
-                Mostrando {pagedRows.length} de {filteredRows.length} {isMovementsModule ? 'movimientos' : isAdjustModule ? 'ajustes' : isCategoriesModule ? 'categorias' : 'productos'}
+                Mostrando {pagedRows.length} de {filteredRows.length} {isMovementsModule ? 'movimientos' : isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}
               </span>
               <div className="inventory-pagination-modern">
                 <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))}>{'<'}</button>
@@ -2985,6 +3361,116 @@ function InventoryDashboardSection({
                   : productModalMode === 'edit'
                     ? 'Guardar cambios'
                     : 'Crear producto'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {comboModalMode ? (
+        <div className="reset-modal-backdrop" onClick={() => setComboModalMode(null)}>
+          <form className="reset-modal inventory-product-modal" onSubmit={handleSubmitCombo} onClick={(event) => event.stopPropagation()}>
+            <h3>{comboModalMode === 'edit' ? 'Editar Combo' : 'Nuevo Combo'}</h3>
+            <p>Combina productos existentes y define un precio final independiente para contratos y cotizaciones.</p>
+            <div className="inventory-modal-grid">
+              <label>
+                Nombre del combo
+                <input value={comboForm.name} onChange={(event) => setComboForm((current) => ({ ...current, name: event.target.value }))} required />
+              </label>
+              <label>
+                Precio del combo (Bs)
+                <input type="number" min="0" step="0.01" value={comboForm.rentalPriceBs} onChange={(event) => setComboForm((current) => ({ ...current, rentalPriceBs: event.target.value }))} required />
+              </label>
+              <label className="full-width">
+                Notas internas
+                <input value={comboForm.notes} onChange={(event) => setComboForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Ej: Mesa coctelera + mantel + capuchon" />
+              </label>
+              <div className="full-width inventory-movement-product-picker">
+                Productos del combo
+                <input
+                  type="search"
+                  value={comboIngredientQuery}
+                  onChange={(event) => setComboIngredientQuery(event.target.value)}
+                  placeholder="Buscar ingrediente por nombre, codigo o categoria..."
+                />
+                <div className="inventory-movement-gallery">
+                  {comboSelectableRows.map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="inventory-movement-item-card"
+                      onClick={() => addComboIngredient(row.id)}
+                    >
+                      <div className="inventory-product-cell">
+                        {row.imageDataUrl ? (
+                          <div className="inventory-product-thumb">
+                            <img src={row.imageDataUrl} alt={`Imagen de ${row.name}`} />
+                          </div>
+                        ) : (
+                          <div className="inventory-product-thumb">
+                            <span className="inventory-thumb-fallback">IMG</span>
+                          </div>
+                        )}
+                        <div>
+                          <strong>{row.name}</strong>
+                          <span>{row.category} - {formatBs(row.price)}</span>
+                        </div>
+                      </div>
+                      <div className="inventory-movement-item-meta">
+                        <span>{row.controlsStock ? `Disponible: ${row.available}` : 'No descuenta aun'}</span>
+                        <span>Agregar</span>
+                      </div>
+                    </button>
+                  ))}
+                  {comboSelectableRows.length === 0 ? (
+                    <p className="inventory-movement-empty">No hay productos con ese criterio.</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="full-width inventory-combo-editor">
+                <header>
+                  <strong>Ingredientes seleccionados</strong>
+                  <span>Separado: {formatBs(comboIngredientValue)} | Combo: {formatBs(Number(comboForm.rentalPriceBs ?? 0))}</span>
+                </header>
+                {comboIngredientRows.length === 0 ? (
+                  <p className="status">Aun no agregaste ingredientes.</p>
+                ) : (
+                  comboIngredientRows.map((line) => (
+                    <div key={line.itemId} className="inventory-combo-line">
+                      <span>
+                        <strong>{line.item.name}</strong>
+                        <small>{line.item.category} - {line.item.controlsStock ? 'controla stock' : 'por validar'}</small>
+                      </span>
+                      <label>
+                        Cant.
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.quantity}
+                          onChange={(event) => updateComboIngredientQuantity(line.itemId, event.target.value)}
+                        />
+                      </label>
+                      <strong>{formatBs(line.lineValue)}</strong>
+                      <button type="button" className="danger-button" onClick={() => removeComboIngredient(line.itemId)}>
+                        Quitar
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            {comboError ? <p className="status error reset-modal-error">{comboError}</p> : null}
+            <div className="reset-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setComboModalMode(null)} disabled={isSavingCombo}>
+                Cancelar
+              </button>
+              <button type="submit" className="primary-button" disabled={isSavingCombo}>
+                {isSavingCombo
+                  ? 'Guardando...'
+                  : comboModalMode === 'edit'
+                    ? 'Guardar cambios'
+                    : 'Crear combo'}
               </button>
             </div>
           </form>

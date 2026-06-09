@@ -10203,6 +10203,90 @@ textarea:focus {
   width: min(760px, 100%);
 }
 
+.inventory-combo-components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.inventory-combo-components span {
+  border: 1px solid #f2d8cb;
+  border-radius: 999px;
+  background: #fff7f1;
+  color: #9b3d12;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.18rem 0.5rem;
+}
+
+.inventory-combo-editor {
+  border: 1px solid #edf1f8;
+  border-radius: 0.72rem;
+  background: #fffaf6;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.52rem;
+}
+
+.inventory-combo-editor header,
+.inventory-combo-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.inventory-combo-editor header {
+  color: #22305b;
+}
+
+.inventory-combo-editor header span,
+.inventory-combo-line small {
+  color: #7c849d;
+  font-size: 0.75rem;
+}
+
+.inventory-combo-line {
+  border: 1px solid #eadfd8;
+  border-radius: 0.58rem;
+  background: #fff;
+  padding: 0.55rem;
+}
+
+.inventory-combo-line span {
+  display: grid;
+  gap: 0.14rem;
+}
+
+.inventory-combo-line label {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 84px;
+  color: #6d738a;
+  font-size: 0.72rem;
+}
+
+.inventory-combo-line input {
+  width: 76px;
+}
+
+.orders-combo-catalog-row {
+  background: #fffaf5;
+}
+
+.orders-combo-thumb {
+  background: #fff1e6;
+  color: #df3f05;
+  font-weight: 900;
+}
+
+.orders-combo-line-note {
+  margin: 0.15rem 0 0;
+  color: #df3f05;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
 .inventory-category-modal {
   width: min(720px, 100%);
 }
@@ -27318,6 +27402,329 @@ button.calendar-dispatch-row:focus-visible {
 
   :is(.clients-header h2, .users-header h2, .orders-header h2, .inventory-header h2, .transport-header h2, .calendar-header h2, .accounting-bigcash-head h2, .accounting-overview-head h2) {
     font-size: 1.32rem !important;
+  }
+}
+
+.orders-mobile-commercial-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .orders-view {
+    gap: 0.72rem;
+  }
+
+  .orders-view .orders-header {
+    align-items: center !important;
+    text-align: center;
+    gap: 0.82rem !important;
+    padding: 0 0.18rem;
+  }
+
+  .orders-view .orders-header > div:first-child {
+    max-width: 100%;
+  }
+
+  .orders-view .orders-header h2 {
+    font-size: clamp(1.52rem, 7.2vw, 2rem) !important;
+    color: #07133a;
+  }
+
+  .orders-view .orders-header p {
+    max-width: 23rem;
+    margin-inline: auto;
+    color: #5d6578;
+    font-size: 0.92rem !important;
+    line-height: 1.3;
+  }
+
+  .orders-view .orders-header-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.56rem !important;
+    width: 100%;
+  }
+
+  .orders-view .orders-header-actions .orders-new-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 3rem;
+    border-radius: 0.68rem;
+    justify-content: center;
+    font-size: 0.93rem;
+    box-shadow: 0 0.72rem 1.45rem rgba(232, 74, 0, 0.18);
+  }
+
+  .orders-view .orders-table-card {
+    border-radius: 1rem;
+    padding: 0.68rem;
+    gap: 0.7rem;
+    background: linear-gradient(180deg, #fffdfb 0%, #ffffff 100%);
+    box-shadow: 0 0.8rem 2.2rem rgba(84, 53, 35, 0.08);
+  }
+
+  .orders-view .orders-board-head {
+    position: relative;
+    display: grid;
+    padding: 0.2rem 4.8rem 0.06rem 0.14rem;
+  }
+
+  .orders-view .orders-board-eyebrow {
+    font-size: 0.72rem;
+    padding: 0.16rem 0.48rem;
+  }
+
+  .orders-view .orders-board-head h3 {
+    font-size: 1.34rem;
+  }
+
+  .orders-view .orders-board-head p {
+    font-size: 0.82rem;
+    line-height: 1.3;
+  }
+
+  .orders-view .orders-board-count {
+    position: absolute;
+    top: 0.04rem;
+    right: 0.06rem;
+    min-width: 3.6rem;
+    padding: 0.48rem 0.48rem;
+    border-radius: 0.78rem;
+  }
+
+  .orders-view .orders-board-count strong {
+    font-size: 1.35rem;
+  }
+
+  .orders-view .orders-view-switch.orders-workflow-tabs {
+    grid-template-columns: 1fr !important;
+    gap: 0.58rem;
+  }
+
+  .orders-view .orders-workflow-tabs button {
+    min-height: 4.7rem;
+    border-radius: 0.82rem !important;
+    padding: 0.72rem 0.78rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .orders-view .orders-workflow-icon {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+
+  .orders-view .orders-workflow-copy strong {
+    font-size: 1rem;
+  }
+
+  .orders-view .orders-workflow-copy small {
+    font-size: 0.78rem;
+  }
+
+  .orders-view .orders-workflow-count {
+    min-width: 2.15rem;
+    height: 2.15rem;
+    font-size: 1rem;
+  }
+
+  .orders-view .orders-filter-panel {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    gap: 0.64rem;
+  }
+
+  .orders-view .orders-toolbar {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.54rem;
+  }
+
+  .orders-view .orders-search {
+    grid-column: 1 / -1;
+    min-height: 3rem;
+    border-radius: 0.82rem;
+    padding-inline: 0.86rem;
+  }
+
+  .orders-view .orders-search input {
+    font-size: 0.9rem;
+  }
+
+  .orders-view .orders-select,
+  .orders-view .orders-range-btn {
+    width: 100%;
+    min-height: 2.65rem;
+    border-radius: 0.76rem;
+  }
+
+  .orders-view .orders-export-btn {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: center;
+    border: 1px solid #f2d4c4;
+    border-radius: 0.76rem;
+    background: #fffaf6;
+    color: #e84a00;
+  }
+
+  .orders-view .orders-status-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.44rem;
+  }
+
+  .orders-view .orders-status-tabs button {
+    min-height: 2.36rem;
+    padding: 0.34rem 0.48rem 0.34rem 0.68rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+  }
+
+  .orders-view .orders-status-tabs button span {
+    min-width: 1.34rem;
+    height: 1.34rem;
+  }
+
+  .orders-view .orders-commercial-table-wrap {
+    display: none !important;
+  }
+
+  .orders-mobile-commercial-list {
+    display: grid;
+    gap: 0.58rem;
+  }
+
+  .orders-mobile-contract-card {
+    display: grid;
+    gap: 0.52rem;
+    border: 1px solid #f0ded2;
+    border-radius: 0.92rem;
+    background: #ffffff;
+    padding: 0.72rem 0.78rem;
+    box-shadow: 0 0.52rem 1.35rem rgba(61, 43, 31, 0.07);
+  }
+
+  .orders-mobile-contract-card header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .orders-mobile-contract-card header > strong {
+    min-width: 0;
+    color: #0b1b49;
+    font-size: 1.04rem;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+  }
+
+  .orders-mobile-contract-card header > b {
+    color: #0b1b49;
+    font-size: 1.02rem;
+    white-space: nowrap;
+  }
+
+  .orders-mobile-contract-main {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.16rem;
+  }
+
+  .orders-mobile-contract-main p {
+    margin: 0;
+    color: #192340;
+    font-size: 0.86rem;
+    line-height: 1.26;
+  }
+
+  .orders-mobile-contract-main span,
+  .orders-mobile-contract-order span {
+    color: #52607e;
+    font-weight: 700;
+  }
+
+  .orders-mobile-contract-main strong {
+    color: #0b1b49;
+    font-weight: 900;
+  }
+
+  .orders-mobile-contract-bottom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: center;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell {
+    min-width: 0;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell > span {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .orders-mobile-contract-order {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.26rem;
+    color: #0b1b49;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .orders-mobile-contract-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.08rem;
+    color: #55617e;
+    font-size: 0.82rem;
+    line-height: 1.22;
+  }
+
+  .orders-mobile-date-line {
+    color: #0b1b49;
+    font-weight: 900;
+  }
+
+  .orders-mobile-contract-actions,
+  .orders-mobile-contract-card .orders-row-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.42rem;
+    flex-wrap: wrap;
+  }
+
+  .orders-mobile-contract-card .orders-open-btn {
+    min-height: 2.3rem;
+    min-width: 5rem;
+    border-radius: 0.72rem;
+    font-size: 0.84rem;
+  }
+
+  .orders-mobile-contract-card .whatsapp-bubble-button {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 0.72rem;
+  }
+
+  .orders-mobile-contract-card .transport-row-menu-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.72rem;
+    border: 1px solid #e9edf6;
+    background: #ffffff;
+    color: #68728d;
+  }
+
+  .orders-view .orders-footer {
+    border-top: 0;
+    padding-top: 0.1rem;
+    color: #6b75a1;
+    font-size: 0.82rem;
   }
 }
 

@@ -29,6 +29,7 @@ const PAGE_LABELS = {
   personal: 'Personal',
   inventario: 'Inventario',
   inventario_productos: 'Inventario',
+  inventario_combos: 'Combos',
   inventario_categorias: 'Categorias',
   inventario_movimientos: 'Movimientos',
   inventario_ajustes: 'Ajustes stock',

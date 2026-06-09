@@ -1043,13 +1043,11 @@ function CalendarSection({
     };
   };
 
-  const operationalAlerts = useMemo(() => (
-    normalizedEvents
-      .map(getOperationalAlertForEvent)
-      .filter(Boolean)
-      .sort((left, right) => `${right.dateKey}T${right.event.startTime}`.localeCompare(`${left.dateKey}T${left.event.startTime}`, 'es'))
-      .slice(0, 6)
-  ), [contracts, normalizedEvents, rentals, todayKey]);
+  const operationalAlerts = normalizedEvents
+    .map(getOperationalAlertForEvent)
+    .filter(Boolean)
+    .sort((left, right) => `${right.dateKey}T${right.event.startTime}`.localeCompare(`${left.dateKey}T${left.event.startTime}`, 'es'))
+    .slice(0, 6);
 
   const getDaySummary = (dayEvents = []) => {
     const groupedByType = dayEvents.reduce(

@@ -841,8 +841,8 @@ function ClientsSection({
       city: mainCity,
       observations: String(form.observations ?? '').trim(),
       isBlacklisted: Boolean(form.isBlacklisted),
-      blacklistReason: Boolean(form.isBlacklisted) ? String(form.blacklistReason ?? 'problematic').trim() : '',
-      blacklistNotes: Boolean(form.isBlacklisted) ? String(form.blacklistNotes ?? '').trim() : '',
+      blacklistReason: form.isBlacklisted ? String(form.blacklistReason ?? 'problematic').trim() : '',
+      blacklistNotes: form.isBlacklisted ? String(form.blacklistNotes ?? '').trim() : '',
       prepaidEnabled: Boolean(form.prepaidEnabled),
       prepaidOpeningBs: modalMode === 'edit' ? 0 : Math.max(0, Number(form.prepaidOpeningBs ?? 0)),
       prepaidTopUpBs: modalMode === 'edit' ? Math.max(0, Number(form.prepaidTopUpBs ?? 0)) : 0,
@@ -894,7 +894,7 @@ function ClientsSection({
   };
 
   const handleToggleBlacklist = async (client) => {
-    const nextIsBlacklisted = !Boolean(client.isBlacklisted);
+    const nextIsBlacklisted = !client.isBlacklisted;
     await onUpdateClient?.({
       id: client.id,
       isBlacklisted: nextIsBlacklisted,

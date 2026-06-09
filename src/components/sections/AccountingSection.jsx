@@ -203,7 +203,7 @@ function AccountingSection({
   const [bigCashVisibleRows, setBigCashVisibleRows] = useState(7);
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
-  const [pettyCashVisibleRows, setPettyCashVisibleRows] = useState(5);
+  const [pettyCashVisibleRows] = useState(5);
   const [isPettyHistoryOpen, setIsPettyHistoryOpen] = useState(false);
   const [pettyHistoryFilters, setPettyHistoryFilters] = useState({
     dateFrom: '',
@@ -311,11 +311,6 @@ function AccountingSection({
 
   const pettyTransfersRows = useMemo(
     () => postedMovements.filter((movement) => isBigCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
-    [postedMovements],
-  );
-
-  const pettyExpenseRows = useMemo(
-    () => postedMovements.filter((movement) => isPettyCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
     [postedMovements],
   );
 
@@ -590,13 +585,6 @@ function AccountingSection({
 
   const activeCashSession = useMemo(
     () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
-    [cashSessions],
-  );
-
-  const pettySessionHistory = useMemo(
-    () => [...cashSessions]
-      .sort((a, b) => new Date(b.openedAt ?? b.closedAt ?? 0) - new Date(a.openedAt ?? a.closedAt ?? 0))
-      .slice(0, 4),
     [cashSessions],
   );
 
