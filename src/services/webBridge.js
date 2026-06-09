@@ -3917,7 +3917,7 @@ const buildDocumentShell = ({
 
 const getContractDocumentStyles = () => `
   ${getProfessionalDocumentStyles()}
-  @page { size: A4 portrait; margin: 8mm; }
+  @page { size: 216mm 330mm; margin: 6mm; }
   body {
     background: #f3f4f7;
     color: #10131f;
@@ -3926,8 +3926,8 @@ const getContractDocumentStyles = () => `
     line-height: 1.34;
   }
   .contract-sheet {
-    width: 210mm;
-    min-height: 297mm;
+    width: 216mm;
+    min-height: 330mm;
     margin: 0 auto;
     padding: 8mm 8mm 6mm;
     background: #fff;
@@ -4389,6 +4389,105 @@ const getContractDocumentStyles = () => `
     font-weight: 800;
   }
   .contract-footer span:last-child { text-align: right; }
+  .contract-sheet.is-compact .contract-company-strip {
+    margin-top: 7mm;
+  }
+  .contract-sheet.is-compact .contract-section-title {
+    margin: 4mm 0 2mm;
+  }
+  .contract-sheet.is-compact .contract-field {
+    min-height: 10mm;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .contract-sheet.is-compact .contract-schedule {
+    min-height: 21mm;
+  }
+  .contract-sheet.is-compact .contract-schedule-main {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .contract-sheet.is-compact .contract-items-table th,
+  .contract-sheet.is-compact .contract-items-table td {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .contract-sheet.is-compact .contract-item-thumb {
+    width: 10mm;
+    height: 10mm;
+  }
+  .contract-sheet.is-compact .contract-item-desc {
+    grid-template-columns: 11mm minmax(0, 1fr);
+  }
+  .contract-sheet.is-compact .contract-summary-title-row td {
+    padding-top: 6px;
+  }
+  .contract-sheet.is-compact .contract-summary-row td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  .contract-sheet.is-compact .contract-terms-panel {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .contract-sheet.is-compact .contract-terms-list {
+    gap: 2px;
+  }
+  .contract-sheet.is-compact .contract-important {
+    padding: 7px;
+  }
+  .contract-sheet.is-compact .contract-closing {
+    margin-top: 3mm;
+    padding-top: 3mm;
+  }
+  .contract-sheet.is-compact .contract-signature-script {
+    min-height: 7mm;
+  }
+  .contract-sheet.is-dense {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+  .contract-sheet.is-dense .contract-company-strip {
+    margin-top: 5mm;
+  }
+  .contract-sheet.is-dense .contract-section-title {
+    margin: 3mm 0 1.5mm;
+    font-size: 11px;
+  }
+  .contract-sheet.is-dense .contract-company-item {
+    min-height: 16mm;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+  .contract-sheet.is-dense .contract-field {
+    min-height: 8.5mm;
+  }
+  .contract-sheet.is-dense .contract-schedule {
+    min-height: 18mm;
+  }
+  .contract-sheet.is-dense .contract-schedule-value {
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+  .contract-sheet.is-dense .contract-items-table th,
+  .contract-sheet.is-dense .contract-items-table td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  .contract-sheet.is-dense .contract-item-desc strong {
+    font-size: 9.5px;
+  }
+  .contract-sheet.is-dense .contract-item-desc small {
+    font-size: 7.5px;
+  }
+  .contract-sheet.is-dense .contract-signature-script {
+    min-height: 5mm;
+  }
+  .contract-sheet.is-dense .contract-footer {
+    margin-top: 2mm;
+    padding-top: 1.5mm;
+  }
   @media screen {
     .contract-items-layout {
       display: block;
@@ -4439,14 +4538,14 @@ const getContractDocumentStyles = () => `
       page-break-inside: avoid;
     }
     .contract-brand h1 { font-size: 24px; }
-    .contract-company-strip { margin-top: 8mm; }
+    .contract-company-strip { margin-top: 7mm; }
     .contract-section-title {
       margin-top: 4mm;
       break-after: avoid;
       page-break-after: avoid;
     }
-    .contract-field { min-height: 10.5mm; }
-    .contract-schedule { min-height: 26mm; }
+    .contract-field { min-height: 10mm; }
+    .contract-schedule { min-height: 22mm; }
     .contract-items-table {
       border-collapse: collapse;
       border-radius: 0;
@@ -4455,8 +4554,45 @@ const getContractDocumentStyles = () => `
     .contract-items-table td {
       padding: 5px 7px;
     }
-    .contract-signature-script { min-height: 9mm; font-size: 16px; }
-    .contract-footer { margin-top: 3mm; padding-top: 2mm; }
+    .contract-signature-script { min-height: 7mm; font-size: 16px; }
+    .contract-footer { margin-top: 2mm; padding-top: 1.5mm; }
+    .contract-sheet.is-compact .contract-company-strip { margin-top: 6mm; }
+    .contract-sheet.is-compact .contract-section-title { margin: 3mm 0 1.5mm; }
+    .contract-sheet.is-compact .contract-field { min-height: 9mm; }
+    .contract-sheet.is-compact .contract-schedule { min-height: 19mm; }
+    .contract-sheet.is-compact .contract-items-table th,
+    .contract-sheet.is-compact .contract-items-table td {
+      padding-top: 3px;
+      padding-bottom: 3px;
+    }
+    .contract-sheet.is-compact .contract-summary-row td {
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+    .contract-sheet.is-compact .contract-closing {
+      margin-top: 2mm;
+      padding-top: 2mm;
+    }
+    .contract-sheet.is-compact .contract-signature-script { min-height: 5mm; }
+    .contract-sheet.is-dense {
+      font-size: 9px;
+      line-height: 1.15;
+    }
+    .contract-sheet.is-dense .contract-company-strip { margin-top: 4mm; }
+    .contract-sheet.is-dense .contract-section-title { margin: 2mm 0 1mm; font-size: 10px; }
+    .contract-sheet.is-dense .contract-company-item { min-height: 14mm; }
+    .contract-sheet.is-dense .contract-field { min-height: 7.5mm; }
+    .contract-sheet.is-dense .contract-schedule { min-height: 16mm; }
+    .contract-sheet.is-dense .contract-item-thumb { width: 8mm; height: 8mm; }
+    .contract-sheet.is-dense .contract-item-desc { grid-template-columns: 9mm minmax(0, 1fr); }
+    .contract-sheet.is-dense .contract-items-table th,
+    .contract-sheet.is-dense .contract-items-table td {
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+    .contract-sheet.is-dense .contract-terms-panel { padding-top: 4px; padding-bottom: 4px; }
+    .contract-sheet.is-dense .contract-terms-list { gap: 1px; }
+    .contract-sheet.is-dense .contract-signature-script { min-height: 3mm; }
   }
 `;
 
@@ -4545,6 +4681,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .join('');
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
+  const itemCount = Array.isArray(rental.items) ? rental.items.length : 0;
+  const densityClass = itemCount >= 7 ? 'is-compact is-dense' : 'is-compact';
   return `<!doctype html>
 <html>
   <head>
@@ -4553,7 +4691,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     <style>${getContractDocumentStyles()}</style>
   </head>
   <body>
-    <main class="contract-sheet">
+    <main class="contract-sheet ${densityClass}">
       <header class="contract-hero">
         <section class="contract-brand">
           <span class="contract-brand-mark" aria-hidden="true">
@@ -10436,4 +10574,3 @@ export const getWebRuntimeInfo = () => ({
   mode: 'web',
   storage: canUseLocalStorage() ? 'localStorage' : 'memory',
 });
-
