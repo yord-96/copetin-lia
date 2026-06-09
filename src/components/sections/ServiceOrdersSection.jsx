@@ -140,6 +140,31 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+const normalizeSearchText = (value) =>
+  normalizeText(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const getSearchTokens = (value) => normalizeSearchText(value).split(' ').filter(Boolean);
+
+const getCatalogSearchScore = (searchValue, fields = []) => {
+  const query = normalizeSearchText(searchValue);
+  if (!query) return 1;
+
+  const tokens = getSearchTokens(searchValue);
+  const normalizedFields = fields.map(normalizeSearchText).filter(Boolean);
+  const combined = normalizedFields.join(' ');
+  if (!tokens.every((token) => combined.includes(token))) return -1;
+
+  const primary = normalizedFields[0] ?? '';
+  if (primary === query) return 100;
+  if (primary.startsWith(query)) return 90;
+  if (primary.includes(query)) return 80;
+  if (tokens.every((token) => primary.includes(token))) return 70;
+  return 50 + tokens.filter((token) => primary.includes(token)).length;
+};
+
 const normalizeWhatsAppNumber = (value) => {
   const digits = String(value ?? '').replace(/\D/g, '');
   if (!digits) return '';
@@ -781,6 +806,7 @@ function ServiceOrdersSection({
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
   const [quickItemDraft, setQuickItemDraft] = useState(buildEmptyQuickItemDraft);
+  const [isQuickItemOpen, setIsQuickItemOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
@@ -1779,25 +1805,41 @@ function ServiceOrdersSection({
   );
 
   const filteredCatalog = useMemo(() => {
-    const text = normalizeText(itemSearch);
     const productEntries = items
-      .filter((item) => {
+      .map((item) => {
         if (itemCategoryFilter !== 'all' && item.category !== itemCategoryFilter) return false;
-        if (!text) return true;
-        return normalizeText(item.name).includes(text) || normalizeText(item.category).includes(text);
+        const score = getCatalogSearchScore(itemSearch, [
+          item.name,
+          item.sku,
+          item.category,
+          item.itemColor,
+          item.color,
+          item.brand,
+          item.material,
+          item.description,
+        ]);
+        if (score < 0) return null;
+        return { type: 'product', id: item.id, item, name: item.name, searchScore: score };
       })
-      .map((item) => ({ type: 'product', id: item.id, item, name: item.name }));
+      .filter(Boolean);
     const comboEntries = (combos ?? [])
-      .filter((combo) => {
+      .map((combo) => {
         if (itemCategoryFilter !== 'all' && itemCategoryFilter !== 'COMBOS') return false;
-        if (!text) return true;
         const ingredientsText = (combo.ingredients ?? []).map((line) => line.itemName).join(' ');
-        return normalizeText(combo.name).includes(text)
-          || normalizeText(combo.category).includes(text)
-          || normalizeText(ingredientsText).includes(text);
+        const score = getCatalogSearchScore(itemSearch, [
+          combo.name,
+          combo.sku,
+          combo.category,
+          ingredientsText,
+          combo.description,
+        ]);
+        if (score < 0) return null;
+        return { type: 'combo', id: combo.id, combo, name: combo.name, searchScore: score };
       })
-      .map((combo) => ({ type: 'combo', id: combo.id, combo, name: combo.name }));
-    return [...productEntries, ...comboEntries].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      .filter(Boolean);
+    return [...productEntries, ...comboEntries].sort(
+      (a, b) => b.searchScore - a.searchScore || a.name.localeCompare(b.name, 'es'),
+    );
   }, [combos, itemCategoryFilter, itemSearch, items]);
 
   const visibleCatalog = useMemo(
@@ -1913,6 +1955,7 @@ function ServiceOrdersSection({
     setItemSearch('');
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
+    setIsQuickItemOpen(false);
     if (sourceRecord) {
       setDraft(mapRecordToDraft(sourceRecord, entityType));
     } else {
@@ -1937,6 +1980,7 @@ function ServiceOrdersSection({
     setItemSearch('');
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
+    setIsQuickItemOpen(false);
     setCurrentStep(0);
     setSupplierFulfillmentDraftByItem({});
     setSupplierCoverageModal(null);
@@ -2264,6 +2308,7 @@ function ServiceOrdersSection({
       ],
     }));
     setQuickItemDraft(buildEmptyQuickItemDraft());
+    setIsQuickItemOpen(false);
     setFormError('');
   };
 
@@ -4739,7 +4784,7 @@ function ServiceOrdersSection({
                       <label className="orders-search">
                         <input
                           type="search"
-                          placeholder="Buscar por nombre, SKU o categoria..."
+                          placeholder="Ej.: arrugado marfil, mantel lavanda, SKU..."
                           value={itemSearch}
                           onChange={(event) => setItemSearch(event.target.value)}
                         />
@@ -4762,58 +4807,92 @@ function ServiceOrdersSection({
                       </label>
                     </div>
 
-                    <section className="orders-quick-item-panel">
+                    {itemSearch.trim() ? (
+                      <div className="orders-search-feedback" role="status">
+                        <div>
+                          <strong>
+                            {filteredCatalog.length} {filteredCatalog.length === 1 ? 'coincidencia' : 'coincidencias'}
+                          </strong>
+                          <span>
+                            para "{itemSearch.trim()}". Se ignoran barras, guiones, tildes y espacios.
+                          </span>
+                        </div>
+                        <button type="button" className="ghost-button" onClick={() => setItemSearch('')}>
+                          Limpiar busqueda
+                        </button>
+                      </div>
+                    ) : null}
+
+                    <section className={`orders-quick-item-panel ${isQuickItemOpen ? 'is-open' : 'is-collapsed'}`}>
                       <header>
                         <div>
-                          <strong>Item rapido pendiente de verificacion</strong>
-                          <span>Para registrar lo prestado hoy y conciliar stock cuando el inventario este contado.</span>
+                          <strong>Agregar item fuera de inventario</strong>
+                          <span>Usalo solo cuando el producto aun no fue registrado o verificado.</span>
                         </div>
-                        <button type="button" className="ghost-button" onClick={addQuickDraftItem}>
-                          + Crear y agregar
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => {
+                            setIsQuickItemOpen((current) => !current);
+                            setFormError('');
+                          }}
+                          aria-expanded={isQuickItemOpen}
+                        >
+                          {isQuickItemOpen ? 'Cancelar' : '+ Desplegar formulario'}
                         </button>
                       </header>
-                      <div className="orders-quick-item-grid">
-                        <label>
-                          Categoria *
-                          <input
-                            value={quickItemDraft.category}
-                            onChange={(event) => setQuickItemField('category', event.target.value)}
-                            placeholder="Sillas, vasos, manteles..."
-                            list="orders-quick-item-categories"
-                          />
-                          <datalist id="orders-quick-item-categories">
-                            {itemCategoryOptions.map((category) => (
-                              <option key={category} value={category} />
-                            ))}
-                          </datalist>
-                        </label>
-                        <label>
-                          Nombre / modelo *
-                          <input
-                            value={quickItemDraft.name}
-                            onChange={(event) => setQuickItemField('name', event.target.value)}
-                            placeholder="Tiffany, cristal, redonda..."
-                          />
-                        </label>
-                        <label>
-                          Color
-                          <input value={quickItemDraft.color} onChange={(event) => setQuickItemField('color', event.target.value)} placeholder="Blanco, dorado..." />
-                        </label>
-                        <label>
-                          Material
-                          <input value={quickItemDraft.material} onChange={(event) => setQuickItemField('material', event.target.value)} placeholder="Madera, vidrio..." />
-                        </label>
-                        <label>
-                          Precio unitario Bs
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={quickItemDraft.rentalPriceBs}
-                            onChange={(event) => setQuickItemField('rentalPriceBs', event.target.value)}
-                          />
-                        </label>
-                      </div>
+                      {isQuickItemOpen ? (
+                        <>
+                          <div className="orders-quick-item-grid">
+                            <label>
+                              Categoria *
+                              <input
+                                value={quickItemDraft.category}
+                                onChange={(event) => setQuickItemField('category', event.target.value)}
+                                placeholder="Sillas, vasos, manteles..."
+                                list="orders-quick-item-categories"
+                              />
+                              <datalist id="orders-quick-item-categories">
+                                {itemCategoryOptions.map((category) => (
+                                  <option key={category} value={category} />
+                                ))}
+                              </datalist>
+                            </label>
+                            <label>
+                              Nombre / modelo *
+                              <input
+                                value={quickItemDraft.name}
+                                onChange={(event) => setQuickItemField('name', event.target.value)}
+                                placeholder="Tiffany, cristal, redonda..."
+                              />
+                            </label>
+                            <label>
+                              Color
+                              <input value={quickItemDraft.color} onChange={(event) => setQuickItemField('color', event.target.value)} placeholder="Blanco, dorado..." />
+                            </label>
+                            <label>
+                              Material
+                              <input value={quickItemDraft.material} onChange={(event) => setQuickItemField('material', event.target.value)} placeholder="Madera, vidrio..." />
+                            </label>
+                            <label>
+                              Precio unitario Bs
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={quickItemDraft.rentalPriceBs}
+                                onChange={(event) => setQuickItemField('rentalPriceBs', event.target.value)}
+                              />
+                            </label>
+                          </div>
+                          <footer className="orders-quick-item-actions">
+                            <span>Se agregara al contrato sin descontar stock hasta que Inventario lo verifique.</span>
+                            <button type="button" className="primary-button" onClick={addQuickDraftItem}>
+                              Crear y agregar
+                            </button>
+                          </footer>
+                        </>
+                      ) : null}
                     </section>
 
                     <section className={`orders-duration-card ${draft.pricingMode === 'duration' ? 'active' : ''}`}>
@@ -4960,7 +5039,7 @@ function ServiceOrdersSection({
 
                     <div className="orders-products-head">
                       <span>
-                        {visibleCatalog.length} visibles de {filteredCatalog.length} productos y combos
+                        Mostrando {visibleCatalog.length} de {filteredCatalog.length} productos y combos
                       </span>
                       {remainingCatalogCount > 0 ? (
                         <span>Lista paginada para trabajar comodo con inventarios grandes.</span>
@@ -5117,14 +5196,14 @@ function ServiceOrdersSection({
                     {remainingCatalogCount > 0 ? (
                       <div className="orders-catalog-actions">
                         <span>
-                          Quedan {remainingCatalogCount} opciones. Busca por nombre, SKU, combo o categoria para llegar mas rapido.
+                          Quedan {remainingCatalogCount} resultados por mostrar.
                         </span>
                         <button
                           type="button"
                           className="ghost-button"
                           onClick={() => setCatalogVisibleCount((count) => count + CATALOG_PAGE_SIZE)}
                         >
-                          Mostrar {Math.min(CATALOG_PAGE_SIZE, remainingCatalogCount)} mas
+                          Ver {Math.min(CATALOG_PAGE_SIZE, remainingCatalogCount)} siguientes
                         </button>
                       </div>
                     ) : null}
@@ -5770,4 +5849,3 @@ function ServiceOrdersSection({
 }
 
 export default ServiceOrdersSection;
-

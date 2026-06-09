@@ -22277,6 +22277,39 @@ button.calendar-dispatch-row:focus-visible {
   gap: 0.55rem;
 }
 
+.orders-search-feedback {
+  border: 1px solid #cddcf6;
+  border-radius: 0.72rem;
+  background: #f6f9ff;
+  padding: 0.58rem 0.68rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.orders-search-feedback > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.orders-search-feedback strong {
+  color: #17366f;
+  font-size: 0.82rem;
+}
+
+.orders-search-feedback span {
+  color: #65739b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.orders-search-feedback .ghost-button {
+  flex: 0 0 auto;
+  min-height: 2.05rem;
+}
+
 .orders-quick-item-panel {
   border: 1px solid #d9e3f3;
   border-radius: 0.86rem;
@@ -22287,6 +22320,12 @@ button.calendar-dispatch-row:focus-visible {
   padding: 0.72rem;
   display: grid;
   gap: 0.62rem;
+}
+
+.orders-quick-item-panel.is-collapsed {
+  padding: 0.52rem 0.68rem;
+  background: #f8faff;
+  border-style: dashed;
 }
 
 .orders-quick-item-panel header {
@@ -22334,6 +22373,23 @@ button.calendar-dispatch-row:focus-visible {
   padding: 0 0.68rem;
   color: #0b163f;
   font-weight: 750;
+}
+
+.orders-quick-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.58rem;
+  border-top: 1px solid #e3e8f4;
+}
+
+.orders-quick-item-actions span {
+  max-width: 42rem;
+}
+
+.orders-quick-item-actions .primary-button {
+  flex: 0 0 auto;
 }
 
 .orders-availability-strip {
@@ -22713,9 +22769,17 @@ button.calendar-dispatch-row:focus-visible {
 }
 
 @media (max-width: 760px) {
-  .orders-quick-item-panel header {
+  .orders-quick-item-panel header,
+  .orders-quick-item-actions,
+  .orders-search-feedback {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .orders-quick-item-panel header .ghost-button,
+  .orders-quick-item-actions .primary-button,
+  .orders-search-feedback .ghost-button {
+    width: 100%;
   }
 
   .orders-products-head,
