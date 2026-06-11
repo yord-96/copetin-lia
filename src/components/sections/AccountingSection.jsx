@@ -67,6 +67,9 @@ const getPeriodRange = (dateKey, period) => {
 
 const isBigCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH';
 const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH';
+const isGuaranteeMovement = (movement) =>
+  String(movement?.type ?? '').toLowerCase() === 'ingreso_garantia'
+  || String(movement?.category ?? '').toLowerCase() === 'garantia';
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
@@ -322,12 +325,12 @@ function AccountingSection({
   );
 
   const bigCashGuaranteeRows = useMemo(
-    () => bigCashPositiveRows.filter((movement) => String(movement?.type ?? '').toLowerCase() === 'ingreso_garantia'),
+    () => bigCashPositiveRows.filter(isGuaranteeMovement),
     [bigCashPositiveRows],
   );
 
   const bigCashIncomeRows = useMemo(
-    () => bigCashPositiveRows.filter((movement) => String(movement?.type ?? '').toLowerCase() !== 'ingreso_garantia'),
+    () => bigCashPositiveRows.filter((movement) => !isGuaranteeMovement(movement)),
     [bigCashPositiveRows],
   );
 
@@ -449,8 +452,6 @@ function AccountingSection({
     [monthTransportExpenseRows],
   );
   const monthTransportMarginBs = Number((monthTransportRevenueBs - monthTransportExpenseBs).toFixed(2));
-  const bigCashMonthOpeningBs = bigCashBalanceBs - monthBigCashIncomeBs + monthBigCashTransferBs;
-
   const getMovementReference = useCallback((movement) => {
     if (movement?.linkedOrderCode) return movement.linkedOrderCode;
     if (movement?.linkedRentalId) {
@@ -480,7 +481,8 @@ function AccountingSection({
       const amount = toNumber(movement.amountBs);
       const matchesType =
         bigCashTypeFilter === 'all'
-        || (bigCashTypeFilter === 'income' && !movement.isInternalTransfer && amount > 0 && !isVoidedCashMovement(movement))
+        || (bigCashTypeFilter === 'income' && !movement.isInternalTransfer && amount > 0 && !isGuaranteeMovement(movement) && !isVoidedCashMovement(movement))
+        || (bigCashTypeFilter === 'guarantee' && isGuaranteeMovement(movement) && !isVoidedCashMovement(movement))
         || (bigCashTypeFilter === 'transfer' && movement.isInternalTransfer && amount < 0 && !isVoidedCashMovement(movement));
       if (!matchesType) return false;
       if (!text) return true;
@@ -626,12 +628,15 @@ function AccountingSection({
     [rentals],
   );
 
-  const guaranteesHeldBs = useMemo(
+  const calculatedGuaranteesHeldBs = useMemo(
     () => sumBy(activeGuaranteeRows, (rental) => rental.depositBs),
     [activeGuaranteeRows],
   );
-
-  const operationalBigCashBs = Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2)));
+  const guaranteesHeldBs = toNumber(cashSummary?.guaranteeHeldBs ?? calculatedGuaranteesHeldBs);
+  const operationalBigCashBs = toNumber(
+    cashSummary?.operationalBigCashBs
+    ?? Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
+  );
   const dayGuaranteeIncomeBs = useMemo(
     () => sumBy(bigCashGuaranteeRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate), (movement) => movement.amountBs),
     [bigCashGuaranteeRows, selectedDate],
@@ -1695,13 +1700,24 @@ function AccountingSection({
 
         <section className="bigcash-kpi-grid">
           <article className="bigcash-kpi-card balance">
-            <small className="pill">Solo recibe</small>
+            <small className="pill">Total fisico</small>
             <div className="bigcash-kpi-content">
               <span className="bigcash-hero-icon blue"><CashIcon kind="petty" /></span>
               <div>
-                <strong>SALDO ACTUAL</strong>
+                <strong>TOTAL EN CAJA GRANDE</strong>
                 <h3 className="value-blue">{formatBs(bigCashBalanceBs)}</h3>
-                <p>Operativo: {formatBs(operationalBigCashBs)} | Garantias: {formatBs(guaranteesHeldBs)}</p>
+                <p>Incluye dinero operativo y garantias retenidas.</p>
+              </div>
+            </div>
+          </article>
+          <article className="bigcash-kpi-card guarantee">
+            <small className="pill warning">No disponible</small>
+            <div className="bigcash-kpi-content">
+              <span className="bigcash-hero-icon violet"><MiniIcon kind="lock" /></span>
+              <div>
+                <strong>GARANTIAS RETENIDAS</strong>
+                <h3 className="value-violet">{formatBs(guaranteesHeldBs)}</h3>
+                <p>{activeGuaranteeRows.length} contrato{activeGuaranteeRows.length === 1 ? '' : 's'} con garantia activa.</p>
               </div>
             </div>
           </article>
@@ -1747,7 +1763,8 @@ function AccountingSection({
               <label>
                 <select value={bigCashTypeFilter} onChange={(event) => setBigCashTypeFilter(event.target.value)}>
                   <option value="all">Todos los tipos</option>
-                  <option value="income">Ingresos</option>
+                  <option value="income">Ingresos operativos</option>
+                  <option value="guarantee">Garantias retenidas</option>
                   <option value="transfer">Retiros</option>
                 </select>
               </label>
@@ -1844,26 +1861,23 @@ function AccountingSection({
             </article>
 
             <section className="bigcash-card bigcash-summary-card">
-              <h3><span className="bigcash-title-icon neutral"><CashIcon kind="summary" /></span>RESUMEN DE CAJA GRANDE</h3>
-              <div className="bigcash-summary-formula">
+              <h3><span className="bigcash-title-icon neutral"><CashIcon kind="summary" /></span>COMPOSICION DEL DINERO EN CAJA GRANDE</h3>
+              <p className="bigcash-summary-note">Las garantias pertenecen temporalmente a los clientes y no forman parte del dinero operativo disponible.</p>
+              <div className="bigcash-summary-formula cash-composition">
                 <span>
-                  <small>Saldo inicial del mes</small>
-                  <b>{formatBs(bigCashMonthOpeningBs)}</b>
-                  <em>{formatDate(monthStartDate)}</em>
+                  <small>Dinero operativo</small>
+                  <b className="value-green">{formatBs(operationalBigCashBs)}</b>
+                  <em>Disponible para la operacion</em>
                 </span>
                 <i>+</i>
                 <span>
-                  <small>Total ingresos del mes</small>
-                  <b className="value-green">{formatBs(monthBigCashIncomeBs)}</b>
-                </span>
-                <i>-</i>
-                <span>
-                  <small>Total retiros a caja chica</small>
-                  <b className="value-orange">{formatBs(monthBigCashTransferBs)}</b>
+                  <small>Garantias retenidas</small>
+                  <b className="value-violet">{formatBs(guaranteesHeldBs)}</b>
+                  <em>No disponible</em>
                 </span>
                 <i>=</i>
                 <span className="current">
-                  <small>Saldo actual</small>
+                  <small>Total fisico en caja</small>
                   <b className="value-blue">{formatBs(bigCashBalanceBs)}</b>
                   <em>{formatDate(selectedDate)}</em>
                 </span>
@@ -1900,6 +1914,7 @@ function AccountingSection({
                 <ul>
                   <li>Su función principal es recibir ingresos.</li>
                   <li>Todos los pagos de contratos, alquiler, cuotas y servicios se registran aquí.</li>
+                  <li>Las garantias se reciben aqui, pero se mantienen separadas del dinero operativo.</li>
                   <li>No se realizan gastos desde Caja Grande.</li>
                   <li>Los retiros solo pueden ser para reposición de Caja Chica.</li>
                 </ul>

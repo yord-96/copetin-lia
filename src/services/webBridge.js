@@ -3596,7 +3596,7 @@ const getProfessionalDocumentStyles = () => `
   }
   .doc-id-card span {
     color: #53627a;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -3948,7 +3948,7 @@ const buildDocumentShell = ({
   </body>
 </html>`;
 
-const getContractDocumentStyles = () => `
+const CONTRACT_LEGACY_DOCUMENT_STYLES = `
   ${getProfessionalDocumentStyles()}
   @page { size: 216mm 330mm; margin: 6mm; }
   body {
@@ -4636,6 +4636,392 @@ const getContractItemMeta = (line, item) => [
 const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
+const getReferenceContractStyles = () => `
+  @page { size: legal portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html { background: #d9d9d9; }
+  body {
+    margin: 0;
+    padding: 12px 0;
+    color: #111;
+    background: #d9d9d9;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10px;
+    line-height: 1.28;
+  }
+  h1, h2, h3, p { margin: 0; }
+  .rc-sheet {
+    width: 216mm;
+    min-height: 355.6mm;
+    margin: 0 auto;
+    padding: 0 6.5mm 4mm;
+    background: #fff;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, .18);
+  }
+  .rc-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 54mm;
+    min-height: 37mm;
+    margin: 0 -6.5mm;
+  }
+  .rc-logo {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    background: #fff;
+  }
+  .rc-logo img {
+    position: absolute;
+    top: -11.5mm;
+    left: -5.4mm;
+    display: block;
+    width: auto;
+    max-width: none;
+    height: 60.2mm;
+  }
+  .rc-code {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 2mm;
+    padding: 3mm 4mm 2mm;
+    background: linear-gradient(135deg, #fff 75%, #f8f8f8);
+  }
+  .rc-number {
+    display: flex;
+    align-items: baseline;
+    gap: 4mm;
+    padding-bottom: 1.5mm;
+    border-bottom: .35mm solid #f3b18f;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  .rc-number span { font-size: 14px; }
+  .rc-number strong { color: #ef5000; font-size: 29px; font-weight: 500; }
+  .rc-date { display: flex; align-items: center; gap: 3mm; font: 15px Georgia, "Times New Roman", serif; }
+  .rc-date img { width: 5mm; height: 5mm; object-fit: contain; }
+  .rc-status {
+    min-width: 34mm;
+    padding: 2.2mm 3mm;
+    border-radius: 1.5mm;
+    color: #fff;
+    background: linear-gradient(135deg, #f04b00, #ff6a00);
+    text-align: center;
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+  .rc-status img {
+    width: 4.5mm;
+    height: 4.5mm;
+    margin-right: 2mm;
+    vertical-align: -1.2mm;
+    filter: brightness(0) invert(1);
+  }
+  .rc-title {
+    padding: 4mm 0 5mm;
+    text-align: center;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  .rc-title h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: 1.2px;
+  }
+  .rc-title p {
+    margin: 1.5mm 0 0;
+    color: #ef5000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+  }
+  .rc-title i {
+    position: relative;
+    display: block;
+    width: 31mm;
+    height: .35mm;
+    margin: 3mm auto 0;
+    background: #ef5000;
+  }
+  .rc-title i::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.2mm;
+    height: 2.2mm;
+    border: .35mm solid #ef5000;
+    background: #fff;
+    transform: translate(-50%, -50%) rotate(45deg);
+  }
+  .rc-company {
+    display: grid;
+    grid-template-columns: 1.05fr 1.15fr .68fr .82fr;
+    min-height: 21mm;
+    border: .25mm solid #d7d7d7;
+    border-radius: 2mm;
+    overflow: hidden;
+  }
+  .rc-company > div {
+    display: grid;
+    grid-template-columns: 8mm minmax(0, 1fr);
+    align-items: center;
+    gap: 2mm;
+    padding: 3mm;
+    border-right: .25mm solid #ff7a35;
+  }
+  .rc-company > div:last-child { border-right: 0; }
+  .rc-company img { width: 6.5mm; height: 6.5mm; object-fit: contain; }
+  .rc-company strong {
+    display: block;
+    font: 700 11px Arial, sans-serif;
+    text-transform: uppercase;
+  }
+  .rc-company .company-name { font: 700 17px Georgia, "Times New Roman", serif; text-transform: uppercase; }
+  .rc-company span { display: block; margin-top: 1mm; font-size: 10px; }
+  .rc-upper {
+    display: grid;
+    grid-template-columns: .93fr 1.07fr;
+    gap: 5mm;
+    margin-top: 4mm;
+  }
+  .rc-block-title {
+    display: flex;
+    align-items: baseline;
+    gap: 2mm;
+    margin: 0 0 2.5mm;
+    font: 700 17px Georgia, "Times New Roman", serif;
+    font-variant: small-caps;
+  }
+  .rc-block-title b { color: #ef5000; font-size: 23px; font-weight: 500; }
+  .rc-block-title::after {
+    content: "";
+    align-self: end;
+    width: 38mm;
+    height: .35mm;
+    margin-left: -34mm;
+    transform: translateY(2.2mm);
+    background: #ef5000;
+  }
+  .rc-client {
+    padding-right: 5mm;
+    border-right: .35mm solid #bcbcbc;
+  }
+  .rc-fields {
+    display: grid;
+    grid-template-columns: 42mm minmax(0, 1fr);
+    row-gap: 2.2mm;
+    padding-top: 1mm;
+    font-size: 11.5px;
+  }
+  .rc-fields strong { font-weight: 500; }
+  .rc-fields span { font-weight: 500; text-transform: uppercase; }
+  .rc-schedule-box,
+  .rc-mode-box,
+  .rc-observations,
+  .rc-money,
+  .rc-terms {
+    border: .25mm solid #f2c9b3;
+    border-radius: 1.5mm;
+  }
+  .rc-schedule-row {
+    display: grid;
+    grid-template-columns: 10mm minmax(0, 1fr) 30mm 30mm;
+    align-items: center;
+    min-height: 13mm;
+    padding: 2mm 3mm;
+    border-bottom: .25mm solid #efd5c7;
+  }
+  .rc-schedule-row:last-child { border-bottom: 0; }
+  .rc-round-icon {
+    width: 8mm;
+    height: 8mm;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #ef5000;
+  }
+  .rc-round-icon img { width: 5mm; height: 5mm; filter: brightness(0) invert(1); }
+  .rc-schedule-row strong { display: block; font-size: 11px; }
+  .rc-schedule-row span { display: block; margin-top: .7mm; font-size: 10px; }
+  .rc-schedule-meta {
+    display: flex !important;
+    align-items: center;
+    gap: 2mm;
+    margin: 0 !important;
+    padding-left: 3mm;
+    border-left: .25mm solid #e7d8d0;
+    white-space: nowrap;
+  }
+  .rc-schedule-meta img { width: 4.5mm; height: 4.5mm; object-fit: contain; }
+  .rc-mode-box { margin-top: 2mm; padding: 2mm 3mm; }
+  .rc-mode-row {
+    display: grid;
+    grid-template-columns: 10mm minmax(0, 1fr);
+    gap: 2mm;
+    align-items: center;
+    min-height: 10mm;
+  }
+  .rc-mode-row + .rc-mode-row { border-top: .25mm solid #efd5c7; }
+  .rc-mode-row img { width: 7mm; height: 7mm; object-fit: contain; }
+  .rc-mode-row strong { display: block; }
+  .rc-mode-row span { display: block; margin-top: .8mm; }
+  .rc-items { margin-top: 3mm; }
+  .rc-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: .25mm solid #ddd;
+    border-radius: 1.5mm;
+    overflow: hidden;
+  }
+  .rc-table thead { display: table-header-group; }
+  .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .rc-table th {
+    padding: 2.1mm 3mm;
+    color: #fff;
+    background: linear-gradient(90deg, #ef5000, #f86600);
+    font-size: 11px;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  .rc-table th.num, .rc-table td.num { text-align: center; white-space: nowrap; }
+  .rc-table td {
+    padding: 1.7mm 3mm;
+    border-right: .25mm solid #e1e1e1;
+    border-bottom: .25mm solid #e1e1e1;
+    vertical-align: middle;
+    font-size: 11.5px;
+  }
+  .rc-table td:last-child { border-right: 0; }
+  .rc-table tbody tr:last-child td { border-bottom: 0; }
+  .rc-item-name { display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; }
+  .rc-item-meta { display: block; margin-top: .6mm; font-size: 9.5px; text-transform: uppercase; }
+  .rc-bottom {
+    display: grid;
+    grid-template-columns: .86fr 1.02fr 1.15fr;
+    gap: 3mm;
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .rc-bottom-title {
+    margin: 0 0 2mm;
+    color: #ef5000;
+    font: 500 14px Georgia, "Times New Roman", serif;
+    font-variant: small-caps;
+  }
+  .rc-bottom-title::after {
+    content: "";
+    display: block;
+    width: 24mm;
+    height: .3mm;
+    margin-top: 1mm;
+    background: #ef5000;
+  }
+  .rc-observations, .rc-money { min-height: 44mm; padding: 3mm; }
+  .rc-observations strong { display: block; margin-bottom: 2mm; font-size: 9px; }
+  .rc-observations p { margin: 0; text-transform: uppercase; }
+  .rc-money-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 3mm;
+    padding: .7mm 0;
+  }
+  .rc-money-line strong { white-space: nowrap; }
+  .rc-money-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-top: 1.5mm;
+    padding: 2mm 0;
+    border-top: .35mm solid #ef5000;
+    border-bottom: .35mm solid #ef5000;
+    color: #ef5000;
+    font: 500 13px Georgia, "Times New Roman", serif;
+  }
+  .rc-money-total strong { font-size: 19px; font-weight: 500; }
+  .rc-terms { min-height: 44mm; padding: 2.5mm 3mm; }
+  .rc-terms-list { display: grid; gap: 1.2mm; margin: 0; padding: 0; list-style: none; }
+  .rc-terms-list li { display: grid; grid-template-columns: 5mm minmax(0, 1fr); gap: 2mm; font-size: 8.5px; }
+  .rc-terms-list b {
+    width: 4mm;
+    height: 4mm;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    background: #ef5000;
+    font-size: 8px;
+  }
+  .rc-important {
+    display: grid;
+    grid-template-columns: 8mm minmax(0, 1fr);
+    gap: 2mm;
+    align-items: center;
+    margin-top: 2mm;
+    padding: 1.5mm 2mm;
+    border: .25mm solid #f2b997;
+    border-radius: 1mm;
+  }
+  .rc-important img { width: 7mm; height: 7mm; }
+  .rc-important strong { color: #ef5000; font-family: Georgia, "Times New Roman", serif; text-transform: uppercase; }
+  .rc-important span { display: block; font-size: 8.2px; }
+  .rc-signatures {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10mm;
+    margin-top: 9mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    text-align: center;
+  }
+  .rc-signature { padding-top: 2mm; border-top: .35mm solid #ef5000; }
+  .rc-signature strong { display: block; font-size: 10px; text-transform: uppercase; }
+  .rc-signature span { display: block; margin-top: .8mm; font-size: 9px; text-transform: uppercase; }
+  .rc-footer {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 4mm;
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: .3mm solid #ef5000;
+    color: #555;
+    font-size: 8.5px;
+  }
+  .rc-footer strong { color: #ef5000; font-size: 9px; }
+  .rc-footer span:last-child { text-align: right; }
+  .rc-sheet.is-dense { font-size: 10px; }
+  .rc-sheet.is-dense .rc-title { padding-top: 3mm; padding-bottom: 3mm; }
+  .rc-sheet.is-dense .rc-company { min-height: 18mm; }
+  .rc-sheet.is-dense .rc-company > div { padding-top: 2mm; padding-bottom: 2mm; }
+  .rc-sheet.is-dense .rc-upper { margin-top: 3mm; }
+  .rc-sheet.is-dense .rc-schedule-row { min-height: 11mm; }
+  .rc-sheet.is-dense .rc-table td { padding-top: 1.1mm; padding-bottom: 1.1mm; }
+  .rc-sheet.is-dense .rc-bottom { margin-top: 2mm; }
+  .rc-sheet.is-dense .rc-observations,
+  .rc-sheet.is-dense .rc-money,
+  .rc-sheet.is-dense .rc-terms { min-height: 39mm; }
+  .rc-sheet.is-dense .rc-signatures { margin-top: 6mm; }
+  @media print {
+    html, body {
+      width: 216mm;
+      height: 355.6mm;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+    }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rc-sheet {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      box-shadow: none;
+    }
+  }
+`;
+
 const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, items = [] }) => {
   const statusLabels = {
     borrador: 'Borrador',
@@ -4669,12 +5055,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const logisticsResponsibility = isCustomerPickup
     ? 'El cliente recoge y devuelve los items en coordinacion con administracion.'
     : 'El equipo de Copetin realiza la entrega y el recojo programado.';
-  const deliverySchedule = `${formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate)} ${
-    deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? ''
-  }${deliveryOut?.windowEnd || contract?.deliveryWindowEnd ? ` - ${deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd}` : ''}`.trim();
-  const pickupSchedule = `${formatDocumentDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate)} ${
-    deliveryBack?.windowStart ?? contract?.pickupWindowStart ?? ''
-  }${deliveryBack?.windowEnd || contract?.pickupWindowEnd ? ` - ${deliveryBack?.windowEnd ?? contract?.pickupWindowEnd}` : ''}`.trim();
   const durationLabel = hasDurationPricing
     ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
     : 'Precio unico';
@@ -4690,24 +5070,16 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .map(
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
-        const imageDataUrl = line.imageDataUrl ?? item?.imageDataUrl ?? null;
         const meta = getContractItemMeta(line, item);
         return `
         <tr>
           <td>
-            <div class="contract-item-desc">
-              <span class="contract-item-thumb">
-                ${imageDataUrl ? `<img src="${escapeHtml(imageDataUrl)}" alt="" />` : 'IMG'}
-              </span>
-              <span>
-                <strong>${escapeHtml(line.itemName)}</strong>
-                ${meta ? `<small>${escapeHtml(meta)}</small>` : ''}
-              </span>
-            </div>
+            <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
+            ${meta ? `<span class="rc-item-meta">${escapeHtml(meta)}</span>` : ''}
           </td>
-          <td class="number">${line.quantity}</td>
-          <td class="number">${formatBs(line.rentalPriceBs)}</td>
-          <td class="number">${formatBs(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0))}</td>
+          <td class="num">${line.quantity}</td>
+          <td class="num">${formatBs(line.rentalPriceBs)}</td>
+          <td class="num">${formatBs(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0))}</td>
         </tr>`;
       },
     )
@@ -4715,151 +5087,136 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = Array.isArray(rental.items) ? rental.items.length : 0;
-  const densityClass = itemCount >= 7 ? 'is-compact is-dense' : 'is-compact';
+  const densityClass = itemCount >= 7 ? 'is-dense' : '';
+  const responsibleName = contract?.createdByName ?? rental?.createdByName ?? company.name;
+  const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
+  const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
+  const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
+  const pickupDate = formatDocumentDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate);
+  const pickupStart = deliveryBack?.windowStart ?? contract?.pickupWindowStart ?? '-';
+  const pickupEnd = deliveryBack?.windowEnd ?? contract?.pickupWindowEnd ?? '-';
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <title>${escapeHtml(`Orden de servicio ${mainCode}`)}</title>
-    <style>${getContractDocumentStyles()}</style>
+    <style>${getReferenceContractStyles()}</style>
   </head>
   <body>
-    <main class="contract-sheet ${densityClass}">
-      <header class="contract-hero">
-        <section class="contract-brand">
-          <span class="contract-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 42 42">
-              <path d="M9 7h24L22 20v12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M15 35h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
-              <path d="M12 9c2.8 1.4 5.8 2.1 9 2.1S27.2 10.4 30 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-            </svg>
-          </span>
-          <div>
-            <h1>El Copet&iacute;n</h1>
-            <p>Alquiler de mobiliario, cristaleria<br />y equipos para eventos</p>
-          </div>
-        </section>
-        <section class="contract-title">
-          <h2>ORDEN DE SERVICIO</h2>
-          <p>Contrato de alquiler</p>
-        </section>
-        <section>
-          <div class="contract-code-card">
-            <span class="contract-code-label">N&deg; ${escapeHtml(mainCode)}</span>
-            <span class="contract-code-date">${escapeHtml(issuedAt)}</span>
-            <div class="contract-status"><img class="contract-status-icon" src="/imagenes/pdf%20contrato/verificado.png" alt="" />${escapeHtml(statusLabel)}</div>
-          </div>
-        </section>
+    <main class="rc-sheet ${densityClass}">
+      <header class="rc-top">
+        <div class="rc-logo"><img src="/imagenes/logocontrato.png" alt="El Copetin" /></div>
+        <div class="rc-code">
+          <div class="rc-number"><span>N&deg;</span><strong>${escapeHtml(mainCode)}</strong></div>
+          <div class="rc-date">${contractPdfIcon('calendario.png')}<span>${escapeHtml(issuedAt)}</span></div>
+          <div class="rc-status"><img src="/imagenes/pdf%20contrato/verificado.png" alt="" />${escapeHtml(statusLabel)}</div>
+        </div>
       </header>
 
-      <section class="contract-company-strip">
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('edificio-de-pisos.png')}</span><div><strong>${escapeHtml(company.name)}</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Direccion</strong><span>${escapeHtml(company.address)}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Telefono</strong><span>${escapeHtml(company.phone || '-')}</span></div></div>
-        <div class="contract-company-item"><span class="contract-icon">${contractPdfIcon('documento.png')}</span><div><strong>Email</strong><span>${escapeHtml(company.email || '-')}</span></div></div>
+      <section class="rc-title">
+        <h1>ORDEN DE SERVICIO</h1>
+        <p>Contrato de alquiler</p>
+        <i></i>
       </section>
 
-      <h3 class="contract-section-title"><span class="number">1.</span> Datos del cliente y evento</h3>
-      <section class="contract-panel contract-data-grid">
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Cliente</strong><span>${escapeHtml(rental.customerName)}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('llamada-telefonica.png')}</span><div><strong>Telefono</strong><span>${escapeHtml(rental.customerPhone || '-')}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('calendario.png')}</span><div><strong>Evento</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('ubicacion.png')}</span><div><strong>Direccion del servicio</strong><span>${escapeHtml(eventAddress)}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('documento.png')}</span><div><strong>Facturacion</strong><span>${escapeHtml(billingLabel)}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('etiqueta-de-precio.png')}</span><div><strong>Tarifa</strong><span>${escapeHtml(durationLabel)}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('camion.png')}</span><div><strong>Logistica</strong><span>${escapeHtml(logisticsLabel)}</span></div></div>
-        <div class="contract-field"><span class="contract-field-icon">${contractPdfIcon('enlace.png')}</span><div><strong>Orden vinculada</strong><span>${escapeHtml(linkedOrderCode)}</span></div></div>
+      <section class="rc-company">
+        <div>${contractPdfIcon('edificio-de-pisos.png')}<p><strong class="company-name">${escapeHtml(company.name)}</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></p></div>
+        <div>${contractPdfIcon('ubicacion.png')}<p><strong>Direccion</strong><span>${escapeHtml(company.address)}</span></p></div>
+        <div>${contractPdfIcon('llamada-telefonica.png')}<p><strong>Telefono</strong><span>${escapeHtml(company.phone || '-')}</span></p></div>
+        <div>${contractPdfIcon('documento.png')}<p><strong>Email</strong><span>${escapeHtml(company.email || '-')}</span></p></div>
       </section>
 
-      <h3 class="contract-section-title"><span class="number">2.</span> Cronograma operativo</h3>
-      <section class="contract-panel contract-schedule">
-        <div class="contract-schedule-main">
-          <span class="contract-icon">${contractPdfIcon('camion.png')}</span>
-          <div><strong class="contract-schedule-label">${isCustomerPickup ? 'Alistamiento para recojo' : 'Entrega programada'}</strong><span class="contract-schedule-value">${escapeHtml(deliverySchedule)}</span></div>
+      <section class="rc-upper">
+        <div class="rc-client">
+          <h2 class="rc-block-title"><b>1.</b> Datos del cliente y evento</h2>
+          <div class="rc-fields">
+            <strong>Cliente:</strong><span>${escapeHtml(rental.customerName)}</span>
+            <strong>Telefono / CI:</strong><span>${escapeHtml(rental.customerPhone || '-')}</span>
+            <strong>Evento:</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span>
+            <strong>Direccion del servicio:</strong><span>${escapeHtml(eventAddress)}</span>
+            <strong>Facturacion:</strong><span>${escapeHtml(billingLabel)}</span>
+            <strong>Tarifa:</strong><span>${escapeHtml(durationLabel)}</span>
+            <strong>Logistica:</strong><span>${escapeHtml(logisticsLabel)}</span>
+            <strong>Orden vinculada:</strong><span>${escapeHtml(linkedOrderCode)}</span>
+          </div>
         </div>
-        <div class="contract-schedule-main">
-          <span class="contract-icon">${contractPdfIcon('flechas-circulares.png')}</span>
-          <div><strong class="contract-schedule-label">${isCustomerPickup ? 'Devolucion por cliente' : 'Recojo programado'}</strong><span class="contract-schedule-value">${escapeHtml(pickupSchedule)}</span></div>
-        </div>
-        <div class="contract-schedule-main">
-          <span class="contract-icon">${contractPdfIcon('documento.png')}</span>
-          <div><strong class="contract-schedule-label">Modalidad acordada</strong><span class="contract-schedule-value">${escapeHtml(logisticsLabel)}</span></div>
-        </div>
-        <div class="contract-schedule-main">
-          <span class="contract-icon">${contractPdfIcon('documento.png')}</span>
-          <div><strong class="contract-schedule-label">Responsable operativo</strong><span class="contract-schedule-value">${escapeHtml(logisticsResponsibility)}</span></div>
+        <div>
+          <h2 class="rc-block-title"><b>2.</b> Cronograma operativo</h2>
+          <div class="rc-schedule-box">
+            <div class="rc-schedule-row">
+              <i class="rc-round-icon">${contractPdfIcon('camion.png')}</i>
+              <p><strong>${isCustomerPickup ? 'Alistamiento' : 'Entrega'}</strong><span>${isCustomerPickup ? 'para recojo' : 'programada'}</span></p>
+              <span class="rc-schedule-meta">${contractPdfIcon('calendario.png')}${escapeHtml(deliveryDate)}</span>
+              <span class="rc-schedule-meta">${contractPdfIcon('reloj.png')}${escapeHtml(`${deliveryStart} - ${deliveryEnd}`)}</span>
+            </div>
+            <div class="rc-schedule-row">
+              <i class="rc-round-icon">${contractPdfIcon('flechas-circulares.png')}</i>
+              <p><strong>${isCustomerPickup ? 'Devolucion' : 'Recojo'}</strong><span>${isCustomerPickup ? 'por cliente' : 'programado'}</span></p>
+              <span class="rc-schedule-meta">${contractPdfIcon('calendario.png')}${escapeHtml(pickupDate)}</span>
+              <span class="rc-schedule-meta">${contractPdfIcon('reloj.png')}${escapeHtml(`${pickupStart} - ${pickupEnd}`)}</span>
+            </div>
+          </div>
+          <div class="rc-mode-box">
+            <div class="rc-mode-row">${contractPdfIcon('enlace.png')}<p><strong>Modalidad acordada:</strong><span>${escapeHtml(logisticsLabel)}</span></p></div>
+            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span>${escapeHtml(logisticsResponsibility)}</span></p></div>
+          </div>
         </div>
       </section>
 
-      <h3 class="contract-section-title"><span class="number">3.</span> Detalle de items contratados</h3>
-      <section class="contract-items-layout">
-        <table class="contract-items-table">
+      <section class="rc-items">
+        <h2 class="rc-block-title"><b>3.</b> Detalle de items contratados</h2>
+        <table class="rc-table">
           <thead>
-            <tr><th>Descripcion</th><th class="number">Cant.</th><th class="number">Precio unit.</th><th class="number">Subtotal</th></tr>
+            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th></tr>
           </thead>
-          <tbody>
-            ${rows || '<tr><td colspan="4">Sin items registrados</td></tr>'}
-            <tr class="contract-observation-row"><td colspan="4"><strong>Observaciones</strong>${escapeHtml(observations)}</td></tr>
-          </tbody>
-          <tfoot>
-            <tr class="contract-summary-title-row"><td colspan="4">Resumen economico</td></tr>
-            ${hasDurationPricing ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Base por dia</td><td class="contract-summary-value">${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</td></tr>` : ''}
-            ${hasDurationPricing ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Promocion duracion</td><td class="contract-summary-value">${formatBs(contract?.totals?.durationDiscountBs ?? pricingPlan.durationDiscountBs ?? 0)}</td></tr>` : ''}
-            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Subtotal</td><td class="contract-summary-value">${formatBs(subtotalBs)}</td></tr>
-            ${hasManualDiscount ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Descuento</td><td class="contract-summary-value">${formatBs(discountBs)}</td></tr>` : ''}
-            ${!isCustomerPickup ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Envio por equipo</td><td class="contract-summary-value">${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</td></tr>` : ''}
-            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Garantia</td><td class="contract-summary-value">${formatBs(guaranteeBs)}</td></tr>
-            ${Number(prepaidAppliedBs ?? 0) > 0 ? `<tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Saldo prepago aplicado</td><td class="contract-summary-value">${formatBs(prepaidAppliedBs)}</td></tr>` : ''}
-            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Pagado</td><td class="contract-summary-value">${formatBs(paidBs)}</td></tr>
-            <tr class="contract-summary-row"><td colspan="3" class="contract-summary-label">Saldo</td><td class="contract-summary-value">${formatBs(pendingBs)}</td></tr>
-            <tr class="contract-summary-row contract-summary-total"><td colspan="3" class="contract-summary-label">Total contrato</td><td class="contract-summary-value">${formatBs(totalBs)}</td></tr>
-            <tr class="contract-summary-row contract-summary-managed"><td colspan="3" class="contract-summary-label">Monto manejado</td><td class="contract-summary-value">${formatBs(documentManagedBs)}</td></tr>
-          </tfoot>
+          <tbody>${rows || '<tr><td colspan="4">Sin items registrados</td></tr>'}</tbody>
         </table>
       </section>
 
-      <h3 class="contract-section-title"><span class="number">4.</span> Condiciones del servicio</h3>
-      <section class="contract-panel contract-terms-panel">
-        <ol class="contract-terms-list">
-          <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
-          <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
-          <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
-          <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
-        </ol>
-        <aside class="contract-important">
-          <span class="contract-icon">${contractPdfIcon('verificado.png')}</span>
-          <p><strong>Importante</strong><br />Al firmar este documento, el cliente acepta todas las condiciones descritas en este contrato.</p>
-        </aside>
-      </section>
-
-      <section class="contract-closing">
-        <div class="contract-signatures">
-          <div>
-            <p class="contract-signature-label">Firma cliente</p>
-            <div class="contract-signature-script"></div>
-            <div class="contract-signature-line"></div>
-            <p class="contract-signature-name">${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</p>
-          </div>
-          <div>
-            <p class="contract-signature-label">Responsable comercial</p>
-            <div class="contract-signature-script"></div>
-            <div class="contract-signature-line"></div>
-            <p class="contract-signature-name">${escapeHtml(company.name)}</p>
-          </div>
-          <div>
-            <p class="contract-signature-label">Administracion</p>
-            <div class="contract-signature-script"></div>
-            <div class="contract-signature-line"></div>
-            <p class="contract-signature-name">${escapeHtml(company.name)}</p>
+      <section class="rc-bottom">
+        <div class="rc-observations">
+          <h3 class="rc-bottom-title">Observaciones</h3>
+          <strong>Observaciones:</strong>
+          <p>${escapeHtml(observations)}</p>
+        </div>
+        <div class="rc-money">
+          <h3 class="rc-bottom-title">Resumen economico</h3>
+          ${hasDurationPricing ? `<div class="rc-money-line"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
+          <div class="rc-money-line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
+          ${hasManualDiscount ? `<div class="rc-money-line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>` : ''}
+          ${!isCustomerPickup ? `<div class="rc-money-line"><span>Envio</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
+          <div class="rc-money-line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
+          ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-money-line"><span>Prepago aplicado</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
+          <div class="rc-money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
+          <div class="rc-money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+          <div class="rc-money-total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
+          <div class="rc-money-line"><span>Monto manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
+        </div>
+        <div>
+          <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
+          <div class="rc-terms">
+            <ol class="rc-terms-list">
+              <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
+              <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
+              <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
+              <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
+            </ol>
+            <aside class="rc-important">${contractPdfIcon('verificado.png')}<p><strong>Importante</strong><span>Al firmar este documento, el cliente acepta todas las condiciones descritas en este contrato.</span></p></aside>
           </div>
         </div>
-
-        <footer class="contract-footer">
-          <span>Documento generado por ${escapeHtml(company.name)}</span>
-          <span>${escapeHtml(company.website || 'www.copetin.com')}</span>
-          <span>Contrato ${escapeHtml(mainCode)}</span>
-        </footer>
       </section>
+
+      <section class="rc-signatures">
+        <div class="rc-signature"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</span></div>
+        <div class="rc-signature"><strong>Responsable comercial</strong><span>${escapeHtml(responsibleName)}<br />${escapeHtml(company.name)}</span></div>
+        <div class="rc-signature"><strong>Administracion</strong><span>${escapeHtml(company.name)}</span></div>
+      </section>
+
+      <footer class="rc-footer">
+        <span>Documento generado por ${escapeHtml(company.name)}</span>
+        <strong>${escapeHtml(company.website || 'www.copetin.com')}</strong>
+        <span>Contrato ${escapeHtml(mainCode)}</span>
+      </footer>
     </main>
   </body>
 </html>`;
@@ -10247,7 +10604,10 @@ const createWebBridge = () => ({
           (movement, index) => {
             const amountBs = Number(movement.amountBs ?? 0);
             const voided = isVoidedCashMovement(movement);
-            const movementLabel = movement.isInternalTransfer
+            const isGuarantee = String(movement.type ?? '').toLowerCase() === 'ingreso_garantia';
+            const movementLabel = isGuarantee
+              ? 'Garantia retenida'
+              : movement.isInternalTransfer
               ? amountBs >= 0 ? 'Reposicion' : 'Transferencia'
               : amountBs >= 0 ? 'Ingreso' : 'Gasto';
             const reference = movement.receiptCode || movement.receipt || movement.linkedOrderCode || movement.sourceId || '-';

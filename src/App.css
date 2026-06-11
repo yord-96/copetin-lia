@@ -25408,7 +25408,7 @@ button.calendar-dispatch-row:focus-visible {
 
 .bigcash-kpi-grid {
   display: grid;
-  grid-template-columns: 1.22fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.18fr 1.05fr repeat(3, minmax(0, 1fr));
   gap: 0.72rem;
 }
 
@@ -25452,10 +25452,23 @@ button.calendar-dispatch-row:focus-visible {
     #ffffff;
 }
 
+.bigcash-kpi-card.guarantee {
+  background:
+    radial-gradient(circle at 14% 24%, rgba(124, 58, 237, 0.11), transparent 30%),
+    #ffffff;
+  border-color: #d9c8fa;
+}
+
 .bigcash-kpi-card.transfer {
   background:
     radial-gradient(circle at 14% 24%, rgba(232, 91, 29, 0.1), transparent 30%),
     #ffffff;
+}
+
+.bigcash-kpi-card .pill.warning {
+  border-color: #e2d5fb;
+  background: #f3edff;
+  color: #6d35bd;
 }
 
 .bigcash-kpi-card .pill {
@@ -25522,6 +25535,16 @@ button.calendar-dispatch-row:focus-visible {
   color: #e85b1d;
   background: #fff0e5;
   border: 1px solid #f6c4a8;
+}
+
+.bigcash-hero-icon.violet {
+  color: #7138bd;
+  background: #f1eaff;
+  border: 1px solid #decefa;
+}
+
+.value-violet {
+  color: #7138bd !important;
 }
 
 .bigcash-kpi-card strong {
@@ -26012,6 +26035,13 @@ button.calendar-dispatch-row:focus-visible {
   gap: 0.85rem;
 }
 
+.bigcash-summary-note {
+  margin: -0.35rem 0 0;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .bigcash-summary-formula {
   border: 1px solid #e4eaf2;
   border-radius: 0.5rem;
@@ -26056,6 +26086,10 @@ button.calendar-dispatch-row:focus-visible {
   background: linear-gradient(140deg, #eff5ff, #ffffff);
   padding: 0.62rem 0.72rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.bigcash-summary-formula.cash-composition {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(9rem, 1fr);
 }
 
 .transport-margin-card {
