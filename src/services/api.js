@@ -58,7 +58,6 @@ const isLocalHost = () => {
 
 const shouldUseServerState = () => {
   if (typeof window === 'undefined' || window.location.protocol === 'file:') return false;
-  if (isLocalHost() && !REMOTE_API_BASE_URL) return false;
   return true;
 };
 

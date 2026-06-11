@@ -3,6 +3,7 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validatePro
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
 const WEB_LEGACY_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
+const LOCAL_STORAGE_SAFE_STATE_BYTES = 3.5 * 1024 * 1024;
 const RESET_SECURITY_CODE = '1703';
 const PRESENCE_TTL_MS = 90 * 1000;
 const SESSION_TTL_MS = 10 * 60 * 60 * 1000;
@@ -1810,40 +1811,72 @@ const normalizeState = (state) => {
 };
 
 let inMemoryState = createSeedData();
+let inMemoryStateHydrated = false;
+let localStorageStateDisabled = false;
+
+const disableLocalStateStorage = () => {
+  localStorageStateDisabled = true;
+  try {
+    window.localStorage.removeItem(WEB_DB_STORAGE_KEY);
+  } catch {
+    // The server remains the source of truth when browser storage is unavailable.
+  }
+};
+
+const persistLocalStateSnapshot = (state) => {
+  if (!canUseLocalStorage() || localStorageStateDisabled) return;
+  try {
+    const serialized = JSON.stringify(state);
+    if (serialized.length > LOCAL_STORAGE_SAFE_STATE_BYTES) {
+      disableLocalStateStorage();
+      return;
+    }
+    window.localStorage.setItem(WEB_DB_STORAGE_KEY, serialized);
+  } catch (error) {
+    if (
+      error?.name === 'QuotaExceededError'
+      || error?.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+      || Number(error?.code) === 22
+      || Number(error?.code) === 1014
+    ) {
+      disableLocalStateStorage();
+      return;
+    }
+    throw error;
+  }
+};
 
 const readState = () => {
-  if (!canUseLocalStorage()) {
+  if (inMemoryStateHydrated || localStorageStateDisabled || !canUseLocalStorage()) {
     inMemoryState = normalizeState(inMemoryState);
+    inMemoryStateHydrated = true;
     return deepClone(inMemoryState);
   }
 
   const raw = window.localStorage.getItem(WEB_DB_STORAGE_KEY);
   if (!raw) {
-    const seed = normalizeState(createSeedData());
-    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(seed));
-    return deepClone(seed);
+    inMemoryState = normalizeState(createSeedData());
+    inMemoryStateHydrated = true;
+    persistLocalStateSnapshot(inMemoryState);
+    return deepClone(inMemoryState);
   }
 
   try {
     const parsed = JSON.parse(raw);
-    const normalized = normalizeState(parsed);
-    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(normalized));
-    return deepClone(normalized);
+    inMemoryState = normalizeState(parsed);
   } catch {
-    const fallback = normalizeState(createSeedData());
-    window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(fallback));
-    return deepClone(fallback);
+    inMemoryState = normalizeState(createSeedData());
   }
+  inMemoryStateHydrated = true;
+  persistLocalStateSnapshot(inMemoryState);
+  return deepClone(inMemoryState);
 };
 
 const writeState = (state) => {
   const normalized = normalizeState(state);
-  if (!canUseLocalStorage()) {
-    inMemoryState = normalized;
-    return deepClone(normalized);
-  }
-
-  window.localStorage.setItem(WEB_DB_STORAGE_KEY, JSON.stringify(normalized));
+  inMemoryState = normalized;
+  inMemoryStateHydrated = true;
+  persistLocalStateSnapshot(normalized);
   return deepClone(normalized);
 };
 
@@ -8662,9 +8695,18 @@ const createWebBridge = () => ({
 
   rentals: {
     list: async () => {
-      const { rentals } = readState();
+      const { contracts, rentals } = readState();
+      const canonicalRentalByContractId = new Map(
+        contracts
+          .filter((contract) => !contract.deletedAt && contract.id && contract.rentalId)
+          .map((contract) => [String(contract.id), String(contract.rentalId)]),
+      );
       return rentals
         .filter((row) => !row.deletedAt)
+        .filter((row) => {
+          const canonicalRentalId = canonicalRentalByContractId.get(String(row.contractId ?? ''));
+          return !canonicalRentalId || canonicalRentalId === String(row.id);
+        })
         .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
@@ -8699,6 +8741,22 @@ const createWebBridge = () => ({
 
       let createdRental = null;
       transaction((state) => {
+        const contractId = String(payload?.contractId ?? '').trim();
+        const existingContractRental = contractId
+          ? state.rentals.find((entry) => (
+            !entry.deletedAt
+            && entry.status !== 'cancelled'
+            && String(entry.contractId ?? '') === contractId
+          ))
+          : null;
+        if (existingContractRental) {
+          createdRental = {
+            ...deepClone(existingContractRental),
+            reusedExisting: true,
+          };
+          return state;
+        }
+
         const settings = state.settings ?? {};
         const depositBs = toNumber(payload?.depositBs ?? settings.defaultDepositBs ?? 200, 'garantia');
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
@@ -8934,7 +8992,7 @@ const createWebBridge = () => ({
         createdRental = {
           id: makeId('rent'),
           clientId,
-          contractId: String(payload?.contractId ?? '').trim() || null,
+          contractId: contractId || null,
           contractCode: String(payload?.contractCode ?? '').trim() || null,
           orderCode,
           customerName,
@@ -10152,22 +10210,59 @@ const createWebBridge = () => ({
       const state = readState();
       const fromDate = parseDateRange(payload?.dateFrom, false);
       const toDate = parseDateRange(payload?.dateTo, true);
-      const sessions = state.cashSessions
-        .filter((session) => isInRange(session.openedAt, fromDate, toDate))
-        .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+      const requestedCashBoxType = normalizeCashBoxType(payload?.cashBoxType, null);
+      const requestedIds = new Set(
+        (Array.isArray(payload?.movementIds) ? payload.movementIds : [])
+          .map((id) => String(id ?? '').trim())
+          .filter(Boolean),
+      );
       const movements = state.cashMovements
         .filter((movement) => isInRange(movement.createdAt, fromDate, toDate))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        .filter((movement) => !requestedCashBoxType || normalizeCashBoxType(movement.cashBoxType) === requestedCashBoxType)
+        .filter((movement) => requestedIds.size === 0 || requestedIds.has(String(movement.id)))
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+      const title = String(payload?.title ?? '').trim()
+        || (requestedCashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Libro de Caja Chica' : 'Libro de Caja Grande');
+      const cashBoxLabel = requestedCashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
+      const validMovements = movements.filter((movement) => !isVoidedCashMovement(movement));
+      const totalIncomeBs = validMovements.reduce(
+        (sum, movement) => sum + Math.max(0, Number(movement.amountBs ?? 0)),
+        0,
+      );
+      const totalExpenseBs = validMovements.reduce(
+        (sum, movement) => sum + Math.abs(Math.min(0, Number(movement.amountBs ?? 0))),
+        0,
+      );
+      const formatInputDate = (value) => {
+        const [year, month, day] = String(value ?? '').split('-');
+        return year && month && day ? `${day}/${month}/${year}` : String(value ?? '');
+      };
+      const periodLabel = fromDate || toDate
+        ? `${payload?.dateFrom ? formatInputDate(payload.dateFrom) : 'Inicio'} al ${payload?.dateTo ? formatInputDate(payload.dateTo) : 'Hoy'}`
+        : 'Historial completo';
 
       const rows = movements
         .map(
-          (movement) => `
+          (movement, index) => {
+            const amountBs = Number(movement.amountBs ?? 0);
+            const voided = isVoidedCashMovement(movement);
+            const movementLabel = movement.isInternalTransfer
+              ? amountBs >= 0 ? 'Reposicion' : 'Transferencia'
+              : amountBs >= 0 ? 'Ingreso' : 'Gasto';
+            const reference = movement.receiptCode || movement.receipt || movement.linkedOrderCode || movement.sourceId || '-';
+            return `
             <tr>
+              <td>${index + 1}</td>
               <td>${escapeHtml(formatDateTime(movement.createdAt))}</td>
-              <td>${escapeHtml(movement.type)}</td>
-              <td>${escapeHtml(movement.description)}</td>
-              <td>${formatBs(movement.amountBs)}</td>
-            </tr>`,
+              <td><span class="movement ${voided ? 'voided' : ''}">${escapeHtml(voided ? 'Anulado' : movementLabel)}</span></td>
+              <td><strong>${escapeHtml(movement.description || '-')}</strong>${movement.notes ? `<small>${escapeHtml(movement.notes)}</small>` : ''}</td>
+              <td>${escapeHtml(reference)}</td>
+              <td class="money income">${!voided && amountBs > 0 ? formatBs(amountBs) : '-'}</td>
+              <td class="money expense">${!voided && amountBs < 0 ? formatBs(Math.abs(amountBs)) : '-'}</td>
+              <td>${escapeHtml(movement.responsible || movement.createdBy || '-')}</td>
+            </tr>`;
+          },
         )
         .join('');
 
@@ -10175,25 +10270,70 @@ const createWebBridge = () => ({
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>Reporte de Caja</title>
+            <title>${escapeHtml(title)}</title>
             <style>
-              body { font-family: "Segoe UI", sans-serif; margin: 24px; color: #1f2d33; }
-              table { width: 100%; border-collapse: collapse; }
-              th, td { border-bottom: 1px solid #e4eeee; text-align: left; padding: 8px 6px; font-size: 13px; }
+              @page { size: 216mm 330mm; margin: 10mm; }
+              * { box-sizing: border-box; }
+              body { font-family: Arial, sans-serif; margin: 0; color: #172033; font-size: 10px; }
+              header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #f05a0b; padding-bottom: 8px; }
+              .brand { display: flex; gap: 10px; align-items: center; }
+              .brand-mark { width: 42px; height: 42px; border: 2px solid #f05a0b; border-radius: 50%; display: grid; place-items: center; color: #f05a0b; font-size: 20px; font-weight: 900; }
+              h1 { margin: 0 0 3px; font-size: 20px; color: #101828; }
+              header p, .meta p { margin: 2px 0; color: #667085; }
+              .report-code { text-align: right; font-weight: 700; }
+              .meta { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; margin: 10px 0; }
+              .meta article, .summary article { border: 1px solid #ead8cc; border-radius: 7px; padding: 7px 9px; background: #fffaf7; }
+              .meta small, .summary small { display: block; color: #8a4b2a; font-weight: 700; text-transform: uppercase; margin-bottom: 3px; }
+              .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+              .summary strong { font-size: 14px; }
+              .income { color: #16834b; }
+              .expense { color: #d94713; }
+              table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+              th { background: #f05a0b; color: white; text-transform: uppercase; font-size: 8px; letter-spacing: .2px; }
+              th, td { border: 1px solid #e4e7ec; text-align: left; padding: 5px 4px; vertical-align: top; }
+              tbody tr:nth-child(even) { background: #fffaf7; }
+              td small { display: block; margin-top: 2px; color: #667085; }
+              .money { text-align: right; font-weight: 700; white-space: nowrap; }
+              .movement { display: inline-block; border-radius: 10px; padding: 2px 5px; background: #eef4ff; color: #3157a4; font-weight: 700; }
+              .movement.voided { background: #feecec; color: #b42318; }
+              footer { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 7px; border-top: 1px solid #f05a0b; color: #667085; }
+              .actions { margin: 12px 0; text-align: right; }
+              .actions button { border: 0; border-radius: 7px; background: #f05a0b; color: white; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+              @media print {
+                .actions { display: none; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              }
             </style>
           </head>
           <body>
-            <h1>Reporte de Caja</h1>
-            <p>Sesiones: ${sessions.length} | Movimientos: ${movements.length}</p>
+            <header>
+              <div class="brand">
+                <div class="brand-mark">EC</div>
+                <div><h1>El Copetin</h1><p>Administrativo | Reporte contable</p></div>
+              </div>
+              <div class="report-code">${escapeHtml(title)}<p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p></div>
+            </header>
+            <section class="meta">
+              <article><small>Libro contable</small><strong>${escapeHtml(cashBoxLabel)}</strong></article>
+              <article><small>Periodo</small><strong>${escapeHtml(periodLabel)}</strong></article>
+              <article><small>Movimientos</small><strong>${movements.length}</strong></article>
+            </section>
+            <section class="summary">
+              <article><small>Ingresos / reposiciones</small><strong class="income">${formatBs(totalIncomeBs)}</strong></article>
+              <article><small>Egresos / gastos</small><strong class="expense">${formatBs(totalExpenseBs)}</strong></article>
+              <article><small>Movimiento neto</small><strong>${formatBs(totalIncomeBs - totalExpenseBs)}</strong></article>
+              <article><small>Anulados</small><strong>${movements.filter(isVoidedCashMovement).length}</strong></article>
+            </section>
             <table>
-              <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripcion</th><th>Monto</th></tr></thead>
-              <tbody>${rows || '<tr><td colspan="4">Sin movimientos en el periodo</td></tr>'}</tbody>
+              <thead><tr><th style="width:4%">N.</th><th style="width:13%">Fecha</th><th style="width:10%">Movimiento</th><th style="width:26%">Concepto</th><th style="width:14%">Referencia</th><th style="width:10%">Ingreso</th><th style="width:10%">Egreso</th><th style="width:13%">Responsable</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="8">Sin movimientos en el periodo seleccionado.</td></tr>'}</tbody>
             </table>
+            <footer><span>Documento generado por El Copetin Administrativo</span><span>${escapeHtml(cashBoxLabel)} | ${escapeHtml(periodLabel)}</span></footer>
+            <div class="actions"><button type="button" onclick="window.print()">Imprimir / guardar PDF</button></div>
           </body>
         </html>`;
 
-      openPrintWindow(html);
-      return { ok: true };
+      return { ok: true, html };
     },
   },
 
@@ -10572,5 +10712,5 @@ export const getWebBridge = () => {
 
 export const getWebRuntimeInfo = () => ({
   mode: 'web',
-  storage: canUseLocalStorage() ? 'localStorage' : 'memory',
+  storage: canUseLocalStorage() && !localStorageStateDisabled ? 'localStorage' : 'memory',
 });

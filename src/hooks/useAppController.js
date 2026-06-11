@@ -1432,6 +1432,21 @@ export const useAppController = () => {
         })),
       });
 
+      if (createdRental.reusedExisting) {
+        await api.contracts.update({
+          id: contract.id,
+          status: 'aprobado',
+          approvedAt: contract.approvedAt ?? createdRental.createdAt ?? new Date().toISOString(),
+          rejectedAt: null,
+          rentalId: createdRental.id,
+          orderCode: createdRental.orderCode,
+          paidAtApprovalBs: coveredAtApprovalBs,
+          prepaidAppliedBs,
+        });
+        await loadData();
+        return createdRental;
+      }
+
       if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
         const refreshedDeliveries = await api.transport.listDeliveries();
         const autoDelivery = refreshedDeliveries.find((entry) => entry.rentalId === createdRental.id);

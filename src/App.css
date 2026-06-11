@@ -26693,6 +26693,42 @@ button.calendar-dispatch-row:focus-visible {
   font-weight: 700;
 }
 
+.petty-history-report-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.25rem 0 0.85rem;
+}
+
+.petty-history-report-bar > span {
+  color: #697399;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.petty-history-report-bar > button:not(.primary-button) {
+  min-height: 34px;
+  border: 1px solid #dfe6f3;
+  border-radius: 8px;
+  background: #fff;
+  color: #29447d;
+  padding: 0 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.petty-history-report-bar .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.petty-history-report-bar .primary-button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .petty-history-modal-table-wrap {
   min-height: 260px;
   overflow: auto;
@@ -26768,6 +26804,14 @@ button.calendar-dispatch-row:focus-visible {
   .petty-history-summary-strip,
   .petty-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .petty-history-report-bar {
+    flex-wrap: wrap;
+  }
+
+  .petty-history-report-bar .primary-button {
+    margin-left: 0;
   }
 
   .accounting-daily-balance,

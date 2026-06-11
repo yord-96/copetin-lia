@@ -44,6 +44,27 @@ const getMonthStartInput = (dateKey) => {
   return getInputDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
 };
 
+const getPeriodRange = (dateKey, period) => {
+  const parsed = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return { dateFrom: dateKey, dateTo: dateKey };
+  if (period === 'month') {
+    return {
+      dateFrom: getInputDate(new Date(parsed.getFullYear(), parsed.getMonth(), 1)),
+      dateTo: getInputDate(new Date(parsed.getFullYear(), parsed.getMonth() + 1, 0)),
+    };
+  }
+  if (period === 'week') {
+    const day = parsed.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(parsed);
+    monday.setDate(parsed.getDate() + mondayOffset);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { dateFrom: getInputDate(monday), dateTo: getInputDate(sunday) };
+  }
+  return { dateFrom: dateKey, dateTo: dateKey };
+};
+
 const isBigCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH';
 const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH';
 const isVoidedCashMovement = (movement) =>
@@ -199,6 +220,7 @@ function AccountingSection({
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
   const [bigCashTypeFilter, setBigCashTypeFilter] = useState('all');
+  const [bigCashPeriod, setBigCashPeriod] = useState('month');
   const [bigCashQuery, setBigCashQuery] = useState('');
   const [bigCashVisibleRows, setBigCashVisibleRows] = useState(7);
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
@@ -310,7 +332,7 @@ function AccountingSection({
   );
 
   const pettyTransfersRows = useMemo(
-    () => postedMovements.filter((movement) => isBigCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) < 0),
+    () => postedMovements.filter((movement) => isPettyCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
     [postedMovements],
   );
 
@@ -376,6 +398,10 @@ function AccountingSection({
   const pettyCashBalanceBs = toNumber(cashSummary?.pettyCashBalanceBs ?? 0);
   const selectedMonthKey = getMonthKey(`${selectedDate}T12:00:00`);
   const monthStartDate = getMonthStartInput(selectedDate);
+  const bigCashPeriodRange = useMemo(
+    () => getPeriodRange(selectedDate, bigCashPeriod),
+    [bigCashPeriod, selectedDate],
+  );
   const monthBigCashIncomeBs = useMemo(
     () => sumBy(bigCashIncomeRows.filter((movement) => getMonthKey(movement.createdAt) === selectedMonthKey), (movement) => movement.amountBs),
     [bigCashIncomeRows, selectedMonthKey],
@@ -449,6 +475,8 @@ function AccountingSection({
   const filteredBigCashRows = useMemo(() => {
     const text = bigCashQuery.trim().toLowerCase();
     return bigCashMovementRows.filter((movement) => {
+      const dateKey = getDateKey(movement.createdAt);
+      if (dateKey < bigCashPeriodRange.dateFrom || dateKey > bigCashPeriodRange.dateTo) return false;
       const amount = toNumber(movement.amountBs);
       const matchesType =
         bigCashTypeFilter === 'all'
@@ -464,7 +492,7 @@ function AccountingSection({
         getMovementReference(movement),
       ].some((value) => String(value ?? '').toLowerCase().includes(text));
     });
-  }, [bigCashMovementRows, bigCashQuery, bigCashTypeFilter, getMovementReference]);
+  }, [bigCashMovementRows, bigCashPeriodRange, bigCashQuery, bigCashTypeFilter, getMovementReference]);
 
   const getPettyExpenseCategory = useCallback((movement) => {
     const raw = String(movement?.category ?? '').trim();
@@ -506,11 +534,12 @@ function AccountingSection({
     const rows = [];
 
     sortedMovements.forEach((movement) => {
+      if (!isPettyCash(movement)) return;
       const amount = toNumber(movement.amountBs);
       const type = String(movement.type ?? '').toLowerCase();
-      const isOpening = isPettyCash(movement) && type === 'apertura' && amount > 0;
-      const isReposition = isBigCash(movement) && movement.isInternalTransfer && amount < 0;
-      const isExpense = isPettyCash(movement) && !movement.isInternalTransfer && amount < 0;
+      const isOpening = type === 'apertura' && amount > 0;
+      const isReposition = movement.isInternalTransfer && amount > 0;
+      const isExpense = !movement.isInternalTransfer && amount < 0;
 
       if (!isOpening && !isReposition && !isExpense) return;
 
@@ -751,6 +780,11 @@ function AccountingSection({
     setIsPettyHistoryOpen(true);
   };
 
+  const applyPettyHistoryPeriod = (period) => {
+    const range = getPeriodRange(selectedDate, period);
+    setPettyHistoryFilters((current) => ({ ...current, ...range }));
+  };
+
   const closeCashAction = () => {
     setCashModal(null);
     setCashActionError('');
@@ -809,6 +843,30 @@ function AccountingSection({
     printWindow.document.write(result.html);
     printWindow.document.close();
     printWindow.focus();
+  };
+
+  const printCashHistoryReport = async ({
+    cashBoxType,
+    rows,
+    title,
+    dateFrom = '',
+    dateTo = '',
+  }) => {
+    let printWindow = null;
+    try {
+      printWindow = openReceiptWindow();
+      const result = await api.cash.printHistoryReport({
+        cashBoxType,
+        movementIds: rows.map((movement) => movement.id),
+        title,
+        dateFrom,
+        dateTo,
+      });
+      writeReceiptWindow(printWindow, result);
+    } catch (error) {
+      if (printWindow && !printWindow.closed) printWindow.close();
+      setCashActionError(error.message || 'No se pudo generar el reporte de caja.');
+    }
   };
 
   const printCashReceipt = async (movementId) => {
@@ -1149,6 +1207,28 @@ function AccountingSection({
               onClick={() => setPettyHistoryFilters({ dateFrom: '', dateTo: '', movement: 'all', category: 'all', query: '' })}
             >
               Limpiar
+            </button>
+          </div>
+
+          <div className="petty-history-report-bar">
+            <span>Periodo rapido:</span>
+            <button type="button" onClick={() => applyPettyHistoryPeriod('day')}>Dia</button>
+            <button type="button" onClick={() => applyPettyHistoryPeriod('week')}>Semana</button>
+            <button type="button" onClick={() => applyPettyHistoryPeriod('month')}>Mes</button>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={filteredPettyHistoryRows.length === 0}
+              onClick={() => printCashHistoryReport({
+                cashBoxType: 'PETTY_CASH',
+                rows: filteredPettyHistoryRows,
+                title: 'Libro de Caja Chica',
+                dateFrom: pettyHistoryFilters.dateFrom,
+                dateTo: pettyHistoryFilters.dateTo,
+              })}
+            >
+              <MiniIcon kind="report" />
+              Imprimir reporte
             </button>
           </div>
 
@@ -1671,8 +1751,15 @@ function AccountingSection({
                   <option value="transfer">Retiros</option>
                 </select>
               </label>
+              <label>
+                <select value={bigCashPeriod} onChange={(event) => setBigCashPeriod(event.target.value)}>
+                  <option value="day">Dia</option>
+                  <option value="week">Semana</option>
+                  <option value="month">Mes</option>
+                </select>
+              </label>
               <label className="bigcash-date-range">
-                <span>{formatDate(monthStartDate)} - {formatDate(selectedDate)}</span>
+                <span>{formatDate(bigCashPeriodRange.dateFrom)} - {formatDate(bigCashPeriodRange.dateTo)}</span>
                 <MiniIcon kind="calendar" />
               </label>
               <label className="bigcash-search">
@@ -1683,9 +1770,19 @@ function AccountingSection({
                 />
                 <MiniIcon kind="search" />
               </label>
-              <button type="button" className="bigcash-export-button" onClick={() => exportCashRows('caja-grande', filteredBigCashRows)}>
-                <MiniIcon kind="export" />
-                Exportar
+              <button
+                type="button"
+                className="bigcash-export-button"
+                onClick={() => printCashHistoryReport({
+                  cashBoxType: 'BIG_CASH',
+                  rows: filteredBigCashRows,
+                  title: 'Libro de Caja Grande',
+                  dateFrom: bigCashPeriodRange.dateFrom,
+                  dateTo: bigCashPeriodRange.dateTo,
+                })}
+              >
+                <MiniIcon kind="report" />
+                Reporte
               </button>
             </div>
 
