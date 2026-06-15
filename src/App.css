@@ -36476,3 +36476,175 @@ button.calendar-dispatch-row:focus-visible {
     grid-column: auto;
   }
 }
+
+/* Paso 3: tipografia legible para catalogo, seleccionados y resumen lateral. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+  height: 21.4rem;
+  min-height: 21.4rem;
+  max-height: 21.4rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-products-head strong {
+  font-size: 1rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-products-head > span,
+.orders-wizard-modal .orders-step3-link-actions .orders-inline-link,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-quick-item-panel.is-collapsed .orders-step3-link-actions .ghost-button {
+  font-size: 0.72rem;
+}
+
+.orders-product-table-head {
+  min-height: 2.15rem;
+  font-size: 0.65rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row {
+  min-height: 3.8rem;
+  padding-block: 0.48rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb {
+  width: 2.35rem;
+  height: 2.35rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > span {
+  font-size: 0.67rem;
+  line-height: 1.25;
+}
+
+.orders-product-table-details span {
+  padding: 0.16rem 0.34rem;
+  font-size: 0.62rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-price {
+  font-size: 0.76rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-price small {
+  font-size: 0.62rem;
+}
+
+.orders-product-stock-badge,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-catalog-card-chip {
+  font-size: 0.64rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row .primary-button {
+  min-height: 2.1rem;
+  padding-inline: 0.55rem;
+  font-size: 0.68rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-catalog-actions .ghost-button {
+  min-height: 1.9rem;
+  font-size: 0.68rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-section .orders-selected-head,
+.orders-wizard-modal .orders-services-section .orders-selected-head {
+  min-height: 2.4rem;
+  padding: 0.52rem 0.65rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-head strong {
+  font-size: 0.85rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-head span {
+  font-size: 0.68rem;
+}
+
+.orders-selected-table-head {
+  min-height: 2rem;
+  padding: 0.42rem 0.6rem;
+  font-size: 0.64rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+  min-height: 4rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > div:first-child > strong,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > strong {
+  font-size: 0.76rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field {
+  font-size: 0.66rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field input,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row input {
+  min-height: 2rem;
+  font-size: 0.76rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability small {
+  font-size: 0.56rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability strong {
+  font-size: 0.75rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row .danger-button {
+  min-height: 2rem;
+  font-size: 0.66rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-editor {
+  max-height: 11rem;
+}
+
+.orders-wizard-modal .orders-summary-items-card h5 {
+  font-size: 0.88rem;
+}
+
+.orders-wizard-modal .orders-summary-items {
+  min-height: 8.2rem;
+  max-height: 13rem;
+  padding: 0.6rem 0.65rem;
+}
+
+.orders-wizard-modal .orders-summary-items .orders-side-line {
+  padding: 0.45rem 0;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.orders-wizard-modal .orders-summary-items .orders-side-line-details {
+  margin-top: 0.12rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.orders-wizard-modal .orders-summary-items .orders-side-line > strong {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.orders-wizard-modal .orders-summary-empty strong {
+  font-size: 0.8rem;
+}
+
+.orders-wizard-modal .orders-summary-empty small {
+  font-size: 0.7rem;
+}
+
+.orders-services-list article {
+  min-height: 3.4rem;
+  font-size: 0.75rem;
+}
+
+.orders-services-list article > span small {
+  font-size: 0.66rem;
+}
