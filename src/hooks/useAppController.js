@@ -1118,6 +1118,7 @@ export const useAppController = () => {
           quantity: line.quantity,
           unitPriceBs: line.unitPriceBs,
         })),
+        services: quote.services ?? [],
       });
 
       await api.quotes.update({
@@ -1259,6 +1260,7 @@ export const useAppController = () => {
           quantity: line.quantity,
           unitPriceBs: line.rentalPriceBs,
         })),
+        services: rental.services ?? [],
         ...getCurrentUserTrace(),
       });
 
@@ -1430,6 +1432,7 @@ export const useAppController = () => {
           verificationStatus: line.verificationStatus,
           quickItem: line.quickItem ?? null,
         })),
+        services: contract.services ?? [],
       });
 
       if (createdRental.reusedExisting) {

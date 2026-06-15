@@ -434,6 +434,26 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
     .filter(Boolean);
 };
 
+const normalizeContractServices = (services) => {
+  if (!Array.isArray(services)) return [];
+  return services
+    .map((service) => {
+      const name = String(service?.name ?? '').trim();
+      if (!name) return null;
+      const quantity = Math.max(1, Math.trunc(Number(service?.quantity ?? 1)));
+      const unitPriceBs = Math.max(0, toPositiveRoundedNumber(service?.unitPriceBs ?? 0));
+      return {
+        id: String(service?.id ?? makeId('svc')).trim() || makeId('svc'),
+        name,
+        detail: String(service?.detail ?? '').trim(),
+        quantity,
+        unitPriceBs,
+        lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+      };
+    })
+    .filter(Boolean);
+};
+
 const normalizeRecordResponsibles = (payload = {}) => {
   const source = Array.isArray(payload?.responsibles) ? payload.responsibles : [];
   const normalized = source
@@ -1182,6 +1202,7 @@ const normalizeState = (state) => {
         customerName: String(rental?.customerName ?? '').trim(),
         customerPhone: String(rental?.customerPhone ?? '').trim(),
         items: Array.isArray(rental?.items) ? rental.items : [],
+        services: normalizeContractServices(rental?.services),
         logisticsMode,
         deliveryChargeMode: deliveryCharge.deliveryChargeMode,
         deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -1354,13 +1375,16 @@ const normalizeState = (state) => {
           }))
           .filter((line) => line.itemId && line.itemName)
         : [];
+      const services = normalizeContractServices(quote?.services);
 
-      const baseSubtotalBs = Number(
-        quote?.totals?.baseSubtotalBs
-          ?? items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)), 0),
+      const itemsBaseSubtotalBs = items.reduce(
+        (sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
+        0,
       );
-      const pricingPlan = calculateDurationPricing({ pricingPlan: quote?.pricingPlan, baseSubtotalBs });
-      const subtotalBs = Number(quote?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
+      const servicesSubtotalBs = services.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+      const pricingPlan = calculateDurationPricing({ pricingPlan: quote?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+      const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+      const subtotalBs = Number(quote?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs);
       const discountBs = Number(quote?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
       const logisticsMode = ['envio', 'recojo'].includes(quote?.logisticsMode) ? quote.logisticsMode : 'envio';
@@ -1416,6 +1440,7 @@ const normalizeState = (state) => {
           pendingBs: Number(pendingBs.toFixed(2)),
         },
         items,
+        services,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(quote?.supplierFulfillmentPlan),
         approvedAt: quote?.approvedAt ?? null,
         rejectedAt: quote?.rejectedAt ?? null,
@@ -1452,13 +1477,16 @@ const normalizeState = (state) => {
           }))
           .filter((line) => line.itemId)
         : [];
+      const services = normalizeContractServices(contract?.services);
 
-      const baseSubtotalBs = Number(
-        contract?.totals?.baseSubtotalBs
-          ?? items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)), 0),
+      const itemsBaseSubtotalBs = items.reduce(
+        (sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
+        0,
       );
-      const pricingPlan = calculateDurationPricing({ pricingPlan: contract?.pricingPlan, baseSubtotalBs });
-      const subtotalBs = Number(contract?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs);
+      const servicesSubtotalBs = services.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+      const pricingPlan = calculateDurationPricing({ pricingPlan: contract?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+      const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+      const subtotalBs = Number(contract?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs);
       const discountBs = Number(contract?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
       const logisticsMode = ['envio', 'recojo'].includes(contract?.logisticsMode) ? contract.logisticsMode : 'envio';
@@ -1517,6 +1545,7 @@ const normalizeState = (state) => {
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
         },
         items,
+        services,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
         approvedAt: contract?.approvedAt ?? null,
         rejectedAt: contract?.rejectedAt ?? null,
@@ -3508,6 +3537,7 @@ const buildRentalSnapshotFromContract = (contract) => ({
     rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
     lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
   })),
+  services: normalizeContractServices(contract?.services),
 });
 
 const formatDocumentDate = (value) => {
@@ -5066,7 +5096,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
-  const rows = (rental.items ?? [])
+  const itemRows = (rental.items ?? [])
     .map(
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
@@ -5084,9 +5114,23 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       },
     )
     .join('');
+  const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
+  const serviceRows = contractServices
+    .map((service) => `
+        <tr>
+          <td>
+            <span class="rc-item-name">SERVICIO: ${escapeHtml(service.name)}</span>
+            ${service.detail ? `<span class="rc-item-meta">${escapeHtml(service.detail)}</span>` : ''}
+          </td>
+          <td class="num">${service.quantity}</td>
+          <td class="num">${formatBs(service.unitPriceBs)}</td>
+          <td class="num">${formatBs(service.lineTotalBs)}</td>
+        </tr>`)
+    .join('');
+  const rows = `${itemRows}${serviceRows}`;
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
-  const itemCount = Array.isArray(rental.items) ? rental.items.length : 0;
+  const itemCount = (Array.isArray(rental.items) ? rental.items.length : 0) + contractServices.length;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
   const responsibleName = contract?.createdByName ?? rental?.createdByName ?? company.name;
   const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
@@ -8249,6 +8293,7 @@ const createWebBridge = () => ({
       const pickupWindowEnd = String(payload?.pickupWindowEnd ?? '22:00').trim();
       const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      const requestedServices = normalizeContractServices(payload?.services);
 
       if (!customerName) throw new Error('Debes indicar el cliente de la cotizacion.');
       if (!customerPhone) throw new Error('Debes indicar el WhatsApp o celular del cliente.');
@@ -8256,7 +8301,7 @@ const createWebBridge = () => ({
       if (!eventTime) throw new Error('Debes indicar la hora del evento.');
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
       if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
-      if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
+      if (!requestedItems.length && !requestedServices.length) throw new Error('Debes agregar al menos un item o servicio en la cotizacion.');
       assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
       assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
 
@@ -8296,9 +8341,11 @@ const createWebBridge = () => ({
           };
         });
 
-        const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
-        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+        const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
@@ -8354,6 +8401,7 @@ const createWebBridge = () => ({
             prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? 0)),
           },
           items: normalizedItems,
+          services: requestedServices,
           supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
@@ -8425,7 +8473,6 @@ const createWebBridge = () => ({
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
-          if (!requestedItems.length) throw new Error('Debes agregar al menos un item en la cotizacion.');
           quote.items = requestedItems.map((line) => {
             const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
@@ -8451,14 +8498,22 @@ const createWebBridge = () => ({
             };
           });
         }
+        if (payload.services !== undefined) {
+          quote.services = normalizeContractServices(payload.services);
+        }
+        if (!(quote.items ?? []).length && !(quote.services ?? []).length) {
+          throw new Error('Debes agregar al menos un item o servicio en la cotizacion.');
+        }
 
         if (payload.pricingPlan !== undefined) {
           quote.pricingPlan = payload.pricingPlan;
         }
 
-        const baseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs });
-        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const itemsBaseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const servicesSubtotalBs = (quote.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+        const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
         const deliveryCharge = normalizeDeliveryCharge({
@@ -8551,6 +8606,7 @@ const createWebBridge = () => ({
       const pickupWindowEnd = String(payload?.pickupWindowEnd ?? '22:00').trim();
       const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      const requestedServices = normalizeContractServices(payload?.services);
 
       if (!customerName) throw new Error('Debes indicar el cliente del contrato.');
       if (!customerPhone) throw new Error('Debes indicar el WhatsApp o celular del cliente.');
@@ -8558,7 +8614,7 @@ const createWebBridge = () => ({
       if (!eventTime) throw new Error('Debes indicar la hora del evento.');
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
       if (!pickupDate) throw new Error('Debes indicar la fecha de recojo.');
-      if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
+      if (!requestedItems.length && !requestedServices.length) throw new Error('Debes agregar al menos un item o servicio en el contrato.');
       assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
       assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
 
@@ -8599,9 +8655,11 @@ const createWebBridge = () => ({
           };
         });
 
-        const baseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs });
-        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+        const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
@@ -8657,6 +8715,7 @@ const createWebBridge = () => ({
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           },
           items: normalizedItems,
+          services: requestedServices,
           supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
@@ -8727,7 +8786,6 @@ const createWebBridge = () => ({
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
-          if (!requestedItems.length) throw new Error('Debes agregar al menos un item en el contrato.');
           const normalizedItems = requestedItems.map((line) => {
             const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
@@ -8754,14 +8812,22 @@ const createWebBridge = () => ({
           });
           contract.items = normalizedItems;
         }
+        if (payload.services !== undefined) {
+          contract.services = normalizeContractServices(payload.services);
+        }
+        if (!(contract.items ?? []).length && !(contract.services ?? []).length) {
+          throw new Error('Debes agregar al menos un item o servicio en el contrato.');
+        }
 
         if (payload.pricingPlan !== undefined) {
           contract.pricingPlan = payload.pricingPlan;
         }
 
-        const baseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs });
-        const subtotalBs = pricingPlan.chargeableSubtotalBs;
+        const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const servicesSubtotalBs = (contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const pricingPlan = calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
+        const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
         const deliveryCharge = normalizeDeliveryCharge({
@@ -9078,6 +9144,7 @@ const createWebBridge = () => ({
         ? payload.paymentMode
         : 'sin_pago';
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
+      const requestedServices = normalizeContractServices(payload?.services);
       const supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan);
 
       if (!customerName) {
@@ -9092,8 +9159,8 @@ const createWebBridge = () => ({
       if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(dueTime)) {
         throw new Error('La hora maxima de devolucion no es valida.');
       }
-      if (!Array.isArray(requestedItems) || requestedItems.length === 0) {
-        throw new Error('Debe agregar al menos un item al alquiler.');
+      if ((!Array.isArray(requestedItems) || requestedItems.length === 0) && requestedServices.length === 0) {
+        throw new Error('Debe agregar al menos un item o servicio al alquiler.');
       }
 
       let createdRental = null;
@@ -9291,9 +9358,12 @@ const createWebBridge = () => ({
         }
 
         const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs });
         const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
-        const subtotalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs));
+        const subtotalBs = Math.max(0, toPositiveRoundedNumber(
+          quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs,
+        ));
         const discountBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountBs ?? 0));
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({
@@ -9371,10 +9441,12 @@ const createWebBridge = () => ({
           prepaidClientId: prepaidClientId || null,
           prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
           items: rentalItems,
+          services: requestedServices,
           pricingPlan,
           totals: {
             itemsSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs),
-            baseSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs),
+            servicesSubtotalBs: toPositiveRoundedNumber(servicesSubtotalBs),
+            baseSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs + servicesSubtotalBs),
             subtotalBs: toPositiveRoundedNumber(subtotalBs),
             theoreticalSubtotalBs: toPositiveRoundedNumber(quotedTotals?.theoreticalSubtotalBs ?? pricingPlan.theoreticalSubtotalBs),
             durationDiscountBs: toPositiveRoundedNumber(quotedTotals?.durationDiscountBs ?? pricingPlan.durationDiscountBs),

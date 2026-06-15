@@ -1,4 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BookOpen,
+  Box,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  Check,
+  ClipboardCheck,
+  ChevronRight,
+  CircleUserRound,
+  Clock3,
+  Info,
+  MapPin,
+  MessageCircle,
+  PackageOpen,
+  Phone,
+  Save,
+  Search,
+  RefreshCw,
+  Truck,
+  UserRound,
+  UsersRound,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 
@@ -63,7 +88,7 @@ const DURATION_PRICING_DEFAULT_TIERS = [
 ];
 
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
-const CATALOG_PAGE_SIZE = 12;
+const CATALOG_PAGE_SIZE = 5;
 
 const OPERATIONAL_STATUS_META = {
   pendiente: { label: 'Pendiente', className: 'pending' },
@@ -637,6 +662,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     observations: '',
     responsibleIds: [],
     items: [],
+    services: [],
     supplierFulfillmentPlan: [],
   };
 };
@@ -647,6 +673,13 @@ const buildEmptyQuickItemDraft = () => ({
   color: '',
   material: '',
   rentalPriceBs: '0',
+});
+
+const buildEmptyServiceDraft = () => ({
+  name: '',
+  detail: '',
+  quantity: '1',
+  unitPriceBs: '0',
 });
 
 const buildEmptySupplierCoverageDraft = () => ({
@@ -807,9 +840,12 @@ function ServiceOrdersSection({
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
   const [quickItemDraft, setQuickItemDraft] = useState(buildEmptyQuickItemDraft);
   const [isQuickItemOpen, setIsQuickItemOpen] = useState(false);
+  const [serviceModalOpen, setServiceModalOpen] = useState(false);
+  const [serviceDraft, setServiceDraft] = useState(buildEmptyServiceDraft);
   const [itemSearch, setItemSearch] = useState('');
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -897,6 +933,7 @@ function ServiceOrdersSection({
 
   useEffect(() => {
     setCatalogVisibleCount(CATALOG_PAGE_SIZE);
+    setCatalogModalOpen(false);
   }, [itemCategoryFilter, itemSearch, modalOpen]);
 
   useEffect(() => {
@@ -1466,6 +1503,27 @@ function ServiceOrdersSection({
       .filter(Boolean);
   }, [availabilityByItemId, draft.items, items]);
 
+  const selectedServices = useMemo(
+    () => (draft.services ?? [])
+      .map((service, index) => {
+        const name = String(service?.name ?? '').trim();
+        if (!name) return null;
+        const quantity = Math.max(1, Math.trunc(Number(service?.quantity ?? 1)));
+        const unitPriceBs = Math.max(0, Number(service?.unitPriceBs ?? 0));
+        return {
+          ...service,
+          id: service?.id ?? `service-${index}`,
+          name,
+          detail: String(service?.detail ?? '').trim(),
+          quantity,
+          unitPriceBs,
+          lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+        };
+      })
+      .filter(Boolean),
+    [draft.services],
+  );
+
   const selectedDemandByItemId = useMemo(() => {
     const map = new Map();
     selectedItems.forEach((line) => {
@@ -1698,6 +1756,11 @@ function ServiceOrdersSection({
     [selectedItems],
   );
 
+  const servicesSubtotalBs = useMemo(
+    () => selectedServices.reduce((sum, line) => sum + line.lineTotalBs, 0),
+    [selectedServices],
+  );
+
   const durationPricing = useMemo(
     () => calculateDurationPricing({
       mode: draft.pricingMode,
@@ -1708,7 +1771,7 @@ function ServiceOrdersSection({
     [baseItemsSubtotalBs, draft.pricingDays, draft.pricingMode, draft.pricingTiers],
   );
 
-  const quoteSubtotalBs = durationPricing.chargeableSubtotalBs;
+  const quoteSubtotalBs = durationPricing.chargeableSubtotalBs + servicesSubtotalBs;
 
   const quotePricingPlan = useMemo(
     () => ({
@@ -1933,6 +1996,13 @@ function ServiceOrdersSection({
       comboQuantity: line.comboQuantity ?? 1,
       comboPricingRole: line.comboPricingRole ?? '',
     })),
+    services: (record?.services ?? []).map((service, index) => ({
+      id: service?.id ?? `service-${index}`,
+      name: String(service?.name ?? ''),
+      detail: String(service?.detail ?? ''),
+      quantity: Math.max(1, Math.trunc(Number(service?.quantity ?? 1))),
+      unitPriceBs: Math.max(0, Number(service?.unitPriceBs ?? 0)),
+    })),
     supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
       ? record.supplierFulfillmentPlan.map((line) => ({
         id: line.id,
@@ -1956,6 +2026,9 @@ function ServiceOrdersSection({
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
     setIsQuickItemOpen(false);
+    setCatalogModalOpen(false);
+    setServiceModalOpen(false);
+    setServiceDraft(buildEmptyServiceDraft());
     if (sourceRecord) {
       setDraft(mapRecordToDraft(sourceRecord, entityType));
     } else {
@@ -1981,6 +2054,8 @@ function ServiceOrdersSection({
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
     setIsQuickItemOpen(false);
+    setServiceModalOpen(false);
+    setServiceDraft(buildEmptyServiceDraft());
     setCurrentStep(0);
     setSupplierFulfillmentDraftByItem({});
     setSupplierCoverageModal(null);
@@ -2334,6 +2409,58 @@ function ServiceOrdersSection({
     setDraft((current) => ({ ...current, items: current.items.filter((line) => (line.lineKey ?? line.itemId) !== lineKeyOrItemId) }));
   };
 
+  const setServiceDraftField = (field, value) => {
+    setServiceDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const openServiceModal = () => {
+    setServiceDraft(buildEmptyServiceDraft());
+    setFormError('');
+    setServiceModalOpen(true);
+  };
+
+  const closeServiceModal = () => {
+    setServiceModalOpen(false);
+    setServiceDraft(buildEmptyServiceDraft());
+    setFormError('');
+  };
+
+  const addDraftService = () => {
+    const name = serviceDraft.name.trim();
+    const quantity = Math.max(1, Math.trunc(Number(serviceDraft.quantity ?? 1)));
+    const unitPriceBs = Math.max(0, Number(serviceDraft.unitPriceBs ?? 0));
+    if (!name) {
+      setFormError('Indica el nombre del servicio.');
+      return;
+    }
+    if (!Number.isFinite(unitPriceBs) || unitPriceBs <= 0) {
+      setFormError('Indica un precio mayor a cero para el servicio.');
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      services: [
+        ...(current.services ?? []),
+        {
+          id: `service-${Date.now()}`,
+          name,
+          detail: serviceDraft.detail.trim(),
+          quantity,
+          unitPriceBs,
+        },
+      ],
+    }));
+    setFormError('');
+    closeServiceModal();
+  };
+
+  const removeDraftService = (serviceId) => {
+    setDraft((current) => ({
+      ...current,
+      services: (current.services ?? []).filter((service) => service.id !== serviceId),
+    }));
+  };
+
   const setDraftItemPrice = (lineKeyOrItemId, value) => {
     const parsed = Math.max(0, Number(value ?? 0));
     setDraft((current) => ({
@@ -2424,7 +2551,7 @@ function ServiceOrdersSection({
       return '';
     }
     if (stepIndex === 2) {
-      if (!selectedItems.length) return 'Agrega al menos un item para continuar.';
+      if (!selectedItems.length && !selectedServices.length) return 'Agrega al menos un item o servicio para continuar.';
       if (uncoveredStockIssues.length) {
         const issue = uncoveredStockIssues[0];
         return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`;
@@ -2502,7 +2629,7 @@ function ServiceOrdersSection({
     if (!isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
       throw new Error('La ventana de recojo debe terminar despues de la hora de inicio.');
     }
-    if (!selectedItems.length) throw new Error('Debes agregar al menos un item.');
+    if (!selectedItems.length && !selectedServices.length) throw new Error('Debes agregar al menos un item o servicio.');
     if (uncoveredStockIssues.length) {
       const issue = uncoveredStockIssues[0];
       throw new Error(`${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`);
@@ -2584,6 +2711,14 @@ function ServiceOrdersSection({
         comboComponentName: line.comboComponentName ?? '',
         comboQuantity: line.comboQuantity ?? 1,
         comboPricingRole: line.comboPricingRole ?? '',
+      })),
+      services: selectedServices.map((service) => ({
+        id: service.id,
+        name: service.name,
+        detail: service.detail,
+        quantity: service.quantity,
+        unitPriceBs: service.unitPriceBs,
+        lineTotalBs: service.lineTotalBs,
       })),
       supplierFulfillmentPlan,
       responsibles: selectedResponsibles,
@@ -4556,9 +4691,217 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
+      {catalogModalOpen ? (
+        <div className="orders-modal-backdrop orders-catalog-browser-backdrop" onClick={() => setCatalogModalOpen(false)}>
+          <div className="orders-modal orders-catalog-browser-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Todos los productos disponibles</h3>
+                <p>Busca y agrega productos o combos sin salir del contrato.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setCatalogModalOpen(false)} aria-label="Cerrar">
+                <X aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="orders-catalog-browser-toolbar">
+              <label className="orders-icon-field">
+                <span>
+                  <i aria-hidden="true"><Search /></i>
+                  <input
+                    type="search"
+                    placeholder="Buscar por producto, color o material..."
+                    value={itemSearch}
+                    onChange={(event) => setItemSearch(event.target.value)}
+                  />
+                </span>
+              </label>
+              <select value={itemCategoryFilter} onChange={(event) => setItemCategoryFilter(event.target.value)} aria-label="Filtrar categoria">
+                <option value="all">Todas las categorias</option>
+                {itemCategoryOptions.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setItemSearch('');
+                  setItemCategoryFilter('all');
+                }}
+              >
+                Limpiar filtros
+              </button>
+            </div>
+
+            <div className="orders-catalog-browser-count">
+              <strong>{filteredCatalog.length}</strong>
+              <span>{filteredCatalog.length === 1 ? 'resultado disponible' : 'resultados disponibles'}</span>
+            </div>
+
+            <div className="orders-catalog-browser-list">
+              {filteredCatalog.map((entry) => {
+                if (entry.type === 'combo') {
+                  const combo = entry.combo;
+                  const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+                  return (
+                    <article key={`catalog-modal-combo-${combo.id}`}>
+                      <div className="orders-product-thumb orders-combo-thumb"><span>CB</span></div>
+                      <div className="orders-catalog-browser-info">
+                        <strong>{combo.name}</strong>
+                        <span>Combo · {ingredients.length} productos</span>
+                        <small>{ingredients.slice(0, 4).map((line) => `${line.quantity}x ${line.itemName}`).join(' · ')}</small>
+                      </div>
+                      <strong className="orders-catalog-browser-price">{formatBs(combo.rentalPriceBs)}</strong>
+                      <span className="orders-product-stock-badge">Combo</span>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => addDraftCombo(combo.id)}
+                        disabled={ingredients.length === 0}
+                      >
+                        Agregar
+                      </button>
+                    </article>
+                  );
+                }
+
+                const item = entry.item;
+                const availability = availabilityByItemId.get(item.id) ?? null;
+                const isProvisionalCatalogItem = isDetachedFromInventory(item);
+                const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
+                const detailParts = getOperationalItemDetails({ item });
+                return (
+                  <article key={`catalog-modal-item-${item.id}`}>
+                    <div className="orders-product-thumb">
+                      {item.imageDataUrl ? (
+                        <button
+                          type="button"
+                          className="orders-product-thumb-button"
+                          onClick={() => handleOpenProductImage(item)}
+                          aria-label={`Ver imagen de ${item.name}`}
+                        >
+                          <img src={item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                        </button>
+                      ) : <span>IMG</span>}
+                    </div>
+                    <div className="orders-catalog-browser-info">
+                      <strong>{item.name}</strong>
+                      <span>{item.category || 'Sin categoria'}</span>
+                      <small>{detailParts.map((part) => `${part.label}: ${part.value}`).join(' · ') || 'Sin detalles adicionales'}</small>
+                    </div>
+                    <strong className="orders-catalog-browser-price">{formatBs(item.rentalPriceBs)}</strong>
+                    <span className={`orders-product-stock-badge${!isProvisionalCatalogItem && projectedAvailable > 0 ? ' available' : ''}`}>
+                      {isProvisionalCatalogItem ? 'No descuenta' : `${projectedAvailable} disponibles`}
+                    </span>
+                    <button type="button" className="primary-button" onClick={() => addDraftItem(item.id)}>
+                      {Number(draftQuantityByItem.get(item.id) ?? 0) > 0
+                        ? `Agregar otro (${draftQuantityByItem.get(item.id)})`
+                        : 'Agregar'}
+                    </button>
+                  </article>
+                );
+              })}
+              {filteredCatalog.length === 0 ? (
+                <div className="orders-catalog-browser-empty">
+                  <PackageOpen aria-hidden="true" />
+                  <strong>No encontramos productos con esos filtros.</strong>
+                  <span>Prueba otra palabra o limpia los filtros.</span>
+                </div>
+              ) : null}
+            </div>
+
+            <footer className="orders-modal-foot">
+              <span className="orders-catalog-browser-selected">
+                {selectedItems.length} producto(s) seleccionado(s)
+              </span>
+              <button type="button" className="primary-button" onClick={() => setCatalogModalOpen(false)}>
+                Listo
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {serviceModalOpen ? (
+        <div className="orders-modal-backdrop orders-service-backdrop" onClick={closeServiceModal}>
+          <div className="orders-modal orders-service-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Asignar servicio</h3>
+                <p>Registra personal o trabajo adicional sin afectar el inventario.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeServiceModal} aria-label="Cerrar">
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <div className="orders-service-form">
+              <label>
+                Nombre del servicio *
+                <input
+                  autoFocus
+                  value={serviceDraft.name}
+                  onChange={(event) => setServiceDraftField('name', event.target.value)}
+                  placeholder="Ej: Garzon, armado de moños..."
+                />
+              </label>
+              <label className="wide">
+                Detalle
+                <textarea
+                  rows="3"
+                  value={serviceDraft.detail}
+                  onChange={(event) => setServiceDraftField('detail', event.target.value)}
+                  placeholder="Describe el trabajo, horario o condiciones acordadas."
+                />
+              </label>
+              <label>
+                Cantidad
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={serviceDraft.quantity}
+                  onChange={(event) => setServiceDraftField('quantity', event.target.value)}
+                />
+              </label>
+              <label>
+                Precio unitario (Bs) *
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={serviceDraft.unitPriceBs}
+                  onChange={(event) => setServiceDraftField('unitPriceBs', event.target.value)}
+                />
+              </label>
+              <div className="orders-service-preview wide">
+                <BriefcaseBusiness aria-hidden="true" />
+                <span>
+                  <small>Total del servicio</small>
+                  <strong>{formatBs(
+                    Math.max(1, Math.trunc(Number(serviceDraft.quantity ?? 1)))
+                    * Math.max(0, Number(serviceDraft.unitPriceBs ?? 0)),
+                  )}</strong>
+                </span>
+              </div>
+            </div>
+            {formError ? <p className="status error orders-service-error">{formError}</p> : null}
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={closeServiceModal}>Cancelar</button>
+              <button type="button" className="primary-button" onClick={addDraftService}>
+                Agregar servicio
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
       {modalOpen ? (
         <div className="orders-modal-backdrop" onClick={closeModal}>
-          <div className="orders-modal orders-wizard-modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            className={`orders-modal orders-wizard-modal${currentStep === 2 ? ' is-items-step' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
             <header className="orders-modal-head">
               <div>
                 <h3>
@@ -4579,13 +4922,16 @@ function ServiceOrdersSection({
               <div className="orders-modal-head-actions">
                 <button
                   type="button"
-                  className="ghost-button"
+                  className="ghost-button orders-wizard-save"
                   onClick={() => handleSaveQuote({ approveNow: false })}
                   disabled={isSubmitting || !isLastStep}
                 >
+                  <Save aria-hidden="true" />
                   {draft.entityType === 'contract' ? 'Guardar contrato' : 'Guardar borrador'}
                 </button>
-                <button type="button" className="orders-modal-close" onClick={closeModal}>x</button>
+                <button type="button" className="orders-modal-close" onClick={closeModal} aria-label="Cerrar">
+                  <X aria-hidden="true" />
+                </button>
               </div>
             </header>
 
@@ -4602,7 +4948,9 @@ function ServiceOrdersSection({
                     }
                   }}
                 >
-                  <span className="orders-wizard-step-index">{index + 1}</span>
+                  <span className="orders-wizard-step-index">
+                    {index < currentStep ? <Check aria-hidden="true" /> : index + 1}
+                  </span>
                   <span className="orders-wizard-step-text">
                     <strong>{step.title}</strong>
                     <small>{step.subtitle}</small>
@@ -4612,52 +4960,93 @@ function ServiceOrdersSection({
             </div>
 
             <div className="orders-modal-body orders-wizard-body">
-              <section className="orders-form-panel orders-wizard-main">
+              <section className={`orders-form-panel orders-wizard-main orders-wizard-panel-step-${currentStep + 1}`}>
                 {currentStep === 0 ? (
                   <>
-                    <h4>Informacion del cliente</h4>
+                    <h4><span className="orders-section-icon"><UserRound aria-hidden="true" /></span>Informacion del cliente</h4>
                     <p className="orders-step-help">Busca un cliente registrado o completa los datos manualmente.</p>
                     <div className="orders-form-grid">
-                      <label>
+                      <label className="orders-icon-field search">
                         Cliente registrado
-                        <select value={draft.clientId} onChange={(event) => setClientFromSelection(event.target.value)}>
-                          <option value="">Seleccionar...</option>
-                          {clients.map((client) => (
-                            <option key={client.id} value={client.id}>
-                              {client.name}{client.isBlacklisted ? ' - No atender' : ''}
-                            </option>
-                          ))}
-                        </select>
+                        <span>
+                          <i aria-hidden="true"><Search /></i>
+                          <select value={draft.clientId} onChange={(event) => setClientFromSelection(event.target.value)}>
+                            <option value="">Seleccionar cliente...</option>
+                            {clients.map((client) => (
+                              <option key={client.id} value={client.id}>
+                                {client.name}{client.isBlacklisted ? ' - No atender' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field company">
                         Empresa / razon social
-                        <input value={draft.companyName} onChange={(event) => setDraftField('companyName', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><Building2 /></i>
+                          <input
+                            value={draft.companyName}
+                            onChange={(event) => setDraftField('companyName', event.target.value)}
+                            placeholder="Ingresa la empresa o razon social"
+                          />
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field person">
                         Nombre cliente *
-                        <input value={draft.customerName} onChange={(event) => setDraftField('customerName', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><UserRound /></i>
+                          <input
+                            value={draft.customerName}
+                            onChange={(event) => setDraftField('customerName', event.target.value)}
+                            placeholder="Ingresa el nombre completo"
+                          />
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field whatsapp">
                         WhatsApp / Celular *
-                        <input value={draft.customerPhone} onChange={(event) => setDraftField('customerPhone', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><MessageCircle /></i>
+                          <input
+                            value={draft.customerPhone}
+                            onChange={(event) => setDraftField('customerPhone', event.target.value)}
+                            placeholder="Ej: 75976197"
+                          />
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field phone">
                         Telefono de referencia
-                        <input value={draft.customerReferencePhone} onChange={(event) => setDraftField('customerReferencePhone', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><Phone /></i>
+                          <input
+                            value={draft.customerReferencePhone}
+                            onChange={(event) => setDraftField('customerReferencePhone', event.target.value)}
+                            placeholder="Ej: 2 1234567"
+                          />
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field location">
                         Ciudad
-                        <input value={draft.city} onChange={(event) => setDraftField('city', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><MapPin /></i>
+                          <input
+                            value={draft.city}
+                            onChange={(event) => setDraftField('city', event.target.value)}
+                            placeholder="Ingresa la ciudad"
+                          />
+                        </span>
                       </label>
                       {!draft.recordId ? (
                         <>
-                          <label>
+                          <label className="orders-icon-field book">
                             Codigo del libro
-                            <select value={draft.documentCodeMode} onChange={(event) => setDraftField('documentCodeMode', event.target.value)}>
-                              <option value="auto">Automatico</option>
-                              <option value="manual">Pasado / manual</option>
-                              <option value="current">Actual y continuar desde aqui</option>
-                            </select>
+                            <span>
+                              <i aria-hidden="true"><BookOpen /></i>
+                              <select value={draft.documentCodeMode} onChange={(event) => setDraftField('documentCodeMode', event.target.value)}>
+                                <option value="auto">Automatico</option>
+                                <option value="manual">Pasado / manual</option>
+                                <option value="current">Actual y continuar desde aqui</option>
+                              </select>
+                            </span>
                           </label>
                           {draft.documentCodeMode !== 'auto' ? (
                             <label>
@@ -4676,7 +5065,7 @@ function ServiceOrdersSection({
                       <section className="orders-responsible-picker">
                         <header>
                           <div>
-                            <strong>Responsable(s) del registro</strong>
+                            <strong><UsersRound aria-hidden="true" />Responsable(s) del registro</strong>
                             <span>Solo Developer: usa esto para cargar contratos o cotizaciones antiguas del cuaderno.</span>
                           </div>
                           <em>{(draft.responsibleIds ?? []).length || 1} seleccionado(s)</em>
@@ -4702,6 +5091,7 @@ function ServiceOrdersSection({
                       </section>
                     ) : null}
                     <div className="orders-form-note">
+                      <Info aria-hidden="true" />
                       Estos datos se usaran en contrato, orden de servicio y hoja de ruta.
                     </div>
                     {selectedClientForDraft?.isBlacklisted ? (
@@ -4719,57 +5109,75 @@ function ServiceOrdersSection({
 
                 {currentStep === 1 ? (
                   <>
-                    <h4>Informacion del evento</h4>
+                    <h4><span className="orders-section-icon"><CalendarDays aria-hidden="true" /></span>Informacion del evento</h4>
                     <p className="orders-step-help">
                       {draft.entityType === 'contract'
                         ? 'Define el evento y las fechas operativas del servicio.'
                         : 'Define el evento y la vigencia comercial de la cotizacion.'}
                     </p>
                     <div className="orders-form-grid">
-                      <label>
+                      <label className="orders-icon-field event">
                         Tipo de evento *
-                        <input value={draft.eventType} onChange={(event) => setDraftField('eventType', event.target.value)} placeholder="Social, corporativo, boda..." />
+                        <span>
+                          <i aria-hidden="true"><CircleUserRound /></i>
+                          <input value={draft.eventType} onChange={(event) => setDraftField('eventType', event.target.value)} placeholder="Social, corporativo, boda..." />
+                        </span>
                       </label>
                       {draft.entityType !== 'contract' ? (
-                        <label>
+                        <label className="orders-icon-field calendar">
                           Vigente hasta
-                          <input type="date" value={draft.validUntil || ''} onChange={(event) => setDraftField('validUntil', event.target.value)} />
+                          <span>
+                            <i aria-hidden="true"><CalendarDays /></i>
+                            <input type="date" value={draft.validUntil || ''} onChange={(event) => setDraftField('validUntil', event.target.value)} />
+                          </span>
                         </label>
                       ) : null}
-                      <label>
+                      <label className="orders-icon-field calendar">
                         Fecha evento *
-                        <input type="date" value={draft.eventDate} onChange={(event) => setDraftEventDate(event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><CalendarDays /></i>
+                          <input type="date" value={draft.eventDate} onChange={(event) => setDraftEventDate(event.target.value)} />
+                        </span>
                       </label>
-                      <label>
+                      <label className="orders-icon-field time">
                         Hora evento *
-                        <input type="time" value={draft.eventTime} onChange={(event) => setDraftField('eventTime', event.target.value)} />
+                        <span>
+                          <i aria-hidden="true"><Clock3 /></i>
+                          <input type="time" value={draft.eventTime} onChange={(event) => setDraftField('eventTime', event.target.value)} />
+                        </span>
                       </label>
                       {selectedClientAddresses.length > 0 ? (
-                        <label className="orders-field-span-2">
+                        <label className="orders-field-span-2 orders-icon-field address-select">
                           Seleccionar direccion del cliente
-                          <select
-                            value={selectedClientAddresses.some((entry) => entry.id === draft.addressSource) ? draft.addressSource : 'manual'}
-                            onChange={(event) => setDraftAddressSource(event.target.value)}
-                          >
-                            {selectedClientAddresses.map((entry) => (
-                              <option key={entry.id} value={entry.id}>
-                                {entry.label} - {[entry.address, entry.city].filter(Boolean).join(', ')}
-                              </option>
-                            ))}
-                            <option value="manual">Nueva direccion para este evento</option>
-                          </select>
+                          <span>
+                            <i aria-hidden="true"><MapPin /></i>
+                            <select
+                              value={selectedClientAddresses.some((entry) => entry.id === draft.addressSource) ? draft.addressSource : 'manual'}
+                              onChange={(event) => setDraftAddressSource(event.target.value)}
+                            >
+                              {selectedClientAddresses.map((entry) => (
+                                <option key={entry.id} value={entry.id}>
+                                  {entry.label} - {[entry.address, entry.city].filter(Boolean).join(', ')}
+                                </option>
+                              ))}
+                              <option value="manual">Nueva direccion para este evento</option>
+                            </select>
+                          </span>
                         </label>
                       ) : null}
-                      <label className="orders-field-span-2">
+                      <label className="orders-field-span-2 orders-icon-field location">
                         Direccion del evento *
-                        <input
-                          value={draft.address}
-                          onChange={(event) => {
-                            setDraftField('addressSource', 'manual');
-                            setDraftField('address', event.target.value);
-                          }}
-                          placeholder="Escribe una direccion o elige una del cliente"
-                        />
+                        <span>
+                          <i aria-hidden="true"><MapPin /></i>
+                          <input
+                            value={draft.address}
+                            onChange={(event) => {
+                              setDraftField('addressSource', 'manual');
+                              setDraftField('address', event.target.value);
+                            }}
+                            placeholder="Escribe una direccion o elige una del cliente"
+                          />
+                        </span>
                       </label>
                     </div>
                   </>
@@ -4777,17 +5185,20 @@ function ServiceOrdersSection({
 
                 {currentStep === 2 ? (
                   <>
-                    <h4>{draft.entityType === 'contract' ? 'Items para contrato' : 'Items para cotizacion'}</h4>
+                    <h4><span className="orders-section-icon"><PackageOpen aria-hidden="true" /></span>{draft.entityType === 'contract' ? 'Items para contrato' : 'Items para cotizacion'}</h4>
                     <p className="orders-step-help">Busca, agrega y ajusta precios por linea sin salir de esta vista.</p>
 
                     <div className="orders-items-toolbar">
-                      <label className="orders-search">
-                        <input
-                          type="search"
-                          placeholder="Ej.: arrugado marfil, mantel lavanda, SKU..."
-                          value={itemSearch}
-                          onChange={(event) => setItemSearch(event.target.value)}
-                        />
+                      <label className="orders-search orders-icon-field">
+                        <span>
+                          <i aria-hidden="true"><Search /></i>
+                          <input
+                            type="search"
+                            placeholder="Buscar por producto, color, material..."
+                            value={itemSearch}
+                            onChange={(event) => setItemSearch(event.target.value)}
+                          />
+                        </span>
                       </label>
                       <label>
                         Categoria
@@ -4805,6 +5216,23 @@ function ServiceOrdersSection({
                           <option value="con_factura">Con factura</option>
                         </select>
                       </label>
+                      <label>
+                        Modo de cobro
+                        <select value={draft.pricingMode} onChange={(event) => setDraftPricingMode(event.target.value)}>
+                          <option value="simple">Precio unico</option>
+                          <option value="duration">Por dias y porcentajes</option>
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="ghost-button orders-clear-item-filters"
+                        onClick={() => {
+                          setItemSearch('');
+                          setItemCategoryFilter('all');
+                        }}
+                      >
+                        Limpiar filtros
+                      </button>
                     </div>
 
                     {itemSearch.trim() ? (
@@ -4829,17 +5257,23 @@ function ServiceOrdersSection({
                           <strong>Agregar item fuera de inventario</strong>
                           <span>Usalo solo cuando el producto aun no fue registrado o verificado.</span>
                         </div>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => {
-                            setIsQuickItemOpen((current) => !current);
-                            setFormError('');
-                          }}
-                          aria-expanded={isQuickItemOpen}
-                        >
-                          {isQuickItemOpen ? 'Cancelar' : '+ Desplegar formulario'}
-                        </button>
+                        <div className="orders-step3-link-actions">
+                          <button type="button" className="orders-inline-link" onClick={openServiceModal}>
+                            <BriefcaseBusiness aria-hidden="true" />
+                            Asignar servicios
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => {
+                              setIsQuickItemOpen((current) => !current);
+                              setFormError('');
+                            }}
+                            aria-expanded={isQuickItemOpen}
+                          >
+                            {isQuickItemOpen ? 'Cancelar' : '+ Agregar item fuera de inventario'}
+                          </button>
+                        </div>
                       </header>
                       {isQuickItemOpen ? (
                         <>
@@ -4901,13 +5335,6 @@ function ServiceOrdersSection({
                           <strong>Tarifa por duracion</strong>
                           <span>Aplica porcentajes por dia sobre el subtotal base negociado.</span>
                         </div>
-                        <label>
-                          Modo de cobro
-                          <select value={draft.pricingMode} onChange={(event) => setDraftPricingMode(event.target.value)}>
-                            <option value="simple">Precio unico</option>
-                            <option value="duration">Por dias y porcentajes</option>
-                          </select>
-                        </label>
                       </header>
 
                       {draft.pricingMode === 'duration' ? (
@@ -4984,20 +5411,18 @@ function ServiceOrdersSection({
                             </span>
                           </div>
                         </>
-                      ) : (
-                        <p className="orders-duration-note">
-                          El total usara solo cantidad por precio unitario. Activa el cobro por dias cuando el evento dure varias jornadas.
-                        </p>
-                      )}
+                      ) : null}
                     </section>
 
                     <section className="orders-availability-strip" aria-label="Disponibilidad del inventario para estas fechas">
                       <article>
+                        <CalendarDays className="orders-availability-icon" aria-hidden="true" />
                         <span>Evento objetivo</span>
                         <strong>{formatDate(draft.eventDate)} {draft.eventTime || ''}</strong>
                         <small>Disponibilidad calculada para esta fecha.</small>
                       </article>
                       <article className="returns">
+                        <RefreshCw className="orders-availability-icon" aria-hidden="true" />
                         <span>Devoluciones consideradas</span>
                         {returnSummaryRows.length > 0 ? (
                           <>
@@ -5019,6 +5444,7 @@ function ServiceOrdersSection({
                         )}
                       </article>
                       <article className={uncoveredStockIssues.length ? 'danger' : 'success'}>
+                        <Box className="orders-availability-icon" aria-hidden="true" />
                         <span>Estado inventario</span>
                         <strong>
                           {stockIssues.length === 0
@@ -5038,15 +5464,19 @@ function ServiceOrdersSection({
                     </section>
 
                     <div className="orders-products-head">
-                      <span>
-                        Mostrando {visibleCatalog.length} de {filteredCatalog.length} productos y combos
-                      </span>
-                      {remainingCatalogCount > 0 ? (
-                        <span>Lista paginada para trabajar comodo con inventarios grandes.</span>
-                      ) : null}
+                      <strong>Productos disponibles</strong>
+                      <span>Mostrando {visibleCatalog.length} de {filteredCatalog.length} productos y combos</span>
                     </div>
 
                     <div className="orders-product-list">
+                      <div className="orders-product-table-head" aria-hidden="true">
+                        <span>Producto</span>
+                        <span>Detalles</span>
+                        <span>Precio unitario</span>
+                        <span>Stock</span>
+                        <span>Agregado</span>
+                        <span>Accion</span>
+                      </div>
                       {visibleCatalog.map((entry) => {
                         if (entry.type === 'combo') {
                           const combo = entry.combo;
@@ -5063,12 +5493,6 @@ function ServiceOrdersSection({
                               <div className="orders-product-info">
                                 <strong title={combo.name}>{combo.name}</strong>
                                 <span>Combo - {ingredients.length} productos</span>
-                                <div className="orders-product-detail-line">
-                                  {ingredients.slice(0, 4).map((line) => (
-                                    <span key={`${combo.id}-${line.itemId}`}>{line.quantity}x {line.itemName}</span>
-                                  ))}
-                                  {ingredients.length > 4 ? <span>+{ingredients.length - 4} mas</span> : null}
-                                </div>
                                 <div className="orders-availability-metrics">
                                   <span className="primary">
                                     <small>Stock</small>
@@ -5084,7 +5508,14 @@ function ServiceOrdersSection({
                                   </span>
                                 </div>
                               </div>
-                              <strong className="orders-product-price">{formatBs(combo.rentalPriceBs)}</strong>
+                              <div className="orders-product-table-details">
+                                {ingredients.slice(0, 3).map((line) => (
+                                  <span key={`${combo.id}-${line.itemId}`}>{line.quantity}x {line.itemName}</span>
+                                ))}
+                                {ingredients.length > 3 ? <span>+{ingredients.length - 3} mas</span> : null}
+                              </div>
+                              <strong className="orders-product-price">{formatBs(combo.rentalPriceBs)}<small>Precio unico</small></strong>
+                              <span className="orders-product-stock-badge">{allVerified ? 'Verificado' : 'Parcial'}</span>
                               <span className="orders-catalog-card-chip">Combo</span>
                               <button
                                 type="button"
@@ -5175,7 +5606,17 @@ function ServiceOrdersSection({
                               </div>
                             )}
                           </div>
-                          <strong className="orders-product-price">{formatBs(item.rentalPriceBs)}</strong>
+                          <div className="orders-product-table-details">
+                            {detailParts.length > 0
+                              ? detailParts.map((part) => (
+                                <span key={`${item.id}-table-${part.label}`}>{part.value}</span>
+                              ))
+                              : <span>{item.category || 'Sin detalle'}</span>}
+                          </div>
+                          <strong className="orders-product-price">{formatBs(item.rentalPriceBs)}<small>Precio unico</small></strong>
+                          <span className={`orders-product-stock-badge${!isProvisionalCatalogItem && projectedAvailable > 0 ? ' available' : ''}`}>
+                            {isProvisionalCatalogItem ? 'No descuenta' : `${projectedAvailable} disponibles`}
+                          </span>
                           {Number(draftQuantityByItem.get(item.id) ?? 0) > 0 ? (
                             <span className="orders-catalog-card-chip">x{draftQuantityByItem.get(item.id)}</span>
                           ) : (
@@ -5201,9 +5642,9 @@ function ServiceOrdersSection({
                         <button
                           type="button"
                           className="ghost-button"
-                          onClick={() => setCatalogVisibleCount((count) => count + CATALOG_PAGE_SIZE)}
+                          onClick={() => setCatalogModalOpen(true)}
                         >
-                          Ver {Math.min(CATALOG_PAGE_SIZE, remainingCatalogCount)} siguientes
+                          Ver todos los productos ({filteredCatalog.length})
                         </button>
                       </div>
                     ) : null}
@@ -5211,8 +5652,18 @@ function ServiceOrdersSection({
                     <section className="orders-selected-section">
                       <div className="orders-selected-head">
                         <strong>Seleccionados ({selectedItems.length})</strong>
-                        <span>Cambia cantidad y precio unitario negociado.</span>
+                        <span>Edita cantidades y precio unitario negociado.</span>
                       </div>
+                      {selectedItems.length > 0 ? (
+                        <div className="orders-selected-table-head" aria-hidden="true">
+                          <span>Item</span>
+                          <span>Cantidad</span>
+                          <span>Disponibilidad</span>
+                          <span>Precio unitario</span>
+                          <span>Subtotal</span>
+                          <span>Accion</span>
+                        </div>
+                      ) : null}
                       <div className="orders-selected-list orders-selected-editor">
                       {selectedItems.length === 0 ? (
                         <p className="status">Aun no agregaste items.</p>
@@ -5407,12 +5858,42 @@ function ServiceOrdersSection({
                       )}
                       </div>
                     </section>
+
+                    {selectedServices.length > 0 ? (
+                      <section className="orders-services-section">
+                        <div className="orders-selected-head">
+                          <strong>Servicios asignados ({selectedServices.length})</strong>
+                          <span>No descuentan inventario y se cobran una sola vez.</span>
+                        </div>
+                        <div className="orders-services-list">
+                          {selectedServices.map((service) => (
+                            <article key={service.id}>
+                              <BriefcaseBusiness aria-hidden="true" />
+                              <span>
+                                <strong>{service.name}</strong>
+                                <small>{service.detail || 'Sin detalle adicional'}</small>
+                              </span>
+                              <span>{service.quantity} x {formatBs(service.unitPriceBs)}</span>
+                              <strong>{formatBs(service.lineTotalBs)}</strong>
+                              <button
+                                type="button"
+                                className="orders-service-remove"
+                                onClick={() => removeDraftService(service.id)}
+                                aria-label={`Quitar servicio ${service.name}`}
+                              >
+                                <Trash2 aria-hidden="true" />
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
                   </>
                 ) : null}
 
                 {currentStep === 3 ? (
                   <>
-                    <h4>Logistica de entrega y recojo</h4>
+                    <h4><span className="orders-section-icon"><Truck aria-hidden="true" /></span>Logistica de entrega y recojo</h4>
                     <p className="orders-step-help">Programa fechas, ventanas horarias y asignaciones sugeridas.</p>
                     <div className="orders-logistics-mode">
                       <button
@@ -5546,7 +6027,7 @@ function ServiceOrdersSection({
 
                 {currentStep === 4 ? (
                   <>
-                    <h4>Revision economica y cierre</h4>
+                    <h4><span className="orders-section-icon"><ClipboardCheck aria-hidden="true" /></span>Revision economica y cierre</h4>
                     <p className="orders-step-help">Revisa importes antes de guardar o aprobar la cotizacion.</p>
                     <div className="orders-money-grid">
                       <label>
@@ -5594,6 +6075,12 @@ function ServiceOrdersSection({
                         </div>
                       ) : null}
                       <div className="orders-money-divider" />
+                      {servicesSubtotalBs > 0 ? (
+                        <div className="orders-money-row muted">
+                          <span>Servicios</span>
+                          <strong>{formatBs(servicesSubtotalBs)}</strong>
+                        </div>
+                      ) : null}
                       <div className="orders-money-row">
                         <span>Subtotal</span>
                         <strong>{formatBs(quoteSubtotalBs)}</strong>
@@ -5674,43 +6161,64 @@ function ServiceOrdersSection({
 
                 <div className="orders-side-context">
                   <article>
+                    <UserRound className="orders-side-context-icon" aria-hidden="true" />
                     <span>Cliente</span>
                     <strong>{sideSummaryClient}</strong>
                     <small>{sideSummaryClientMeta}</small>
                   </article>
                   <article>
+                    <CalendarDays className="orders-side-context-icon" aria-hidden="true" />
                     <span>Evento</span>
                     <strong>{sideSummaryEvent}</strong>
                     <small>{sideSummaryEventMeta}</small>
                   </article>
                   <article className="wide">
+                    <MapPin className="orders-side-context-icon" aria-hidden="true" />
                     <span>Direccion</span>
                     <strong>{sideSummaryAddress}</strong>
                   </article>
                 </div>
 
-                <div className="orders-selected-list compact orders-summary-items">
-                  {selectedItems.length === 0 ? (
-                    <p className="status">Aun no hay items agregados.</p>
-                  ) : (
-                    selectedItems.slice(0, 6).map((line) => {
-                      const detailParts = getOperationalItemDetails(line);
-                      return (
-                        <div key={line.lineKey} className="orders-side-line">
-                          <span>
-                            {line.quantity}x {line.item.name} - {formatBs(line.unitPriceBs)} c/u
-                            {detailParts.length > 0 ? (
-                              <small className="orders-side-line-details">
-                                {detailParts.map((part) => `${part.label}: ${part.value}`).join(' | ')}
-                              </small>
-                            ) : null}
-                          </span>
-                          <strong>{formatBs(line.lineTotalBs)}</strong>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <section className="orders-summary-items-card">
+                  <h5>{draft.entityType === 'contract' ? 'Items del contrato' : 'Items de la cotizacion'}</h5>
+                  <div className="orders-selected-list compact orders-summary-items">
+                    {selectedItems.length === 0 && selectedServices.length === 0 ? (
+                      <div className="orders-summary-empty">
+                        <PackageOpen aria-hidden="true" />
+                        <strong>Aun no hay items ni servicios.</strong>
+                        <small>Agrega productos o servicios en el paso de Items.</small>
+                      </div>
+                    ) : (
+                      <>
+                        {selectedItems.slice(0, 6).map((line) => {
+                          const detailParts = getOperationalItemDetails(line);
+                          return (
+                            <div key={line.lineKey} className="orders-side-line">
+                              <span>
+                                {line.quantity}x {line.item.name} - {formatBs(line.unitPriceBs)} c/u
+                                {detailParts.length > 0 ? (
+                                  <small className="orders-side-line-details">
+                                    {detailParts.map((part) => `${part.label}: ${part.value}`).join(' | ')}
+                                  </small>
+                                ) : null}
+                              </span>
+                              <strong>{formatBs(line.lineTotalBs)}</strong>
+                            </div>
+                          );
+                        })}
+                        {selectedServices.slice(0, Math.max(0, 6 - selectedItems.length)).map((service) => (
+                          <div key={service.id} className="orders-side-line is-service">
+                            <span>
+                              {service.quantity}x {service.name}
+                              <small className="orders-side-line-details">{service.detail || 'Servicio adicional'}</small>
+                            </span>
+                            <strong>{formatBs(service.lineTotalBs)}</strong>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </section>
 
                 {stockIssues.length > 0 ? (
                   <div className={`orders-form-note ${uncoveredStockIssues.length > 0 ? 'orders-form-note-warn' : ''}`}>
@@ -5751,6 +6259,12 @@ function ServiceOrdersSection({
                     </div>
                   ) : null}
                   <div className="orders-money-divider" />
+                  {servicesSubtotalBs > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Servicios</span>
+                      <strong>{formatBs(servicesSubtotalBs)}</strong>
+                    </div>
+                  ) : null}
                   <div className="orders-money-row">
                     <span>Subtotal</span>
                     <strong>{formatBs(quoteSubtotalBs)}</strong>
@@ -5819,7 +6333,7 @@ function ServiceOrdersSection({
 
                 {!isLastStep ? (
                   <button type="button" className="primary-button" onClick={handleNextStep} disabled={isSubmitting}>
-                    Continuar
+                    Continuar <ChevronRight aria-hidden="true" />
                   </button>
                 ) : (
                   <>
