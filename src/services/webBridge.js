@@ -1568,6 +1568,24 @@ const normalizeState = (state) => {
     }).filter((contract) => contract.contractCode && contract.customerName)
     : [];
 
+  source.contracts.forEach((contract) => {
+    const activeLinkedRentals = source.rentals
+      .filter((rental) => (
+        String(rental.contractId ?? '') === String(contract.id)
+        && !rental.deletedAt
+        && rental.status !== 'cancelled'
+      ))
+      .sort((left, right) => new Date(right.createdAt ?? right.rentalAt ?? 0) - new Date(left.createdAt ?? left.rentalAt ?? 0));
+    const linkedRental = activeLinkedRentals.find((rental) => rental.id === contract.rentalId)
+      ?? activeLinkedRentals[0];
+    if (!linkedRental) return;
+    contract.status = 'aprobado';
+    contract.approvedAt = contract.approvedAt ?? linkedRental.createdAt ?? linkedRental.rentalAt ?? now;
+    contract.rejectedAt = null;
+    contract.rentalId = linkedRental.id;
+    contract.orderCode = linkedRental.orderCode ?? contract.orderCode ?? null;
+  });
+
   source.suppliers = Array.isArray(source.suppliers)
     ? source.suppliers
       .map((supplier) => ({

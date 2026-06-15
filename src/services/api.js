@@ -93,6 +93,14 @@ const getRetryDelayMs = (error, attempt) => {
 };
 
 const getSaveErrorMessage = (error, fallback) => {
+  if (error instanceof TypeError && /fetch/i.test(error.message ?? '')) {
+    return isLocalHost()
+      ? 'No se pudo conectar con la base local. Reinicia npm run dev y vuelve a intentar la importacion.'
+      : 'No se pudo conectar con el servidor. Verifica la conexion e intenta nuevamente.';
+  }
+  if (error?.status === 413) {
+    return 'La copia de seguridad supera el tamano permitido por el servidor.';
+  }
   if (error?.status === 429) {
     return 'El servidor esta recibiendo muchas operaciones al mismo tiempo. Espera unos segundos e intenta guardar otra vez.';
   }

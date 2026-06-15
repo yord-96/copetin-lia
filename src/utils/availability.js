@@ -169,15 +169,22 @@ export function getProjectedInventoryAvailability({
 
   const hardRecords = [];
   rentals.filter(isActiveRental).forEach((rental) => {
-    if (isExcluded(rental, exclude)) return;
     const contract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
+    const lines = recordItemLines(rental);
+    if (isExcluded(rental, exclude)) {
+      lines.forEach((line) => {
+        const summary = summaries.get(line.itemId);
+        if (summary) summary.activeRentalQty += line.quantity;
+      });
+      return;
+    }
     hardRecords.push({
       id: rental.id,
       code: rental.orderCode,
       customerName: rental.customerName,
       type: 'orden',
       period: periodFromRental(rental, contract),
-      lines: recordItemLines(rental),
+      lines,
       affectsCurrentStock: true,
     });
   });

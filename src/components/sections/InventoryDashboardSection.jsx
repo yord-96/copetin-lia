@@ -660,6 +660,7 @@ function InventoryDashboardSection({
   items = [],
   combos = [],
   categories = [],
+  contracts = [],
   activeRentals = [],
   cancelledRentals = [],
   deliveries = [],
@@ -860,6 +861,32 @@ function InventoryDashboardSection({
     return map;
   }, [activeRentals]);
 
+  const itemUsageById = useMemo(() => {
+    const usage = new Map();
+    const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
+    activeRentals.forEach((rental) => {
+      const contract = contractById.get(String(rental.contractId ?? ''));
+      (rental.items ?? []).forEach((line) => {
+        const quantity = Math.max(0, Number(line.internalReservedQty ?? line.quantity ?? 0));
+        if (!line.itemId || quantity <= 0) return;
+        const rows = usage.get(line.itemId) ?? [];
+        rows.push({
+          rentalId: rental.id,
+          orderCode: rental.orderCode ?? 'Orden sin codigo',
+          contractCode: contract?.contractCode ?? rental.contractCode ?? 'Sin contrato',
+          customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
+          quantity,
+          deliveryDate: contract?.deliveryDate ?? rental.rentalDate ?? null,
+          pickupDate: contract?.pickupDate ?? rental.dueDate ?? null,
+          inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+          transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+        });
+        usage.set(line.itemId, rows);
+      });
+    });
+    return usage;
+  }, [activeRentals, contracts]);
+
   const maintenanceByItem = useMemo(() => {
     const map = {};
     stockRecoveries.forEach((entry) => {
@@ -1009,9 +1036,10 @@ function InventoryDashboardSection({
         needsCleaningOnReturn: Boolean(item.needsCleaningOnReturn),
         createdAt: item.createdAt ?? item.updatedAt ?? null,
         updatedAt: item.updatedAt ?? null,
+        usage: itemUsageById.get(item.id) ?? [],
       };
     });
-  }, [items, maintenanceByItem, reservedByItem]);
+  }, [itemUsageById, items, maintenanceByItem, reservedByItem]);
 
   const comboRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
@@ -2368,7 +2396,7 @@ function InventoryDashboardSection({
   const renderProductRowMenu = (row, openUp = false) => (
     <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()}>
       <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); }}>
-        Ver detalle
+        Ver detalle y ubicacion
       </button>
       <button type="button" onClick={() => { openEditProductModal(row); setRowMenuOpenId(null); }}>
         Editar producto
@@ -3981,6 +4009,40 @@ function InventoryDashboardSection({
                   </div>
                 ) : null}
               </div>
+            ) : null}
+            {Array.isArray(detailRow.usage) ? (
+              <section className="inventory-usage-section">
+                <div className="inventory-usage-head">
+                  <div>
+                    <span className="inventory-detail-kicker">Ubicacion del inventario</span>
+                    <h4>Contratos y ordenes activas</h4>
+                  </div>
+                  <strong>{detailRow.usage.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0)} unidades comprometidas</strong>
+                </div>
+                {detailRow.usage.length > 0 ? (
+                  <div className="inventory-usage-list">
+                    {detailRow.usage.map((entry) => (
+                      <article key={`${entry.rentalId}-${entry.orderCode}`}>
+                        <div>
+                          <strong>{entry.orderCode}</strong>
+                          <span>Contrato {entry.contractCode} · {entry.customerName}</span>
+                        </div>
+                        <div>
+                          <span>Periodo</span>
+                          <strong>{entry.deliveryDate || '-'} al {entry.pickupDate || '-'}</strong>
+                        </div>
+                        <div>
+                          <span>Estado</span>
+                          <strong>{entry.inventoryStatus === 'confirmado' ? 'Alistado' : 'Reservado'}</strong>
+                        </div>
+                        <b>{entry.quantity} u.</b>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="inventory-usage-empty">Este producto no está comprometido en contratos u órdenes activas.</p>
+                )}
+              </section>
             ) : null}
             <div className="reset-modal-actions">
               {detailRow.name && detailRow.total !== undefined ? (

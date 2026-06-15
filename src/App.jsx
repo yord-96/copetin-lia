@@ -459,6 +459,7 @@ function App() {
             items={controller.items}
             combos={controller.inventoryCombos}
             categories={controller.categories}
+            contracts={controller.contracts}
             activeRentals={controller.activeRentals}
             cancelledRentals={controller.cancelledRentals}
             deliveries={controller.deliveries}

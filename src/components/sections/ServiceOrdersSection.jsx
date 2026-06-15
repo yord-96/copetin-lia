@@ -1452,18 +1452,25 @@ function ServiceOrdersSection({
   );
 
   const availabilityByItemId = useMemo(
-    () => getProjectedInventoryAvailability({
-      items,
-      rentals,
-      contracts,
-      quotes,
-      period: draftAvailabilityPeriod,
-      exclude: {
-        recordId: draft.recordId,
-        quoteId: draft.quoteId,
-        contractId: draft.entityType === 'contract' ? draft.recordId : null,
-      },
-    }),
+    () => {
+      const linkedRental = draft.entityType === 'contract' && draft.recordId
+        ? rentals.find((rental) => String(rental.contractId ?? '') === String(draft.recordId))
+        : null;
+      return getProjectedInventoryAvailability({
+        items,
+        rentals,
+        contracts,
+        quotes,
+        period: draftAvailabilityPeriod,
+        exclude: {
+          recordId: draft.recordId,
+          quoteId: draft.quoteId,
+          contractId: draft.entityType === 'contract' ? draft.recordId : null,
+          rentalId: linkedRental?.id ?? null,
+          orderCode: linkedRental?.orderCode ?? null,
+        },
+      });
+    },
     [contracts, draft.entityType, draft.recordId, draft.quoteId, draftAvailabilityPeriod, items, quotes, rentals],
   );
 

@@ -78,7 +78,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: process.env.JSON_LIMIT ?? '25mb' }));
+app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 
 app.get('/health', async (_req, res, next) => {
   try {

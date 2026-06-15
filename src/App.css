@@ -36602,7 +36602,92 @@ button.calendar-dispatch-row:focus-visible {
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-editor {
-  max-height: 11rem;
+  max-height: 20rem;
+}
+
+.inventory-usage-section {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid #dfe5ee;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+}
+
+.inventory-usage-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inventory-usage-head h4 {
+  margin: 0.12rem 0 0;
+  color: #17213d;
+  font-size: 1rem;
+}
+
+.inventory-usage-head > strong {
+  color: #e84a00;
+  font-size: 0.82rem;
+}
+
+.inventory-usage-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.inventory-usage-list article {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 1fr) minmax(90px, 0.6fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e2e7ef;
+  border-radius: 0.65rem;
+  background: #fff;
+}
+
+.inventory-usage-list article div,
+.inventory-usage-list article span,
+.inventory-usage-list article strong {
+  display: block;
+}
+
+.inventory-usage-list article span {
+  color: #758096;
+  font-size: 0.7rem;
+}
+
+.inventory-usage-list article strong {
+  color: #25304a;
+  font-size: 0.78rem;
+}
+
+.inventory-usage-list article > b {
+  color: #e84a00;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.inventory-usage-empty {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px dashed #d8dee8;
+  border-radius: 0.6rem;
+  color: #6d7890;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .inventory-usage-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .inventory-usage-list article {
+    grid-template-columns: 1fr auto;
+  }
 }
 
 .orders-wizard-modal .orders-summary-items-card h5 {

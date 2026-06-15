@@ -42,7 +42,7 @@ Ejemplo inicial por IP:
 NODE_ENV=production
 PORT=4000
 CORS_ORIGIN=http://2.24.108.161
-JSON_LIMIT=25mb
+JSON_LIMIT=64mb
 APP_STATE_FILE=/var/www/prestamos-app/data/app-state.json
 BACKUP_DIR=/var/www/prestamos-app/backups
 APP_INTERNAL_KEY=CAMBIA_POR_UNA_CLAVE_LARGA

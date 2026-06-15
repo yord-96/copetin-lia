@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sharedDbPath = path.join(__dirname, '.copetin-shared-db.json')
+const maxSharedDbPayloadBytes = 64 * 1024 * 1024
 
 const getSharedDbRevision = () => {
   if (!fs.existsSync(sharedDbPath)) {
@@ -24,15 +25,27 @@ const sendJson = (res, statusCode, payload) => {
 
 const readBody = (req) =>
   new Promise((resolve, reject) => {
-    let body = ''
+    const chunks = []
+    let receivedBytes = 0
+    let payloadTooLarge = false
+
     req.on('data', (chunk) => {
-      body += chunk
-      if (body.length > 10 * 1024 * 1024) {
-        reject(new Error('Payload demasiado grande.'))
-        req.destroy()
+      receivedBytes += chunk.length
+      if (receivedBytes > maxSharedDbPayloadBytes) {
+        payloadTooLarge = true
+        return
       }
+      chunks.push(chunk)
     })
-    req.on('end', () => resolve(body))
+    req.on('end', () => {
+      if (payloadTooLarge) {
+        const error = new Error('La base supera el limite local permitido de 64 MB.')
+        error.statusCode = 413
+        reject(error)
+        return
+      }
+      resolve(Buffer.concat(chunks).toString('utf8'))
+    })
     req.on('error', reject)
   })
 
@@ -98,7 +111,9 @@ const sharedDemoDbPlugin = () => ({
         sendJson(res, 405, { error: 'Metodo no permitido.' })
       } catch (error) {
         server.config.logger.error(error)
-        sendJson(res, 500, { error: error.message ?? 'No se pudo sincronizar la base demo.' })
+        sendJson(res, error.statusCode ?? 500, {
+          error: error.message ?? 'No se pudo sincronizar la base demo.',
+        })
       }
     })
   },

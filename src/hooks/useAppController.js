@@ -1450,38 +1450,16 @@ export const useAppController = () => {
         return createdRental;
       }
 
-      if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
-        const refreshedDeliveries = await api.transport.listDeliveries();
-        const autoDelivery = refreshedDeliveries.find((entry) => entry.rentalId === createdRental.id);
-        if (autoDelivery) {
-          await api.transport.updateDelivery({
-            id: autoDelivery.id,
-            scheduledDate: contract.deliveryDate || contract.eventDate,
-            windowStart: contract.deliveryWindowStart || autoDelivery.windowStart,
-            windowEnd: contract.deliveryWindowEnd || autoDelivery.windowEnd,
-            address: contract.address || autoDelivery.address,
-            city: contract.city || autoDelivery.city,
-            driverId: contract.driverId || autoDelivery.driverId,
-            vehicleId: contract.vehicleId || autoDelivery.vehicleId,
-            notes: `Entrega de ${createdRental.orderCode}. ${contract.observations ?? ''}`.trim(),
-          });
-        }
-
-        await api.transport.createDelivery({
-          rentalId: createdRental.id,
-          orderCode: createdRental.orderCode,
-          customerName: contract.customerName,
-          companyName: contract.companyName || contract.customerName,
-          address: contract.address || 'Direccion pendiente',
-          city: contract.city || 'Ciudad',
-          scheduledDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
-          windowStart: contract.pickupWindowStart || '20:00',
-          windowEnd: contract.pickupWindowEnd || '22:00',
-          driverId: contract.driverId || null,
-          vehicleId: contract.vehicleId || null,
-          notes: `Recojo programado de ${createdRental.orderCode}`,
-        });
-      }
+      await api.contracts.update({
+        id: contract.id,
+        status: 'aprobado',
+        approvedAt: new Date().toISOString(),
+        rejectedAt: null,
+        rentalId: createdRental.id,
+        orderCode: createdRental.orderCode,
+        paidAtApprovalBs: coveredAtApprovalBs,
+        prepaidAppliedBs,
+      });
 
       if (contract.quoteId) {
         await api.quotes.update({
@@ -1494,16 +1472,46 @@ export const useAppController = () => {
         });
       }
 
-      await api.contracts.update({
-        id: contract.id,
-        status: 'aprobado',
-        approvedAt: new Date().toISOString(),
-        rejectedAt: null,
-        rentalId: createdRental.id,
-        orderCode: createdRental.orderCode,
-        paidAtApprovalBs: coveredAtApprovalBs,
-        prepaidAppliedBs,
-      });
+      let logisticsWarning = '';
+      if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
+        try {
+          const refreshedDeliveries = await api.transport.listDeliveries();
+          const linkedDeliveries = refreshedDeliveries.filter((entry) => entry.rentalId === createdRental.id);
+          const autoDelivery = linkedDeliveries[0] ?? null;
+          if (autoDelivery) {
+            await api.transport.updateDelivery({
+              id: autoDelivery.id,
+              scheduledDate: contract.deliveryDate || contract.eventDate,
+              windowStart: contract.deliveryWindowStart || autoDelivery.windowStart,
+              windowEnd: contract.deliveryWindowEnd || autoDelivery.windowEnd,
+              address: contract.address || autoDelivery.address,
+              city: contract.city || autoDelivery.city,
+              driverId: contract.driverId || autoDelivery.driverId,
+              vehicleId: contract.vehicleId || autoDelivery.vehicleId,
+              notes: `Entrega de ${createdRental.orderCode}. ${contract.observations ?? ''}`.trim(),
+            });
+          }
+
+          if (linkedDeliveries.length < 2) {
+            await api.transport.createDelivery({
+              rentalId: createdRental.id,
+              orderCode: createdRental.orderCode,
+              customerName: contract.customerName,
+              companyName: contract.companyName || contract.customerName,
+              address: contract.address || 'Direccion pendiente',
+              city: contract.city || 'Ciudad',
+              scheduledDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
+              windowStart: contract.pickupWindowStart || '20:00',
+              windowEnd: contract.pickupWindowEnd || '22:00',
+              driverId: contract.driverId || null,
+              vehicleId: contract.vehicleId || null,
+              notes: `Recojo programado de ${createdRental.orderCode}`,
+            });
+          }
+        } catch (logisticsError) {
+          logisticsWarning = logisticsError?.message || 'No se pudo completar la programacion de transporte.';
+        }
+      }
 
       const supplierPlan = Array.isArray(contract.supplierFulfillmentPlan)
         ? contract.supplierFulfillmentPlan
@@ -1566,8 +1574,12 @@ export const useAppController = () => {
 
       await loadData();
 
-      if (documentsWarning) {
-        setError(`${createdRental.orderCode} aprobada, pero hubo un problema al generar documentos.`);
+      if (documentsWarning || logisticsWarning) {
+        const pendingTasks = [
+          logisticsWarning ? 'programacion de transporte' : '',
+          documentsWarning ? 'generacion de documentos' : '',
+        ].filter(Boolean).join(' y ');
+        setError(`${createdRental.orderCode} fue aprobada, pero queda pendiente revisar: ${pendingTasks}.`);
       }
 
       return createdRental;
