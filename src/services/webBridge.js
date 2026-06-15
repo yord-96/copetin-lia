@@ -1556,6 +1556,20 @@ const normalizeState = (state) => {
         createdByName: String(contract?.createdByName ?? contract?.userName ?? primaryResponsible?.name ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
         createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
         responsibles,
+        revisionHistory: Array.isArray(contract?.revisionHistory)
+          ? contract.revisionHistory
+            .map((revision) => ({
+              id: String(revision?.id ?? makeId('rev')).trim() || makeId('rev'),
+              updatedAt: revision?.updatedAt ?? revision?.createdAt ?? now,
+              updatedById: revision?.updatedById ?? null,
+              updatedByName: String(revision?.updatedByName ?? 'Sistema').trim() || 'Sistema',
+              updatedByRole: String(revision?.updatedByRole ?? 'Operacion').trim() || 'Operacion',
+              changes: Array.isArray(revision?.changes)
+                ? revision.changes.map((change) => String(change ?? '').trim()).filter(Boolean)
+                : [],
+            }))
+            .filter((revision) => revision.changes.length > 0)
+          : [],
         cancelledAt: contract?.cancelledAt ?? null,
         cancellationPenaltyPercent: Number(contract?.cancellationPenaltyPercent ?? 0),
         cancellationPenaltyBs: Number(contract?.cancellationPenaltyBs ?? 0),
@@ -5016,16 +5030,51 @@ const getReferenceContractStyles = () => `
   .rc-important img { width: 7mm; height: 7mm; }
   .rc-important strong { color: #ef5000; font-family: Georgia, "Times New Roman", serif; text-transform: uppercase; }
   .rc-important span { display: block; font-size: 8.2px; }
+  .rc-revisions {
+    margin-top: 3mm;
+    padding: 2.5mm 3mm;
+    border: .25mm solid #f2c9b3;
+    border-radius: 1.5mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .rc-revisions-title {
+    color: #ef5000;
+    font: 700 12px Georgia, "Times New Roman", serif;
+    text-transform: uppercase;
+  }
+  .rc-revision {
+    display: grid;
+    grid-template-columns: 47mm minmax(0, 1fr);
+    gap: 3mm;
+    padding-top: 1.5mm;
+    font-size: 8.5px;
+  }
+  .rc-revision + .rc-revision {
+    margin-top: 1.5mm;
+    border-top: .2mm solid #eee;
+  }
+  .rc-revision strong { text-transform: uppercase; }
+  .rc-revision span { color: #444; }
   .rc-signatures {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10mm;
-    margin-top: 9mm;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24mm;
+    margin: 8mm 12mm 0;
     break-inside: avoid;
     page-break-inside: avoid;
     text-align: center;
   }
-  .rc-signature { padding-top: 2mm; border-top: .35mm solid #ef5000; }
+  .rc-signature {
+    display: flex;
+    min-height: 27mm;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .rc-signature-line {
+    padding-top: 2mm;
+    border-top: .35mm solid #ef5000;
+  }
   .rc-signature strong { display: block; font-size: 10px; text-transform: uppercase; }
   .rc-signature span { display: block; margin-top: .8mm; font-size: 9px; text-transform: uppercase; }
   .rc-footer {
@@ -5051,7 +5100,8 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-observations,
   .rc-sheet.is-dense .rc-money,
   .rc-sheet.is-dense .rc-terms { min-height: 39mm; }
-  .rc-sheet.is-dense .rc-signatures { margin-top: 6mm; }
+  .rc-sheet.is-dense .rc-signatures { margin-top: 5mm; }
+  .rc-sheet.is-dense .rc-signature { min-height: 23mm; }
   @media print {
     html, body {
       width: 216mm;
@@ -5114,7 +5164,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
-  const itemRows = (rental.items ?? [])
+  const documentItems = Array.isArray(contract?.items) && contract.items.length > 0
+    ? contract.items.map((line) => ({
+      ...line,
+      rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
+      lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
+    }))
+    : (rental.items ?? []);
+  const itemRows = documentItems
     .map(
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
@@ -5148,9 +5205,32 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const rows = `${itemRows}${serviceRows}`;
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
-  const itemCount = (Array.isArray(rental.items) ? rental.items.length : 0) + contractServices.length;
+  const itemCount = documentItems.length + contractServices.length;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
-  const responsibleName = contract?.createdByName ?? rental?.createdByName ?? company.name;
+  const primaryResponsible = contract?.responsibles?.[0] ?? null;
+  const responsibleName = primaryResponsible?.name ?? contract?.createdByName ?? rental?.createdByName ?? company.name;
+  const responsibleRole = primaryResponsible?.role ?? contract?.createdByRole ?? rental?.createdByRole ?? 'Responsable del contrato';
+  const revisions = (Array.isArray(contract?.revisionHistory) ? contract.revisionHistory : [])
+    .slice()
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .slice(0, 2);
+  const formatRevisionDate = (value) => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return new Intl.DateTimeFormat('es-BO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(parsed);
+  };
+  const revisionRows = revisions.map((revision) => `
+        <div class="rc-revision">
+          <strong>${escapeHtml(`${formatRevisionDate(revision.updatedAt)} | ${revision.updatedByName || 'Sistema'} (${revision.updatedByRole || 'Operacion'})`)}</strong>
+          <span>${escapeHtml((revision.changes ?? []).slice(0, 3).join(' · '))}</span>
+        </div>`).join('');
   const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
   const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
@@ -5268,10 +5348,15 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </div>
       </section>
 
+      ${revisionRows ? `
+      <section class="rc-revisions">
+        <h3 class="rc-revisions-title">Control de cambios</h3>
+        ${revisionRows}
+      </section>` : ''}
+
       <section class="rc-signatures">
-        <div class="rc-signature"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</span></div>
-        <div class="rc-signature"><strong>Responsable comercial</strong><span>${escapeHtml(responsibleName)}<br />${escapeHtml(company.name)}</span></div>
-        <div class="rc-signature"><strong>Administracion</strong><span>${escapeHtml(company.name)}</span></div>
+        <div class="rc-signature"><div class="rc-signature-line"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</span></div></div>
+        <div class="rc-signature"><div class="rc-signature-line"><strong>Responsable del contrato</strong><span>${escapeHtml(responsibleName)}<br />${escapeHtml(responsibleRole)}</span></div></div>
       </section>
 
       <footer class="rc-footer">
@@ -5631,6 +5716,308 @@ const lineControlsStock = (line, item) =>
   line?.controlsStock !== false
   && String(line?.verificationStatus ?? '').trim() !== 'pending_verification'
   && itemControlsStock(item);
+
+const summarizeContractChanges = (beforeContract, contract) => {
+  const changes = [];
+  const addTextChange = (label, beforeValue, afterValue) => {
+    const beforeText = String(beforeValue ?? '').trim();
+    const afterText = String(afterValue ?? '').trim();
+    if (beforeText !== afterText) {
+      changes.push(`${label}: ${beforeText || 'Sin definir'} -> ${afterText || 'Sin definir'}`);
+    }
+  };
+
+  addTextChange('Tipo de evento', beforeContract?.eventType, contract?.eventType);
+  addTextChange('Fecha del evento', beforeContract?.eventDate, contract?.eventDate);
+  addTextChange('Hora del evento', beforeContract?.eventTime, contract?.eventTime);
+  addTextChange('Direccion', beforeContract?.address, contract?.address);
+  addTextChange('Ciudad', beforeContract?.city, contract?.city);
+  addTextChange('Fecha de entrega', beforeContract?.deliveryDate, contract?.deliveryDate);
+  addTextChange(
+    'Horario de entrega',
+    `${beforeContract?.deliveryWindowStart ?? ''}-${beforeContract?.deliveryWindowEnd ?? ''}`,
+    `${contract?.deliveryWindowStart ?? ''}-${contract?.deliveryWindowEnd ?? ''}`,
+  );
+  addTextChange('Fecha de recojo', beforeContract?.pickupDate, contract?.pickupDate);
+  addTextChange(
+    'Horario de recojo',
+    `${beforeContract?.pickupWindowStart ?? ''}-${beforeContract?.pickupWindowEnd ?? ''}`,
+    `${contract?.pickupWindowStart ?? ''}-${contract?.pickupWindowEnd ?? ''}`,
+  );
+  addTextChange('Logistica', beforeContract?.logisticsMode, contract?.logisticsMode);
+  addTextChange('Observaciones', beforeContract?.observations, contract?.observations);
+
+  const beforeResponsible = beforeContract?.responsibles?.[0]?.name ?? '';
+  const nextResponsible = contract?.responsibles?.[0]?.name ?? '';
+  addTextChange('Responsable del contrato', beforeResponsible, nextResponsible);
+
+  const aggregateItems = (lines) => {
+    const result = new Map();
+    (Array.isArray(lines) ? lines : []).forEach((line) => {
+      const key = String(line?.itemId ?? line?.itemName ?? '').trim();
+      if (!key) return;
+      const current = result.get(key) ?? { name: String(line?.itemName ?? 'Item').trim() || 'Item', quantity: 0 };
+      current.quantity += Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+      result.set(key, current);
+    });
+    return result;
+  };
+  const beforeItems = aggregateItems(beforeContract?.items);
+  const nextItems = aggregateItems(contract?.items);
+  new Set([...beforeItems.keys(), ...nextItems.keys()]).forEach((key) => {
+    const beforeLine = beforeItems.get(key);
+    const nextLine = nextItems.get(key);
+    const beforeQty = beforeLine?.quantity ?? 0;
+    const nextQty = nextLine?.quantity ?? 0;
+    if (beforeQty === nextQty) return;
+    const itemName = nextLine?.name ?? beforeLine?.name ?? 'Item';
+    if (beforeQty === 0) changes.push(`Agrego ${nextQty} x ${itemName}`);
+    else if (nextQty === 0) changes.push(`Retiro ${beforeQty} x ${itemName}`);
+    else changes.push(`${itemName}: ${beforeQty} -> ${nextQty}`);
+  });
+
+  const serviceSignature = (services) => normalizeContractServices(services)
+    .map((service) => `${service.name}|${service.detail}|${service.quantity}|${service.unitPriceBs}`)
+    .sort()
+    .join('||');
+  if (serviceSignature(beforeContract?.services) !== serviceSignature(contract?.services)) {
+    changes.push('Actualizo los servicios asignados');
+  }
+
+  const beforeTotal = Number(beforeContract?.totals?.totalBs ?? 0);
+  const nextTotal = Number(contract?.totals?.totalBs ?? 0);
+  if (Math.abs(beforeTotal - nextTotal) >= 0.01) {
+    changes.push(`Total: ${formatBs(beforeTotal)} -> ${formatBs(nextTotal)}`);
+  }
+  return changes;
+};
+
+const syncApprovedContractOperation = (state, contract, payload, now) => {
+  if (String(contract?.status ?? '').trim() !== 'aprobado') return;
+
+  const rental = state.rentals.find((entry) => (
+    !entry.deletedAt
+    && entry.status !== 'cancelled'
+    && (
+      String(entry.id ?? '') === String(contract.rentalId ?? '')
+      || String(entry.contractId ?? '') === String(contract.id ?? '')
+      || (contract.orderCode && String(entry.orderCode ?? '') === String(contract.orderCode))
+    )
+  ));
+  if (!rental) return;
+
+  const userName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
+  const userRole = String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion';
+  const oldLinesByItem = new Map();
+  (rental.items ?? []).forEach((line) => {
+    const key = String(line?.itemId ?? '').trim();
+    if (!key) return;
+    const current = oldLinesByItem.get(key);
+    if (!current) {
+      oldLinesByItem.set(key, { ...line });
+      return;
+    }
+    current.quantity = Number(current.quantity ?? 0) + Number(line.quantity ?? 0);
+    current.internalReservedQty = Number(current.internalReservedQty ?? 0) + Number(line.internalReservedQty ?? 0);
+    current.supplierBackedQty = Number(current.supplierBackedQty ?? 0) + Number(line.supplierBackedQty ?? 0);
+  });
+
+  const supplierSupportByItem = new Map();
+  normalizeSupplierFulfillmentPlan(contract.supplierFulfillmentPlan).forEach((line) => {
+    const itemId = String(line?.itemId ?? '').trim();
+    if (!itemId) return;
+    supplierSupportByItem.set(
+      itemId,
+      Number(supplierSupportByItem.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(line?.neededQty ?? 0))),
+    );
+  });
+
+  const nextLines = (contract.items ?? []).map((line) => {
+    const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
+    if (!item) throw new Error(`El item "${line.itemName}" ya no existe en inventario.`);
+    const oldLine = oldLinesByItem.get(String(line.itemId)) ?? null;
+    const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+    const supplierBackedQty = Math.min(quantity, Number(supplierSupportByItem.get(String(line.itemId)) ?? 0));
+    const controlsStock = lineControlsStock(line, item);
+    const internalReservedQty = controlsStock ? Math.max(0, quantity - supplierBackedQty) : 0;
+    const oldInternalReservedQty = oldLine
+      ? Math.max(
+        0,
+        Math.trunc(Number(
+          oldLine.internalReservedQty
+          ?? (oldLine.controlsStock === false ? 0 : Number(oldLine.quantity ?? 0) - Number(oldLine.supplierBackedQty ?? 0)),
+        )),
+      )
+      : 0;
+    const reservationDelta = internalReservedQty - oldInternalReservedQty;
+
+    if (reservationDelta > 0 && Number(item.availableStock ?? 0) < reservationDelta) {
+      throw new Error(
+        `Stock insuficiente para "${item.name}". Disponibles: ${Math.max(0, Number(item.availableStock ?? 0))}. Faltan: ${reservationDelta - Math.max(0, Number(item.availableStock ?? 0))}.`,
+      );
+    }
+    if (reservationDelta !== 0) {
+      const beforeAvailableStock = Number(item.availableStock ?? 0);
+      const beforeTotalStock = Number(item.totalStock ?? 0);
+      item.availableStock = Math.min(
+        beforeTotalStock,
+        Math.max(0, beforeAvailableStock - reservationDelta),
+      );
+      item.updatedAt = now;
+      if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
+      state.inventoryMovements.push({
+        id: makeId('mov'),
+        itemId: item.id,
+        itemName: item.name,
+        category: item.category,
+        type: reservationDelta > 0 ? 'reserva' : 'reinsercion',
+        reason: `Edicion de contrato ${contract.contractCode}`,
+        detail: reservationDelta > 0
+          ? `Reserva adicional de ${reservationDelta} unidades para ${rental.orderCode}`
+          : `Liberacion de ${Math.abs(reservationDelta)} unidades de ${rental.orderCode}`,
+        reference: rental.orderCode,
+        deltaUnits: -reservationDelta,
+        beforeTotalStock,
+        afterTotalStock: beforeTotalStock,
+        beforeAvailableStock,
+        afterAvailableStock: item.availableStock,
+        reservedStockAfter: beforeTotalStock - item.availableStock,
+        userName,
+        userRole,
+        createdAt: now,
+      });
+    }
+
+    const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? oldLine?.rentalPriceBs ?? item.rentalPriceBs ?? 0));
+    return {
+      ...oldLine,
+      ...line,
+      itemId: item.id,
+      itemName: item.name,
+      quantity,
+      rentalPriceBs,
+      lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+      supplierBackedQty,
+      internalReservedQty,
+      controlsStock,
+      verificationStatus: controlsStock ? (item.verificationStatus ?? 'verified') : 'pending_verification',
+      damagedUnitChargeBs: Number(oldLine?.damagedUnitChargeBs ?? item.damagedUnitChargeBs ?? 0),
+      missingUnitChargeBs: Number(oldLine?.missingUnitChargeBs ?? item.missingUnitChargeBs ?? 0),
+    };
+  });
+
+  oldLinesByItem.forEach((oldLine, itemId) => {
+    if (nextLines.some((line) => String(line.itemId) === itemId)) return;
+    const item = state.items.find((entry) => String(entry.id) === itemId);
+    if (!item) return;
+    const releasedQty = Math.max(
+      0,
+      Math.trunc(Number(
+        oldLine.internalReservedQty
+        ?? (oldLine.controlsStock === false ? 0 : Number(oldLine.quantity ?? 0) - Number(oldLine.supplierBackedQty ?? 0)),
+      )),
+    );
+    if (releasedQty <= 0) return;
+    const beforeAvailableStock = Number(item.availableStock ?? 0);
+    const beforeTotalStock = Number(item.totalStock ?? 0);
+    item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + releasedQty);
+    item.updatedAt = now;
+    if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
+    state.inventoryMovements.push({
+      id: makeId('mov'),
+      itemId: item.id,
+      itemName: item.name,
+      category: item.category,
+      type: 'reinsercion',
+      reason: `Edicion de contrato ${contract.contractCode}`,
+      detail: `Liberacion de ${releasedQty} unidades de ${rental.orderCode}`,
+      reference: rental.orderCode,
+      deltaUnits: releasedQty,
+      beforeTotalStock,
+      afterTotalStock: beforeTotalStock,
+      beforeAvailableStock,
+      afterAvailableStock: item.availableStock,
+      reservedStockAfter: beforeTotalStock - item.availableStock,
+      userName,
+      userRole,
+      createdAt: now,
+    });
+  });
+
+  rental.items = nextLines;
+  rental.services = normalizeContractServices(contract.services);
+  rental.customerName = contract.customerName;
+  rental.customerPhone = contract.customerPhone;
+  rental.rentalDate = contract.deliveryDate;
+  rental.dueDate = contract.pickupDate;
+  rental.dueTime = contract.pickupWindowEnd;
+  rental.deliveryWindowStart = contract.deliveryWindowStart;
+  rental.deliveryWindowEnd = contract.deliveryWindowEnd;
+  rental.pickupWindowStart = contract.pickupWindowStart;
+  rental.pickupWindowEnd = contract.pickupWindowEnd;
+  rental.eventType = contract.eventType;
+  rental.eventAddress = contract.address;
+  rental.notes = contract.observations;
+  rental.billingMode = contract.billingMode;
+  rental.logisticsMode = contract.logisticsMode;
+  rental.deliveryChargeMode = contract.deliveryChargeMode;
+  rental.deliveryFeeBs = contract.deliveryFeeBs;
+  rental.deliveryFeeReason = contract.deliveryFeeReason;
+  rental.depositBs = Number(contract?.totals?.guaranteeBs ?? rental.depositBs ?? 0);
+  rental.pricingPlan = deepClone(contract.pricingPlan);
+  rental.supplierFulfillmentPlan = deepClone(contract.supplierFulfillmentPlan ?? []);
+  const paidAtRentalBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
+  const totalBs = Number(contract?.totals?.totalBs ?? 0);
+  const pendingPaymentBs = Math.max(0, Number((totalBs - paidAtRentalBs).toFixed(2)));
+  rental.totals = {
+    ...(rental.totals ?? {}),
+    itemsSubtotalBs: Number((contract.items ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0).toFixed(2)),
+    servicesSubtotalBs: Number((contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0).toFixed(2)),
+    ...deepClone(contract.totals),
+    paidAtRentalBs,
+    pendingPaymentBs,
+  };
+  rental.payment = {
+    ...(rental.payment ?? {}),
+    paidAtRentalBs,
+    pendingPaymentBs,
+  };
+  const dueAt = new Date(`${contract.pickupDate}T${contract.pickupWindowEnd || '23:59'}:00`);
+  if (!Number.isNaN(dueAt.getTime())) rental.dueAt = dueAt.toISOString();
+  rental.updatedAt = now;
+
+  const linkedDeliveries = state.deliveries
+    .filter((entry) => !entry.deletedAt && String(entry.rentalId ?? '') === String(rental.id))
+    .sort((a, b) => {
+      const aPickup = isPickupDeliveryRecord(a) ? 1 : 0;
+      const bPickup = isPickupDeliveryRecord(b) ? 1 : 0;
+      if (aPickup !== bPickup) return aPickup - bPickup;
+      return String(a.scheduledDate ?? '').localeCompare(String(b.scheduledDate ?? ''));
+    });
+  const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
+  const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
+  [deliveryOut, deliveryBack].forEach((delivery, index) => {
+    if (!delivery) return;
+    const isPickup = index === 1;
+    delivery.customerName = contract.customerName;
+    delivery.companyName = contract.companyName || contract.customerName;
+    delivery.address = contract.address || delivery.address;
+    delivery.city = contract.city || delivery.city;
+    delivery.scheduledDate = isPickup ? contract.pickupDate : contract.deliveryDate;
+    delivery.windowStart = isPickup ? contract.pickupWindowStart : contract.deliveryWindowStart;
+    delivery.windowEnd = isPickup ? contract.pickupWindowEnd : contract.deliveryWindowEnd;
+    delivery.driverId = contract.driverId ?? delivery.driverId;
+    delivery.vehicleId = contract.vehicleId ?? delivery.vehicleId;
+    delivery.updatedAt = now;
+  });
+
+  syncClientOperationalData(state, contract.clientId, {
+    customerPhone: contract.customerPhone,
+    customerReferencePhone: contract.customerReferencePhone,
+    address: contract.address,
+    city: contract.city,
+  });
+};
 
 const addClientDeliveryAddressIfNeeded = (client, address, city, now = new Date().toISOString()) => {
   const cleanAddress = String(address ?? '').trim();
@@ -8430,6 +8817,7 @@ const createWebBridge = () => ({
           createdByName: String(payload?.createdByName ?? payload?.userName ?? primaryResponsible?.name ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
           createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
           responsibles,
+          revisionHistory: [],
           createdAt: now,
           updatedAt: now,
           deletedAt: null,
@@ -8765,6 +9153,7 @@ const createWebBridge = () => ({
         if (!Array.isArray(state.contracts)) state.contracts = [];
         const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
         if (!contract) throw new Error('Contrato no encontrado.');
+        const beforeContract = deepClone(contract);
 
         if (payload.customerName !== undefined) contract.customerName = String(payload.customerName ?? '').trim() || contract.customerName;
         if (payload.customerPhone !== undefined) contract.customerPhone = String(payload.customerPhone ?? '').trim() || contract.customerPhone;
@@ -8881,16 +9270,24 @@ const createWebBridge = () => ({
         };
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
-          const primaryResponsible = responsibles[0] ?? null;
           contract.responsibles = responsibles;
-          if (primaryResponsible) {
-            contract.createdBy = primaryResponsible.name;
-            contract.createdById = primaryResponsible.id;
-            contract.createdByName = primaryResponsible.name;
-            contract.createdByRole = primaryResponsible.role;
-          }
         }
-        contract.updatedAt = new Date().toISOString();
+        const now = new Date().toISOString();
+        const changes = summarizeContractChanges(beforeContract, contract);
+        const tracksApprovedRevision = beforeContract.status === 'aprobado' && contract.status === 'aprobado';
+        if (changes.length > 0 && tracksApprovedRevision) {
+          contract.revisionHistory = Array.isArray(contract.revisionHistory) ? contract.revisionHistory : [];
+          contract.revisionHistory.push({
+            id: makeId('rev'),
+            updatedAt: now,
+            updatedById: payload?.updatedById ?? payload?.userId ?? null,
+            updatedByName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+            updatedByRole: String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion',
+            changes,
+          });
+          syncApprovedContractOperation(state, contract, payload, now);
+        }
+        contract.updatedAt = now;
         updated = deepClone(contract);
         return state;
       });
