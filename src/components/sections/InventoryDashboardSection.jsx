@@ -111,6 +111,219 @@ const downloadCsv = (name, lines) => {
   URL.revokeObjectURL(url);
 };
 
+const downloadBlob = (name, blob) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
+
+const getExcelImageExtension = (dataUrl) => {
+  const match = /^data:image\/(png|jpe?g);base64,/i.exec(String(dataUrl ?? ''));
+  if (!match) return null;
+  return match[1].toLowerCase() === 'png' ? 'png' : 'jpeg';
+};
+
+const exportProductsWorkbook = async ({ rows, filters }) => {
+  const excelModule = await import('exceljs');
+  const ExcelJS = excelModule.default ?? excelModule;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'El Copetin';
+  workbook.company = 'Copetin SRL';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
+
+  const sheet = workbook.addWorksheet('Productos', {
+    properties: { defaultRowHeight: 18 },
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
+    views: [{ state: 'frozen', ySplit: 6, xSplit: 2 }],
+  });
+
+  sheet.mergeCells('A1:L1');
+  sheet.getCell('A1').value = 'EL COPETIN - REPORTE DE INVENTARIO';
+  sheet.getCell('A1').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FFFFFFFF' } };
+  sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+  sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D2433' } };
+  sheet.getRow(1).height = 34;
+
+  sheet.mergeCells('A2:L2');
+  sheet.getCell('A2').value = 'Listado profesional de productos y disponibilidad';
+  sheet.getCell('A2').font = { name: 'Calibri', size: 12, italic: true, color: { argb: 'FF596579' } };
+  sheet.getRow(2).height = 23;
+
+  sheet.mergeCells('A3:D3');
+  sheet.getCell('A3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  }).format(new Date())}`;
+  sheet.mergeCells('E3:L3');
+  sheet.getCell('E3').value = `Filtros: ${filters}`;
+  ['A3', 'E3'].forEach((cellAddress) => {
+    const cell = sheet.getCell(cellAddress);
+    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF39465C' } };
+    cell.alignment = { vertical: 'middle', wrapText: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F6F9' } };
+  });
+  sheet.getRow(3).height = 28;
+
+  sheet.mergeCells('A4:L4');
+  sheet.getCell('A4').value = `${rows.length} producto${rows.length === 1 ? '' : 's'} en este reporte`;
+  sheet.getCell('A4').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFE84A00' } };
+  sheet.getCell('A4').alignment = { vertical: 'middle', horizontal: 'right' };
+
+  const headerRowNumber = 6;
+  const headers = [
+    'Imagen',
+    'Producto',
+    'Categoria',
+    'Marca / material',
+    'Color / descripcion',
+    'Codigo',
+    'Disponible',
+    'Reservado',
+    'Mantenimiento',
+    'Stock total',
+    'Precio alquiler (Bs)',
+    'Estado',
+  ];
+  const headerRow = sheet.getRow(headerRowNumber);
+  headerRow.values = headers;
+  headerRow.height = 27;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE84A00' } };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFD63E00' } },
+      left: { style: 'thin', color: { argb: 'FFF2A27E' } },
+      bottom: { style: 'thin', color: { argb: 'FFD63E00' } },
+      right: { style: 'thin', color: { argb: 'FFF2A27E' } },
+    };
+  });
+
+  sheet.columns = [
+    { key: 'image', width: 11 },
+    { key: 'name', width: 38 },
+    { key: 'category', width: 18 },
+    { key: 'brand', width: 20 },
+    { key: 'color', width: 24 },
+    { key: 'sku', width: 15 },
+    { key: 'available', width: 12 },
+    { key: 'reserved', width: 12 },
+    { key: 'maintenance', width: 15 },
+    { key: 'total', width: 12 },
+    { key: 'price', width: 18 },
+    { key: 'status', width: 17 },
+  ];
+
+  rows.forEach((row, index) => {
+    const rowNumber = headerRowNumber + index + 1;
+    const status = !row.controlsStock
+      ? 'Por validar'
+      : row.lowAvailability
+      ? 'Stock bajo'
+      : 'Disponible';
+    const excelRow = sheet.getRow(rowNumber);
+    excelRow.values = [
+      row.imageDataUrl ? '' : 'Sin imagen',
+      row.name,
+      row.category || '-',
+      row.brand || '-',
+      row.itemColor || '-',
+      row.sku,
+      row.available,
+      row.reserved,
+      row.maintenance,
+      row.total,
+      row.price,
+      status,
+    ];
+    excelRow.height = 58;
+
+    excelRow.eachCell((cell, columnNumber) => {
+      cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF253047' } };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: columnNumber >= 7 && columnNumber <= 11 ? 'center' : 'left',
+        wrapText: true,
+      };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: index % 2 === 0 ? 'FFFFFFFF' : 'FFFFFAF7' },
+      };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE4E8EF' } },
+        right: { style: 'thin', color: { argb: 'FFF0F2F5' } },
+      };
+    });
+
+    excelRow.getCell(1).font = { name: 'Calibri', size: 8, italic: true, color: { argb: 'FF8A94A6' } };
+    excelRow.getCell(2).font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF17213D' } };
+    excelRow.getCell(7).numFmt = '0';
+    excelRow.getCell(8).numFmt = '0';
+    excelRow.getCell(9).numFmt = '0';
+    excelRow.getCell(10).numFmt = '0';
+    excelRow.getCell(11).numFmt = '"Bs" #,##0.00';
+    excelRow.getCell(12).font = {
+      name: 'Calibri',
+      size: 9,
+      bold: true,
+      color: { argb: status === 'Disponible' ? 'FF137548' : status === 'Stock bajo' ? 'FFC2420A' : 'FF9B5A20' },
+    };
+
+    const extension = getExcelImageExtension(row.imageDataUrl);
+    if (extension) {
+      const imageId = workbook.addImage({ base64: row.imageDataUrl, extension });
+      sheet.addImage(imageId, {
+        tl: { col: 0.18, row: rowNumber - 0.88 },
+        ext: { width: 58, height: 58 },
+        editAs: 'oneCell',
+      });
+    }
+  });
+
+  const totalRowNumber = headerRowNumber + rows.length + 1;
+  const totalRow = sheet.getRow(totalRowNumber);
+  totalRow.values = ['', 'TOTALES', '', '', '', '', '', '', '', '', '', ''];
+  totalRow.height = 26;
+  totalRow.getCell(7).value = { formula: `SUM(G${headerRowNumber + 1}:G${totalRowNumber - 1})` };
+  totalRow.getCell(8).value = { formula: `SUM(H${headerRowNumber + 1}:H${totalRowNumber - 1})` };
+  totalRow.getCell(9).value = { formula: `SUM(I${headerRowNumber + 1}:I${totalRowNumber - 1})` };
+  totalRow.getCell(10).value = { formula: `SUM(J${headerRowNumber + 1}:J${totalRowNumber - 1})` };
+  totalRow.eachCell((cell, columnNumber) => {
+    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF273148' } };
+    cell.alignment = { vertical: 'middle', horizontal: columnNumber >= 7 ? 'center' : 'left' };
+  });
+
+  sheet.autoFilter = {
+    from: { row: headerRowNumber, column: 2 },
+    to: { row: totalRowNumber - 1, column: 12 },
+  };
+  sheet.pageSetup.printTitlesRow = '1:6';
+  sheet.pageSetup.printArea = `A1:L${totalRowNumber}`;
+  sheet.headerFooter.oddFooter = '&LEl Copetin - Inventario&C&P de &N&RDocumento interno';
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  downloadBlob(
+    `inventario-productos-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+  );
+};
+
 const getDateRangeLabel = (dateFrom, dateTo) => {
   if (!dateFrom && !dateTo) return 'Todo el periodo';
   const fromText = dateFrom || '...';
@@ -1382,7 +1595,7 @@ function InventoryDashboardSection({
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (filteredRows.length === 0) {
       showMessage('No hay datos para exportar con los filtros actuales.', 'error');
       return;
@@ -1514,38 +1727,22 @@ function InventoryDashboardSection({
       return;
     }
 
-    const lines = [
-      [
-        'producto',
-        'categoria',
-        'marca',
-        'color_o_descripcion',
-        'codigo',
-        'disponible',
-        'reservado',
-        'mantenimiento',
-        'total',
-        'precio_alquiler_bs',
-        'estado',
-      ].join(','),
-      ...filteredRows.map((row) =>
-        [
-          csvEscape(row.name),
-          csvEscape(row.category),
-          csvEscape(row.brand),
-          csvEscape(row.itemColor),
-          csvEscape(row.sku),
-          csvEscape(row.available),
-          csvEscape(row.reserved),
-          csvEscape(row.maintenance),
-          csvEscape(row.total),
-          csvEscape(Number(row.price ?? 0).toFixed(2)),
-          csvEscape(row.lowAvailability ? 'Stock Bajo' : 'Disponible'),
-        ].join(','),
-      ),
-    ];
-    downloadCsv(`inventario-productos-${new Date().toISOString().slice(0, 10)}.csv`, lines);
-    showMessage('Exportacion de productos completada.');
+    try {
+      showMessage('Preparando documento profesional de productos...');
+      const activeFilters = [
+        query.trim() ? `Busqueda: ${query.trim()}` : '',
+        categoryFilter !== 'all' ? `Categoria: ${categoryFilter}` : '',
+        stockFilter !== 'all' ? `Stock: ${stockFilter}` : '',
+        controlFilter !== 'all' ? `Estado: ${controlFilter}` : '',
+      ].filter(Boolean);
+      await exportProductsWorkbook({
+        rows: filteredRows,
+        filters: activeFilters.length > 0 ? activeFilters.join(' | ') : 'Todos los productos',
+      });
+      showMessage('Documento Excel de productos exportado correctamente.');
+    } catch (error) {
+      showMessage(error?.message || 'No se pudo generar el documento Excel.', 'error');
+    }
   };
 
   const handleKpiLink = (card) => {
@@ -2574,7 +2771,7 @@ function InventoryDashboardSection({
                 </>
               ) : (
                 <button type="button" className="link-button inventory-export-btn" onClick={handleExport}>
-                  {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar'}
+                  {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar Excel'}
                 </button>
               )}
             </header>
