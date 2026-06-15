@@ -698,6 +698,7 @@ export const api = {
     printCashMovementReceipt: (payload) => callBridge('printer', 'printCashMovementReceipt', false, payload),
     printContract: (payload) => callBridge('printer', 'printContract', false, payload),
     printInventoryOrder: (payload) => callBridge('printer', 'printInventoryOrder', false, payload),
+    printInventoryWeek: (payload) => callBridge('printer', 'printInventoryWeek', false, payload),
     printRouteSheet: (payload) => callBridge('printer', 'printRouteSheet', false, payload),
   },
   dashboard: {

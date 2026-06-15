@@ -735,9 +735,19 @@ const syncRentalTransportStatus = (state, rental, now = new Date().toISOString()
     inventoryNote: rental.operational?.inventoryNote ?? '',
     transportNote: rental.operational?.transportNote ?? '',
     inventorySentAt: rental.operational?.inventorySentAt ?? null,
+    inventoryDispatchedAt: rental.operational?.inventoryDispatchedAt ?? null,
+    inventoryDispatchedByName: rental.operational?.inventoryDispatchedByName ?? null,
+    inventoryDispatchedByRole: rental.operational?.inventoryDispatchedByRole ?? null,
     transportSentAt: rental.operational?.transportSentAt ?? null,
     inventoryConfirmedAt: rental.operational?.inventoryConfirmedAt ?? null,
+    inventoryConfirmedByName: rental.operational?.inventoryConfirmedByName ?? null,
+    inventoryConfirmedByRole: rental.operational?.inventoryConfirmedByRole ?? null,
+    inventoryReturnedAt: rental.operational?.inventoryReturnedAt ?? null,
+    inventoryReturnedByName: rental.operational?.inventoryReturnedByName ?? null,
+    inventoryReturnedByRole: rental.operational?.inventoryReturnedByRole ?? null,
     transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
+    transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
+    transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
   };
 
   if (rental.logisticsMode === 'recojo') {
@@ -1220,11 +1230,17 @@ const normalizeState = (state) => {
           inventoryNote: String(rental?.operational?.inventoryNote ?? '').trim(),
           transportNote: String(rental?.operational?.transportNote ?? '').trim(),
           inventorySentAt: rental?.operational?.inventorySentAt ?? null,
+          inventoryDispatchedAt: rental?.operational?.inventoryDispatchedAt ?? null,
+          inventoryDispatchedByName: rental?.operational?.inventoryDispatchedByName ?? null,
+          inventoryDispatchedByRole: rental?.operational?.inventoryDispatchedByRole ?? null,
           transportSentAt: rental?.operational?.transportSentAt ?? null,
           inventoryConfirmedAt: rental?.operational?.inventoryConfirmedAt ?? null,
           transportConfirmedAt: rental?.operational?.transportConfirmedAt ?? null,
           inventoryConfirmedByName: rental?.operational?.inventoryConfirmedByName ?? null,
           inventoryConfirmedByRole: rental?.operational?.inventoryConfirmedByRole ?? null,
+          inventoryReturnedAt: rental?.operational?.inventoryReturnedAt ?? null,
+          inventoryReturnedByName: rental?.operational?.inventoryReturnedByName ?? null,
+          inventoryReturnedByRole: rental?.operational?.inventoryReturnedByRole ?? null,
           transportConfirmedByName: rental?.operational?.transportConfirmedByName ?? null,
           transportConfirmedByRole: rental?.operational?.transportConfirmedByRole ?? null,
         },
@@ -5432,6 +5448,187 @@ const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
       </div>
     `,
   });
+};
+
+const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, settings, weekStart, weekEnd }) => {
+  const company = getDocumentCompany(settings);
+  const contractById = new Map((contracts ?? []).map((contract) => [String(contract.id), contract]));
+  const itemById = new Map((items ?? []).map((item) => [String(item.id), item]));
+  const deliveryByRental = new Map();
+  (deliveries ?? []).forEach((delivery) => {
+    const rentalId = String(delivery?.rentalId ?? '').trim();
+    if (!rentalId) return;
+    const list = deliveryByRental.get(rentalId) ?? [];
+    list.push(delivery);
+    deliveryByRental.set(rentalId, list);
+  });
+  const dateInWeek = (value) => {
+    const key = toDateKey(value);
+    return Boolean(key && key >= weekStart && key <= weekEnd);
+  };
+  const formatWindow = (date, start, end) => (
+    dateInWeek(date)
+      ? `${formatDocumentDate(date)} | ${String(start || '--:--')} - ${String(end || '--:--')}`
+      : 'Fuera de esta semana'
+  );
+  const weeklyOrders = (rentals ?? [])
+    .filter((rental) => !rental.deletedAt && rental.status !== 'cancelled')
+    .map((rental) => {
+      const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
+      const linkedDeliveries = (deliveryByRental.get(String(rental.id)) ?? []).slice();
+      const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
+      const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
+      const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate;
+      const pickupDate = contract?.pickupDate ?? deliveryBack?.scheduledDate ?? rental.dueDate;
+      return {
+        rental,
+        contract,
+        deliveryOut,
+        deliveryBack,
+        deliveryDate,
+        pickupDate,
+        matchesWeek: dateInWeek(deliveryDate) || dateInWeek(pickupDate),
+      };
+    })
+    .filter((entry) => entry.matchesWeek)
+    .sort((a, b) => {
+      const firstA = [a.deliveryDate, a.pickupDate].filter(dateInWeek).sort()[0] ?? '';
+      const firstB = [b.deliveryDate, b.pickupDate].filter(dateInWeek).sort()[0] ?? '';
+      return firstA.localeCompare(firstB) || String(a.rental.orderCode ?? '').localeCompare(String(b.rental.orderCode ?? ''));
+    });
+
+  const orderSections = weeklyOrders.map((entry, orderIndex) => {
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
+    const itemRows = (rental.items ?? []).map((line, index) => {
+      const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
+      const imageDataUrl = catalogItem?.imageDataUrl ?? line.imageDataUrl ?? '';
+      return `
+          <tr>
+            <td class="wi-index">${index + 1}</td>
+            <td class="wi-product">
+              ${imageDataUrl
+                ? `<img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(line.itemName)}" />`
+                : '<span class="wi-no-image">Sin imagen</span>'}
+              <strong>${escapeHtml(line.itemName)}</strong>
+            </td>
+            <td class="wi-number">${Math.max(0, Number(line.quantity ?? 0))}</td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-report"></td>
+          </tr>`;
+    }).join('');
+    const responsible = contract?.responsibles?.[0]?.name
+      ?? contract?.createdByName
+      ?? rental.createdByName
+      ?? 'Sin responsable';
+    const address = contract?.address ?? deliveryOut?.address ?? rental.eventAddress ?? '-';
+    const inventoryStatus = rental.status === 'returned'
+      ? 'Devuelto'
+      : rental.operational?.inventoryStatus === 'salio'
+        ? 'Salio'
+        : rental.operational?.inventoryStatus === 'confirmado'
+          ? 'Listo'
+          : 'Por alistar';
+    return `
+      <section class="wi-order">
+        <header class="wi-order-head">
+          <div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>
+          <div><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
+          <div><small>RESPONSABLE</small><strong>${escapeHtml(responsible)}</strong></div>
+          <div><small>DIRECCION</small><strong>${escapeHtml(address)}</strong></div>
+          <div><small>ESTADO</small><strong class="wi-status">${escapeHtml(inventoryStatus)}</strong></div>
+        </header>
+        <div class="wi-order-meta">
+          <div><small>ENTREGA / SALIDA</small><strong>${escapeHtml(formatWindow(deliveryDate, contract?.deliveryWindowStart ?? deliveryOut?.windowStart, contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd))}</strong></div>
+          <div><small>RECOJO / RETORNO</small><strong>${escapeHtml(formatWindow(pickupDate, contract?.pickupWindowStart ?? deliveryBack?.windowStart, contract?.pickupWindowEnd ?? deliveryBack?.windowEnd))}</strong></div>
+          <div><small>EVENTO</small><strong>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</strong></div>
+          <div><small>LOGISTICA</small><strong>${escapeHtml((contract?.logisticsMode ?? rental.logisticsMode) === 'recojo' ? 'Recojo por cliente' : 'Envio por equipo')}</strong></div>
+        </div>
+        <table class="wi-table">
+          <thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>
+          <tbody>${itemRows || '<tr><td colspan="8">Sin items registrados.</td></tr>'}</tbody>
+        </table>
+        <div class="wi-order-foot">
+          <span>Preparado por: ______________________________</span>
+          <span>Entregado por: ______________________________</span>
+          <span>Recibido y constatado por: ______________________________</span>
+        </div>
+      </section>`;
+  }).join('');
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Control semanal de inventario ${escapeHtml(weekStart)}</title>
+    <style>
+      @page { size: legal landscape; margin: 9mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #16213d; background: #eef1f6; font: 12px Arial, sans-serif; }
+      .wi-sheet { width: 100%; max-width: 336mm; min-height: 196mm; margin: 0 auto; padding: 8mm; background: #fff; }
+      .wi-header { display: grid; grid-template-columns: 1fr auto; gap: 8mm; align-items: center; padding-bottom: 4mm; border-bottom: 1mm solid #ef5000; }
+      .wi-brand { display: flex; align-items: center; gap: 4mm; }
+      .wi-brand-mark { width: 13mm; height: 13mm; display: grid; place-items: center; border: .6mm solid #ef5000; border-radius: 50%; color: #ef5000; font: italic 800 18px Georgia, serif; }
+      .wi-brand h1 { margin: 0; color: #10182e; font: 800 22px Georgia, serif; }
+      .wi-brand p { margin: 1mm 0 0; color: #ef5000; font-weight: 700; text-transform: uppercase; }
+      .wi-period { min-width: 76mm; padding: 3mm 5mm; border: .3mm solid #f4b18d; border-radius: 2mm; text-align: right; }
+      .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #77809a; font-size: 9px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; }
+      .wi-period strong { display: block; margin-top: 1mm; color: #ef5000; font-size: 15px; }
+      .wi-intro { display: grid; grid-template-columns: 1fr auto; gap: 5mm; margin: 4mm 0; padding: 3mm 4mm; border-radius: 2mm; background: #fff6f0; }
+      .wi-intro h2 { margin: 0; font-size: 17px; }
+      .wi-intro p { margin: 1mm 0 0; color: #626c86; }
+      .wi-count { align-self: center; color: #ef5000; font-size: 13px; font-weight: 900; }
+      .wi-order { margin-top: 4mm; border: .3mm solid #d9dfeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+      .wi-order-head { display: grid; grid-template-columns: 42mm 1fr 1fr 1.5fr 28mm; gap: 4mm; align-items: center; padding: 3mm; background: #f7f9fd; border-bottom: .25mm solid #d9dfeb; }
+      .wi-order-head strong { display: block; margin-top: .7mm; font-size: 12px; line-height: 1.25; text-transform: uppercase; }
+      .wi-order-number { display: flex; align-items: center; gap: 2.5mm; }
+      .wi-order-number > span { width: 8mm; height: 8mm; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #ef5000; font-weight: 900; }
+      .wi-status { color: #ef5000; }
+      .wi-order-meta { display: grid; grid-template-columns: 1fr 1fr 1.7fr .8fr; gap: 3mm; padding: 2mm 3mm; border-bottom: .25mm solid #d9dfeb; }
+      .wi-order-meta > div { padding-right: 3mm; border-right: .2mm solid #e5e8ef; }
+      .wi-order-meta > div:last-child { border-right: 0; }
+      .wi-order-meta strong { display: block; margin-top: .7mm; font-size: 11px; }
+      .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .wi-table th { padding: 2.2mm; color: #fff; background: #ef5000; font-size: 10px; text-align: left; }
+      .wi-table td { height: 13mm; padding: 1.8mm 2mm; border-right: .2mm solid #e1e5ed; border-bottom: .2mm solid #e1e5ed; vertical-align: middle; font-size: 11px; }
+      .wi-table tr:last-child td { border-bottom: 0; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 22mm; text-align: center; }
+      .wi-table th:last-child, .wi-table td:last-child { width: 58mm; border-right: 0; }
+      .wi-index { width: 9mm; text-align: center !important; }
+      .wi-number { width: 17mm; text-align: center !important; }
+      .wi-product { display: grid; grid-template-columns: 13mm minmax(0, 1fr); gap: 2.5mm; align-items: center; }
+      .wi-product img, .wi-no-image { width: 11mm; height: 11mm; border: .2mm solid #d8deea; border-radius: 1.2mm; object-fit: cover; }
+      .wi-no-image { display: grid; place-items: center; color: #929aae; background: #f6f7fa; font-size: 6.5px; line-height: 1; text-align: center; }
+      .wi-product strong { font-size: 11px; line-height: 1.2; }
+      .wi-check i { display: inline-block; width: 5.5mm; height: 5.5mm; border: .4mm solid #727b91; border-radius: .8mm; }
+      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; padding: 5mm 4mm 3mm; color: #4f5871; font-size: 10px; }
+      .wi-empty { padding: 20mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
+      .wi-footer { display: flex; justify-content: space-between; margin-top: 5mm; padding-top: 2mm; border-top: .3mm solid #ef5000; color: #6c7488; font-size: 8px; }
+      @media print {
+        body { background: #fff; }
+        .wi-sheet { max-width: none; min-height: 0; margin: 0; padding: 0; }
+        .wi-footer { position: fixed; right: 0; bottom: -5mm; left: 0; }
+        .wi-page::after { content: "Pagina " counter(page); }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wi-sheet">
+      <header class="wi-header">
+        <div class="wi-brand"><span class="wi-brand-mark">C</span><div><h1>${escapeHtml(company.name)}</h1><p>Control operativo de inventario</p></div></div>
+        <div class="wi-period"><small>Semana operativa</small><strong>${escapeHtml(`${formatDocumentDate(weekStart)} al ${formatDocumentDate(weekEnd)}`)}</strong></div>
+      </header>
+      <section class="wi-intro">
+        <div><h2>Hoja semanal de alistamiento, salida y retorno</h2><p>Documento unico para controlar las ordenes de servicio con entrega o recojo dentro del periodo.</p></div>
+        <div class="wi-count">${weeklyOrders.length} ordenes</div>
+      </section>
+      ${orderSections || '<div class="wi-empty">No existen contratos con entrega o recojo programados para esta semana.</div>'}
+      <footer class="wi-footer"><span>${escapeHtml(company.address)} | ${escapeHtml(company.phone || '')}</span><span class="wi-page"></span></footer>
+    </main>
+  </body>
+</html>`;
 };
 
 const getDeliveryStatusLabel = (value) => {
@@ -9898,6 +10095,9 @@ const createWebBridge = () => ({
             inventoryNote: '',
             transportNote: '',
             inventorySentAt: null,
+            inventoryDispatchedAt: null,
+            inventoryDispatchedByName: null,
+            inventoryDispatchedByRole: null,
             transportSentAt: null,
             inventoryConfirmedAt: null,
             transportConfirmedAt: null,
@@ -9966,16 +10166,23 @@ const createWebBridge = () => ({
           inventoryNote: rental.operational?.inventoryNote ?? '',
           transportNote: rental.operational?.transportNote ?? '',
           inventorySentAt: rental.operational?.inventorySentAt ?? null,
+          inventoryDispatchedAt: rental.operational?.inventoryDispatchedAt ?? null,
+          inventoryDispatchedByName: rental.operational?.inventoryDispatchedByName ?? null,
+          inventoryDispatchedByRole: rental.operational?.inventoryDispatchedByRole ?? null,
           transportSentAt: rental.operational?.transportSentAt ?? null,
           inventoryConfirmedAt: rental.operational?.inventoryConfirmedAt ?? null,
           transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
           inventoryConfirmedByName: rental.operational?.inventoryConfirmedByName ?? null,
           inventoryConfirmedByRole: rental.operational?.inventoryConfirmedByRole ?? null,
+          inventoryReturnedAt: rental.operational?.inventoryReturnedAt ?? null,
+          inventoryReturnedByName: rental.operational?.inventoryReturnedByName ?? null,
+          inventoryReturnedByRole: rental.operational?.inventoryReturnedByRole ?? null,
           transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
           transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
         };
 
         if (payload.inventoryStatus !== undefined) {
+          const previousInventoryStatus = rental.operational.inventoryStatus;
           rental.operational.inventoryStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
           if (rental.operational.inventoryStatus === 'enviado' && !rental.operational.inventorySentAt) {
             rental.operational.inventorySentAt = now;
@@ -9985,6 +10192,14 @@ const createWebBridge = () => ({
             rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
             rental.operational.inventoryConfirmedByName = userName;
             rental.operational.inventoryConfirmedByRole = userRole;
+          }
+          if (rental.operational.inventoryStatus === 'salio') {
+            if (previousInventoryStatus !== 'confirmado' && !rental.operational.inventoryConfirmedAt) {
+              throw new Error('Primero debes marcar la orden como lista antes de registrar su salida.');
+            }
+            rental.operational.inventoryDispatchedAt = now;
+            rental.operational.inventoryDispatchedByName = userName;
+            rental.operational.inventoryDispatchedByRole = userRole;
           }
         }
 
@@ -10143,9 +10358,22 @@ const createWebBridge = () => ({
 
           const item = state.items.find((entry) => entry.id === rentalLine.itemId);
           if (item) {
+            const internalExpectedQty = Math.max(
+              0,
+              Math.min(
+                expectedQty,
+                Math.trunc(Number(rentalLine.internalReservedQty ?? expectedQty)),
+              ),
+            );
+            const internalDamagedQty = Math.min(damagedQty, internalExpectedQty);
+            const internalMissingQty = Math.min(missingQty, Math.max(0, internalExpectedQty - internalDamagedQty));
+            const internalGoodQty = Math.min(
+              returnedQty,
+              Math.max(0, internalExpectedQty - internalDamagedQty - internalMissingQty),
+            );
             const needsCleaningOnReturn = categoryRequiresCleaning(item.category) || Boolean(item.needsCleaningOnReturn);
-            const movedToCleaningQty = needsCleaningOnReturn ? returnedQty : 0;
-            const returnedToAvailableQty = returnedQty - movedToCleaningQty;
+            const movedToCleaningQty = needsCleaningOnReturn ? internalGoodQty : 0;
+            const returnedToAvailableQty = internalGoodQty - movedToCleaningQty;
 
             item.availableStock += returnedToAvailableQty;
             item.updatedAt = new Date().toISOString();
@@ -10167,7 +10395,7 @@ const createWebBridge = () => ({
               });
             }
 
-            if (damagedQty > 0) {
+            if (internalDamagedQty > 0) {
               state.stockRecoveries.push({
                 id: makeId('reco'),
                 itemId: item.id,
@@ -10177,7 +10405,7 @@ const createWebBridge = () => ({
                 sourceRentalId: rental.id,
                 sourceCustomerName: rental.customerName,
                 stage: 'reparacion',
-                quantity: damagedQty,
+                quantity: internalDamagedQty,
                 note: damageNote || 'Dano reportado en devolucion.',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -10188,6 +10416,8 @@ const createWebBridge = () => ({
               itemId: rentalLine.itemId,
               itemName: rentalLine.itemName,
               expectedQty,
+              internalExpectedQty,
+              supplierBackedQty: Math.max(0, expectedQty - internalExpectedQty),
               returnedQty,
               returnedToAvailableQty,
               movedToCleaningQty,
@@ -10229,6 +10459,13 @@ const createWebBridge = () => ({
         rental.status = 'returned';
         rental.returnedAt = new Date().toISOString();
         rental.returnReport = returnReport;
+        rental.operational = {
+          ...(rental.operational ?? {}),
+          inventoryStatus: 'devuelto',
+          inventoryReturnedAt: rental.returnedAt,
+          inventoryReturnedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+          inventoryReturnedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+        };
         rental.penaltiesBs = penaltiesBs;
         rental.refundBs = refundBs;
         rental.payment = {
@@ -11476,6 +11713,39 @@ const createWebBridge = () => ({
       const deliveries = resolveDeliveriesForRental(state, rental);
       const title = `Orden inventario ${rental.orderCode ?? rental.id}`;
       return { ok: true, title, html: buildInventoryOrderHtml({ rental, deliveries, settings: state.settings }) };
+    },
+    printInventoryWeek: async (payload) => {
+      const state = readState();
+      const requestedStart = toDateKey(payload?.weekStart);
+      const baseDate = requestedStart ? new Date(`${requestedStart}T12:00:00`) : new Date();
+      const day = baseDate.getDay();
+      const mondayOffset = day === 0 ? -6 : 1 - day;
+      baseDate.setDate(baseDate.getDate() + mondayOffset);
+      const weekStart = [
+        baseDate.getFullYear(),
+        String(baseDate.getMonth() + 1).padStart(2, '0'),
+        String(baseDate.getDate()).padStart(2, '0'),
+      ].join('-');
+      const endDate = new Date(`${weekStart}T12:00:00`);
+      endDate.setDate(endDate.getDate() + 6);
+      const weekEnd = [
+        endDate.getFullYear(),
+        String(endDate.getMonth() + 1).padStart(2, '0'),
+        String(endDate.getDate()).padStart(2, '0'),
+      ].join('-');
+      return {
+        ok: true,
+        title: `Control semanal de inventario ${weekStart}`,
+        html: buildWeeklyInventoryHtml({
+          rentals: state.rentals,
+          contracts: state.contracts,
+          deliveries: state.deliveries,
+          items: state.items,
+          settings: state.settings,
+          weekStart,
+          weekEnd,
+        }),
+      };
     },
     printRouteSheet: async (payload) => {
       const state = readState();

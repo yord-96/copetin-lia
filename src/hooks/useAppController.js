@@ -613,6 +613,7 @@ export const useAppController = () => {
     try {
       const returned = await api.rentals.registerReturn({
         ...payload,
+        ...getCurrentUserTrace(),
         requireCashSession: false,
       });
       await loadData();
@@ -1355,6 +1356,17 @@ export const useAppController = () => {
     }
   };
 
+  const handlePrintInventoryWeekDocument = async ({ weekStart }) => {
+    setError('');
+    try {
+      return await api.printer.printInventoryWeek({ weekStart });
+    } catch (requestError) {
+      if (isPrintCanceledError(requestError)) return;
+      setError(requestError.message || 'No se pudo abrir la hoja semanal de inventario.');
+      throw requestError;
+    }
+  };
+
   const handlePrintRouteSheetDocument = async ({ rentalId, orderCode, contractId, contractCode }) => {
     setError('');
     try {
@@ -1880,6 +1892,7 @@ export const useAppController = () => {
     handleGenerateOrderDocuments,
     handlePrintContractDocument,
     handlePrintInventoryOrderDocument,
+    handlePrintInventoryWeekDocument,
     handlePrintRouteSheetDocument,
     handlePrintRentalReceipt,
     handlePrintReturnReceipt,

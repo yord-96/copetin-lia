@@ -10,6 +10,18 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+const getMondayDateKey = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value) : new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  const day = date.getDay();
+  date.setDate(date.getDate() + (day === 0 ? -6 : 1 - day));
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
 const toCategoryClass = (category) => {
   const value = normalizeText(category);
   if (value.includes('silla')) return 'cat-violet';
@@ -683,7 +695,7 @@ function InventoryDashboardSection({
   onOpenImage,
   onUpdateOrderOperational,
   onReceiveReturnedOrder,
-  onPrintInventoryOrderDocument,
+  onPrintInventoryWeekDocument,
 }) {
   const initialProductFiltersRef = useRef(null);
   if (!initialProductFiltersRef.current) {
@@ -728,6 +740,7 @@ function InventoryDashboardSection({
   const [detailRow, setDetailRow] = useState(null);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [inventoryWeekStart, setInventoryWeekStart] = useState(() => getMondayDateKey());
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
@@ -735,17 +748,17 @@ function InventoryDashboardSection({
   const rowMenuRef = useRef(null);
   const productFilterRef = useRef(null);
 
-  const openInventoryOrderDocument = async (row) => {
+  const openInventoryWeekDocument = async () => {
     try {
-      const preview = await onPrintInventoryOrderDocument?.({ rentalId: row.rentalId, orderCode: row.orderCode });
+      const preview = await onPrintInventoryWeekDocument?.({ weekStart: inventoryWeekStart });
       if (preview?.html) {
         setDocumentPreview({
-          title: preview.title ?? `Orden inventario ${row.orderCode}`,
+          title: preview.title ?? 'Control semanal de inventario',
           html: preview.html,
         });
       }
     } catch (error) {
-      setFeedback(error.message || 'No se pudo abrir la orden de inventario.');
+      setFeedback(error.message || 'No se pudo abrir la hoja semanal de inventario.');
       setFeedbackType('error');
     }
   };
@@ -898,6 +911,7 @@ function InventoryDashboardSection({
   const prepOrderRows = useMemo(() => {
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
     const deliveryByRental = new Map();
 
     deliveries
@@ -923,18 +937,22 @@ function InventoryDashboardSection({
     };
 
     const getInventoryMeta = (status) => {
+      if (status === 'salio') {
+        return { sortWeight: 0, secondarySortWeight: 0, text: 'Fuera de almacen', actionLabel: 'Marcar que volvio', action: 'return', canConfirm: true };
+      }
       if (status === 'confirmado') {
-        return { sortWeight: 0, secondarySortWeight: 1, text: 'Alistada y asignada', actionLabel: 'Ya asignada', canConfirm: false };
+        return { sortWeight: 1, secondarySortWeight: 0, text: 'Lista para salir', actionLabel: 'Marcar que salio', action: 'dispatch', canConfirm: true };
       }
       if (status === 'enviado') {
-        return { sortWeight: 1, secondarySortWeight: 0, text: 'Asignada, pendiente de confirmar', actionLabel: 'Confirmar alistado', canConfirm: true };
+        return { sortWeight: 2, secondarySortWeight: 0, text: 'Asignada, pendiente de confirmar', actionLabel: 'Marcar lista', action: 'ready', canConfirm: true };
       }
-      return { sortWeight: 2, secondarySortWeight: 0, text: 'Por alistar', actionLabel: 'Asignar y confirmar', canConfirm: true };
+      return { sortWeight: 3, secondarySortWeight: 0, text: 'Por alistar', actionLabel: 'Marcar lista', action: 'ready', canConfirm: true };
     };
 
     return activeRentals
       .map((rental) => {
         const delivery = deliveryByRental.get(rental.id) ?? null;
+        const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
         const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
         const lines = (rental.items ?? []).length;
         const priority = getPriority(delivery);
@@ -942,16 +960,22 @@ function InventoryDashboardSection({
         const inventoryMeta = getInventoryMeta(inventoryStatus);
         return {
           id: rental.id,
+          rental,
           rentalId: rental.id,
           orderCode: rental.orderCode ?? rental.id,
+          contractCode: contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id,
           customerName: rental.customerName,
+          address: contract?.address ?? delivery?.address ?? rental.eventAddress ?? 'Direccion pendiente',
           itemsText: `${totalItems} unidades · ${lines} items`,
-          deliveryDate: delivery?.scheduledDate ?? rental.dueDate ?? null,
+          deliveryDate: delivery?.scheduledDate ?? rental.rentalDate ?? null,
           deliveryWindow: delivery ? `${delivery.windowStart || '--:--'} - ${delivery.windowEnd || '--:--'}` : 'Pendiente',
+          pickupDate: rental.dueDate ?? null,
+          pickupWindow: `${rental.pickupWindowStart || '--:--'} - ${rental.pickupWindowEnd || rental.dueTime || '--:--'}`,
           priority,
           inventoryStatus,
           inventoryStatusText: inventoryMeta.text,
           inventoryActionLabel: inventoryMeta.actionLabel,
+          inventoryAction: inventoryMeta.action,
           canConfirmInventory: inventoryMeta.canConfirm,
           inventorySortWeight: inventoryMeta.sortWeight,
           inventorySecondarySortWeight: inventoryMeta.secondarySortWeight,
@@ -968,7 +992,23 @@ function InventoryDashboardSection({
         if (b.priority.weight !== a.priority.weight) return b.priority.weight - a.priority.weight;
         return new Date(a.deliveryDate ?? 0) - new Date(b.deliveryDate ?? 0);
       });
-  }, [activeRentals, deliveries]);
+  }, [activeRentals, contracts, deliveries]);
+
+  const weeklyPrepOrderRows = useMemo(() => {
+    const start = inventoryWeekStart;
+    const endDate = new Date(`${start}T12:00:00`);
+    endDate.setDate(endDate.getDate() + 6);
+    const end = [
+      endDate.getFullYear(),
+      String(endDate.getMonth() + 1).padStart(2, '0'),
+      String(endDate.getDate()).padStart(2, '0'),
+    ].join('-');
+    const inWeek = (value) => {
+      const key = String(value ?? '').slice(0, 10);
+      return Boolean(key && key >= start && key <= end);
+    };
+    return prepOrderRows.filter((row) => inWeek(row.deliveryDate) || inWeek(row.pickupDate));
+  }, [inventoryWeekStart, prepOrderRows]);
 
   const cancelledOrderRows = useMemo(() => {
     return cancelledRentals
@@ -1087,6 +1127,7 @@ function InventoryDashboardSection({
 
   const movementRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
+    const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
     const rentalsForTrace = [...activeRentals, ...cancelledRentals];
     const rentalByOrderCode = new Map(rentalsForTrace.map((rental) => [rental.orderCode ?? rental.id, rental]));
     const reservationMovementKeys = new Set(
@@ -1098,26 +1139,32 @@ function InventoryDashboardSection({
     const persistedRows = inventoryMovements.map((movement) => {
       const itemRow = itemById.get(movement.itemId);
       const linkedRental = rentalByOrderCode.get(movement.reference ?? '');
+      const linkedContract = linkedRental ? contractById.get(String(linkedRental.contractId ?? '')) : null;
       const isEntry = movement.type === 'entrada' || movement.type === 'reinsercion';
       const isExit = movement.type === 'salida' || movement.type === 'reserva';
       const isReservation = movement.type === 'reserva';
       const inventoryStatus = linkedRental?.operational?.inventoryStatus ?? movement.status ?? 'pendiente';
+      const inventoryHandled = ['confirmado', 'salio', 'devuelto'].includes(inventoryStatus);
       const rawMovementUserName = movement.userName;
       const movementUserName =
         rawMovementUserName && rawMovementUserName !== 'Sistema'
           ? rawMovementUserName
           : linkedRental?.createdByName ?? linkedRental?.createdBy ?? rawMovementUserName ?? 'Sistema';
       const responsibleName =
-        isReservation && inventoryStatus !== 'confirmado'
+        isReservation && !inventoryHandled
           ? 'Por alistar'
+          : isReservation && inventoryStatus === 'salio'
+          ? linkedRental?.operational?.inventoryDispatchedByName ?? linkedRental?.operational?.inventoryConfirmedByName ?? movementUserName
           : isReservation
           ? linkedRental?.operational?.inventoryConfirmedByName ?? movementUserName
           : movementUserName;
       const responsibleRole =
-        isReservation && inventoryStatus !== 'confirmado'
+        isReservation && !inventoryHandled
           ? inventoryStatus === 'enviado'
             ? 'Inventario recibido'
             : 'Inventario pendiente'
+          : isReservation && inventoryStatus === 'salio'
+          ? linkedRental?.operational?.inventoryDispatchedByRole ?? 'Salida de almacen'
           : isReservation
           ? linkedRental?.operational?.inventoryConfirmedByRole ?? linkedRental?.createdByRole ?? movement.userRole ?? 'Inventario'
           : movement.userRole && movement.userRole !== 'Operacion'
@@ -1132,7 +1179,7 @@ function InventoryDashboardSection({
         itemId: movement.itemId ?? '',
         imageDataUrl: movement.imageDataUrl ?? itemRow?.imageDataUrl ?? null,
         sku: String(movement.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
-        reference: movement.reference ?? movement.id,
+        reference: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.reference ?? movement.id,
         deltaUnits: Number(movement.deltaUnits ?? 0),
         beforeStock: Number(movement.beforeAvailableStock ?? movement.beforeTotalStock ?? 0),
         afterStock: Number(movement.afterAvailableStock ?? movement.afterTotalStock ?? 0),
@@ -1143,12 +1190,14 @@ function InventoryDashboardSection({
         observation: movement.reason ?? movement.detail ?? '-',
         valueAmount: Number(movement.valueAmount ?? 0),
         status: isReservation ? inventoryStatus : movement.status ?? 'aprobado',
-        isPendingReservation: isReservation && !['confirmado', 'anulado'].includes(inventoryStatus),
+        isPendingReservation: isReservation && !['confirmado', 'salio', 'devuelto', 'anulado'].includes(inventoryStatus),
       };
     });
 
     const serviceOrderRows = rentalsForTrace.flatMap((rental) => {
       const reference = rental.orderCode ?? rental.id;
+      const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
+      const displayReference = contract?.contractCode ?? rental.contractCode ?? reference;
       return (rental.items ?? [])
         .map((line, index) => {
           const key = `${reference}::${line.itemId ?? ''}`;
@@ -1168,24 +1217,24 @@ function InventoryDashboardSection({
             itemId: line.itemId ?? '',
             imageDataUrl: itemRow?.imageDataUrl ?? null,
             sku: String(line.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
-            reference,
+            reference: displayReference,
             deltaUnits: -quantity,
             beforeStock: afterStock + quantity,
             afterStock,
-            userName: rental.operational?.inventoryStatus === 'confirmado'
+            userName: ['confirmado', 'salio', 'devuelto'].includes(rental.operational?.inventoryStatus)
               ? rental.operational?.inventoryConfirmedByName ?? rental.createdByName ?? rental.createdBy ?? 'Sistema'
               : 'Por alistar',
-            userRole: rental.operational?.inventoryStatus === 'confirmado'
+            userRole: ['confirmado', 'salio', 'devuelto'].includes(rental.operational?.inventoryStatus)
               ? rental.operational?.inventoryConfirmedByRole ?? rental.createdByRole ?? 'Inventario'
               : rental.operational?.inventoryStatus === 'enviado'
               ? 'Inventario recibido'
               : 'Inventario pendiente',
             registeredByName: rental.createdByName ?? rental.createdBy ?? 'Sistema',
             registeredByRole: rental.createdByRole ?? 'Inventario',
-            observation: `Reservado para ${reference} - ${rental.customerName ?? 'Cliente'}`,
+            observation: `Reservado para contrato ${displayReference} - ${rental.customerName ?? 'Cliente'}`,
             valueAmount: Number(line.lineTotalBs ?? 0),
             status: rental.operational?.inventoryStatus ?? 'pendiente',
-            isPendingReservation: !['confirmado', 'anulado'].includes(rental.operational?.inventoryStatus ?? 'pendiente'),
+            isPendingReservation: !['confirmado', 'salio', 'devuelto', 'anulado'].includes(rental.operational?.inventoryStatus ?? 'pendiente'),
           };
         })
         .filter(Boolean);
@@ -1193,7 +1242,7 @@ function InventoryDashboardSection({
 
     return [...persistedRows, ...serviceOrderRows]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [activeRentals, cancelledRentals, inventoryMovements, inventoryRows]);
+  }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
 
   const movementSelectableRows = useMemo(() => {
     const text = normalizeText(movementItemQuery);
@@ -2286,6 +2335,25 @@ function InventoryDashboardSection({
     });
   };
 
+  const handleInventoryOrderAction = async (row) => {
+    try {
+      if (row.inventoryAction === 'return') {
+        openReceivingModal(row);
+        return;
+      }
+      const inventoryStatus = row.inventoryAction === 'dispatch' ? 'salio' : 'confirmado';
+      await onUpdateOrderOperational?.({ id: row.rentalId, inventoryStatus });
+      showMessage(
+        inventoryStatus === 'salio'
+          ? `Salida registrada para ${row.orderCode}.`
+          : `${row.orderCode} marcada como lista para salir.`,
+      );
+    } catch (error) {
+      setFeedback(error?.message || 'No se pudo actualizar el estado de la orden.');
+      setFeedbackType('error');
+    }
+  };
+
   const updateReceivingLine = (itemId, field, value) => {
     setReceivingModal((current) => {
       if (!current) return current;
@@ -2634,14 +2702,27 @@ function InventoryDashboardSection({
           {isMovementsModule ? (
             <article className="inventory-ops-card">
               <header className="inventory-ops-head">
-                <h3>Ordenes operativas para asignar y alistar</h3>
+                <div>
+                  <h3>Control semanal de ordenes operativas</h3>
+                  <span>Alistamiento, salida y retorno de inventario en un solo documento.</span>
+                </div>
+                <div className="inventory-week-actions">
+                  <label>
+                    Semana desde
+                    <input type="date" value={inventoryWeekStart} onChange={(event) => setInventoryWeekStart(getMondayDateKey(event.target.value))} />
+                  </label>
+                  <button type="button" className="primary-button" onClick={openInventoryWeekDocument}>
+                    Ver documento semanal
+                  </button>
+                </div>
               </header>
               <div className="inventory-ops-list">
-                {prepOrderRows.slice(0, 6).map((row) => (
+                {weeklyPrepOrderRows.map((row) => (
                   <div key={row.id} className="inventory-ops-row">
                     <div>
-                      <strong>{row.orderCode}</strong>
+                      <strong>Contrato {row.contractCode}</strong>
                       <span>{row.customerName}</span>
+                      <span className="inventory-ops-address">{row.address}</span>
                     </div>
                     <div>
                       <strong>{row.itemsText}</strong>
@@ -2653,29 +2734,22 @@ function InventoryDashboardSection({
                     </div>
                     <div className="inventory-ops-state">
                       <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
-                      <span>{row.inventoryStatus === 'confirmado' ? 'Listo' : row.inventoryStatus === 'enviado' ? 'Recibida' : 'Pendiente'}</span>
+                      <span>{row.inventoryStatus === 'salio' ? 'Salio' : row.inventoryStatus === 'confirmado' ? 'Listo' : 'Pendiente'}</span>
                     </div>
                     <div className="inventory-ops-actions">
                       <button
                         type="button"
                         className="link-button"
-                        onClick={() => openInventoryOrderDocument(row)}
-                      >
-                        Ver documento
-                      </button>
-                      <button
-                        type="button"
-                        className="link-button"
                         disabled={!row.canConfirmInventory}
-                        onClick={() => onUpdateOrderOperational?.({ id: row.rentalId, inventoryStatus: 'confirmado' })}
+                        onClick={() => handleInventoryOrderAction(row)}
                       >
                         {row.inventoryActionLabel}
                       </button>
                     </div>
                   </div>
                 ))}
-                {prepOrderRows.length === 0 ? (
-                  <p className="status">No hay ordenes activas para alistamiento en este momento.</p>
+                {weeklyPrepOrderRows.length === 0 ? (
+                  <p className="status">No hay entregas ni recojos programados para la semana seleccionada.</p>
                 ) : null}
               </div>
             </article>
@@ -4114,7 +4188,7 @@ function InventoryDashboardSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>Vista previa de la orden operativa de inventario.</p>
+                <p>Vista previa del control operativo de inventario.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>
                 x

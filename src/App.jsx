@@ -482,7 +482,7 @@ function App() {
             onOpenImage={controller.setImagePreview}
             onUpdateOrderOperational={controller.handleUpdateOrderOperational}
             onReceiveReturnedOrder={controller.handleReceiveReturnedOrder}
-            onPrintInventoryOrderDocument={controller.handlePrintInventoryOrderDocument}
+            onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
           />
         )}
 

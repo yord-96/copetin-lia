@@ -9819,6 +9819,37 @@ textarea:focus {
   font-size: 1rem;
 }
 
+.inventory-ops-head > div:first-child > span {
+  display: block;
+  margin-top: 0.18rem;
+  color: #7b84ab;
+  font-size: 0.72rem;
+}
+
+.inventory-week-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.inventory-week-actions label {
+  display: grid;
+  gap: 0.2rem;
+  color: #66708f;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.inventory-week-actions input {
+  min-height: 2.15rem;
+  border: 1px solid #dce2ef;
+  border-radius: 0.52rem;
+  padding: 0.38rem 0.58rem;
+  background: #fff;
+  color: #273063;
+  font: inherit;
+}
+
 .inventory-ops-list {
   display: grid;
   gap: 0.34rem;
@@ -9838,12 +9869,20 @@ textarea:focus {
 .inventory-ops-row strong {
   display: block;
   color: #2a345f;
-  font-size: 0.76rem;
+  font-size: 0.84rem;
 }
 
 .inventory-ops-row span {
   color: #7b84ab;
-  font-size: 0.69rem;
+  font-size: 0.75rem;
+}
+
+.inventory-ops-row .inventory-ops-address {
+  margin-top: 0.18rem;
+  color: #4f5875;
+  font-size: 0.73rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .inventory-ops-priority {
@@ -9897,6 +9936,12 @@ textarea:focus {
 }
 
 @media (max-width: 760px) {
+  .inventory-ops-head,
+  .inventory-week-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .inventory-ops-row {
     grid-template-columns: 1fr;
   }
