@@ -5639,39 +5639,43 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
     <meta charset="utf-8" />
     <title>Control semanal termico ${escapeHtml(weekStart)}</title>
     <style>
-      @page { size: 80mm auto; margin: 3mm; }
+      @page { size: 80mm auto; margin: 1.5mm 2mm; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #000; background: #fff; font: 700 11px Arial, sans-serif; }
-      .ti-receipt { width: 74mm; margin: 0 auto; }
-      .ti-header { display: grid; grid-template-columns: 12mm 1fr; gap: 3mm; align-items: center; padding-bottom: 1.5mm; border-bottom: .35mm dashed #000; }
-      .ti-mark { width: 11mm; height: 11mm; display: grid; place-items: center; border: .7mm solid #000; border-radius: 50%; font-size: 20px; font-weight: 900; }
-      .ti-header h1 { margin: 0; font-size: 18px; line-height: 1; }
-      .ti-header p { margin: 1mm 0 0; font-size: 9px; }
-      .ti-title { padding: 2mm 0 1mm; border-bottom: .3mm solid #000; }
-      .ti-title h2 { margin: 0; font-size: 16px; line-height: 1.05; }
-      .ti-title p { margin: 1mm 0 0; font-size: 10px; line-height: 1.18; }
-      .ti-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; padding: 1.5mm 0; border-bottom: .35mm dashed #000; }
+      html, body { width: 80mm; min-height: 0; margin: 0; padding: 0; }
+      body { color: #000; background: #fff; font: 700 10.5px Arial, sans-serif; }
+      .ti-receipt { width: 76mm; margin: 0; padding: 0; }
+      .ti-header { display: grid; grid-template-columns: 11mm 1fr; gap: 2mm; align-items: center; padding-bottom: 1mm; border-bottom: .35mm dashed #000; }
+      .ti-mark { width: 10mm; height: 10mm; display: grid; place-items: center; border: .7mm solid #000; border-radius: 50%; font-size: 18px; font-weight: 900; }
+      .ti-header h1 { margin: 0; font-size: 17px; line-height: 1; }
+      .ti-header p { margin: .7mm 0 0; font-size: 8.5px; }
+      .ti-title { padding: 1.4mm 0 .8mm; border-bottom: .3mm solid #000; }
+      .ti-title h2 { margin: 0; font-size: 14px; line-height: 1.04; }
+      .ti-title p { margin: .8mm 0 0; font-size: 9.5px; line-height: 1.12; }
+      .ti-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; padding: 1mm 0; border-bottom: .35mm dashed #000; }
       .ti-summary small { display: block; font-size: 9px; }
       .ti-summary strong { display: block; margin-top: .6mm; font-size: 12px; }
-      .ti-order { padding: 1.6mm 0; border-bottom: .35mm dashed #000; break-inside: avoid; page-break-inside: avoid; }
-      .ti-order p { margin: .7mm 0; line-height: 1.15; }
+      .ti-order { padding: 1mm 0; border-bottom: .35mm dashed #000; break-inside: auto; page-break-inside: auto; }
+      .ti-order p { margin: .45mm 0; line-height: 1.1; }
       .ti-order-top { display: grid; grid-template-columns: 7mm 1fr; gap: 2mm; align-items: center; }
       .ti-order-top span { width: 6mm; height: 6mm; display: grid; place-items: center; color: #fff; background: #000; border-radius: .7mm; font-size: 15px; }
       .ti-order-top strong, .ti-order-top b { font-size: 12px; line-height: 1.1; }
       .ti-order-top b { grid-column: 2; justify-self: end; }
       .ti-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 3mm; }
       .ti-grid p:nth-child(3) { grid-column: 1 / -1; }
-      .ti-items { margin-top: 1mm; }
-      .ti-items.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8mm; }
-      .ti-items.is-split table:first-child { border-right: .25mm solid #000; padding-right: 1.4mm; }
+      .ti-items { margin-top: .7mm; break-inside: auto; page-break-inside: auto; }
+      .ti-items.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4mm; }
+      .ti-items.is-split table:first-child { border-right: .25mm solid #000; padding-right: 1mm; }
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      th { padding: .7mm .5mm; border-bottom: .25mm solid #000; font-size: 9px; text-align: left; }
-      td { padding: .45mm .5mm; font-size: 9.3px; line-height: 1.05; vertical-align: top; }
+      th { padding: .5mm .4mm; border-bottom: .25mm solid #000; font-size: 8.5px; text-align: left; }
+      td { padding: .3mm .4mm; font-size: 8.8px; line-height: 1.02; vertical-align: top; }
       th:first-child, td:first-child { width: 6mm; text-align: center; }
       th:last-child, td:last-child { width: 10mm; text-align: right; }
-      .ti-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 2mm; font-size: 10px; }
-      .ti-footer { padding: 2mm 0; text-align: center; font-size: 11px; }
-      .ti-footer strong { display: block; margin-top: 1.5mm; }
+      .ti-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; margin-top: 1.2mm; font-size: 9.5px; }
+      .ti-footer { padding: 1.4mm 0 0; text-align: center; font-size: 10px; }
+      .ti-footer strong { display: block; margin-top: 1mm; }
+      @media print {
+        html, body, .ti-receipt { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+      }
     </style>
   </head>
   <body>
@@ -5704,55 +5708,55 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
     <meta charset="utf-8" />
     <title>Control semanal de inventario ${escapeHtml(weekStart)}</title>
     <style>
-      @page { size: A4 portrait; margin: 6mm; }
+      @page { size: legal portrait; margin: 6mm; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #09255a; background: #eef1f6; font: 8.2px Arial, sans-serif; }
-      .wi-sheet { width: 100%; max-width: 198mm; min-height: 285mm; margin: 0 auto; padding: 4.5mm; background: #fff; box-shadow: 0 3mm 12mm rgba(9, 37, 90, .12); }
-      .wi-header { display: grid; grid-template-columns: 1fr 54mm; gap: 5mm; align-items: center; padding-bottom: 3mm; border-bottom: .35mm solid #09255a; }
-      .wi-brand { display: flex; align-items: center; gap: 4mm; }
-      .wi-brand-mark { width: 13mm; height: 13mm; display: grid; place-items: center; border: .7mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 18px Arial, sans-serif; }
-      .wi-brand h1 { margin: 0; color: #09255a; font: 900 21px Arial, sans-serif; letter-spacing: 0; }
-      .wi-brand p { margin: .6mm 0 0; color: #ef5000; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-      .wi-period { padding: 2.5mm 3mm; border: .3mm solid #09255a; border-radius: 2.5mm; text-align: center; }
-      .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #09255a; font-size: 6.4px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-      .wi-period strong { display: block; margin-top: .7mm; color: #ef5000; font-size: 11px; line-height: 1.18; }
-      .wi-intro { display: grid; grid-template-columns: 1fr 39mm; gap: 5mm; align-items: center; margin: 3mm 0 2mm; }
-      .wi-intro h2 { margin: 0; color: #09255a; font-size: 14.5px; line-height: 1.08; text-transform: uppercase; }
-      .wi-intro p { margin: .8mm 0 0; max-width: 115mm; color: #3c4967; font-size: 8.4px; line-height: 1.2; }
-      .wi-count { display: grid; place-items: center; min-height: 15mm; border-radius: 2.5mm; color: #fff; background: #ef5000; font-size: 9px; font-weight: 900; text-transform: uppercase; }
-      .wi-count b { display: block; margin-bottom: -1mm; font-size: 21px; line-height: 1; }
-      .wi-order { margin-top: 2mm; border: .22mm solid #d8deeb; border-radius: 2.5mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-      .wi-order-head { display: grid; grid-template-columns: 35mm 41mm 41mm 1fr 24mm; gap: 2mm; align-items: center; padding: 1.8mm 2.2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
-      .wi-order-head strong { display: block; margin-top: .4mm; color: #061b48; font-size: 8.3px; line-height: 1.13; text-transform: uppercase; }
-      .wi-order-number { display: flex; align-items: center; gap: 2mm; }
-      .wi-order-number > span { width: 9mm; height: 11mm; display: grid; place-items: center; border-radius: 2.2mm 2.2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 15px; font-weight: 900; }
-      .wi-status { display: inline-block !important; width: max-content; padding: .8mm 1.5mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 7.4px !important; }
+      body { margin: 0; color: #09255a; background: #eef1f6; font: 10px Arial, sans-serif; }
+      .wi-sheet { width: 100%; max-width: 204mm; min-height: 344mm; margin: 0 auto; padding: 5mm; background: #fff; box-shadow: 0 3mm 12mm rgba(9, 37, 90, .12); }
+      .wi-header { display: grid; grid-template-columns: 1fr 62mm; gap: 6mm; align-items: center; padding-bottom: 3.5mm; border-bottom: .45mm solid #09255a; }
+      .wi-brand { display: flex; align-items: center; gap: 4.5mm; }
+      .wi-brand-mark { width: 15mm; height: 15mm; display: grid; place-items: center; border: .8mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 22px Arial, sans-serif; }
+      .wi-brand h1 { margin: 0; color: #09255a; font: 900 25px Arial, sans-serif; letter-spacing: 0; }
+      .wi-brand p { margin: .8mm 0 0; color: #ef5000; font-size: 10.5px; font-weight: 800; text-transform: uppercase; }
+      .wi-period { padding: 3mm 3.5mm; border: .35mm solid #09255a; border-radius: 2.5mm; text-align: center; }
+      .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #09255a; font-size: 7.4px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
+      .wi-period strong { display: block; margin-top: .8mm; color: #ef5000; font-size: 13px; line-height: 1.18; }
+      .wi-intro { display: grid; grid-template-columns: 1fr 44mm; gap: 6mm; align-items: center; margin: 3.5mm 0 2.5mm; }
+      .wi-intro h2 { margin: 0; color: #09255a; font-size: 17px; line-height: 1.08; text-transform: uppercase; }
+      .wi-intro p { margin: 1mm 0 0; max-width: 130mm; color: #3c4967; font-size: 10px; line-height: 1.22; }
+      .wi-count { display: grid; place-items: center; min-height: 17mm; border-radius: 2.5mm; color: #fff; background: #ef5000; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+      .wi-count b { display: block; margin-bottom: -1mm; font-size: 25px; line-height: 1; }
+      .wi-order { margin-top: 2.4mm; border: .25mm solid #d8deeb; border-radius: 2.5mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+      .wi-order-head { display: grid; grid-template-columns: 38mm 43mm 43mm 1fr 26mm; gap: 2.5mm; align-items: center; padding: 2mm 2.5mm; background: #fbfcff; border-bottom: .25mm solid #d8deeb; }
+      .wi-order-head strong { display: block; margin-top: .5mm; color: #061b48; font-size: 9.5px; line-height: 1.14; text-transform: uppercase; }
+      .wi-order-number { display: flex; align-items: center; gap: 2.2mm; }
+      .wi-order-number > span { width: 10mm; height: 12.5mm; display: grid; place-items: center; border-radius: 2.2mm 2.2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 17px; font-weight: 900; }
+      .wi-status { display: inline-block !important; width: max-content; padding: .9mm 1.6mm; border: .25mm solid #ef5000; border-radius: .9mm; color: #ef5000 !important; background: #fff; font-size: 8.2px !important; }
       .wi-order-meta { display: grid; grid-template-columns: 1.25fr 1.25fr .85fr 1fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
-      .wi-order-meta > div { min-height: 9mm; padding: 1.5mm 3mm 1.3mm 6mm; border-right: .18mm solid #d8deeb; }
+      .wi-order-meta > div { min-height: 10.5mm; padding: 1.7mm 3.4mm 1.5mm 6.5mm; border-right: .2mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
-      .wi-order-meta strong { display: block; margin-top: .4mm; color: #061b48; font-size: 7.6px; line-height: 1.12; }
+      .wi-order-meta strong { display: block; margin-top: .5mm; color: #061b48; font-size: 8.7px; line-height: 1.13; }
       .wi-tables { width: 100%; }
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .3mm solid #09255a; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .wi-table th { padding: .85mm 1mm; color: #fff; background: #09255a; font-size: 5.7px; line-height: 1; text-align: left; }
-      .wi-table td { height: 5.7mm; padding: .45mm .8mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 6.8px; }
+      .wi-table th { padding: 1mm 1.1mm; color: #fff; background: #09255a; font-size: 6.6px; line-height: 1; text-align: left; }
+      .wi-table td { height: 6.9mm; padding: .6mm .9mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 7.8px; }
       .wi-table tr:last-child td { border-bottom: 0; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 13mm; text-align: center; }
-      .wi-table th:last-child, .wi-table td:last-child { width: 26mm; border-right: 0; }
-      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 8mm; }
-      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 16mm; }
-      .wi-index { width: 5.5mm; text-align: center !important; }
-      .wi-number { width: 10mm; text-align: center !important; }
-      .wi-product { display: grid; grid-template-columns: 6.4mm minmax(0, 1fr); gap: 1mm; align-items: center; }
-      .wi-product img, .wi-no-image { width: 5.7mm; height: 5.7mm; border: .18mm solid #d8deea; border-radius: .8mm; object-fit: cover; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 14mm; text-align: center; }
+      .wi-table th:last-child, .wi-table td:last-child { width: 28mm; border-right: 0; }
+      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 9mm; }
+      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 17mm; }
+      .wi-index { width: 6mm; text-align: center !important; }
+      .wi-number { width: 11mm; text-align: center !important; }
+      .wi-product { display: grid; grid-template-columns: 7.2mm minmax(0, 1fr); gap: 1.1mm; align-items: center; }
+      .wi-product img, .wi-no-image { width: 6.5mm; height: 6.5mm; border: .18mm solid #d8deea; border-radius: .8mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 6.3px; line-height: 1.1; text-transform: uppercase; }
-      .wi-check i { display: inline-block; width: 3.2mm; height: 3.2mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
-      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 1.7mm 4mm; color: #09255a; font-size: 6.7px; }
+      .wi-product strong { color: #061b48; font-size: 7.2px; line-height: 1.12; text-transform: uppercase; }
+      .wi-check i { display: inline-block; width: 3.8mm; height: 3.8mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
+      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 2.1mm 4.5mm; color: #09255a; font-size: 7.6px; }
       .wi-empty-order { padding: 5mm; color: #7b8499; text-align: center; }
       .wi-empty { padding: 20mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
-      .wi-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 2.5mm; padding: 3mm 6mm; color: #fff; background: #09255a; font-size: 9px; }
+      .wi-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 3mm; padding: 3.5mm 6mm; color: #fff; background: #09255a; font-size: 10px; }
       @media print {
         body { background: #fff; }
         .wi-sheet { max-width: none; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
