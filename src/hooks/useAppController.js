@@ -1356,10 +1356,10 @@ export const useAppController = () => {
     }
   };
 
-  const handlePrintInventoryWeekDocument = async ({ weekStart, format }) => {
+  const handlePrintInventoryWeekDocument = async ({ weekStart, format, rentalId, orderCode, contractCode }) => {
     setError('');
     try {
-      return await api.printer.printInventoryWeek({ weekStart, format });
+      return await api.printer.printInventoryWeek({ weekStart, format, rentalId, orderCode, contractCode });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir la hoja semanal de inventario.');

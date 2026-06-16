@@ -764,6 +764,28 @@ function InventoryDashboardSection({
     }
   };
 
+  const openInventorySingleOrderDocument = async (row) => {
+    try {
+      const preview = await onPrintInventoryWeekDocument?.({
+        weekStart: inventoryWeekStart,
+        format: 'individual',
+        rentalId: row.rentalId,
+        orderCode: row.orderCode,
+        contractCode: row.contractCode,
+      });
+      if (preview?.html) {
+        setDocumentPreview({
+          title: preview.title ?? `Inventario ${row.contractCode}`,
+          html: preview.html,
+          format: 'individual',
+        });
+      }
+    } catch (error) {
+      setFeedback(error.message || 'No se pudo abrir la impresion individual.');
+      setFeedbackType('error');
+    }
+  };
+
   const printInventoryPreview = () => {
     const frame = document.getElementById('inventory-document-preview-frame');
     frame?.contentWindow?.focus();
@@ -2743,6 +2765,13 @@ function InventoryDashboardSection({
                     <div className="inventory-ops-actions">
                       <button
                         type="button"
+                        className="ghost-button"
+                        onClick={() => openInventorySingleOrderDocument(row)}
+                      >
+                        Impresion individual
+                      </button>
+                      <button
+                        type="button"
                         className="link-button"
                         disabled={!row.canConfirmInventory}
                         onClick={() => handleInventoryOrderAction(row)}
@@ -4192,7 +4221,13 @@ function InventoryDashboardSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>{documentPreview.format === 'thermal' ? 'Formato termico 80mm para Epson TM-T20.' : 'Vista previa del control operativo de inventario.'}</p>
+                <p>
+                  {documentPreview.format === 'thermal'
+                    ? 'Formato termico 80mm para Epson TM-T20.'
+                    : documentPreview.format === 'individual'
+                    ? 'Formato individual media hoja carta.'
+                    : 'Vista previa del control operativo de inventario.'}
+                </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>
                 x
