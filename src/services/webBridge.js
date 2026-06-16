@@ -5847,45 +5847,47 @@ const buildWeeklyInventoryHtml = ({
     <meta charset="utf-8" />
     <title>Inventario individual ${escapeHtml(documentCode)}</title>
     <style>
-      @page { size: 8.5in 5.5in; margin: 5mm; }
+      @page { size: 5.5in 8.5in; margin: 5mm; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #09255a; background: #eef1f6; font: 10px Arial, sans-serif; }
-      .wi-sheet { width: 100%; max-width: 204mm; min-height: 0; margin: 0 auto; padding: 3.5mm; background: #fff; box-shadow: 0 2mm 8mm rgba(9, 37, 90, .12); }
-      .wi-header { display: grid; grid-template-columns: 1fr 52mm; gap: 5mm; align-items: center; padding-bottom: 2.2mm; border-bottom: .4mm solid #09255a; }
+      html, body { width: 5.5in; min-height: 8.5in; margin: 0; padding: 0; }
+      body { color: #09255a; background: #eef1f6; font: 10px Arial, sans-serif; }
+      .wi-sheet { width: 5.5in; max-width: 5.5in; min-height: 8.5in; margin: 0; padding: 3.5mm; background: #fff; box-shadow: 0 2mm 8mm rgba(9, 37, 90, .12); }
+      .wi-header { display: grid; grid-template-columns: 1fr 42mm; gap: 4mm; align-items: center; padding-bottom: 2.2mm; border-bottom: .4mm solid #09255a; }
       .wi-brand { display: flex; align-items: center; gap: 3mm; }
       .wi-brand-mark { width: 11mm; height: 11mm; display: grid; place-items: center; border: .65mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 17px Arial, sans-serif; }
-      .wi-brand h1 { margin: 0; color: #09255a; font: 900 19px Arial, sans-serif; letter-spacing: 0; }
+      .wi-brand h1 { margin: 0; color: #09255a; font: 900 17px Arial, sans-serif; letter-spacing: 0; }
       .wi-brand p { margin: .5mm 0 0; color: #ef5000; font-size: 8.5px; font-weight: 800; text-transform: uppercase; }
       .wi-period { padding: 2mm 2.4mm; border: .3mm solid #09255a; border-radius: 2mm; text-align: center; }
       .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #09255a; font-size: 7.2px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-      .wi-period strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 10.5px; line-height: 1.15; }
+      .wi-period strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 9px; line-height: 1.15; }
       .wi-intro { display: grid; grid-template-columns: 1fr auto; gap: 4mm; align-items: center; margin: 2.2mm 0; }
       .wi-intro h2 { margin: 0; color: #09255a; font-size: 13.5px; line-height: 1.05; text-transform: uppercase; }
       .wi-intro p { margin: .6mm 0 0; color: #3c4967; font-size: 8.2px; line-height: 1.15; }
       .wi-count { display: grid; place-items: center; min-width: 24mm; min-height: 11mm; border-radius: 2mm; color: #fff; background: #ef5000; font-size: 8px; font-weight: 900; text-transform: uppercase; }
       .wi-count b { display: block; margin-bottom: -.7mm; font-size: 17px; line-height: 1; }
       .wi-order { margin-top: 0; border: .25mm solid #d8deeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-      .wi-order-head { display: grid; grid-template-columns: 34mm 42mm 42mm 1fr 31mm; gap: 2mm; align-items: center; padding: 1.6mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
-      .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 9px; line-height: 1.05; text-transform: uppercase; }
+      .wi-order-head { display: grid; grid-template-columns: 28mm 1fr 1fr; gap: 1.8mm; align-items: center; padding: 1.6mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-head > div:nth-child(4), .wi-order-head > div:nth-child(5) { grid-column: span 1; }
+      .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 8.4px; line-height: 1.05; text-transform: uppercase; }
       .wi-order-number { display: flex; align-items: center; gap: 1.8mm; }
       .wi-order-number > span { width: 8.5mm; height: 10mm; display: grid; place-items: center; border-radius: 2mm 2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 14px; font-weight: 900; }
       .wi-status { display: inline-block !important; width: max-content; padding: .7mm 1.2mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 7.5px !important; }
       .wi-operation { display: block; margin-bottom: .6mm; color: #09255a !important; font-size: 8px !important; line-height: 1.05 !important; }
-      .wi-order-meta { display: grid; grid-template-columns: 1.2fr 1.2fr .8fr .9fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
       .wi-order-meta > div { min-height: 8.4mm; padding: 1.2mm 2.5mm 1mm 5mm; border-right: .18mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
       .wi-order-meta strong { display: block; margin-top: .35mm; color: #061b48; font-size: 8.5px; line-height: 1.08; }
       .wi-tables { width: 100%; }
-      .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-      .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; }
+      .wi-tables.is-split { display: block; }
+      .wi-tables.is-split .wi-table:first-child { border-right: 0; border-bottom: .25mm solid #09255a; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
       .wi-table th { padding: .75mm .8mm; color: #fff; background: #09255a; font-size: 6px; line-height: 1; text-align: left; }
       .wi-table td { height: 5.8mm; padding: .4mm .65mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 7.2px; }
       .wi-table tr:last-child td { border-bottom: 0; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 11mm; text-align: center; }
-      .wi-table th:last-child, .wi-table td:last-child { width: 24mm; border-right: 0; }
-      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 7.2mm; }
-      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 14mm; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 9mm; text-align: center; }
+      .wi-table th:last-child, .wi-table td:last-child { width: 17mm; border-right: 0; }
+      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 9mm; }
+      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 17mm; }
       .wi-index { width: 5mm; text-align: center !important; }
       .wi-number { width: 9mm; text-align: center !important; }
       .wi-product { display: grid; grid-template-columns: 6mm minmax(0, 1fr); gap: .8mm; align-items: center; }
@@ -5893,11 +5895,11 @@ const buildWeeklyInventoryHtml = ({
       .wi-no-image { display: block; background: #f6f7fa; }
       .wi-product strong { color: #061b48; font-size: 6.7px; line-height: 1.05; text-transform: uppercase; }
       .wi-check i { display: inline-block; width: 3.2mm; height: 3.2mm; border: .2mm solid #8c95a8; border-radius: .3mm; }
-      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; padding: 1.5mm 3.2mm; color: #09255a; font-size: 7.2px; }
+      .wi-order-foot { display: grid; grid-template-columns: 1fr; gap: 1.8mm; padding: 1.8mm 3.2mm; color: #09255a; font-size: 7.2px; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
-        body { background: #fff; }
-        .wi-sheet { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+        html, body { width: 5.5in !important; min-height: 8.5in !important; margin: 0 !important; padding: 0 !important; background: #fff; overflow: visible !important; }
+        .wi-sheet { width: 5.5in !important; max-width: 5.5in !important; min-height: 8.5in !important; margin: 0 !important; padding: 0 !important; box-shadow: none; }
       }
     </style>
   </head>

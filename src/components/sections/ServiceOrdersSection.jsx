@@ -5986,24 +5986,26 @@ function ServiceOrdersSection({
                         Fecha devolucion / recojo *
                         <input type="date" value={draft.pickupDate} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
                       </label>
+                      <>
+                        <label>
+                          {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento inicio' : 'Ventana entrega inicio'}
+                          <input type="time" value={draft.deliveryWindowStart} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
+                        </label>
+                        <label>
+                          {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento fin' : 'Ventana entrega fin'}
+                          <input type="time" value={draft.deliveryWindowEnd} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
+                        </label>
+                        <label>
+                          {draft.logisticsMode === 'recojo' ? 'Ventana devolucion inicio' : 'Ventana recojo inicio'}
+                          <input type="time" value={draft.pickupWindowStart} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
+                        </label>
+                        <label>
+                          {draft.logisticsMode === 'recojo' ? 'Ventana devolucion fin' : 'Ventana recojo fin'}
+                          <input type="time" value={draft.pickupWindowEnd} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
+                        </label>
+                      </>
                       {draft.logisticsMode === 'envio' ? (
                         <>
-                          <label>
-                            Ventana entrega inicio
-                            <input type="time" value={draft.deliveryWindowStart} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
-                          </label>
-                          <label>
-                            Ventana entrega fin
-                            <input type="time" value={draft.deliveryWindowEnd} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
-                          </label>
-                          <label>
-                            Ventana recojo inicio
-                            <input type="time" value={draft.pickupWindowStart} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
-                          </label>
-                          <label>
-                            Ventana recojo fin
-                            <input type="time" value={draft.pickupWindowEnd} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
-                          </label>
                           <label>
                             Chofer sugerido
                             <select value={draft.driverId} onChange={(event) => setDraftField('driverId', event.target.value)}>
