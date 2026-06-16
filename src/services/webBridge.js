@@ -5471,7 +5471,42 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       ? `${formatDocumentDate(date)} | ${String(start || '--:--')} - ${String(end || '--:--')}`
       : 'Fuera de esta semana'
   );
-  const weeklyOrders = (rentals ?? [])
+  const formatOperationDate = (value) => escapeHtml(formatDocumentDate(value));
+  const getWeekOperations = (deliveryDate, pickupDate) => {
+    const operations = [];
+    if (dateInWeek(deliveryDate)) {
+      operations.push({ type: 'entrega', label: `ENTREGA ${formatOperationDate(deliveryDate)}` });
+    }
+    if (dateInWeek(pickupDate)) {
+      operations.push({ type: 'recojo', label: `RECOJO ${formatOperationDate(pickupDate)}` });
+    }
+    return operations;
+  };
+  const getOperationSummary = (operations) => {
+    if (!operations?.length) return 'Fuera de semana';
+    return operations.map((operation) => operation.label).join(' + ');
+  };
+  const getWeeklyDedupeKey = ({ rental, contract }) => {
+    const contractCode = String(contract?.contractCode ?? rental.contractCode ?? '').trim();
+    if (contractCode) return `contract-code:${contractCode}`;
+    const contractKey = String(contract?.id ?? rental.contractId ?? '').trim();
+    if (contractKey) return `contract:${contractKey}`;
+    return `rental:${rental.id ?? rental.orderCode ?? `${rental.customerName ?? ''}-${rental.rentalDate ?? ''}-${rental.dueDate ?? ''}`}`;
+  };
+  const mergeOperations = (first = [], second = []) => {
+    const byType = new Map();
+    [...first, ...second].forEach((operation) => {
+      if (!operation?.type) return;
+      byType.set(operation.type, operation);
+    });
+    return [...byType.values()].sort((a, b) => (a.type === 'entrega' ? -1 : 1) - (b.type === 'entrega' ? -1 : 1));
+  };
+  const isNewerRental = (candidate, current) => {
+    const candidateTime = new Date(candidate?.updatedAt ?? candidate?.createdAt ?? 0).getTime();
+    const currentTime = new Date(current?.updatedAt ?? current?.createdAt ?? 0).getTime();
+    return Number.isFinite(candidateTime) && candidateTime > (Number.isFinite(currentTime) ? currentTime : 0);
+  };
+  const weeklyOrderEntries = (rentals ?? [])
     .filter((rental) => !rental.deletedAt && rental.status !== 'cancelled')
     .map((rental) => {
       const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
@@ -5480,6 +5515,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
       const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate;
       const pickupDate = contract?.pickupDate ?? deliveryBack?.scheduledDate ?? rental.dueDate;
+      const operations = getWeekOperations(deliveryDate, pickupDate);
       return {
         rental,
         contract,
@@ -5487,10 +5523,36 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
         deliveryBack,
         deliveryDate,
         pickupDate,
-        matchesWeek: dateInWeek(deliveryDate) || dateInWeek(pickupDate),
+        operations,
+        operationSummary: getOperationSummary(operations),
+        matchesWeek: operations.length > 0,
       };
     })
-    .filter((entry) => entry.matchesWeek)
+    .filter((entry) => entry.matchesWeek);
+  const weeklyOrdersByKey = new Map();
+  weeklyOrderEntries.forEach((entry) => {
+    const key = getWeeklyDedupeKey(entry);
+    const existing = weeklyOrdersByKey.get(key);
+    if (!existing) {
+      weeklyOrdersByKey.set(key, entry);
+      return;
+    }
+    const mergedOperations = mergeOperations(existing.operations, entry.operations);
+    if (isNewerRental(entry.rental, existing.rental)) {
+      weeklyOrdersByKey.set(key, {
+        ...entry,
+        operations: mergedOperations,
+        operationSummary: getOperationSummary(mergedOperations),
+      });
+      return;
+    }
+    weeklyOrdersByKey.set(key, {
+      ...existing,
+      operations: mergedOperations,
+      operationSummary: getOperationSummary(mergedOperations),
+    });
+  });
+  const weeklyOrders = [...weeklyOrdersByKey.values()]
     .sort((a, b) => {
       const firstA = [a.deliveryDate, a.pickupDate].filter(dateInWeek).sort()[0] ?? '';
       const firstB = [b.deliveryDate, b.pickupDate].filter(dateInWeek).sort()[0] ?? '';
@@ -5519,7 +5581,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
   }).join('');
   const tableHead = '<thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>';
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
-    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
     const orderItems = rental.items ?? [];
     const splitItems = orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
@@ -5558,7 +5620,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
           <div><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
           <div><small>RESPONSABLE</small><strong>${escapeHtml(responsible)}</strong></div>
           <div><small>DIRECCION</small><strong>${escapeHtml(address)}</strong></div>
-          <div><small>ESTADO</small><strong class="wi-status">${escapeHtml(inventoryStatus)}</strong></div>
+          <div><small>OPERACION / ESTADO</small><strong class="wi-operation">${escapeHtml(operationSummary)}</strong><strong class="wi-status">${escapeHtml(inventoryStatus)}</strong></div>
         </header>
         <div class="wi-order-meta">
           <div><small>ENTREGA / SALIDA</small><strong>${escapeHtml(formatWindow(deliveryDate, contract?.deliveryWindowStart ?? deliveryOut?.windowStart, contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd))}</strong></div>
@@ -5576,7 +5638,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
   }).join('');
 
   const thermalOrderSections = weeklyOrders.map((entry, orderIndex) => {
-    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
     const orderItems = rental.items ?? [];
     const splitItems = orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
@@ -5607,6 +5669,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
           <strong>CONTRATO: ${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong>
           <b>ESTADO: ${escapeHtml(inventoryStatus)}</b>
         </div>
+        <p class="ti-operation"><b>OPERACION:</b> ${escapeHtml(operationSummary)}</p>
         <div class="ti-grid">
           <p><b>CLIENTE:</b> ${escapeHtml(rental.customerName)}</p>
           <p><b>RESPONSABLE:</b> ${escapeHtml(responsible)}</p>
@@ -5656,6 +5719,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       .ti-summary strong { display: block; margin-top: .6mm; font-size: 12px; }
       .ti-order { padding: 1mm 0; border-bottom: .35mm dashed #000; break-inside: auto; page-break-inside: auto; }
       .ti-order p { margin: .45mm 0; line-height: 1.1; }
+      .ti-operation { border-bottom: .25mm solid #000; padding-bottom: .5mm; font-size: 10px; }
       .ti-order-top { display: grid; grid-template-columns: 7mm 1fr; gap: 2mm; align-items: center; }
       .ti-order-top span { width: 6mm; height: 6mm; display: grid; place-items: center; color: #fff; background: #000; border-radius: .7mm; font-size: 15px; }
       .ti-order-top strong, .ti-order-top b { font-size: 12px; line-height: 1.1; }
@@ -5731,6 +5795,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       .wi-order-number { display: flex; align-items: center; gap: 2.2mm; }
       .wi-order-number > span { width: 10mm; height: 12.5mm; display: grid; place-items: center; border-radius: 2.2mm 2.2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 17px; font-weight: 900; }
       .wi-status { display: inline-block !important; width: max-content; padding: .9mm 1.6mm; border: .25mm solid #ef5000; border-radius: .9mm; color: #ef5000 !important; background: #fff; font-size: 8.2px !important; }
+      .wi-operation { display: block; margin-bottom: .8mm; color: #09255a !important; font-size: 8.4px !important; line-height: 1.08 !important; }
       .wi-order-meta { display: grid; grid-template-columns: 1.25fr 1.25fr .85fr 1fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
       .wi-order-meta > div { min-height: 10.5mm; padding: 1.7mm 3.4mm 1.5mm 6.5mm; border-right: .2mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
