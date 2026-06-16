@@ -5700,9 +5700,9 @@ const buildWeeklyInventoryHtml = ({
         </div>
         ${itemTables}
         <div class="wi-order-foot">
-          <span>Preparado por: ______________________________</span>
-          <span>Entregado por: ______________________________</span>
-          <span>Recibido y constatado por: ______________________________</span>
+          ${format === 'individual'
+            ? '<span>Entregado por: ______________________________</span><span>Recibido por: ______________________________</span>'
+            : '<span>Preparado por: ______________________________</span><span>Entregado por: ______________________________</span><span>Recibido y constatado por: ______________________________</span>'}
         </div>
       </section>`;
   }).join('');
@@ -5880,21 +5880,21 @@ const buildWeeklyInventoryHtml = ({
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; border-bottom: 0; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .wi-table th { padding: .8mm .85mm; color: #fff; background: #09255a; font-size: 7px; line-height: 1; text-align: left; }
-      .wi-table td { height: 6.8mm; padding: .45mm .75mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 8.4px; }
+      .wi-table th { padding: .95mm .9mm; color: #fff; background: #09255a; font-size: 8px; line-height: 1; text-align: left; }
+      .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
       .wi-table tr:last-child td { border-bottom: 0; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 11mm; text-align: center; }
       .wi-table th:last-child, .wi-table td:last-child { width: 24mm; border-right: 0; }
       .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 7.2mm; }
       .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 14mm; }
       .wi-index { width: 5mm; text-align: center !important; }
-      .wi-number { width: 9mm; text-align: center !important; }
-      .wi-product { display: grid; grid-template-columns: 7mm minmax(0, 1fr); gap: .9mm; align-items: center; }
-      .wi-product img, .wi-no-image { width: 6.3mm; height: 6.3mm; border: .18mm solid #d8deea; border-radius: .7mm; object-fit: cover; }
+      .wi-number { width: 10mm; text-align: center !important; font-size: 10.2px !important; font-weight: 900 !important; }
+      .wi-product { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
+      .wi-product img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #d8deea; border-radius: .7mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 7.8px; line-height: 1.05; text-transform: uppercase; }
-      .wi-check i { display: inline-block; width: 3.8mm; height: 3.8mm; border: .2mm solid #8c95a8; border-radius: .3mm; }
-      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; padding: 1.6mm 3.4mm; color: #09255a; font-size: 8.3px; }
+      .wi-product strong { color: #061b48; font-size: 9.8px; line-height: 1.06; text-transform: uppercase; }
+      .wi-check i { display: inline-block; width: 4.4mm; height: 4.4mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
+      .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
         html, body { width: 8.5in !important; height: 11in !important; margin: 0 !important; padding: 0 !important; background: #fff; overflow: hidden !important; }
