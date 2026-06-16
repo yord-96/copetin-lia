@@ -682,6 +682,10 @@ const buildEmptyServiceDraft = () => ({
   unitPriceBs: '0',
 });
 
+const selectNumericInput = (event) => {
+  event.target.select();
+};
+
 const buildEmptySupplierCoverageDraft = () => ({
   supplierMode: 'existing',
   supplierId: '',
@@ -4262,16 +4266,16 @@ function ServiceOrdersSection({
                 </label>
                 <label className="supplier-coverage-field">
                   Cantidad a cubrir
-                  <input type="number" min="1" max={supplierCoverageModal.shortageQty} value={supplierCoverageDraft.quantity} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
+                  <input type="number" min="1" max={supplierCoverageModal.shortageQty} value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
                   <small>Faltante maximo: {supplierCoverageModal.shortageQty} u.</small>
                 </label>
                 <label className="supplier-coverage-field">
                   Costo proveedor Bs *
-                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.supplierUnitCostBs} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
+                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.supplierUnitCostBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
                 </label>
                 <label className="supplier-coverage-field">
                   Precio cliente Bs *
-                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.saleUnitPriceBs} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
+                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.saleUnitPriceBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
                   <small>Este precio queda en el item del contrato.</small>
                 </label>
                 <label className="supplier-coverage-field wide">
@@ -4868,6 +4872,7 @@ function ServiceOrdersSection({
                   min="1"
                   step="1"
                   value={serviceDraft.quantity}
+                  onFocus={selectNumericInput}
                   onChange={(event) => setServiceDraftField('quantity', event.target.value)}
                 />
               </label>
@@ -4878,6 +4883,7 @@ function ServiceOrdersSection({
                   min="0"
                   step="0.01"
                   value={serviceDraft.unitPriceBs}
+                  onFocus={selectNumericInput}
                   onChange={(event) => setServiceDraftField('unitPriceBs', event.target.value)}
                 />
               </label>
@@ -5714,6 +5720,7 @@ function ServiceOrdersSection({
                                 type="number"
                                 min="1"
                                 value={line.quantity}
+                                onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
                                 aria-label={`Cantidad de ${line.item.name}`}
                                 aria-invalid={isOverAvailable ? 'true' : 'false'}
@@ -5818,6 +5825,7 @@ function ServiceOrdersSection({
                                   min="1"
                                   step="1"
                                   value={Math.max(1, Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? shortageForItem)))}
+                                  onFocus={selectNumericInput}
                                   onChange={(event) => {
                                     const shortage = Math.max(1, shortageForItem);
                                     const nextQty = Math.max(1, Math.min(shortage, Math.trunc(Number(event.target.value || 1))));
@@ -5837,6 +5845,7 @@ function ServiceOrdersSection({
                                   min="0"
                                   step="0.01"
                                   value={Math.max(0, Number(supplierFulfillmentDraftByItem[line.itemId]?.supplierUnitCostBs ?? 0))}
+                                  onFocus={selectNumericInput}
                                   onChange={(event) => {
                                     const nextValue = Math.max(0, Number(event.target.value ?? 0));
                                     setSupplierCoverageField(line.itemId, { supplierUnitCostBs: nextValue });
@@ -5851,6 +5860,7 @@ function ServiceOrdersSection({
                                 min="0"
                                 step="0.01"
                                 value={line.unitPriceBs}
+                                onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
                                 aria-label={`Precio unitario de ${line.item.name}`}
                               />

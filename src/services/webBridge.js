@@ -1968,6 +1968,15 @@ const transaction = (mutator) => {
 
 const RESET_MODULES = [
   {
+    id: 'cash_accounting',
+    level: 'safe',
+    risk: 'medio',
+    name: 'Borrar movimientos de caja de prueba',
+    description: 'Borra movimientos de Caja Grande y Caja Chica que no esten vinculados a contratos, cobros, saldos pendientes ni garantias.',
+    deletes: ['cashMovements', 'cashSessions'],
+    warnings: ['Conserva garantias, cuentas por cobrar y movimientos enlazados a contratos u ordenes.'],
+  },
+  {
     id: 'trial_cleanup',
     level: 'validation',
     risk: 'alto',
@@ -2116,6 +2125,39 @@ const linkedToRental = (entry, rental) =>
         || (entry.reference && rental.orderCode && entry.reference === rental.orderCode)
       ),
   );
+
+const isProtectedCashMovement = (movement) => {
+  const source = normalizeText(movement?.sourceType ?? movement?.source ?? '');
+  const type = normalizeText(movement?.type);
+  const category = normalizeText(movement?.category);
+  const tag = normalizeText(movement?.accountingTag);
+  const description = normalizeText(movement?.description);
+  const notes = normalizeText(movement?.notes);
+  const linked = Boolean(
+    movement?.rentalId
+      || movement?.contractId
+      || movement?.clientId
+      || movement?.orderCode
+      || movement?.linkedRentalId
+      || movement?.linkedContractId
+      || movement?.linkedOrderCode
+      || (movement?.sourceId && ['rental', 'contract', 'return', 'client', 'prepaid'].some((token) => source.includes(token)))
+  );
+  const protectedText = `${source} ${type} ${category} ${tag} ${description} ${notes}`;
+  const protectedTokens = [
+    'garantia',
+    'cobro',
+    'saldo',
+    'pendiente',
+    'contrato',
+    'alquiler',
+    'devolucion garantia',
+    'liquidacion',
+    'prepaid',
+    'prepago',
+  ];
+  return linked || protectedTokens.some((token) => protectedText.includes(token));
+};
 
 const addBlocked = (target, record, reason) => {
   target.blocked.push({
@@ -2379,11 +2421,8 @@ const analyzeResetModule = (state, moduleId) => {
   if (moduleId === 'cash_accounting') {
     result.total = cashMovements.length + (Array.isArray(state.cashSessions) ? state.cashSessions.length : 0);
     cashMovements.forEach((movement) => {
-      const source = normalizeText(movement.sourceType ?? movement.type ?? movement.reason);
-      const linked = Boolean(movement.rentalId || movement.contractId || movement.clientId || movement.orderCode)
-        || ['rental', 'contract', 'return', 'client', 'prepaid'].some((token) => source.includes(token));
-      if (linked) {
-        addBlocked(result.records, movement, 'Movimiento contable vinculado a una operacion real.');
+      if (isProtectedCashMovement(movement)) {
+        addBlocked(result.records, movement, 'Movimiento protegido: contrato, cobro, saldo pendiente o garantia.');
         return;
       }
       addDeletable(result.records, movement, 'cashMovements');
@@ -2391,6 +2430,13 @@ const analyzeResetModule = (state, moduleId) => {
     activeRows(state.cashSessions).forEach((session) => {
       if (session.status === 'open') {
         addBlocked(result.records, session, 'No se puede borrar una caja abierta.');
+        return;
+      }
+      const hasProtectedMovements = cashMovements.some(
+        (movement) => movement.sessionId === session.id && isProtectedCashMovement(movement),
+      );
+      if (hasProtectedMovements) {
+        addBlocked(result.records, session, 'Sesion con movimientos protegidos por contratos, cobros o garantias.');
         return;
       }
       addDeletable(result.records, session, 'cashSessions');
