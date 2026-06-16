@@ -4767,10 +4767,10 @@ const getReferenceContractStyles = () => `
   body {
     margin: 0;
     padding: 12px 0;
-    color: #111;
+    color: #161616;
     background: #d9d9d9;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 10px;
+    font-size: 10.5px;
     line-height: 1.28;
   }
   h1, h2, h3, p { margin: 0; }
@@ -4778,96 +4778,78 @@ const getReferenceContractStyles = () => `
     width: 216mm;
     min-height: 355.6mm;
     margin: 0 auto;
-    padding: 0 6.5mm 4mm;
-    background: #fff;
+    padding: 4.5mm 8mm 4mm;
+    background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
     box-shadow: 0 12px 36px rgba(0, 0, 0, .18);
   }
   .rc-top {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 54mm;
-    min-height: 37mm;
-    margin: 0 -6.5mm;
+    grid-template-columns: minmax(0, 74mm) minmax(0, 1fr) 39mm;
+    gap: 6mm;
+    align-items: center;
+    min-height: 32mm;
   }
-  .rc-logo {
-    position: relative;
-    min-width: 0;
-    overflow: hidden;
-    background: #fff;
-  }
-  .rc-logo img {
-    position: absolute;
-    top: -11.5mm;
-    left: -5.4mm;
-    display: block;
-    width: auto;
-    max-width: none;
-    height: 60.2mm;
+  .rc-logo { min-width: 0; overflow: hidden; }
+  .rc-logo img { display: block; width: 70mm; max-width: 100%; height: auto; }
+  .rc-business {
+    min-height: 18mm;
+    padding-left: 5mm;
+    border-left: .35mm solid #d2b178;
+    color: #161616;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .35px;
+    line-height: 1.48;
+    text-transform: uppercase;
   }
   .rc-code {
     display: grid;
     align-content: center;
     justify-items: center;
-    gap: 2mm;
-    padding: 3mm 4mm 2mm;
-    background: linear-gradient(135deg, #fff 75%, #f8f8f8);
+    gap: 3mm;
+    min-height: 30mm;
+    padding: 2.4mm;
+    border: .28mm solid #d8d0c4;
+    border-radius: 1.7mm;
+    background: rgba(255, 255, 255, .72);
   }
   .rc-number {
     display: flex;
     align-items: baseline;
-    gap: 4mm;
-    padding-bottom: 1.5mm;
-    border-bottom: .35mm solid #f3b18f;
+    justify-content: center;
+    gap: 3mm;
+    width: 100%;
+    padding-bottom: 2mm;
+    border-bottom: .25mm solid #d8d0c4;
     font-family: Georgia, "Times New Roman", serif;
   }
-  .rc-number span { font-size: 14px; }
-  .rc-number strong { color: #ef5000; font-size: 29px; font-weight: 500; }
+  .rc-number span { font-size: 15px; }
+  .rc-number strong { color: #a66a20; font-size: 25px; font-weight: 500; }
   .rc-date { display: flex; align-items: center; gap: 3mm; font: 15px Georgia, "Times New Roman", serif; }
-  .rc-date img { width: 5mm; height: 5mm; object-fit: contain; }
+  .rc-date img { width: 5mm; height: 5mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
   .rc-status {
-    min-width: 34mm;
+    min-width: 32mm;
     padding: 2.2mm 3mm;
     border-radius: 1.5mm;
     color: #fff;
-    background: linear-gradient(135deg, #f04b00, #ff6a00);
+    background: linear-gradient(135deg, #98611d, #bd8433);
     text-align: center;
     font-size: 13px;
     font-weight: 900;
     text-transform: uppercase;
   }
-  .rc-status img {
-    width: 4.5mm;
-    height: 4.5mm;
-    margin-right: 2mm;
-    vertical-align: -1.2mm;
-    filter: brightness(0) invert(1);
-  }
-  .rc-title {
-    padding: 4mm 0 5mm;
-    text-align: center;
-    font-family: Georgia, "Times New Roman", serif;
-  }
-  .rc-title h1 {
-    margin: 0;
-    font-size: 28px;
-    font-weight: 500;
-    letter-spacing: 1.2px;
-  }
+  .rc-status img { width: 4.5mm; height: 4.5mm; margin-right: 2mm; vertical-align: -1.2mm; filter: brightness(0) invert(1); }
+  .rc-title { padding: 1.2mm 0 3.2mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
+  .rc-title h1 { margin: 0; font-size: 27px; font-weight: 500; letter-spacing: 1.2px; }
   .rc-title p {
     margin: 1.5mm 0 0;
-    color: #ef5000;
+    color: #a66a20;
     font-family: Arial, Helvetica, sans-serif;
     font-size: 13px;
     letter-spacing: 5px;
     text-transform: uppercase;
   }
-  .rc-title i {
-    position: relative;
-    display: block;
-    width: 31mm;
-    height: .35mm;
-    margin: 3mm auto 0;
-    background: #ef5000;
-  }
+  .rc-title i { position: relative; display: block; width: 31mm; height: .3mm; margin: 2mm auto 0; background: #a66a20; }
   .rc-title i::after {
     content: "";
     position: absolute;
@@ -4875,295 +4857,240 @@ const getReferenceContractStyles = () => `
     left: 50%;
     width: 2.2mm;
     height: 2.2mm;
-    border: .35mm solid #ef5000;
-    background: #fff;
+    border: .32mm solid #a66a20;
+    background: #fffdfa;
     transform: translate(-50%, -50%) rotate(45deg);
   }
   .rc-company {
     display: grid;
     grid-template-columns: 1.05fr 1.15fr .68fr .82fr;
-    min-height: 21mm;
-    border: .25mm solid #d7d7d7;
+    min-height: 13mm;
+    border: .25mm solid #d8d0c4;
     border-radius: 2mm;
     overflow: hidden;
+    background: rgba(255, 255, 255, .66);
   }
   .rc-company > div {
     display: grid;
-    grid-template-columns: 8mm minmax(0, 1fr);
+    grid-template-columns: 6.5mm minmax(0, 1fr);
     align-items: center;
-    gap: 2mm;
-    padding: 3mm;
-    border-right: .25mm solid #ff7a35;
+    gap: 1.5mm;
+    padding: 1.7mm 2mm;
+    border-right: .25mm solid #d8d0c4;
   }
   .rc-company > div:last-child { border-right: 0; }
-  .rc-company img { width: 6.5mm; height: 6.5mm; object-fit: contain; }
-  .rc-company strong {
-    display: block;
-    font: 700 11px Arial, sans-serif;
-    text-transform: uppercase;
-  }
-  .rc-company .company-name { font: 700 17px Georgia, "Times New Roman", serif; text-transform: uppercase; }
-  .rc-company span { display: block; margin-top: 1mm; font-size: 10px; }
-  .rc-upper {
-    display: grid;
-    grid-template-columns: .93fr 1.07fr;
-    gap: 5mm;
-    margin-top: 4mm;
-  }
+  .rc-company img, .rc-schedule-meta img, .rc-mode-row img, .rc-important img { filter: sepia(1) saturate(1.5) brightness(.72); }
+  .rc-company img { width: 5.3mm; height: 5.3mm; object-fit: contain; }
+  .rc-company strong { display: block; font: 800 9px Arial, sans-serif; text-transform: uppercase; }
+  .rc-company .company-name { font: 800 13px Arial, sans-serif; text-transform: uppercase; }
+  .rc-company span { display: block; margin-top: .35mm; font-size: 8.2px; line-height: 1.15; }
+  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 4mm; margin-top: 3mm; }
   .rc-block-title {
     display: flex;
     align-items: baseline;
     gap: 2mm;
-    margin: 0 0 2.5mm;
-    font: 700 17px Georgia, "Times New Roman", serif;
+    margin: 0 0 1.8mm;
+    color: #a66a20;
+    font: 700 16px Georgia, "Times New Roman", serif;
     font-variant: small-caps;
   }
-  .rc-block-title b { color: #ef5000; font-size: 23px; font-weight: 500; }
-  .rc-block-title::after {
-    content: "";
-    align-self: end;
-    width: 38mm;
-    height: .35mm;
-    margin-left: -34mm;
-    transform: translateY(2.2mm);
-    background: #ef5000;
-  }
-  .rc-client {
-    padding-right: 5mm;
-    border-right: .35mm solid #bcbcbc;
-  }
+  .rc-block-title b { color: #a66a20; font-size: 22px; font-weight: 500; }
+  .rc-block-title::after { content: ""; align-self: end; width: 24mm; height: .3mm; background: #a66a20; transform: translateY(1.8mm); }
+  .rc-client { padding-right: 5mm; border-right: .3mm solid #d8d0c4; }
   .rc-fields {
     display: grid;
     grid-template-columns: 42mm minmax(0, 1fr);
-    row-gap: 2.2mm;
-    padding-top: 1mm;
-    font-size: 11.5px;
+    row-gap: 1.25mm;
+    padding-top: .4mm;
+    font-size: 10.6px;
   }
-  .rc-fields strong { font-weight: 500; }
-  .rc-fields span { font-weight: 500; text-transform: uppercase; }
-  .rc-schedule-box,
-  .rc-mode-box,
-  .rc-observations,
-  .rc-money,
-  .rc-terms {
-    border: .25mm solid #f2c9b3;
+  .rc-fields strong { font-weight: 800; }
+  .rc-fields span {
+    min-height: 3.8mm;
+    border-bottom: .2mm solid #ded6ca;
+    font-family: Georgia, "Times New Roman", serif;
+    text-transform: uppercase;
+  }
+  .rc-schedule-box, .rc-mode-box, .rc-observations, .rc-money, .rc-terms {
+    border: .25mm solid #e4d3bb;
     border-radius: 1.5mm;
+    background: rgba(255, 255, 255, .45);
   }
   .rc-schedule-row {
     display: grid;
     grid-template-columns: 10mm minmax(0, 1fr) 30mm 30mm;
     align-items: center;
-    min-height: 13mm;
-    padding: 2mm 3mm;
-    border-bottom: .25mm solid #efd5c7;
+    min-height: 10.5mm;
+    padding: 1.3mm 2mm;
+    border-bottom: .25mm solid #d8d0c4;
   }
   .rc-schedule-row:last-child { border-bottom: 0; }
   .rc-round-icon {
-    width: 8mm;
-    height: 8mm;
+    width: 7.2mm;
+    height: 7.2mm;
     display: grid;
     place-items: center;
+    border: .22mm solid #e0c899;
     border-radius: 50%;
-    background: #ef5000;
+    background: #f7f0e4;
   }
-  .rc-round-icon img { width: 5mm; height: 5mm; filter: brightness(0) invert(1); }
-  .rc-schedule-row strong { display: block; font-size: 11px; }
-  .rc-schedule-row span { display: block; margin-top: .7mm; font-size: 10px; }
+  .rc-round-icon img { width: 4.4mm; height: 4.4mm; filter: sepia(1) saturate(1.5) brightness(.7); }
+  .rc-schedule-row strong { display: block; font-size: 10px; }
+  .rc-schedule-row span { display: block; margin-top: .4mm; font-size: 8.8px; }
   .rc-schedule-meta {
     display: flex !important;
     align-items: center;
     gap: 2mm;
     margin: 0 !important;
     padding-left: 3mm;
-    border-left: .25mm solid #e7d8d0;
+    border-left: .25mm solid #d8d0c4;
     white-space: nowrap;
   }
   .rc-schedule-meta img { width: 4.5mm; height: 4.5mm; object-fit: contain; }
-  .rc-mode-box { margin-top: 2mm; padding: 2mm 3mm; }
-  .rc-mode-row {
-    display: grid;
-    grid-template-columns: 10mm minmax(0, 1fr);
-    gap: 2mm;
-    align-items: center;
-    min-height: 10mm;
-  }
-  .rc-mode-row + .rc-mode-row { border-top: .25mm solid #efd5c7; }
-  .rc-mode-row img { width: 7mm; height: 7mm; object-fit: contain; }
+  .rc-mode-box { margin-top: 1.5mm; padding: 1.3mm 2mm; }
+  .rc-mode-row { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1.6mm; align-items: center; min-height: 7.5mm; }
+  .rc-mode-row + .rc-mode-row { border-top: .25mm solid #d8d0c4; }
+  .rc-mode-row img { width: 5.8mm; height: 5.8mm; object-fit: contain; }
   .rc-mode-row strong { display: block; }
   .rc-mode-row span { display: block; margin-top: .8mm; }
-  .rc-items { margin-top: 3mm; }
+  .rc-items { margin-top: 2.5mm; }
   .rc-table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
-    border: .25mm solid #ddd;
+    border: .25mm solid #d8d0c4;
     border-radius: 1.5mm;
     overflow: hidden;
+    table-layout: fixed;
   }
   .rc-table thead { display: table-header-group; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
-    padding: 2.1mm 3mm;
+    padding: 1.3mm 1.6mm;
     color: #fff;
-    background: linear-gradient(90deg, #ef5000, #f86600);
-    font-size: 11px;
+    background: linear-gradient(90deg, #181818, #323232);
+    font-size: 8.7px;
     text-align: left;
     text-transform: uppercase;
   }
-  .rc-table th.num, .rc-table td.num { text-align: center; white-space: nowrap; }
+  .rc-table th.num, .rc-table td.num, .rc-table th.check, .rc-table td.check { text-align: center; white-space: nowrap; }
+  .rc-table th.check { font-size: 7px; letter-spacing: 0; overflow-wrap: anywhere; white-space: normal; }
   .rc-table td {
-    padding: 1.7mm 3mm;
-    border-right: .25mm solid #e1e1e1;
-    border-bottom: .25mm solid #e1e1e1;
+    padding: 1mm 1.5mm;
+    border-right: .25mm solid #e8ded0;
+    border-bottom: .25mm solid #e8ded0;
     vertical-align: middle;
-    font-size: 11.5px;
+    font-size: 9.8px;
   }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
-  .rc-item-name { display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; }
-  .rc-item-meta { display: block; margin-top: .6mm; font-size: 9.5px; text-transform: uppercase; }
+  .rc-item-name { display: block; font: 700 10.2px Georgia, "Times New Roman", serif; text-transform: uppercase; }
+  .rc-item-meta { display: block; margin-top: .35mm; font-size: 7.6px; text-transform: uppercase; }
+  .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
+  .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
   .rc-bottom {
     display: grid;
     grid-template-columns: .86fr 1.02fr 1.15fr;
     gap: 3mm;
-    margin-top: 3mm;
+    margin-top: 1.6mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .rc-bottom-title {
-    margin: 0 0 2mm;
-    color: #ef5000;
-    font: 500 14px Georgia, "Times New Roman", serif;
-    font-variant: small-caps;
-  }
-  .rc-bottom-title::after {
-    content: "";
-    display: block;
-    width: 24mm;
-    height: .3mm;
-    margin-top: 1mm;
-    background: #ef5000;
-  }
-  .rc-observations, .rc-money { min-height: 44mm; padding: 3mm; }
-  .rc-observations strong { display: block; margin-bottom: 2mm; font-size: 9px; }
+  .rc-bottom-title { margin: 0 0 1.2mm; color: #a66a20; font: 500 12.5px Georgia, "Times New Roman", serif; font-variant: small-caps; }
+  .rc-bottom-title::after { content: ""; display: block; width: 18mm; height: .25mm; margin-top: .6mm; background: #a66a20; }
+  .rc-observations, .rc-money { min-height: 27mm; padding: 1.6mm; }
+  .rc-observations strong { display: block; margin-bottom: 1.2mm; font-size: 8.2px; }
   .rc-observations p { margin: 0; text-transform: uppercase; }
-  .rc-money-line {
-    display: flex;
-    justify-content: space-between;
-    gap: 3mm;
-    padding: .7mm 0;
-  }
+  .rc-money-line { display: flex; justify-content: space-between; gap: 3mm; padding: .35mm 0; font-size: 8.4px; }
   .rc-money-line strong { white-space: nowrap; }
   .rc-money-total {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-top: 1.5mm;
-    padding: 2mm 0;
-    border-top: .35mm solid #ef5000;
-    border-bottom: .35mm solid #ef5000;
-    color: #ef5000;
-    font: 500 13px Georgia, "Times New Roman", serif;
+    margin-top: .9mm;
+    padding: 1.1mm 0;
+    border-top: .35mm solid #d8d0c4;
+    border-bottom: .35mm solid #d8d0c4;
+    color: #161616;
+    font: 500 11.5px Georgia, "Times New Roman", serif;
   }
-  .rc-money-total strong { font-size: 19px; font-weight: 500; }
-  .rc-terms { min-height: 44mm; padding: 2.5mm 3mm; }
-  .rc-terms-list { display: grid; gap: 1.2mm; margin: 0; padding: 0; list-style: none; }
-  .rc-terms-list li { display: grid; grid-template-columns: 5mm minmax(0, 1fr); gap: 2mm; font-size: 8.5px; }
+  .rc-money-total strong { font-size: 14.5px; font-weight: 500; }
+  .rc-terms { min-height: 27mm; padding: 1.6mm; }
+  .rc-terms-list { display: grid; gap: .75mm; margin: 0; padding: 0; list-style: none; }
+  .rc-terms-list li { display: grid; grid-template-columns: 4.2mm minmax(0, 1fr); gap: 1.3mm; font-size: 7px; line-height: 1.18; }
   .rc-terms-list b {
-    width: 4mm;
-    height: 4mm;
+    width: 3.5mm;
+    height: 3.5mm;
     display: grid;
     place-items: center;
     border-radius: 50%;
     color: #fff;
-    background: #ef5000;
-    font-size: 8px;
+    background: #a66a20;
+    font-size: 7px;
   }
   .rc-important {
     display: grid;
-    grid-template-columns: 8mm minmax(0, 1fr);
-    gap: 2mm;
+    grid-template-columns: 6mm minmax(0, 1fr);
+    gap: 1.3mm;
     align-items: center;
-    margin-top: 2mm;
-    padding: 1.5mm 2mm;
-    border: .25mm solid #f2b997;
+    margin-top: 1mm;
+    padding: .9mm 1.2mm;
+    border: .25mm solid #d8c29c;
     border-radius: 1mm;
   }
-  .rc-important img { width: 7mm; height: 7mm; }
-  .rc-important strong { color: #ef5000; font-family: Georgia, "Times New Roman", serif; text-transform: uppercase; }
-  .rc-important span { display: block; font-size: 8.2px; }
+  .rc-important img { width: 5mm; height: 5mm; }
+  .rc-important strong { color: #a66a20; font-family: Georgia, "Times New Roman", serif; text-transform: uppercase; }
+  .rc-important span { display: block; font-size: 6.6px; }
   .rc-revisions {
     margin-top: 3mm;
     padding: 2.5mm 3mm;
-    border: .25mm solid #f2c9b3;
+    border: .25mm solid #e4d3bb;
     border-radius: 1.5mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .rc-revisions-title {
-    color: #ef5000;
-    font: 700 12px Georgia, "Times New Roman", serif;
-    text-transform: uppercase;
-  }
-  .rc-revision {
-    display: grid;
-    grid-template-columns: 47mm minmax(0, 1fr);
-    gap: 3mm;
-    padding-top: 1.5mm;
-    font-size: 8.5px;
-  }
-  .rc-revision + .rc-revision {
-    margin-top: 1.5mm;
-    border-top: .2mm solid #eee;
-  }
+  .rc-revisions-title { color: #a66a20; font: 700 12px Georgia, "Times New Roman", serif; text-transform: uppercase; }
+  .rc-revision { display: grid; grid-template-columns: 47mm minmax(0, 1fr); gap: 3mm; padding-top: 1.5mm; font-size: 8.5px; }
+  .rc-revision + .rc-revision { margin-top: 1.5mm; border-top: .2mm solid #eee; }
   .rc-revision strong { text-transform: uppercase; }
   .rc-revision span { color: #444; }
   .rc-signatures {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 24mm;
-    margin: 8mm 12mm 0;
+    margin: 6mm 12mm 0;
     break-inside: avoid;
     page-break-inside: avoid;
     text-align: center;
   }
-  .rc-signature {
-    display: flex;
-    min-height: 27mm;
-    flex-direction: column;
-    justify-content: flex-end;
-  }
-  .rc-signature-line {
-    padding-top: 2mm;
-    border-top: .35mm solid #ef5000;
-  }
+  .rc-signature { display: flex; min-height: 28mm; flex-direction: column; justify-content: flex-end; }
+  .rc-signature-line { padding-top: 2.2mm; border-top: .3mm solid #777; }
   .rc-signature strong { display: block; font-size: 10px; text-transform: uppercase; }
   .rc-signature span { display: block; margin-top: .8mm; font-size: 9px; text-transform: uppercase; }
   .rc-footer {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 4mm;
-    margin-top: 3mm;
-    padding-top: 2mm;
-    border-top: .3mm solid #ef5000;
+    margin-top: 2mm;
+    padding-top: 1.5mm;
+    border-top: .3mm solid #a66a20;
     color: #555;
     font-size: 8.5px;
   }
-  .rc-footer strong { color: #ef5000; font-size: 9px; }
+  .rc-footer strong { color: #a66a20; font-size: 9px; }
   .rc-footer span:last-child { text-align: right; }
   .rc-sheet.is-dense { font-size: 10px; }
-  .rc-sheet.is-dense .rc-title { padding-top: 3mm; padding-bottom: 3mm; }
-  .rc-sheet.is-dense .rc-company { min-height: 18mm; }
-  .rc-sheet.is-dense .rc-company > div { padding-top: 2mm; padding-bottom: 2mm; }
-  .rc-sheet.is-dense .rc-upper { margin-top: 3mm; }
-  .rc-sheet.is-dense .rc-schedule-row { min-height: 11mm; }
-  .rc-sheet.is-dense .rc-table td { padding-top: 1.1mm; padding-bottom: 1.1mm; }
-  .rc-sheet.is-dense .rc-bottom { margin-top: 2mm; }
-  .rc-sheet.is-dense .rc-observations,
-  .rc-sheet.is-dense .rc-money,
-  .rc-sheet.is-dense .rc-terms { min-height: 39mm; }
+  .rc-sheet.is-dense .rc-title { padding-top: 1mm; padding-bottom: 2.5mm; }
+  .rc-sheet.is-dense .rc-company { min-height: 12mm; }
+  .rc-sheet.is-dense .rc-company > div { padding-top: 1.4mm; padding-bottom: 1.4mm; }
+  .rc-sheet.is-dense .rc-upper { margin-top: 2.5mm; }
+  .rc-sheet.is-dense .rc-schedule-row { min-height: 9.6mm; }
+  .rc-sheet.is-dense .rc-table th { padding-top: 1.05mm; padding-bottom: 1.05mm; font-size: 8.1px; }
+  .rc-sheet.is-dense .rc-table td { padding-top: .75mm; padding-bottom: .75mm; }
+  .rc-sheet.is-dense .rc-bottom { margin-top: 1.2mm; }
+  .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-money, .rc-sheet.is-dense .rc-terms { min-height: 25mm; }
   .rc-sheet.is-dense .rc-signatures { margin-top: 5mm; }
-  .rc-sheet.is-dense .rc-signature { min-height: 23mm; }
+  .rc-sheet.is-dense .rc-signature { min-height: 25mm; }
   @media print {
     html, body {
       width: 216mm;
@@ -5177,6 +5104,7 @@ const getReferenceContractStyles = () => `
       position: absolute;
       inset: 0;
       margin: 0;
+      padding: 4.5mm 8mm 4mm;
       box-shadow: none;
     }
   }
@@ -5247,6 +5175,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="num">${line.quantity}</td>
           <td class="num">${formatBs(line.rentalPriceBs)}</td>
           <td class="num">${formatBs(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0))}</td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td><span class="rc-observation-line"></span></td>
         </tr>`;
       },
     )
@@ -5262,6 +5193,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="num">${service.quantity}</td>
           <td class="num">${formatBs(service.unitPriceBs)}</td>
           <td class="num">${formatBs(service.lineTotalBs)}</td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td><span class="rc-observation-line"></span></td>
         </tr>`)
     .join('');
   const rows = `${itemRows}${serviceRows}`;
@@ -5309,7 +5243,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   <body>
     <main class="rc-sheet ${densityClass}">
       <header class="rc-top">
-        <div class="rc-logo"><img src="/imagenes/logocontrato.png" alt="El Copetin" /></div>
+        <div class="rc-logo"><img src="/imagenes/logo_el_copetin_redisenado.png" alt="El Copetin" /></div>
+        <div class="rc-business">Alquiler de mobiliario, cristaleria<br />y equipos para eventos</div>
         <div class="rc-code">
           <div class="rc-number"><span>N&deg;</span><strong>${escapeHtml(mainCode)}</strong></div>
           <div class="rc-date">${contractPdfIcon('calendario.png')}<span>${escapeHtml(issuedAt)}</span></div>
@@ -5324,10 +5259,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       </section>
 
       <section class="rc-company">
-        <div>${contractPdfIcon('edificio-de-pisos.png')}<p><strong class="company-name">${escapeHtml(company.name)}</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></p></div>
-        <div>${contractPdfIcon('ubicacion.png')}<p><strong>Direccion</strong><span>${escapeHtml(company.address)}</span></p></div>
-        <div>${contractPdfIcon('llamada-telefonica.png')}<p><strong>Telefono</strong><span>${escapeHtml(company.phone || '-')}</span></p></div>
-        <div>${contractPdfIcon('documento.png')}<p><strong>Email</strong><span>${escapeHtml(company.email || '-')}</span></p></div>
+        <div>${contractPdfIcon('edificio-de-pisos.png')}<p><strong class="company-name">El Copetin</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></p></div>
+        <div>${contractPdfIcon('ubicacion.png')}<p><strong>Direccion:</strong><span>${escapeHtml(company.address)}</span></p></div>
+        <div>${contractPdfIcon('llamada-telefonica.png')}<p><strong>Celular:</strong><span>${escapeHtml([company.phone, '67402818'].filter(Boolean).join(' / ') || '-')}</span></p></div>
+        <div>${contractPdfIcon('documento.png')}<p><strong>Email:</strong><span>${escapeHtml(company.email || '-')}</span></p></div>
       </section>
 
       <section class="rc-upper">
@@ -5370,10 +5305,19 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       <section class="rc-items">
         <h2 class="rc-block-title"><b>3.</b> Detalle de items contratados</h2>
         <table class="rc-table">
+          <colgroup>
+            <col style="width: 35%;" />
+            <col style="width: 7%;" />
+            <col style="width: 11%;" />
+            <col style="width: 11%;" />
+            <col style="width: 6.5%;" />
+            <col style="width: 6.5%;" />
+            <col style="width: 23%;" />
+          </colgroup>
           <thead>
-            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th></tr>
+            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes / observacion</th></tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="4">Sin items registrados</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="7">Sin items registrados</td></tr>'}</tbody>
         </table>
       </section>
 
@@ -5422,7 +5366,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       </section>
 
       <footer class="rc-footer">
-        <span>Documento generado por ${escapeHtml(company.name)}</span>
+        <span>Documento generado por El Copetin</span>
         <strong>${escapeHtml(company.website || 'www.copetin.com')}</strong>
         <span>Contrato ${escapeHtml(mainCode)}</span>
       </footer>
@@ -5649,6 +5593,17 @@ const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
+  const inventoryTableCols = `
+            <colgroup>
+              <col class="wi-col-index" />
+              <col class="wi-col-product" />
+              <col class="wi-col-number" />
+              <col class="wi-col-check" />
+              <col class="wi-col-check" />
+              <col class="wi-col-check" />
+              <col class="wi-col-check" />
+              <col class="wi-col-report" />
+            </colgroup>`;
   const tableHead = '<thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>';
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
     const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
@@ -5661,11 +5616,13 @@ const buildWeeklyInventoryHtml = ({
       ? `
         <div class="wi-tables ${splitItems ? 'is-split' : ''}">
           <table class="wi-table">
+            ${inventoryTableCols}
             ${tableHead}
             <tbody>${firstRows}</tbody>
           </table>
           ${splitItems ? `
           <table class="wi-table">
+            ${inventoryTableCols}
             ${tableHead}
             <tbody>${secondRows}</tbody>
           </table>` : ''}
@@ -5880,13 +5837,17 @@ const buildWeeklyInventoryHtml = ({
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; border-bottom: 0; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .wi-col-index { width: 4.2%; }
+      .wi-col-product { width: 47%; }
+      .wi-col-number { width: 6.8%; }
+      .wi-col-check { width: 4.8%; }
+      .wi-col-report { width: 22.8%; }
       .wi-table th { padding: .95mm .9mm; color: #fff; background: #09255a; font-size: 8px; line-height: 1; text-align: left; }
       .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
       .wi-table tr:last-child td { border-bottom: 0; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 11mm; text-align: center; }
-      .wi-table th:last-child, .wi-table td:last-child { width: 24mm; border-right: 0; }
-      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 7.2mm; }
-      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 14mm; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; font-size: 6.4px; overflow-wrap: anywhere; }
+      .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 5mm; text-align: center !important; }
       .wi-number { width: 10mm; text-align: center !important; font-size: 10.2px !important; font-weight: 900 !important; }
       .wi-product { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
