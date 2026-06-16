@@ -748,13 +748,14 @@ function InventoryDashboardSection({
   const rowMenuRef = useRef(null);
   const productFilterRef = useRef(null);
 
-  const openInventoryWeekDocument = async () => {
+  const openInventoryWeekDocument = async (format = 'standard') => {
     try {
-      const preview = await onPrintInventoryWeekDocument?.({ weekStart: inventoryWeekStart });
+      const preview = await onPrintInventoryWeekDocument?.({ weekStart: inventoryWeekStart, format });
       if (preview?.html) {
         setDocumentPreview({
           title: preview.title ?? 'Control semanal de inventario',
           html: preview.html,
+          format,
         });
       }
     } catch (error) {
@@ -2711,7 +2712,10 @@ function InventoryDashboardSection({
                     Semana desde
                     <input type="date" value={inventoryWeekStart} onChange={(event) => setInventoryWeekStart(getMondayDateKey(event.target.value))} />
                   </label>
-                  <button type="button" className="primary-button" onClick={openInventoryWeekDocument}>
+                  <button type="button" className="ghost-button" onClick={() => openInventoryWeekDocument('thermal')}>
+                    Epson TM-T20
+                  </button>
+                  <button type="button" className="primary-button" onClick={() => openInventoryWeekDocument('standard')}>
                     Ver documento semanal
                   </button>
                 </div>
@@ -4188,7 +4192,7 @@ function InventoryDashboardSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>Vista previa del control operativo de inventario.</p>
+                <p>{documentPreview.format === 'thermal' ? 'Formato termico 80mm para Epson TM-T20.' : 'Vista previa del control operativo de inventario.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>
                 x

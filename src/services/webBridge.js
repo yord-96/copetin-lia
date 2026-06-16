@@ -5450,7 +5450,7 @@ const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
   });
 };
 
-const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, settings, weekStart, weekEnd }) => {
+const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, settings, weekStart, weekEnd, format = 'standard' }) => {
   const company = getDocumentCompany(settings);
   const contractById = new Map((contracts ?? []).map((contract) => [String(contract.id), contract]));
   const itemById = new Map((items ?? []).map((item) => [String(item.id), item]));
@@ -5497,18 +5497,16 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       return firstA.localeCompare(firstB) || String(a.rental.orderCode ?? '').localeCompare(String(b.rental.orderCode ?? ''));
     });
 
-  const orderSections = weeklyOrders.map((entry, orderIndex) => {
-    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
-    const itemRows = (rental.items ?? []).map((line, index) => {
-      const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
-      const imageDataUrl = catalogItem?.imageDataUrl ?? line.imageDataUrl ?? '';
-      return `
+  const renderItemRows = (lines, offset = 0) => lines.map((line, index) => {
+    const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
+    const imageDataUrl = catalogItem?.imageDataUrl ?? line.imageDataUrl ?? '';
+    return `
           <tr>
-            <td class="wi-index">${index + 1}</td>
+            <td class="wi-index">${offset + index + 1}</td>
             <td class="wi-product">
               ${imageDataUrl
                 ? `<img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(line.itemName)}" />`
-                : '<span class="wi-no-image">Sin imagen</span>'}
+                : '<span class="wi-no-image"></span>'}
               <strong>${escapeHtml(line.itemName)}</strong>
             </td>
             <td class="wi-number">${Math.max(0, Number(line.quantity ?? 0))}</td>
@@ -5518,7 +5516,29 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
             <td class="wi-check"><i></i></td>
             <td class="wi-report"></td>
           </tr>`;
-    }).join('');
+  }).join('');
+  const tableHead = '<thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>';
+  const orderSections = weeklyOrders.map((entry, orderIndex) => {
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
+    const orderItems = rental.items ?? [];
+    const splitItems = orderItems.length > 7;
+    const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
+    const firstRows = renderItemRows(orderItems.slice(0, firstColumnSize), 0);
+    const secondRows = splitItems ? renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize) : '';
+    const itemTables = orderItems.length
+      ? `
+        <div class="wi-tables ${splitItems ? 'is-split' : ''}">
+          <table class="wi-table">
+            ${tableHead}
+            <tbody>${firstRows}</tbody>
+          </table>
+          ${splitItems ? `
+          <table class="wi-table">
+            ${tableHead}
+            <tbody>${secondRows}</tbody>
+          </table>` : ''}
+        </div>`
+      : '<div class="wi-empty-order">Sin items registrados.</div>';
     const responsible = contract?.responsibles?.[0]?.name
       ?? contract?.createdByName
       ?? rental.createdByName
@@ -5546,10 +5566,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
           <div><small>EVENTO</small><strong>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</strong></div>
           <div><small>LOGISTICA</small><strong>${escapeHtml((contract?.logisticsMode ?? rental.logisticsMode) === 'recojo' ? 'Recojo por cliente' : 'Envio por equipo')}</strong></div>
         </div>
-        <table class="wi-table">
-          <thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>
-          <tbody>${itemRows || '<tr><td colspan="8">Sin items registrados.</td></tr>'}</tbody>
-        </table>
+        ${itemTables}
         <div class="wi-order-foot">
           <span>Preparado por: ______________________________</span>
           <span>Entregado por: ______________________________</span>
@@ -5558,58 +5575,187 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       </section>`;
   }).join('');
 
+  const thermalOrderSections = weeklyOrders.map((entry, orderIndex) => {
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
+    const orderItems = rental.items ?? [];
+    const splitItems = orderItems.length > 7;
+    const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
+    const renderThermalRows = (lines, offset = 0) => lines.map((line, index) => `
+          <tr>
+            <td>${offset + index + 1}</td>
+            <td>${escapeHtml(line.itemName)}</td>
+            <td>${Math.max(0, Number(line.quantity ?? 0))}</td>
+          </tr>`).join('');
+    const responsible = contract?.responsibles?.[0]?.name
+      ?? contract?.createdByName
+      ?? rental.createdByName
+      ?? 'Sin responsable';
+    const address = contract?.address ?? deliveryOut?.address ?? rental.eventAddress ?? '-';
+    const inventoryStatus = rental.status === 'returned'
+      ? 'Devuelto'
+      : rental.operational?.inventoryStatus === 'salio'
+        ? 'Salio'
+        : rental.operational?.inventoryStatus === 'confirmado'
+          ? 'Listo'
+          : 'Por alistar';
+    const firstRows = renderThermalRows(orderItems.slice(0, firstColumnSize), 0);
+    const secondRows = splitItems ? renderThermalRows(orderItems.slice(firstColumnSize), firstColumnSize) : '';
+    return `
+      <section class="ti-order">
+        <div class="ti-order-top">
+          <span>${orderIndex + 1}</span>
+          <strong>CONTRATO: ${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong>
+          <b>ESTADO: ${escapeHtml(inventoryStatus)}</b>
+        </div>
+        <div class="ti-grid">
+          <p><b>CLIENTE:</b> ${escapeHtml(rental.customerName)}</p>
+          <p><b>RESPONSABLE:</b> ${escapeHtml(responsible)}</p>
+          <p><b>DIRECCION:</b> ${escapeHtml(address)}</p>
+          <p><b>EVENTO:</b> ${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</p>
+        </div>
+        <p><b>ENTREGA / SALIDA:</b> ${escapeHtml(formatWindow(deliveryDate, contract?.deliveryWindowStart ?? deliveryOut?.windowStart, contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd))}</p>
+        <p><b>RECOJO / RETORNO:</b> ${escapeHtml(formatWindow(pickupDate, contract?.pickupWindowStart ?? deliveryBack?.windowStart, contract?.pickupWindowEnd ?? deliveryBack?.windowEnd))}</p>
+        <p><b>LOGISTICA:</b> ${escapeHtml((contract?.logisticsMode ?? rental.logisticsMode) === 'recojo' ? 'Recojo por cliente' : 'Envio por equipo')}</p>
+        ${orderItems.length ? `
+        <div class="ti-items ${splitItems ? 'is-split' : ''}">
+          <table>
+            <thead><tr><th>N</th><th>ITEM</th><th>CANT.</th></tr></thead>
+            <tbody>${firstRows}</tbody>
+          </table>
+          ${splitItems ? `
+          <table>
+            <thead><tr><th>N</th><th>ITEM</th><th>CANT.</th></tr></thead>
+            <tbody>${secondRows}</tbody>
+          </table>` : ''}
+        </div>` : '<p>Sin items registrados.</p>'}
+        <div class="ti-sign"><span>Entregado por: ______________</span><span>Recibido por: ______________</span></div>
+      </section>`;
+  }).join('');
+
+  if (format === 'thermal') {
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Control semanal termico ${escapeHtml(weekStart)}</title>
+    <style>
+      @page { size: 80mm auto; margin: 3mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #000; background: #fff; font: 700 11px Arial, sans-serif; }
+      .ti-receipt { width: 74mm; margin: 0 auto; }
+      .ti-header { display: grid; grid-template-columns: 12mm 1fr; gap: 3mm; align-items: center; padding-bottom: 1.5mm; border-bottom: .35mm dashed #000; }
+      .ti-mark { width: 11mm; height: 11mm; display: grid; place-items: center; border: .7mm solid #000; border-radius: 50%; font-size: 20px; font-weight: 900; }
+      .ti-header h1 { margin: 0; font-size: 18px; line-height: 1; }
+      .ti-header p { margin: 1mm 0 0; font-size: 9px; }
+      .ti-title { padding: 2mm 0 1mm; border-bottom: .3mm solid #000; }
+      .ti-title h2 { margin: 0; font-size: 16px; line-height: 1.05; }
+      .ti-title p { margin: 1mm 0 0; font-size: 10px; line-height: 1.18; }
+      .ti-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; padding: 1.5mm 0; border-bottom: .35mm dashed #000; }
+      .ti-summary small { display: block; font-size: 9px; }
+      .ti-summary strong { display: block; margin-top: .6mm; font-size: 12px; }
+      .ti-order { padding: 1.6mm 0; border-bottom: .35mm dashed #000; break-inside: avoid; page-break-inside: avoid; }
+      .ti-order p { margin: .7mm 0; line-height: 1.15; }
+      .ti-order-top { display: grid; grid-template-columns: 7mm 1fr; gap: 2mm; align-items: center; }
+      .ti-order-top span { width: 6mm; height: 6mm; display: grid; place-items: center; color: #fff; background: #000; border-radius: .7mm; font-size: 15px; }
+      .ti-order-top strong, .ti-order-top b { font-size: 12px; line-height: 1.1; }
+      .ti-order-top b { grid-column: 2; justify-self: end; }
+      .ti-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 3mm; }
+      .ti-grid p:nth-child(3) { grid-column: 1 / -1; }
+      .ti-items { margin-top: 1mm; }
+      .ti-items.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.8mm; }
+      .ti-items.is-split table:first-child { border-right: .25mm solid #000; padding-right: 1.4mm; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th { padding: .7mm .5mm; border-bottom: .25mm solid #000; font-size: 9px; text-align: left; }
+      td { padding: .45mm .5mm; font-size: 9.3px; line-height: 1.05; vertical-align: top; }
+      th:first-child, td:first-child { width: 6mm; text-align: center; }
+      th:last-child, td:last-child { width: 10mm; text-align: right; }
+      .ti-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 2mm; font-size: 10px; }
+      .ti-footer { padding: 2mm 0; text-align: center; font-size: 11px; }
+      .ti-footer strong { display: block; margin-top: 1.5mm; }
+    </style>
+  </head>
+  <body>
+    <main class="ti-receipt">
+      <header class="ti-header">
+        <span class="ti-mark">C</span>
+        <div><h1>${escapeHtml(company.name)}</h1><p>CONTROL OPERATIVO DE INVENTARIO</p></div>
+      </header>
+      <section class="ti-title">
+        <h2>HOJA SEMANAL DE ALISTAMIENTO, SALIDA Y RETORNO</h2>
+        <p>Documento unico para controlar las ordenes de servicio con entrega o recojo dentro del periodo.</p>
+      </section>
+      <section class="ti-summary">
+        <div><small>SEMANA OPERATIVA</small><strong>${escapeHtml(`${formatDocumentDate(weekStart)} al ${formatDocumentDate(weekEnd)}`)}</strong></div>
+        <div><small>TOTAL ORDENES</small><strong>${weeklyOrders.length}</strong></div>
+      </section>
+      ${thermalOrderSections || '<p>No existen contratos con entrega o recojo programados para esta semana.</p>'}
+      <footer class="ti-footer">
+        ${escapeHtml(company.address)} | ${escapeHtml(company.phone || '')}
+        <strong>PAGINA 1 DE 1</strong>
+      </footer>
+    </main>
+  </body>
+</html>`;
+  }
+
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <title>Control semanal de inventario ${escapeHtml(weekStart)}</title>
     <style>
-      @page { size: legal landscape; margin: 9mm; }
+      @page { size: A4 portrait; margin: 6mm; }
       * { box-sizing: border-box; }
-      body { margin: 0; color: #16213d; background: #eef1f6; font: 12px Arial, sans-serif; }
-      .wi-sheet { width: 100%; max-width: 336mm; min-height: 196mm; margin: 0 auto; padding: 8mm; background: #fff; }
-      .wi-header { display: grid; grid-template-columns: 1fr auto; gap: 8mm; align-items: center; padding-bottom: 4mm; border-bottom: 1mm solid #ef5000; }
+      body { margin: 0; color: #09255a; background: #eef1f6; font: 8.2px Arial, sans-serif; }
+      .wi-sheet { width: 100%; max-width: 198mm; min-height: 285mm; margin: 0 auto; padding: 4.5mm; background: #fff; box-shadow: 0 3mm 12mm rgba(9, 37, 90, .12); }
+      .wi-header { display: grid; grid-template-columns: 1fr 54mm; gap: 5mm; align-items: center; padding-bottom: 3mm; border-bottom: .35mm solid #09255a; }
       .wi-brand { display: flex; align-items: center; gap: 4mm; }
-      .wi-brand-mark { width: 13mm; height: 13mm; display: grid; place-items: center; border: .6mm solid #ef5000; border-radius: 50%; color: #ef5000; font: italic 800 18px Georgia, serif; }
-      .wi-brand h1 { margin: 0; color: #10182e; font: 800 22px Georgia, serif; }
-      .wi-brand p { margin: 1mm 0 0; color: #ef5000; font-weight: 700; text-transform: uppercase; }
-      .wi-period { min-width: 76mm; padding: 3mm 5mm; border: .3mm solid #f4b18d; border-radius: 2mm; text-align: right; }
-      .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #77809a; font-size: 9px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; }
-      .wi-period strong { display: block; margin-top: 1mm; color: #ef5000; font-size: 15px; }
-      .wi-intro { display: grid; grid-template-columns: 1fr auto; gap: 5mm; margin: 4mm 0; padding: 3mm 4mm; border-radius: 2mm; background: #fff6f0; }
-      .wi-intro h2 { margin: 0; font-size: 17px; }
-      .wi-intro p { margin: 1mm 0 0; color: #626c86; }
-      .wi-count { align-self: center; color: #ef5000; font-size: 13px; font-weight: 900; }
-      .wi-order { margin-top: 4mm; border: .3mm solid #d9dfeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-      .wi-order-head { display: grid; grid-template-columns: 42mm 1fr 1fr 1.5fr 28mm; gap: 4mm; align-items: center; padding: 3mm; background: #f7f9fd; border-bottom: .25mm solid #d9dfeb; }
-      .wi-order-head strong { display: block; margin-top: .7mm; font-size: 12px; line-height: 1.25; text-transform: uppercase; }
-      .wi-order-number { display: flex; align-items: center; gap: 2.5mm; }
-      .wi-order-number > span { width: 8mm; height: 8mm; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #ef5000; font-weight: 900; }
-      .wi-status { color: #ef5000; }
-      .wi-order-meta { display: grid; grid-template-columns: 1fr 1fr 1.7fr .8fr; gap: 3mm; padding: 2mm 3mm; border-bottom: .25mm solid #d9dfeb; }
-      .wi-order-meta > div { padding-right: 3mm; border-right: .2mm solid #e5e8ef; }
+      .wi-brand-mark { width: 13mm; height: 13mm; display: grid; place-items: center; border: .7mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 18px Arial, sans-serif; }
+      .wi-brand h1 { margin: 0; color: #09255a; font: 900 21px Arial, sans-serif; letter-spacing: 0; }
+      .wi-brand p { margin: .6mm 0 0; color: #ef5000; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+      .wi-period { padding: 2.5mm 3mm; border: .3mm solid #09255a; border-radius: 2.5mm; text-align: center; }
+      .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #09255a; font-size: 6.4px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
+      .wi-period strong { display: block; margin-top: .7mm; color: #ef5000; font-size: 11px; line-height: 1.18; }
+      .wi-intro { display: grid; grid-template-columns: 1fr 39mm; gap: 5mm; align-items: center; margin: 3mm 0 2mm; }
+      .wi-intro h2 { margin: 0; color: #09255a; font-size: 14.5px; line-height: 1.08; text-transform: uppercase; }
+      .wi-intro p { margin: .8mm 0 0; max-width: 115mm; color: #3c4967; font-size: 8.4px; line-height: 1.2; }
+      .wi-count { display: grid; place-items: center; min-height: 15mm; border-radius: 2.5mm; color: #fff; background: #ef5000; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+      .wi-count b { display: block; margin-bottom: -1mm; font-size: 21px; line-height: 1; }
+      .wi-order { margin-top: 2mm; border: .22mm solid #d8deeb; border-radius: 2.5mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+      .wi-order-head { display: grid; grid-template-columns: 35mm 41mm 41mm 1fr 24mm; gap: 2mm; align-items: center; padding: 1.8mm 2.2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-head strong { display: block; margin-top: .4mm; color: #061b48; font-size: 8.3px; line-height: 1.13; text-transform: uppercase; }
+      .wi-order-number { display: flex; align-items: center; gap: 2mm; }
+      .wi-order-number > span { width: 9mm; height: 11mm; display: grid; place-items: center; border-radius: 2.2mm 2.2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 15px; font-weight: 900; }
+      .wi-status { display: inline-block !important; width: max-content; padding: .8mm 1.5mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 7.4px !important; }
+      .wi-order-meta { display: grid; grid-template-columns: 1.25fr 1.25fr .85fr 1fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-meta > div { min-height: 9mm; padding: 1.5mm 3mm 1.3mm 6mm; border-right: .18mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
-      .wi-order-meta strong { display: block; margin-top: .7mm; font-size: 11px; }
+      .wi-order-meta strong { display: block; margin-top: .4mm; color: #061b48; font-size: 7.6px; line-height: 1.12; }
+      .wi-tables { width: 100%; }
+      .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+      .wi-tables.is-split .wi-table:first-child { border-right: .3mm solid #09255a; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .wi-table th { padding: 2.2mm; color: #fff; background: #ef5000; font-size: 10px; text-align: left; }
-      .wi-table td { height: 13mm; padding: 1.8mm 2mm; border-right: .2mm solid #e1e5ed; border-bottom: .2mm solid #e1e5ed; vertical-align: middle; font-size: 11px; }
+      .wi-table th { padding: .85mm 1mm; color: #fff; background: #09255a; font-size: 5.7px; line-height: 1; text-align: left; }
+      .wi-table td { height: 5.7mm; padding: .45mm .8mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 6.8px; }
       .wi-table tr:last-child td { border-bottom: 0; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 22mm; text-align: center; }
-      .wi-table th:last-child, .wi-table td:last-child { width: 58mm; border-right: 0; }
-      .wi-index { width: 9mm; text-align: center !important; }
-      .wi-number { width: 17mm; text-align: center !important; }
-      .wi-product { display: grid; grid-template-columns: 13mm minmax(0, 1fr); gap: 2.5mm; align-items: center; }
-      .wi-product img, .wi-no-image { width: 11mm; height: 11mm; border: .2mm solid #d8deea; border-radius: 1.2mm; object-fit: cover; }
-      .wi-no-image { display: grid; place-items: center; color: #929aae; background: #f6f7fa; font-size: 6.5px; line-height: 1; text-align: center; }
-      .wi-product strong { font-size: 11px; line-height: 1.2; }
-      .wi-check i { display: inline-block; width: 5.5mm; height: 5.5mm; border: .4mm solid #727b91; border-radius: .8mm; }
-      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; padding: 5mm 4mm 3mm; color: #4f5871; font-size: 10px; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 13mm; text-align: center; }
+      .wi-table th:last-child, .wi-table td:last-child { width: 26mm; border-right: 0; }
+      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 8mm; }
+      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 16mm; }
+      .wi-index { width: 5.5mm; text-align: center !important; }
+      .wi-number { width: 10mm; text-align: center !important; }
+      .wi-product { display: grid; grid-template-columns: 6.4mm minmax(0, 1fr); gap: 1mm; align-items: center; }
+      .wi-product img, .wi-no-image { width: 5.7mm; height: 5.7mm; border: .18mm solid #d8deea; border-radius: .8mm; object-fit: cover; }
+      .wi-no-image { display: block; background: #f6f7fa; }
+      .wi-product strong { color: #061b48; font-size: 6.3px; line-height: 1.1; text-transform: uppercase; }
+      .wi-check i { display: inline-block; width: 3.2mm; height: 3.2mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
+      .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 1.7mm 4mm; color: #09255a; font-size: 6.7px; }
+      .wi-empty-order { padding: 5mm; color: #7b8499; text-align: center; }
       .wi-empty { padding: 20mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
-      .wi-footer { display: flex; justify-content: space-between; margin-top: 5mm; padding-top: 2mm; border-top: .3mm solid #ef5000; color: #6c7488; font-size: 8px; }
+      .wi-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 2.5mm; padding: 3mm 6mm; color: #fff; background: #09255a; font-size: 9px; }
       @media print {
         body { background: #fff; }
-        .wi-sheet { max-width: none; min-height: 0; margin: 0; padding: 0; }
-        .wi-footer { position: fixed; right: 0; bottom: -5mm; left: 0; }
+        .wi-sheet { max-width: none; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
         .wi-page::after { content: "Pagina " counter(page); }
       }
     </style>
@@ -5622,7 +5768,7 @@ const buildWeeklyInventoryHtml = ({ rentals, contracts, deliveries, items, setti
       </header>
       <section class="wi-intro">
         <div><h2>Hoja semanal de alistamiento, salida y retorno</h2><p>Documento unico para controlar las ordenes de servicio con entrega o recojo dentro del periodo.</p></div>
-        <div class="wi-count">${weeklyOrders.length} ordenes</div>
+        <div class="wi-count"><b>${weeklyOrders.length}</b> ordenes</div>
       </section>
       ${orderSections || '<div class="wi-empty">No existen contratos con entrega o recojo programados para esta semana.</div>'}
       <footer class="wi-footer"><span>${escapeHtml(company.address)} | ${escapeHtml(company.phone || '')}</span><span class="wi-page"></span></footer>
@@ -11717,6 +11863,7 @@ const createWebBridge = () => ({
     printInventoryWeek: async (payload) => {
       const state = readState();
       const requestedStart = toDateKey(payload?.weekStart);
+      const format = payload?.format === 'thermal' ? 'thermal' : 'standard';
       const baseDate = requestedStart ? new Date(`${requestedStart}T12:00:00`) : new Date();
       const day = baseDate.getDay();
       const mondayOffset = day === 0 ? -6 : 1 - day;
@@ -11735,7 +11882,7 @@ const createWebBridge = () => ({
       ].join('-');
       return {
         ok: true,
-        title: `Control semanal de inventario ${weekStart}`,
+        title: `${format === 'thermal' ? 'Ticket Epson TM-T20' : 'Control semanal de inventario'} ${weekStart}`,
         html: buildWeeklyInventoryHtml({
           rentals: state.rentals,
           contracts: state.contracts,
@@ -11744,6 +11891,7 @@ const createWebBridge = () => ({
           settings: state.settings,
           weekStart,
           weekEnd,
+          format,
         }),
       };
     },
