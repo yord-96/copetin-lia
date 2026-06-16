@@ -9861,7 +9861,7 @@ textarea:focus {
   background: #f9fbff;
   padding: 0.46rem 0.52rem;
   display: grid;
-  grid-template-columns: 1.1fr 1fr 1fr auto auto;
+  grid-template-columns: 1.08fr 0.88fr 1.12fr auto auto;
   gap: 0.56rem;
   align-items: center;
 }
@@ -9883,6 +9883,28 @@ textarea:focus {
   font-size: 0.73rem;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.inventory-ops-label {
+  color: #4e5b88 !important;
+  font-size: 0.62rem !important;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.inventory-ops-schedule {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.inventory-ops-schedule-line {
+  display: grid;
+  gap: 0.04rem;
+}
+
+.inventory-ops-schedule-line strong {
+  font-size: 0.8rem;
 }
 
 .inventory-ops-priority {

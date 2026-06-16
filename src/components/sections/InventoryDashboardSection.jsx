@@ -10,6 +10,15 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+const isPickupDeliveryRecord = (delivery) => {
+  const routeType = normalizeText(delivery?.routeType);
+  const notes = normalizeText(delivery?.notes);
+  return routeType === 'recojo'
+    || notes.includes('recojo')
+    || notes.includes('recog')
+    || notes.includes('devolucion');
+};
+
 const getMondayDateKey = (value = new Date()) => {
   const date = value instanceof Date ? new Date(value) : new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return '';
@@ -941,17 +950,24 @@ function InventoryDashboardSection({
       .filter((delivery) => delivery.rentalId)
       .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate))
       .forEach((delivery) => {
-        if (!deliveryByRental.has(delivery.rentalId)) {
-          deliveryByRental.set(delivery.rentalId, delivery);
-        }
+        const key = String(delivery.rentalId);
+        const list = deliveryByRental.get(key) ?? [];
+        list.push(delivery);
+        deliveryByRental.set(key, list);
       });
 
-    const getPriority = (delivery) => {
-      if (!delivery) return { key: 'media', label: 'Media', weight: 2 };
-      if (delivery.status === 'incidencia' || delivery.status === 'en_ruta') {
+    const formatWindow = (start, end) => {
+      const windowStart = String(start ?? '').trim();
+      const windowEnd = String(end ?? '').trim();
+      if (!windowStart && !windowEnd) return 'Sin horario';
+      return `${windowStart || '--:--'} - ${windowEnd || '--:--'}`;
+    };
+
+    const getPriority = (dateValue, delivery) => {
+      if (delivery?.status === 'incidencia' || delivery?.status === 'en_ruta') {
         return { key: 'alta', label: 'Alta', weight: 3 };
       }
-      const deliveryTime = new Date(String(delivery.scheduledDate ?? '')).getTime();
+      const deliveryTime = new Date(String(dateValue ?? '')).getTime();
       if (!Number.isFinite(deliveryTime)) return { key: 'media', label: 'Media', weight: 2 };
       const diffDays = Math.floor((deliveryTime - startOfToday) / (1000 * 60 * 60 * 24));
       if (diffDays <= 1) return { key: 'alta', label: 'Alta', weight: 3 };
@@ -974,11 +990,25 @@ function InventoryDashboardSection({
 
     return activeRentals
       .map((rental) => {
-        const delivery = deliveryByRental.get(rental.id) ?? null;
         const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
+        const linkedDeliveries = (deliveryByRental.get(String(rental.id)) ?? []).slice();
+        const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
+        const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
+        const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
+        const deliveryLabel = logisticsMode === 'recojo' ? 'Alistamiento' : 'Entrega';
+        const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate ?? null;
+        const deliveryWindowStart = contract?.deliveryWindowStart ?? deliveryOut?.windowStart ?? rental.deliveryWindowStart ?? '';
+        const deliveryWindowEnd = contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd ?? rental.deliveryWindowEnd ?? '';
+        const pickupDate = contract?.pickupDate ?? deliveryBack?.scheduledDate ?? rental.dueDate ?? null;
+        const pickupWindowStart = contract?.pickupWindowStart ?? deliveryBack?.windowStart ?? rental.pickupWindowStart ?? '';
+        const pickupWindowEnd = contract?.pickupWindowEnd ?? deliveryBack?.windowEnd ?? rental.pickupWindowEnd ?? rental.dueTime ?? '';
+        const operationDates = [deliveryDate, pickupDate]
+          .map((value) => String(value ?? '').slice(0, 10))
+          .filter(Boolean)
+          .sort();
         const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
         const lines = (rental.items ?? []).length;
-        const priority = getPriority(delivery);
+        const priority = getPriority(operationDates[0] ?? deliveryDate, deliveryOut ?? deliveryBack);
         const inventoryStatus = rental.operational?.inventoryStatus ?? 'pendiente';
         const inventoryMeta = getInventoryMeta(inventoryStatus);
         return {
@@ -987,13 +1017,15 @@ function InventoryDashboardSection({
           rentalId: rental.id,
           orderCode: rental.orderCode ?? rental.id,
           contractCode: contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id,
-          customerName: rental.customerName,
-          address: contract?.address ?? delivery?.address ?? rental.eventAddress ?? 'Direccion pendiente',
+          customerName: contract?.customerName ?? rental.customerName,
+          address: contract?.address ?? deliveryOut?.address ?? deliveryBack?.address ?? rental.eventAddress ?? 'Direccion pendiente',
           itemsText: `${totalItems} unidades · ${lines} items`,
-          deliveryDate: delivery?.scheduledDate ?? rental.rentalDate ?? null,
-          deliveryWindow: delivery ? `${delivery.windowStart || '--:--'} - ${delivery.windowEnd || '--:--'}` : 'Pendiente',
-          pickupDate: rental.dueDate ?? null,
-          pickupWindow: `${rental.pickupWindowStart || '--:--'} - ${rental.pickupWindowEnd || rental.dueTime || '--:--'}`,
+          deliveryLabel,
+          deliveryDate,
+          deliveryWindow: formatWindow(deliveryWindowStart, deliveryWindowEnd),
+          pickupDate,
+          pickupWindow: formatWindow(pickupWindowStart, pickupWindowEnd),
+          operationSortDate: operationDates[0] ?? null,
           priority,
           inventoryStatus,
           inventoryStatusText: inventoryMeta.text,
@@ -1013,7 +1045,7 @@ function InventoryDashboardSection({
           return a.inventorySecondarySortWeight - b.inventorySecondarySortWeight;
         }
         if (b.priority.weight !== a.priority.weight) return b.priority.weight - a.priority.weight;
-        return new Date(a.deliveryDate ?? 0) - new Date(b.deliveryDate ?? 0);
+        return new Date(a.operationSortDate ?? a.deliveryDate ?? 0) - new Date(b.operationSortDate ?? b.deliveryDate ?? 0);
       });
   }, [activeRentals, contracts, deliveries]);
 
@@ -2754,12 +2786,22 @@ function InventoryDashboardSection({
                       <strong>{row.itemsText}</strong>
                       <span>{row.inventoryStatusText}</span>
                     </div>
-                    <div>
-                      <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
-                      <span>{row.deliveryWindow}</span>
+                    <div className="inventory-ops-schedule">
+                      <div className="inventory-ops-schedule-line">
+                        <span className="inventory-ops-label">{row.deliveryLabel}</span>
+                        <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
+                        <span>{row.deliveryWindow}</span>
+                      </div>
+                      <div className="inventory-ops-schedule-line">
+                        <span className="inventory-ops-label">Recojo</span>
+                        <strong>{row.pickupDate ? formatDateTime(row.pickupDate).split(',')[0] : 'Sin fecha'}</strong>
+                        <span>{row.pickupWindow}</span>
+                      </div>
                     </div>
                     <div className="inventory-ops-state">
+                      <span className="inventory-ops-label">Prioridad</span>
                       <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
+                      <span className="inventory-ops-label">Estado</span>
                       <span>{row.inventoryStatus === 'salio' ? 'Salio' : row.inventoryStatus === 'confirmado' ? 'Listo' : 'Pendiente'}</span>
                     </div>
                     <div className="inventory-ops-actions">
