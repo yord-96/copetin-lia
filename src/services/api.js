@@ -28,6 +28,8 @@ const browserTabId =
 let sharedSyncPromise = null;
 let lastSharedSyncAt = 0;
 let lastSharedRevision = null;
+let hasLoadedServerState = false;
+let serverStateFetchCount = 0;
 let lastRemotePollAt = 0;
 let remotePollBackoffUntil = 0;
 let remotePollBackoffMs = 0;
@@ -176,7 +178,11 @@ const exportLocalState = async () => {
   return storage.exportState();
 };
 
-const fetchServerState = async () => {
+const fetchServerState = async (reason = 'sync') => {
+  serverStateFetchCount += 1;
+  const requestNumber = serverStateFetchCount;
+  const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  console.info(`[copetin-sync] GET ${SERVER_STATE_ENDPOINT} #${requestNumber} iniciado`, { reason });
   const response = await fetch(getServerStateUrl(), {
     cache: 'no-store',
     headers: getInternalHeaders(),
@@ -185,6 +191,12 @@ const fetchServerState = async () => {
     throw await createServerStateError(response, 'No se pudo leer la base de datos del sistema.');
   }
   const payload = await response.json();
+  const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  console.info(`[copetin-sync] GET ${SERVER_STATE_ENDPOINT} #${requestNumber} completado`, {
+    reason,
+    durationMs: Math.round(finishedAt - startedAt),
+    revision: payload?.revision ?? null,
+  });
   if (payload && Object.prototype.hasOwnProperty.call(payload, 'revision')) {
     lastSharedRevision = payload.revision;
   }
@@ -352,7 +364,7 @@ const callServerPresence = async (action, payload) => {
   }
 };
 
-const syncServerState = async ({ force = false, required = false } = {}) => {
+const syncServerState = async ({ force = false, required = false, reason = 'sync' } = {}) => {
   if (!shouldUseServerState()) {
     return;
   }
@@ -362,7 +374,11 @@ const syncServerState = async ({ force = false, required = false } = {}) => {
     await sharedSyncPromise.catch(() => {});
   }
   if (sharedSyncPromise) {
+    console.info(`[copetin-sync] Reutilizando carga en curso de ${SERVER_STATE_ENDPOINT}`, { reason });
     return sharedSyncPromise;
+  }
+  if (!force && hasLoadedServerState) {
+    return;
   }
   if (!force && now - lastSharedSyncAt < SYNC_THROTTLE_MS) {
     return;
@@ -370,11 +386,12 @@ const syncServerState = async ({ force = false, required = false } = {}) => {
 
   sharedSyncPromise = (async () => {
   try {
-    const payload = await fetchServerState();
+    const payload = await fetchServerState(reason);
     resetRemoteBackoff();
     if (payload?.initialized && payload.state) {
       await replaceLocalState(payload.state);
       lastSharedSyncAt = Date.now();
+      hasLoadedServerState = true;
       return;
     }
 
@@ -383,6 +400,7 @@ const syncServerState = async ({ force = false, required = false } = {}) => {
       await pushServerState();
     }
     lastSharedSyncAt = Date.now();
+    hasLoadedServerState = true;
   } catch (error) {
     applyRemoteBackoff(error);
     if (required) {
@@ -407,6 +425,12 @@ const notifySubscribers = (payload) => {
       console.warn(error);
     }
   });
+};
+
+const markServerStateStale = (reason) => {
+  hasLoadedServerState = false;
+  lastSharedSyncAt = 0;
+  console.info(`[copetin-sync] Estado local marcado como pendiente de sincronizacion`, { reason });
 };
 
 const announceDataChange = ({ domain, method }) => {
@@ -473,7 +497,7 @@ const pollRemoteRevision = async () => {
       return;
     }
     if (remoteRevision !== lastSharedRevision) {
-      await syncServerState({ force: true });
+      await syncServerState({ force: true, reason: 'remote-revision' });
       notifySubscribers({ source: 'remote', reason: 'remote-revision', revision: remoteRevision });
     }
   } catch (error) {
@@ -495,6 +519,9 @@ const ensureSyncListeners = () => {
     syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
     syncChannel.onmessage = (event) => {
       if (!event.data || event.data.source === browserTabId) return;
+      if (event.data.domain !== 'presence') {
+        markServerStateStale('broadcast');
+      }
       if (event.data.revision) {
         lastSharedRevision = event.data.revision;
       }
@@ -503,6 +530,7 @@ const ensureSyncListeners = () => {
   } else {
     window.addEventListener('storage', (event) => {
       if (event.key !== WEB_DB_STORAGE_KEY) return;
+      markServerStateStale('storage');
       notifySubscribers({ source: 'storage', reason: 'storage' });
     });
   }
@@ -534,7 +562,11 @@ const callBridge = async (domain, method, mutates, ...args) => {
   const request = (async () => {
     const runMutationAttempt = async (attempt = 0) => {
       try {
-        await syncServerState({ force: !isPresenceMutation, required: !isPresenceMutation });
+        await syncServerState({
+          force: !isPresenceMutation,
+          required: !isPresenceMutation,
+          reason: `${domain}.${method}:mutation-preflight`,
+        });
       } catch (error) {
         if (isTransientServerError(error) && attempt < MUTATION_TRANSIENT_RETRIES) {
           await sleep(getRetryDelayMs(error, attempt));
@@ -552,13 +584,17 @@ const callBridge = async (domain, method, mutates, ...args) => {
         if (isPresenceMutation) {
           applyRemoteBackoff(error);
           if (error?.status === 409) {
-            await syncServerState({ force: true });
+            await syncServerState({ force: true, reason: `${domain}.${method}:presence-conflict` });
           }
           return result;
         }
 
         if (error?.status === 409 && attempt < MUTATION_CONFLICT_RETRIES) {
-          await syncServerState({ force: true, required: true });
+          await syncServerState({
+            force: true,
+            required: true,
+            reason: `${domain}.${method}:revision-conflict`,
+          });
           await sleep(getRetryDelayMs(error, attempt));
           return runMutationAttempt(attempt + 1);
         }
@@ -576,7 +612,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
       return enqueueMutation(() => runMutationAttempt());
     }
 
-    await syncServerState({ force: false });
+    await syncServerState({ force: false, reason: `${domain}.${method}` });
     const result = await getBridge()[domain][method](...args);
     return result;
   })();
@@ -606,7 +642,8 @@ export const runtimeInfo =
 export const api = {
   sync: {
     subscribe: subscribeToDataChanges,
-    pullLatest: () => syncServerState({ force: true }),
+    ensureLoaded: () => syncServerState({ required: true, reason: 'initial-bootstrap' }),
+    pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     getRevision: fetchServerMeta,
   },
   inventory: {
@@ -671,7 +708,16 @@ export const api = {
     resendInvite: (payload) => callBridge('users', 'resendInvite', true, payload),
   },
   auth: {
-    getSession: () => callBridge('auth', 'getSession', false),
+    getSession: async () => {
+      const bridge = getBridge();
+      const hasStoredSession = await bridge.auth.hasStoredSession();
+      if (!hasStoredSession) {
+        console.info(`[copetin-sync] Sesion local ausente; se omite GET ${SERVER_STATE_ENDPOINT}`);
+        return null;
+      }
+      await syncServerState({ required: true, reason: 'auth-session' });
+      return bridge.auth.getSession();
+    },
     login: (payload) => callBridge('auth', 'login', true, payload),
     logout: () => callBridge('auth', 'logout', true),
   },

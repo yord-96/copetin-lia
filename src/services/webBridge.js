@@ -1904,6 +1904,8 @@ const normalizeState = (state) => {
 let inMemoryState = createSeedData();
 let inMemoryStateHydrated = false;
 let localStorageStateDisabled = false;
+let queryStateSnapshot = null;
+let queryStateSnapshotBuildCount = 0;
 
 const disableLocalStateStorage = () => {
   localStorageStateDisabled = true;
@@ -1937,11 +1939,18 @@ const persistLocalStateSnapshot = (state) => {
   }
 };
 
-const readState = () => {
-  if (inMemoryStateHydrated || localStorageStateDisabled || !canUseLocalStorage()) {
+const invalidateQueryStateSnapshot = () => {
+  queryStateSnapshot = null;
+};
+
+const ensureStateHydrated = () => {
+  if (inMemoryStateHydrated) return;
+
+  if (localStorageStateDisabled || !canUseLocalStorage()) {
     inMemoryState = normalizeState(inMemoryState);
     inMemoryStateHydrated = true;
-    return deepClone(inMemoryState);
+    invalidateQueryStateSnapshot();
+    return;
   }
 
   const raw = window.localStorage.getItem(WEB_DB_STORAGE_KEY);
@@ -1949,7 +1958,8 @@ const readState = () => {
     inMemoryState = normalizeState(createSeedData());
     inMemoryStateHydrated = true;
     persistLocalStateSnapshot(inMemoryState);
-    return deepClone(inMemoryState);
+    invalidateQueryStateSnapshot();
+    return;
   }
 
   try {
@@ -1960,13 +1970,34 @@ const readState = () => {
   }
   inMemoryStateHydrated = true;
   persistLocalStateSnapshot(inMemoryState);
+  invalidateQueryStateSnapshot();
+};
+
+const readState = () => {
+  ensureStateHydrated();
   return deepClone(inMemoryState);
+};
+
+const readQueryState = () => {
+  ensureStateHydrated();
+  if (!queryStateSnapshot) {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    queryStateSnapshot = deepClone(inMemoryState);
+    queryStateSnapshotBuildCount += 1;
+    const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    console.info(`[copetin-state] Snapshot compartido #${queryStateSnapshotBuildCount} creado`, {
+      durationMs: Math.round(finishedAt - startedAt),
+      items: queryStateSnapshot.items?.length ?? 0,
+    });
+  }
+  return queryStateSnapshot;
 };
 
 const writeState = (state) => {
   const normalized = normalizeState(state);
   inMemoryState = normalized;
   inMemoryStateHydrated = true;
+  invalidateQueryStateSnapshot();
   persistLocalStateSnapshot(normalized);
   return deepClone(normalized);
 };
@@ -6957,22 +6988,22 @@ const syncRouteStopsToDeliveries = (state, route) => {
 const createWebBridge = () => ({
   inventory: {
     list: async () => {
-      const { items } = readState();
+      const { items } = readQueryState();
       return items.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
     listCombos: async () => {
-      const { inventoryCombos } = readState();
+      const { inventoryCombos } = readQueryState();
       return (inventoryCombos ?? [])
         .filter((combo) => !combo.deletedAt && String(combo.status ?? 'active') !== 'deleted')
         .slice()
         .sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
     listMovements: async () => {
-      const { inventoryMovements } = readState();
+      const { inventoryMovements } = readQueryState();
       return inventoryMovements.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
     listRecoveries: async () => {
-      const { stockRecoveries } = readState();
+      const { stockRecoveries } = readQueryState();
       return stockRecoveries
         .filter((entry) => Number(entry.quantity ?? 0) > 0)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -7560,7 +7591,7 @@ const createWebBridge = () => ({
 
   categories: {
     list: async () => {
-      const { categories } = readState();
+      const { categories } = readQueryState();
       return categories.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
     create: async (payload) => {
@@ -7682,7 +7713,7 @@ const createWebBridge = () => ({
 
   clients: {
     list: async () => {
-      const state = readState();
+      const state = readQueryState();
       const metrics = computeClientMetrics(state);
       return state.clients
         .map((client) => {
@@ -7955,7 +7986,7 @@ const createWebBridge = () => ({
 
   users: {
     list: async () => {
-      const { users } = readState();
+      const { users } = readQueryState();
       return users.filter((user) => !user.deletedAt).slice().sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
     },
     create: async (payload) => {
@@ -8282,7 +8313,7 @@ const createWebBridge = () => ({
 
   personnel: {
     listBundle: async () => {
-      const state = readState();
+      const state = readQueryState();
       return {
         employees: state.personnelEmployees
           .filter((row) => !row.deletedAt)
@@ -8549,6 +8580,7 @@ const createWebBridge = () => ({
   },
 
   auth: {
+    hasStoredSession: async () => Boolean(readSessionRecord()),
     getSession: async () => {
       const sessionRecord = touchSessionRecord();
       const userId = sessionRecord?.userId ?? null;
@@ -8556,7 +8588,7 @@ const createWebBridge = () => ({
         clearSessionUserId();
         return null;
       }
-      const state = readState();
+      const state = readQueryState();
       const user = state.users.find((entry) => entry.id === userId && entry.status === 'active');
       if (!user) {
         clearSessionUserId();
@@ -8633,7 +8665,7 @@ const createWebBridge = () => ({
 
   presence: {
     listActive: async () => {
-      const state = readState();
+      const state = readQueryState();
       const threshold = Date.now() - PRESENCE_TTL_MS;
       return (state.userPresence ?? [])
         .filter((presence) => new Date(presence.lastSeenAt).getTime() >= threshold)
@@ -8702,7 +8734,7 @@ const createWebBridge = () => ({
 
   transport: {
     listDeliveries: async () => {
-      const state = readState();
+      const state = readQueryState();
       return state.deliveries
         .filter((delivery) => !delivery.deletedAt)
         .map((delivery) => {
@@ -8731,7 +8763,7 @@ const createWebBridge = () => ({
         .sort((a, b) => new Date(b.scheduledDate) - new Date(a.scheduledDate));
     },
     listRoutes: async () => {
-      const state = readState();
+      const state = readQueryState();
       return (state.transportRoutes ?? [])
         .filter((route) => !route.deletedAt)
         .map((route) => hydrateTransportRoute(state, route))
@@ -8990,7 +9022,7 @@ const createWebBridge = () => ({
       return updated;
     },
     listVehicles: async () => {
-      const { vehicles } = readState();
+      const { vehicles } = readQueryState();
       return vehicles.filter((row) => !row.deletedAt).slice().sort((a, b) => a.code.localeCompare(b.code, 'es'));
     },
     createVehicle: async (payload) => {
@@ -9078,7 +9110,7 @@ const createWebBridge = () => ({
       return updated;
     },
     listDrivers: async () => {
-      const { drivers } = readState();
+      const { drivers } = readQueryState();
       return drivers.filter((row) => !row.deletedAt).slice().sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
     },
     createDriver: async (payload) => {
@@ -9170,7 +9202,7 @@ const createWebBridge = () => ({
 
   calendar: {
     listBoardNotes: async () => {
-      const state = readState();
+      const state = readQueryState();
       return state.calendarBoardNotes
         .slice()
         .sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0) - new Date(a.updatedAt ?? a.createdAt ?? 0))
@@ -9224,7 +9256,7 @@ const createWebBridge = () => ({
       return { ok: true, rowId };
     },
     listEvents: async () => {
-      const state = readState();
+      const state = readQueryState();
       const deliveryEvents = state.deliveries.map((delivery) => ({
         id: `del-${delivery.id}`,
         title: delivery.deliveryCode,
@@ -9308,7 +9340,7 @@ const createWebBridge = () => ({
 
   settings: {
     get: async () => {
-      const state = readState();
+      const state = readQueryState();
       return {
         settings: deepClone(state.settings),
         categories: state.categories.slice().sort((a, b) => a.name.localeCompare(b.name, 'es')),
@@ -9346,7 +9378,7 @@ const createWebBridge = () => ({
 
   reports: {
     listGenerated: async () => {
-      const state = readState();
+      const state = readQueryState();
       const receiptReports = state.rentals.filter((rental) => !rental.deletedAt).slice(0, 30).map((rental) => ({
         id: `rent-report-${rental.id}`,
         name: `Orden ${rental.orderCode ?? rental.id} - ${rental.customerName}`,
@@ -9394,7 +9426,7 @@ const createWebBridge = () => ({
 
   quotes: {
     list: async () => {
-      const { quotes } = readState();
+      const { quotes } = readQueryState();
       return quotes
         .filter((row) => !row.deletedAt)
         .slice()
@@ -9708,7 +9740,7 @@ const createWebBridge = () => ({
 
   contracts: {
     list: async () => {
-      const { contracts } = readState();
+      const { contracts } = readQueryState();
       return contracts
         .filter((row) => !row.deletedAt)
         .slice()
@@ -10032,7 +10064,7 @@ const createWebBridge = () => ({
 
   suppliers: {
     listBundle: async () => {
-      const state = readState();
+      const state = readQueryState();
       return {
         suppliers: state.suppliers
           .filter((row) => !row.deletedAt)
@@ -10251,7 +10283,7 @@ const createWebBridge = () => ({
 
   rentals: {
     list: async () => {
-      const { contracts, rentals } = readState();
+      const { contracts, rentals } = readQueryState();
       const canonicalRentalByContractId = new Map(
         contracts
           .filter((contract) => !contract.deletedAt && contract.id && contract.rentalId)
@@ -11026,7 +11058,7 @@ const createWebBridge = () => ({
 
   cash: {
     getSummary: async () => {
-      const state = readState();
+      const state = readQueryState();
       const activeSession = getActiveSession(state);
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -11112,12 +11144,12 @@ const createWebBridge = () => ({
       };
     },
     listSessions: async () => {
-      const { cashSessions } = readState();
+      const { cashSessions } = readQueryState();
       return cashSessions.slice().sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
     },
     listMovements: async (payload) => {
       const filterSessionId = String(payload?.sessionId ?? '').trim();
-      const { cashMovements } = readState();
+      const { cashMovements } = readQueryState();
       const filtered = filterSessionId
         ? cashMovements.filter((movement) => movement.sessionId === filterSessionId)
         : cashMovements;
@@ -12298,7 +12330,7 @@ const createWebBridge = () => ({
 
   dashboard: {
     get: async () => {
-      const state = readState();
+      const state = readQueryState();
       const activeRentals = state.rentals.filter((rental) => rental.status === 'active' && !rental.deletedAt);
       const returnedRentals = state.rentals.filter((rental) => rental.status === 'returned' && !rental.deletedAt);
 

@@ -128,6 +128,7 @@ export const useAppController = () => {
       setError('');
     }
     try {
+      await api.sync.ensureLoaded();
       const [
         dashboardData,
         inventoryData,
