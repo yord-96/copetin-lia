@@ -654,6 +654,9 @@ export const api = {
   calendar: {
     listEvents: () => callBridge('calendar', 'listEvents', false),
     createEvent: (payload) => callBridge('calendar', 'createEvent', true, payload),
+    listBoardNotes: () => callBridge('calendar', 'listBoardNotes', false),
+    upsertBoardNote: (payload) => callBridge('calendar', 'upsertBoardNote', true, payload),
+    removeBoardNote: (payload) => callBridge('calendar', 'removeBoardNote', true, payload),
   },
   settings: {
     get: () => callBridge('settings', 'get', false),

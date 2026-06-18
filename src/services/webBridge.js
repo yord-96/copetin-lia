@@ -869,6 +869,7 @@ const createSeedData = () => {
     vehicles: [],
     drivers: [],
     calendarEvents: [],
+    calendarBoardNotes: [],
     generatedReports: [],
     suppliers: [],
     supplierQuotes: [],
@@ -1355,6 +1356,19 @@ const normalizeState = (state) => {
       createdAt: event?.createdAt ?? now,
       updatedAt: event?.updatedAt ?? event?.createdAt ?? now,
     })).filter((event) => event.title && event.date)
+    : [];
+
+  source.calendarBoardNotes = Array.isArray(source.calendarBoardNotes)
+    ? source.calendarBoardNotes.map((note) => ({
+      id: note?.id ?? makeId('cbn'),
+      rowId: String(note?.rowId ?? '').trim(),
+      eventId: String(note?.eventId ?? '').trim() || null,
+      kind: String(note?.kind ?? '').trim() || null,
+      dateKey: String(note?.dateKey ?? '').trim() || null,
+      text: String(note?.text ?? '').trim(),
+      createdAt: note?.createdAt ?? now,
+      updatedAt: note?.updatedAt ?? note?.createdAt ?? now,
+    })).filter((note) => note.rowId && note.text)
     : [];
 
   source.generatedReports = Array.isArray(source.generatedReports)
@@ -5604,7 +5618,23 @@ const buildWeeklyInventoryHtml = ({
               <col class="wi-col-check" />
               <col class="wi-col-report" />
             </colgroup>`;
-  const tableHead = '<thead><tr><th class="wi-index">N.</th><th>ITEM</th><th class="wi-number">CANT.</th><th>LISTO</th><th>ENTREGADO</th><th>RECIBIDO</th><th>DESPERFECTO</th><th>DETALLE / REPORTE</th></tr></thead>';
+  const tableHead = `
+    <thead>
+      <tr class="wi-head-groups">
+        <th class="wi-index" rowspan="2">N.</th>
+        <th rowspan="2">ITEM</th>
+        <th class="wi-number" rowspan="2">CANT.</th>
+        <th class="wi-group-delivery" colspan="2">ENTREGA</th>
+        <th class="wi-group-pickup" colspan="2">RECOJO</th>
+        <th class="wi-report-head" rowspan="2">DETALLE / REPORTE</th>
+      </tr>
+      <tr class="wi-head-checks">
+        <th>LISTO</th>
+        <th>ENTREGADO<br />CLIENTE</th>
+        <th class="wi-pickup-start">RECOGIDO</th>
+        <th>DESPERFECTO</th>
+      </tr>
+    </thead>`;
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
     const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
     const orderItems = rental.items ?? [];
@@ -5658,8 +5688,8 @@ const buildWeeklyInventoryHtml = ({
         ${itemTables}
         <div class="wi-order-foot">
           ${format === 'individual'
-            ? '<span>Entregado por: ______________________________</span><span>Recibido por: ______________________________</span>'
-            : '<span>Preparado por: ______________________________</span><span>Entregado por: ______________________________</span><span>Recibido y constatado por: ______________________________</span>'}
+            ? '<span>Entregado por: ______________________________</span><span>Recogido por: ______________________________</span>'
+            : '<span>Preparado por: ______________________________</span><span>Entregado por: ______________________________</span><span>Recogido y constatado por: ______________________________</span>'}
         </div>
       </section>`;
   }).join('');
@@ -5718,7 +5748,7 @@ const buildWeeklyInventoryHtml = ({
             <tbody>${secondRows}</tbody>
           </table>` : ''}
         </div>` : '<p>Sin items registrados.</p>'}
-        <div class="ti-sign"><span>Entregado por: ______________</span><span>Recibido por: ______________</span></div>
+        <div class="ti-sign"><span>Entregado por: ______________</span><span>Recogido por: ______________</span></div>
       </section>`;
   }).join('');
 
@@ -5837,24 +5867,32 @@ const buildWeeklyInventoryHtml = ({
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; border-bottom: 0; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .wi-col-index { width: 4.2%; }
-      .wi-col-product { width: 47%; }
-      .wi-col-number { width: 6.8%; }
-      .wi-col-check { width: 4.8%; }
-      .wi-col-report { width: 22.8%; }
-      .wi-table th { padding: .95mm .9mm; color: #fff; background: #09255a; font-size: 8px; line-height: 1; text-align: left; }
-      .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
+      .wi-col-index { width: 4%; }
+      .wi-col-product { width: 38%; }
+      .wi-col-number { width: 7%; }
+      .wi-col-check { width: 6.5%; }
+      .wi-col-report { width: 25%; }
+      .wi-table { border: .3mm solid #aeb9cd; }
+      .wi-table th { padding: 1mm .65mm; border-right: .25mm solid #51658b; border-bottom: .25mm solid #51658b; color: #fff; background: #09255a; font-size: 8.8px; line-height: 1.08; text-align: left; vertical-align: middle; }
+      .wi-table .wi-head-groups th { font-size: 9.5px; text-align: center; }
+      .wi-table .wi-head-groups th:nth-child(2) { text-align: left; }
+      .wi-table .wi-head-checks th { padding: .8mm .25mm; font-size: 7.4px; line-height: 1.05; text-align: center; }
+      .wi-table .wi-group-delivery { background: #123b78; }
+      .wi-table .wi-group-pickup { background: #ef5000; }
+      .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left: .42mm solid #09255a; }
+      .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .42mm solid #09255a; }
+      .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .25mm solid #bac4d6; border-bottom: .25mm solid #bac4d6; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
       .wi-table tr:last-child td { border-bottom: 0; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; font-size: 6.4px; overflow-wrap: anywhere; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; overflow-wrap: anywhere; }
       .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 5mm; text-align: center !important; }
       .wi-number { width: 10mm; text-align: center !important; font-size: 10.2px !important; font-weight: 900 !important; }
       .wi-product { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
       .wi-product img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #d8deea; border-radius: .7mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 9.8px; line-height: 1.06; text-transform: uppercase; }
-      .wi-check i { display: inline-block; width: 4.4mm; height: 4.4mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
+      .wi-product strong { color: #061b48; font-size: 9.4px; line-height: 1.06; text-transform: uppercase; }
+      .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #67748c; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
@@ -5916,21 +5954,31 @@ const buildWeeklyInventoryHtml = ({
       .wi-tables { width: 100%; }
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .3mm solid #09255a; }
-      .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      .wi-table th { padding: .8mm .9mm; color: #fff; background: #09255a; font-size: 7.4px; line-height: 1; text-align: left; }
-      .wi-table td { height: 6.8mm; padding: .45mm .75mm; border-right: .18mm solid #e1e5ed; border-bottom: .18mm solid #e1e5ed; vertical-align: middle; font-size: 8.8px; }
+      .wi-table { width: 100%; border: .28mm solid #aeb9cd; border-collapse: collapse; table-layout: fixed; }
+      .wi-col-index { width: 4%; }
+      .wi-col-product { width: 38%; }
+      .wi-col-number { width: 7%; }
+      .wi-col-check { width: 6.5%; }
+      .wi-col-report { width: 25%; }
+      .wi-table th { padding: .85mm .65mm; border-right: .22mm solid #51658b; border-bottom: .22mm solid #51658b; color: #fff; background: #09255a; font-size: 8.1px; line-height: 1.05; text-align: left; vertical-align: middle; }
+      .wi-table .wi-head-groups th { font-size: 8.7px; text-align: center; }
+      .wi-table .wi-head-groups th:nth-child(2) { text-align: left; }
+      .wi-table .wi-head-checks th { padding: .65mm .2mm; font-size: 6.8px; text-align: center; }
+      .wi-table .wi-group-delivery { background: #123b78; }
+      .wi-table .wi-group-pickup { background: #ef5000; }
+      .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left: .35mm solid #09255a; }
+      .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .35mm solid #09255a; }
+      .wi-table td { height: 6.8mm; padding: .45mm .75mm; border-right: .23mm solid #bac4d6; border-bottom: .23mm solid #bac4d6; vertical-align: middle; font-size: 8.8px; }
       .wi-table tr:last-child td { border-bottom: 0; }
-      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 14mm; text-align: center; }
-      .wi-table th:last-child, .wi-table td:last-child { width: 28mm; border-right: 0; }
-      .wi-tables.is-split .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-tables.is-split .wi-table td:nth-child(n+4):nth-child(-n+7) { width: 9mm; }
-      .wi-tables.is-split .wi-table th:last-child, .wi-tables.is-split .wi-table td:last-child { width: 17mm; }
+      .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
+      .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 6mm; text-align: center !important; }
       .wi-number { width: 11mm; text-align: center !important; }
       .wi-product { display: grid; grid-template-columns: 7.2mm minmax(0, 1fr); gap: 1.1mm; align-items: center; }
       .wi-product img, .wi-no-image { width: 6.5mm; height: 6.5mm; border: .18mm solid #d8deea; border-radius: .8mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
       .wi-product strong { color: #061b48; font-size: 8.2px; line-height: 1.08; text-transform: uppercase; }
-      .wi-check i { display: inline-block; width: 4mm; height: 4mm; border: .22mm solid #8c95a8; border-radius: .35mm; }
+      .wi-check i { display: inline-block; width: 4.2mm; height: 4.2mm; border: .28mm solid #67748c; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 1.8mm 4mm; color: #09255a; font-size: 8.6px; }
       .wi-empty-order { padding: 5mm; color: #7b8499; text-align: center; }
       .wi-empty { padding: 20mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
@@ -9032,6 +9080,60 @@ const createWebBridge = () => ({
   },
 
   calendar: {
+    listBoardNotes: async () => {
+      const state = readState();
+      return state.calendarBoardNotes
+        .slice()
+        .sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0) - new Date(a.updatedAt ?? a.createdAt ?? 0))
+        .map((note) => ({ ...note }));
+    },
+    upsertBoardNote: async (payload) => {
+      const rowId = String(payload?.rowId ?? '').trim();
+      const text = String(payload?.text ?? '').trim();
+      if (!rowId) throw new Error('Debes indicar la fila del recordatorio.');
+      if (!text) throw new Error('El recordatorio no puede estar vacio.');
+
+      let saved = null;
+      transaction((state) => {
+        const now = new Date().toISOString();
+        const existing = state.calendarBoardNotes.find((note) => note.rowId === rowId);
+        if (existing) {
+          existing.eventId = String(payload?.eventId ?? existing.eventId ?? '').trim() || null;
+          existing.kind = String(payload?.kind ?? existing.kind ?? '').trim() || null;
+          existing.dateKey = String(payload?.dateKey ?? existing.dateKey ?? '').trim() || null;
+          existing.text = text;
+          existing.updatedAt = now;
+          saved = { ...existing };
+          return state;
+        }
+
+        saved = {
+          id: makeId('cbn'),
+          rowId,
+          eventId: String(payload?.eventId ?? '').trim() || null,
+          kind: String(payload?.kind ?? '').trim() || null,
+          dateKey: String(payload?.dateKey ?? '').trim() || null,
+          text,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.calendarBoardNotes.push(saved);
+        return state;
+      });
+
+      return saved;
+    },
+    removeBoardNote: async (payload) => {
+      const rowId = String(payload?.rowId ?? '').trim();
+      if (!rowId) throw new Error('Debes indicar la fila del recordatorio.');
+
+      transaction((state) => {
+        state.calendarBoardNotes = state.calendarBoardNotes.filter((note) => note.rowId !== rowId);
+        return state;
+      });
+
+      return { ok: true, rowId };
+    },
     listEvents: async () => {
       const state = readState();
       const deliveryEvents = state.deliveries.map((delivery) => ({

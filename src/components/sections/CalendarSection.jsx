@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../../services/api';
 import { buildInventoryReturnRiskEvents } from '../../utils/availability';
 
 const EVENT_TYPE_META = {
@@ -327,15 +328,32 @@ function CalendarSection({
   const [boardContextMenu, setBoardContextMenu] = useState(null);
   const [boardNoteTarget, setBoardNoteTarget] = useState(null);
   const [boardNoteText, setBoardNoteText] = useState('');
+  const [openBoardReminderId, setOpenBoardReminderId] = useState(null);
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
-  const [boardNotes, setBoardNotes] = useState(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      return JSON.parse(window.localStorage.getItem('copetin-calendar-board-notes') || '{}');
-    } catch {
-      return {};
-    }
-  });
+  const [boardNotes, setBoardNotes] = useState({});
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadBoardNotes = async () => {
+      try {
+        const notes = await api.calendar.listBoardNotes();
+        if (!isMounted) return;
+        setBoardNotes(Object.fromEntries((notes || []).map((note) => [note.rowId, note])));
+      } catch {
+        if (!isMounted || typeof window === 'undefined') return;
+        try {
+          setBoardNotes(JSON.parse(window.localStorage.getItem('copetin-calendar-board-notes') || '{}'));
+        } catch {
+          setBoardNotes({});
+        }
+      }
+    };
+
+    loadBoardNotes();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const relationshipMaps = useMemo(() => {
     const contractByRentalId = new Map();
@@ -680,6 +698,7 @@ function CalendarSection({
       return {
         id: event.id,
         type: event.type,
+        kind: event.type,
         time: event.startTime || '-',
         code: event.contractCode ?? event.orderCode ?? event.deliveryCode ?? event.relatedId ?? event.title ?? '-',
         responsible: event.responsibleName || 'Sistema',
@@ -766,7 +785,6 @@ function CalendarSection({
     };
   }, [monthDate, normalizedEvents]);
 
-  const selectedLabel = selectedDateKey ? formatShortDate(selectedDateKey) : '-';
   const monthTitle = `${monthNames[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
   const pickerYears = useMemo(() => {
     const currentYear = today.getFullYear();
@@ -874,12 +892,15 @@ function CalendarSection({
     setBoardNoteText(boardNotes[row.id]?.text ?? '');
   };
 
-  const saveBoardNote = () => {
+  const saveBoardNote = async () => {
     if (!boardNoteTarget) return;
     const trimmed = boardNoteText.trim();
     const nextNotes = { ...boardNotes };
     if (trimmed) {
       nextNotes[boardNoteTarget.id] = {
+        rowId: boardNoteTarget.id,
+        eventId: boardNoteTarget.event?.id ?? null,
+        kind: boardNoteTarget.kind,
         text: trimmed,
         updatedAt: new Date().toISOString(),
         dateKey: boardNoteTarget.event?.dateKey ?? selectedDateKey,
@@ -888,6 +909,22 @@ function CalendarSection({
       delete nextNotes[boardNoteTarget.id];
     }
     persistBoardNotes(nextNotes);
+    try {
+      if (trimmed) {
+        const savedNote = await api.calendar.upsertBoardNote({
+          rowId: boardNoteTarget.id,
+          eventId: boardNoteTarget.event?.id ?? null,
+          kind: boardNoteTarget.kind,
+          dateKey: boardNoteTarget.event?.dateKey ?? selectedDateKey,
+          text: trimmed,
+        });
+        setBoardNotes((currentNotes) => ({ ...currentNotes, [savedNote.rowId]: savedNote }));
+      } else {
+        await api.calendar.removeBoardNote({ rowId: boardNoteTarget.id });
+      }
+    } catch {
+      // La reserva local evita perder el recordatorio si la conexion compartida falla.
+    }
     setBoardNoteTarget(null);
     setBoardNoteText('');
   };
@@ -1224,17 +1261,25 @@ function CalendarSection({
           <span>Codigo</span>
           <span>Responsable</span>
           <span>Destino</span>
+          <span>Estado</span>
+          <span>Nota</span>
         </div>
         {rows.map((row) => {
           const rowAlert = getOperationalAlertForEvent(row.event);
+          const savedNote = boardNotes[row.id]?.text;
+          const isReminderOpen = Boolean(savedNote && openBoardReminderId === row.id);
           return (
             <button
               type="button"
               key={row.id}
-              className={`calendar-dispatch-row ${row.status.className} ${boardNotes[row.id]?.text ? 'has-board-note' : ''} ${rowAlert ? `has-operational-alert ${rowAlert.severity}` : ''}`}
+              className={`calendar-dispatch-row ${row.status.className} ${savedNote ? 'has-board-note' : ''} ${isReminderOpen ? 'reminder-open' : ''} ${rowAlert ? `has-operational-alert ${rowAlert.severity}` : ''}`}
               onClick={() => handleEventClick(row.event, selectedDateKey)}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                openBoardNoteEditor(row);
+              }}
               onContextMenu={(contextEvent) => openBoardContextMenu(contextEvent, row)}
-              title="Clic derecho para ver detalles, notas o recordatorios."
+              title="Clic derecho o doble clic para ver detalles y recordatorios."
             >
               <strong>{row.time}</strong>
               <span>{row.code}</span>
@@ -1243,6 +1288,37 @@ function CalendarSection({
                 <b>{row.title}</b>
                 {rowAlert ? <small className="calendar-dispatch-warning">Alerta operativa</small> : null}
               </span>
+              <span className={`calendar-event-state ${row.status.className}`}>{row.status.label}</span>
+              <span
+                className={`calendar-board-row-bell ${savedNote ? 'active' : ''}`}
+                aria-label={savedNote ? 'Ver recordatorio' : 'Sin recordatorio'}
+                aria-expanded={isReminderOpen}
+                onClick={(event) => {
+                  if (!savedNote) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpenBoardReminderId((currentId) => (currentId === row.id ? null : row.id));
+                }}
+              >
+                {savedNote ? (
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+                    <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                  </svg>
+                ) : null}
+              </span>
+              {isReminderOpen ? (
+                <span className="calendar-board-reminder-card">
+                  <span className="calendar-board-reminder-head">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+                      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                    </svg>
+                    <b>Recordatorio operativo</b>
+                  </span>
+                  <small>{savedNote}</small>
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -1339,7 +1415,7 @@ function CalendarSection({
             Ver detalle completo
           </button>
           <button type="button" onClick={() => openBoardNoteEditor(row)}>
-            {savedNote ? 'Ver / editar notas y recordatorios' : 'Dejar nota o recordatorio'}
+            {savedNote ? 'Ver / editar recordatorio' : 'Crear recordatorio visible'}
           </button>
           {savedNote ? <p>{savedNote}</p> : null}
         </div>
@@ -1356,7 +1432,7 @@ function CalendarSection({
           <header className="orders-modal-head">
             <div>
               <span className="calendar-board-note-kicker">Pizarra operativa</span>
-              <h3>Notas y recordatorios</h3>
+              <h3>Recordatorio operativo</h3>
               <p>{boardNoteTarget.time} | {boardNoteTarget.code} | {boardNoteTarget.title}</p>
             </div>
             <button type="button" className="orders-modal-close" onClick={() => setBoardNoteTarget(null)}>x</button>
@@ -1376,7 +1452,7 @@ function CalendarSection({
               <span>{boardNoteTarget.notes}</span>
             </article>
             <label className="wide">
-              Nota o recordatorio
+              Recordatorio visible para todo el equipo
               <textarea
                 value={boardNoteText}
                 onChange={(event) => setBoardNoteText(event.target.value)}
@@ -1400,11 +1476,13 @@ function CalendarSection({
                   const nextNotes = { ...boardNotes };
                   delete nextNotes[boardNoteTarget.id];
                   persistBoardNotes(nextNotes);
+                  api.calendar.removeBoardNote({ rowId: boardNoteTarget.id }).catch(() => {});
                   setBoardNoteText('');
+                  setOpenBoardReminderId((currentId) => (currentId === boardNoteTarget.id ? null : currentId));
                   setBoardNoteTarget(null);
                 }}
               >
-                Quitar nota
+                Quitar recordatorio
               </button>
             ) : null}
             <button type="button" className="primary-button" onClick={saveBoardNote}>Guardar</button>
@@ -1446,34 +1524,6 @@ function CalendarSection({
           <article>
             <strong>Sin pendientes operativos</strong>
             <small>Si una entrega vence incompleta o un recojo depende de una entrega no realizada, aparecera aqui.</small>
-          </article>
-        ) : null}
-      </div>
-    </section>
-  );
-
-  const renderOtherEventsPanel = () => (
-    <section className="calendar-main-other-events">
-      <header>
-        <div>
-          <h4>Otros eventos del dia</h4>
-          <p>{selectedLabel} | {selectedDispatchRows.other.length} registro{selectedDispatchRows.other.length === 1 ? '' : 's'}</p>
-        </div>
-      </header>
-      <div>
-        {selectedDispatchRows.other.map((row) => (
-          <button type="button" key={row.id} onClick={() => handleEventClick(row.event, selectedDateKey)}>
-            <strong>{row.time}</strong>
-            <span>
-              <b>{row.title}</b>
-              <small>{row.notes}</small>
-            </span>
-          </button>
-        ))}
-        {selectedDispatchRows.other.length === 0 ? (
-          <article>
-            <strong>Sin eventos adicionales</strong>
-            <small>Mantenimientos, vencimientos y recordatorios apareceran aqui al seleccionar una fecha.</small>
           </article>
         ) : null}
       </div>
@@ -1697,8 +1747,11 @@ function CalendarSection({
         </article>
       </div>
 
-      <div className="calendar-layout">
+      <div className="calendar-redesign-stack">
         <article className="calendar-main-card">
+          <div className="calendar-card-title">
+            <h3>Calendario</h3>
+          </div>
           <header className="calendar-controls">
             <div className="calendar-filters">
               {Object.entries(EVENT_TYPE_META).map(([key, meta]) => (
@@ -1783,9 +1836,6 @@ function CalendarSection({
             <span><i className="license" /> Vencimiento</span>
             <span><i className="other" /> Otro</span>
           </footer>
-
-          {renderOperationalAlertsPanel()}
-          {renderOtherEventsPanel()}
         </article>
 
         <aside className="calendar-side-card calendar-board-card">
@@ -1841,40 +1891,42 @@ function CalendarSection({
               </li>
             ) : null}
           </ul>
-
-          <section className="calendar-upcoming">
-            <h4>Proximos eventos</h4>
-            {upcomingEvents.slice(0, 4).map((event) => (
-              <button
-                type="button"
-                key={event.id}
-                className={`calendar-upcoming-item ${getTypeMeta(event.type).className}`}
-                onClick={() => handleEventClick(event, event.dateKey)}
-              >
-                <span className="calendar-upcoming-icon"><DayEventIcon kind={event.type} /></span>
-                <span className="calendar-upcoming-date">{formatShortDate(event.dateKey)}</span>
-                <strong>
-                  {event.operationLabel || event.title}
-                  <small>{event.customerName || event.subtitle}{event.eventName ? ` - ${event.eventName}` : ''}</small>
-                  <small>{event.responsibleName ? `Resp. ${event.responsibleName}` : 'Resp. Sistema'}</small>
-                </strong>
-              </button>
-            ))}
-            {upcomingEvents.length === 0 ? <p>Sin proximos eventos con este filtro.</p> : null}
-          </section>
-
-          <section className="calendar-ops-summary">
-            <h4>Estado operativo</h4>
-            <div className="calendar-ops-grid">
-              <article className="ok"><span>Contratos finalizados</span><strong>{operationalInsights.successfulReturns.length}</strong><small>Sin penalidades</small></article>
-              <article className="late"><span>Contratos retrasados</span><strong>{operationalInsights.lateRentals.length}</strong><small>Devolucion vencida</small></article>
-              <article className="ontime"><span>Contratos a tiempo</span><strong>{operationalInsights.onTimeRentals.length}</strong><small>Activos vigentes</small></article>
-              <article className="loan"><span>Prestamos activos</span><strong>{operationalInsights.activeLoans.length}</strong><small>{operationalInsights.lateLoans.length} retrasados</small></article>
-            </div>
-          </section>
-
-          <p className="calendar-board-signature">Organizados hoy, entregamos mejor :)</p>
         </aside>
+      </div>
+
+      <div className="calendar-bottom-grid">
+        <section className="calendar-upcoming">
+          <h4>Proximos eventos</h4>
+          {upcomingEvents.slice(0, 4).map((event) => (
+            <button
+              type="button"
+              key={event.id}
+              className={`calendar-upcoming-item ${getTypeMeta(event.type).className}`}
+              onClick={() => handleEventClick(event, event.dateKey)}
+            >
+              <span className="calendar-upcoming-icon"><DayEventIcon kind={event.type} /></span>
+              <span className="calendar-upcoming-date">{formatShortDate(event.dateKey)}</span>
+              <strong>
+                {event.operationLabel || event.title}
+                <small>{event.customerName || event.subtitle}{event.eventName ? ` - ${event.eventName}` : ''}</small>
+                <small>{event.responsibleName ? `Resp. ${event.responsibleName}` : 'Resp. Sistema'}</small>
+              </strong>
+            </button>
+          ))}
+          {upcomingEvents.length === 0 ? <p>Sin proximos eventos con este filtro.</p> : null}
+        </section>
+
+        {renderOperationalAlertsPanel()}
+
+        <section className="calendar-ops-summary">
+          <h4>Estado operativo</h4>
+          <div className="calendar-ops-grid">
+            <article className="ok"><span>Contratos finalizados</span><strong>{operationalInsights.successfulReturns.length}</strong><small>Sin penalidades</small></article>
+            <article className="late"><span>Contratos retrasados</span><strong>{operationalInsights.lateRentals.length}</strong><small>Devolucion vencida</small></article>
+            <article className="ontime"><span>Contratos a tiempo</span><strong>{operationalInsights.onTimeRentals.length}</strong><small>Activos vigentes</small></article>
+            <article className="loan"><span>Prestamos activos</span><strong>{operationalInsights.activeLoans.length}</strong><small>{operationalInsights.lateLoans.length} retrasados</small></article>
+          </div>
+        </section>
       </div>
 
       {renderCreateModal()}
