@@ -5825,6 +5825,9 @@ const buildWeeklyInventoryHtml = ({
 
   if (format === 'individual') {
     const selectedOrder = weeklyOrders[0] ?? null;
+    const individualItemCount = selectedOrder?.rental?.items?.length ?? 0;
+    const useFullLetterSheet = individualItemCount >= 6;
+    const individualPageClass = useFullLetterSheet ? 'individual-full' : 'individual-half';
     const documentCode = selectedOrder
       ? selectedOrder.contract?.contractCode ?? selectedOrder.rental?.contractCode ?? selectedOrder.rental?.orderCode ?? ''
       : '';
@@ -5838,7 +5841,9 @@ const buildWeeklyInventoryHtml = ({
       * { box-sizing: border-box; }
       html { background: #f4f4f4; }
       body { margin: 0; padding: 8px 8px 12px; color: #09255a; background: #eef1f6; font: 12px Arial, sans-serif; overflow: auto; }
-      .wi-sheet { width: 8.5in; height: 5.5in; margin: 0 auto; padding: 4.5mm 5.5mm 3.5mm; background: #fff; box-shadow: 0 2mm 8mm rgba(9, 37, 90, .12); overflow: hidden; }
+      .wi-sheet { width: 8.5in; margin: 0 auto; padding: 4.5mm 5.5mm 3.5mm; background: #fff; box-shadow: 0 2mm 8mm rgba(9, 37, 90, .12); }
+      .individual-half .wi-sheet { height: 5.5in; overflow: hidden; }
+      .individual-full .wi-sheet { min-height: 11in; height: auto; overflow: visible; padding-bottom: 8mm; }
       .wi-header { display: grid; grid-template-columns: 1fr 56mm; gap: 5mm; align-items: center; padding-bottom: 2.3mm; border-bottom: .45mm solid #09255a; }
       .wi-brand { display: flex; align-items: center; gap: 3.4mm; }
       .wi-brand-mark { width: 12.5mm; height: 12.5mm; display: grid; place-items: center; border: .7mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 20px Arial, sans-serif; }
@@ -5853,6 +5858,7 @@ const buildWeeklyInventoryHtml = ({
       .wi-count { display: grid; place-items: center; min-width: 27mm; min-height: 13mm; border-radius: 2mm; color: #fff; background: #ef5000; font-size: 9.5px; font-weight: 900; text-transform: uppercase; }
       .wi-count b { display: block; margin-bottom: -.7mm; font-size: 20px; line-height: 1; }
       .wi-order { margin-top: 0; border: .25mm solid #d8deeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+      .individual-full .wi-order { overflow: visible; break-inside: auto; page-break-inside: auto; }
       .wi-order-head { display: grid; grid-template-columns: 36mm 43mm 43mm 1fr 32mm; gap: 2mm; align-items: center; padding: 1.55mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
       .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.4px; line-height: 1.05; text-transform: uppercase; }
       .wi-order-number { display: flex; align-items: center; gap: 2mm; }
@@ -5873,6 +5879,8 @@ const buildWeeklyInventoryHtml = ({
       .wi-col-check { width: 6.5%; }
       .wi-col-report { width: 25%; }
       .wi-table { border: .3mm solid #aeb9cd; }
+      .individual-full .wi-table thead { display: table-header-group; }
+      .individual-full .wi-table tr { break-inside: avoid; page-break-inside: avoid; }
       .wi-table th { padding: 1mm .65mm; border-right: .25mm solid #51658b; border-bottom: .25mm solid #51658b; color: #fff; background: #09255a; font-size: 8.8px; line-height: 1.08; text-align: left; vertical-align: middle; }
       .wi-table .wi-head-groups th { font-size: 9.5px; text-align: center; }
       .wi-table .wi-head-groups th:nth-child(2) { text-align: left; }
@@ -5896,12 +5904,15 @@ const buildWeeklyInventoryHtml = ({
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
-        html, body { width: 8.5in !important; height: 11in !important; margin: 0 !important; padding: 0 !important; background: #fff; overflow: hidden !important; }
-        .wi-sheet { width: 8.5in !important; height: 5.5in !important; margin: 0 !important; box-shadow: none; page-break-after: avoid; break-after: avoid; }
+        html, body { width: 8.5in !important; margin: 0 !important; padding: 0 !important; background: #fff; }
+        body.individual-half { height: 11in !important; overflow: hidden !important; }
+        body.individual-half .wi-sheet { width: 8.5in !important; height: 5.5in !important; margin: 0 !important; box-shadow: none; page-break-after: avoid; break-after: avoid; }
+        body.individual-full { min-height: 11in !important; height: auto !important; overflow: visible !important; }
+        body.individual-full .wi-sheet { width: 8.5in !important; min-height: 11in !important; height: auto !important; margin: 0 !important; box-shadow: none; overflow: visible !important; }
       }
     </style>
   </head>
-  <body>
+  <body class="${individualPageClass}">
     <main class="wi-sheet">
       <header class="wi-header">
         <div class="wi-brand"><span class="wi-brand-mark">C</span><div><h1>${escapeHtml(company.name)}</h1><p>Control operativo de inventario</p></div></div>
