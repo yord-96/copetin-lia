@@ -47,6 +47,11 @@ const getServerStateUrl = (suffix = '') =>
     ? `${REMOTE_API_BASE_URL}${SERVER_STATE_ENDPOINT}${suffix}`
     : `${SERVER_STATE_ENDPOINT}${suffix}`;
 
+const getApiUrl = (path) =>
+  REMOTE_API_BASE_URL
+    ? `${REMOTE_API_BASE_URL}${path}`
+    : path;
+
 const getInternalHeaders = (extraHeaders = {}) => {
   const headers = { ...extraHeaders };
   if (INTERNAL_KEY) {
@@ -339,6 +344,24 @@ const postServerPresence = async (action, payload) => {
     throw await createServerStateError(response, 'No se pudo actualizar las sesiones activas.');
   }
 
+  return response.json();
+};
+
+const uploadProductImage = async (file, { itemId } = {}) => {
+  if (!(file instanceof File)) {
+    throw new Error('Selecciona una imagen valida para subir.');
+  }
+  const response = await fetch(getApiUrl('/api/uploads/products'), {
+    method: 'POST',
+    headers: getInternalHeaders({
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Product-Id': String(itemId ?? 'product').trim() || 'product',
+    }),
+    body: file,
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo subir la imagen del producto.');
+  }
   return response.json();
 };
 
@@ -659,6 +682,9 @@ export const api = {
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     listRecoveries: () => callBridge('inventory', 'listRecoveries', false),
     processRecovery: (payload) => callBridge('inventory', 'processRecovery', true, payload),
+  },
+  uploads: {
+    productImage: uploadProductImage,
   },
   categories: {
     list: () => callBridge('categories', 'list', false),

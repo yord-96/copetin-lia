@@ -13,7 +13,8 @@
     "server": "node server/index.js",
     "start": "node server/index.js",
     "backup": "node scripts/backup/backup-state.cjs",
-    "restore": "node scripts/backup/restore-state.cjs"
+    "restore": "node scripts/backup/restore-state.cjs",
+    "migrate:product-images": "node scripts/migrate/migrate-product-images.cjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

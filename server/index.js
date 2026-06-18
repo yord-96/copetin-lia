@@ -7,7 +7,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import stateRoutes from './routes/state.js';
+import uploadRoutes from './routes/uploads.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
+import {
+  ensureProductUploadDirectory,
+  getProductUploadInfo,
+} from './storage/productImageStore.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -78,6 +83,7 @@ app.use(
     },
   }),
 );
+app.use(uploadRoutes);
 app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 
 app.get('/health', async (_req, res, next) => {
@@ -98,10 +104,26 @@ app.use('/__copetin_db/presence', presenceLimiter);
 app.use('/__copetin_db', stateLimiter);
 app.use(stateRoutes);
 
+const productUploadInfo = getProductUploadInfo();
+app.use(
+  '/uploads/products',
+  express.static(productUploadInfo.uploadDirectory, {
+    immutable: true,
+    maxAge: '30d',
+    index: false,
+  }),
+);
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.use((req, res, next) => {
-    if (req.method !== 'GET' || req.path.startsWith('/__copetin_db') || req.path.startsWith('/health')) {
+    if (
+      req.method !== 'GET'
+      || req.path.startsWith('/__copetin_db')
+      || req.path.startsWith('/api/')
+      || req.path.startsWith('/uploads/')
+      || req.path.startsWith('/health')
+    ) {
       next();
       return;
     }
@@ -115,6 +137,10 @@ app.use((req, res) => {
 
 app.use((error, _req, res, _next) => {
   console.error(error);
+  if (error?.type === 'entity.too.large') {
+    res.status(413).json({ error: 'La imagen supera el tamano maximo permitido.' });
+    return;
+  }
   res.status(500).json({
     error: isProduction ? 'Error interno del servidor.' : error?.message ?? 'Error interno del servidor.',
   });
@@ -122,6 +148,7 @@ app.use((error, _req, res, _next) => {
 
 const start = async () => {
   await ensureStateStore();
+  await ensureProductUploadDirectory();
   app.listen(port, () => {
     console.log(`Copetin API escuchando en puerto ${port}`);
   });

@@ -1132,7 +1132,10 @@ const normalizeState = (state) => {
         rentalPriceBs: Number.isFinite(rentalPriceBs) ? rentalPriceBs : 0,
         damagedUnitChargeBs: Number.isFinite(damagedUnitChargeBs) ? damagedUnitChargeBs : 0,
         missingUnitChargeBs: Number.isFinite(missingUnitChargeBs) ? missingUnitChargeBs : 0,
+        imageUrl: String(item?.imageUrl ?? '').trim() || null,
         imageDataUrl: item?.imageDataUrl ?? null,
+        imageFile: String(item?.imageFile ?? '').trim() || null,
+        imageMigratedAt: item?.imageMigratedAt ?? null,
         createdAt: item?.createdAt ?? now,
         updatedAt: item?.updatedAt,
       };
@@ -5698,7 +5701,11 @@ const buildWeeklyInventoryHtml = ({
 
   const renderItemRows = (lines, offset = 0) => lines.map((line, index) => {
     const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
-    const imageDataUrl = catalogItem?.imageDataUrl ?? line.imageDataUrl ?? '';
+    const imageDataUrl = catalogItem?.imageUrl
+      ?? catalogItem?.imageDataUrl
+      ?? line.imageUrl
+      ?? line.imageDataUrl
+      ?? '';
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -6391,6 +6398,7 @@ const resolveOperationalItemFromLine = (state, line, now = new Date().toISOStrin
     rentalPriceBs,
     damagedUnitChargeBs: Number((rentalPriceBs * Number(state.settings?.damageMultiplier ?? 1.2)).toFixed(2)),
     missingUnitChargeBs: Number((rentalPriceBs * Number(state.settings?.missingMultiplier ?? 2)).toFixed(2)),
+    imageUrl: null,
     imageDataUrl: null,
     createdAt: now,
     updatedAt: now,
@@ -7019,6 +7027,7 @@ const createWebBridge = () => ({
       const damagedUnitChargeBs = toNumber(payload?.damagedUnitChargeBs, 'cargo por danio');
       const missingUnitChargeBs = toNumber(payload?.missingUnitChargeBs, 'cargo por perdida');
       const requestedNeedsCleaningOnReturn = Boolean(payload?.needsCleaningOnReturn);
+      const imageUrl = String(payload?.imageUrl ?? '').trim() || null;
       const imageDataUrl = payload?.imageDataUrl ?? null;
       const controlsStock = payload?.controlsStock === true;
 
@@ -7039,6 +7048,9 @@ const createWebBridge = () => ({
       }
       if (imageDataUrl && (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/'))) {
         throw new Error('La imagen enviada no es valida.');
+      }
+      if (imageUrl && !imageUrl.startsWith('/uploads/products/')) {
+        throw new Error('La URL de imagen enviada no es valida.');
       }
 
       let createdItem = null;
@@ -7069,6 +7081,7 @@ const createWebBridge = () => ({
           rentalPriceBs,
           damagedUnitChargeBs,
           missingUnitChargeBs,
+          imageUrl,
           imageDataUrl,
           createdAt: new Date().toISOString(),
         };
@@ -7179,6 +7192,16 @@ const createWebBridge = () => ({
             throw new Error('La imagen enviada no es valida.');
           }
           item.imageDataUrl = payload.imageDataUrl;
+        }
+        if (payload.imageUrl !== undefined) {
+          const nextImageUrl = String(payload.imageUrl ?? '').trim() || null;
+          if (nextImageUrl && !nextImageUrl.startsWith('/uploads/products/')) {
+            throw new Error('La URL de imagen enviada no es valida.');
+          }
+          item.imageUrl = nextImageUrl;
+          if (nextImageUrl) {
+            item.imageDataUrl = null;
+          }
         }
 
         if (payload.controlsStock !== undefined) {
@@ -10937,6 +10960,7 @@ const createWebBridge = () => ({
                 itemId: item.id,
                 itemName: item.name,
                 category: item.category,
+                imageUrl: item.imageUrl ?? null,
                 imageDataUrl: item.imageDataUrl ?? null,
                 sourceRentalId: rental.id,
                 sourceCustomerName: rental.customerName,
@@ -10954,6 +10978,7 @@ const createWebBridge = () => ({
                 itemId: item.id,
                 itemName: item.name,
                 category: item.category,
+                imageUrl: item.imageUrl ?? null,
                 imageDataUrl: item.imageDataUrl ?? null,
                 sourceRentalId: rental.id,
                 sourceCustomerName: rental.customerName,

@@ -288,11 +288,12 @@ function RentalSection({
                     type="button"
                     className="rental-v2-item-image"
                     onClick={() =>
-                      item.imageDataUrl && setImagePreview({ url: item.imageDataUrl, name: item.name })
+                      (item.imageUrl ?? item.imageDataUrl)
+                      && setImagePreview({ url: item.imageUrl ?? item.imageDataUrl, name: item.name })
                     }
                   >
-                    {item.imageDataUrl ? (
-                      <img src={item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                    {item.imageUrl ?? item.imageDataUrl ? (
+                      <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
                     ) : (
                       <span>Sin imagen</span>
                     )}
@@ -360,12 +361,12 @@ function RentalSection({
                         type="button"
                         className="rental-v2-selected-thumb"
                         onClick={() =>
-                          line.item.imageDataUrl &&
-                          setImagePreview({ url: line.item.imageDataUrl, name: line.item.name })
+                          (line.item.imageUrl ?? line.item.imageDataUrl)
+                          && setImagePreview({ url: line.item.imageUrl ?? line.item.imageDataUrl, name: line.item.name })
                         }
                       >
-                        {line.item.imageDataUrl ? (
-                          <img src={line.item.imageDataUrl} alt={`Imagen de ${line.item.name}`} />
+                        {line.item.imageUrl ?? line.item.imageDataUrl ? (
+                          <img src={line.item.imageUrl ?? line.item.imageDataUrl} alt={`Imagen de ${line.item.name}`} />
                         ) : (
                           <span>Sin imagen</span>
                         )}

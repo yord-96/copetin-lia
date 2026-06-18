@@ -369,7 +369,7 @@ function SummarySection({
         name: item.name,
         available: Number(item.availableStock ?? 0),
         progress: item.totalStock > 0 ? Math.round((Number(item.availableStock ?? 0) / Number(item.totalStock)) * 100) : 0,
-        imageDataUrl: item.imageDataUrl ?? item.imageUrl ?? item.image ?? null,
+        imageDataUrl: item.imageUrl ?? item.imageDataUrl ?? item.image ?? null,
         visualType: getFeaturedVisualType(item),
       }));
   }, [items]);

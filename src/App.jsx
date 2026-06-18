@@ -470,6 +470,7 @@ function App() {
             onSwitchInventoryModule={controller.setActiveTab}
             onCreateInventoryItem={controller.handleCreateInventoryItem}
             onUpdateInventoryItem={controller.handleUpdateInventoryItem}
+            onUploadProductImage={controller.handleUploadProductImage}
             onRemoveInventoryItem={controller.handleRemoveInventoryItem}
             onCreateInventoryCombo={controller.handleCreateInventoryCombo}
             onUpdateInventoryCombo={controller.handleUpdateInventoryCombo}

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -7,6 +8,7 @@ import react from '@vitejs/plugin-react'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sharedDbPath = path.join(__dirname, '.copetin-shared-db.json')
 const maxSharedDbPayloadBytes = 64 * 1024 * 1024
+const defaultProductUploadDirectory = path.join(__dirname, 'uploads', 'products')
 
 const getSharedDbRevision = () => {
   if (!fs.existsSync(sharedDbPath)) {
@@ -49,9 +51,110 @@ const readBody = (req) =>
     req.on('error', reject)
   })
 
-const sharedDemoDbPlugin = () => ({
+const detectImageType = (buffer) => {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mimeType: 'image/jpeg', extension: 'jpg' }
+  }
+  if (
+    buffer.length >= 8
+    && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return { mimeType: 'image/png', extension: 'png' }
+  }
+  if (
+    buffer.length >= 12
+    && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+    && buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return { mimeType: 'image/webp', extension: 'webp' }
+  }
+  return null
+}
+
+const sanitizeIdentifier = (value) =>
+  String(value ?? 'product')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'product'
+
+const sharedDemoDbPlugin = (env) => {
+  const productUploadDirectory = path.resolve(env.PRODUCT_UPLOAD_DIR || defaultProductUploadDirectory)
+  const maxProductImageBytes = Number(env.PRODUCT_IMAGE_MAX_BYTES || 8 * 1024 * 1024)
+  fs.mkdirSync(productUploadDirectory, { recursive: true })
+
+  return {
   name: 'copetin-shared-demo-db',
   configureServer(server) {
+    server.middlewares.use('/api/uploads/products', async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'Metodo no permitido.' })
+        return
+      }
+      try {
+        const chunks = []
+        let bytes = 0
+        for await (const chunk of req) {
+          bytes += chunk.length
+          if (bytes > maxProductImageBytes) {
+            sendJson(res, 413, { error: 'La imagen supera el tamano maximo permitido.' })
+            return
+          }
+          chunks.push(chunk)
+        }
+        const buffer = Buffer.concat(chunks)
+        const type = detectImageType(buffer)
+        if (!type) {
+          sendJson(res, 400, { error: 'El archivo no es una imagen JPG, PNG o WEBP valida.' })
+          return
+        }
+        const declaredMime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
+        if (declaredMime && declaredMime !== 'application/octet-stream' && declaredMime !== type.mimeType) {
+          sendJson(res, 400, { error: 'El contenido de la imagen no coincide con su tipo declarado.' })
+          return
+        }
+        const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20)
+        const filename = `${sanitizeIdentifier(req.headers['x-product-id'])}-${hash}.${type.extension}`
+        const destination = path.join(productUploadDirectory, filename)
+        if (!fs.existsSync(destination)) {
+          fs.writeFileSync(destination, buffer, { flag: 'wx' })
+        }
+        sendJson(res, 201, {
+          ok: true,
+          imageUrl: `/uploads/products/${filename}`,
+          filename,
+          mimeType: type.mimeType,
+          bytes: buffer.length,
+        })
+      } catch (error) {
+        server.config.logger.error(error)
+        sendJson(res, 500, { error: error.message || 'No se pudo guardar la imagen.' })
+      }
+    })
+
+    server.middlewares.use('/uploads/products', (req, res) => {
+      const filename = path.basename(decodeURIComponent(String(req.url || '').replace(/^\/+/, '')))
+      if (!filename || filename !== decodeURIComponent(String(req.url || '').replace(/^\/+/, ''))) {
+        sendJson(res, 400, { error: 'Nombre de archivo invalido.' })
+        return
+      }
+      const filePath = path.join(productUploadDirectory, filename)
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        sendJson(res, 404, { error: 'Imagen no encontrada.' })
+        return
+      }
+      const extension = path.extname(filename).toLowerCase()
+      const mimeType = extension === '.png'
+        ? 'image/png'
+        : extension === '.webp'
+          ? 'image/webp'
+          : 'image/jpeg'
+      res.statusCode = 200
+      res.setHeader('Content-Type', mimeType)
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable')
+      fs.createReadStream(filePath).pipe(res)
+    })
+
     server.middlewares.use('/__copetin_db', async (req, res) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost')
@@ -117,7 +220,8 @@ const sharedDemoDbPlugin = () => ({
       }
     })
   },
-})
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -129,6 +233,6 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.APP_INTERNAL_KEY': JSON.stringify(env.APP_INTERNAL_KEY ?? ''),
       'import.meta.env.RESET_SECURITY_CODE': JSON.stringify(env.RESET_SECURITY_CODE ?? ''),
     },
-    plugins: [react(), sharedDemoDbPlugin()],
+    plugins: [react(), sharedDemoDbPlugin(env)],
   }
 })

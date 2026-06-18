@@ -19,6 +19,8 @@ dist-ssr
 data/
 data/app-state.json
 backups/
+uploads/products/*
+!uploads/products/.gitkeep
 *.tmp
 *.bak
 *.gz

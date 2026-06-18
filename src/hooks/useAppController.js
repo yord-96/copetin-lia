@@ -735,6 +735,16 @@ export const useAppController = () => {
     }
   };
 
+  const handleUploadProductImage = async (file, options) => {
+    setError('');
+    try {
+      return await api.uploads.productImage(file, options);
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo subir la imagen del producto.');
+      throw requestError;
+    }
+  };
+
   const handleUpdateInventoryItem = async (payload) => {
     setError('');
     try {
@@ -1857,6 +1867,7 @@ export const useAppController = () => {
     handleGenerateReport,
     handleCreateInventoryItem,
     handleUpdateInventoryItem,
+    handleUploadProductImage,
     handleRemoveInventoryItem,
     handleCreateInventoryCombo,
     handleUpdateInventoryCombo,

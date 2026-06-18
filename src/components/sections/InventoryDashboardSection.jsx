@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFileAsDataUrl } from '../../utils/files';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -147,6 +146,21 @@ const getExcelImageExtension = (dataUrl) => {
   const match = /^data:image\/(png|jpe?g);base64,/i.exec(String(dataUrl ?? ''));
   if (!match) return null;
   return match[1].toLowerCase() === 'png' ? 'png' : 'jpeg';
+};
+
+const resolveExcelImageDataUrl = async (source) => {
+  if (!source) return null;
+  if (String(source).startsWith('data:image/')) return source;
+  const response = await fetch(source);
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(blob.type)) return null;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('No se pudo leer la imagen.'));
+    reader.readAsDataURL(blob);
+  });
 };
 
 const exportProductsWorkbook = async ({ rows, filters }) => {
@@ -305,16 +319,23 @@ const exportProductsWorkbook = async ({ rows, filters }) => {
       color: { argb: status === 'Disponible' ? 'FF137548' : status === 'Stock bajo' ? 'FFC2420A' : 'FF9B5A20' },
     };
 
-    const extension = getExcelImageExtension(row.imageDataUrl);
-    if (extension) {
-      const imageId = workbook.addImage({ base64: row.imageDataUrl, extension });
+  });
+
+  await Promise.all(rows.map(async (row, index) => {
+    try {
+      const imageDataUrl = await resolveExcelImageDataUrl(row.imageDataUrl);
+      const extension = getExcelImageExtension(imageDataUrl);
+      if (!extension) return;
+      const imageId = workbook.addImage({ base64: imageDataUrl, extension });
       sheet.addImage(imageId, {
-        tl: { col: 0.18, row: rowNumber - 0.88 },
+        tl: { col: 0.18, row: headerRowNumber + index + 0.12 },
         ext: { width: 58, height: 58 },
         editAs: 'oneCell',
       });
+    } catch {
+      // La exportacion continua aunque una imagen puntual no este disponible.
     }
-  });
+  }));
 
   const totalRowNumber = headerRowNumber + rows.length + 1;
   const totalRow = sheet.getRow(totalRowNumber);
@@ -648,7 +669,11 @@ const EMPTY_PRODUCT_FORM = {
   damagedUnitChargeBs: '0',
   missingUnitChargeBs: '0',
   needsCleaningOnReturn: false,
+  imageUrl: null,
   imageDataUrl: null,
+  imageFile: null,
+  imagePreviewUrl: null,
+  imageRemoved: false,
   imageFileName: '',
 };
 
@@ -692,6 +717,7 @@ function InventoryDashboardSection({
   onSwitchInventoryModule,
   onCreateInventoryItem,
   onUpdateInventoryItem,
+  onUploadProductImage,
   onRemoveInventoryItem,
   onCreateInventoryCombo,
   onUpdateInventoryCombo,
@@ -756,6 +782,12 @@ function InventoryDashboardSection({
 
   const rowMenuRef = useRef(null);
   const productFilterRef = useRef(null);
+
+  useEffect(() => () => {
+    if (productForm.imageFile && productForm.imagePreviewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(productForm.imagePreviewUrl);
+    }
+  }, [productForm.imageFile, productForm.imagePreviewUrl]);
 
   const openInventoryWeekDocument = async (format = 'standard') => {
     try {
@@ -1113,7 +1145,8 @@ function InventoryDashboardSection({
         category: item.category,
         brand: String(item.brand ?? '').trim(),
         itemColor: String(item.itemColor ?? '').trim(),
-        imageDataUrl: item.imageDataUrl,
+        imageUrl: item.imageUrl ?? null,
+        imageDataUrl: item.imageUrl ?? item.imageDataUrl ?? null,
         sku: String(item.sku ?? '').trim()
           || String(item.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase()
           || 'GEN',
@@ -1995,7 +2028,11 @@ function InventoryDashboardSection({
       damagedUnitChargeBs: String(row.damagedUnitChargeBs),
       missingUnitChargeBs: String(row.missingUnitChargeBs),
       needsCleaningOnReturn: Boolean(row.needsCleaningOnReturn),
+      imageUrl: row.imageUrl ?? null,
       imageDataUrl: row.imageDataUrl ?? null,
+      imageFile: null,
+      imagePreviewUrl: row.imageUrl ?? row.imageDataUrl ?? null,
+      imageRemoved: false,
       imageFileName: '',
     });
   };
@@ -2080,13 +2117,18 @@ function InventoryDashboardSection({
     event.target.value = '';
     if (!file) return;
     try {
-      const dataUrl = await readFileAsDataUrl(file);
-      if (!String(dataUrl).startsWith('data:image/')) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
         throw new Error('Selecciona una imagen valida (JPG, PNG o WEBP).');
       }
+      if (file.size > 8 * 1024 * 1024) {
+        throw new Error('La imagen supera el limite de 8 MB.');
+      }
+      const previewUrl = URL.createObjectURL(file);
       setProductForm((current) => ({
         ...current,
-        imageDataUrl: dataUrl,
+        imageFile: file,
+        imagePreviewUrl: previewUrl,
+        imageRemoved: false,
         imageFileName: file.name,
       }));
     } catch (error) {
@@ -2240,8 +2282,12 @@ function InventoryDashboardSection({
       damagedUnitChargeBs: Number(productForm.damagedUnitChargeBs ?? 0),
       missingUnitChargeBs: Number(productForm.missingUnitChargeBs ?? 0),
       needsCleaningOnReturn: Boolean(productForm.needsCleaningOnReturn),
-      imageDataUrl: productForm.imageDataUrl || null,
+      imageUrl: productForm.imageUrl || null,
     };
+    if (productForm.imageRemoved) {
+      payload.imageUrl = null;
+      payload.imageDataUrl = null;
+    }
 
     if (!payload.name) {
       setProductError('El nombre del producto es obligatorio.');
@@ -2262,6 +2308,16 @@ function InventoryDashboardSection({
 
     try {
       setIsSavingProduct(true);
+      if (productForm.imageFile) {
+        const upload = await onUploadProductImage?.(productForm.imageFile, {
+          itemId: productForm.id || productForm.sku || productForm.name,
+        });
+        if (!upload?.imageUrl) {
+          throw new Error('El servidor no devolvio la URL de la imagen.');
+        }
+        payload.imageUrl = upload.imageUrl;
+        payload.imageDataUrl = null;
+      }
       if (productModalMode === 'edit') {
         await onUpdateInventoryItem?.(payload);
         showMessage('Producto actualizado correctamente.');
@@ -3701,21 +3757,29 @@ function InventoryDashboardSection({
                   onChange={handleProductImageChange}
                 />
                 <div className="inventory-image-preview">
-                  {productForm.imageDataUrl ? (
-                    <img src={productForm.imageDataUrl} alt="Vista previa del producto" />
+                  {productForm.imagePreviewUrl ? (
+                    <img src={productForm.imagePreviewUrl} alt="Vista previa del producto" />
                   ) : (
                     <span>Sin imagen</span>
                   )}
                 </div>
                 <div className="inventory-image-actions">
                   <button type="button" className="ghost-button" onClick={() => productImageInputRef.current?.click()}>
-                    {productForm.imageDataUrl ? 'Cambiar imagen' : 'Subir imagen'}
+                    {productForm.imagePreviewUrl ? 'Cambiar imagen' : 'Subir imagen'}
                   </button>
-                  {productForm.imageDataUrl ? (
+                  {productForm.imagePreviewUrl ? (
                     <button
                       type="button"
                       className="link-button"
-                      onClick={() => setProductForm((current) => ({ ...current, imageDataUrl: null, imageFileName: '' }))}
+                      onClick={() => setProductForm((current) => ({
+                        ...current,
+                        imageUrl: null,
+                        imageDataUrl: null,
+                        imageFile: null,
+                        imagePreviewUrl: null,
+                        imageRemoved: true,
+                        imageFileName: '',
+                      }))}
                     >
                       Quitar imagen
                     </button>

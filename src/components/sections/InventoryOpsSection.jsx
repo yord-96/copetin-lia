@@ -212,8 +212,8 @@ function InventoryOpsSection({
               return (
                 <article key={recovery.id} className="inventory-recovery-item">
                   <div className="inventory-recovery-media">
-                    {recovery.imageDataUrl ? (
-                      <img src={recovery.imageDataUrl} alt={`Imagen de ${recovery.itemName}`} />
+                    {recovery.imageUrl ?? recovery.imageDataUrl ? (
+                      <img src={recovery.imageUrl ?? recovery.imageDataUrl} alt={`Imagen de ${recovery.itemName}`} />
                     ) : (
                       <span>Sin imagen</span>
                     )}

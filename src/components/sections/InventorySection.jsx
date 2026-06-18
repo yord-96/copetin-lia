@@ -60,19 +60,19 @@ function InventorySection({
             <input ref={inventoryImageInputRef} type="file" accept="image/*" onChange={handleInventoryImageChange} />
           </label>
 
-          {inventoryForm.imageDataUrl && (
+          {(inventoryForm.imageUrl ?? inventoryForm.imageDataUrl) && (
             <div className="full-width image-preview-box">
               <button
                 type="button"
                 className="image-preview-trigger"
                 onClick={() =>
                   setImagePreview({
-                    url: inventoryForm.imageDataUrl,
+                    url: inventoryForm.imageUrl ?? inventoryForm.imageDataUrl,
                     name: inventoryForm.name || inventoryForm.imageFileName || 'Imagen',
                   })
                 }
               >
-                <img src={inventoryForm.imageDataUrl} alt="Vista previa del item" />
+                <img src={inventoryForm.imageUrl ?? inventoryForm.imageDataUrl} alt="Vista previa del item" />
               </button>
               <p>{inventoryForm.imageFileName || 'Imagen seleccionada'}</p>
             </div>
@@ -184,13 +184,13 @@ function InventorySection({
               {items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {item.imageDataUrl ? (
+                    {item.imageUrl ?? item.imageDataUrl ? (
                       <button
                         type="button"
                         className="table-image-button"
-                        onClick={() => setImagePreview({ url: item.imageDataUrl, name: item.name })}
+                        onClick={() => setImagePreview({ url: item.imageUrl ?? item.imageDataUrl, name: item.name })}
                       >
-                        <img src={item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                        <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
                       </button>
                     ) : (
                       <span className="image-missing">Sin imagen</span>
