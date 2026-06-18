@@ -4793,6 +4793,8 @@ const getReferenceContractStyles = () => `
     min-height: 355.6mm;
     margin: 0 auto;
     padding: 4.5mm 8mm 4mm;
+    display: flex;
+    flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
     box-shadow: 0 12px 36px rgba(0, 0, 0, .18);
   }
@@ -4893,7 +4895,7 @@ const getReferenceContractStyles = () => `
     border-right: .25mm solid #d8d0c4;
   }
   .rc-company > div:last-child { border-right: 0; }
-  .rc-company img, .rc-schedule-meta img, .rc-mode-row img, .rc-important img { filter: sepia(1) saturate(1.5) brightness(.72); }
+  .rc-company img, .rc-schedule-meta img, .rc-mode-row img { filter: sepia(1) saturate(1.5) brightness(.72); }
   .rc-company img { width: 5.3mm; height: 5.3mm; object-fit: contain; }
   .rc-company strong { display: block; font: 800 9px Arial, sans-serif; text-transform: uppercase; }
   .rc-company .company-name { font: 800 13px Arial, sans-serif; text-transform: uppercase; }
@@ -4998,13 +5000,59 @@ const getReferenceContractStyles = () => `
   }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
+  .rc-table tfoot td {
+    padding: 0;
+    border-right: 0;
+    border-top: .45mm solid #a66a20;
+    border-bottom: 0;
+    background: #fffaf2;
+  }
+  .rc-financial-summary {
+    display: flex;
+    width: 100%;
+    align-items: stretch;
+  }
+  .rc-financial-item {
+    min-width: 0;
+    flex: 1 1 0;
+    display: grid;
+    align-content: center;
+    gap: .55mm;
+    min-height: 12mm;
+    padding: 1.2mm .8mm;
+    border-right: .22mm solid #d8c9b5;
+    text-align: center;
+  }
+  .rc-financial-item:last-child { border-right: 0; }
+  .rc-financial-item span {
+    color: #665541;
+    font-size: 6.7px;
+    font-weight: 800;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+  .rc-financial-item strong {
+    color: #181818;
+    font-size: 9.2px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .rc-financial-item.guarantee { background: #fff0d7; }
+  .rc-financial-item.guarantee span,
+  .rc-financial-item.guarantee strong { color: #96570f; }
+  .rc-financial-item.total { background: #f3e4cf; }
+  .rc-financial-item.total span { color: #4b3218; }
+  .rc-financial-item.total strong { color: #161616; font-size: 11px; }
+  .rc-financial-item.managed { background: #2e241a; }
+  .rc-financial-item.managed span { color: #f5dfbe; }
+  .rc-financial-item.managed strong { color: #fff; font-size: 10px; }
   .rc-item-name { display: block; font: 700 10.2px Georgia, "Times New Roman", serif; text-transform: uppercase; }
   .rc-item-meta { display: block; margin-top: .35mm; font-size: 7.6px; text-transform: uppercase; }
   .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
   .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
   .rc-bottom {
     display: grid;
-    grid-template-columns: .86fr 1.02fr 1.15fr;
+    grid-template-columns: minmax(0, .62fr) minmax(0, 1fr);
     gap: 3mm;
     margin-top: 1.6mm;
     break-inside: avoid;
@@ -5012,26 +5060,33 @@ const getReferenceContractStyles = () => `
   }
   .rc-bottom-title { margin: 0 0 1.2mm; color: #a66a20; font: 500 12.5px Georgia, "Times New Roman", serif; font-variant: small-caps; }
   .rc-bottom-title::after { content: ""; display: block; width: 18mm; height: .25mm; margin-top: .6mm; background: #a66a20; }
-  .rc-observations, .rc-money { min-height: 27mm; padding: 1.6mm; }
+  .rc-observations, .rc-guarantee-control {
+    min-height: 24mm;
+    padding: 1.6mm;
+    border: .25mm solid #d8c29c;
+    border-radius: 1.5mm;
+    background: #fffdf9;
+  }
   .rc-observations strong { display: block; margin-bottom: 1.2mm; font-size: 8.2px; }
   .rc-observations p { margin: 0; text-transform: uppercase; }
-  .rc-money-line { display: flex; justify-content: space-between; gap: 3mm; padding: .35mm 0; font-size: 8.4px; }
-  .rc-money-line strong { white-space: nowrap; }
-  .rc-money-total {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-top: .9mm;
-    padding: 1.1mm 0;
-    border-top: .35mm solid #d8d0c4;
-    border-bottom: .35mm solid #d8d0c4;
-    color: #161616;
-    font: 500 11.5px Georgia, "Times New Roman", serif;
+  .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
+  .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
+  .rc-terms-section {
+    margin-top: auto;
+    padding-top: 2mm;
+    border-top: .3mm solid #a66a20;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
-  .rc-money-total strong { font-size: 14.5px; font-weight: 500; }
-  .rc-terms { min-height: 27mm; padding: 1.6mm; }
-  .rc-terms-list { display: grid; gap: .75mm; margin: 0; padding: 0; list-style: none; }
-  .rc-terms-list li { display: grid; grid-template-columns: 4.2mm minmax(0, 1fr); gap: 1.3mm; font-size: 7px; line-height: 1.18; }
+  .rc-terms-section .rc-block-title { margin-bottom: 1.5mm; }
+  .rc-terms {
+    padding: 1.7mm 2mm;
+    border: .25mm solid #d8c29c;
+    border-radius: 1.5mm;
+    background: #fffdf9;
+  }
+  .rc-terms-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.2mm; margin: 0; padding: 0; list-style: none; }
+  .rc-terms-list li { display: grid; grid-template-columns: 4.2mm minmax(0, 1fr); gap: 1.2mm; font-size: 8.6px; line-height: 1.28; }
   .rc-terms-list b {
     width: 3.5mm;
     height: 3.5mm;
@@ -5042,19 +5097,6 @@ const getReferenceContractStyles = () => `
     background: #a66a20;
     font-size: 7px;
   }
-  .rc-important {
-    display: grid;
-    grid-template-columns: 6mm minmax(0, 1fr);
-    gap: 1.3mm;
-    align-items: center;
-    margin-top: 1mm;
-    padding: .9mm 1.2mm;
-    border: .25mm solid #d8c29c;
-    border-radius: 1mm;
-  }
-  .rc-important img { width: 5mm; height: 5mm; }
-  .rc-important strong { color: #a66a20; font-family: Georgia, "Times New Roman", serif; text-transform: uppercase; }
-  .rc-important span { display: block; font-size: 6.6px; }
   .rc-revisions {
     margin-top: 3mm;
     padding: 2.5mm 3mm;
@@ -5072,12 +5114,12 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 24mm;
-    margin: 6mm 12mm 0;
+    margin: 8mm 12mm 0;
     break-inside: avoid;
     page-break-inside: avoid;
     text-align: center;
   }
-  .rc-signature { display: flex; min-height: 28mm; flex-direction: column; justify-content: flex-end; }
+  .rc-signature { display: flex; min-height: 31mm; flex-direction: column; justify-content: flex-end; }
   .rc-signature-line { padding-top: 2.2mm; border-top: .3mm solid #777; }
   .rc-signature strong { display: block; font-size: 10px; text-transform: uppercase; }
   .rc-signature span { display: block; margin-top: .8mm; font-size: 9px; text-transform: uppercase; }
@@ -5102,9 +5144,11 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-table th { padding-top: 1.05mm; padding-bottom: 1.05mm; font-size: 8.1px; }
   .rc-sheet.is-dense .rc-table td { padding-top: .75mm; padding-bottom: .75mm; }
   .rc-sheet.is-dense .rc-bottom { margin-top: 1.2mm; }
-  .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-money, .rc-sheet.is-dense .rc-terms { min-height: 25mm; }
+  .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-guarantee-control { min-height: 22mm; }
   .rc-sheet.is-dense .rc-signatures { margin-top: 5mm; }
-  .rc-sheet.is-dense .rc-signature { min-height: 25mm; }
+  .rc-sheet.is-dense .rc-signature { min-height: 27mm; }
+  .rc-sheet.is-dense .rc-terms-section { margin-top: 2.5mm; }
+  .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
   @media print {
     html, body {
       width: 216mm;
@@ -5332,6 +5376,24 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes / observacion</th></tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="7">Sin items registrados</td></tr>'}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="7">
+                <div class="rc-financial-summary">
+                  ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
+                  <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
+                  ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
+                  ${!isCustomerPickup ? `<div class="rc-financial-item"><span>Envio</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
+                  <div class="rc-financial-item guarantee"><span>Garantia reembolsable</span><strong>${formatBs(guaranteeBs)}</strong></div>
+                  ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
+                  <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
+                  <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+                  <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
+                  <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
+                </div>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </section>
 
@@ -5341,29 +5403,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <strong>Observaciones:</strong>
           <p>${escapeHtml(observations)}</p>
         </div>
-        <div class="rc-money">
-          <h3 class="rc-bottom-title">Resumen economico</h3>
-          ${hasDurationPricing ? `<div class="rc-money-line"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
-          <div class="rc-money-line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
-          ${hasManualDiscount ? `<div class="rc-money-line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>` : ''}
-          ${!isCustomerPickup ? `<div class="rc-money-line"><span>Envio</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
-          <div class="rc-money-line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
-          ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-money-line"><span>Prepago aplicado</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
-          <div class="rc-money-line"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
-          <div class="rc-money-line"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
-          <div class="rc-money-total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
-          <div class="rc-money-line"><span>Monto manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
-        </div>
-        <div>
-          <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
-          <div class="rc-terms">
-            <ol class="rc-terms-list">
-              <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
-              <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
-              <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
-              <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
-            </ol>
-            <aside class="rc-important">${contractPdfIcon('verificado.png')}<p><strong>Importante</strong><span>Al firmar este documento, el cliente acepta todas las condiciones descritas en este contrato.</span></p></aside>
+        <div class="rc-guarantee-control">
+          <h3 class="rc-bottom-title">Control de garantia o cambios del momento</h3>
+          <div class="rc-change-lines">
+            <span class="rc-change-line"></span>
+            <span class="rc-change-line"></span>
+            <span class="rc-change-line"></span>
+            <span class="rc-change-line"></span>
+            <span class="rc-change-line"></span>
           </div>
         </div>
       </section>
@@ -5377,6 +5424,18 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       <section class="rc-signatures">
         <div class="rc-signature"><div class="rc-signature-line"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</span></div></div>
         <div class="rc-signature"><div class="rc-signature-line"><strong>Responsable del contrato</strong><span>${escapeHtml(responsibleName)}<br />${escapeHtml(responsibleRole)}</span></div></div>
+      </section>
+
+      <section class="rc-terms-section">
+        <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
+        <div class="rc-terms">
+          <ol class="rc-terms-list">
+            <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
+            <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
+            <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
+            <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
+          </ol>
+        </div>
       </section>
 
       <footer class="rc-footer">
