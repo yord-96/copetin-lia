@@ -11,6 +11,8 @@ const REMOTE_BACKOFF_MAX_MS = 180000;
 const MUTATION_CONFLICT_RETRIES = 3;
 const MUTATION_TRANSIENT_RETRIES = 4;
 const SAVE_TRANSIENT_RETRIES = 4;
+const DIRECT_STATE_SAVE_MAX_BYTES = 700 * 1024;
+const STATE_CHUNK_BYTES = 320 * 1024;
 const REMOTE_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_KEY = String(
   import.meta.env?.VITE_APP_INTERNAL_KEY
@@ -200,6 +202,54 @@ const fetchServerMeta = async () => {
   return response.json();
 };
 
+const bytesToBase64 = (bytes) => {
+  let binary = '';
+  const batchSize = 16 * 1024;
+  for (let offset = 0; offset < bytes.length; offset += batchSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + batchSize));
+  }
+  return btoa(binary);
+};
+
+const postChunkedStateRequest = async (suffix, payload) => {
+  const response = await fetch(getServerStateUrl(`/chunked/${suffix}`), {
+    method: 'POST',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo completar el guardado fragmentado.');
+  }
+  return response.json().catch(() => null);
+};
+
+const pushServerStateInChunks = async (state) => {
+  const serializedState = JSON.stringify(state);
+  const bytes = new TextEncoder().encode(serializedState);
+  const totalChunks = Math.ceil(bytes.length / STATE_CHUNK_BYTES);
+  const started = await postChunkedStateRequest('start', {
+    revision: lastSharedRevision ?? null,
+    totalChunks,
+    totalBytes: bytes.length,
+  });
+  const uploadId = started?.uploadId;
+  if (!uploadId) {
+    throw new Error('El servidor no inicio correctamente el guardado fragmentado.');
+  }
+
+  for (let index = 0; index < totalChunks; index += 1) {
+    const start = index * STATE_CHUNK_BYTES;
+    const chunk = bytes.subarray(start, Math.min(bytes.length, start + STATE_CHUNK_BYTES));
+    await postChunkedStateRequest('chunk', {
+      uploadId,
+      index,
+      data: bytesToBase64(chunk),
+    });
+  }
+
+  return postChunkedStateRequest('commit', { uploadId });
+};
+
 const pushServerState = async ({ attempt = 0 } = {}) => {
   if (!shouldUseServerState()) {
     return;
@@ -210,13 +260,22 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
     return;
   }
 
+  const serializedPayload = JSON.stringify({
+    state,
+    revision: lastSharedRevision ?? null,
+  });
+  if (!isLocalHost() && new TextEncoder().encode(serializedPayload).length > DIRECT_STATE_SAVE_MAX_BYTES) {
+    const payload = await pushServerStateInChunks(state);
+    if (payload?.revision) {
+      lastSharedRevision = payload.revision;
+    }
+    return payload;
+  }
+
   const response = await fetch(getServerStateUrl(), {
     method: 'PUT',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({
-      state,
-      revision: lastSharedRevision ?? null,
-    }),
+    body: serializedPayload,
   });
 
   if (response.status === 409) {
