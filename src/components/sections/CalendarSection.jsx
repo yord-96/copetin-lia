@@ -40,6 +40,8 @@ const OPERATIONAL_STATUS_META = {
     pendiente: { label: 'Pendiente', className: 'pending', detail: 'Inventario aun no confirmo el alistamiento.' },
     enviado: { label: 'Recibida', className: 'transport', detail: 'La orden ya fue enviada a inventario.' },
     confirmado: { label: 'Listo', className: 'completed', detail: 'Inventario confirmo los items.' },
+    salio: { label: 'Salio', className: 'completed', detail: 'Los items ya salieron del almacen.' },
+    devuelto: { label: 'Devuelto', className: 'completed', detail: 'Los items retornaron y fueron recibidos.' },
     no_aplica: { label: 'No aplica', className: 'draft', detail: 'No requiere gestion de inventario.' },
   },
   transport: {
@@ -132,7 +134,7 @@ const getOperationalStatusMeta = (area, status) => {
 const getOperationalProgressValue = (status, { noAplicaComplete = true } = {}) => {
   const key = normalizeText(status).replaceAll(' ', '_');
   if (key === 'no_aplica') return noAplicaComplete ? 100 : 0;
-  if (['confirmado', 'confirmada', 'completado', 'completada', 'completed', 'devuelto', 'devuelta', 'liquidado', 'liquidada', 'aprobado', 'aprobada'].includes(key)) return 100;
+  if (['confirmado', 'confirmada', 'completado', 'completada', 'completed', 'salio', 'devuelto', 'devuelta', 'liquidado', 'liquidada', 'aprobado', 'aprobada'].includes(key)) return 100;
   if (['enviado', 'enviada', 'en_ruta', 'ruta', 'recibido', 'recibida'].includes(key)) return 50;
   return 0;
 };
@@ -609,9 +611,12 @@ function CalendarSection({
           deliveryCode ? deliveryCode : null,
         ].filter(Boolean).join(' | ');
         const responsible = getResponsibleTrace(event, contract, rental, delivery);
+        const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus).replaceAll(' ', '_');
+        const deliveryAlreadyLeftWarehouse = type === 'delivery' && ['salio', 'devuelto'].includes(inventoryStatus);
 
         return {
           ...event,
+          status: deliveryAlreadyLeftWarehouse ? 'completada' : event.status,
           dateKey: toDateKey(event.date),
           type,
           startTime: event.startTime || '08:00',
@@ -941,6 +946,8 @@ function CalendarSection({
     const operational = rental?.operational ?? {};
 
     if (event.type === 'delivery') {
+      const inventoryStatus = normalizeText(operational.inventoryStatus).replaceAll(' ', '_');
+      if (['salio', 'devuelto'].includes(inventoryStatus)) return 100;
       const steps = [getOperationalProgressValue(operational.inventoryStatus, { noAplicaComplete: false })];
       if (logisticsMode !== 'recojo') {
         steps.push(getOperationalProgressValue(operational.transportStatus, { noAplicaComplete: false }));
