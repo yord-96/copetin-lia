@@ -4789,10 +4789,11 @@ const getReferenceContractStyles = () => `
   }
   h1, h2, h3, p { margin: 0; }
   .rc-sheet {
+    position: relative;
     width: 216mm;
     min-height: 355.6mm;
     margin: 0 auto;
-    padding: 4.5mm 8mm 4mm;
+    padding: 4.5mm 8mm 45mm;
     display: flex;
     flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
@@ -5072,13 +5073,20 @@ const getReferenceContractStyles = () => `
   .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
   .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
   .rc-terms-section {
-    margin-top: auto;
-    padding-top: 2mm;
-    border-top: .3mm solid #a66a20;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .rc-terms-section .rc-block-title { margin-bottom: 1.5mm; }
+  .rc-terms-head {
+    display: grid;
+    grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr);
+    gap: 8mm;
+    align-items: end;
+    margin-bottom: 1.5mm;
+  }
+  .rc-terms-section .rc-block-title { margin-bottom: 0; }
   .rc-terms {
     padding: 1.7mm 2mm;
     border: .25mm solid #d8c29c;
@@ -5113,16 +5121,16 @@ const getReferenceContractStyles = () => `
   .rc-signatures {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 24mm;
-    margin: 8mm 12mm 0;
+    gap: 10mm;
+    margin: 0;
     break-inside: avoid;
     page-break-inside: avoid;
     text-align: center;
   }
-  .rc-signature { display: flex; min-height: 31mm; flex-direction: column; justify-content: flex-end; }
-  .rc-signature-line { padding-top: 2.2mm; border-top: .3mm solid #777; }
-  .rc-signature strong { display: block; font-size: 10px; text-transform: uppercase; }
-  .rc-signature span { display: block; margin-top: .8mm; font-size: 9px; text-transform: uppercase; }
+  .rc-signature { display: flex; min-height: 13mm; flex-direction: column; justify-content: flex-end; }
+  .rc-signature-line { padding-top: 1.2mm; border-top: .3mm solid #777; }
+  .rc-signature strong { display: block; font-size: 8.5px; text-transform: uppercase; }
+  .rc-signature span { display: block; margin-top: .45mm; font-size: 7.4px; line-height: 1.1; text-transform: uppercase; }
   .rc-footer {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
@@ -5135,6 +5143,16 @@ const getReferenceContractStyles = () => `
   }
   .rc-footer strong { color: #a66a20; font-size: 9px; }
   .rc-footer span:last-child { text-align: right; }
+  .rc-page-bottom {
+    position: absolute;
+    right: 8mm;
+    bottom: 4mm;
+    left: 8mm;
+    z-index: 2;
+    background: #fffdfa;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .rc-sheet.is-dense { font-size: 10px; }
   .rc-sheet.is-dense .rc-title { padding-top: 1mm; padding-bottom: 2.5mm; }
   .rc-sheet.is-dense .rc-company { min-height: 12mm; }
@@ -5145,9 +5163,7 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-table td { padding-top: .75mm; padding-bottom: .75mm; }
   .rc-sheet.is-dense .rc-bottom { margin-top: 1.2mm; }
   .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-guarantee-control { min-height: 22mm; }
-  .rc-sheet.is-dense .rc-signatures { margin-top: 5mm; }
-  .rc-sheet.is-dense .rc-signature { min-height: 27mm; }
-  .rc-sheet.is-dense .rc-terms-section { margin-top: 2.5mm; }
+  .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
   @media print {
     html, body {
@@ -5162,7 +5178,7 @@ const getReferenceContractStyles = () => `
       position: absolute;
       inset: 0;
       margin: 0;
-      padding: 4.5mm 8mm 4mm;
+      padding: 4.5mm 8mm 45mm;
       box-shadow: none;
     }
   }
@@ -5421,28 +5437,31 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         ${revisionRows}
       </section>` : ''}
 
-      <section class="rc-signatures">
-        <div class="rc-signature"><div class="rc-signature-line"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)}<br />CI: ${escapeHtml(rental.customerPhone || '-')}</span></div></div>
-        <div class="rc-signature"><div class="rc-signature-line"><strong>Responsable del contrato</strong><span>${escapeHtml(responsibleName)}<br />${escapeHtml(responsibleRole)}</span></div></div>
-      </section>
+      <div class="rc-page-bottom">
+        <section class="rc-terms-section">
+          <div class="rc-terms-head">
+            <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
+            <section class="rc-signatures">
+              <div class="rc-signature"><div class="rc-signature-line"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)} | CI: ${escapeHtml(rental.customerPhone || '-')}</span></div></div>
+              <div class="rc-signature"><div class="rc-signature-line"><strong>Responsable del contrato</strong><span>${escapeHtml(responsibleName)} | ${escapeHtml(responsibleRole)}</span></div></div>
+            </section>
+          </div>
+          <div class="rc-terms">
+            <ol class="rc-terms-list">
+              <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
+              <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
+              <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
+              <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
+            </ol>
+          </div>
+        </section>
 
-      <section class="rc-terms-section">
-        <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
-        <div class="rc-terms">
-          <ol class="rc-terms-list">
-            <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
-            <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
-            <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
-            <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
-          </ol>
-        </div>
-      </section>
-
-      <footer class="rc-footer">
-        <span>Documento generado por El Copetin</span>
-        <strong>${escapeHtml(company.website || 'www.copetin.com')}</strong>
-        <span>Contrato ${escapeHtml(mainCode)}</span>
-      </footer>
+        <footer class="rc-footer">
+          <span>Documento generado por El Copetin</span>
+          <strong>${escapeHtml(company.website || 'www.copetin.com')}</strong>
+          <span>Contrato ${escapeHtml(mainCode)}</span>
+        </footer>
+      </div>
     </main>
   </body>
 </html>`;
