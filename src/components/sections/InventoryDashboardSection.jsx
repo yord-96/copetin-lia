@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -272,7 +274,7 @@ const exportProductsWorkbook = async ({ rows, filters }) => {
       : 'Disponible';
     const excelRow = sheet.getRow(rowNumber);
     excelRow.values = [
-      row.imageDataUrl ? '' : 'Sin imagen',
+      getProductImageSrc(row) ? '' : 'Sin imagen',
       row.name,
       row.category || '-',
       row.brand || '-',
@@ -323,7 +325,7 @@ const exportProductsWorkbook = async ({ rows, filters }) => {
 
   await Promise.all(rows.map(async (row, index) => {
     try {
-      const imageDataUrl = await resolveExcelImageDataUrl(row.imageDataUrl);
+      const imageDataUrl = await resolveExcelImageDataUrl(getProductImageSrc(row));
       const extension = getExcelImageExtension(imageDataUrl);
       if (!extension) return;
       const imageId = workbook.addImage({ base64: imageDataUrl, extension });
@@ -1265,6 +1267,7 @@ function InventoryDashboardSection({
         typeLabel: movement.type === 'reserva' ? 'Reserva' : isEntry ? 'Entrada' : movement.type === 'salida' ? 'Salida' : 'Ajuste',
         itemName: movement.itemName ?? 'Item',
         itemId: movement.itemId ?? '',
+        imageUrl: movement.imageUrl ?? itemRow?.imageUrl ?? null,
         imageDataUrl: movement.imageDataUrl ?? itemRow?.imageDataUrl ?? null,
         sku: String(movement.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
         reference: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.reference ?? movement.id,
@@ -1303,6 +1306,7 @@ function InventoryDashboardSection({
             typeLabel: 'Reserva',
             itemName: line.itemName ?? itemRow?.name ?? 'Item',
             itemId: line.itemId ?? '',
+            imageUrl: itemRow?.imageUrl ?? null,
             imageDataUrl: itemRow?.imageDataUrl ?? null,
             sku: String(line.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
             reference: displayReference,
@@ -3159,14 +3163,18 @@ function InventoryDashboardSection({
                         </td>
                         <td>
                           <div className="inventory-product-cell movement-product-cell">
-                            {row.imageDataUrl ? (
+                            {getProductImageSrc(row) ? (
                               <button
                                 type="button"
                                 className="inventory-product-thumb inventory-product-thumb-button"
-                                onClick={() => handleOpenImagePreview(row.imageDataUrl, row.itemName)}
+                                onClick={() => handleOpenImagePreview(getProductImageSrc(row), row.itemName)}
                                 aria-label={`Ver imagen de ${row.itemName}`}
                               >
-                                <img src={row.imageDataUrl} alt={`Imagen de ${row.itemName}`} />
+                                <ProductImage
+                                  item={row}
+                                  alt={`Imagen de ${row.itemName}`}
+                                  fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                                />
                               </button>
                             ) : (
                               <div className="inventory-product-thumb">
@@ -3254,14 +3262,18 @@ function InventoryDashboardSection({
                         </td>
                         <td>
                           <div className="inventory-product-cell movement-product-cell">
-                            {row.imageDataUrl ? (
+                            {getProductImageSrc(row) ? (
                               <button
                                 type="button"
                                 className="inventory-product-thumb inventory-product-thumb-button"
-                                onClick={() => handleOpenImagePreview(row.imageDataUrl, row.itemName)}
+                                onClick={() => handleOpenImagePreview(getProductImageSrc(row), row.itemName)}
                                 aria-label={`Ver imagen de ${row.itemName}`}
                               >
-                                <img src={row.imageDataUrl} alt={`Imagen de ${row.itemName}`} />
+                                <ProductImage
+                                  item={row}
+                                  alt={`Imagen de ${row.itemName}`}
+                                  fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                                />
                               </button>
                             ) : (
                               <div className="inventory-product-thumb">
@@ -3491,14 +3503,18 @@ function InventoryDashboardSection({
                       <tr key={row.id}>
                         <td>
                           <div className="inventory-product-cell">
-                            {row.imageDataUrl ? (
+                            {getProductImageSrc(row) ? (
                               <button
                                 type="button"
                                 className="inventory-product-thumb inventory-product-thumb-button"
-                                onClick={() => handleOpenImagePreview(row.imageDataUrl, row.name)}
+                                onClick={() => handleOpenImagePreview(getProductImageSrc(row), row.name)}
                                 aria-label={`Ver imagen de ${row.name}`}
                               >
-                                <img src={row.imageDataUrl} alt={`Imagen de ${row.name}`} />
+                                <ProductImage
+                                  item={row}
+                                  alt={`Imagen de ${row.name}`}
+                                  fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                                />
                               </button>
                             ) : (
                               <div className="inventory-product-thumb">
@@ -3758,7 +3774,11 @@ function InventoryDashboardSection({
                 />
                 <div className="inventory-image-preview">
                   {productForm.imagePreviewUrl ? (
-                    <img src={productForm.imagePreviewUrl} alt="Vista previa del producto" />
+                    <ProductImage
+                      src={productForm.imagePreviewUrl}
+                      alt="Vista previa del producto"
+                      fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                    />
                   ) : (
                     <span>Sin imagen</span>
                   )}
@@ -3840,9 +3860,13 @@ function InventoryDashboardSection({
                       onClick={() => addComboIngredient(row.id)}
                     >
                       <div className="inventory-product-cell">
-                        {row.imageDataUrl ? (
+                        {getProductImageSrc(row) ? (
                           <div className="inventory-product-thumb">
-                            <img src={row.imageDataUrl} alt={`Imagen de ${row.name}`} />
+                            <ProductImage
+                              item={row}
+                              alt={`Imagen de ${row.name}`}
+                              fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                            />
                           </div>
                         ) : (
                           <div className="inventory-product-thumb">
@@ -3944,9 +3968,13 @@ function InventoryDashboardSection({
                         }))}
                     >
                       <div className="inventory-product-cell">
-                        {row.imageDataUrl ? (
+                        {getProductImageSrc(row) ? (
                           <div className="inventory-product-thumb">
-                            <img src={row.imageDataUrl} alt={`Imagen de ${row.name}`} />
+                            <ProductImage
+                              item={row}
+                              alt={`Imagen de ${row.name}`}
+                              fallback={<span className="inventory-thumb-fallback">IMG</span>}
+                            />
                           </div>
                         ) : (
                           <div className="inventory-product-thumb">
@@ -4093,14 +4121,18 @@ function InventoryDashboardSection({
           <section className="reset-modal inventory-detail-modal" onClick={(event) => event.stopPropagation()}>
             <header className="inventory-detail-head">
               <div className="inventory-detail-media">
-                {detailRow.imageDataUrl ? (
+                {getProductImageSrc(detailRow) ? (
                   <button
                     type="button"
                     className="inventory-detail-image-button"
-                    onClick={() => handleOpenImagePreview(detailRow.imageDataUrl, detailRow.name || detailRow.itemName)}
+                    onClick={() => handleOpenImagePreview(getProductImageSrc(detailRow), detailRow.name || detailRow.itemName)}
                     title="Ver imagen en grande"
                   >
-                    <img src={detailRow.imageDataUrl} alt={`Imagen de ${detailRow.name || detailRow.itemName || 'producto'}`} />
+                    <ProductImage
+                      item={detailRow}
+                      alt={`Imagen de ${detailRow.name || detailRow.itemName || 'producto'}`}
+                      fallback={<CategoryIcon category={detailRow.category || detailRow.name || detailRow.itemName} />}
+                    />
                   </button>
                 ) : (
                   <CategoryIcon category={detailRow.category || detailRow.name || detailRow.itemName} />

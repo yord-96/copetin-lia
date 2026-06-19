@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
 
 function RentalSection({
   rentalForm,
@@ -288,12 +290,12 @@ function RentalSection({
                     type="button"
                     className="rental-v2-item-image"
                     onClick={() =>
-                      (item.imageUrl ?? item.imageDataUrl)
-                      && setImagePreview({ url: item.imageUrl ?? item.imageDataUrl, name: item.name })
+                      getProductImageSrc(item)
+                      && setImagePreview({ url: getProductImageSrc(item), name: item.name })
                     }
                   >
-                    {item.imageUrl ?? item.imageDataUrl ? (
-                      <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                    {getProductImageSrc(item) ? (
+                      <ProductImage item={item} alt={`Imagen de ${item.name}`} fallback={<span>Sin imagen</span>} />
                     ) : (
                       <span>Sin imagen</span>
                     )}
@@ -361,12 +363,16 @@ function RentalSection({
                         type="button"
                         className="rental-v2-selected-thumb"
                         onClick={() =>
-                          (line.item.imageUrl ?? line.item.imageDataUrl)
-                          && setImagePreview({ url: line.item.imageUrl ?? line.item.imageDataUrl, name: line.item.name })
+                          getProductImageSrc(line.item)
+                          && setImagePreview({ url: getProductImageSrc(line.item), name: line.item.name })
                         }
                       >
-                        {line.item.imageUrl ?? line.item.imageDataUrl ? (
-                          <img src={line.item.imageUrl ?? line.item.imageDataUrl} alt={`Imagen de ${line.item.name}`} />
+                        {getProductImageSrc(line.item) ? (
+                          <ProductImage
+                            item={line.item}
+                            alt={`Imagen de ${line.item.name}`}
+                            fallback={<span>Sin imagen</span>}
+                          />
                         ) : (
                           <span>Sin imagen</span>
                         )}

@@ -440,7 +440,13 @@ function CalendarSection({
       const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
       if (logisticsMode === 'recojo') {
         const deliveryKey = toDateKey(contract?.deliveryDate || rental.rentalDate || rental.createdAt);
-        if (deliveryKey) {
+        const hasOutboundDelivery = deliveries.some((delivery) => {
+          if (delivery.deletedAt) return false;
+          const sameRental = delivery.rentalId && delivery.rentalId === rental.id;
+          const sameOrder = delivery.orderCode && delivery.orderCode === rental.orderCode;
+          return (sameRental || sameOrder) && !isDeliveryReturnLeg(delivery, contract, rental);
+        });
+        if (deliveryKey && !hasOutboundDelivery) {
           const deliveryStart = contract?.deliveryWindowStart || rental.deliveryWindowStart || '08:00';
           const deliveryEnd = contract?.deliveryWindowEnd && contract.deliveryWindowEnd !== deliveryStart
             ? contract.deliveryWindowEnd

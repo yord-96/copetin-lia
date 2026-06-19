@@ -1,3 +1,6 @@
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
+
 function InventorySection({
   editingInventoryId,
   inventoryForm,
@@ -60,19 +63,23 @@ function InventorySection({
             <input ref={inventoryImageInputRef} type="file" accept="image/*" onChange={handleInventoryImageChange} />
           </label>
 
-          {(inventoryForm.imageUrl ?? inventoryForm.imageDataUrl) && (
+          {getProductImageSrc(inventoryForm) && (
             <div className="full-width image-preview-box">
               <button
                 type="button"
                 className="image-preview-trigger"
                 onClick={() =>
                   setImagePreview({
-                    url: inventoryForm.imageUrl ?? inventoryForm.imageDataUrl,
+                    url: getProductImageSrc(inventoryForm),
                     name: inventoryForm.name || inventoryForm.imageFileName || 'Imagen',
                   })
                 }
               >
-                <img src={inventoryForm.imageUrl ?? inventoryForm.imageDataUrl} alt="Vista previa del item" />
+                <ProductImage
+                  item={inventoryForm}
+                  alt="Vista previa del item"
+                  fallback={<span className="image-missing">Sin imagen</span>}
+                />
               </button>
               <p>{inventoryForm.imageFileName || 'Imagen seleccionada'}</p>
             </div>
@@ -184,13 +191,17 @@ function InventorySection({
               {items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    {item.imageUrl ?? item.imageDataUrl ? (
+                    {getProductImageSrc(item) ? (
                       <button
                         type="button"
                         className="table-image-button"
-                        onClick={() => setImagePreview({ url: item.imageUrl ?? item.imageDataUrl, name: item.name })}
+                        onClick={() => setImagePreview({ url: getProductImageSrc(item), name: item.name })}
                       >
-                        <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                        <ProductImage
+                          item={item}
+                          alt={`Imagen de ${item.name}`}
+                          fallback={<span className="image-missing">Sin imagen</span>}
+                        />
                       </button>
                     ) : (
                       <span className="image-missing">Sin imagen</span>

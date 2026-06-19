@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
 
 const ORDER_STATUS_META = {
   pending: { label: 'Pendiente', className: 'pending' },
@@ -1923,9 +1925,9 @@ function ServiceOrdersSection({
   const remainingCatalogCount = Math.max(0, filteredCatalog.length - visibleCatalog.length);
 
   const handleOpenProductImage = (item) => {
-    if (!(item?.imageUrl ?? item?.imageDataUrl)) return;
+    if (!getProductImageSrc(item)) return;
     onOpenImage?.({
-      url: item.imageUrl ?? item.imageDataUrl,
+      url: getProductImageSrc(item),
       name: `Imagen de ${item.name || 'producto'}`,
     });
   };
@@ -4785,14 +4787,14 @@ function ServiceOrdersSection({
                 return (
                   <article key={`catalog-modal-item-${item.id}`}>
                     <div className="orders-product-thumb">
-                      {item.imageUrl ?? item.imageDataUrl ? (
+                      {getProductImageSrc(item) ? (
                         <button
                           type="button"
                           className="orders-product-thumb-button"
                           onClick={() => handleOpenProductImage(item)}
                           aria-label={`Ver imagen de ${item.name}`}
                         >
-                          <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                          <ProductImage item={item} alt={`Imagen de ${item.name}`} fallback={<span>IMG</span>} />
                         </button>
                       ) : <span>IMG</span>}
                     </div>
@@ -5554,7 +5556,7 @@ function ServiceOrdersSection({
                           className={`orders-product-row${!isProvisionalCatalogItem && projectedAvailable <= 0 ? ' is-unavailable' : ''}${isProvisionalCatalogItem ? ' is-provisional' : ''}`}
                         >
                           <div className="orders-product-thumb">
-                            {item.imageUrl ?? item.imageDataUrl ? (
+                            {getProductImageSrc(item) ? (
                               <button
                                 type="button"
                                 className="orders-product-thumb-button"
@@ -5562,7 +5564,7 @@ function ServiceOrdersSection({
                                 aria-label={`Ver imagen de ${item.name} en grande`}
                                 title="Ver imagen en grande"
                               >
-                                <img src={item.imageUrl ?? item.imageDataUrl} alt={`Imagen de ${item.name}`} />
+                                <ProductImage item={item} alt={`Imagen de ${item.name}`} fallback={<span>IMG</span>} />
                               </button>
                             ) : (
                               <span>IMG</span>

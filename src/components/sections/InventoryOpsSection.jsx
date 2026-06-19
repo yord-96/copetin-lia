@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
 
 const formatDateTime = (value) => {
   if (!value) {
@@ -212,8 +214,12 @@ function InventoryOpsSection({
               return (
                 <article key={recovery.id} className="inventory-recovery-item">
                   <div className="inventory-recovery-media">
-                    {recovery.imageUrl ?? recovery.imageDataUrl ? (
-                      <img src={recovery.imageUrl ?? recovery.imageDataUrl} alt={`Imagen de ${recovery.itemName}`} />
+                    {getProductImageSrc(recovery) ? (
+                      <ProductImage
+                        item={recovery}
+                        alt={`Imagen de ${recovery.itemName}`}
+                        fallback={<span>Sin imagen</span>}
+                      />
                     ) : (
                       <span>Sin imagen</span>
                     )}

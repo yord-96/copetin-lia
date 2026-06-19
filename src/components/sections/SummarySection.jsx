@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { getProductImageSrc } from '../../utils/productImage';
+import ProductImage from '../common/ProductImage';
 
 const statusClassFromDelivery = (status) => {
   if (status === 'completada') return 'done';
@@ -366,10 +368,10 @@ function SummarySection({
       .sort((a, b) => Number(b.availableStock ?? 0) - Number(a.availableStock ?? 0))
       .slice(0, 4)
       .map((item) => ({
+        ...item,
         name: item.name,
         available: Number(item.availableStock ?? 0),
         progress: item.totalStock > 0 ? Math.round((Number(item.availableStock ?? 0) / Number(item.totalStock)) * 100) : 0,
-        imageDataUrl: item.imageUrl ?? item.imageDataUrl ?? item.image ?? null,
         visualType: getFeaturedVisualType(item),
       }));
   }, [items]);
@@ -489,18 +491,23 @@ function SummarySection({
             <div className="inventory-featured-grid">
               {featuredInventory.map((item) => (
                 <article key={item.name} className="inventory-featured-item">
-                  {item.imageDataUrl ? (
+                  {getProductImageSrc(item) ? (
                     <button
                       type="button"
                       className="inventory-featured-image inventory-featured-image-button"
                       onClick={() =>
                         onOpenImage?.({
-                          url: item.imageDataUrl,
+                          url: getProductImageSrc(item),
                           name: `Imagen de ${item.name}`,
                         })}
                       aria-label={`Ver imagen de ${item.name} en grande`}
                     >
-                      <img src={item.imageDataUrl} alt={`Imagen de ${item.name}`} loading="lazy" />
+                      <ProductImage
+                        item={item}
+                        alt={`Imagen de ${item.name}`}
+                        loading="lazy"
+                        fallback={<ProductIllustration type={item.visualType} />}
+                      />
                     </button>
                   ) : (
                     <div className="inventory-featured-image" aria-hidden="true">
