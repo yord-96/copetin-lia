@@ -777,13 +777,17 @@ function InventoryDashboardSection({
   const [detailRow, setDetailRow] = useState(null);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
-  const [inventoryWeekStart, setInventoryWeekStart] = useState(() => getMondayDateKey());
+  const [inventoryOrderQuery, setInventoryOrderQuery] = useState('');
+  const [inventoryOperationDate, setInventoryOperationDate] = useState('');
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
 
   const rowMenuRef = useRef(null);
   const productFilterRef = useRef(null);
+
+  const getInventoryDocumentWeekStart = (dateValue = '') =>
+    getMondayDateKey(dateValue || new Date());
 
   useEffect(() => () => {
     if (productForm.imageFile && productForm.imagePreviewUrl?.startsWith('blob:')) {
@@ -793,7 +797,10 @@ function InventoryDashboardSection({
 
   const openInventoryWeekDocument = async (format = 'standard') => {
     try {
-      const preview = await onPrintInventoryWeekDocument?.({ weekStart: inventoryWeekStart, format });
+      const preview = await onPrintInventoryWeekDocument?.({
+        weekStart: getInventoryDocumentWeekStart(inventoryOperationDate),
+        format,
+      });
       if (preview?.html) {
         setDocumentPreview({
           title: preview.title ?? 'Control semanal de inventario',
@@ -809,8 +816,9 @@ function InventoryDashboardSection({
 
   const openInventorySingleOrderDocument = async (row) => {
     try {
+      const operationDate = inventoryOperationDate || row.deliveryDate || row.pickupDate;
       const preview = await onPrintInventoryWeekDocument?.({
-        weekStart: inventoryWeekStart,
+        weekStart: getInventoryDocumentWeekStart(operationDate),
         format: 'individual',
         rentalId: row.rentalId,
         orderCode: row.orderCode,
@@ -1083,21 +1091,22 @@ function InventoryDashboardSection({
       });
   }, [activeRentals, contracts, deliveries]);
 
-  const weeklyPrepOrderRows = useMemo(() => {
-    const start = inventoryWeekStart;
-    const endDate = new Date(`${start}T12:00:00`);
-    endDate.setDate(endDate.getDate() + 6);
-    const end = [
-      endDate.getFullYear(),
-      String(endDate.getMonth() + 1).padStart(2, '0'),
-      String(endDate.getDate()).padStart(2, '0'),
-    ].join('-');
-    const inWeek = (value) => {
-      const key = String(value ?? '').slice(0, 10);
-      return Boolean(key && key >= start && key <= end);
-    };
-    return prepOrderRows.filter((row) => inWeek(row.deliveryDate) || inWeek(row.pickupDate));
-  }, [inventoryWeekStart, prepOrderRows]);
+  const filteredPrepOrderRows = useMemo(() => {
+    const normalizedQuery = normalizeText(inventoryOrderQuery);
+    const selectedDate = String(inventoryOperationDate ?? '').slice(0, 10);
+
+    return prepOrderRows.filter((row) => {
+      const matchesQuery = !normalizedQuery || [
+        row.contractCode,
+        row.orderCode,
+        row.customerName,
+      ].some((value) => normalizeText(value).includes(normalizedQuery));
+      const matchesDate = !selectedDate
+        || String(row.deliveryDate ?? '').slice(0, 10) === selectedDate
+        || String(row.pickupDate ?? '').slice(0, 10) === selectedDate;
+      return matchesQuery && matchesDate;
+    });
+  }, [inventoryOperationDate, inventoryOrderQuery, prepOrderRows]);
 
   const cancelledOrderRows = useMemo(() => {
     return cancelledRentals
@@ -2818,14 +2827,10 @@ function InventoryDashboardSection({
             <article className="inventory-ops-card">
               <header className="inventory-ops-head">
                 <div>
-                  <h3>Control semanal de ordenes operativas</h3>
-                  <span>Alistamiento, salida y retorno de inventario en un solo documento.</span>
+                  <h3>Ordenes operativas de inventario</h3>
+                  <span>Consulta todas las ordenes o filtra por cliente, contrato y fecha exacta.</span>
                 </div>
                 <div className="inventory-week-actions">
-                  <label>
-                    Semana desde
-                    <input type="date" value={inventoryWeekStart} onChange={(event) => setInventoryWeekStart(getMondayDateKey(event.target.value))} />
-                  </label>
                   <button type="button" className="ghost-button" onClick={() => openInventoryWeekDocument('thermal')}>
                     Epson TM-T20
                   </button>
@@ -2834,35 +2839,79 @@ function InventoryDashboardSection({
                   </button>
                 </div>
               </header>
+              <div className="inventory-ops-toolbar">
+                <label className="inventory-ops-search">
+                  <span>Buscar contrato o cliente</span>
+                  <input
+                    type="search"
+                    value={inventoryOrderQuery}
+                    onChange={(event) => setInventoryOrderQuery(event.target.value)}
+                    placeholder="Ej. 1348 o Paola Fernandez"
+                  />
+                </label>
+                <label className="inventory-ops-date-filter">
+                  <span>Ver dia</span>
+                  <input
+                    type="date"
+                    value={inventoryOperationDate}
+                    onChange={(event) => setInventoryOperationDate(event.target.value)}
+                  />
+                </label>
+                <div className="inventory-ops-filter-summary">
+                  <strong>{filteredPrepOrderRows.length}</strong>
+                  <span>{filteredPrepOrderRows.length === 1 ? 'orden visible' : 'ordenes visibles'}</span>
+                </div>
+                {(inventoryOrderQuery || inventoryOperationDate) ? (
+                  <button
+                    type="button"
+                    className="link-button inventory-ops-clear"
+                    onClick={() => {
+                      setInventoryOrderQuery('');
+                      setInventoryOperationDate('');
+                    }}
+                  >
+                    Limpiar filtros
+                  </button>
+                ) : null}
+              </div>
               <div className="inventory-ops-list">
-                {weeklyPrepOrderRows.map((row) => (
+                <div className="inventory-ops-table-head" aria-hidden="true">
+                  <span>Contrato y cliente</span>
+                  <span>Inventario</span>
+                  <span>Entrega / alistamiento</span>
+                  <span>Recojo</span>
+                  <span>Estado</span>
+                  <span>Acciones</span>
+                </div>
+                {filteredPrepOrderRows.map((row) => (
                   <div key={row.id} className="inventory-ops-row">
-                    <div>
-                      <strong>Contrato {row.contractCode}</strong>
-                      <span>{row.customerName}</span>
+                    <div className="inventory-ops-identity">
+                      <div className="inventory-ops-contract-line">
+                        <strong>Contrato {row.contractCode}</strong>
+                        <span>{row.orderCode}</span>
+                      </div>
+                      <span className="inventory-ops-customer">{row.customerName}</span>
                       <span className="inventory-ops-address">{row.address}</span>
                     </div>
-                    <div>
+                    <div className="inventory-ops-inventory">
                       <strong>{row.itemsText}</strong>
-                      <span>{row.inventoryStatusText}</span>
+                      <span className={`inventory-ops-stock-state state-${row.inventoryStatus}`}>
+                        {row.inventoryStatusText}
+                      </span>
                     </div>
-                    <div className="inventory-ops-schedule">
-                      <div className="inventory-ops-schedule-line">
-                        <span className="inventory-ops-label">{row.deliveryLabel}</span>
-                        <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
-                        <span>{row.deliveryWindow}</span>
-                      </div>
-                      <div className="inventory-ops-schedule-line">
-                        <span className="inventory-ops-label">Recojo</span>
-                        <strong>{row.pickupDate ? formatDateTime(row.pickupDate).split(',')[0] : 'Sin fecha'}</strong>
-                        <span>{row.pickupWindow}</span>
-                      </div>
+                    <div className="inventory-ops-schedule-line">
+                      <span className="inventory-ops-label">{row.deliveryLabel}</span>
+                      <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
+                      <span>{row.deliveryWindow}</span>
+                    </div>
+                    <div className="inventory-ops-schedule-line">
+                      <span className="inventory-ops-label">Recojo</span>
+                      <strong>{row.pickupDate ? formatDateTime(row.pickupDate).split(',')[0] : 'Sin fecha'}</strong>
+                      <span>{row.pickupWindow}</span>
                     </div>
                     <div className="inventory-ops-state">
-                      <span className="inventory-ops-label">Prioridad</span>
                       <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
-                      <span className="inventory-ops-label">Estado</span>
-                      <span>{row.inventoryStatus === 'salio' ? 'Salio' : row.inventoryStatus === 'confirmado' ? 'Listo' : 'Pendiente'}</span>
+                      <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : 'Pendiente'}</strong>
                     </div>
                     <div className="inventory-ops-actions">
                       <button
@@ -2883,8 +2932,12 @@ function InventoryDashboardSection({
                     </div>
                   </div>
                 ))}
-                {weeklyPrepOrderRows.length === 0 ? (
-                  <p className="status">No hay entregas ni recojos programados para la semana seleccionada.</p>
+                {filteredPrepOrderRows.length === 0 ? (
+                  <p className="status">
+                    {inventoryOperationDate
+                      ? 'No hay entregas ni recojos programados para el dia seleccionado.'
+                      : 'No hay ordenes que coincidan con la busqueda.'}
+                  </p>
                 ) : null}
               </div>
             </article>
