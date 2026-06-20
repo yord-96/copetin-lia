@@ -778,7 +778,8 @@ function InventoryDashboardSection({
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
   const [inventoryOrderQuery, setInventoryOrderQuery] = useState('');
-  const [inventoryOperationDate, setInventoryOperationDate] = useState('');
+  const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState('');
+  const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState('');
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
@@ -798,7 +799,7 @@ function InventoryDashboardSection({
   const openInventoryWeekDocument = async (format = 'standard') => {
     try {
       const preview = await onPrintInventoryWeekDocument?.({
-        weekStart: getInventoryDocumentWeekStart(inventoryOperationDate),
+        weekStart: getInventoryDocumentWeekStart(inventoryOperationDateFrom || inventoryOperationDateTo),
         format,
       });
       if (preview?.html) {
@@ -816,7 +817,10 @@ function InventoryDashboardSection({
 
   const openInventorySingleOrderDocument = async (row) => {
     try {
-      const operationDate = inventoryOperationDate || row.deliveryDate || row.pickupDate;
+      const operationDate = inventoryOperationDateFrom
+        || inventoryOperationDateTo
+        || row.deliveryDate
+        || row.pickupDate;
       const preview = await onPrintInventoryWeekDocument?.({
         weekStart: getInventoryDocumentWeekStart(operationDate),
         format: 'individual',
@@ -1093,7 +1097,8 @@ function InventoryDashboardSection({
 
   const filteredPrepOrderRows = useMemo(() => {
     const normalizedQuery = normalizeText(inventoryOrderQuery);
-    const selectedDate = String(inventoryOperationDate ?? '').slice(0, 10);
+    const selectedDateFrom = String(inventoryOperationDateFrom ?? '').slice(0, 10);
+    const selectedDateTo = String(inventoryOperationDateTo ?? '').slice(0, 10);
 
     return prepOrderRows.filter((row) => {
       const matchesQuery = !normalizedQuery || [
@@ -1101,12 +1106,16 @@ function InventoryDashboardSection({
         row.orderCode,
         row.customerName,
       ].some((value) => normalizeText(value).includes(normalizedQuery));
-      const matchesDate = !selectedDate
-        || String(row.deliveryDate ?? '').slice(0, 10) === selectedDate
-        || String(row.pickupDate ?? '').slice(0, 10) === selectedDate;
+      const operationDates = [row.deliveryDate, row.pickupDate]
+        .map((value) => String(value ?? '').slice(0, 10))
+        .filter(Boolean);
+      const matchesDate = (!selectedDateFrom && !selectedDateTo) || operationDates.some((date) => (
+        (!selectedDateFrom || date >= selectedDateFrom)
+        && (!selectedDateTo || date <= selectedDateTo)
+      ));
       return matchesQuery && matchesDate;
     });
-  }, [inventoryOperationDate, inventoryOrderQuery, prepOrderRows]);
+  }, [inventoryOperationDateFrom, inventoryOperationDateTo, inventoryOrderQuery, prepOrderRows]);
 
   const cancelledOrderRows = useMemo(() => {
     return cancelledRentals
@@ -2831,9 +2840,6 @@ function InventoryDashboardSection({
                   <span>Consulta todas las ordenes o filtra por cliente, contrato y fecha exacta.</span>
                 </div>
                 <div className="inventory-week-actions">
-                  <button type="button" className="ghost-button" onClick={() => openInventoryWeekDocument('thermal')}>
-                    Epson TM-T20
-                  </button>
                   <button type="button" className="primary-button" onClick={() => openInventoryWeekDocument('standard')}>
                     Ver documento semanal
                   </button>
@@ -2850,24 +2856,47 @@ function InventoryDashboardSection({
                   />
                 </label>
                 <label className="inventory-ops-date-filter">
-                  <span>Ver dia</span>
+                  <span>Desde</span>
                   <input
                     type="date"
-                    value={inventoryOperationDate}
-                    onChange={(event) => setInventoryOperationDate(event.target.value)}
+                    value={inventoryOperationDateFrom}
+                    max={inventoryOperationDateTo || undefined}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      setInventoryOperationDateFrom(nextDate);
+                      if (inventoryOperationDateTo && nextDate > inventoryOperationDateTo) {
+                        setInventoryOperationDateTo(nextDate);
+                      }
+                    }}
+                  />
+                </label>
+                <label className="inventory-ops-date-filter">
+                  <span>Hasta</span>
+                  <input
+                    type="date"
+                    value={inventoryOperationDateTo}
+                    min={inventoryOperationDateFrom || undefined}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      setInventoryOperationDateTo(nextDate);
+                      if (inventoryOperationDateFrom && nextDate < inventoryOperationDateFrom) {
+                        setInventoryOperationDateFrom(nextDate);
+                      }
+                    }}
                   />
                 </label>
                 <div className="inventory-ops-filter-summary">
                   <strong>{filteredPrepOrderRows.length}</strong>
                   <span>{filteredPrepOrderRows.length === 1 ? 'orden visible' : 'ordenes visibles'}</span>
                 </div>
-                {(inventoryOrderQuery || inventoryOperationDate) ? (
+                {(inventoryOrderQuery || inventoryOperationDateFrom || inventoryOperationDateTo) ? (
                   <button
                     type="button"
                     className="link-button inventory-ops-clear"
                     onClick={() => {
                       setInventoryOrderQuery('');
-                      setInventoryOperationDate('');
+                      setInventoryOperationDateFrom('');
+                      setInventoryOperationDateTo('');
                     }}
                   >
                     Limpiar filtros
@@ -2934,8 +2963,8 @@ function InventoryDashboardSection({
                 ))}
                 {filteredPrepOrderRows.length === 0 ? (
                   <p className="status">
-                    {inventoryOperationDate
-                      ? 'No hay entregas ni recojos programados para el dia seleccionado.'
+                    {(inventoryOperationDateFrom || inventoryOperationDateTo)
+                      ? 'No hay entregas ni recojos programados para el rango seleccionado.'
                       : 'No hay ordenes que coincidan con la busqueda.'}
                   </p>
                 ) : null}
@@ -2944,83 +2973,87 @@ function InventoryDashboardSection({
           ) : null}
 
           {isMovementsModule ? (
-            <article className="inventory-ops-card">
-              <header className="inventory-ops-head">
-                <h3>Ordenes anuladas (historial visible)</h3>
-              </header>
-              <div className="inventory-ops-list">
-                {cancelledOrderRows.slice(0, 6).map((row) => (
-                  <div key={row.id} className="inventory-ops-row">
-                    <div>
-                      <strong>{row.orderCode}</strong>
-                      <span>{row.customerName}</span>
-                    </div>
-                    <div>
-                      <strong>{row.itemsText}</strong>
-                      <span>Estado: anulado</span>
-                    </div>
-                    <div>
-                      <strong>{row.cancelledAt ? formatDateTime(row.cancelledAt).split(',')[0] : 'Sin fecha'}</strong>
-                      <span>Anulada en esta fecha</span>
-                    </div>
-                    <div className="inventory-ops-state">
-                      <span className="inventory-ops-priority alta">Anulado</span>
-                      <span>Penalidad {formatBs(row.penaltyBs)}</span>
-                    </div>
-                    <div className="inventory-ops-actions">
-                      <button type="button" className="link-button" disabled>
-                        Sin accion operativa
-                      </button>
-                    </div>
+            <section className="inventory-movement-summary-grid" aria-label="Resumen de incidencias operativas">
+              <article className="inventory-ops-card inventory-movement-summary-card">
+                <header className="inventory-ops-head">
+                  <div>
+                    <h3>Ordenes anuladas</h3>
+                    <span>Historial visible del periodo consultado</span>
                   </div>
-                ))}
-                {cancelledOrderRows.length === 0 ? (
-                  <p className="status">No hay ordenes anuladas en el periodo visible.</p>
-                ) : null}
-              </div>
-            </article>
-          ) : null}
+                  <strong className="inventory-summary-count cancelled">{cancelledOrderRows.length}</strong>
+                </header>
+                <div className="inventory-ops-list">
+                  {cancelledOrderRows.slice(0, 6).map((row) => (
+                    <div key={row.id} className="inventory-summary-row">
+                      <div>
+                        <strong>{row.orderCode}</strong>
+                        <span>{row.customerName}</span>
+                      </div>
+                      <div>
+                        <strong>{row.itemsText}</strong>
+                        <span>{row.cancelledAt ? formatDateTime(row.cancelledAt).split(',')[0] : 'Sin fecha'}</span>
+                      </div>
+                      <div className="inventory-summary-status">
+                        <span className="inventory-ops-priority alta">Anulado</span>
+                        <small>Penalidad {formatBs(row.penaltyBs)}</small>
+                      </div>
+                    </div>
+                  ))}
+                  {cancelledOrderRows.length === 0 ? (
+                    <div className="inventory-summary-empty">
+                      <strong>Sin ordenes anuladas</strong>
+                      <span>No hay registros anulados en el periodo visible.</span>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
 
-          {isMovementsModule ? (
-            <article className="inventory-ops-card">
-              <header className="inventory-ops-head">
-                <h3>Recepciones pendientes desde transporte</h3>
-              </header>
-              <div className="inventory-ops-list">
-                {receptionRows.slice(0, 8).map((row) => (
-                  <div key={row.id} className="inventory-ops-row">
-                    <div>
-                      <strong>{row.orderCode}</strong>
-                      <span>{row.customerName}</span>
-                    </div>
-                    <div>
-                      <strong>{row.itemsText}</strong>
-                      <span>Recojo controlado por {row.checkedBy}</span>
-                    </div>
-                    <div>
-                      <strong>{formatDateTime(row.checkedAt).split(',')[0]}</strong>
-                      <span>Pendiente de recibir</span>
-                    </div>
-                    <div className="inventory-ops-state">
-                      <span className="inventory-ops-priority media">Recepcion</span>
-                      <span>Inventario</span>
-                    </div>
-                    <div className="inventory-ops-actions">
-                      <button type="button" className="link-button" onClick={() => openReceivingModal(row)}>
-                        Recibir y constatar
-                      </button>
-                    </div>
+              <article className="inventory-ops-card inventory-movement-summary-card">
+                <header className="inventory-ops-head">
+                  <div>
+                    <h3>Recepciones pendientes</h3>
+                    <span>Recojos enviados desde transporte al galpon</span>
                   </div>
-                ))}
-                {receptionRows.length === 0 ? (
-                  <p className="status">No hay recojos pendientes de recepcion en galpon.</p>
-                ) : null}
-              </div>
-            </article>
+                  <strong className="inventory-summary-count pending">{receptionRows.length}</strong>
+                </header>
+                <div className="inventory-ops-list">
+                  {receptionRows.slice(0, 8).map((row) => (
+                    <div key={row.id} className="inventory-summary-row">
+                      <div>
+                        <strong>{row.orderCode}</strong>
+                        <span>{row.customerName}</span>
+                      </div>
+                      <div>
+                        <strong>{row.itemsText}</strong>
+                        <span>Controlado por {row.checkedBy}</span>
+                      </div>
+                      <div className="inventory-summary-status">
+                        <small>{formatDateTime(row.checkedAt).split(',')[0]}</small>
+                        <button type="button" className="link-button" onClick={() => openReceivingModal(row)}>
+                          Recibir y constatar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {receptionRows.length === 0 ? (
+                    <div className="inventory-summary-empty">
+                      <strong>Todo recibido</strong>
+                      <span>No hay recojos pendientes de recepcion en galpon.</span>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            </section>
           ) : null}
 
           <article className="inventory-table-card">
             <header className={`inventory-toolbar ${isMovementsModule ? 'inventory-toolbar-movements' : ''} ${isAdjustModule ? 'inventory-toolbar-adjust' : ''}`}>
+              {isMovementsModule ? (
+                <div className="inventory-history-heading">
+                  <h3>Historial de movimientos</h3>
+                  <span>Detalle cronologico de reservas, salidas, entradas y ajustes de stock</span>
+                </div>
+              ) : null}
               <label className="inventory-search">
                 <input
                   type="search"
@@ -3190,6 +3223,18 @@ function InventoryDashboardSection({
             {isMovementsModule ? (
               <div className="inventory-table-wrap-modern">
                 <table className="inventory-table-modern movements-table-modern">
+                  <colgroup>
+                    <col className="movement-col-date" />
+                    <col className="movement-col-type" />
+                    <col className="movement-col-product" />
+                    <col className="movement-col-reference" />
+                    <col className="movement-col-quantity" />
+                    <col className="movement-col-stock" />
+                    <col className="movement-col-stock" />
+                    <col className="movement-col-user" />
+                    <col className="movement-col-observation" />
+                    <col className="movement-col-actions" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Fecha y Hora</th>
@@ -3214,7 +3259,7 @@ function InventoryDashboardSection({
                         <td>
                           <span className={`movement-type-pill ${row.typeKey}`}>{row.typeLabel}</span>
                         </td>
-                        <td>
+                        <td className="movement-product-table-cell">
                           <div className="inventory-product-cell movement-product-cell">
                             {getProductImageSrc(row) ? (
                               <button
@@ -3240,7 +3285,7 @@ function InventoryDashboardSection({
                             </div>
                           </div>
                         </td>
-                        <td>{row.reference}</td>
+                        <td className="movement-reference-cell" title={row.reference}>{row.reference}</td>
                         <td className={row.deltaUnits > 0 ? 'movement-delta-positive' : row.deltaUnits < 0 ? 'movement-delta-negative' : 'movement-delta-neutral'}>
                           {row.deltaUnits > 0 ? `+${row.deltaUnits}` : row.deltaUnits}
                         </td>
@@ -3258,7 +3303,7 @@ function InventoryDashboardSection({
                             </div>
                           </div>
                         </td>
-                        <td>{row.observation}</td>
+                        <td className="movement-observation">{row.observation}</td>
                         <td className="inventory-row-menu">
                           <div className="inventory-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
                             <button
@@ -4412,13 +4457,11 @@ function InventoryDashboardSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>
-                  {documentPreview.format === 'thermal'
-                    ? 'Formato termico 80mm para Epson TM-T20.'
-                    : documentPreview.format === 'individual'
-                    ? 'Formato individual en media carta o carta completa segun la cantidad de items.'
-                    : 'Vista previa del control operativo de inventario.'}
-                </p>
+              <p>
+                {documentPreview.format === 'individual'
+                  ? 'Formato individual en media carta o carta completa segun la cantidad de items.'
+                  : 'Vista previa del control operativo de inventario.'}
+              </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>
                 x

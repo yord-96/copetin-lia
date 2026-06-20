@@ -5846,135 +5846,6 @@ const buildWeeklyInventoryHtml = ({
       </section>`;
   }).join('');
 
-  const thermalOrderSections = weeklyOrders.map((entry, orderIndex) => {
-    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
-    const orderItems = rental.items ?? [];
-    const splitItems = orderItems.length > 7;
-    const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
-    const renderThermalRows = (lines, offset = 0) => lines.map((line, index) => `
-          <tr>
-            <td>${offset + index + 1}</td>
-            <td>${escapeHtml(line.itemName)}</td>
-            <td>${Math.max(0, Number(line.quantity ?? 0))}</td>
-          </tr>`).join('');
-    const responsible = contract?.responsibles?.[0]?.name
-      ?? contract?.createdByName
-      ?? rental.createdByName
-      ?? 'Sin responsable';
-    const address = contract?.address ?? deliveryOut?.address ?? rental.eventAddress ?? '-';
-    const inventoryStatus = rental.status === 'returned'
-      ? 'Devuelto'
-      : rental.operational?.inventoryStatus === 'salio'
-        ? 'Salio'
-        : rental.operational?.inventoryStatus === 'confirmado'
-          ? 'Listo'
-          : 'Por alistar';
-    const firstRows = renderThermalRows(orderItems.slice(0, firstColumnSize), 0);
-    const secondRows = splitItems ? renderThermalRows(orderItems.slice(firstColumnSize), firstColumnSize) : '';
-    return `
-      <section class="ti-order">
-        <div class="ti-order-top">
-          <span>${orderIndex + 1}</span>
-          <strong>CONTRATO: ${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong>
-          <b>ESTADO: ${escapeHtml(inventoryStatus)}</b>
-        </div>
-        <p class="ti-operation"><b>OPERACION:</b> ${escapeHtml(operationSummary)}</p>
-        <div class="ti-grid">
-          <p><b>CLIENTE:</b> ${escapeHtml(rental.customerName)}</p>
-          <p><b>RESPONSABLE:</b> ${escapeHtml(responsible)}</p>
-          <p><b>DIRECCION:</b> ${escapeHtml(address)}</p>
-          <p><b>EVENTO:</b> ${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</p>
-        </div>
-        <p><b>ENTREGA / SALIDA:</b> ${escapeHtml(formatWindow(deliveryDate, contract?.deliveryWindowStart ?? deliveryOut?.windowStart, contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd))}</p>
-        <p><b>RECOJO / RETORNO:</b> ${escapeHtml(formatWindow(pickupDate, contract?.pickupWindowStart ?? deliveryBack?.windowStart, contract?.pickupWindowEnd ?? deliveryBack?.windowEnd))}</p>
-        <p><b>LOGISTICA:</b> ${escapeHtml((contract?.logisticsMode ?? rental.logisticsMode) === 'recojo' ? 'Recojo por cliente' : 'Envio por equipo')}</p>
-        ${orderItems.length ? `
-        <div class="ti-items ${splitItems ? 'is-split' : ''}">
-          <table>
-            <thead><tr><th>N</th><th>ITEM</th><th>CANT.</th></tr></thead>
-            <tbody>${firstRows}</tbody>
-          </table>
-          ${splitItems ? `
-          <table>
-            <thead><tr><th>N</th><th>ITEM</th><th>CANT.</th></tr></thead>
-            <tbody>${secondRows}</tbody>
-          </table>` : ''}
-        </div>` : '<p>Sin items registrados.</p>'}
-        <div class="ti-sign"><span>Entregado por: ______________</span><span>Recogido por: ______________</span></div>
-      </section>`;
-  }).join('');
-
-  if (format === 'thermal') {
-    return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Control semanal termico ${escapeHtml(weekStart)}</title>
-    <style>
-      @page { size: 80mm auto; margin: 1.5mm 2mm; }
-      * { box-sizing: border-box; }
-      html, body { width: 80mm; min-height: 0; margin: 0; padding: 0; }
-      body { color: #000; background: #fff; font: 700 10.5px Arial, sans-serif; }
-      .ti-receipt { width: 76mm; margin: 0; padding: 0; }
-      .ti-header { display: grid; grid-template-columns: 11mm 1fr; gap: 2mm; align-items: center; padding-bottom: 1mm; border-bottom: .35mm dashed #000; }
-      .ti-mark { width: 10mm; height: 10mm; display: grid; place-items: center; border: .7mm solid #000; border-radius: 50%; font-size: 18px; font-weight: 900; }
-      .ti-header h1 { margin: 0; font-size: 17px; line-height: 1; }
-      .ti-header p { margin: .7mm 0 0; font-size: 8.5px; }
-      .ti-title { padding: 1.4mm 0 .8mm; border-bottom: .3mm solid #000; }
-      .ti-title h2 { margin: 0; font-size: 14px; line-height: 1.04; }
-      .ti-title p { margin: .8mm 0 0; font-size: 9.5px; line-height: 1.12; }
-      .ti-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; padding: 1mm 0; border-bottom: .35mm dashed #000; }
-      .ti-summary small { display: block; font-size: 9px; }
-      .ti-summary strong { display: block; margin-top: .6mm; font-size: 12px; }
-      .ti-order { padding: 1mm 0; border-bottom: .35mm dashed #000; break-inside: auto; page-break-inside: auto; }
-      .ti-order p { margin: .45mm 0; line-height: 1.1; }
-      .ti-operation { border-bottom: .25mm solid #000; padding-bottom: .5mm; font-size: 10px; }
-      .ti-order-top { display: grid; grid-template-columns: 7mm 1fr; gap: 2mm; align-items: center; }
-      .ti-order-top span { width: 6mm; height: 6mm; display: grid; place-items: center; color: #fff; background: #000; border-radius: .7mm; font-size: 15px; }
-      .ti-order-top strong, .ti-order-top b { font-size: 12px; line-height: 1.1; }
-      .ti-order-top b { grid-column: 2; justify-self: end; }
-      .ti-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 3mm; }
-      .ti-grid p:nth-child(3) { grid-column: 1 / -1; }
-      .ti-items { margin-top: .7mm; break-inside: auto; page-break-inside: auto; }
-      .ti-items.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4mm; }
-      .ti-items.is-split table:first-child { border-right: .25mm solid #000; padding-right: 1mm; }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      th { padding: .5mm .4mm; border-bottom: .25mm solid #000; font-size: 8.5px; text-align: left; }
-      td { padding: .3mm .4mm; font-size: 8.8px; line-height: 1.02; vertical-align: top; }
-      th:first-child, td:first-child { width: 6mm; text-align: center; }
-      th:last-child, td:last-child { width: 10mm; text-align: right; }
-      .ti-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; margin-top: 1.2mm; font-size: 9.5px; }
-      .ti-footer { padding: 1.4mm 0 0; text-align: center; font-size: 10px; }
-      .ti-footer strong { display: block; margin-top: 1mm; }
-      @media print {
-        html, body, .ti-receipt { height: auto !important; min-height: 0 !important; overflow: visible !important; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="ti-receipt">
-      <header class="ti-header">
-        <span class="ti-mark">C</span>
-        <div><h1>${escapeHtml(company.name)}</h1><p>CONTROL OPERATIVO DE INVENTARIO</p></div>
-      </header>
-      <section class="ti-title">
-        <h2>HOJA SEMANAL DE ALISTAMIENTO, SALIDA Y RETORNO</h2>
-        <p>Documento unico para controlar las ordenes de servicio con entrega o recojo dentro del periodo.</p>
-      </section>
-      <section class="ti-summary">
-        <div><small>SEMANA OPERATIVA</small><strong>${escapeHtml(`${formatDocumentDate(weekStart)} al ${formatDocumentDate(weekEnd)}`)}</strong></div>
-        <div><small>TOTAL ORDENES</small><strong>${weeklyOrders.length}</strong></div>
-      </section>
-      ${thermalOrderSections || '<p>No existen contratos con entrega o recojo programados para esta semana.</p>'}
-      <footer class="ti-footer">
-        ${escapeHtml(company.address)} | ${escapeHtml(company.phone || '')}
-        <strong>PAGINA 1 DE 1</strong>
-      </footer>
-    </main>
-  </body>
-</html>`;
-  }
-
   if (format === 'individual') {
     const selectedOrder = weeklyOrders[0] ?? null;
     const individualItemCount = selectedOrder?.rental?.items?.length ?? 0;
@@ -12344,7 +12215,7 @@ const createWebBridge = () => ({
       const state = readState();
       const requestedStart = toDateKey(payload?.weekStart);
       const requestedFormat = String(payload?.format ?? '').trim();
-      const format = ['thermal', 'individual'].includes(requestedFormat) ? requestedFormat : 'standard';
+      const format = requestedFormat === 'individual' ? 'individual' : 'standard';
       const baseDate = requestedStart ? new Date(`${requestedStart}T12:00:00`) : new Date();
       const day = baseDate.getDay();
       const mondayOffset = day === 0 ? -6 : 1 - day;
@@ -12363,7 +12234,7 @@ const createWebBridge = () => ({
       ].join('-');
       return {
         ok: true,
-        title: `${format === 'thermal' ? 'Ticket Epson TM-T20' : format === 'individual' ? 'Inventario individual' : 'Control semanal de inventario'} ${weekStart}`,
+        title: `${format === 'individual' ? 'Inventario individual' : 'Control semanal de inventario'} ${weekStart}`,
         html: buildWeeklyInventoryHtml({
           rentals: state.rentals,
           contracts: state.contracts,
