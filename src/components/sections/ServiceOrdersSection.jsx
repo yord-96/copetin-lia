@@ -914,7 +914,11 @@ function ServiceOrdersSection({
     return entries.sort((a, b) => a.name.localeCompare(b.name, 'es'));
   }, [currentUser, personnelBundle?.employees, users]);
 
-  const fallbackResponsibleId = responsibleOptions[0]?.id ?? '';
+  const currentResponsibleId = String(currentUser?.id ?? currentUser?.username ?? '').trim();
+  const fallbackResponsibleId = responsibleOptions.find((option) => (
+    option.source === 'current'
+    || (currentResponsibleId && String(option.id) === currentResponsibleId)
+  ))?.id ?? responsibleOptions[0]?.id ?? '';
 
   useEffect(() => {
     if (!modalOpen || !canChooseResponsibles) return;

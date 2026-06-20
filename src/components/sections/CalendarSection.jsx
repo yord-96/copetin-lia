@@ -179,7 +179,10 @@ const initialsFromName = (name) =>
     .toUpperCase();
 
 const getResponsibleTrace = (...records) => {
-  const source = records.find((record) => (
+  const explicitResponsible = records
+    .flatMap((record) => (Array.isArray(record?.responsibles) ? record.responsibles : []))
+    .find((responsible) => String(responsible?.name ?? responsible?.fullName ?? '').trim());
+  const source = explicitResponsible ?? records.find((record) => (
     record?.responsibleName
     || record?.createdByName
     || record?.userName
@@ -187,7 +190,9 @@ const getResponsibleTrace = (...records) => {
     || record?.createdBy
   ));
   const name = String(
-    source?.responsibleName
+    source?.name
+    ?? source?.fullName
+    ?? source?.responsibleName
     ?? source?.createdByName
     ?? source?.userName
     ?? source?.responsible
@@ -195,7 +200,9 @@ const getResponsibleTrace = (...records) => {
     ?? 'Sistema',
   ).trim() || 'Sistema';
   const role = String(
-    source?.responsibleRole
+    source?.role
+    ?? source?.position
+    ?? source?.responsibleRole
     ?? source?.createdByRole
     ?? source?.userRole
     ?? 'Operacion',

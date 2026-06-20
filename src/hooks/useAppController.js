@@ -1422,9 +1422,17 @@ export const useAppController = () => {
           : coveredAtApprovalBs > 0
           ? 'a_cuenta'
           : 'sin_pago';
+      const contractResponsible = Array.isArray(contract.responsibles)
+        ? contract.responsibles.find((responsible) => String(responsible?.name ?? '').trim())
+        : null;
+      const approvalTrace = getCurrentUserTrace();
 
       const createdRental = await api.rentals.create({
-        ...getCurrentUserTrace(),
+        ...approvalTrace,
+        createdBy: contractResponsible?.name ?? contract.createdBy ?? contract.createdByName ?? approvalTrace.createdBy,
+        createdById: contractResponsible?.id ?? contract.createdById ?? approvalTrace.createdById,
+        createdByName: contractResponsible?.name ?? contract.createdByName ?? approvalTrace.createdByName,
+        createdByRole: contractResponsible?.role ?? contract.createdByRole ?? approvalTrace.createdByRole,
         clientId: contract.clientId ?? null,
         customerName: contract.customerName,
         customerPhone: contract.customerPhone,

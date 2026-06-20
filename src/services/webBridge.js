@@ -6705,6 +6705,12 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
   rental.depositBs = Number(contract?.totals?.guaranteeBs ?? rental.depositBs ?? 0);
   rental.pricingPlan = deepClone(contract.pricingPlan);
   rental.supplierFulfillmentPlan = deepClone(contract.supplierFulfillmentPlan ?? []);
+  const primaryResponsible = contract?.responsibles?.[0] ?? null;
+  if (primaryResponsible?.name) {
+    rental.createdById = primaryResponsible.id ?? rental.createdById ?? null;
+    rental.createdByName = primaryResponsible.name;
+    rental.createdByRole = primaryResponsible.role ?? rental.createdByRole ?? 'Operacion';
+  }
   const paidAtRentalBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
   const pendingPaymentBs = Math.max(0, Number((totalBs - paidAtRentalBs).toFixed(2)));
@@ -6747,6 +6753,10 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     delivery.windowEnd = isPickup ? contract.pickupWindowEnd : contract.deliveryWindowEnd;
     delivery.driverId = contract.driverId ?? delivery.driverId;
     delivery.vehicleId = contract.vehicleId ?? delivery.vehicleId;
+    if (primaryResponsible?.name) {
+      delivery.responsibleName = primaryResponsible.name;
+      delivery.responsibleRole = primaryResponsible.role ?? 'Operacion';
+    }
     delivery.updatedAt = now;
   });
 
