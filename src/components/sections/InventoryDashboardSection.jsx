@@ -4363,7 +4363,7 @@ function InventoryDashboardSection({
                   {documentPreview.format === 'thermal'
                     ? 'Formato termico 80mm para Epson TM-T20.'
                     : documentPreview.format === 'individual'
-                    ? 'Formato individual media hoja carta.'
+                    ? 'Formato individual en media carta o carta completa segun la cantidad de items.'
                     : 'Vista previa del control operativo de inventario.'}
                 </p>
               </div>

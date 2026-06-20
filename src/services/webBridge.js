@@ -4827,7 +4827,7 @@ const getReferenceContractStyles = () => `
     width: 216mm;
     min-height: 355.6mm;
     margin: 0 auto;
-    padding: 4.5mm 8mm 45mm;
+    padding: 3mm 8mm 45mm;
     display: flex;
     flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
@@ -4835,31 +4835,31 @@ const getReferenceContractStyles = () => `
   }
   .rc-top {
     display: grid;
-    grid-template-columns: minmax(0, 74mm) minmax(0, 1fr) 39mm;
-    gap: 6mm;
+    grid-template-columns: minmax(0, 68mm) minmax(0, 1fr) 37mm;
+    gap: 4mm;
     align-items: center;
-    min-height: 32mm;
+    min-height: 24mm;
   }
   .rc-logo { min-width: 0; overflow: hidden; }
-  .rc-logo img { display: block; width: 70mm; max-width: 100%; height: auto; }
+  .rc-logo img { display: block; width: 64mm; max-width: 100%; height: auto; }
   .rc-business {
-    min-height: 18mm;
-    padding-left: 5mm;
+    min-height: 14mm;
+    padding-left: 4mm;
     border-left: .35mm solid #d2b178;
     color: #161616;
-    font-size: 12.5px;
+    font-size: 11.5px;
     font-weight: 700;
     letter-spacing: .35px;
-    line-height: 1.48;
+    line-height: 1.3;
     text-transform: uppercase;
   }
   .rc-code {
     display: grid;
     align-content: center;
     justify-items: center;
-    gap: 3mm;
-    min-height: 30mm;
-    padding: 2.4mm;
+    gap: 1.4mm;
+    min-height: 23mm;
+    padding: 1.4mm 2mm;
     border: .28mm solid #d8d0c4;
     border-radius: 1.7mm;
     background: rgba(255, 255, 255, .72);
@@ -4870,37 +4870,37 @@ const getReferenceContractStyles = () => `
     justify-content: center;
     gap: 3mm;
     width: 100%;
-    padding-bottom: 2mm;
+    padding-bottom: 1mm;
     border-bottom: .25mm solid #d8d0c4;
     font-family: Georgia, "Times New Roman", serif;
   }
-  .rc-number span { font-size: 15px; }
-  .rc-number strong { color: #a66a20; font-size: 25px; font-weight: 500; }
-  .rc-date { display: flex; align-items: center; gap: 3mm; font: 15px Georgia, "Times New Roman", serif; }
-  .rc-date img { width: 5mm; height: 5mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
+  .rc-number span { font-size: 13px; }
+  .rc-number strong { color: #a66a20; font-size: 22px; font-weight: 500; }
+  .rc-date { display: flex; align-items: center; gap: 2mm; font: 13px Georgia, "Times New Roman", serif; }
+  .rc-date img { width: 4mm; height: 4mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
   .rc-status {
     min-width: 32mm;
-    padding: 2.2mm 3mm;
+    padding: 1.4mm 2.5mm;
     border-radius: 1.5mm;
     color: #fff;
     background: linear-gradient(135deg, #98611d, #bd8433);
     text-align: center;
-    font-size: 13px;
+    font-size: 11.5px;
     font-weight: 900;
     text-transform: uppercase;
   }
-  .rc-status img { width: 4.5mm; height: 4.5mm; margin-right: 2mm; vertical-align: -1.2mm; filter: brightness(0) invert(1); }
-  .rc-title { padding: 1.2mm 0 3.2mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
-  .rc-title h1 { margin: 0; font-size: 27px; font-weight: 500; letter-spacing: 1.2px; }
+  .rc-status img { width: 3.8mm; height: 3.8mm; margin-right: 1.5mm; vertical-align: -1mm; filter: brightness(0) invert(1); }
+  .rc-title { padding: .3mm 0 1.5mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
+  .rc-title h1 { margin: 0; font-size: 25px; font-weight: 500; letter-spacing: 1.2px; }
   .rc-title p {
-    margin: 1.5mm 0 0;
+    margin: .7mm 0 0;
     color: #a66a20;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 13px;
+    font-size: 12px;
     letter-spacing: 5px;
     text-transform: uppercase;
   }
-  .rc-title i { position: relative; display: block; width: 31mm; height: .3mm; margin: 2mm auto 0; background: #a66a20; }
+  .rc-title i { position: relative; display: block; width: 27mm; height: .3mm; margin: 1mm auto 0; background: #a66a20; }
   .rc-title i::after {
     content: "";
     position: absolute;
@@ -4915,7 +4915,7 @@ const getReferenceContractStyles = () => `
   .rc-company {
     display: grid;
     grid-template-columns: 1.05fr 1.15fr .68fr .82fr;
-    min-height: 13mm;
+    min-height: 10.5mm;
     border: .25mm solid #d8d0c4;
     border-radius: 2mm;
     overflow: hidden;
@@ -4926,38 +4926,39 @@ const getReferenceContractStyles = () => `
     grid-template-columns: 6.5mm minmax(0, 1fr);
     align-items: center;
     gap: 1.5mm;
-    padding: 1.7mm 2mm;
+    padding: 1mm 1.6mm;
     border-right: .25mm solid #d8d0c4;
   }
   .rc-company > div:last-child { border-right: 0; }
   .rc-company img, .rc-schedule-meta img, .rc-mode-row img { filter: sepia(1) saturate(1.5) brightness(.72); }
-  .rc-company img { width: 5.3mm; height: 5.3mm; object-fit: contain; }
+  .rc-company img { width: 4.7mm; height: 4.7mm; object-fit: contain; }
   .rc-company strong { display: block; font: 800 9px Arial, sans-serif; text-transform: uppercase; }
-  .rc-company .company-name { font: 800 13px Arial, sans-serif; text-transform: uppercase; }
+  .rc-company .company-name { font: 800 12px Arial, sans-serif; text-transform: uppercase; }
   .rc-company span { display: block; margin-top: .35mm; font-size: 8.2px; line-height: 1.15; }
-  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 4mm; margin-top: 3mm; }
+  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 4mm; margin-top: 1.8mm; }
   .rc-block-title {
     display: flex;
     align-items: baseline;
     gap: 2mm;
-    margin: 0 0 1.8mm;
+    margin: 0 0 .8mm;
     color: #a66a20;
-    font: 700 16px Georgia, "Times New Roman", serif;
+    font: 700 14px Georgia, "Times New Roman", serif;
     font-variant: small-caps;
   }
-  .rc-block-title b { color: #a66a20; font-size: 22px; font-weight: 500; }
-  .rc-block-title::after { content: ""; align-self: end; width: 24mm; height: .3mm; background: #a66a20; transform: translateY(1.8mm); }
+  .rc-block-title b { color: #a66a20; font-size: 19px; font-weight: 500; }
+  .rc-block-title::after { content: ""; align-self: end; width: 20mm; height: .3mm; background: #a66a20; transform: translateY(1mm); }
+  .rc-upper .rc-block-title::after { display: none; }
   .rc-client { padding-right: 5mm; border-right: .3mm solid #d8d0c4; }
   .rc-fields {
     display: grid;
     grid-template-columns: 42mm minmax(0, 1fr);
-    row-gap: 1.25mm;
-    padding-top: .4mm;
+    row-gap: .55mm;
+    padding-top: 0;
     font-size: 10.6px;
   }
   .rc-fields strong { font-weight: 800; }
   .rc-fields span {
-    min-height: 3.8mm;
+    min-height: 3.2mm;
     border-bottom: .2mm solid #ded6ca;
     font-family: Georgia, "Times New Roman", serif;
     text-transform: uppercase;
@@ -4971,21 +4972,21 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: 10mm minmax(0, 1fr) 30mm 30mm;
     align-items: center;
-    min-height: 10.5mm;
-    padding: 1.3mm 2mm;
+    min-height: 8.2mm;
+    padding: .7mm 1.6mm;
     border-bottom: .25mm solid #d8d0c4;
   }
   .rc-schedule-row:last-child { border-bottom: 0; }
   .rc-round-icon {
-    width: 7.2mm;
-    height: 7.2mm;
+    width: 6mm;
+    height: 6mm;
     display: grid;
     place-items: center;
     border: .22mm solid #e0c899;
     border-radius: 50%;
     background: #f7f0e4;
   }
-  .rc-round-icon img { width: 4.4mm; height: 4.4mm; filter: sepia(1) saturate(1.5) brightness(.7); }
+  .rc-round-icon img { width: 3.8mm; height: 3.8mm; filter: sepia(1) saturate(1.5) brightness(.7); }
   .rc-schedule-row strong { display: block; font-size: 10px; }
   .rc-schedule-row span { display: block; margin-top: .4mm; font-size: 8.8px; }
   .rc-schedule-meta {
@@ -4998,13 +4999,13 @@ const getReferenceContractStyles = () => `
     white-space: nowrap;
   }
   .rc-schedule-meta img { width: 4.5mm; height: 4.5mm; object-fit: contain; }
-  .rc-mode-box { margin-top: 1.5mm; padding: 1.3mm 2mm; }
-  .rc-mode-row { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1.6mm; align-items: center; min-height: 7.5mm; }
+  .rc-mode-box { margin-top: .8mm; padding: .6mm 1.6mm; }
+  .rc-mode-row { display: grid; grid-template-columns: 7mm minmax(0, 1fr); gap: 1.2mm; align-items: center; min-height: 6mm; }
   .rc-mode-row + .rc-mode-row { border-top: .25mm solid #d8d0c4; }
-  .rc-mode-row img { width: 5.8mm; height: 5.8mm; object-fit: contain; }
+  .rc-mode-row img { width: 4.8mm; height: 4.8mm; object-fit: contain; }
   .rc-mode-row strong { display: block; }
-  .rc-mode-row span { display: block; margin-top: .8mm; }
-  .rc-items { margin-top: 2.5mm; }
+  .rc-mode-row span { display: block; margin-top: .35mm; }
+  .rc-items { margin-top: 1.2mm; }
   .rc-table {
     width: 100%;
     border-collapse: separate;
@@ -5081,10 +5082,22 @@ const getReferenceContractStyles = () => `
   .rc-financial-item.managed { background: #2e241a; }
   .rc-financial-item.managed span { color: #f5dfbe; }
   .rc-financial-item.managed strong { color: #fff; font-size: 10px; }
+  .rc-financial-item.manual { background: #fff; }
+  .rc-financial-item.manual strong {
+    width: 82%;
+    min-height: 3mm;
+    margin: 0 auto;
+  }
   .rc-item-name { display: block; font: 700 10.2px Georgia, "Times New Roman", serif; text-transform: uppercase; }
   .rc-item-meta { display: block; margin-top: .35mm; font-size: 7.6px; text-transform: uppercase; }
   .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
   .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
+  .rc-manual-row td { height: 8mm; }
+  .rc-manual-write-line {
+    display: block;
+    width: 100%;
+    height: 4.2mm;
+  }
   .rc-bottom {
     display: grid;
     grid-template-columns: minmax(0, .62fr) minmax(0, 1fr);
@@ -5212,7 +5225,7 @@ const getReferenceContractStyles = () => `
       position: absolute;
       inset: 0;
       margin: 0;
-      padding: 4.5mm 8mm 45mm;
+      padding: 3mm 8mm 45mm;
       box-shadow: none;
     }
   }
@@ -5306,10 +5319,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td><span class="rc-observation-line"></span></td>
         </tr>`)
     .join('');
-  const rows = `${itemRows}${serviceRows}`;
+  const manualRows = Array.from({ length: 3 }, () => `
+        <tr class="rc-manual-row">
+          <td><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td></td>
+        </tr>`).join('');
+  const rows = `${itemRows}${serviceRows}${manualRows}`;
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
-  const itemCount = documentItems.length + contractServices.length;
+  const itemCount = documentItems.length + contractServices.length + 3;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
   const primaryResponsible = contract?.responsibles?.[0] ?? null;
   const responsibleName = primaryResponsible?.name ?? contract?.createdByName ?? rental?.createdByName ?? company.name;
@@ -5438,6 +5461,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
                   ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
                   <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+                  <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
                   <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
                   <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
                 </div>
@@ -5723,6 +5747,17 @@ const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
+  const renderManualItemRows = (count = 3) => Array.from({ length: count }, () => `
+          <tr class="wi-manual-row">
+            <td class="wi-index"></td>
+            <td class="wi-product"></td>
+            <td class="wi-number"></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-check"><i></i></td>
+            <td class="wi-report"></td>
+          </tr>`).join('');
   const inventoryTableCols = `
             <colgroup>
               <col class="wi-col-index" />
@@ -5754,12 +5789,14 @@ const buildWeeklyInventoryHtml = ({
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
     const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
     const orderItems = rental.items ?? [];
-    const splitItems = orderItems.length > 7;
+    const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
-    const firstRows = renderItemRows(orderItems.slice(0, firstColumnSize), 0);
-    const secondRows = splitItems ? renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize) : '';
-    const itemTables = orderItems.length
-      ? `
+    const manualRows = format === 'individual' ? renderManualItemRows(3) : '';
+    const firstRows = `${renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
+    const secondRows = splitItems
+      ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize)}${manualRows}`
+      : '';
+    const itemTables = `
         <div class="wi-tables ${splitItems ? 'is-split' : ''}">
           <table class="wi-table">
             ${inventoryTableCols}
@@ -5772,8 +5809,7 @@ const buildWeeklyInventoryHtml = ({
             ${tableHead}
             <tbody>${secondRows}</tbody>
           </table>` : ''}
-        </div>`
-      : '<div class="wi-empty-order">Sin items registrados.</div>';
+        </div>`;
     const responsible = contract?.responsibles?.[0]?.name
       ?? contract?.createdByName
       ?? rental.createdByName
@@ -5942,7 +5978,8 @@ const buildWeeklyInventoryHtml = ({
   if (format === 'individual') {
     const selectedOrder = weeklyOrders[0] ?? null;
     const individualItemCount = selectedOrder?.rental?.items?.length ?? 0;
-    const useFullLetterSheet = individualItemCount >= 6;
+    const individualRenderedRowCount = individualItemCount + 3;
+    const useFullLetterSheet = individualRenderedRowCount >= 6;
     const individualPageClass = useFullLetterSheet ? 'individual-full' : 'individual-half';
     const documentCode = selectedOrder
       ? selectedOrder.contract?.contractCode ?? selectedOrder.rental?.contractCode ?? selectedOrder.rental?.orderCode ?? ''
@@ -6006,6 +6043,7 @@ const buildWeeklyInventoryHtml = ({
       .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left: .42mm solid #09255a; }
       .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .42mm solid #09255a; }
       .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .25mm solid #bac4d6; border-bottom: .25mm solid #bac4d6; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
+      .wi-table .wi-manual-row td { height: 8.2mm; }
       .wi-table tr:last-child td { border-bottom: 0; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
       .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; overflow-wrap: anywhere; }
