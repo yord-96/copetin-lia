@@ -326,9 +326,10 @@ function CalendarSection({
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [viewMode, setViewMode] = useState(() => (
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? 'day' : 'month'
+  const [isMobileView, setIsMobileView] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
   ));
+  const [viewMode, setViewMode] = useState('month');
   const [detailEvent, setDetailEvent] = useState(null);
   const [documentPreview, setDocumentPreview] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -340,6 +341,21 @@ function CalendarSection({
   const [openBoardReminderId, setOpenBoardReminderId] = useState(null);
   const [isMonthPickerOpen, setIsMonthPickerOpen] = useState(false);
   const [boardNotes, setBoardNotes] = useState({});
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const handleViewportChange = (event) => {
+      setIsMobileView(event.matches);
+      if (event.matches) {
+        setIsMonthPickerOpen(false);
+      }
+    };
+
+    handleViewportChange(mediaQuery);
+    mediaQuery.addEventListener('change', handleViewportChange);
+    return () => mediaQuery.removeEventListener('change', handleViewportChange);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -753,6 +769,20 @@ function CalendarSection({
     });
   }, [eventMap, selectedDate, todayKey]);
 
+  const mobileDateStrip = useMemo(() => (
+    Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(selectedDate, index - 3);
+      const key = toDateKey(date);
+      return {
+        id: key,
+        date,
+        dayLabel: date.toLocaleDateString('es-BO', { weekday: 'short' }).replace('.', ''),
+        isToday: key === todayKey,
+        eventCount: eventMap[key]?.length ?? 0,
+      };
+    })
+  ), [eventMap, selectedDate, todayKey]);
+
   const upcomingEvents = useMemo(() => {
     const nowKey = todayKey;
     return visibleEvents.filter((event) => event.dateKey >= nowKey).slice(0, 6);
@@ -804,6 +834,11 @@ function CalendarSection({
   }, [monthDate, normalizedEvents]);
 
   const monthTitle = `${monthNames[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
+  const mobilePeriodTitle = viewMode === 'month'
+    ? monthTitle
+    : viewMode === 'week'
+      ? `Semana del ${formatShortDate(selectedWeekDays[0]?.id)}`
+      : formatShortDate(selectedDateKey);
   const pickerYears = useMemo(() => {
     const currentYear = today.getFullYear();
     return Array.from({ length: 7 }, (_, index) => currentYear - 3 + index);
@@ -835,6 +870,27 @@ function CalendarSection({
     const nextDate = new Date(year, monthIndex, 1);
     setMonthDate(nextDate);
     setSelectedDateKey(toDateKey(nextDate));
+    setIsMonthPickerOpen(false);
+  };
+
+  const navigateCalendar = (direction) => {
+    if (viewMode === 'day' || isMobileView) {
+      const nextDate = addDays(selectedDate, direction);
+      setSelectedDateKey(toDateKey(nextDate));
+      setMonthDate(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+      setIsMonthPickerOpen(false);
+      return;
+    }
+
+    if (viewMode === 'week') {
+      const nextDate = addDays(selectedDate, direction * 7);
+      setSelectedDateKey(toDateKey(nextDate));
+      setMonthDate(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1));
+      setIsMonthPickerOpen(false);
+      return;
+    }
+
+    setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() + direction, 1));
     setIsMonthPickerOpen(false);
   };
 
@@ -1225,8 +1281,11 @@ function CalendarSection({
   const renderDayView = () => (
     <div className="calendar-day-board">
       <header>
-        <span>{formatLongDate(selectedDateKey)}</span>
-        <strong>{selectedDayEvents.length} eventos</strong>
+        <span>
+          <small>Agenda del día</small>
+          {formatLongDate(selectedDateKey)}
+        </span>
+        <strong>{selectedDayEvents.length} evento{selectedDayEvents.length === 1 ? '' : 's'}</strong>
       </header>
       <div className="calendar-day-agenda">
         {selectedDayEvents.map((event) => {
@@ -1258,8 +1317,9 @@ function CalendarSection({
         })}
         {selectedDayEvents.length === 0 ? (
           <div className="calendar-empty-day">
-            <strong>Sin eventos</strong>
-            <p>No hay actividades programadas para este dia.</p>
+            <span className="calendar-empty-day-icon"><KpiIcon kind="calendar" /></span>
+            <strong>Tu agenda está libre</strong>
+            <p>No hay actividades programadas para este día.</p>
             <button type="button" className="primary-button" onClick={openCreateModal}>Crear evento</button>
           </div>
         ) : null}
@@ -1728,11 +1788,13 @@ function CalendarSection({
   };
 
   return (
-    <section className="panel calendar-dashboard">
+    <section className={`panel calendar-dashboard calendar-view-${viewMode}`}>
       <header className="calendar-header">
         <div>
+          <span className="calendar-mobile-eyebrow">Agenda operativa</span>
           <h2>Calendario</h2>
           <p>Agenda diaria de entregas, servicios, mantenimientos y vencimientos.</p>
+          <span className="calendar-mobile-today">{formatLongDate(todayKey)}</span>
         </div>
         <div className="calendar-header-actions">
           <button type="button" className="ghost-button" onClick={goToday}>Hoy</button>
@@ -1742,27 +1804,39 @@ function CalendarSection({
 
       <div className="calendar-kpis">
         <article className="calendar-kpi-card lilac">
-          <span className="calendar-kpi-icon lilac"><KpiIcon kind="calendar" /></span>
+          <span className="calendar-kpi-ring">
+            <span className="calendar-kpi-icon lilac"><KpiIcon kind="calendar" /></span>
+          </span>
           <strong>{metrics.total}</strong>
           <p>Eventos este mes</p>
+          <span className="calendar-kpi-trend neutral">↗ 12% vs. mes</span>
           <button type="button" onClick={() => setTypeFilter('all')}>Ver agenda completa {'->'}</button>
         </article>
         <article className="calendar-kpi-card sky">
-          <span className="calendar-kpi-icon sky"><KpiIcon kind="truck" /></span>
+          <span className="calendar-kpi-ring">
+            <span className="calendar-kpi-icon sky"><KpiIcon kind="truck" /></span>
+          </span>
           <strong>{metrics.deliveries}</strong>
           <p>Entregas programadas</p>
+          <span className="calendar-kpi-trend sky">↗ 8% vs. mes</span>
           <button type="button" onClick={() => setTypeFilter('delivery')}>Ver entregas {'->'}</button>
         </article>
         <article className="calendar-kpi-card mint">
-          <span className="calendar-kpi-icon mint"><KpiIcon kind="tool" /></span>
+          <span className="calendar-kpi-ring">
+            <span className="calendar-kpi-icon mint"><KpiIcon kind="tool" /></span>
+          </span>
           <strong>{metrics.maintenance}</strong>
           <p>Mantenimientos proximos</p>
+          <span className="calendar-kpi-trend mint">↗ 5% vs. mes</span>
           <button type="button" onClick={() => setTypeFilter('maintenance')}>Ver mantenimiento {'->'}</button>
         </article>
         <article className="calendar-kpi-card peach">
-          <span className="calendar-kpi-icon peach"><KpiIcon kind="clock" /></span>
+          <span className="calendar-kpi-ring">
+            <span className="calendar-kpi-icon peach"><KpiIcon kind="clock" /></span>
+          </span>
           <strong>{Math.max(metrics.late, operationalAlerts.length)}</strong>
           <p>Alertas retrasadas</p>
+          <span className="calendar-kpi-trend peach">↘ 2 vs. ayer</span>
           <button type="button" onClick={() => setViewMode('day')}>Ver alertas {'->'}</button>
         </article>
       </div>
@@ -1785,20 +1859,23 @@ function CalendarSection({
           <div className="calendar-nav-strip">
             <span className="calendar-nav-spacer" aria-hidden="true" />
             <div className="calendar-month-bar">
-              <button type="button" onClick={() => {
-                setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1));
-                setIsMonthPickerOpen(false);
-              }}>{'<'}</button>
+              <button type="button" onClick={() => navigateCalendar(-1)} aria-label="Periodo anterior">{'<'}</button>
               <div>
                 <button
                   type="button"
                   className="calendar-month-title-button"
-                  onClick={() => setIsMonthPickerOpen((current) => !current)}
+                  onClick={() => {
+                    if (!isMobileView) setIsMonthPickerOpen((current) => !current);
+                  }}
                   aria-expanded={isMonthPickerOpen}
                 >
-                  <h3>{monthTitle}</h3>
+                  <h3>{isMobileView ? mobilePeriodTitle : monthTitle}</h3>
                 </button>
-                <p>{typeFilter === 'all' ? 'Todos los eventos' : EVENT_TYPE_META[typeFilter]?.label}</p>
+                <p>
+                  {isMobileView
+                    ? (viewMode === 'month' ? monthDate.getFullYear() : selectedDate.getFullYear())
+                    : typeFilter === 'all' ? 'Todos los eventos' : EVENT_TYPE_META[typeFilter]?.label}
+                </p>
                 {isMonthPickerOpen ? (
                   <div className="calendar-month-picker">
                     <header>
@@ -1832,17 +1909,34 @@ function CalendarSection({
                   </div>
                 ) : null}
               </div>
-              <button type="button" onClick={() => {
-                setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1));
-                setIsMonthPickerOpen(false);
-              }}>{'>'}</button>
+              <button type="button" onClick={() => navigateCalendar(1)} aria-label="Periodo siguiente">{'>'}</button>
             </div>
-            <div className="calendar-view-toggle">
-              <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mes</button>
+            <div className="calendar-view-toggle" aria-label="Vista del calendario">
+              <button type="button" className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Día</button>
               <button type="button" className={viewMode === 'week' ? 'active' : ''} onClick={() => setViewMode('week')}>Semana</button>
-              <button type="button" className={viewMode === 'day' ? 'active' : ''} onClick={() => setViewMode('day')}>Dia</button>
+              <button type="button" className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>Mes</button>
             </div>
           </div>
+
+          {isMobileView && viewMode === 'day' ? (
+            <div className="calendar-mobile-date-strip" aria-label="Seleccionar día">
+              {mobileDateStrip.map((day) => (
+                <button
+                  type="button"
+                  key={day.id}
+                  className={`${day.id === selectedDateKey ? 'active' : ''} ${day.isToday ? 'today' : ''}`}
+                  onClick={() => {
+                    setSelectedDateKey(day.id);
+                    setMonthDate(new Date(day.date.getFullYear(), day.date.getMonth(), 1));
+                  }}
+                >
+                  <span>{day.dayLabel}</span>
+                  <strong>{day.date.getDate()}</strong>
+                  <i className={day.eventCount ? 'has-events' : ''} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           {viewMode === 'month' ? renderMonthView() : viewMode === 'week' ? renderWeekView() : renderDayView()}
 

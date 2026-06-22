@@ -229,6 +229,7 @@ export function MobileNavigation({
   onChange,
 }) {
   const allowedSet = new Set(allowedTabs);
+  const [expandedMobileGroup, setExpandedMobileGroup] = useState(null);
 
   const canShowTab = (tab) => {
     const targetId = tab.targetId ?? tab.id;
@@ -253,6 +254,16 @@ export function MobileNavigation({
   const handleChange = (tabId) => {
     onChange(tabId);
     onCloseMore();
+    setExpandedMobileGroup(null);
+  };
+
+  const handleMobileGroupClick = (tab) => {
+    const hasChildren = Array.isArray(tab.children) && tab.children.length > 0;
+    if (!hasChildren) {
+      handleChange(tab.targetId ?? tab.id);
+      return;
+    }
+    setExpandedMobileGroup((current) => (current === tab.id ? null : tab.id));
   };
 
   const allowedOperationTabs = operationTabs.filter(canShowTab);
@@ -303,12 +314,25 @@ export function MobileNavigation({
             </header>
             <div className="mobile-more-grid">
               {moreOperationTabs.map((tab) => (
-                <div key={tab.id} className="mobile-more-group">
-                  <button type="button" className={isActive(tab) ? 'active' : ''} onClick={() => handleChange(tab.targetId ?? tab.id)}>
+                <div
+                  key={tab.id}
+                  className={`mobile-more-group ${expandedMobileGroup === tab.id ? 'expanded' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className={isActive(tab) ? 'active' : ''}
+                    onClick={() => handleMobileGroupClick(tab)}
+                    aria-expanded={Array.isArray(tab.children) ? expandedMobileGroup === tab.id : undefined}
+                  >
                     <span className="mobile-nav-icon">{renderIcon(tab.icon)}</span>
                     <span>{tab.label}</span>
+                    {Array.isArray(tab.children) && tab.children.length > 0 ? (
+                      <svg className="mobile-more-chevron" viewBox="0 0 20 20" aria-hidden="true">
+                        <path d="m6 8 4 4 4-4" />
+                      </svg>
+                    ) : null}
                   </button>
-                  {Array.isArray(tab.children) && tab.children.length > 0 ? (
+                  {Array.isArray(tab.children) && tab.children.length > 0 && expandedMobileGroup === tab.id ? (
                     <div className="mobile-more-children">
                       {tab.children.map((child) => {
                         const root = getTabRoot(child.targetId);
