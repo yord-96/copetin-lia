@@ -1406,6 +1406,7 @@ const normalizeState = (state) => {
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
             comboComponentName: String(line?.comboComponentName ?? '').trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId && line.itemName)
@@ -1508,6 +1509,7 @@ const normalizeState = (state) => {
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
             comboComponentName: String(line?.comboComponentName ?? '').trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId)
@@ -5874,10 +5876,13 @@ const buildWeeklyInventoryHtml = ({
         : rental.operational?.inventoryStatus === 'confirmado'
           ? 'Listo'
           : 'Por alistar';
+    const contractIdentity = format === 'individual'
+      ? `<div class="wi-order-number is-individual"><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div>`
+      : `<div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>`;
     return `
       <section class="wi-order">
         <header class="wi-order-head">
-          <div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>
+          ${contractIdentity}
           <div class="wi-client"><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
           <div><small>RESPONSABLE</small><strong>${escapeHtml(responsible)}</strong></div>
           <div><small>DIRECCION</small><strong>${escapeHtml(address)}</strong></div>
@@ -5907,6 +5912,10 @@ const buildWeeklyInventoryHtml = ({
     const documentCode = selectedOrder
       ? selectedOrder.contract?.contractCode ?? selectedOrder.rental?.contractCode ?? selectedOrder.rental?.orderCode ?? ''
       : '';
+    const eventDate = selectedOrder?.contract?.eventDate
+      ?? selectedOrder?.rental?.eventDate
+      ?? selectedOrder?.deliveryDate
+      ?? '';
     return `<!doctype html>
 <html>
   <head>
@@ -5931,14 +5940,16 @@ const buildWeeklyInventoryHtml = ({
       .wi-intro { display: grid; grid-template-columns: 1fr auto; gap: 4mm; align-items: center; margin: 2.4mm 0; }
       .wi-intro h2 { margin: 0; color: #09255a; font-size: 15.8px; line-height: 1.05; text-transform: uppercase; }
       .wi-intro p { margin: .7mm 0 0; color: #3c4967; font-size: 9.6px; line-height: 1.15; }
-      .wi-count { display: grid; place-items: center; min-width: 27mm; min-height: 13mm; border-radius: 2mm; color: #fff; background: #ef5000; font-size: 9.5px; font-weight: 900; text-transform: uppercase; }
-      .wi-count b { display: block; margin-bottom: -.7mm; font-size: 20px; line-height: 1; }
+      .wi-event-date { min-width: 56mm; padding: 2mm 2.5mm; border: .3mm solid #efb58f; border-radius: 2mm; background: #fff8f3; text-align: center; }
+      .wi-event-date small { display: block; color: #9e4b24; font-size: 8.4px; font-weight: 900; text-transform: uppercase; }
+      .wi-event-date strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 11.5px; line-height: 1.15; }
       .wi-order { margin-top: 0; border: .25mm solid #d8deeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
       .individual-full .wi-order { overflow: visible; break-inside: auto; page-break-inside: auto; }
       .wi-order-head { display: grid; grid-template-columns: 40mm 49mm 40mm 1fr 30mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
       .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; }
       .wi-order-number strong, .wi-order-head .wi-client strong { font-size: 13.2px; line-height: 1.08; }
       .wi-order-number { display: flex; align-items: center; gap: 2mm; }
+      .wi-order-number.is-individual { display: block; }
       .wi-order-number > span { width: 9.5mm; height: 11mm; display: grid; place-items: center; border-radius: 2mm 2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 16px; font-weight: 900; }
       .wi-status { display: inline-block !important; width: max-content; padding: .7mm 1.2mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 8.8px !important; }
       .wi-operation { display: block; margin-bottom: .6mm; color: #09255a !important; font-size: 9.2px !important; line-height: 1.05 !important; }
@@ -6000,7 +6011,7 @@ const buildWeeklyInventoryHtml = ({
       </header>
       <section class="wi-intro">
         <div><h2>Hoja de alistamiento, salida y retorno</h2><p>Control individual para una orden operativa.</p></div>
-        <div class="wi-count"><b>1</b> orden</div>
+        <div class="wi-event-date"><small>Fecha del evento</small><strong>${escapeHtml(formatDocumentLongDate(eventDate))}</strong></div>
       </section>
       ${orderSections || '<div class="wi-empty">No se encontro la orden seleccionada para esta semana.</div>'}
     </main>
@@ -9514,6 +9525,7 @@ const createWebBridge = () => ({
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
@@ -9672,6 +9684,7 @@ const createWebBridge = () => ({
               comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
               comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
               comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+              comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
@@ -9829,6 +9842,7 @@ const createWebBridge = () => ({
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
@@ -9986,6 +10000,7 @@ const createWebBridge = () => ({
               comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
               comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
               comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+              comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
@@ -10534,6 +10549,7 @@ const createWebBridge = () => ({
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
+            comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * rentalPriceBs,
           };

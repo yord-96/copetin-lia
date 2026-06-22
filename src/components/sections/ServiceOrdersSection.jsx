@@ -1991,6 +1991,11 @@ function ServiceOrdersSection({
       comboLineKey: line.comboLineKey ?? null,
       comboComponentName: line.comboComponentName ?? '',
       comboQuantity: line.comboQuantity ?? 1,
+      comboComponentQuantity: line.comboComponentQuantity ?? (
+        line.comboId
+          ? Math.max(1, Math.trunc(Number(line.quantity ?? 1) / Math.max(1, Math.trunc(Number(line.comboQuantity ?? 1)))))
+          : 1
+      ),
       comboPricingRole: line.comboPricingRole ?? '',
     })),
     services: (record?.services ?? []).map((service, index) => ({
@@ -2340,6 +2345,7 @@ function ServiceOrdersSection({
             comboLineKey,
             comboComponentName: item?.name ?? line.itemName ?? '',
             comboQuantity: 1,
+            comboComponentQuantity: quantity,
             comboPricingRole: index === 0 ? 'price' : 'component',
             controlsStock: item?.controlsStock ?? line.controlsStock,
             verificationStatus: item?.verificationStatus ?? line.verificationStatus,
@@ -2390,6 +2396,40 @@ function ServiceOrdersSection({
     const item = items.find((entry) => entry.id === itemId) ?? draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId && line.quickItem);
     if (!item) return;
     const parsed = Math.max(1, Math.trunc(Number(quantityValue ?? 1)));
+    if (draftLine?.comboId && draftLine.comboLineKey) {
+      const baseComponentQuantity = Math.max(
+        1,
+        Math.trunc(Number(
+          draftLine.comboComponentQuantity
+          ?? (Number(draftLine.quantity ?? 1) / Math.max(1, Number(draftLine.comboQuantity ?? 1))),
+        )),
+      );
+      const nextComboQuantity = Math.max(1, Math.ceil(parsed / baseComponentQuantity));
+      setDraft((current) => ({
+        ...current,
+        items: current.items.map((line) => {
+          if (line.comboLineKey !== draftLine.comboLineKey) return line;
+          const componentQuantity = Math.max(
+            1,
+            Math.trunc(Number(
+              line.comboComponentQuantity
+              ?? (Number(line.quantity ?? 1) / Math.max(1, Number(line.comboQuantity ?? 1))),
+            )),
+          );
+          const nextQuantity = componentQuantity * nextComboQuantity;
+          return {
+            ...line,
+            quantity: nextQuantity,
+            comboQuantity: nextComboQuantity,
+            comboComponentQuantity: componentQuantity,
+            lineTotalBs: line.comboPricingRole === 'price'
+              ? Number((Math.max(0, Number(line.unitPriceBs ?? 0)) * nextComboQuantity).toFixed(2))
+              : 0,
+          };
+        }),
+      }));
+      return;
+    }
     setDraft((current) => ({
       ...current,
       items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
@@ -2403,7 +2443,15 @@ function ServiceOrdersSection({
   };
 
   const removeDraftItem = (lineKeyOrItemId) => {
-    setDraft((current) => ({ ...current, items: current.items.filter((line) => (line.lineKey ?? line.itemId) !== lineKeyOrItemId) }));
+    const draftLine = draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId);
+    setDraft((current) => ({
+      ...current,
+      items: current.items.filter((line) => (
+        draftLine?.comboLineKey
+          ? line.comboLineKey !== draftLine.comboLineKey
+          : (line.lineKey ?? line.itemId) !== lineKeyOrItemId
+      )),
+    }));
   };
 
   const setServiceDraftField = (field, value) => {
@@ -2466,7 +2514,9 @@ function ServiceOrdersSection({
         ? {
           ...line,
           unitPriceBs: parsed,
-          lineTotalBs: line.comboId ? parsed : undefined,
+          lineTotalBs: line.comboId
+            ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
+            : undefined,
         }
         : line)),
     }));
@@ -2707,6 +2757,7 @@ function ServiceOrdersSection({
         comboLineKey: line.comboLineKey ?? null,
         comboComponentName: line.comboComponentName ?? '',
         comboQuantity: line.comboQuantity ?? 1,
+        comboComponentQuantity: line.comboComponentQuantity ?? 1,
         comboPricingRole: line.comboPricingRole ?? '',
       })),
       services: selectedServices.map((service) => ({
@@ -5762,7 +5813,10 @@ function ServiceOrdersSection({
                             <div>
                               <strong>{line.item.name}</strong>
                               {line.comboName ? (
-                                <p className="orders-combo-line-note">Combo: {line.comboName}</p>
+                                <p className="orders-combo-line-note">
+                                  Combo: {line.comboName} · {line.comboQuantity} paquete(s)
+                                  {line.comboComponentQuantity > 1 ? ` · ${line.comboComponentQuantity} por paquete` : ''}
+                                </p>
                               ) : null}
                               {detailParts.length > 0 ? (
                                 <div className="orders-item-detail-chips">
@@ -5928,7 +5982,11 @@ function ServiceOrdersSection({
                                 onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
                                 aria-label={`Precio unitario de ${line.item.name}`}
+                                readOnly={Boolean(line.comboId && line.comboPricingRole !== 'price')}
                               />
+                              {line.comboId && line.comboPricingRole !== 'price' ? (
+                                <small className="orders-available-note">Incluido en el precio del combo</small>
+                              ) : null}
                             </label>
                             <strong>{formatBs(line.lineTotalBs)}</strong>
                             <button type="button" className="danger-button" onClick={() => removeDraftItem(line.lineKey)}>
