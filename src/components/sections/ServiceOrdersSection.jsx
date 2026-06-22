@@ -3322,8 +3322,12 @@ function ServiceOrdersSection({
     <section className="panel orders-view">
       <header className="orders-header">
         <div>
+          <span className="orders-mobile-eyebrow">Gestión comercial</span>
           <h2>Cotizaciones y Contratos</h2>
           <p>Gestion comercial centralizada: cotizaciones, contratos y apertura documental en un solo lugar.</p>
+          <span className="orders-mobile-summary">
+            {quoteRows.length} cotizaciones · {contractRows.length} contratos
+          </span>
         </div>
         <div className="orders-header-actions">
           <button type="button" className="primary-button orders-new-btn" onClick={() => openCreateModal('order', 'contract')}>
@@ -3532,6 +3536,90 @@ function ServiceOrdersSection({
                   ) : null}
                 </tbody>
               </table>
+            </div>
+
+            <div className="orders-mobile-order-list">
+              {filteredOrders.map((row) => {
+                const statusMeta = ORDER_STATUS_META[row.status] ?? ORDER_STATUS_META.pending;
+                const inventoryMeta = OPERATIONAL_STATUS_META[row.inventoryStatus] ?? OPERATIONAL_STATUS_META.pendiente;
+                const transportMeta = OPERATIONAL_STATUS_META[row.transportStatus] ?? OPERATIONAL_STATUS_META.pendiente;
+                return (
+                  <article key={row.id} className={`orders-mobile-order-card ${row.status}`}>
+                    <header>
+                      <div>
+                        <span>Orden de servicio</span>
+                        <strong>{row.orderCode}</strong>
+                      </div>
+                      <span className={`orders-status-badge ${statusMeta.className}`}>{statusMeta.label}</span>
+                    </header>
+                    <div className="orders-mobile-order-client">
+                      <strong>{row.client}</strong>
+                      <span>{row.event} · {row.eventMeta}</span>
+                    </div>
+                    <div className="orders-mobile-order-service">
+                      <span>
+                        <small>Servicio</small>
+                        <strong>{formatDate(row.serviceDate)}</strong>
+                      </span>
+                      <span>
+                        <small>Entrega</small>
+                        <strong>{formatDate(row.deliveryAt)}</strong>
+                      </span>
+                      <span>
+                        <small>Total</small>
+                        <strong>{formatBs(row.totalBs)}</strong>
+                      </span>
+                    </div>
+                    <div className="orders-mobile-order-progress">
+                      <span>
+                        <small>Inventario</small>
+                        <strong className={inventoryMeta.className}>{inventoryMeta.label}</strong>
+                      </span>
+                      <span>
+                        <small>Transporte</small>
+                        <strong className={transportMeta.className}>{transportMeta.label}</strong>
+                      </span>
+                    </div>
+                    <footer>
+                      <div className="orders-responsible-cell">
+                        <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
+                        <div>
+                          <strong>{row.responsibleName}</strong>
+                          <small>{row.responsibleRole}</small>
+                        </div>
+                      </div>
+                      <div className="orders-row-actions">
+                        <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsPanel(row)}>
+                          Abrir
+                        </button>
+                        <button
+                          type="button"
+                          className="whatsapp-bubble-button"
+                          onClick={() => openWhatsAppModal('order', row)}
+                          aria-label={`Contactar por WhatsApp a ${row.client}`}
+                        >
+                          <WhatsAppGlyph />
+                        </button>
+                        <button
+                          type="button"
+                          className="transport-row-menu-button"
+                          onClick={(event) => toggleActionsMenu('order', row.id, event)}
+                          aria-label={`Mas acciones para ${row.orderCode}`}
+                        >
+                          {'\u22ee'}
+                        </button>
+                      </div>
+                    </footer>
+                  </article>
+                );
+              })}
+              {filteredOrders.length === 0 ? (
+                <div className="orders-empty-state">
+                  <span className="orders-empty-icon"><OrdersKpiIcon kind="orders" /></span>
+                  <strong>No hay ordenes con esos filtros</strong>
+                  <p>Ajusta la busqueda o crea una nueva orden para iniciar el flujo operativo.</p>
+                </div>
+              ) : null}
             </div>
 
             <footer className="orders-footer">
@@ -4762,7 +4850,7 @@ function ServiceOrdersSection({
                   const combo = entry.combo;
                   const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
                   return (
-                    <article key={`catalog-modal-combo-${combo.id}`}>
+                    <article className="orders-catalog-browser-card is-combo" key={`catalog-modal-combo-${combo.id}`}>
                       <div className="orders-product-thumb orders-combo-thumb"><span>CB</span></div>
                       <div className="orders-catalog-browser-info">
                         <strong>{combo.name}</strong>
@@ -4789,8 +4877,8 @@ function ServiceOrdersSection({
                 const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
                 const detailParts = getOperationalItemDetails({ item });
                 return (
-                  <article key={`catalog-modal-item-${item.id}`}>
-                    <div className="orders-product-thumb">
+                  <article className="orders-catalog-browser-card is-product" key={`catalog-modal-item-${item.id}`}>
+                    <div className={`orders-product-thumb${getProductImageSrc(item) ? ' has-image' : ' has-no-image'}`}>
                       {getProductImageSrc(item) ? (
                         <button
                           type="button"
@@ -4798,9 +4886,15 @@ function ServiceOrdersSection({
                           onClick={() => handleOpenProductImage(item)}
                           aria-label={`Ver imagen de ${item.name}`}
                         >
-                          <ProductImage item={item} alt={`Imagen de ${item.name}`} fallback={<span>IMG</span>} />
+                          <ProductImage
+                            item={item}
+                            alt={`Imagen de ${item.name}`}
+                            fallback={<span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>}
+                          />
                         </button>
-                      ) : <span>IMG</span>}
+                      ) : (
+                        <span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>
+                      )}
                     </div>
                     <div className="orders-catalog-browser-info">
                       <strong>{item.name}</strong>
@@ -5559,7 +5653,7 @@ function ServiceOrdersSection({
                           key={item.id}
                           className={`orders-product-row${!isProvisionalCatalogItem && projectedAvailable <= 0 ? ' is-unavailable' : ''}${isProvisionalCatalogItem ? ' is-provisional' : ''}`}
                         >
-                          <div className="orders-product-thumb">
+                          <div className={`orders-product-thumb${getProductImageSrc(item) ? ' has-image' : ' has-no-image'}`}>
                             {getProductImageSrc(item) ? (
                               <button
                                 type="button"
@@ -5568,10 +5662,14 @@ function ServiceOrdersSection({
                                 aria-label={`Ver imagen de ${item.name} en grande`}
                                 title="Ver imagen en grande"
                               >
-                                <ProductImage item={item} alt={`Imagen de ${item.name}`} fallback={<span>IMG</span>} />
+                                <ProductImage
+                                  item={item}
+                                  alt={`Imagen de ${item.name}`}
+                                  fallback={<span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>}
+                                />
                               </button>
                             ) : (
-                              <span>IMG</span>
+                              <span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>
                             )}
                           </div>
                           <div className="orders-product-info">
