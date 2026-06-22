@@ -29078,6 +29078,379 @@ button.calendar-dispatch-row:focus-visible {
   }
 }
 
+/* Combos de inventario: catalogo visual y editor de paquete */
+.inventory-view-combos .inventory-table-wrap-modern {
+  border: 1px solid #eadfd8;
+  border-radius: 0.9rem;
+  background: #ffffff;
+  box-shadow: 0 0.65rem 1.6rem rgba(71, 42, 25, 0.06);
+  overflow: hidden;
+}
+
+.inventory-view-combos .inventory-table-modern th {
+  background: #fff8f3;
+  color: #795846;
+}
+
+.inventory-view-combos .inventory-table-modern tbody tr {
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.inventory-view-combos .inventory-table-modern tbody tr:hover {
+  background: #fffaf7;
+}
+
+.inventory-view-combos .inventory-product-cell {
+  min-width: 14rem;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.inventory-view-combos .inventory-combo-thumb {
+  width: 3.6rem;
+  height: 3.6rem;
+  padding: 0;
+  border: 1px solid #f0d9cc;
+  border-radius: 0.78rem;
+  background: linear-gradient(145deg, #fff6ef, #ffe5d5);
+  color: #d84a0b;
+  box-shadow: 0 0.35rem 0.8rem rgba(128, 61, 25, 0.09);
+}
+
+.inventory-view-combos .inventory-combo-thumb:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.inventory-view-combos .inventory-combo-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.inventory-view-combos .inventory-combo-components {
+  max-width: 23rem;
+  gap: 0.28rem;
+}
+
+.inventory-view-combos .inventory-combo-components span {
+  border: 0;
+  background: #fff0e6;
+  color: #a74317;
+  padding: 0.25rem 0.5rem;
+}
+
+.inventory-combo-image-editor {
+  border-style: solid;
+  border-color: #f0d9cc;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, #fffaf7, #fff4ec);
+  padding: 0.75rem;
+}
+
+.inventory-combo-image-editor .inventory-image-preview {
+  border-color: #efcfbd;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  box-shadow: 0 0.4rem 1rem rgba(118, 55, 22, 0.08);
+}
+
+.inventory-combo-image-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #df4c0b !important;
+  background: radial-gradient(circle at 30% 20%, #ffffff, #ffe5d5);
+  font-size: 1.15rem !important;
+  font-weight: 900 !important;
+}
+
+.inventory-combo-image-editor .inventory-image-actions strong {
+  color: #2a345f;
+  font-size: 0.8rem;
+}
+
+.inventory-combo-image-editor .inventory-image-actions small {
+  color: #7e8499;
+  font-size: 0.68rem;
+}
+
+.inventory-combo-editor {
+  border-color: #efd8ca;
+  border-radius: 0.85rem;
+  background: #fffaf7;
+}
+
+.inventory-combo-line {
+  border-color: #eadfd8;
+  border-radius: 0.72rem;
+  box-shadow: 0 0.25rem 0.7rem rgba(71, 42, 25, 0.04);
+}
+
+.inventory-combo-modal-backdrop {
+  overflow: hidden;
+}
+
+.inventory-combo-modal {
+  width: min(760px, calc(100vw - 2rem));
+  height: min(760px, calc(100svh - 2rem));
+  max-height: calc(100svh - 2rem);
+  padding: 0;
+  gap: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+.inventory-combo-modal-head {
+  min-width: 0;
+  padding: 1rem 1rem 0.8rem;
+  border-bottom: 1px solid #f0e0d7;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #ffffff;
+}
+
+.inventory-combo-modal-head h3 {
+  margin: 0;
+}
+
+.inventory-combo-modal-head p {
+  max-width: 36rem;
+  margin-top: 0.35rem;
+  line-height: 1.35;
+}
+
+.inventory-combo-modal-close {
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border: 1px solid #f0d7c9;
+  border-radius: 0.65rem;
+  background: #fff7f1;
+  color: #d94a0b;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.inventory-combo-modal > .inventory-modal-grid {
+  min-height: 0;
+  padding: 0.85rem 1rem 1.2rem;
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.inventory-combo-modal > .reset-modal-error {
+  margin: 0;
+  padding: 0.55rem 1rem;
+}
+
+.inventory-combo-modal > .reset-modal-actions {
+  min-height: 4.4rem;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid #eadfd8;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 -0.5rem 1.2rem rgba(62, 37, 22, 0.06);
+  z-index: 3;
+}
+
+.inventory-view-combos .inventory-row-menu-button {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #efd9cc;
+  border-radius: 0.62rem;
+  background: #fff8f3;
+  color: #d94a0b;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.inventory-view-combos .inventory-row-menu-button:hover,
+.inventory-view-combos .inventory-row-menu-button:focus-visible {
+  border-color: #efb797;
+  background: #fff0e7;
+  color: #bd3900;
+  outline: none;
+}
+
+.inventory-combo-actions-dropdown {
+  min-width: 9.5rem;
+  border-color: #efd8ca;
+  border-radius: 0.72rem;
+  padding: 0.35rem;
+  box-shadow: 0 0.8rem 2rem rgba(54, 34, 23, 0.17);
+}
+
+.inventory-combo-actions-dropdown button {
+  min-height: 2.35rem;
+  padding: 0.5rem 0.65rem;
+  color: #343d55;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.inventory-combo-actions-dropdown button.danger {
+  border-top: 1px solid #f2e5de;
+  border-radius: 0.45rem;
+  color: #c33d2e;
+}
+
+@media (max-width: 768px) {
+  .inventory-combo-modal-backdrop {
+    padding: 0 !important;
+  }
+
+  .inventory-combo-modal {
+    width: 100% !important;
+    max-width: none !important;
+    height: 96svh !important;
+    max-height: 96svh !important;
+    border-radius: 1.15rem 1.15rem 0 0 !important;
+  }
+
+  .inventory-combo-modal-head {
+    padding: 1rem 0.8rem 0.72rem;
+  }
+
+  .inventory-combo-modal-head h3 {
+    font-size: 1rem;
+  }
+
+  .inventory-combo-modal-head p {
+    font-size: 0.68rem;
+  }
+
+  .inventory-combo-modal > .inventory-modal-grid {
+    padding: 0.72rem 0.75rem 1rem;
+  }
+
+  .inventory-combo-modal > .reset-modal-actions {
+    padding: 0.62rem 0.75rem max(0.62rem, env(safe-area-inset-bottom));
+    flex-direction: row !important;
+  }
+
+  .inventory-combo-modal > .reset-modal-actions button {
+    width: auto;
+    flex: 1;
+  }
+
+  .inventory-view-combos .inventory-table-wrap-modern {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .inventory-view-combos .inventory-table-modern,
+  .inventory-view-combos .inventory-table-modern tbody {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .inventory-view-combos .inventory-table-modern thead {
+    display: none;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody tr {
+    position: relative;
+    min-width: 0;
+    border: 1px solid #eadfd8;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    padding: 0.72rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    box-shadow: 0 0.45rem 1.1rem rgba(71, 42, 25, 0.06);
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:first-child,
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(2),
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(6) {
+    grid-column: 1 / -1;
+  }
+
+  .inventory-view-combos .inventory-product-cell {
+    min-width: 0;
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+
+  .inventory-view-combos .inventory-combo-thumb {
+    width: 4rem;
+    height: 4rem;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(3)::before,
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(4)::before,
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(5)::before {
+    display: block;
+    margin-bottom: 0.12rem;
+    color: #9399aa;
+    font-size: 0.56rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(3)::before {
+    content: "Precio combo";
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(4)::before {
+    content: "Por separado";
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:nth-child(5)::before {
+    content: "Disponibles";
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:last-child {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    display: block !important;
+    visibility: visible !important;
+    z-index: 4;
+  }
+
+  .inventory-product-modal .inventory-combo-image-editor {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+
+  .inventory-product-modal .inventory-combo-image-editor .inventory-image-preview {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .inventory-combo-editor header {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+
+  .inventory-combo-line {
+    grid-template-columns: minmax(0, 1fr) 4.5rem;
+  }
+
+  .inventory-combo-line > strong,
+  .inventory-combo-line > .danger-button {
+    grid-column: auto;
+  }
+}
+
 /* Catalogo de items: presentacion movil nativa y miniaturas visibles */
 @media (max-width: 768px) {
   .orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb,

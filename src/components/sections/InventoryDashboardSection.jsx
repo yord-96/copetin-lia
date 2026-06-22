@@ -686,6 +686,12 @@ const EMPTY_COMBO_FORM = {
   rentalPriceBs: '0',
   notes: '',
   ingredients: [],
+  imageUrl: null,
+  imageDataUrl: null,
+  imageFile: null,
+  imagePreviewUrl: null,
+  imageRemoved: false,
+  imageFileName: '',
 };
 
 const EMPTY_MOVEMENT_FORM = {
@@ -848,6 +854,7 @@ function InventoryDashboardSection({
   };
   const importInputRef = useRef(null);
   const productImageInputRef = useRef(null);
+  const comboImageInputRef = useRef(null);
 
   const isProductsModule = activeModule === 'inventario_productos';
   const isCombosModule = activeModule === 'inventario_combos';
@@ -1227,6 +1234,8 @@ function InventoryDashboardSection({
         controlsStock: allVerified,
         availableCombos: Number.isFinite(minAvailable) ? Math.max(0, minAvailable) : 0,
         notes: combo.notes ?? '',
+        imageUrl: combo.imageUrl ?? null,
+        imageDataUrl: combo.imageDataUrl ?? null,
         createdAt: combo.createdAt ?? combo.updatedAt ?? null,
         updatedAt: combo.updatedAt ?? null,
       };
@@ -2083,6 +2092,12 @@ function InventoryDashboardSection({
         itemId: line.itemId,
         quantity: String(line.quantity),
       })),
+      imageUrl: row.imageUrl ?? null,
+      imageDataUrl: row.imageDataUrl ?? null,
+      imageFile: null,
+      imagePreviewUrl: row.imageUrl ?? row.imageDataUrl ?? null,
+      imageRemoved: false,
+      imageFileName: '',
     });
   };
 
@@ -2155,6 +2170,30 @@ function InventoryDashboardSection({
       }));
     } catch (error) {
       setProductError(error?.message || 'No se pudo cargar la imagen.');
+    }
+  };
+
+  const handleComboImageChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        throw new Error('Selecciona una imagen valida (JPG, PNG o WEBP).');
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        throw new Error('La imagen supera el limite de 8 MB.');
+      }
+      const previewUrl = URL.createObjectURL(file);
+      setComboForm((current) => ({
+        ...current,
+        imageFile: file,
+        imagePreviewUrl: previewUrl,
+        imageRemoved: false,
+        imageFileName: file.name,
+      }));
+    } catch (error) {
+      setComboError(error?.message || 'No se pudo cargar la imagen del combo.');
     }
   };
 
@@ -2367,6 +2406,7 @@ function InventoryDashboardSection({
       category: String(comboForm.category ?? 'COMBOS').trim() || 'COMBOS',
       rentalPriceBs: Number(comboForm.rentalPriceBs ?? 0),
       notes: String(comboForm.notes ?? '').trim(),
+      imageUrl: comboForm.imageUrl || null,
       ingredients: comboForm.ingredients.map((line) => ({
         itemId: line.itemId,
         quantity: Math.max(1, Math.trunc(Number(line.quantity ?? 1))),
@@ -2388,6 +2428,20 @@ function InventoryDashboardSection({
 
     try {
       setIsSavingCombo(true);
+      if (comboForm.imageRemoved) {
+        payload.imageUrl = null;
+        payload.imageDataUrl = null;
+      }
+      if (comboForm.imageFile) {
+        const upload = await onUploadProductImage?.(comboForm.imageFile, {
+          itemId: `combo-${comboForm.id || comboForm.name}`,
+        });
+        if (!upload?.imageUrl) {
+          throw new Error('El servidor no devolvio la URL de la imagen.');
+        }
+        payload.imageUrl = upload.imageUrl;
+        payload.imageDataUrl = null;
+      }
       if (comboModalMode === 'edit') {
         await onUpdateInventoryCombo?.(payload);
         showMessage('Combo actualizado correctamente.');
@@ -2581,15 +2635,17 @@ function InventoryDashboardSection({
     .slice(0, 10);
 
   const renderComboRowMenu = (row, openUp = false) => (
-    <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()}>
-      <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); }}>
-        Ver detalle
-      </button>
+    <div
+      className={`inventory-row-dropdown inventory-combo-actions-dropdown floating ${openUp ? 'open-up' : ''}`}
+      style={getRowMenuStyle()}
+      role="menu"
+      aria-label={`Acciones para ${row.name}`}
+    >
       <button type="button" onClick={() => { openEditComboModal(row); setRowMenuOpenId(null); }}>
-        Editar combo
+        Editar
       </button>
       <button type="button" className="danger" onClick={() => handleDeleteCombo(row)}>
-        Eliminar combo
+        Eliminar
       </button>
     </div>
   );
@@ -3446,9 +3502,23 @@ function InventoryDashboardSection({
                       <tr key={row.id}>
                         <td>
                           <div className="inventory-product-cell">
-                            <div className="inventory-product-thumb">
-                              <span className="inventory-thumb-fallback">CB</span>
-                            </div>
+                            <button
+                              type="button"
+                              className="inventory-product-thumb inventory-product-thumb-button inventory-combo-thumb"
+                              onClick={() => handleOpenImagePreview(getProductImageSrc(row), row.name)}
+                              disabled={!getProductImageSrc(row)}
+                              aria-label={getProductImageSrc(row) ? `Ver imagen de ${row.name}` : `${row.name} sin imagen`}
+                            >
+                              {getProductImageSrc(row) ? (
+                                <ProductImage
+                                  item={row}
+                                  alt={`Imagen de ${row.name}`}
+                                  fallback={<span className="inventory-thumb-fallback">CB</span>}
+                                />
+                              ) : (
+                                <span className="inventory-thumb-fallback">CB</span>
+                              )}
+                            </button>
                             <div>
                               <strong>{row.name}</strong>
                               <span>{row.notes || `Codigo: ${row.sku}`}</span>
@@ -3924,10 +3994,22 @@ function InventoryDashboardSection({
       ) : null}
 
       {comboModalMode ? (
-        <div className="reset-modal-backdrop" onClick={() => setComboModalMode(null)}>
-          <form className="reset-modal inventory-product-modal" onSubmit={handleSubmitCombo} onClick={(event) => event.stopPropagation()}>
-            <h3>{comboModalMode === 'edit' ? 'Editar Combo' : 'Nuevo Combo'}</h3>
-            <p>Combina productos existentes y define un precio final independiente para contratos y cotizaciones.</p>
+        <div className="reset-modal-backdrop inventory-combo-modal-backdrop" onClick={() => setComboModalMode(null)}>
+          <form className="reset-modal inventory-product-modal inventory-combo-modal" onSubmit={handleSubmitCombo} onClick={(event) => event.stopPropagation()}>
+            <header className="inventory-combo-modal-head">
+              <div>
+                <h3>{comboModalMode === 'edit' ? 'Editar Combo' : 'Nuevo Combo'}</h3>
+                <p>Combina productos existentes y define un precio final independiente para contratos y cotizaciones.</p>
+              </div>
+              <button
+                type="button"
+                className="inventory-combo-modal-close"
+                onClick={() => setComboModalMode(null)}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </header>
             <div className="inventory-modal-grid">
               <label>
                 Nombre del combo
@@ -3941,6 +4023,51 @@ function InventoryDashboardSection({
                 Notas internas
                 <input value={comboForm.notes} onChange={(event) => setComboForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Ej: Mesa coctelera + mantel + capuchon" />
               </label>
+              <div className="full-width inventory-image-editor inventory-combo-image-editor">
+                <input
+                  ref={comboImageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  hidden
+                  onChange={handleComboImageChange}
+                />
+                <div className="inventory-image-preview">
+                  {comboForm.imagePreviewUrl ? (
+                    <ProductImage
+                      src={comboForm.imagePreviewUrl}
+                      alt="Vista previa del combo"
+                      fallback={<span className="inventory-thumb-fallback">CB</span>}
+                    />
+                  ) : (
+                    <span className="inventory-combo-image-empty">CB</span>
+                  )}
+                </div>
+                <div className="inventory-image-actions">
+                  <strong>Imagen del combo</strong>
+                  <small>Usa una foto clara del paquete armado. JPG, PNG o WEBP.</small>
+                  <button type="button" className="ghost-button" onClick={() => comboImageInputRef.current?.click()}>
+                    {comboForm.imagePreviewUrl ? 'Cambiar imagen' : 'Subir imagen'}
+                  </button>
+                  {comboForm.imagePreviewUrl ? (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => setComboForm((current) => ({
+                        ...current,
+                        imageUrl: null,
+                        imageDataUrl: null,
+                        imageFile: null,
+                        imagePreviewUrl: null,
+                        imageRemoved: true,
+                        imageFileName: '',
+                      }))}
+                    >
+                      Quitar imagen
+                    </button>
+                  ) : null}
+                  {comboForm.imageFileName ? <small>{comboForm.imageFileName}</small> : null}
+                </div>
+              </div>
               <div className="full-width inventory-movement-product-picker">
                 Productos del combo
                 <input

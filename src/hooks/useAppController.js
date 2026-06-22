@@ -1305,9 +1305,6 @@ export const useAppController = () => {
       throw new Error('No se pudo identificar la orden de servicio para generar documentos.');
     }
 
-    const linkedDeliveries = await resolveDeliveriesForDocumentFlow(rental);
-    const firstDelivery = linkedDeliveries[0] ?? null;
-
     const baseDate = rental.rentalDate ?? rental.createdAt?.slice(0, 10) ?? null;
     const endDate = rental.dueDate ?? baseDate;
 
@@ -1331,16 +1328,6 @@ export const useAppController = () => {
         generatedBy: 'Sistema Copetin',
         sourceType: 'orden_inventario',
         sourceId: rental.id,
-      }),
-      api.reports.generate({
-        name: `Hoja Ruta ${rental.orderCode}${firstDelivery?.deliveryCode ? ` (${firstDelivery.deliveryCode})` : ''}`,
-        category: 'Transporte',
-        periodFrom: firstDelivery?.scheduledDate ?? baseDate,
-        periodTo: firstDelivery?.scheduledDate ?? baseDate,
-        format: 'PDF',
-        generatedBy: 'Sistema Copetin',
-        sourceType: 'hoja_ruta',
-        sourceId: firstDelivery?.id ?? rental.id,
       }),
     ]);
   };

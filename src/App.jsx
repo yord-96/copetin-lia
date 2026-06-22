@@ -532,7 +532,7 @@ function App() {
             onOpenReportsModule={() => controller.setActiveTab('recibos')}
             onOpenImage={controller.setImagePreview}
             onPrintContractDocument={controller.handlePrintContractDocument}
-            onPrintInventoryOrderDocument={controller.handlePrintInventoryOrderDocument}
+            onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
             onPrintRouteSheetDocument={controller.handlePrintRouteSheetDocument}
             canAccessTransport={canAccessTab(controller.currentUser, 'devolucion_entregas')}
             canAccessInventory={canAccessTab(controller.currentUser, 'inventario_movimientos')}

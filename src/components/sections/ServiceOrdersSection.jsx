@@ -828,7 +828,7 @@ function ServiceOrdersSection({
   onOpenReportsModule,
   onOpenImage,
   onPrintContractDocument,
-  onPrintInventoryOrderDocument,
+  onPrintInventoryWeekDocument,
   onPrintRouteSheetDocument,
   canAccessInventory = true,
   canAccessTransport = true,
@@ -1251,7 +1251,15 @@ function ServiceOrdersSection({
 
   const documentsForSelectedOrder = useMemo(() => {
     if (!documentsOrder) return [];
-    const directDocs = documentsByOrderId.get(documentsOrder.id) ?? [];
+    const isCenterDocument = (report) => {
+      const sourceType = normalizeText(report?.sourceType ?? '');
+      const reportName = normalizeText(report?.name ?? '');
+      return sourceType === 'contrato'
+        || sourceType === 'orden_inventario'
+        || reportName.includes('contrato')
+        || reportName.includes('inventario');
+    };
+    const directDocs = (documentsByOrderId.get(documentsOrder.id) ?? []).filter(isCenterDocument);
     if (directDocs.length) return directDocs;
 
     const tokens = [
@@ -1265,7 +1273,8 @@ function ServiceOrdersSection({
       .filter((report) => {
         const sourceId = String(report?.sourceId ?? '').trim();
         const reportName = normalizeText(report?.name ?? '');
-        return tokens.includes(sourceId) || normalizedTokens.some((token) => reportName.includes(token));
+        return isCenterDocument(report)
+          && (tokens.includes(sourceId) || normalizedTokens.some((token) => reportName.includes(token)));
       })
       .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
   }, [documentsByOrderId, documentsOrder, generatedReports]);
@@ -1290,10 +1299,8 @@ function ServiceOrdersSection({
 
     const contractReport = findLatestReport('contrato', 'contrato');
     const inventoryReport = findLatestReport('orden_inventario', 'inventario');
-    const routeReport = findLatestReport('hoja_ruta', 'ruta');
-    const supplierPlan = selectedDocumentsContract?.supplierFulfillmentPlan ?? documentsOrder.supplierFulfillmentPlan ?? [];
 
-    const rows = [
+    return [
       {
         id: 'contract',
         kind: 'contract',
@@ -1316,35 +1323,8 @@ function ServiceOrdersSection({
         format: inventoryReport?.format ?? 'PDF',
         latestReportId: inventoryReport?.id ?? null,
       },
-      {
-        id: 'route',
-        kind: 'route',
-        title: `Hoja de ruta ${documentsOrder.orderCode}`,
-        description: 'Documento de entrega, recojo y datos de transporte.',
-        status: routeReport ? 'Generado' : 'Vista previa',
-        statusClass: routeReport ? 'contract-approved' : 'quote-sent',
-        generatedAt: routeReport?.generatedAt ?? null,
-        format: routeReport?.format ?? 'PDF',
-        latestReportId: routeReport?.id ?? null,
-      },
     ];
-
-    if (supplierPlan.length > 0) {
-      rows.push({
-        id: 'supplier-internal',
-        kind: 'supplier-internal',
-        title: `Resumen proveedor ${documentsOrder.contractCode || documentsOrder.orderCode}`,
-        description: 'Vista interna con proveedor, costo, venta y margen. No entregar al cliente.',
-        status: 'Interno',
-        statusClass: 'quote-sent',
-        generatedAt: null,
-        format: 'INT',
-        latestReportId: null,
-      });
-    }
-
-    return rows;
-  }, [documentsForSelectedOrder, documentsOrder, selectedDocumentsContract]);
+  }, [documentsForSelectedOrder, documentsOrder]);
 
   const historicalDocumentsForSelectedOrder = useMemo(() => {
     if (!documentsOrder) return [];
@@ -3014,10 +2994,11 @@ function ServiceOrdersSection({
           contractCode: orderRow.contractCode,
         });
       } else if (kind === 'inventory') {
-        preview = await onPrintInventoryOrderDocument?.({
+        preview = await onPrintInventoryWeekDocument?.({
+          weekStart: orderRow.deliveryDate ?? orderRow.rentalDate ?? orderRow.createdAt?.slice(0, 10),
+          format: 'individual',
           rentalId: orderRow.rentalId,
           orderCode: orderRow.orderCode,
-          contractId: orderRow.contractId,
           contractCode: orderRow.contractCode,
         });
       } else if (kind === 'route') {
@@ -4414,7 +4395,7 @@ function ServiceOrdersSection({
             <header className="orders-modal-head">
               <div>
                 <h3>Centro documental {documentsOrder.orderCode}</h3>
-                <p>Vista unificada de contrato, inventario y ruta. Sin duplicados entre actuales e historial.</p>
+                <p>Consulta centralizada del contrato y su documento de inventario.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={handleCloseDocumentsPanel}>
                 x
@@ -4429,7 +4410,7 @@ function ServiceOrdersSection({
                 </article>
                 <article>
                   <small>Documentos</small>
-                  <strong>{documentsForSelectedOrder.length} totales</strong>
+                  <strong>{documentOverviewRows.length} totales</strong>
                 </article>
                 <article>
                   <small>Orden vinculada</small>
@@ -4440,42 +4421,8 @@ function ServiceOrdersSection({
               <section className="orders-documents-panel">
                 <div className="orders-documents-section-head">
                   <div>
-                    <h4>Ordenes de servicio del contrato</h4>
-                    <p>Inventario y transporte se gestionan dentro de este contrato.</p>
-                  </div>
-                </div>
-
-                <div className="orders-documents-service-grid">
-                  <button
-                    type="button"
-                    className="orders-document-service-card"
-                    onClick={() => handlePrintOrderDocument('inventory', documentsOrder)}
-                  >
-                    <span className="orders-document-service-title">Inventario</span>
-                    <span className={`orders-status-badge ${OPERATIONAL_STATUS_META[documentsOrder.inventoryStatus ?? 'no_aplica']?.className ?? 'draft'}`}>
-                      {OPERATIONAL_STATUS_META[documentsOrder.inventoryStatus ?? 'no_aplica']?.label ?? 'No aplica'}
-                    </span>
-                    <small>Alistamiento, control y devolucion de items.</small>
-                  </button>
-                  <button
-                    type="button"
-                    className="orders-document-service-card"
-                    onClick={() => handlePrintOrderDocument('route', documentsOrder)}
-                  >
-                    <span className="orders-document-service-title">Transporte</span>
-                    <span className={`orders-status-badge ${OPERATIONAL_STATUS_META[documentsOrder.transportStatus ?? 'no_aplica']?.className ?? 'draft'}`}>
-                      {OPERATIONAL_STATUS_META[documentsOrder.transportStatus ?? 'no_aplica']?.label ?? 'No aplica'}
-                    </span>
-                    <small>Entrega, ruta y recojo operativo.</small>
-                  </button>
-                </div>
-              </section>
-
-              <section className="orders-documents-panel">
-                <div className="orders-documents-section-head">
-                  <div>
                     <h4>Documentos actuales</h4>
-                    <p>Un bloque por documento operativo. Abre vista previa o imprime desde aqui.</p>
+                    <p>Contrato e inventario disponibles para consultar o imprimir.</p>
                   </div>
                   <button type="button" className="primary-button" onClick={() => handleGenerateDocuments(documentsOrder)}>
                     Generar / actualizar
@@ -4851,7 +4798,15 @@ function ServiceOrdersSection({
                   const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
                   return (
                     <article className="orders-catalog-browser-card is-combo" key={`catalog-modal-combo-${combo.id}`}>
-                      <div className="orders-product-thumb orders-combo-thumb"><span>CB</span></div>
+                      <div className="orders-product-thumb orders-combo-thumb">
+                        {getProductImageSrc(combo) ? (
+                          <ProductImage
+                            item={combo}
+                            alt={`Imagen de ${combo.name}`}
+                            fallback={<span>CB</span>}
+                          />
+                        ) : <span>CB</span>}
+                      </div>
                       <div className="orders-catalog-browser-info">
                         <strong>{combo.name}</strong>
                         <span>Combo · {ingredients.length} productos</span>
@@ -5601,7 +5556,13 @@ function ServiceOrdersSection({
                           return (
                             <article key={`combo-${combo.id}`} className="orders-product-row orders-combo-catalog-row">
                               <div className="orders-product-thumb orders-combo-thumb">
-                                <span>CB</span>
+                                {getProductImageSrc(combo) ? (
+                                  <ProductImage
+                                    item={combo}
+                                    alt={`Imagen de ${combo.name}`}
+                                    fallback={<span>CB</span>}
+                                  />
+                                ) : <span>CB</span>}
                               </div>
                               <div className="orders-product-info">
                                 <strong title={combo.name}>{combo.name}</strong>

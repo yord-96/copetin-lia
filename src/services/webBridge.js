@@ -1180,6 +1180,8 @@ const normalizeState = (state) => {
         category: categoryName,
         rentalPriceBs: Math.max(0, toPositiveRoundedNumber(combo?.rentalPriceBs ?? combo?.priceBs ?? 0)),
         notes: String(combo?.notes ?? '').trim(),
+        imageUrl: String(combo?.imageUrl ?? '').trim() || null,
+        imageDataUrl: combo?.imageDataUrl ?? null,
         ingredients,
         status: String(combo?.status ?? 'active').trim() || 'active',
         createdAt: combo?.createdAt ?? now,
@@ -7196,12 +7198,20 @@ const createWebBridge = () => ({
       const category = toBusinessUppercase(payload?.category ?? 'COMBOS') || 'COMBOS';
       const rentalPriceBs = toNumber(payload?.rentalPriceBs ?? payload?.priceBs ?? 0, 'precio del combo');
       const notes = String(payload?.notes ?? '').trim();
+      const imageUrl = String(payload?.imageUrl ?? '').trim() || null;
+      const imageDataUrl = payload?.imageDataUrl ?? null;
 
       if (!name) {
         throw new Error('El nombre del combo es obligatorio.');
       }
       if (rentalPriceBs < 0) {
         throw new Error('El precio del combo no puede ser negativo.');
+      }
+      if (imageDataUrl && (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:image/'))) {
+        throw new Error('La imagen enviada no es valida.');
+      }
+      if (imageUrl && !imageUrl.startsWith('/uploads/products/')) {
+        throw new Error('La URL de imagen enviada no es valida.');
       }
 
       let createdCombo = null;
@@ -7239,6 +7249,8 @@ const createWebBridge = () => ({
           category,
           rentalPriceBs,
           notes,
+          imageUrl,
+          imageDataUrl,
           ingredients,
           status: 'active',
           createdAt: new Date().toISOString(),
@@ -7284,6 +7296,23 @@ const createWebBridge = () => ({
         }
         if (payload.notes !== undefined) {
           combo.notes = String(payload.notes ?? '').trim();
+        }
+        if (payload.imageDataUrl !== undefined) {
+          if (
+            payload.imageDataUrl
+            && (typeof payload.imageDataUrl !== 'string' || !payload.imageDataUrl.startsWith('data:image/'))
+          ) {
+            throw new Error('La imagen enviada no es valida.');
+          }
+          combo.imageDataUrl = payload.imageDataUrl;
+        }
+        if (payload.imageUrl !== undefined) {
+          const nextImageUrl = String(payload.imageUrl ?? '').trim() || null;
+          if (nextImageUrl && !nextImageUrl.startsWith('/uploads/products/')) {
+            throw new Error('La URL de imagen enviada no es valida.');
+          }
+          combo.imageUrl = nextImageUrl;
+          if (nextImageUrl) combo.imageDataUrl = null;
         }
         if (payload.ingredients !== undefined) {
           const itemById = new Map(state.items.map((item) => [String(item.id), item]));
