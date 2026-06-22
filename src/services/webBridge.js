@@ -3693,6 +3693,20 @@ const formatDocumentDate = (value) => {
   return formatDate(value);
 };
 
+const formatDocumentLongDate = (value) => {
+  const dateKey = toDateKey(value);
+  if (!dateKey) return '-';
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return formatDocumentDate(value);
+  const formatted = new Intl.DateTimeFormat('es-BO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+};
+
 const getDocumentCompany = (settings = {}) => ({
   name: String(settings.companyName ?? 'Copetin SRL').trim() || 'Copetin SRL',
   taxId: String(settings.taxId ?? '').trim() || '-',
@@ -5622,7 +5636,7 @@ const buildWeeklyInventoryHtml = ({
   };
   const formatWindow = (date, start, end) => (
     dateInWeek(date)
-      ? `${formatDocumentDate(date)} | ${String(start || '--:--')} - ${String(end || '--:--')}`
+      ? `${format === 'individual' ? formatDocumentLongDate(date) : formatDocumentDate(date)} | ${String(start || '--:--')} - ${String(end || '--:--')}`
       : 'Fuera de esta semana'
   );
   const formatOperationDate = (value) => escapeHtml(formatDocumentDate(value));
@@ -5725,6 +5739,30 @@ const buildWeeklyInventoryHtml = ({
       return firstA.localeCompare(firstB) || String(a.rental.orderCode ?? '').localeCompare(String(b.rental.orderCode ?? ''));
     });
 
+  const getInventoryGroup = (line) => {
+    const catalogItem = itemById.get(String(line?.itemId ?? '')) ?? null;
+    const category = normalizeText(catalogItem?.category ?? line?.category ?? '');
+    const name = normalizeText(catalogItem?.name ?? line?.itemName ?? '');
+    if (category.includes('vajilla') || category.includes('cristaler') || category.includes('cubiert')) {
+      return { id: 'vajilla', label: 'Vajilla', order: 1 };
+    }
+    if (category.includes('manteler') || category.includes('textil') || name.includes('mantel') || name.includes('servilleta')) {
+      return { id: 'manteleria', label: 'Mantelería', order: 2 };
+    }
+    return { id: 'mobiliario', label: 'Mobiliario', order: 3 };
+  };
+  const groupInventoryLines = (lines) => {
+    const groups = new Map([
+      ['vajilla', { id: 'vajilla', label: 'Vajilla', order: 1, lines: [] }],
+      ['manteleria', { id: 'manteleria', label: 'Mantelería', order: 2, lines: [] }],
+      ['mobiliario', { id: 'mobiliario', label: 'Mobiliario', order: 3, lines: [] }],
+    ]);
+    lines.forEach((line) => {
+      const group = getInventoryGroup(line);
+      groups.get(group.id)?.lines.push(line);
+    });
+    return [...groups.values()].filter((group) => group.lines.length > 0).sort((a, b) => a.order - b.order);
+  };
   const renderItemRows = (lines, offset = 0) => lines.map((line, index) => {
     const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
     const imageDataUrl = catalogItem?.imageUrl
@@ -5741,7 +5779,7 @@ const buildWeeklyInventoryHtml = ({
                 : '<span class="wi-no-image"></span>'}
               <strong>${escapeHtml(line.itemName)}</strong>
             </td>
-            <td class="wi-number">${Math.max(0, Number(line.quantity ?? 0))}</td>
+            <td class="wi-number"><span class="wi-qty-value">${Math.max(0, Number(line.quantity ?? 0))}</span></td>
             <td class="wi-check"><i></i></td>
             <td class="wi-check"><i></i></td>
             <td class="wi-check"><i></i></td>
@@ -5749,6 +5787,18 @@ const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
+  const renderGroupedItemRows = (lines) => {
+    let offset = 0;
+    return groupInventoryLines(lines).map((group) => {
+      const rows = renderItemRows(group.lines, offset);
+      offset += group.lines.length;
+      return `
+          <tr class="wi-category-row">
+            <td colspan="8">${escapeHtml(group.label)}</td>
+          </tr>
+          ${rows}`;
+    }).join('');
+  };
   const renderManualItemRows = (count = 3) => Array.from({ length: count }, () => `
           <tr class="wi-manual-row">
             <td class="wi-index"></td>
@@ -5794,7 +5844,7 @@ const buildWeeklyInventoryHtml = ({
     const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
     const manualRows = format === 'individual' ? renderManualItemRows(3) : '';
-    const firstRows = `${renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
+    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems) : renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
     const secondRows = splitItems
       ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize)}${manualRows}`
       : '';
@@ -5828,7 +5878,7 @@ const buildWeeklyInventoryHtml = ({
       <section class="wi-order">
         <header class="wi-order-head">
           <div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>
-          <div><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
+          <div class="wi-client"><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
           <div><small>RESPONSABLE</small><strong>${escapeHtml(responsible)}</strong></div>
           <div><small>DIRECCION</small><strong>${escapeHtml(address)}</strong></div>
           <div><small>OPERACION / ESTADO</small><strong class="wi-operation">${escapeHtml(operationSummary)}</strong><strong class="wi-status">${escapeHtml(inventoryStatus)}</strong></div>
@@ -5851,7 +5901,7 @@ const buildWeeklyInventoryHtml = ({
   if (format === 'individual') {
     const selectedOrder = weeklyOrders[0] ?? null;
     const individualItemCount = selectedOrder?.rental?.items?.length ?? 0;
-    const individualRenderedRowCount = individualItemCount + 3;
+    const individualRenderedRowCount = individualItemCount + 6;
     const useFullLetterSheet = individualRenderedRowCount >= 6;
     const individualPageClass = useFullLetterSheet ? 'individual-full' : 'individual-half';
     const documentCode = selectedOrder
@@ -5885,8 +5935,9 @@ const buildWeeklyInventoryHtml = ({
       .wi-count b { display: block; margin-bottom: -.7mm; font-size: 20px; line-height: 1; }
       .wi-order { margin-top: 0; border: .25mm solid #d8deeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
       .individual-full .wi-order { overflow: visible; break-inside: auto; page-break-inside: auto; }
-      .wi-order-head { display: grid; grid-template-columns: 36mm 43mm 43mm 1fr 32mm; gap: 2mm; align-items: center; padding: 1.55mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
-      .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.4px; line-height: 1.05; text-transform: uppercase; }
+      .wi-order-head { display: grid; grid-template-columns: 40mm 49mm 40mm 1fr 30mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; }
+      .wi-order-number strong, .wi-order-head .wi-client strong { font-size: 13.2px; line-height: 1.08; }
       .wi-order-number { display: flex; align-items: center; gap: 2mm; }
       .wi-order-number > span { width: 9.5mm; height: 11mm; display: grid; place-items: center; border-radius: 2mm 2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 16px; font-weight: 900; }
       .wi-status { display: inline-block !important; width: max-content; padding: .7mm 1.2mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 8.8px !important; }
@@ -5894,39 +5945,41 @@ const buildWeeklyInventoryHtml = ({
       .wi-order-meta { display: grid; grid-template-columns: 1.2fr 1.2fr .8fr .9fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
       .wi-order-meta > div { min-height: 9.4mm; padding: 1.2mm 2.6mm 1mm 5.1mm; border-right: .18mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
-      .wi-order-meta strong { display: block; margin-top: .35mm; color: #061b48; font-size: 9.8px; line-height: 1.08; }
+      .wi-order-meta strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.2px; line-height: 1.12; }
       .wi-tables { width: 100%; }
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; border-bottom: 0; }
       .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
       .wi-col-index { width: 4%; }
-      .wi-col-product { width: 38%; }
-      .wi-col-number { width: 7%; }
+      .wi-col-product { width: 35%; }
+      .wi-col-number { width: 10%; }
       .wi-col-check { width: 6.5%; }
       .wi-col-report { width: 25%; }
       .wi-table { border: .3mm solid #aeb9cd; }
       .individual-full .wi-table thead { display: table-header-group; }
       .individual-full .wi-table tr { break-inside: avoid; page-break-inside: avoid; }
-      .wi-table th { padding: 1mm .65mm; border-right: .25mm solid #51658b; border-bottom: .25mm solid #51658b; color: #fff; background: #09255a; font-size: 8.8px; line-height: 1.08; text-align: left; vertical-align: middle; }
-      .wi-table .wi-head-groups th { font-size: 9.5px; text-align: center; }
+      .wi-table th { padding: 1.1mm .75mm; border-right: .25mm solid #51658b; border-bottom: .25mm solid #51658b; color: #fff; background: #09255a; font-size: 9.5px; line-height: 1.1; text-align: left; vertical-align: middle; }
+      .wi-table .wi-head-groups th { font-size: 10.2px; text-align: center; }
       .wi-table .wi-head-groups th:nth-child(2) { text-align: left; }
-      .wi-table .wi-head-checks th { padding: .8mm .25mm; font-size: 7.4px; line-height: 1.05; text-align: center; }
+      .wi-table .wi-head-checks th { padding: .9mm .25mm; font-size: 8px; line-height: 1.05; text-align: center; }
       .wi-table .wi-group-delivery { background: #123b78; }
       .wi-table .wi-group-pickup { background: #ef5000; }
       .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left: .42mm solid #09255a; }
       .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .42mm solid #09255a; }
-      .wi-table td { height: 8.2mm; padding: .55mm .85mm; border-right: .25mm solid #bac4d6; border-bottom: .25mm solid #bac4d6; vertical-align: middle; font-size: 9.5px; font-weight: 800; }
+      .wi-table td { height: 8.6mm; padding: .65mm .95mm; border-right: .25mm solid #bac4d6; border-bottom: .25mm solid #bac4d6; vertical-align: middle; font-size: 10.3px; font-weight: 800; }
       .wi-table .wi-manual-row td { height: 8.2mm; }
       .wi-table tr:last-child td { border-bottom: 0; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
       .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; overflow-wrap: anywhere; }
       .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 5mm; text-align: center !important; }
-      .wi-number { width: 10mm; text-align: center !important; font-size: 10.2px !important; font-weight: 900 !important; }
+      .wi-number { width: 14mm; text-align: left !important; padding-left: 1.8mm !important; font-size: 11.2px !important; font-weight: 900 !important; }
+      .wi-qty-value { display: inline-block; min-width: 8mm; text-align: left; }
       .wi-product { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
       .wi-product img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #d8deea; border-radius: .7mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 9.4px; line-height: 1.06; text-transform: uppercase; }
+      .wi-product strong { color: #061b48; font-size: 10.3px; line-height: 1.08; text-transform: uppercase; }
+      .wi-category-row td { height: 6.5mm !important; padding: 1mm 2mm !important; border-right: 0 !important; color: #09255a; background: #e8eef8; font-size: 11px !important; font-weight: 900 !important; letter-spacing: .25px; text-align: left !important; text-transform: uppercase; }
       .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #67748c; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
@@ -5943,7 +5996,7 @@ const buildWeeklyInventoryHtml = ({
     <main class="wi-sheet">
       <header class="wi-header">
         <div class="wi-brand"><span class="wi-brand-mark">C</span><div><h1>${escapeHtml(company.name)}</h1><p>Control operativo de inventario</p></div></div>
-        <div class="wi-period"><small>Impresion individual</small><strong>${escapeHtml(`${formatDocumentDate(weekStart)} al ${formatDocumentDate(weekEnd)}`)}</strong></div>
+        <div class="wi-period"><small>Contrato creado</small><strong>${escapeHtml(formatDocumentLongDate(selectedOrder?.contract?.createdAt ?? selectedOrder?.rental?.createdAt))}</strong></div>
       </header>
       <section class="wi-intro">
         <div><h2>Hoja de alistamiento, salida y retorno</h2><p>Control individual para una orden operativa.</p></div>
@@ -12242,9 +12295,18 @@ const createWebBridge = () => ({
     },
     printInventoryWeek: async (payload) => {
       const state = readState();
-      const requestedStart = toDateKey(payload?.weekStart);
       const requestedFormat = String(payload?.format ?? '').trim();
       const format = requestedFormat === 'individual' ? 'individual' : 'standard';
+      const selectedRental = format === 'individual' ? resolveRentalForPrinting(state, payload) : null;
+      const selectedContract = selectedRental ? resolveContractForRental(state, selectedRental) : null;
+      const selectedDeliveries = selectedRental ? resolveDeliveriesForRental(state, selectedRental) : [];
+      const firstOutboundDelivery = selectedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? selectedDeliveries[0] ?? null;
+      const requestedStart = toDateKey(
+        selectedContract?.deliveryDate
+        ?? firstOutboundDelivery?.scheduledDate
+        ?? selectedRental?.rentalDate
+        ?? payload?.weekStart,
+      );
       const baseDate = requestedStart ? new Date(`${requestedStart}T12:00:00`) : new Date();
       const day = baseDate.getDay();
       const mondayOffset = day === 0 ? -6 : 1 - day;
