@@ -1,4 +1,5 @@
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability';
+import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
@@ -1136,6 +1137,7 @@ const normalizeState = (state) => {
         imageDataUrl: item?.imageDataUrl ?? null,
         imageFile: String(item?.imageFile ?? '').trim() || null,
         imageMigratedAt: item?.imageMigratedAt ?? null,
+        inventoryArea: normalizeInventoryArea(item?.inventoryArea),
         createdAt: item?.createdAt ?? now,
         updatedAt: item?.updatedAt,
       };
@@ -5743,14 +5745,9 @@ const buildWeeklyInventoryHtml = ({
 
   const getInventoryGroup = (line) => {
     const catalogItem = itemById.get(String(line?.itemId ?? '')) ?? null;
-    const category = normalizeText(catalogItem?.category ?? line?.category ?? '');
-    const name = normalizeText(catalogItem?.name ?? line?.itemName ?? '');
-    if (category.includes('vajilla') || category.includes('cristaler') || category.includes('cubiert')) {
-      return { id: 'vajilla', label: 'Vajilla', order: 1 };
-    }
-    if (category.includes('manteler') || category.includes('textil') || name.includes('mantel') || name.includes('servilleta')) {
-      return { id: 'manteleria', label: 'Mantelería', order: 2 };
-    }
+    const area = resolveInventoryArea(catalogItem ?? line);
+    if (area === 'vajilla') return { id: 'vajilla', label: 'Vajilla', order: 1 };
+    if (area === 'manteleria') return { id: 'manteleria', label: 'Mantelería', order: 2 };
     return { id: 'mobiliario', label: 'Mobiliario', order: 3 };
   };
   const groupInventoryLines = (lines) => {
@@ -7015,6 +7012,7 @@ const createWebBridge = () => ({
       const imageUrl = String(payload?.imageUrl ?? '').trim() || null;
       const imageDataUrl = payload?.imageDataUrl ?? null;
       const controlsStock = payload?.controlsStock === true;
+      const inventoryArea = normalizeInventoryArea(payload?.inventoryArea);
 
       if (!name) {
         throw new Error('El nombre es obligatorio.');
@@ -7068,6 +7066,7 @@ const createWebBridge = () => ({
           missingUnitChargeBs,
           imageUrl,
           imageDataUrl,
+          inventoryArea,
           createdAt: new Date().toISOString(),
         };
         state.items.push(createdItem);
@@ -7117,6 +7116,10 @@ const createWebBridge = () => ({
 
         if (payload.itemColor !== undefined) {
           item.itemColor = toBusinessUppercase(payload.itemColor ?? '');
+        }
+
+        if (payload.inventoryArea !== undefined) {
+          item.inventoryArea = normalizeInventoryArea(payload.inventoryArea);
         }
 
         if (payload.sku !== undefined || payload.code !== undefined) {

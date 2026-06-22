@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getProductImageSrc } from '../../utils/productImage';
+import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import ProductImage from '../common/ProductImage';
 
 const normalizeText = (value) =>
@@ -767,6 +768,8 @@ function InventoryDashboardSection({
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [productError, setProductError] = useState('');
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [areaAssignment, setAreaAssignment] = useState(null);
+  const [isSavingArea, setIsSavingArea] = useState(false);
   const [comboModalMode, setComboModalMode] = useState(null);
   const [comboForm, setComboForm] = useState(EMPTY_COMBO_FORM);
   const [comboError, setComboError] = useState('');
@@ -1174,6 +1177,8 @@ function InventoryDashboardSection({
         itemColor: String(item.itemColor ?? '').trim(),
         imageUrl: item.imageUrl ?? null,
         imageDataUrl: item.imageUrl ?? item.imageDataUrl ?? null,
+        inventoryArea: item.inventoryArea ?? '',
+        resolvedInventoryArea: resolveInventoryArea(item),
         sku: String(item.sku ?? '').trim()
           || String(item.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase()
           || 'GEN',
@@ -2068,6 +2073,32 @@ function InventoryDashboardSection({
     });
   };
 
+  const openAreaAssignment = (row) => {
+    setAreaAssignment({
+      id: row.id,
+      name: row.name,
+      area: row.inventoryArea || row.resolvedInventoryArea || resolveInventoryArea(row),
+    });
+    setRowMenuOpenId(null);
+  };
+
+  const saveAreaAssignment = async () => {
+    if (!areaAssignment?.id || isSavingArea) return;
+    try {
+      setIsSavingArea(true);
+      await onUpdateInventoryItem?.({
+        id: areaAssignment.id,
+        inventoryArea: areaAssignment.area,
+      });
+      showMessage(`${areaAssignment.name} asignado a ${getInventoryAreaLabel(areaAssignment.area)}.`);
+      setAreaAssignment(null);
+    } catch (error) {
+      showMessage(error?.message || 'No se pudo asignar el area.', 'error');
+    } finally {
+      setIsSavingArea(false);
+    }
+  };
+
   const openCreateComboModal = () => {
     setComboModalMode('create');
     setComboError('');
@@ -2657,6 +2688,9 @@ function InventoryDashboardSection({
       </button>
       <button type="button" onClick={() => { openEditProductModal(row); setRowMenuOpenId(null); }}>
         Editar producto
+      </button>
+      <button type="button" onClick={() => openAreaAssignment(row)}>
+        Asignar área
       </button>
       <button type="button" onClick={() => { openMovementModal(row, 'ajuste'); setRowMenuOpenId(null); }}>
         Ajuste rapido
@@ -4161,6 +4195,63 @@ function InventoryDashboardSection({
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {areaAssignment ? (
+        <div className="reset-modal-backdrop" onClick={() => !isSavingArea && setAreaAssignment(null)}>
+          <section
+            className="reset-modal inventory-area-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="inventory-area-title"
+          >
+            <div className="inventory-area-modal-head">
+              <div>
+                <span>Organización de inventario</span>
+                <h3 id="inventory-area-title">Asignar área</h3>
+                <p>{areaAssignment.name}</p>
+              </div>
+              <button type="button" onClick={() => setAreaAssignment(null)} aria-label="Cerrar" disabled={isSavingArea}>×</button>
+            </div>
+            <div className="inventory-area-options">
+              {INVENTORY_AREAS.map((area) => (
+                <button
+                  key={area.id}
+                  type="button"
+                  className={areaAssignment.area === area.id ? 'selected' : ''}
+                  onClick={() => setAreaAssignment((current) => ({ ...current, area: area.id }))}
+                >
+                  <span className={`inventory-area-icon ${area.id}`}>
+                    {area.id === 'vajilla' ? 'V' : area.id === 'manteleria' ? 'M' : 'MB'}
+                  </span>
+                  <span>
+                    <strong>{area.label}</strong>
+                    <small>
+                      {area.id === 'vajilla'
+                        ? 'Cristalería, cubiertos, vasos y accesorios.'
+                        : area.id === 'manteleria'
+                          ? 'Manteles, servilletas, gasas y textiles.'
+                          : 'Mesas, sillas, paneles, toldos y estructuras.'}
+                    </small>
+                  </span>
+                  <i aria-hidden="true">{areaAssignment.area === area.id ? '✓' : ''}</i>
+                </button>
+              ))}
+            </div>
+            <div className="inventory-area-current">
+              Las impresiones individuales colocarán este producto en <strong>{getInventoryAreaLabel(areaAssignment.area)}</strong>.
+            </div>
+            <div className="reset-modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setAreaAssignment(null)} disabled={isSavingArea}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={saveAreaAssignment} disabled={isSavingArea}>
+                {isSavingArea ? 'Guardando...' : 'Guardar área'}
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 
