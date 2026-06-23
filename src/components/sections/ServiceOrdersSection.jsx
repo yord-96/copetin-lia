@@ -840,6 +840,8 @@ function ServiceOrdersSection({
   const [quoteQuery, setQuoteQuery] = useState('');
   const [contractFilter, setContractFilter] = useState('all');
   const [contractQuery, setContractQuery] = useState('');
+  const [contractDateFrom, setContractDateFrom] = useState('');
+  const [contractDateTo, setContractDateTo] = useState('');
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -1015,6 +1017,7 @@ function ServiceOrdersSection({
       return {
         id: rental.id,
         rentalId: rental.id,
+        rentalStatus: rental.status ?? '',
         orderCode,
         createdAt: rental.createdAt ?? rental.rentalAt,
         responsibleName: getResponsibleDisplayName(linkedContract ?? rental),
@@ -1032,9 +1035,11 @@ function ServiceOrdersSection({
           : 'Pendiente de ruta',
         status: toOrderStatus(rental, delivery),
         totalBs: Number(rental?.totals?.totalBs ?? 0),
+        refundBs: Number(rental?.refundBs ?? rental?.returnSettlement?.refundBs ?? 0),
         accountingStatus,
         pendingPaymentBs,
         pendingCollectionBs,
+        returnSettlement: rental.returnSettlement ?? null,
         cancelledAt: rental.cancelledAt ?? null,
         cancellationPenaltyPercent: Number(rental.cancellationPenaltyPercent ?? linkedContract?.cancellationPenaltyPercent ?? 0),
         cancellationPenaltyBs: Number(rental.cancellationPenaltyBs ?? linkedContract?.cancellationPenaltyBs ?? 0),
@@ -1152,10 +1157,29 @@ function ServiceOrdersSection({
     });
   }, [quoteFilter, quoteQuery, quoteRows]);
 
+  const orderByContractId = useMemo(() => {
+    const map = new Map();
+    orderRowsWithMeta.forEach((order) => {
+      if (order.contractId) map.set(String(order.contractId), order);
+    });
+    return map;
+  }, [orderRowsWithMeta]);
+
   const contractRows = useMemo(() => {
     return contracts.map((contract) => {
       const itemsCount = (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
       const status = CONTRACT_STATUS_META[contract.status] ? contract.status : 'borrador';
+      const linkedOrder = orderByContractId.get(String(contract.id)) ?? null;
+      const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
+        || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
+      const isSent = Boolean(linkedOrder?.orderCode || contract.orderCode || contract.rentalId);
+      const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
+      const refundBs = Math.max(0, Number(linkedOrder?.refundBs ?? 0));
+      const guaranteeStatus = guaranteeBs <= 0
+        ? 'none'
+        : refundBs > 0
+          ? 'returned'
+          : 'held';
       return {
         ...contract,
         status,
@@ -1163,9 +1187,17 @@ function ServiceOrdersSection({
         responsibleName: getResponsibleDisplayName(contract),
         responsibleRole: getResponsibleDisplayRole(contract),
         totalBs: Number(contract?.totals?.totalBs ?? 0),
+        isSent,
+        isReturned,
+        guaranteeBs,
+        guaranteeStatus,
+        guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
+        guaranteeSecondary: guaranteeBs > 0
+          ? guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
+          : '',
       };
     });
-  }, [contracts]);
+  }, [contracts, formatBs, orderByContractId]);
 
   const contractCounts = useMemo(() => {
     const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
@@ -1178,6 +1210,9 @@ function ServiceOrdersSection({
   const searchedContracts = useMemo(() => {
     const text = normalizeText(contractQuery);
     return contractRows.filter((row) => {
+      const createdKey = getDateKey(row.createdAt);
+      if (contractDateFrom && (!createdKey || createdKey < contractDateFrom)) return false;
+      if (contractDateTo && (!createdKey || createdKey > contractDateTo)) return false;
       if (!text) return true;
       return (
         normalizeText(row.contractCode).includes(text)
@@ -1188,7 +1223,7 @@ function ServiceOrdersSection({
         || normalizeText(row.orderCode).includes(text)
       );
     });
-  }, [contractQuery, contractRows]);
+  }, [contractDateFrom, contractDateTo, contractQuery, contractRows]);
 
   const visibleContractCounts = useMemo(() => {
     const base = { all: searchedContracts.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
@@ -3926,15 +3961,21 @@ function ServiceOrdersSection({
                     onChange={(event) => setContractQuery(event.target.value)}
                   />
                 </label>
-                <select className="orders-select" value={contractFilter} onChange={(event) => setContractFilter(event.target.value)}>
-                  <option value="all">Estado: Todos</option>
-                  <option value="borrador">Borrador</option>
-                  <option value="pendiente">Pendiente</option>
-                  <option value="aprobado">Aprobado</option>
-                  <option value="rechazado">Rechazado</option>
-                  <option value="anulado">Anulado</option>
-                </select>
-                <button type="button" className="ghost-button orders-range-btn">Todo el periodo</button>
+                <div className="orders-date-range-filter" aria-label="Rango de fechas de contratos">
+                  <label>
+                    <span>Desde</span>
+                    <input type="date" value={contractDateFrom} onChange={(event) => setContractDateFrom(event.target.value)} />
+                  </label>
+                  <label>
+                    <span>Hasta</span>
+                    <input type="date" value={contractDateTo} onChange={(event) => setContractDateTo(event.target.value)} />
+                  </label>
+                  {(contractDateFrom || contractDateTo) ? (
+                    <button type="button" className="link-button" onClick={() => { setContractDateFrom(''); setContractDateTo(''); }}>
+                      Limpiar
+                    </button>
+                  ) : null}
+                </div>
                 <button type="button" className="link-button orders-export-btn">Exportar</button>
               </header>
 
@@ -3957,6 +3998,10 @@ function ServiceOrdersSection({
                 <button type="button" className={contractFilter === 'anulado' ? 'active' : ''} onClick={() => setContractFilter('anulado')}>
                   Anulado <span>{visibleContractCounts.anulado}</span>
                 </button>
+                <div className="orders-contract-legend" aria-label="Leyenda operativa de contratos">
+                  <span><i className="sent" /> Enviado</span>
+                  <span><i className="returned" /> Volvió / devuelto</span>
+                </div>
               </div>
             </div>
 
@@ -3966,10 +4011,10 @@ function ServiceOrdersSection({
                   <tr>
                     <th>Contrato</th>
                     <th>Cliente</th>
-                    <th>Evento</th>
                     <th>Responsable</th>
                     <th>Servicio</th>
                     <th>Estado</th>
+                    <th>Garantía</th>
                     <th>Fecha de creación</th>
                     <th>Total</th>
                     <th>Acciones</th>
@@ -3979,27 +4024,21 @@ function ServiceOrdersSection({
                   {filteredContracts.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                     return (
-                      <tr key={row.id} className={`orders-row contract-${row.status}`}>
-                        <td>
+                      <tr key={row.id} className={`orders-row contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}`}>
+                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
                             <span>{row.itemsCount} items · {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'}</span>
                           </div>
                         </td>
-                        <td>
+                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong>{row.customerName}</strong>
                             <span>{row.customerPhone || 'Sin WhatsApp/celular'}</span>
                             {row.customerReferencePhone ? <span>Ref: {row.customerReferencePhone}</span> : null}
                           </div>
                         </td>
-                        <td>
-                          <div className="orders-cell-main">
-                            <strong>{row.eventType || 'Evento general'}</strong>
-                            <span>{formatDate(row.eventDate)} {row.eventTime || ''}</span>
-                          </div>
-                        </td>
-                        <td>
+                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-responsible-cell">
                             <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
                             <div>
@@ -4008,14 +4047,20 @@ function ServiceOrdersSection({
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong>{[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</strong>
                             <span>Entrega / recojo</span>
                           </div>
                         </td>
-                        <td>
+                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
                           <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
+                        </td>
+                        <td>
+                          <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
+                            <strong>{row.guaranteePrimary}</strong>
+                            <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
+                          </div>
                         </td>
                         <td>
                           <div className="orders-created-date-cell">
