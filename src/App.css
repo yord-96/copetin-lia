@@ -19700,7 +19700,7 @@ body,
 
 .suppliers-content-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.3fr);
+  grid-template-columns: minmax(440px, 1fr) minmax(380px, 1.24fr);
   gap: 0.82rem;
   align-items: start;
 }
@@ -19855,6 +19855,431 @@ body,
   min-width: 280px;
 }
 
+/* Proveedores: centro de abastecimiento claro y operativo */
+.suppliers-panel {
+  gap: 1rem;
+}
+
+.suppliers-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #f0c8b3;
+  border-radius: 1.05rem;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.32) 0 7rem, transparent 7.2rem),
+    linear-gradient(135deg, #fff7ef 0%, #ffffff 55%, #fff3ea 100%);
+  box-shadow: 0 1rem 2.4rem rgba(135, 55, 15, 0.08);
+}
+
+.suppliers-hero-copy span,
+.suppliers-card-head > div > span {
+  color: #e65313;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.suppliers-hero h2 {
+  margin-top: 0.15rem;
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+}
+
+.suppliers-hero p {
+  max-width: 48rem;
+  color: #5f6c86;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.suppliers-tabs {
+  align-self: center;
+  border: 1px solid #f0d7c8;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.25rem;
+  box-shadow: 0 0.5rem 1.2rem rgba(31, 43, 67, 0.06);
+}
+
+.suppliers-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 0.58rem 0.88rem;
+  color: #48566f;
+}
+
+.suppliers-tabs button.active {
+  background: linear-gradient(135deg, #ef5a18, #d83d04);
+  box-shadow: 0 0.55rem 1.1rem rgba(223, 63, 5, 0.22);
+}
+
+.suppliers-kpi-grid article {
+  position: relative;
+  overflow: hidden;
+  min-height: 6rem;
+  border-radius: 0.95rem;
+  background: linear-gradient(135deg, #ffffff, #fffaf6);
+}
+
+.suppliers-kpi-grid article::after {
+  content: "";
+  position: absolute;
+  right: -1.8rem;
+  bottom: -2.2rem;
+  width: 5.4rem;
+  height: 5.4rem;
+  border-radius: 999px;
+  background: rgba(239, 90, 24, 0.08);
+}
+
+.suppliers-kpi-grid strong {
+  color: #0f2248;
+  font-size: 1.55rem;
+}
+
+.suppliers-kpi-grid small {
+  display: block;
+  margin-top: 0.18rem;
+  color: #8390a6;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.suppliers-card {
+  border-radius: 1rem;
+}
+
+.suppliers-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+  margin-bottom: 0.8rem;
+}
+
+.suppliers-card-head h3 {
+  margin-top: 0.16rem;
+}
+
+.suppliers-card-head p {
+  margin: 0.2rem 0 0;
+  color: #7b879c;
+  font-size: 0.78rem;
+}
+
+.suppliers-card-head.inline {
+  align-items: center;
+}
+
+.suppliers-search {
+  width: min(260px, 100%);
+  border: 1px solid #ecd7ca;
+  border-radius: 999px;
+  padding: 0.58rem 0.78rem;
+  background: #fffdfb;
+  color: #18233d;
+}
+
+.supplier-row {
+  border-color: #ead8ce;
+  border-radius: 0.9rem;
+  background: linear-gradient(135deg, #ffffff, #fffaf7);
+  box-shadow: inset 0.22rem 0 0 #f26a22;
+}
+
+.supplier-row strong {
+  color: #0f2248;
+  font-size: 0.96rem;
+}
+
+.supplier-row em {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.38rem;
+  border-radius: 999px;
+  background: #f5f8ff;
+  padding: 0.24rem 0.5rem;
+  color: #51607e;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.supplier-row-money > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.supplier-line-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.95fr) 5.6rem;
+  gap: 0.46rem;
+  align-items: end;
+  border: 1px solid #e6edf8;
+  border-radius: 0.86rem;
+  background: #f9fbff;
+  padding: 0.62rem;
+}
+
+.supplier-line-card label:nth-of-type(4),
+.supplier-line-card label:nth-of-type(5),
+.supplier-line-card .supplier-line-summary {
+  grid-column: span 1;
+}
+
+.supplier-line-card .link-button {
+  justify-self: end;
+  align-self: center;
+}
+
+.supplier-line-card.request {
+  background: #fffaf6;
+  border-color: #f0d9ca;
+}
+
+.supplier-line-card label {
+  display: grid;
+  gap: 0.22rem;
+  color: #667085;
+  font-size: 0.66rem;
+  font-weight: 900;
+}
+
+.supplier-line-card input {
+  min-height: 2.25rem;
+  border-color: #dfe7f3;
+  background: #ffffff;
+}
+
+.supplier-line-summary {
+  min-height: 2.25rem;
+  border: 1px solid #e3edf9;
+  border-radius: 0.7rem;
+  background: #ffffff;
+  padding: 0.35rem 0.5rem;
+  display: grid;
+  align-content: center;
+  gap: 0.06rem;
+  white-space: nowrap;
+}
+
+.supplier-line-summary span {
+  color: #7c879d;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.supplier-line-summary strong {
+  color: #0f2248;
+  font-size: 0.75rem;
+}
+
+.supplier-offer-list {
+  display: grid;
+  gap: 0.52rem;
+  margin-bottom: 0.8rem;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.supplier-offer-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border: 1px solid #e5edf8;
+  border-radius: 0.82rem;
+  background: #ffffff;
+  padding: 0.62rem;
+}
+
+.supplier-offer-card strong,
+.supplier-offer-card span,
+.supplier-offer-card small {
+  display: block;
+}
+
+.supplier-offer-card strong {
+  color: #0f2248;
+  font-size: 0.82rem;
+}
+
+.supplier-offer-card span {
+  color: #58677f;
+  font-size: 0.76rem;
+}
+
+.supplier-offer-card small {
+  margin-top: 0.14rem;
+  color: #8a95aa;
+  font-size: 0.66rem;
+}
+
+.supplier-offer-card > div:last-child {
+  min-width: 8.5rem;
+  text-align: right;
+}
+
+.supplier-price-lists {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px dashed #e3d6cc;
+  padding-top: 0.78rem;
+}
+
+.supplier-price-lists h4 {
+  margin: 0;
+  color: #0f2248;
+  font-size: 0.86rem;
+}
+
+.supplier-price-list-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #eadfd7;
+  border-radius: 0.82rem;
+  background: #fffaf6;
+  padding: 0.68rem;
+}
+
+.supplier-price-list-card strong,
+.supplier-price-list-card span,
+.supplier-price-list-card small {
+  display: block;
+}
+
+.supplier-price-list-card strong {
+  color: #102654;
+  font-size: 0.82rem;
+}
+
+.supplier-price-list-card span {
+  color: #5d6a80;
+  font-size: 0.74rem;
+}
+
+.supplier-price-list-card small {
+  margin-top: 0.12rem;
+  color: #8c96a9;
+  font-size: 0.66rem;
+}
+
+.supplier-price-list-card > div:last-child {
+  min-width: 7.6rem;
+  text-align: right;
+}
+
+.supplier-request-offers {
+  border: 1px solid #e5edf8;
+  border-radius: 0.92rem;
+  background: linear-gradient(135deg, #f8fbff, #ffffff);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.supplier-request-offers header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.supplier-request-offers strong,
+.supplier-request-offers span {
+  display: block;
+}
+
+.supplier-request-offers header strong {
+  color: #0f2248;
+  font-size: 0.84rem;
+}
+
+.supplier-request-offers header span {
+  margin-top: 0.12rem;
+  color: #7b879c;
+  font-size: 0.7rem;
+}
+
+.supplier-request-offer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.48rem;
+  max-height: 13rem;
+  overflow: auto;
+  padding-right: 0.12rem;
+}
+
+.supplier-request-offer-grid button {
+  border: 1px solid #dfe8f6;
+  border-radius: 0.82rem;
+  background: #ffffff;
+  padding: 0.58rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.supplier-request-offer-grid button:hover {
+  transform: translateY(-1px);
+  border-color: #f26a22;
+  box-shadow: 0 0.55rem 1.2rem rgba(31, 43, 67, 0.08);
+}
+
+.supplier-request-offer-grid strong {
+  color: #0f2248;
+  font-size: 0.78rem;
+}
+
+.supplier-request-offer-grid span {
+  margin-top: 0.12rem;
+  color: #68748a;
+  font-size: 0.68rem;
+}
+
+.supplier-request-offer-grid small {
+  display: block;
+  margin-top: 0.26rem;
+  color: #d84a0a;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.suppliers-table-wrap {
+  border: 1px solid #e2e8f3;
+  border-radius: 0.9rem;
+  background: #ffffff;
+}
+
+.suppliers-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.suppliers-table th {
+  background: #0f2b5c;
+  color: #ffffff;
+}
+
+.suppliers-table th:first-child {
+  border-top-left-radius: 0.82rem;
+}
+
+.suppliers-table th:last-child {
+  border-top-right-radius: 0.82rem;
+}
+
+.suppliers-table tbody tr:nth-child(even) {
+  background: #f8fbff;
+}
+
+.suppliers-table td {
+  border-bottom-color: #e6edf8;
+}
+
 @media (max-width: 1180px) {
   .suppliers-content-grid,
   .suppliers-kpi-grid {
@@ -19873,7 +20298,8 @@ body,
 
 @media (max-width: 720px) {
   .suppliers-form-grid,
-  .supplier-line-row {
+  .supplier-line-row,
+  .supplier-line-card {
     grid-template-columns: 1fr;
   }
 
@@ -19886,6 +20312,16 @@ body,
 
   .supplier-row-money {
     justify-items: start;
+  }
+
+  .suppliers-card-head,
+  .supplier-offer-card {
+    flex-direction: column;
+  }
+
+  .supplier-offer-card > div:last-child {
+    min-width: 0;
+    text-align: left;
   }
 }
 
@@ -43866,6 +44302,27 @@ button.calendar-dispatch-row:focus-visible {
     margin: 0 !important;
     border-radius: 1.25rem 1.25rem 0 0 !important;
   }
+}
+
+/* El configurador de combos es un modal secundario sobre el wizard:
+   debe ganar siempre la capa visual y no heredar el formato bottom-sheet. */
+.orders-modal-backdrop.orders-combo-configurator-backdrop {
+  z-index: 560 !important;
+  align-items: center !important;
+  justify-items: center !important;
+  place-items: center !important;
+  padding: 1rem !important;
+  background: rgba(12, 17, 39, 0.58) !important;
+  backdrop-filter: blur(6px);
+}
+
+.orders-modal-backdrop.orders-combo-configurator-backdrop > .orders-combo-configurator {
+  width: min(880px, calc(100vw - 2rem)) !important;
+  max-width: min(880px, calc(100vw - 2rem)) !important;
+  max-height: min(860px, calc(100svh - 2rem)) !important;
+  margin: 0 !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 2.5rem 5rem rgba(5, 10, 28, 0.46) !important;
 }
 
 /* Ordenes movil v2: acciones claras y wizard nativo */

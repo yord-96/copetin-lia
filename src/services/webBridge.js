@@ -1712,6 +1712,7 @@ const normalizeState = (state) => {
                 quantity,
                 unit: String(line?.unit ?? 'unidad').trim() || 'unidad',
                 unitPriceBs: Number(unitPriceBs.toFixed(2)),
+                saleUnitPriceBs: Math.max(0, Number(line?.saleUnitPriceBs ?? line?.clientUnitPriceBs ?? 0)),
                 lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
               };
             })
@@ -1752,10 +1753,11 @@ const normalizeState = (state) => {
                 itemId: String(line?.itemId ?? '').trim() || null,
                 itemName: String(line?.itemName ?? line?.name ?? '').trim(),
                 category: String(line?.category ?? '').trim(),
-                quantity,
-                unitPriceBs: Number(unitPriceBs.toFixed(2)),
-                lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
-              };
+              quantity,
+              unitPriceBs: Number(unitPriceBs.toFixed(2)),
+              saleUnitPriceBs: Math.max(0, Number(line?.saleUnitPriceBs ?? line?.clientUnitPriceBs ?? 0)),
+              lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+            };
             })
             .filter((line) => line.itemName)
           : [];
@@ -10242,6 +10244,7 @@ const createWebBridge = () => ({
               quantity,
               unit: String(line?.unit ?? 'unidad').trim() || 'unidad',
               unitPriceBs,
+              saleUnitPriceBs: Math.max(0, toPositiveRoundedNumber(line?.saleUnitPriceBs ?? line?.clientUnitPriceBs ?? 0)),
               lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
             };
           })
@@ -10295,6 +10298,7 @@ const createWebBridge = () => ({
               category: String(line?.category ?? '').trim(),
               quantity,
               unitPriceBs,
+              saleUnitPriceBs: Math.max(0, toPositiveRoundedNumber(line?.saleUnitPriceBs ?? line?.clientUnitPriceBs ?? 0)),
               lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
             };
           })

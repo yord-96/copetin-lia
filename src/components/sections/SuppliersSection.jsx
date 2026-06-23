@@ -34,6 +34,7 @@ const EMPTY_LINE = {
   category: '',
   quantity: '1',
   unitPriceBs: '0',
+  saleUnitPriceBs: '0',
 };
 
 const normalizeText = (value) =>
@@ -52,6 +53,11 @@ const formatDate = (value) => {
 
 const getLineTotal = (line) =>
   Math.max(1, Math.trunc(Number(line.quantity ?? 1))) * Math.max(0, Number(line.unitPriceBs ?? 0));
+
+const getLineSaleTotal = (line) =>
+  Math.max(1, Math.trunc(Number(line.quantity ?? 1))) * Math.max(0, Number(line.saleUnitPriceBs ?? 0));
+
+const getMarginTotal = (line) => getLineSaleTotal(line) - getLineTotal(line);
 
 const createDocumentHtml = (loan) => `
   <!doctype html>
@@ -82,11 +88,12 @@ const createDocumentHtml = (loan) => `
         <div class="box"><strong>Evento / referencia</strong><br />${loan.eventName || '-'}</div>
       </div>
       <table>
-        <thead><tr><th>Item</th><th>Categoria</th><th>Cantidad</th></tr></thead>
+        <thead><tr><th>Item</th><th>Categoria</th><th>Cantidad</th><th>Costo proveedor</th><th>Precio cliente</th><th>Total a pagar</th></tr></thead>
         <tbody>
-          ${loan.items.map((line) => `<tr><td>${line.itemName}</td><td>${line.category || '-'}</td><td>${line.quantity}</td></tr>`).join('')}
+          ${loan.items.map((line) => `<tr><td>${line.itemName}</td><td>${line.category || '-'}</td><td>${line.quantity}</td><td>Bs ${Number(line.unitPriceBs ?? 0).toFixed(2)}</td><td>Bs ${Number(line.saleUnitPriceBs ?? 0).toFixed(2)}</td><td>Bs ${Number(line.lineTotalBs ?? 0).toFixed(2)}</td></tr>`).join('')}
         </tbody>
       </table>
+      <p style="margin-top:12px;"><strong>Total a pagar:</strong> Bs ${Number(loan?.totals?.totalBs ?? 0).toFixed(2)}</p>
       <p style="margin-top:18px;"><strong>Notas:</strong> ${loan.notes || 'Sin observaciones.'}</p>
       <div class="sign"><div>Copetin</div><div>${loan.supplierName}</div></div>
     </body>
@@ -114,6 +121,7 @@ function SuppliersSection({
   const [quoteLines, setQuoteLines] = useState([{ ...EMPTY_LINE }]);
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
   const [loanLines, setLoanLines] = useState([{ ...EMPTY_LINE }]);
+  const [supplierSearch, setSupplierSearch] = useState('');
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -147,6 +155,17 @@ function SuppliersSection({
     return Array.from(bySupplier.values());
   }, [loans, quotes, suppliers]);
 
+  const visibleSupplierStats = useMemo(() => {
+    const query = normalizeText(supplierSearch);
+    if (!query) return supplierStats;
+    return supplierStats.filter(({ supplier }) => (
+      normalizeText(supplier.name).includes(query)
+      || normalizeText(supplier.contactName).includes(query)
+      || normalizeText(supplier.phone).includes(query)
+      || normalizeText(supplier.whatsapp).includes(query)
+    ));
+  }, [supplierSearch, supplierStats]);
+
   const latestPrices = useMemo(() => {
     const map = new Map();
     quotes
@@ -155,11 +174,67 @@ function SuppliersSection({
       .forEach((quote) => {
         (quote.items ?? []).forEach((line) => {
           const key = `${quote.supplierId}|${normalizeText(line.itemName)}`;
-          if (!map.has(key)) map.set(key, Number(line.unitPriceBs ?? 0));
+          if (!map.has(key)) {
+            map.set(key, {
+              itemName: line.itemName,
+              category: line.category,
+              supplierUnitCostBs: Number(line.unitPriceBs ?? 0),
+              saleUnitPriceBs: Number(line.saleUnitPriceBs ?? 0),
+              quoteCode: quote.quoteCode,
+            });
+          }
         });
       });
     return map;
   }, [quotes]);
+
+  const supplierCatalogRows = useMemo(() => {
+    const rows = [];
+    quotes.forEach((quote) => {
+      (quote.items ?? []).forEach((line) => {
+        rows.push({
+          ...line,
+          supplierId: quote.supplierId,
+          supplierName: quote.supplierName,
+          quoteCode: quote.quoteCode,
+          quoteTitle: quote.title,
+          validUntil: quote.validUntil,
+          createdAt: quote.createdAt,
+        });
+      });
+    });
+    return rows;
+  }, [quotes]);
+
+  const supplierCatalogPreviewRows = useMemo(() => supplierCatalogRows.slice(0, 14), [supplierCatalogRows]);
+
+  const selectedLoanSupplierOffers = useMemo(() => {
+    if (!loanForm.supplierId) return [];
+    const unique = new Map();
+    supplierCatalogRows
+      .filter((line) => line.supplierId === loanForm.supplierId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .forEach((line) => {
+        const key = normalizeText(line.itemName);
+        if (!unique.has(key)) unique.set(key, line);
+      });
+    return Array.from(unique.values());
+  }, [loanForm.supplierId, supplierCatalogRows]);
+
+  const requestTotals = useMemo(() => {
+    const activeLoans = loans.filter((loan) => !['cancelado'].includes(loan.status));
+    const totalCostBs = activeLoans.reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0);
+    const totalSaleBs = activeLoans.reduce(
+      (sum, loan) => sum + (loan.items ?? []).reduce((lineSum, line) => lineSum + getLineSaleTotal(line), 0),
+      0,
+    );
+    return {
+      activeCount: activeLoans.filter((loan) => !['devuelto', 'liquidado'].includes(loan.status)).length,
+      totalCostBs,
+      totalSaleBs,
+      marginBs: totalSaleBs - totalCostBs,
+    };
+  }, [loans]);
 
   const updateLine = (kind, index, field, value) => {
     const setter = kind === 'quote' ? setQuoteLines : setLoanLines;
@@ -170,14 +245,35 @@ function SuppliersSection({
         const next = { ...line, [field]: value };
         if (field === 'itemName') {
           const inventoryItem = items.find((item) => normalizeText(item.name) === normalizeText(value));
+          const price = latestPrices.get(`${supplierId}|${normalizeText(value)}`);
           if (inventoryItem) {
             next.category = inventoryItem.category;
-            const price = latestPrices.get(`${supplierId}|${normalizeText(inventoryItem.name)}`);
-            if (price !== undefined) next.unitPriceBs = String(price);
+            next.saleUnitPriceBs = String(Math.max(0, Number(inventoryItem.rentalPriceBs ?? inventoryItem.unitPriceBs ?? next.saleUnitPriceBs ?? 0)));
+          }
+          if (price !== undefined) {
+            next.category = price.category || next.category;
+            next.unitPriceBs = String(price.supplierUnitCostBs ?? 0);
+            if (Number(price.saleUnitPriceBs ?? 0) > 0) next.saleUnitPriceBs = String(price.saleUnitPriceBs);
           }
         }
         return next;
       }));
+  };
+
+  const applySupplierOfferToLoanLine = (offer, index = 0) => {
+    setLoanLines((current) => {
+      const safeIndex = Math.min(Math.max(0, index), Math.max(0, current.length - 1));
+      return current.map((line, lineIndex) => {
+        if (lineIndex !== safeIndex) return line;
+        return {
+          ...line,
+          itemName: offer.itemName ?? '',
+          category: offer.category ?? '',
+          unitPriceBs: String(Math.max(0, Number(offer.unitPriceBs ?? 0))),
+          saleUnitPriceBs: String(Math.max(0, Number(offer.saleUnitPriceBs ?? 0))),
+        };
+      });
+    });
   };
 
   const submitSupplier = async (event) => {
@@ -269,14 +365,15 @@ function SuppliersSection({
 
   return (
     <section className="panel suppliers-panel">
-      <header className="suppliers-header">
-        <div>
+      <header className="suppliers-header suppliers-hero">
+        <div className="suppliers-hero-copy">
+          <span>Abastecimiento externo</span>
           <h2>Proveedores</h2>
-          <p>Controla listas de precios de proveedores y solicitudes de abastecimiento con costo.</p>
+          <p>Registra quién te alquila, qué items ofrece, cuánto te cobra y cuánto debes pagar cuando cubres faltantes de una orden.</p>
         </div>
         <div className="suppliers-tabs" role="tablist" aria-label="Vistas de proveedores">
-          <button type="button" className={activeView === 'proveedores' ? 'active' : ''} onClick={() => setActiveView('proveedores')}>Proveedores</button>
-          <button type="button" className={activeView === 'cotizaciones' ? 'active' : ''} onClick={() => setActiveView('cotizaciones')}>Cotizaciones</button>
+          <button type="button" className={activeView === 'proveedores' ? 'active' : ''} onClick={() => setActiveView('proveedores')}>Directorio</button>
+          <button type="button" className={activeView === 'cotizaciones' ? 'active' : ''} onClick={() => setActiveView('cotizaciones')}>Items y precios</button>
           <button type="button" className={activeView === 'prestamos' ? 'active' : ''} onClick={() => setActiveView('prestamos')}>Solicitudes</button>
         </div>
       </header>
@@ -285,19 +382,25 @@ function SuppliersSection({
       {error ? <p className="status error">{error}</p> : null}
 
       <div className="suppliers-kpi-grid">
-        <article><span>Proveedores</span><strong>{suppliers.length}</strong></article>
-        <article><span>Cotizaciones</span><strong>{quotes.length}</strong></article>
-        <article><span>Solicitudes activas</span><strong>{loans.filter((loan) => !['devuelto', 'liquidado', 'cancelado'].includes(loan.status)).length}</strong></article>
-        <article><span>Total por pagar</span><strong>{formatBs(loans.filter((loan) => loan.status !== 'cancelado').reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0))}</strong></article>
+        <article><span>Proveedores activos</span><strong>{suppliers.length}</strong><small>Contactos y condiciones</small></article>
+        <article><span>Items con precio</span><strong>{supplierCatalogRows.length}</strong><small>Registrados en listas</small></article>
+        <article><span>Solicitudes activas</span><strong>{requestTotals.activeCount}</strong><small>Pendientes de cierre</small></article>
+        <article><span>Total por pagar</span><strong>{formatBs(requestTotals.totalCostBs)}</strong><small>Margen ref. {formatBs(requestTotals.marginBs)}</small></article>
       </div>
 
       {activeView === 'proveedores' ? (
         <div className="suppliers-content-grid">
           <form className="suppliers-card suppliers-form" onSubmit={submitSupplier}>
-            <h3>{editingSupplierId ? 'Editar proveedor' : 'Nuevo proveedor'}</h3>
+            <div className="suppliers-card-head">
+              <div>
+                <span>01 · Directorio</span>
+                <h3>{editingSupplierId ? 'Editar proveedor' : 'Nuevo proveedor'}</h3>
+                <p>Datos de contacto y condiciones para coordinar entregas, pagos y devoluciones.</p>
+              </div>
+            </div>
             <div className="suppliers-form-grid">
               <label>Nombre<input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} required /></label>
-              <label>Tipo<input value="Proveedor con cobro" disabled /></label>
+              <label>Tipo<input value="Abastecimiento con costo" disabled /></label>
               <label>Contacto<input value={supplierForm.contactName} onChange={(event) => setSupplierForm((current) => ({ ...current, contactName: event.target.value }))} /></label>
               <label>Celular<input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} /></label>
               <label>WhatsApp<input value={supplierForm.whatsapp} onChange={(event) => setSupplierForm((current) => ({ ...current, whatsapp: event.target.value }))} /></label>
@@ -314,22 +417,34 @@ function SuppliersSection({
           </form>
 
           <section className="suppliers-card">
-            <h3>Directorio</h3>
+            <div className="suppliers-card-head inline">
+              <div>
+                <span>Proveedores disponibles</span>
+                <h3>Directorio operativo</h3>
+                <p>Selecciona un proveedor para registrar sus precios o crear una solicitud.</p>
+              </div>
+              <input className="suppliers-search" placeholder="Buscar proveedor..." value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} />
+            </div>
             <div className="suppliers-list">
-              {supplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => (
+              {visibleSupplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => (
                 <article key={supplier.id} className="supplier-row">
                   <div>
                     <strong>{supplier.name}</strong>
-                    <span>Proveedor con lista de precios</span>
-                    <small>{supplier.phone || supplier.whatsapp || 'Sin telefono'} · {quoteCount} cotizaciones · {loanCount} solicitudes</small>
+                    <span>{supplier.contactName || 'Contacto pendiente'} · {supplier.city || 'Sin ciudad'}</span>
+                    <small>{supplier.phone || supplier.whatsapp || 'Sin telefono'} · {quoteCount} lista(s) · {loanCount} solicitud(es)</small>
+                    {supplier.paymentTerms ? <em>{supplier.paymentTerms}</em> : null}
                   </div>
                   <div className="supplier-row-money">
                     <span>Por pagar: {formatBs(pendingPaidBs)}</span>
-                    <button type="button" className="link-button" onClick={() => editSupplier(supplier)}>Editar</button>
+                    <div>
+                      <button type="button" className="link-button" onClick={() => editSupplier(supplier)}>Editar</button>
+                      <button type="button" className="link-button" onClick={() => { setQuoteForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
+                      <button type="button" className="link-button" onClick={() => { setLoanForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
+                    </div>
                   </div>
                 </article>
               ))}
-              {suppliers.length === 0 ? <p className="status">Todavia no hay proveedores.</p> : null}
+              {visibleSupplierStats.length === 0 ? <p className="status">Todavia no hay proveedores para mostrar.</p> : null}
             </div>
           </section>
         </div>
@@ -338,7 +453,13 @@ function SuppliersSection({
       {activeView === 'cotizaciones' ? (
         <div className="suppliers-content-grid">
           <form className="suppliers-card suppliers-form" onSubmit={submitQuote}>
-            <h3>Nueva cotizacion / lista de precios</h3>
+            <div className="suppliers-card-head">
+              <div>
+                <span>02 · Items y precios</span>
+                <h3>Lista de precios del proveedor</h3>
+                <p>Registra lo que puede darte, el costo que te cobra y el precio referencial al cliente.</p>
+              </div>
+            </div>
             <div className="suppliers-form-grid">
               <label>Proveedor<select value={quoteForm.supplierId} onChange={(event) => setQuoteForm((current) => ({ ...current, supplierId: event.target.value }))} required><option value="">Seleccionar...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
               <label>Titulo<input value={quoteForm.title} onChange={(event) => setQuoteForm((current) => ({ ...current, title: event.target.value }))} /></label>
@@ -347,12 +468,17 @@ function SuppliersSection({
             </div>
             <div className="supplier-lines">
               {quoteLines.map((line, index) => (
-                <div key={`quote-line-${index}`} className="supplier-line-row">
-                  <input list="inventory-item-names" placeholder="Item" value={line.itemName} onChange={(event) => updateLine('quote', index, 'itemName', event.target.value)} required />
-                  <input placeholder="Categoria" value={line.category} onChange={(event) => updateLine('quote', index, 'category', event.target.value)} />
-                  <input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('quote', index, 'quantity', event.target.value)} />
-                  <input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('quote', index, 'unitPriceBs', event.target.value)} />
-                  <strong>{formatBs(getLineTotal(line))}</strong>
+                <div key={`quote-line-${index}`} className="supplier-line-card">
+                  <label>Item que ofrece<input list="inventory-item-names" placeholder="Ej: Silla tiffany dorada" value={line.itemName} onChange={(event) => updateLine('quote', index, 'itemName', event.target.value)} required /></label>
+                  <label>Categoria<input placeholder="Sillas, mesas..." value={line.category} onChange={(event) => updateLine('quote', index, 'category', event.target.value)} /></label>
+                  <label>Cant. base<input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('quote', index, 'quantity', event.target.value)} /></label>
+                  <label>Me alquila a Bs<input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('quote', index, 'unitPriceBs', event.target.value)} /></label>
+                  <label>Yo lo doy a Bs<input type="number" min="0" step="0.01" value={line.saleUnitPriceBs} onChange={(event) => updateLine('quote', index, 'saleUnitPriceBs', event.target.value)} /></label>
+                  <div className="supplier-line-summary">
+                    <span>Costo {formatBs(getLineTotal(line))}</span>
+                    <strong>Margen {formatBs(getMarginTotal(line))}</strong>
+                  </div>
+                  {quoteLines.length > 1 ? <button type="button" className="link-button" onClick={() => setQuoteLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button> : null}
                 </div>
               ))}
             </div>
@@ -363,12 +489,46 @@ function SuppliersSection({
             {selectedQuoteSupplier ? <p className="suppliers-hint">Se guardara para {selectedQuoteSupplier.name} como referencia de costos.</p> : null}
           </form>
           <section className="suppliers-card">
-            <h3>Cotizaciones registradas</h3>
-            <div className="suppliers-table-wrap">
-              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Items</th><th>Vigencia</th><th>Total ref.</th></tr></thead><tbody>
-                {quotes.map((quote) => <tr key={quote.id}><td>{quote.quoteCode}</td><td>{quote.supplierName}</td><td>{quote.items.length}</td><td>{formatDate(quote.validFrom)} - {formatDate(quote.validUntil)}</td><td>{formatBs(quote?.totals?.totalBs ?? 0)}</td></tr>)}
-                {quotes.length === 0 ? <tr><td colSpan={5}>Sin cotizaciones de proveedores.</td></tr> : null}
-              </tbody></table>
+            <div className="suppliers-card-head">
+              <div>
+                <span>Catálogo vigente</span>
+                <h3>Items ofrecidos por proveedores</h3>
+                <p>Referencia rápida para saber quién te alquila cada item y a qué costo.</p>
+              </div>
+            </div>
+            <div className="supplier-offer-list">
+              {supplierCatalogPreviewRows.map((line) => (
+                <article key={`${line.quoteCode}-${line.id}`} className="supplier-offer-card">
+                  <div>
+                    <strong>{line.itemName}</strong>
+                    <span>{line.supplierName} · {line.category || 'Sin categoría'}</span>
+                    <small>{line.quoteCode} · Vigencia {formatDate(line.validUntil)}</small>
+                  </div>
+                  <div>
+                    <span>Proveedor {formatBs(line.unitPriceBs)}</span>
+                    <strong>Cliente {formatBs(line.saleUnitPriceBs ?? 0)}</strong>
+                  </div>
+                </article>
+              ))}
+              {supplierCatalogRows.length > supplierCatalogPreviewRows.length ? <p className="suppliers-hint">Mostrando {supplierCatalogPreviewRows.length} de {supplierCatalogRows.length} items registrados.</p> : null}
+              {supplierCatalogRows.length === 0 ? <p className="status">Aún no registraste items de proveedores.</p> : null}
+            </div>
+            <div className="supplier-price-lists">
+              <h4>Listas registradas</h4>
+              {quotes.map((quote) => (
+                <article key={quote.id} className="supplier-price-list-card">
+                  <div>
+                    <strong>{quote.title || quote.quoteCode}</strong>
+                    <span>{quote.supplierName} · {quote.items.length} item(s)</span>
+                    <small>{quote.quoteCode} · {formatDate(quote.validFrom)} - {formatDate(quote.validUntil)}</small>
+                  </div>
+                  <div>
+                    <span>Total proveedor</span>
+                    <strong>{formatBs(quote?.totals?.totalBs ?? 0)}</strong>
+                  </div>
+                </article>
+              ))}
+              {quotes.length === 0 ? <p className="status">Sin listas de precios registradas.</p> : null}
             </div>
           </section>
         </div>
@@ -377,7 +537,13 @@ function SuppliersSection({
       {activeView === 'prestamos' ? (
         <div className="suppliers-content-grid">
           <form className="suppliers-card suppliers-form" onSubmit={submitLoan}>
-            <h3>Registrar solicitud a proveedor</h3>
+            <div className="suppliers-card-head">
+              <div>
+                <span>03 · Solicitud de abastecimiento</span>
+                <h3>Registrar pedido a proveedor</h3>
+                <p>Usa esto cuando una orden necesita items que no tienes disponibles. La solicitud calcula cuánto pagarás.</p>
+              </div>
+            </div>
             <div className="suppliers-form-grid">
               <label>Proveedor<select value={loanForm.supplierId} onChange={(event) => setLoanForm((current) => ({ ...current, supplierId: event.target.value }))} required><option value="">Seleccionar...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
               <label>Fecha solicitada<input type="date" value={loanForm.requestDate} onChange={(event) => setLoanForm((current) => ({ ...current, requestDate: event.target.value }))} required /></label>
@@ -385,14 +551,56 @@ function SuppliersSection({
               <label>Evento / referencia<input value={loanForm.eventName} onChange={(event) => setLoanForm((current) => ({ ...current, eventName: event.target.value }))} /></label>
               <label className="full-width">Notas<textarea value={loanForm.notes} onChange={(event) => setLoanForm((current) => ({ ...current, notes: event.target.value }))} /></label>
             </div>
+            {loanForm.supplierId ? (
+              <section className="supplier-request-offers">
+                <header>
+                  <div>
+                    <strong>Items registrados de {selectedLoanSupplier?.name}</strong>
+                    <span>{selectedLoanSupplierOffers.length} item(s) disponibles en sus listas de precios.</span>
+                  </div>
+                </header>
+                {selectedLoanSupplierOffers.length > 0 ? (
+                  <div className="supplier-request-offer-grid">
+                    {selectedLoanSupplierOffers.map((offer) => (
+                      <button key={`${offer.supplierId}-${offer.itemName}`} type="button" onClick={() => applySupplierOfferToLoanLine(offer, 0)}>
+                        <strong>{offer.itemName}</strong>
+                        <span>{offer.category || 'Sin categoría'}</span>
+                        <small>Proveedor {formatBs(offer.unitPriceBs)} · Cliente {formatBs(offer.saleUnitPriceBs ?? 0)}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="suppliers-hint">Este proveedor todavía no tiene items/precios registrados. Puedes escribir el item manualmente o ir a “Items y precios”.</p>
+                )}
+              </section>
+            ) : null}
             <div className="supplier-lines">
               {loanLines.map((line, index) => (
-                <div key={`loan-line-${index}`} className="supplier-line-row">
-                  <input list="inventory-item-names" placeholder="Item" value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required />
-                  <input placeholder="Categoria" value={line.category} onChange={(event) => updateLine('loan', index, 'category', event.target.value)} />
-                  <input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('loan', index, 'quantity', event.target.value)} />
-                  <input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('loan', index, 'unitPriceBs', event.target.value)} />
-                  <strong>{formatBs(getLineTotal(line))}</strong>
+                <div key={`loan-line-${index}`} className="supplier-line-card request">
+                  <label>
+                    Item faltante
+                    {selectedLoanSupplierOffers.length > 0 ? (
+                      <select value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required>
+                        <option value="">Seleccionar item del proveedor...</option>
+                        {selectedLoanSupplierOffers.map((offer) => (
+                          <option key={`${offer.supplierId}-${offer.itemName}-${index}`} value={offer.itemName}>
+                            {offer.itemName} · {formatBs(offer.unitPriceBs)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input list="inventory-item-names" placeholder="Qué necesitas cubrir" value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required />
+                    )}
+                  </label>
+                  <label>Categoria<input placeholder="Categoria" value={line.category} onChange={(event) => updateLine('loan', index, 'category', event.target.value)} /></label>
+                  <label>Cantidad<input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('loan', index, 'quantity', event.target.value)} /></label>
+                  <label>Me alquila a Bs<input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('loan', index, 'unitPriceBs', event.target.value)} /></label>
+                  <label>Yo lo doy a Bs<input type="number" min="0" step="0.01" value={line.saleUnitPriceBs} onChange={(event) => updateLine('loan', index, 'saleUnitPriceBs', event.target.value)} /></label>
+                  <div className="supplier-line-summary">
+                    <span>Pago {formatBs(getLineTotal(line))}</span>
+                    <strong>Venta {formatBs(getLineSaleTotal(line))}</strong>
+                  </div>
+                  {loanLines.length > 1 ? <button type="button" className="link-button" onClick={() => setLoanLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button> : null}
                 </div>
               ))}
             </div>
@@ -404,16 +612,23 @@ function SuppliersSection({
           </form>
 
           <section className="suppliers-card">
-            <h3>Solicitudes registradas</h3>
+            <div className="suppliers-card-head inline">
+              <div>
+                <span>Control de pago</span>
+                <h3>Solicitudes registradas</h3>
+                <p>Costo proveedor {formatBs(requestTotals.totalCostBs)} · venta ref. {formatBs(requestTotals.totalSaleBs)}</p>
+              </div>
+            </div>
             <div className="suppliers-table-wrap">
-              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Tipo</th><th>Fecha</th><th>Total interno</th><th>Estado</th><th></th></tr></thead><tbody>
+              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Referencia</th><th>Fecha</th><th>A pagar</th><th>Venta ref.</th><th>Estado</th><th></th></tr></thead><tbody>
                 {loans.map((loan) => (
                   <tr key={loan.id}>
                     <td>{loan.loanCode}</td>
                     <td>{loan.supplierName}</td>
-                    <td>Compra a proveedor</td>
+                    <td>{loan.eventName || loan.sourceOrderCode || 'Solicitud manual'}</td>
                     <td>{formatDate(loan.requestDate)}</td>
                     <td>{formatBs(loan?.totals?.totalBs ?? 0)}</td>
+                    <td>{formatBs((loan.items ?? []).reduce((sum, line) => sum + getLineSaleTotal(line), 0))}</td>
                     <td>{loan.status}</td>
                     <td className="supplier-table-actions">
                       <button type="button" className="link-button" onClick={() => setDocumentPreview({ title: loan.loanCode, html: createDocumentHtml(loan) })}>Documento</button>
@@ -422,7 +637,7 @@ function SuppliersSection({
                     </td>
                   </tr>
                 ))}
-                {loans.length === 0 ? <tr><td colSpan={7}>Sin solicitudes registradas.</td></tr> : null}
+                {loans.length === 0 ? <tr><td colSpan={8}>Sin solicitudes registradas.</td></tr> : null}
               </tbody></table>
             </div>
           </section>
