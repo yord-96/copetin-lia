@@ -123,6 +123,34 @@ const isValidSameDayWindow = (start, end) => {
   return startMinutes !== null && endMinutes !== null && endMinutes > startMinutes;
 };
 
+const formatLongSpanishDate = (value) => {
+  const key = getDateKey(value);
+  if (!key) return 'SIN FECHA';
+  const parsed = new Date(`${key}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return 'SIN FECHA';
+  return parsed
+    .toLocaleDateString('es-BO', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    .toUpperCase();
+};
+
+const getContractTransportLabel = (row) => {
+  if (row?.logisticsMode === 'recojo') {
+    return {
+      title: 'Cliente retira',
+      detail: 'Cliente devuelve',
+    };
+  }
+  return {
+    title: 'Envío por equipo',
+    detail: 'Recojo por equipo',
+  };
+};
+
 function OrdersKpiIcon({ kind }) {
   if (kind === 'truck') {
     return <img className="asset-icon truck-asset-icon" src="/imagenes/camion.png" alt="" aria-hidden="true" />;
@@ -288,6 +316,22 @@ const getDateKey = (value) => {
   if (Number.isNaN(parsed.getTime())) return '';
   return getInputDate(parsed);
 };
+
+const getCurrentWeekRange = (baseDate = new Date()) => {
+  const date = new Date(baseDate);
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    from: getInputDate(monday),
+    to: getInputDate(sunday),
+  };
+};
+
+const DEFAULT_CONTRACT_WEEK_RANGE = getCurrentWeekRange();
 
 const getQuoteTimelineLabel = (quote) => {
   const status = normalizeText(quote?.status);
@@ -840,8 +884,8 @@ function ServiceOrdersSection({
   const [quoteQuery, setQuoteQuery] = useState('');
   const [contractFilter, setContractFilter] = useState('all');
   const [contractQuery, setContractQuery] = useState('');
-  const [contractDateFrom, setContractDateFrom] = useState('');
-  const [contractDateTo, setContractDateTo] = useState('');
+  const [contractDateFrom, setContractDateFrom] = useState(DEFAULT_CONTRACT_WEEK_RANGE.from);
+  const [contractDateTo, setContractDateTo] = useState(DEFAULT_CONTRACT_WEEK_RANGE.to);
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -1210,9 +1254,9 @@ function ServiceOrdersSection({
   const searchedContracts = useMemo(() => {
     const text = normalizeText(contractQuery);
     return contractRows.filter((row) => {
-      const createdKey = getDateKey(row.createdAt);
-      if (contractDateFrom && (!createdKey || createdKey < contractDateFrom)) return false;
-      if (contractDateTo && (!createdKey || createdKey > contractDateTo)) return false;
+      const eventKey = getDateKey(row.eventDate);
+      if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
+      if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
       if (!text) return true;
       return (
         normalizeText(row.contractCode).includes(text)
@@ -3961,7 +4005,7 @@ function ServiceOrdersSection({
                     onChange={(event) => setContractQuery(event.target.value)}
                   />
                 </label>
-                <div className="orders-date-range-filter" aria-label="Rango de fechas de contratos">
+                <div className="orders-date-range-filter" aria-label="Rango de fecha del evento">
                   <label>
                     <span>Desde</span>
                     <input type="date" value={contractDateFrom} onChange={(event) => setContractDateFrom(event.target.value)} />
@@ -4015,7 +4059,7 @@ function ServiceOrdersSection({
                     <th>Servicio</th>
                     <th>Estado</th>
                     <th>Garantía</th>
-                    <th>Fecha de creación</th>
+                    <th>Transporte</th>
                     <th>Total</th>
                     <th>Acciones</th>
                   </tr>
@@ -4023,12 +4067,13 @@ function ServiceOrdersSection({
                 <tbody>
                   {filteredContracts.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
+                    const transportMeta = getContractTransportLabel(row);
                     return (
                       <tr key={row.id} className={`orders-row contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}`}>
                         <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
-                            <span>{row.itemsCount} items · {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'}</span>
+                            <span>{formatLongSpanishDate(row.eventDate)}</span>
                           </div>
                         </td>
                         <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
@@ -4063,9 +4108,9 @@ function ServiceOrdersSection({
                           </div>
                         </td>
                         <td>
-                          <div className="orders-created-date-cell">
-                            <strong>{formatDate(row.createdAt)}</strong>
-                            <span>{formatDateTime(row.createdAt)}</span>
+                          <div className="orders-transport-cell">
+                            <strong>{transportMeta.title}</strong>
+                            <span>{transportMeta.detail}</span>
                           </div>
                         </td>
                         <td className="orders-total">{formatBs(row.totalBs)}</td>

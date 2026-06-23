@@ -6781,8 +6781,8 @@ textarea:focus {
 }
 
 .orders-contract-legend i.sent {
-  background: #fbff24;
-  border: 1px solid #cad400;
+  background: #ff7a00;
+  border: 1px solid #db4d00;
 }
 
 .orders-contract-legend i.returned {
@@ -29714,8 +29714,8 @@ button.calendar-dispatch-row:focus-visible {
     border-radius: 0.48rem;
     background: #fff0e7;
     color: #d94a0b !important;
-    padding: 0.28rem 0.45rem;
-    font-size: 0.9rem !important;
+    padding: 0.32rem 0.5rem;
+    font-size: 1.02rem !important;
   }
 
   .orders-view .orders-contracts-table .orders-responsible-cell > span {
@@ -29726,18 +29726,21 @@ button.calendar-dispatch-row:focus-visible {
     color: #d94a0b;
   }
 
-  .orders-created-date-cell {
+  .orders-created-date-cell,
+  .orders-transport-cell {
     display: grid;
     gap: 0.16rem;
   }
 
-  .orders-created-date-cell strong {
+  .orders-created-date-cell strong,
+  .orders-transport-cell strong {
     color: #102b59;
     font-size: 0.84rem;
     line-height: 1.2;
   }
 
-  .orders-created-date-cell span {
+  .orders-created-date-cell span,
+  .orders-transport-cell span {
     color: #7a869c;
     font-size: 0.66rem;
     line-height: 1.25;
@@ -29758,8 +29761,12 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-view .orders-contracts-table td.orders-contract-sent-cell {
-    background: #fbff24 !important;
-    box-shadow: inset 0 0 0 1px rgba(185, 190, 0, 0.4);
+    background: #ff7a00 !important;
+    box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.38);
+  }
+
+  .orders-view .orders-contracts-table td.orders-contract-sent-cell :is(strong, span) {
+    color: #17140c !important;
   }
 
   .orders-view .orders-contracts-table td.orders-contract-returned-cell {
@@ -29768,7 +29775,7 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-view .orders-contracts-table tbody tr:hover td.orders-contract-sent-cell {
-    background: #f5ff00 !important;
+    background: #ff8f1f !important;
   }
 
   .orders-view .orders-contracts-table tbody tr:hover td.orders-contract-returned-cell {
