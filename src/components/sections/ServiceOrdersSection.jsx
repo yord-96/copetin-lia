@@ -1216,7 +1216,7 @@ function ServiceOrdersSection({
       const linkedOrder = orderByContractId.get(String(contract.id)) ?? null;
       const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
-      const isSent = Boolean(linkedOrder?.orderCode || contract.orderCode || contract.rentalId);
+      const isSent = normalizeText(linkedOrder?.inventoryStatus) === 'salio';
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
       const refundBs = Math.max(0, Number(linkedOrder?.refundBs ?? 0));
       const guaranteeStatus = guaranteeBs <= 0
