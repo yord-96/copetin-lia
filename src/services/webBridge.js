@@ -62,6 +62,48 @@ const normalizeText = (value) =>
 const toBusinessUppercase = (value) =>
   String(value ?? '').trim().toLocaleUpperCase('es-BO');
 
+const normalizeComboRule = (line, inventoryItems = []) => {
+  const itemById = new Map(inventoryItems.map((item) => [String(item.id), item]));
+  const requestedMode = String(line?.selectionMode ?? '').trim();
+  const selectionMode = ['item', 'options', 'category'].includes(requestedMode) ? requestedMode : 'item';
+  const category = toBusinessUppercase(line?.category ?? '');
+  const requestedOptionIds = Array.isArray(line?.optionItemIds)
+    ? line.optionItemIds.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  const categoryOptionIds = selectionMode === 'category'
+    ? inventoryItems
+      .filter((item) => normalizeText(item.category) === normalizeText(category))
+      .map((item) => String(item.id))
+    : [];
+  const optionItemIds = [...new Set(
+    (selectionMode === 'category' ? categoryOptionIds : requestedOptionIds)
+      .filter((id) => itemById.has(id)),
+  )];
+  const requestedItemId = String(line?.itemId ?? '').trim();
+  const itemId = optionItemIds.includes(requestedItemId)
+    ? requestedItemId
+    : optionItemIds[0] ?? (itemById.has(requestedItemId) ? requestedItemId : '');
+  const item = itemById.get(itemId);
+  const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+  if (!item || quantity <= 0) return null;
+  const controlsStock =
+    item.controlsStock !== false
+    && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
+    && Number(item.totalStock ?? 0) > 0;
+  return {
+    itemId: item.id,
+    itemName: item.name,
+    quantity,
+    selectionMode: selectionMode === 'item' && optionItemIds.length > 1 ? 'options' : selectionMode,
+    optionItemIds: optionItemIds.length > 0 ? optionItemIds : [item.id],
+    category: selectionMode === 'category' ? category : '',
+    slotLabel: toBusinessUppercase(line?.slotLabel ?? item.name),
+    unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
+    controlsStock,
+    verificationStatus: controlsStock ? 'verified' : 'pending_verification',
+  };
+};
+
 const BUSINESS_UPPERCASE_KEYS = new Set([
   'name',
   'fullName',
@@ -1145,26 +1187,8 @@ const normalizeState = (state) => {
     : [];
 
   const normalizeComboIngredients = (ingredients) => {
-    const itemById = new Map(source.items.map((item) => [String(item.id), item]));
     return (Array.isArray(ingredients) ? ingredients : [])
-      .map((line) => {
-        const itemId = String(line?.itemId ?? '').trim();
-        const item = itemById.get(itemId);
-        const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-        if (!item || quantity <= 0) return null;
-        const controlsStock =
-          item.controlsStock !== false
-          && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
-          && Number(item.totalStock ?? 0) > 0;
-        return {
-          itemId: item.id,
-          itemName: item.name,
-          quantity,
-          unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
-          controlsStock,
-          verificationStatus: controlsStock ? 'verified' : 'pending_verification',
-        };
-      })
+      .map((line) => normalizeComboRule(line, source.items))
       .filter(Boolean);
   };
 
@@ -1409,6 +1433,11 @@ const normalizeState = (state) => {
             comboComponentName: String(line?.comboComponentName ?? '').trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
             comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+            comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+            comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+            comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+            comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+            comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId && line.itemName)
@@ -1512,6 +1541,11 @@ const normalizeState = (state) => {
             comboComponentName: String(line?.comboComponentName ?? '').trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
             comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+            comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+            comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+            comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+            comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+            comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           }))
           .filter((line) => line.itemId)
@@ -5773,10 +5807,12 @@ const buildWeeklyInventoryHtml = ({
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
             <td class="wi-product">
-              ${imageDataUrl
-                ? `<img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(line.itemName)}" />`
-                : '<span class="wi-no-image"></span>'}
-              <strong>${escapeHtml(line.itemName)}</strong>
+              <div class="wi-product-content">
+                ${imageDataUrl
+                  ? `<img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(line.itemName)}" />`
+                  : '<span class="wi-no-image"></span>'}
+                <strong>${escapeHtml(line.itemName)}</strong>
+              </div>
             </td>
             <td class="wi-number"><span class="wi-qty-value">${Math.max(0, Number(line.quantity ?? 0))}</span></td>
             <td class="wi-check"><i></i></td>
@@ -5874,7 +5910,7 @@ const buildWeeklyInventoryHtml = ({
           ? 'Listo'
           : 'Por alistar';
     const contractIdentity = format === 'individual'
-      ? `<div class="wi-order-number is-individual"><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div>`
+      ? ''
       : `<div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>`;
     return `
       <section class="wi-order">
@@ -5926,11 +5962,14 @@ const buildWeeklyInventoryHtml = ({
       .wi-sheet { width: 8.5in; margin: 0 auto; padding: 4.5mm 5.5mm 3.5mm; background: #fff; box-shadow: 0 2mm 8mm rgba(9, 37, 90, .12); }
       .individual-half .wi-sheet { height: 5.5in; overflow: hidden; }
       .individual-full .wi-sheet { min-height: 11in; height: auto; overflow: visible; padding-bottom: 8mm; }
-      .wi-header { display: grid; grid-template-columns: 1fr 56mm; gap: 5mm; align-items: center; padding-bottom: 2.3mm; border-bottom: .45mm solid #09255a; }
+      .wi-header { display: grid; grid-template-columns: minmax(0, 1fr) 42mm 56mm; gap: 4mm; align-items: center; padding-bottom: 2.3mm; border-bottom: .45mm solid #09255a; }
       .wi-brand { display: flex; align-items: center; gap: 3.4mm; }
       .wi-brand-mark { width: 12.5mm; height: 12.5mm; display: grid; place-items: center; border: .7mm solid #ef5000; border-radius: 50%; color: #ef5000; font: 900 20px Arial, sans-serif; }
       .wi-brand h1 { margin: 0; color: #09255a; font: 900 22px Arial, sans-serif; letter-spacing: 0; }
       .wi-brand p { margin: .6mm 0 0; color: #ef5000; font-size: 9.8px; font-weight: 800; text-transform: uppercase; }
+      .wi-header-contract { min-width: 0; text-align: center; }
+      .wi-header-contract small { display: block; color: #8b3b1c; font-size: 8.8px; font-weight: 900; text-transform: uppercase; }
+      .wi-header-contract strong { display: block; margin-top: .5mm; color: #d93600; font-size: 21px; font-weight: 950; line-height: 1; overflow-wrap: anywhere; }
       .wi-period { padding: 2mm 2.4mm; border: .3mm solid #09255a; border-radius: 2mm; text-align: center; }
       .wi-period small, .wi-order small, .wi-order-meta small { display: block; color: #09255a; font-size: 8.4px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
       .wi-period strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 12.2px; line-height: 1.15; }
@@ -5940,55 +5979,54 @@ const buildWeeklyInventoryHtml = ({
       .wi-event-date { min-width: 56mm; padding: 2mm 2.5mm; border: .3mm solid #efb58f; border-radius: 2mm; background: #fff8f3; text-align: center; }
       .wi-event-date small { display: block; color: #9e4b24; font-size: 8.4px; font-weight: 900; text-transform: uppercase; }
       .wi-event-date strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 11.5px; line-height: 1.15; }
-      .wi-order { margin-top: 0; border: .25mm solid #d8deeb; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+      .wi-order { margin-top: 0; border: .32mm solid #09255a; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
       .individual-full .wi-order { overflow: visible; break-inside: auto; page-break-inside: auto; }
-      .wi-order-head { display: grid; grid-template-columns: 40mm 49mm 40mm 1fr 30mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .22mm solid #d8deeb; }
+      .wi-order-head { display: grid; grid-template-columns: 54mm 40mm 1fr 31mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .28mm solid #09255a; }
       .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; }
-      .wi-order-number strong, .wi-order-head .wi-client strong { font-size: 13.2px; line-height: 1.08; }
+      .wi-order-head .wi-client strong { font-size: 13.2px; line-height: 1.08; }
       .wi-order-number { display: flex; align-items: center; gap: 2mm; }
       .wi-order-number.is-individual { display: block; }
       .wi-order-number > span { width: 9.5mm; height: 11mm; display: grid; place-items: center; border-radius: 2mm 2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 16px; font-weight: 900; }
       .wi-status { display: inline-block !important; width: max-content; padding: .7mm 1.2mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 8.8px !important; }
       .wi-operation { display: block; margin-bottom: .6mm; color: #09255a !important; font-size: 9.2px !important; line-height: 1.05 !important; }
-      .wi-order-meta { display: grid; grid-template-columns: 1.2fr 1.2fr .8fr .9fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
-      .wi-order-meta > div { min-height: 9.4mm; padding: 1.2mm 2.6mm 1mm 5.1mm; border-right: .18mm solid #d8deeb; }
+      .wi-order-meta { display: grid; grid-template-columns: 1.28fr 1.18fr .72fr .82fr; gap: 0; padding: 0; border-bottom: .28mm solid #09255a; }
+      .wi-order-meta > div { min-height: 9.4mm; padding: 1.2mm 2.1mm 1mm 3.4mm; border-right: .24mm solid #09255a; }
       .wi-order-meta > div:last-child { border-right: 0; }
       .wi-order-meta strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.2px; line-height: 1.12; }
       .wi-tables { width: 100%; }
       .wi-tables.is-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
       .wi-tables.is-split .wi-table:first-child { border-right: .25mm solid #09255a; border-bottom: 0; }
-      .wi-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .wi-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
       .wi-col-index { width: 4%; }
-      .wi-col-product { width: 35%; }
-      .wi-col-number { width: 10%; }
-      .wi-col-check { width: 6.5%; }
-      .wi-col-report { width: 25%; }
-      .wi-table { border: .3mm solid #aeb9cd; }
+      .wi-col-product { width: 40%; }
+      .wi-col-number { width: 9%; }
+      .wi-col-check { width: 6%; }
+      .wi-col-report { width: 23%; }
+      .wi-table { border: 0; outline: 0; }
       .individual-full .wi-table thead { display: table-header-group; }
       .individual-full .wi-table tr { break-inside: avoid; page-break-inside: avoid; }
-      .wi-table th { padding: 1.1mm .75mm; border-right: .25mm solid #51658b; border-bottom: .25mm solid #51658b; color: #fff; background: #09255a; font-size: 9.5px; line-height: 1.1; text-align: left; vertical-align: middle; }
-      .wi-table .wi-head-groups th { font-size: 10.2px; text-align: center; }
+      .wi-table th { padding: 1.15mm .45mm; border: .26mm solid #09255a; color: #fff; background: #09255a; font-size: 9.8px; line-height: 1.06; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+      .wi-table .wi-head-groups th { font-size: 11px; text-align: center; }
       .wi-table .wi-head-groups th:nth-child(2) { text-align: left; }
-      .wi-table .wi-head-checks th { padding: .9mm .25mm; font-size: 8px; line-height: 1.05; text-align: center; }
+      .wi-table .wi-head-checks th { padding: .85mm .12mm; font-size: 7.4px; line-height: 1.02; text-align: center; }
       .wi-table .wi-group-delivery { background: #123b78; }
       .wi-table .wi-group-pickup { background: #ef5000; }
-      .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left: .42mm solid #09255a; }
-      .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .42mm solid #09255a; }
-      .wi-table td { height: 8.6mm; padding: .65mm .95mm; border-right: .25mm solid #bac4d6; border-bottom: .25mm solid #bac4d6; vertical-align: middle; font-size: 10.3px; font-weight: 800; }
+      .wi-table .wi-pickup-start, .wi-table td:nth-child(6) { border-left-width: .32mm; }
+      .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left-width: .32mm; }
+      .wi-table td { height: 9mm; padding: .65mm .75mm; border: .26mm solid #09255a; vertical-align: middle; font-size: 10.8px; font-weight: 800; }
       .wi-table .wi-manual-row td { height: 8.2mm; }
-      .wi-table tr:last-child td { border-bottom: 0; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
       .wi-table th:nth-child(n+4):nth-child(-n+7) { padding-left: .25mm; padding-right: .25mm; overflow-wrap: anywhere; }
-      .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 5mm; text-align: center !important; }
-      .wi-number { width: 14mm; text-align: left !important; padding-left: 1.8mm !important; font-size: 11.2px !important; font-weight: 900 !important; }
+      .wi-number { width: 14mm; text-align: left !important; padding-left: 1.8mm !important; font-size: 12px !important; font-weight: 900 !important; }
       .wi-qty-value { display: inline-block; min-width: 8mm; text-align: left; }
-      .wi-product { display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
-      .wi-product img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #d8deea; border-radius: .7mm; object-fit: cover; }
+      .wi-product { min-width: 0; }
+      .wi-product-content { width: 100%; min-width: 0; display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
+      .wi-product-content img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #09255a; border-radius: .7mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 10.3px; line-height: 1.08; text-transform: uppercase; }
-      .wi-category-row td { height: 6.5mm !important; padding: 1mm 2mm !important; border-right: 0 !important; color: #09255a; background: #e8eef8; font-size: 11px !important; font-weight: 900 !important; letter-spacing: .25px; text-align: left !important; text-transform: uppercase; }
-      .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #67748c; border-radius: .35mm; }
+      .wi-product-content strong { min-width: 0; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; overflow-wrap: anywhere; }
+      .wi-category-row td { height: 6.8mm !important; padding: 1.05mm 2mm !important; border: .26mm solid #09255a !important; color: #09255a; background: #e8eef8; font-size: 11.8px !important; font-weight: 900 !important; letter-spacing: .25px; text-align: left !important; text-transform: uppercase; }
+      .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #09255a; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
@@ -6004,6 +6042,7 @@ const buildWeeklyInventoryHtml = ({
     <main class="wi-sheet">
       <header class="wi-header">
         <div class="wi-brand"><span class="wi-brand-mark">C</span><div><h1>${escapeHtml(company.name)}</h1><p>Control operativo de inventario</p></div></div>
+        <div class="wi-header-contract"><small>Contrato</small><strong>${escapeHtml(documentCode)}</strong></div>
         <div class="wi-period"><small>Contrato creado</small><strong>${escapeHtml(formatDocumentLongDate(selectedOrder?.contract?.createdAt ?? selectedOrder?.rental?.createdAt))}</strong></div>
       </header>
       <section class="wi-intro">
@@ -7286,25 +7325,8 @@ const createWebBridge = () => ({
         if ((state.inventoryCombos ?? []).some((entry) => !entry.deletedAt && normalizeText(entry.name) === normalizeText(name))) {
           throw new Error('Ya existe un combo con ese nombre.');
         }
-        const itemById = new Map(state.items.map((item) => [String(item.id), item]));
         const ingredients = (Array.isArray(payload?.ingredients) ? payload.ingredients : [])
-          .map((line) => {
-            const item = itemById.get(String(line?.itemId ?? '').trim());
-            const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-            if (!item || quantity <= 0) return null;
-            const controlsStock =
-              item.controlsStock !== false
-              && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
-              && Number(item.totalStock ?? 0) > 0;
-            return {
-              itemId: item.id,
-              itemName: item.name,
-              quantity,
-              unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
-              controlsStock,
-              verificationStatus: controlsStock ? 'verified' : 'pending_verification',
-            };
-          })
+          .map((line) => normalizeComboRule(line, state.items))
           .filter(Boolean);
         if (ingredients.length === 0) {
           throw new Error('Agrega al menos un producto existente al combo.');
@@ -7382,25 +7404,8 @@ const createWebBridge = () => ({
           if (nextImageUrl) combo.imageDataUrl = null;
         }
         if (payload.ingredients !== undefined) {
-          const itemById = new Map(state.items.map((item) => [String(item.id), item]));
           const ingredients = (Array.isArray(payload.ingredients) ? payload.ingredients : [])
-            .map((line) => {
-              const item = itemById.get(String(line?.itemId ?? '').trim());
-              const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-              if (!item || quantity <= 0) return null;
-              const controlsStock =
-                item.controlsStock !== false
-                && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
-                && Number(item.totalStock ?? 0) > 0;
-              return {
-                itemId: item.id,
-                itemName: item.name,
-                quantity,
-                unitPriceBs: Math.max(0, Number(item.rentalPriceBs ?? 0)),
-                controlsStock,
-                verificationStatus: controlsStock ? 'verified' : 'pending_verification',
-              };
-            })
+            .map((line) => normalizeComboRule(line, state.items))
             .filter(Boolean);
           if (ingredients.length === 0) {
             throw new Error('Agrega al menos un producto existente al combo.');
@@ -9529,6 +9534,11 @@ const createWebBridge = () => ({
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
             comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+            comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+            comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+            comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+            comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+            comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
@@ -9688,6 +9698,11 @@ const createWebBridge = () => ({
               comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
               comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
               comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+              comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+              comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+              comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+              comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+              comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
@@ -9846,6 +9861,11 @@ const createWebBridge = () => ({
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
             comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+            comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+            comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+            comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+            comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+            comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
           };
         });
@@ -10004,6 +10024,11 @@ const createWebBridge = () => ({
               comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
               comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
               comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+              comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+              comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+              comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+              comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+              comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             };
           });
@@ -10553,6 +10578,11 @@ const createWebBridge = () => ({
             comboComponentName: String(line?.comboComponentName ?? item.name).trim(),
             comboQuantity: Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1))),
             comboComponentQuantity: Math.max(1, Math.trunc(Number(line?.comboComponentQuantity ?? (Number(line?.quantity ?? 1) / Math.max(1, Number(line?.comboQuantity ?? 1)))))),
+            comboRuleIndex: Math.max(0, Math.trunc(Number(line?.comboRuleIndex ?? 0))),
+            comboSlotLabel: String(line?.comboSlotLabel ?? '').trim(),
+            comboSelectionMode: String(line?.comboSelectionMode ?? 'item').trim() || 'item',
+            comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+            comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * rentalPriceBs,
           };

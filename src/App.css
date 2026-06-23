@@ -10157,6 +10157,18 @@ textarea:focus {
   grid-template-columns: 1fr;
 }
 
+.inventory-view-combos .inventory-content-grid {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.inventory-view-combos .inventory-left-stack,
+.inventory-view-combos .inventory-table-card,
+.inventory-view-combos .inventory-table-wrap-modern {
+  width: 100%;
+  min-width: 0;
+}
+
 .inventory-view-products .inventory-left-stack {
   gap: 0.56rem;
 }
@@ -29075,6 +29087,642 @@ button.calendar-dispatch-row:focus-visible {
 
   .orders-mobile-order-service > span:last-child {
     grid-column: 1 / -1;
+  }
+}
+
+/* Ordenes de servicio: tabla de contratos con lectura operativa */
+@media (min-width: 769px) {
+  .orders-view .orders-commercial-table-wrap:has(.orders-contracts-table) {
+    border: 1px solid #d9e1ef;
+    border-radius: 0.9rem;
+    background: #ffffff;
+    overflow-x: auto;
+    box-shadow: 0 0.65rem 1.6rem rgba(20, 45, 86, 0.07);
+  }
+
+  .orders-view .orders-contracts-table {
+    min-width: 1240px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+
+  .orders-view .orders-contracts-table thead th {
+    height: 2.85rem;
+    border-bottom: 0;
+    padding: 0.72rem 0.65rem;
+    color: #ffffff;
+    background: #102b59;
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .orders-view .orders-contracts-table thead th:first-child {
+    border-radius: 0.78rem 0 0 0;
+  }
+
+  .orders-view .orders-contracts-table thead th:last-child {
+    border-radius: 0 0.78rem 0 0;
+    text-align: center;
+  }
+
+  .orders-view .orders-contracts-table tbody tr {
+    transition: background 150ms ease, box-shadow 150ms ease;
+  }
+
+  .orders-view .orders-contracts-table tbody tr:nth-child(even) td {
+    background: #f8fafd;
+  }
+
+  .orders-view .orders-contracts-table tbody tr:hover td {
+    background: #fff7f1;
+  }
+
+  .orders-view .orders-contracts-table tbody td {
+    height: 4.55rem;
+    padding: 0.68rem 0.65rem;
+    border-bottom: 1px solid #dce4f0;
+    color: #263552;
+    vertical-align: middle;
+    white-space: normal;
+  }
+
+  .orders-view .orders-contracts-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .orders-view .orders-contracts-table tbody td:first-child {
+    border-left: 3px solid #ef5a18;
+  }
+
+  .orders-view .orders-contracts-table th:nth-child(1),
+  .orders-view .orders-contracts-table td:nth-child(1) { width: 11%; }
+  .orders-view .orders-contracts-table th:nth-child(2),
+  .orders-view .orders-contracts-table td:nth-child(2) { width: 13%; }
+  .orders-view .orders-contracts-table th:nth-child(3),
+  .orders-view .orders-contracts-table td:nth-child(3) { width: 10%; }
+  .orders-view .orders-contracts-table th:nth-child(4),
+  .orders-view .orders-contracts-table td:nth-child(4) { width: 14%; }
+  .orders-view .orders-contracts-table th:nth-child(5),
+  .orders-view .orders-contracts-table td:nth-child(5) { width: 14%; }
+  .orders-view .orders-contracts-table th:nth-child(6),
+  .orders-view .orders-contracts-table td:nth-child(6) { width: 8%; }
+  .orders-view .orders-contracts-table th:nth-child(7),
+  .orders-view .orders-contracts-table td:nth-child(7) { width: 11%; }
+  .orders-view .orders-contracts-table th:nth-child(8),
+  .orders-view .orders-contracts-table td:nth-child(8) { width: 9%; }
+  .orders-view .orders-contracts-table th:nth-child(9),
+  .orders-view .orders-contracts-table td:nth-child(9) { width: 10%; }
+
+  .orders-view .orders-contracts-table .orders-cell-main {
+    gap: 0.2rem;
+  }
+
+  .orders-view .orders-contracts-table .orders-cell-main strong,
+  .orders-view .orders-contracts-table .orders-responsible-cell strong {
+    color: #102b59;
+    font-size: 0.76rem;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .orders-view .orders-contracts-table .orders-cell-main span,
+  .orders-view .orders-contracts-table .orders-responsible-cell small {
+    color: #758199;
+    font-size: 0.61rem;
+    line-height: 1.3;
+    white-space: normal;
+  }
+
+  .orders-view .orders-contracts-table .orders-contract-code {
+    display: inline-flex;
+    width: max-content;
+    min-width: 3.2rem;
+    border-radius: 0.48rem;
+    background: #fff0e7;
+    color: #d94a0b !important;
+    padding: 0.28rem 0.45rem;
+    font-size: 0.78rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-responsible-cell > span {
+    width: 2rem;
+    height: 2rem;
+    flex: none;
+    background: #fff0e7;
+    color: #d94a0b;
+  }
+
+  .orders-created-date-cell {
+    display: grid;
+    gap: 0.16rem;
+  }
+
+  .orders-created-date-cell strong {
+    color: #102b59;
+    font-size: 0.74rem;
+    line-height: 1.2;
+  }
+
+  .orders-created-date-cell span {
+    color: #7a869c;
+    font-size: 0.58rem;
+    line-height: 1.25;
+  }
+
+  .orders-view .orders-contracts-table .orders-status-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.62rem;
+  }
+
+  .orders-view .orders-contracts-table .orders-total {
+    color: #102b59;
+    font-size: 0.76rem;
+    font-weight: 900;
+  }
+
+  .orders-view .orders-contracts-table .orders-row-actions {
+    justify-content: center;
+    flex-wrap: nowrap;
+  }
+
+  .orders-view .orders-contracts-table .orders-open-btn {
+    min-height: 1.9rem;
+    border-color: #f1c8b4;
+    border-radius: 0.55rem;
+    background: #fff8f3;
+    color: #d94a0b;
+    padding-inline: 0.62rem;
+  }
+}
+
+/* Recetas configurables de combos */
+.inventory-combo-rule-builder {
+  border: 1px solid #dce4f0;
+  border-radius: 0.9rem;
+  background: #f8fafd;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.inventory-combo-rule-builder > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.inventory-combo-rule-builder > header div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.inventory-combo-rule-builder > header strong {
+  color: #172b4d;
+  font-size: 0.82rem;
+}
+
+.inventory-combo-rule-builder > header span {
+  color: #758199;
+  font-size: 0.64rem;
+}
+
+.inventory-combo-rule-builder > header label {
+  width: 8rem;
+}
+
+.inventory-combo-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0.22rem;
+  border-radius: 0.72rem;
+  background: #e9edf4;
+}
+
+.inventory-combo-mode-switch button {
+  min-height: 2.35rem;
+  border: 0;
+  border-radius: 0.58rem;
+  background: transparent;
+  color: #667188;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-combo-mode-switch button.active {
+  background: #ffffff;
+  color: #d94a0b;
+  box-shadow: 0 0.25rem 0.65rem rgba(31, 43, 67, 0.09);
+}
+
+.inventory-combo-options-gallery .inventory-movement-item-card.selected {
+  border-color: #ef5a18;
+  background: #fff6ef;
+  box-shadow: inset 0 0 0 1px #ef5a18;
+}
+
+.inventory-combo-add-rule {
+  justify-self: end;
+}
+
+.orders-combo-configure-link {
+  margin-top: 0.28rem;
+  border: 0;
+  background: transparent;
+  color: #2765b0;
+  padding: 0;
+  font-size: 0.62rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.orders-combo-configure-link:hover {
+  text-decoration: underline;
+}
+
+.orders-combo-configurator {
+  width: min(880px, calc(100vw - 2rem));
+  max-height: min(860px, calc(100svh - 2rem));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.orders-combo-configurator-kicker {
+  display: block;
+  margin-bottom: 0.18rem;
+  color: #e65313;
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orders-combo-configurator-body {
+  min-height: 0;
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+  overflow-y: auto;
+  background: #f7f8fa;
+}
+
+.orders-combo-option-group {
+  border: 1px solid #dfe5ee;
+  border-radius: 0.9rem;
+  background: #ffffff;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.orders-combo-option-group > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.orders-combo-option-group > header div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.orders-combo-option-group > header strong {
+  color: #172b4d;
+  font-size: 0.78rem;
+}
+
+.orders-combo-option-group > header span {
+  color: #758199;
+  font-size: 0.58rem;
+}
+
+.orders-combo-option-mode {
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #d94a0b !important;
+  padding: 0.28rem 0.5rem;
+  font-weight: 800;
+}
+
+.orders-combo-option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.orders-combo-option-grid > button {
+  min-width: 0;
+  min-height: 4.4rem;
+  border: 1px solid #e0e5ed;
+  border-radius: 0.78rem;
+  background: #ffffff;
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 1.2rem;
+  gap: 0.48rem;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orders-combo-option-grid > button.selected {
+  border-color: #ef5a18;
+  background: #fff7f1;
+  box-shadow: inset 0 0 0 1px #ef5a18;
+}
+
+.orders-combo-option-image {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.62rem;
+  background: #f0f2f5;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: #7b879c;
+}
+
+.orders-combo-option-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.orders-combo-option-grid strong,
+.orders-combo-option-grid small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.orders-combo-option-grid strong {
+  color: #24304a;
+  font-size: 0.66rem;
+}
+
+.orders-combo-option-grid small {
+  margin-top: 0.15rem;
+  color: #7d8799;
+  font-size: 0.53rem;
+}
+
+.orders-combo-option-grid i {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: #ef5a18;
+  font-size: 0.58rem;
+  font-style: normal;
+}
+
+.orders-combo-configurator-price {
+  margin-right: auto;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.orders-combo-configurator-price span {
+  color: #7b8699;
+  font-size: 0.58rem;
+}
+
+.orders-combo-configurator-price strong {
+  color: #d94a0b;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .inventory-combo-rule-builder > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inventory-combo-rule-builder > header label {
+    width: 100%;
+  }
+
+  .orders-combo-configurator {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 94svh !important;
+    border-radius: 1.2rem 1.2rem 0 0 !important;
+  }
+
+  .orders-combo-option-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-combo-configurator .orders-modal-foot {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-combo-configurator-price {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Combos: tabla comercial con la misma jerarquia de Ordenes y Movimientos */
+@media (min-width: 769px) {
+  .inventory-view-combos .inventory-table-wrap-modern {
+    border: 1px solid #d9e1ef;
+    border-radius: 0.9rem;
+    background: #ffffff;
+    overflow-x: auto;
+    box-shadow: 0 0.65rem 1.6rem rgba(20, 45, 86, 0.07);
+  }
+
+  .inventory-view-combos .inventory-table-modern {
+    width: 100%;
+    min-width: 1040px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+
+  .inventory-view-combos .inventory-table-modern thead th {
+    height: 2.85rem;
+    padding: 0.72rem 0.7rem;
+    border: 0;
+    border-bottom: 0;
+    color: #ffffff;
+    background: #102b59;
+    font-size: 0.67rem;
+    font-weight: 850;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .inventory-view-combos .inventory-table-modern thead th:first-child {
+    border-radius: 0.78rem 0 0 0;
+  }
+
+  .inventory-view-combos .inventory-table-modern thead th:last-child {
+    border-radius: 0 0.78rem 0 0;
+    text-align: center;
+  }
+
+  .inventory-view-combos .inventory-table-modern th:nth-child(1),
+  .inventory-view-combos .inventory-table-modern td:nth-child(1) { width: 22%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(2),
+  .inventory-view-combos .inventory-table-modern td:nth-child(2) { width: 29%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(3),
+  .inventory-view-combos .inventory-table-modern td:nth-child(3) { width: 10%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(4),
+  .inventory-view-combos .inventory-table-modern td:nth-child(4) { width: 10%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(5),
+  .inventory-view-combos .inventory-table-modern td:nth-child(5) { width: 9%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(6),
+  .inventory-view-combos .inventory-table-modern td:nth-child(6) { width: 13%; }
+  .inventory-view-combos .inventory-table-modern th:nth-child(7),
+  .inventory-view-combos .inventory-table-modern td:nth-child(7) { width: 7%; }
+
+  .inventory-view-combos .inventory-table-modern tbody tr {
+    transition: background 150ms ease;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody tr:nth-child(even) td {
+    background: #f8fafd;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody tr:hover td {
+    background: #fff7f1;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td {
+    min-width: 0;
+    min-height: 4.9rem;
+    padding: 0.72rem 0.7rem;
+    border: 0;
+    border-bottom: 1px solid #dce4f0;
+    color: #263552;
+    font-size: 0.72rem;
+    vertical-align: middle;
+    white-space: normal;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .inventory-view-combos .inventory-table-modern tbody td:first-child {
+    border-left: 3px solid #ef5a18;
+  }
+
+  .inventory-view-combos .inventory-product-cell {
+    min-width: 0;
+    grid-template-columns: 3.6rem minmax(0, 1fr);
+    gap: 0.7rem;
+  }
+
+  .inventory-view-combos .inventory-product-cell > div:last-child {
+    min-width: 0;
+  }
+
+  .inventory-view-combos .inventory-product-cell strong {
+    color: #102b59;
+    font-size: 0.77rem;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .inventory-view-combos .inventory-product-cell span {
+    margin-top: 0.15rem;
+    color: #778399;
+    font-size: 0.61rem;
+    line-height: 1.3;
+    white-space: normal;
+  }
+
+  .inventory-view-combos .inventory-combo-thumb {
+    width: 3.6rem;
+    height: 3.6rem;
+    border: 1px solid #f0cdbb;
+    border-radius: 0.78rem;
+    background: linear-gradient(145deg, #fff8f3, #ffe9dc);
+    color: #d94a0b;
+    box-shadow: 0 0.35rem 0.8rem rgba(128, 61, 25, 0.08);
+  }
+
+  .inventory-view-combos .inventory-combo-components {
+    max-width: none;
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+  }
+
+  .inventory-view-combos .inventory-combo-components span {
+    border: 1px solid #dce5f2;
+    border-radius: 0.48rem;
+    background: #eef3fa;
+    color: #31517d;
+    padding: 0.28rem 0.48rem;
+    font-size: 0.59rem;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .inventory-view-combos .inventory-table-modern td:nth-child(3) strong {
+    color: #d94a0b;
+    font-size: 0.79rem;
+    font-weight: 900;
+  }
+
+  .inventory-view-combos .inventory-table-modern td:nth-child(4) {
+    color: #66738a;
+    font-weight: 750;
+  }
+
+  .inventory-view-combos .inventory-table-modern td:nth-child(5) {
+    color: #15855a;
+    font-size: 0.8rem;
+    font-weight: 900;
+  }
+
+  .inventory-view-combos .inventory-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    border-radius: 999px;
+    padding: 0.3rem 0.58rem;
+    font-size: 0.6rem;
+    font-weight: 800;
+  }
+
+  .inventory-view-combos .inventory-stock-mode-note {
+    margin-top: 0.25rem;
+    color: #8a6a59;
+    font-size: 0.56rem;
+  }
+
+  .inventory-view-combos .inventory-row-menu {
+    text-align: center;
+  }
+
+  .inventory-view-combos .inventory-row-menu-button {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid #efcdbb;
+    border-radius: 0.58rem;
+    background: #fff8f3;
+    color: #d94a0b;
+  }
+
+  .inventory-view-combos .inventory-table-footer-modern {
+    min-height: 3.1rem;
+    border-top: 1px solid #dce4f0;
+    background: #f8fafd;
+    padding-inline: 0.75rem;
   }
 }
 

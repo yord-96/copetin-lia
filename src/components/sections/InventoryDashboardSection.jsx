@@ -775,6 +775,13 @@ function InventoryDashboardSection({
   const [comboError, setComboError] = useState('');
   const [isSavingCombo, setIsSavingCombo] = useState(false);
   const [comboIngredientQuery, setComboIngredientQuery] = useState('');
+  const [comboRuleDraft, setComboRuleDraft] = useState({
+    mode: 'items',
+    label: '',
+    quantity: '1',
+    category: '',
+    itemIds: [],
+  });
   const [movementModalOpen, setMovementModalOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(EMPTY_MOVEMENT_FORM);
   const [movementError, setMovementError] = useState('');
@@ -1216,6 +1223,10 @@ function InventoryDashboardSection({
             unitPriceBs: Number(item?.price ?? line?.unitPriceBs ?? 0),
             controlsStock: item ? item.controlsStock : Boolean(line?.controlsStock),
             available: Number(item?.available ?? 0),
+            selectionMode: line?.selectionMode ?? 'item',
+            optionItemIds: Array.isArray(line?.optionItemIds) ? line.optionItemIds : [line?.itemId].filter(Boolean),
+            slotLabel: line?.slotLabel ?? line?.itemName ?? '',
+            categoryRule: line?.category ?? '',
           };
         })
         .filter((line) => line.itemId);
@@ -2103,6 +2114,7 @@ function InventoryDashboardSection({
     setComboModalMode('create');
     setComboError('');
     setComboIngredientQuery('');
+    setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
     setComboForm({
       ...EMPTY_COMBO_FORM,
       category: categories.find((entry) => normalizeText(entry.name) === 'combos')?.name ?? 'COMBOS',
@@ -2113,6 +2125,7 @@ function InventoryDashboardSection({
     setComboModalMode('edit');
     setComboError('');
     setComboIngredientQuery('');
+    setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
     setComboForm({
       id: row.id,
       name: row.name,
@@ -2122,6 +2135,10 @@ function InventoryDashboardSection({
       ingredients: row.ingredients.map((line) => ({
         itemId: line.itemId,
         quantity: String(line.quantity),
+        selectionMode: line.selectionMode ?? 'item',
+        optionItemIds: line.optionItemIds ?? [line.itemId],
+        category: line.categoryRule ?? '',
+        slotLabel: line.slotLabel ?? line.itemName ?? '',
       })),
       imageUrl: row.imageUrl ?? null,
       imageDataUrl: row.imageDataUrl ?? null,
@@ -2132,39 +2149,75 @@ function InventoryDashboardSection({
     });
   };
 
-  const addComboIngredient = (itemId) => {
-    setComboForm((current) => {
-      const exists = current.ingredients.some((line) => line.itemId === itemId);
-      if (exists) {
-        return {
-          ...current,
-          ingredients: current.ingredients.map((line) => (
-            line.itemId === itemId
-              ? { ...line, quantity: String(Math.max(1, Math.trunc(Number(line.quantity ?? 1))) + 1) }
-              : line
-          )),
-        };
-      }
-      return {
-        ...current,
-        ingredients: [...current.ingredients, { itemId, quantity: '1' }],
-      };
-    });
+  const toggleComboRuleItem = (itemId) => {
+    setComboRuleDraft((current) => ({
+      ...current,
+      itemIds: current.itemIds.includes(itemId)
+        ? current.itemIds.filter((id) => id !== itemId)
+        : [...current.itemIds, itemId],
+    }));
   };
 
-  const updateComboIngredientQuantity = (itemId, value) => {
+  const addComboRule = () => {
+    const quantity = Math.max(1, Math.trunc(Number(comboRuleDraft.quantity ?? 1)));
+    if (comboRuleDraft.mode === 'category') {
+      if (!comboRuleDraft.category) {
+        setComboError('Selecciona una categoria para este componente.');
+        return;
+      }
+      const candidates = inventoryRows.filter((row) => normalizeText(row.category) === normalizeText(comboRuleDraft.category));
+      if (candidates.length === 0) {
+        setComboError('La categoria seleccionada no tiene productos.');
+        return;
+      }
+      const defaultItem = candidates[0];
+      setComboForm((current) => ({
+        ...current,
+        ingredients: [...current.ingredients, {
+          itemId: defaultItem.id,
+          quantity: String(quantity),
+          selectionMode: 'category',
+          category: comboRuleDraft.category,
+          optionItemIds: candidates.map((row) => row.id),
+          slotLabel: comboRuleDraft.label.trim() || comboRuleDraft.category,
+        }],
+      }));
+    } else {
+      if (comboRuleDraft.itemIds.length === 0) {
+        setComboError('Selecciona uno o mas productos alternativos.');
+        return;
+      }
+      const defaultItem = inventoryRows.find((row) => row.id === comboRuleDraft.itemIds[0]);
+      setComboForm((current) => ({
+        ...current,
+        ingredients: [...current.ingredients, {
+          itemId: comboRuleDraft.itemIds[0],
+          quantity: String(quantity),
+          selectionMode: comboRuleDraft.itemIds.length > 1 ? 'options' : 'item',
+          category: '',
+          optionItemIds: comboRuleDraft.itemIds,
+          slotLabel: comboRuleDraft.label.trim() || defaultItem?.name || 'Componente',
+        }],
+      }));
+    }
+    setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
+    setComboIngredientQuery('');
+    setComboError('');
+  };
+
+  const updateComboIngredientQuantity = (lineIndex, value) => {
     setComboForm((current) => ({
       ...current,
-      ingredients: current.ingredients.map((line) => (
-        line.itemId === itemId ? { ...line, quantity: value } : line
+      ingredients: current.ingredients.map((line, index) => (
+        index === lineIndex ? { ...line, quantity: value } : line
       )),
     }));
   };
 
-  const removeComboIngredient = (itemId) => {
+  const removeComboIngredient = (lineIndex) => {
     setComboForm((current) => ({
       ...current,
-      ingredients: current.ingredients.filter((line) => line.itemId !== itemId),
+      ingredients: current.ingredients.filter((_, index) => index !== lineIndex),
     }));
   };
 
@@ -2441,6 +2494,10 @@ function InventoryDashboardSection({
       ingredients: comboForm.ingredients.map((line) => ({
         itemId: line.itemId,
         quantity: Math.max(1, Math.trunc(Number(line.quantity ?? 1))),
+        selectionMode: line.selectionMode ?? 'item',
+        optionItemIds: line.optionItemIds ?? [line.itemId],
+        category: line.category ?? '',
+        slotLabel: line.slotLabel ?? '',
       })),
     };
 
@@ -2640,14 +2697,17 @@ function InventoryDashboardSection({
       : undefined;
 
   const comboIngredientRows = comboForm.ingredients
-    .map((line) => {
+    .map((line, index) => {
       const item = inventoryRows.find((row) => row.id === line.itemId);
       if (!item) return null;
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+      const optionRows = inventoryRows.filter((row) => (line.optionItemIds ?? [line.itemId]).includes(row.id));
       return {
         ...line,
+        lineIndex: index,
         quantity,
         item,
+        optionRows,
         lineValue: quantity * Number(item.price ?? 0),
       };
     })
@@ -4102,22 +4162,76 @@ function InventoryDashboardSection({
                   {comboForm.imageFileName ? <small>{comboForm.imageFileName}</small> : null}
                 </div>
               </div>
-              <div className="full-width inventory-movement-product-picker">
-                Productos del combo
-                <input
-                  type="search"
-                  value={comboIngredientQuery}
-                  onChange={(event) => setComboIngredientQuery(event.target.value)}
-                  placeholder="Buscar ingrediente por nombre, codigo o categoria..."
-                />
-                <div className="inventory-movement-gallery">
-                  {comboSelectableRows.map((row) => (
-                    <button
-                      key={row.id}
-                      type="button"
-                      className="inventory-movement-item-card"
-                      onClick={() => addComboIngredient(row.id)}
+              <div className="full-width inventory-combo-rule-builder">
+                <header>
+                  <div>
+                    <strong>Agregar componente</strong>
+                    <span>Define si el cliente podrá elegir entre productos específicos o toda una categoría.</span>
+                  </div>
+                  <label>
+                    Cantidad por combo
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={comboRuleDraft.quantity}
+                      onChange={(event) => setComboRuleDraft((current) => ({ ...current, quantity: event.target.value }))}
+                    />
+                  </label>
+                </header>
+                <div className="inventory-combo-mode-switch">
+                  <button
+                    type="button"
+                    className={comboRuleDraft.mode === 'items' ? 'active' : ''}
+                    onClick={() => setComboRuleDraft((current) => ({ ...current, mode: 'items', category: '' }))}
+                  >
+                    Productos permitidos
+                  </button>
+                  <button
+                    type="button"
+                    className={comboRuleDraft.mode === 'category' ? 'active' : ''}
+                    onClick={() => setComboRuleDraft((current) => ({ ...current, mode: 'category', itemIds: [] }))}
+                  >
+                    Categoría completa
+                  </button>
+                </div>
+                <label>
+                  Nombre visible del componente
+                  <input
+                    value={comboRuleDraft.label}
+                    onChange={(event) => setComboRuleDraft((current) => ({ ...current, label: event.target.value }))}
+                    placeholder="Ej: Mesa, Mantel, Capuchón o Sillas"
+                  />
+                </label>
+                {comboRuleDraft.mode === 'category' ? (
+                  <label>
+                    Categoría permitida
+                    <select
+                      value={comboRuleDraft.category}
+                      onChange={(event) => setComboRuleDraft((current) => ({ ...current, category: event.target.value }))}
                     >
+                      <option value="">Seleccionar categoría...</option>
+                      {categoriesList.map((category) => (
+                        <option key={category.name} value={category.name}>{category.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <input
+                      type="search"
+                      value={comboIngredientQuery}
+                      onChange={(event) => setComboIngredientQuery(event.target.value)}
+                      placeholder="Buscar productos permitidos..."
+                    />
+                    <div className="inventory-movement-gallery inventory-combo-options-gallery">
+                      {comboSelectableRows.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          className={`inventory-movement-item-card${comboRuleDraft.itemIds.includes(row.id) ? ' selected' : ''}`}
+                          onClick={() => toggleComboRuleItem(row.id)}
+                        >
                       <div className="inventory-product-cell">
                         {getProductImageSrc(row) ? (
                           <div className="inventory-product-thumb">
@@ -4139,14 +4253,19 @@ function InventoryDashboardSection({
                       </div>
                       <div className="inventory-movement-item-meta">
                         <span>{row.controlsStock ? `Disponible: ${row.available}` : 'No descuenta aun'}</span>
-                        <span>Agregar</span>
+                        <span>{comboRuleDraft.itemIds.includes(row.id) ? 'Seleccionado' : 'Elegir'}</span>
                       </div>
-                    </button>
-                  ))}
-                  {comboSelectableRows.length === 0 ? (
-                    <p className="inventory-movement-empty">No hay productos con ese criterio.</p>
-                  ) : null}
-                </div>
+                        </button>
+                      ))}
+                      {comboSelectableRows.length === 0 ? (
+                        <p className="inventory-movement-empty">No hay productos con ese criterio.</p>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+                <button type="button" className="primary-button inventory-combo-add-rule" onClick={addComboRule}>
+                  + Agregar componente al combo
+                </button>
               </div>
               <div className="full-width inventory-combo-editor">
                 <header>
@@ -4157,10 +4276,14 @@ function InventoryDashboardSection({
                   <p className="status">Aun no agregaste ingredientes.</p>
                 ) : (
                   comboIngredientRows.map((line) => (
-                    <div key={line.itemId} className="inventory-combo-line">
+                    <div key={`${line.itemId}-${line.lineIndex}`} className="inventory-combo-line">
                       <span>
-                        <strong>{line.item.name}</strong>
-                        <small>{line.item.category} - {line.item.controlsStock ? 'controla stock' : 'por validar'}</small>
+                        <strong>{line.slotLabel || line.item.name}</strong>
+                        <small>
+                          {line.selectionMode === 'category'
+                            ? `Categoría: ${line.category} · ${line.optionRows.length} opciones`
+                            : `${line.optionRows.length} producto(s) permitido(s)`}
+                        </small>
                       </span>
                       <label>
                         Cant.
@@ -4169,11 +4292,11 @@ function InventoryDashboardSection({
                           min="1"
                           step="1"
                           value={line.quantity}
-                          onChange={(event) => updateComboIngredientQuantity(line.itemId, event.target.value)}
+                          onChange={(event) => updateComboIngredientQuantity(line.lineIndex, event.target.value)}
                         />
                       </label>
-                      <strong>{formatBs(line.lineValue)}</strong>
-                      <button type="button" className="danger-button" onClick={() => removeComboIngredient(line.itemId)}>
+                      <strong>{line.quantity} por combo</strong>
+                      <button type="button" className="danger-button" onClick={() => removeComboIngredient(line.lineIndex)}>
                         Quitar
                       </button>
                     </div>

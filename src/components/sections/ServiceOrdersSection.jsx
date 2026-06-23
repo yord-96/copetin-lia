@@ -852,6 +852,7 @@ function ServiceOrdersSection({
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [comboConfigurator, setComboConfigurator] = useState(null);
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1997,6 +1998,11 @@ function ServiceOrdersSection({
           : 1
       ),
       comboPricingRole: line.comboPricingRole ?? '',
+      comboRuleIndex: line.comboRuleIndex ?? index,
+      comboSlotLabel: line.comboSlotLabel ?? '',
+      comboSelectionMode: line.comboSelectionMode ?? 'item',
+      comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
+      comboCategory: line.comboCategory ?? '',
     })),
     services: (record?.services ?? []).map((service, index) => ({
       id: service?.id ?? `service-${index}`,
@@ -2321,38 +2327,83 @@ function ServiceOrdersSection({
     });
   };
 
-  const addDraftCombo = (comboId) => {
-    const combo = (combos ?? []).find((entry) => entry.id === comboId);
-    if (!combo) return;
-    const comboLineKey = `combo-${combo.id}-${Date.now()}`;
+  const getComboRuleOptions = (rule) => {
+    if (rule.selectionMode === 'category' && rule.category) {
+      return items.filter((item) => normalizeText(item.category) === normalizeText(rule.category));
+    }
+    const optionIds = Array.isArray(rule.optionItemIds) && rule.optionItemIds.length > 0
+      ? rule.optionItemIds
+      : [rule.itemId];
+    return optionIds.map((id) => items.find((item) => item.id === id)).filter(Boolean);
+  };
+
+  const appendConfiguredCombo = (combo, selections = {}, existingComboLineKey = '') => {
+    const comboLineKey = existingComboLineKey || `combo-${combo.id}-${Date.now()}`;
     const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
-    setDraft((current) => ({
-      ...current,
-      items: [
-        ...current.items,
-        ...ingredients.map((line, index) => {
-          const item = items.find((entry) => entry.id === line.itemId);
+    setDraft((current) => {
+      const previousComboQuantity = existingComboLineKey
+        ? Math.max(1, Number(current.items.find((line) => line.comboLineKey === existingComboLineKey)?.comboQuantity ?? 1))
+        : 1;
+      const previousItems = existingComboLineKey
+        ? current.items.filter((line) => line.comboLineKey !== existingComboLineKey)
+        : current.items;
+      return {
+        ...current,
+        items: [
+          ...previousItems,
+          ...ingredients.map((line, index) => {
+          const options = getComboRuleOptions(line);
+          const selectedItemId = selections[index] ?? line.itemId ?? options[0]?.id;
+          const item = items.find((entry) => entry.id === selectedItemId) ?? options[0];
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
           const comboPrice = Math.max(0, Number(combo.rentalPriceBs ?? 0));
           return {
-            lineKey: `${comboLineKey}-${line.itemId}-${index}`,
-            itemId: line.itemId,
-            quantity,
+            lineKey: `${comboLineKey}-${item?.id ?? line.itemId}-${index}`,
+            itemId: item?.id ?? line.itemId,
+            quantity: quantity * previousComboQuantity,
             unitPriceBs: index === 0 ? comboPrice : 0,
-            lineTotalBs: index === 0 ? comboPrice : 0,
+            lineTotalBs: index === 0 ? comboPrice * previousComboQuantity : 0,
             comboId: combo.id,
             comboName: combo.name,
             comboLineKey,
             comboComponentName: item?.name ?? line.itemName ?? '',
-            comboQuantity: 1,
+            comboQuantity: previousComboQuantity,
             comboComponentQuantity: quantity,
             comboPricingRole: index === 0 ? 'price' : 'component',
+            comboRuleIndex: index,
+            comboSlotLabel: line.slotLabel ?? line.itemName ?? `Componente ${index + 1}`,
+            comboSelectionMode: line.selectionMode ?? 'item',
+            comboOptionItemIds: options.map((option) => option.id),
+            comboCategory: line.category ?? '',
             controlsStock: item?.controlsStock ?? line.controlsStock,
             verificationStatus: item?.verificationStatus ?? line.verificationStatus,
           };
         }),
-      ],
-    }));
+        ],
+      };
+    });
+  };
+
+  const openComboConfigurator = (combo, existingComboLineKey = '') => {
+    const selections = {};
+    (combo.ingredients ?? []).forEach((line, index) => {
+      const existingLine = existingComboLineKey
+        ? draft.items.find((entry) => entry.comboLineKey === existingComboLineKey && Number(entry.comboRuleIndex) === index)
+        : null;
+      selections[index] = existingLine?.itemId ?? line.itemId ?? getComboRuleOptions(line)[0]?.id ?? '';
+    });
+    setComboConfigurator({ combo, existingComboLineKey, selections, search: {} });
+  };
+
+  const addDraftCombo = (comboId) => {
+    const combo = (combos ?? []).find((entry) => entry.id === comboId);
+    if (!combo) return;
+    const configurable = (combo.ingredients ?? []).some((line) => getComboRuleOptions(line).length > 1);
+    if (configurable) {
+      openComboConfigurator(combo);
+      return;
+    }
+    appendConfiguredCombo(combo);
   };
 
   const setQuickItemField = (field, value) => {
@@ -2759,6 +2810,11 @@ function ServiceOrdersSection({
         comboQuantity: line.comboQuantity ?? 1,
         comboComponentQuantity: line.comboComponentQuantity ?? 1,
         comboPricingRole: line.comboPricingRole ?? '',
+        comboRuleIndex: line.comboRuleIndex ?? 0,
+        comboSlotLabel: line.comboSlotLabel ?? '',
+        comboSelectionMode: line.comboSelectionMode ?? 'item',
+        comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
+        comboCategory: line.comboCategory ?? '',
       })),
       services: selectedServices.map((service) => ({
         id: service.id,
@@ -3914,7 +3970,7 @@ function ServiceOrdersSection({
                     <th>Responsable</th>
                     <th>Servicio</th>
                     <th>Estado</th>
-                    <th>Orden vinculada</th>
+                    <th>Fecha de creación</th>
                     <th>Total</th>
                     <th>Acciones</th>
                   </tr>
@@ -3926,8 +3982,8 @@ function ServiceOrdersSection({
                       <tr key={row.id} className={`orders-row contract-${row.status}`}>
                         <td>
                           <div className="orders-cell-main">
-                            <strong>{row.contractCode}</strong>
-                            <span>{row.itemsCount} items | {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'} | {formatDateTime(row.createdAt)}</span>
+                            <strong className="orders-contract-code">{row.contractCode}</strong>
+                            <span>{row.itemsCount} items · {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'}</span>
                           </div>
                         </td>
                         <td>
@@ -3961,7 +4017,12 @@ function ServiceOrdersSection({
                         <td>
                           <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
                         </td>
-                        <td>{row.orderCode || '-'}</td>
+                        <td>
+                          <div className="orders-created-date-cell">
+                            <strong>{formatDate(row.createdAt)}</strong>
+                            <span>{formatDateTime(row.createdAt)}</span>
+                          </div>
+                        </td>
                         <td className="orders-total">{formatBs(row.totalBs)}</td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
@@ -4940,6 +5001,115 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
+      {comboConfigurator ? (
+        <div className="orders-modal-backdrop orders-combo-configurator-backdrop" onClick={() => setComboConfigurator(null)}>
+          <section className="orders-modal orders-combo-configurator" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <span className="orders-combo-configurator-kicker">Configurar combo</span>
+                <h3>{comboConfigurator.combo.name}</h3>
+                <p>Elige el tipo, color o modelo para cada componente. El precio del combo no cambia.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setComboConfigurator(null)} aria-label="Cerrar">
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <div className="orders-combo-configurator-body">
+              {(comboConfigurator.combo.ingredients ?? []).map((rule, index) => {
+                const allOptions = getComboRuleOptions(rule);
+                const search = normalizeText(comboConfigurator.search[index] ?? '');
+                const visibleOptions = allOptions.filter((item) => (
+                  !search
+                  || normalizeText(item.name).includes(search)
+                  || normalizeText(item.category).includes(search)
+                  || normalizeText(item.itemColor).includes(search)
+                  || normalizeText(item.brand).includes(search)
+                ));
+                return (
+                  <article key={`${rule.slotLabel ?? rule.itemName}-${index}`} className="orders-combo-option-group">
+                    <header>
+                      <div>
+                        <strong>{rule.slotLabel || rule.itemName || `Componente ${index + 1}`}</strong>
+                        <span>{Math.max(1, Number(rule.quantity ?? 1))} por combo · {allOptions.length} opciones</span>
+                      </div>
+                      <span className="orders-combo-option-mode">
+                        {rule.selectionMode === 'category' ? rule.category : 'Productos elegidos'}
+                      </span>
+                    </header>
+                    {allOptions.length > 4 ? (
+                      <label className="orders-icon-field">
+                        <span>
+                          <i aria-hidden="true"><Search /></i>
+                          <input
+                            type="search"
+                            placeholder={`Buscar ${rule.slotLabel || 'opcion'}...`}
+                            value={comboConfigurator.search[index] ?? ''}
+                            onChange={(event) => setComboConfigurator((current) => ({
+                              ...current,
+                              search: { ...current.search, [index]: event.target.value },
+                            }))}
+                          />
+                        </span>
+                      </label>
+                    ) : null}
+                    <div className="orders-combo-option-grid">
+                      {visibleOptions.map((item) => {
+                        const selected = comboConfigurator.selections[index] === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={selected ? 'selected' : ''}
+                            onClick={() => setComboConfigurator((current) => ({
+                              ...current,
+                              selections: { ...current.selections, [index]: item.id },
+                            }))}
+                          >
+                            <span className="orders-combo-option-image">
+                              {getProductImageSrc(item) ? (
+                                <ProductImage item={item} alt={item.name} fallback={<Box aria-hidden="true" />} />
+                              ) : <Box aria-hidden="true" />}
+                            </span>
+                            <span>
+                              <strong>{item.name}</strong>
+                              <small>{[item.itemColor, item.brand, item.category].filter(Boolean).join(' · ')}</small>
+                            </span>
+                            <i aria-hidden="true">{selected ? '✓' : ''}</i>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <footer className="orders-modal-foot">
+              <div className="orders-combo-configurator-price">
+                <span>Precio por combo</span>
+                <strong>{formatBs(comboConfigurator.combo.rentalPriceBs)}</strong>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setComboConfigurator(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  appendConfiguredCombo(
+                    comboConfigurator.combo,
+                    comboConfigurator.selections,
+                    comboConfigurator.existingComboLineKey,
+                  );
+                  setComboConfigurator(null);
+                }}
+              >
+                Confirmar selección
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
       {serviceModalOpen ? (
         <div className="orders-modal-backdrop orders-service-backdrop" onClick={closeServiceModal}>
           <div className="orders-modal orders-service-modal" onClick={(event) => event.stopPropagation()}>
@@ -5817,6 +5987,18 @@ function ServiceOrdersSection({
                                   Combo: {line.comboName} · {line.comboQuantity} paquete(s)
                                   {line.comboComponentQuantity > 1 ? ` · ${line.comboComponentQuantity} por paquete` : ''}
                                 </p>
+                              ) : null}
+                              {line.comboId && line.comboPricingRole === 'price' ? (
+                                <button
+                                  type="button"
+                                  className="orders-combo-configure-link"
+                                  onClick={() => {
+                                    const combo = (combos ?? []).find((entry) => entry.id === line.comboId);
+                                    if (combo) openComboConfigurator(combo, line.comboLineKey);
+                                  }}
+                                >
+                                  Tipo, color y modelo
+                                </button>
                               ) : null}
                               {detailParts.length > 0 ? (
                                 <div className="orders-item-detail-chips">
