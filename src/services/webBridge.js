@@ -4865,12 +4865,12 @@ const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
 const getReferenceContractStyles = () => `
-  @page { size: legal portrait; margin: 0; }
+  @page { size: 216mm 330mm; margin: 7mm; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
     margin: 0;
-    padding: 12px 0;
+    padding: 10px 0;
     color: #161616;
     background: #d9d9d9;
     font-family: Arial, Helvetica, sans-serif;
@@ -4881,9 +4881,9 @@ const getReferenceContractStyles = () => `
   .rc-sheet {
     position: relative;
     width: 216mm;
-    min-height: 355.6mm;
+    min-height: 330mm;
     margin: 0 auto;
-    padding: 3mm 8mm 45mm;
+    padding: 8mm 10mm 10mm;
     display: flex;
     flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
@@ -4891,10 +4891,10 @@ const getReferenceContractStyles = () => `
   }
   .rc-top {
     display: grid;
-    grid-template-columns: minmax(0, 68mm) minmax(0, 1fr) 37mm;
-    gap: 4mm;
+    grid-template-columns: minmax(0, 70mm) minmax(0, 1fr) 36mm;
+    gap: 5mm;
     align-items: center;
-    min-height: 24mm;
+    min-height: 25mm;
   }
   .rc-logo { min-width: 0; overflow: hidden; }
   .rc-logo img { display: block; width: 64mm; max-width: 100%; height: auto; }
@@ -4946,7 +4946,7 @@ const getReferenceContractStyles = () => `
     text-transform: uppercase;
   }
   .rc-status img { width: 3.8mm; height: 3.8mm; margin-right: 1.5mm; vertical-align: -1mm; filter: brightness(0) invert(1); }
-  .rc-title { padding: .3mm 0 1.5mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
+  .rc-title { padding: 2mm 0 2mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
   .rc-title h1 { margin: 0; font-size: 25px; font-weight: 500; letter-spacing: 1.2px; }
   .rc-title p {
     margin: .7mm 0 0;
@@ -4991,7 +4991,7 @@ const getReferenceContractStyles = () => `
   .rc-company strong { display: block; font: 800 9px Arial, sans-serif; text-transform: uppercase; }
   .rc-company .company-name { font: 800 12px Arial, sans-serif; text-transform: uppercase; }
   .rc-company span { display: block; margin-top: .35mm; font-size: 8.2px; line-height: 1.15; }
-  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 4mm; margin-top: 1.8mm; }
+  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 5mm; margin-top: 3mm; }
   .rc-block-title {
     display: flex;
     align-items: baseline;
@@ -5061,7 +5061,7 @@ const getReferenceContractStyles = () => `
   .rc-mode-row img { width: 4.8mm; height: 4.8mm; object-fit: contain; }
   .rc-mode-row strong { display: block; }
   .rc-mode-row span { display: block; margin-top: .35mm; }
-  .rc-items { margin-top: 1.2mm; }
+  .rc-items { margin-top: 3mm; }
   .rc-table {
     width: 100%;
     border-collapse: separate;
@@ -5074,21 +5074,21 @@ const getReferenceContractStyles = () => `
   .rc-table thead { display: table-header-group; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
-    padding: 1.3mm 1.6mm;
+    padding: 1.45mm 1.7mm;
     color: #fff;
     background: linear-gradient(90deg, #181818, #323232);
-    font-size: 8.7px;
+    font-size: 8.9px;
     text-align: left;
     text-transform: uppercase;
   }
   .rc-table th.num, .rc-table td.num, .rc-table th.check, .rc-table td.check { text-align: center; white-space: nowrap; }
   .rc-table th.check { font-size: 7px; letter-spacing: 0; overflow-wrap: anywhere; white-space: normal; }
   .rc-table td {
-    padding: 1mm 1.5mm;
+    padding: 1.1mm 1.55mm;
     border-right: .25mm solid #e8ded0;
     border-bottom: .25mm solid #e8ded0;
     vertical-align: middle;
-    font-size: 9.8px;
+    font-size: 10px;
   }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
@@ -5157,8 +5157,8 @@ const getReferenceContractStyles = () => `
   .rc-bottom {
     display: grid;
     grid-template-columns: minmax(0, .62fr) minmax(0, 1fr);
-    gap: 3mm;
-    margin-top: 1.6mm;
+    gap: 4mm;
+    margin-top: 3mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -5176,7 +5176,7 @@ const getReferenceContractStyles = () => `
   .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
   .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
   .rc-terms-section {
-    margin-top: 0;
+    margin-top: 4mm;
     padding-top: 0;
     border-top: 0;
     break-inside: avoid;
@@ -5196,7 +5196,7 @@ const getReferenceContractStyles = () => `
     border-radius: 1.5mm;
     background: #fffdf9;
   }
-  .rc-terms-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.2mm; margin: 0; padding: 0; list-style: none; }
+  .rc-terms-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.4mm; margin: 0; padding: 0; list-style: none; }
   .rc-terms-list li { display: grid; grid-template-columns: 4.2mm minmax(0, 1fr); gap: 1.2mm; font-size: 8.6px; line-height: 1.28; }
   .rc-terms-list b {
     width: 3.5mm;
@@ -5238,7 +5238,7 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 4mm;
-    margin-top: 2mm;
+    margin-top: 2.5mm;
     padding-top: 1.5mm;
     border-top: .3mm solid #a66a20;
     color: #555;
@@ -5247,12 +5247,10 @@ const getReferenceContractStyles = () => `
   .rc-footer strong { color: #a66a20; font-size: 9px; }
   .rc-footer span:last-child { text-align: right; }
   .rc-page-bottom {
-    position: absolute;
-    right: 8mm;
-    bottom: 4mm;
-    left: 8mm;
-    z-index: 2;
-    background: #fffdfa;
+    position: static;
+    margin-top: auto;
+    padding-top: 4mm;
+    background: transparent;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -5270,19 +5268,21 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
   @media print {
     html, body {
-      width: 216mm;
-      height: 355.6mm;
+      width: auto;
+      height: auto;
       margin: 0;
       padding: 0;
       background: #fff;
     }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
-      position: absolute;
-      inset: 0;
+      position: relative;
+      width: auto;
+      min-height: auto;
       margin: 0;
-      padding: 3mm 8mm 45mm;
+      padding: 0;
       box-shadow: none;
+      background: #fffdfa;
     }
   }
 `;
