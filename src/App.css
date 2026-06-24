@@ -30004,9 +30004,46 @@ button.calendar-dispatch-row:focus-visible {
 }
 
 .orders-combo-configurator {
-  width: min(880px, calc(100vw - 2rem));
+  width: min(1040px, calc(100vw - 2rem));
   max-height: min(860px, calc(100svh - 2rem));
   grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.orders-combo-configurator .orders-modal-head {
+  grid-template-columns: minmax(0, 1fr) 10.5rem auto;
+  align-items: center;
+}
+
+.orders-combo-quantity-field {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.48rem;
+  border: 1px solid #ffd1bd;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, #fff8f3, #ffffff);
+}
+
+.orders-combo-quantity-field span {
+  color: #8b3a15;
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orders-combo-quantity-field input {
+  width: 100%;
+  border: 1px solid #f2b798;
+  border-radius: 0.55rem;
+  padding: 0.42rem 0.55rem;
+  color: #0f1f3d;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.orders-combo-quantity-field small {
+  color: #ef5a18;
+  font-size: 0.58rem;
+  font-weight: 850;
 }
 
 .orders-combo-configurator-kicker {
@@ -30066,9 +30103,41 @@ button.calendar-dispatch-row:focus-visible {
   font-weight: 800;
 }
 
+.orders-combo-group-summary {
+  min-width: 8.6rem;
+  display: grid;
+  justify-items: end;
+  gap: 0.18rem;
+}
+
+.orders-combo-group-summary > span {
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.62rem !important;
+  font-weight: 950;
+}
+
+.orders-combo-group-summary > span.ok {
+  border: 1px solid #bcebd1;
+  background: #ecfbf2;
+  color: #0c7a4a !important;
+}
+
+.orders-combo-group-summary > span.danger {
+  border: 1px solid #ffc4c4;
+  background: #fff1f1;
+  color: #c02626 !important;
+}
+
+.orders-combo-group-summary small {
+  color: #8d96a8;
+  font-size: 0.54rem;
+  font-weight: 850;
+}
+
 .orders-combo-option-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
 }
 
@@ -30127,6 +30196,20 @@ button.calendar-dispatch-row:focus-visible {
   font-size: 0.53rem;
 }
 
+.orders-combo-option-grid em {
+  width: max-content;
+  max-width: 100%;
+  display: block;
+  margin-top: 0.28rem;
+  border-radius: 999px;
+  background: #edf7ff;
+  padding: 0.16rem 0.38rem;
+  color: #0d5ea8;
+  font-size: 0.55rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .orders-combo-option-grid i {
   width: 1.15rem;
   height: 1.15rem;
@@ -30170,6 +30253,14 @@ button.calendar-dispatch-row:focus-visible {
     max-width: 100% !important;
     max-height: 94svh !important;
     border-radius: 1.2rem 1.2rem 0 0 !important;
+  }
+
+  .orders-combo-configurator .orders-modal-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .orders-combo-quantity-field {
+    grid-column: 1 / -1;
   }
 
   .orders-combo-option-grid {

@@ -1897,31 +1897,108 @@ const normalizeState = (state) => {
       treasuryUpdatedBy: String(session?.treasuryUpdatedBy ?? '').trim(),
     }))
     : [];
+  const contractByIdForCash = new Map(source.contracts.map((contract) => [String(contract.id), contract]));
+  const contractByCodeForCash = new Map(source.contracts.map((contract) => [String(contract.contractCode), contract]));
+  const contractByOrderCodeForCash = new Map(
+    source.contracts
+      .filter((contract) => contract.orderCode)
+      .map((contract) => [String(contract.orderCode), contract]),
+  );
+  const rentalByIdForCash = new Map(source.rentals.map((rental) => [String(rental.id), rental]));
+  const rentalByOrderCodeForCash = new Map(
+    source.rentals
+      .filter((rental) => rental.orderCode)
+      .map((rental) => [String(rental.orderCode), rental]),
+  );
+  const findCashContractContext = (movement) => {
+    const linkedContractId = String(movement?.linkedContractId ?? movement?.contractId ?? '').trim();
+    if (linkedContractId && contractByIdForCash.has(linkedContractId)) {
+      return contractByIdForCash.get(linkedContractId);
+    }
+    const linkedRentalId = String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim();
+    const sourceId = String(movement?.sourceId ?? '').trim();
+    const rental = (linkedRentalId && rentalByIdForCash.get(linkedRentalId))
+      || (String(movement?.sourceType ?? '').trim() === 'rental' && sourceId && rentalByIdForCash.get(sourceId))
+      || null;
+    if (rental) {
+      const rentalContractId = String(rental.contractId ?? '').trim();
+      const rentalContractCode = String(rental.contractCode ?? '').trim();
+      const rentalOrderCode = String(rental.orderCode ?? '').trim();
+      return (rentalContractId && contractByIdForCash.get(rentalContractId))
+        || (rentalContractCode && contractByCodeForCash.get(rentalContractCode))
+        || (rentalOrderCode && contractByOrderCodeForCash.get(rentalOrderCode))
+        || null;
+    }
+    const linkedOrderCode = String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim();
+    if (linkedOrderCode) {
+      return contractByOrderCodeForCash.get(linkedOrderCode)
+        || contractByCodeForCash.get(linkedOrderCode)
+        || null;
+    }
+    return null;
+  };
+  const findCashRentalContext = (movement) => {
+    const linkedRentalId = String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim();
+    if (linkedRentalId && rentalByIdForCash.has(linkedRentalId)) {
+      return rentalByIdForCash.get(linkedRentalId);
+    }
+    const sourceId = String(movement?.sourceId ?? '').trim();
+    if (String(movement?.sourceType ?? '').trim() === 'rental' && sourceId && rentalByIdForCash.has(sourceId)) {
+      return rentalByIdForCash.get(sourceId);
+    }
+    const linkedOrderCode = String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim();
+    if (linkedOrderCode && rentalByOrderCodeForCash.has(linkedOrderCode)) {
+      return rentalByOrderCodeForCash.get(linkedOrderCode);
+    }
+    return null;
+  };
+  const resolveCashMovementResponsible = (movement) => {
+    const currentResponsible = String(movement?.responsible ?? '').trim();
+    const currentCreatedBy = String(movement?.createdBy ?? '').trim();
+    const current = currentResponsible || currentCreatedBy;
+    if (current && normalizeText(current) !== 'sistema') return current;
+    const contract = findCashContractContext(movement);
+    const rental = findCashRentalContext(movement);
+    const primaryResponsible = contract?.responsibles?.[0] ?? null;
+    return String(
+      primaryResponsible?.name
+      ?? contract?.createdByName
+      ?? rental?.createdByName
+      ?? contract?.createdBy
+      ?? rental?.createdBy
+      ?? current
+      ?? '',
+    ).trim();
+  };
   source.cashMovements = Array.isArray(source.cashMovements)
-    ? source.cashMovements.map((movement) => ({
-      ...movement,
-      cashBoxType: normalizeCashBoxType(movement?.cashBoxType),
-      category: String(movement?.category ?? '').trim(),
-      paymentMethod: String(movement?.paymentMethod ?? '').trim(),
-      responsible: String(movement?.responsible ?? movement?.createdBy ?? '').trim(),
-      receipt: String(movement?.receipt ?? '').trim(),
-      receiptCode: String(movement?.receiptCode ?? '').trim(),
-      notes: String(movement?.notes ?? '').trim(),
-      isInternalTransfer: Boolean(movement?.isInternalTransfer),
-      transferGroupId: movement?.transferGroupId ?? null,
-      receiptStatus: String(movement?.receiptStatus ?? movement?.statusReceipt ?? '').trim(),
-      voidedAt: movement?.voidedAt ?? null,
-      voidedBy: String(movement?.voidedBy ?? '').trim(),
-      voidReason: String(movement?.voidReason ?? '').trim(),
-      replacedByMovementId: movement?.replacedByMovementId ?? null,
-      replacementOfMovementId: movement?.replacementOfMovementId ?? null,
-      linkedRentalId: String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim() || null,
-      linkedContractId: String(movement?.linkedContractId ?? movement?.contractId ?? '').trim() || null,
-      linkedOrderCode: String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim() || null,
-      accountingTag: String(movement?.accountingTag ?? '').trim(),
-      transportRevenueBs: Number(movement?.transportRevenueBs ?? 0),
-      transportExpenseBs: Number(movement?.transportExpenseBs ?? 0),
-    }))
+    ? source.cashMovements.map((movement) => {
+      const responsible = resolveCashMovementResponsible(movement);
+      return {
+        ...movement,
+        cashBoxType: normalizeCashBoxType(movement?.cashBoxType),
+        category: String(movement?.category ?? '').trim(),
+        paymentMethod: String(movement?.paymentMethod ?? '').trim(),
+        responsible,
+        createdBy: responsible || String(movement?.createdBy ?? '').trim(),
+        receipt: String(movement?.receipt ?? '').trim(),
+        receiptCode: String(movement?.receiptCode ?? '').trim(),
+        notes: String(movement?.notes ?? '').trim(),
+        isInternalTransfer: Boolean(movement?.isInternalTransfer),
+        transferGroupId: movement?.transferGroupId ?? null,
+        receiptStatus: String(movement?.receiptStatus ?? movement?.statusReceipt ?? '').trim(),
+        voidedAt: movement?.voidedAt ?? null,
+        voidedBy: String(movement?.voidedBy ?? '').trim(),
+        voidReason: String(movement?.voidReason ?? '').trim(),
+        replacedByMovementId: movement?.replacedByMovementId ?? null,
+        replacementOfMovementId: movement?.replacementOfMovementId ?? null,
+        linkedRentalId: String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim() || null,
+        linkedContractId: String(movement?.linkedContractId ?? movement?.contractId ?? '').trim() || null,
+        linkedOrderCode: String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim() || null,
+        accountingTag: String(movement?.accountingTag ?? '').trim(),
+        transportRevenueBs: Number(movement?.transportRevenueBs ?? 0),
+        transportExpenseBs: Number(movement?.transportExpenseBs ?? 0),
+      };
+    })
     : [];
   source.userPresence = Array.isArray(source.userPresence)
     ? source.userPresence.map((presence) => ({
