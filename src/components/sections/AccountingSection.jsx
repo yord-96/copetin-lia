@@ -453,22 +453,29 @@ function AccountingSection({
   );
   const monthTransportMarginBs = Number((monthTransportRevenueBs - monthTransportExpenseBs).toFixed(2));
   const getMovementReference = useCallback((movement) => {
-    if (movement?.linkedOrderCode) return movement.linkedOrderCode;
     if (movement?.linkedRentalId) {
       const linkedRental = rentalById.get(movement.linkedRentalId);
       const linkedContract = contractByRentalId.get(movement.linkedRentalId);
-      if (linkedContract?.contractCode) return `${linkedRental?.orderCode ?? movement.linkedOrderCode ?? ''} | ${linkedContract.contractCode}`.trim();
+      if (linkedContract?.contractCode) return linkedContract.contractCode;
+      if (linkedRental?.contractCode) return linkedRental.contractCode;
       if (linkedRental?.orderCode) return linkedRental.orderCode;
     }
     if (movement?.linkedContractId) {
       const linkedContract = contracts.find((contract) => contract.id === movement.linkedContractId);
       if (linkedContract?.contractCode) return linkedContract.contractCode;
     }
+    if (movement?.contractCode) return movement.contractCode;
+    if (movement?.linkedOrderCode) {
+      const linkedContract = contracts.find((contract) => contract.orderCode === movement.linkedOrderCode);
+      if (linkedContract?.contractCode) return linkedContract.contractCode;
+      return movement.linkedOrderCode;
+    }
     const sourceId = String(movement?.sourceId ?? '').trim();
     if (!sourceId) return movement?.receipt || '-';
     const rental = rentalById.get(sourceId);
     const contract = contractByRentalId.get(sourceId);
     if (contract?.contractCode) return contract.contractCode;
+    if (rental?.contractCode) return rental.contractCode;
     if (rental?.orderCode) return rental.orderCode;
     return movement?.receipt || sourceId;
   }, [contractByRentalId, contracts, rentalById]);

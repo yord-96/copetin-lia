@@ -1182,6 +1182,7 @@ const normalizeState = (state) => {
         inventoryArea: normalizeInventoryArea(item?.inventoryArea),
         createdAt: item?.createdAt ?? now,
         updatedAt: item?.updatedAt,
+        deletedAt: item?.deletedAt ?? null,
       };
     }).filter((item) => item.name)
     : [];
@@ -2693,12 +2694,23 @@ const applyCashAccountingReset = (state) => {
 
   activeGuaranteeRentals.forEach((rental) => {
     const contract = contractByRentalId.get(String(rental.id ?? ''));
+    const primaryResponsible = contract?.responsibles?.[0] ?? null;
+    const responsibleName = String(
+      primaryResponsible?.name
+      ?? contract?.createdByName
+      ?? rental?.createdByName
+      ?? contract?.createdBy
+      ?? rental?.createdBy
+      ?? 'Contabilidad',
+    ).trim() || 'Contabilidad';
     state.cashMovements.push(buildCashMovement({
       type: 'ingreso_garantia',
       amountBs: Number(rental.depositBs ?? 0),
       description: `Ingreso garantia: ${rental.customerName ?? 'Cliente'}`,
       sourceType: 'rental',
       sourceId: rental.id,
+      createdBy: responsibleName,
+      responsible: responsibleName,
       cashBoxType: CASH_BOX_TYPES.BIG_CASH,
       category: 'garantia',
       linkedRentalId: rental.id,
@@ -2944,6 +2956,12 @@ const addRentalCashMovements = (state, rental) => {
   const rentalCashCollectedBs = Math.max(0, Number((cashCollectedBs - deliveryFeeCollectedBs).toFixed(2)));
   const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
   const depositBs = Number(rental?.depositBs ?? 0);
+  const movementResponsible = String(
+    rental?.createdByName
+    ?? rental?.createdBy
+    ?? rental?.userName
+    ?? 'Contabilidad',
+  ).trim() || 'Contabilidad';
 
   if (rentalCashCollectedBs > 0) {
     state.cashMovements.push(
@@ -2954,6 +2972,8 @@ const addRentalCashMovements = (state, rental) => {
         description: `Cobro inicial alquiler: ${customerName}`,
         sourceType: 'rental',
         sourceId: rental.id,
+        createdBy: movementResponsible,
+        responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'cobro_contrato',
         linkedRentalId: rental.id,
@@ -2972,6 +2992,8 @@ const addRentalCashMovements = (state, rental) => {
         description: `Transporte cobrado al cliente: ${customerName}`,
         sourceType: 'rental',
         sourceId: rental.id,
+        createdBy: movementResponsible,
+        responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'transporte_cobrado',
         linkedRentalId: rental.id,
@@ -2993,6 +3015,8 @@ const addRentalCashMovements = (state, rental) => {
         description: `Aplicacion saldo prepago (${customerName}): Bs ${prepaidAppliedBs.toFixed(2)}`,
         sourceType: 'rental',
         sourceId: rental.id,
+        createdBy: movementResponsible,
+        responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
       }),
     );
@@ -3007,6 +3031,8 @@ const addRentalCashMovements = (state, rental) => {
         description: `Ingreso garantia: ${customerName}`,
         sourceType: 'rental',
         sourceId: rental.id,
+        createdBy: movementResponsible,
+        responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
       }),
     );
@@ -3021,6 +3047,8 @@ const addRentalCashMovements = (state, rental) => {
         description: `Saldo alquiler pendiente (${customerName}): Bs ${pendingPaymentBs.toFixed(2)}`,
         sourceType: 'rental',
         sourceId: rental.id,
+        createdBy: movementResponsible,
+        responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
       }),
     );
@@ -3746,7 +3774,12 @@ const formatDocumentLongDate = (value) => {
     month: 'long',
     year: 'numeric',
   }).format(date);
-  return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  const cleanFormatted = formatted
+    .replace(',', '')
+    .replace(/\s+de\s+(\d{4})$/i, ' $1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleanFormatted.charAt(0).toUpperCase() + cleanFormatted.slice(1);
 };
 
 const getDocumentCompany = (settings = {}) => ({
@@ -4867,7 +4900,7 @@ const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
 const getReferenceContractStyles = () => `
-  @page { size: 216mm 330mm; margin: 7mm; }
+  @page { size: legal portrait; margin: 0; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -4882,10 +4915,10 @@ const getReferenceContractStyles = () => `
   h1, h2, h3, p { margin: 0; }
   .rc-sheet {
     position: relative;
-    width: 216mm;
-    min-height: 330mm;
+    width: 8.5in;
+    min-height: 14in;
     margin: 0 auto;
-    padding: 8mm 10mm 10mm;
+    padding: .34in .42in .36in;
     display: flex;
     flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
@@ -4893,13 +4926,13 @@ const getReferenceContractStyles = () => `
   }
   .rc-top {
     display: grid;
-    grid-template-columns: minmax(0, 70mm) minmax(0, 1fr) 36mm;
+    grid-template-columns: minmax(0, 66mm) minmax(0, 1fr) 42mm;
     gap: 5mm;
     align-items: center;
     min-height: 25mm;
   }
   .rc-logo { min-width: 0; overflow: hidden; }
-  .rc-logo img { display: block; width: 64mm; max-width: 100%; height: auto; }
+  .rc-logo img { display: block; width: 62mm; max-width: 100%; height: auto; }
   .rc-business {
     min-height: 14mm;
     padding-left: 4mm;
@@ -4916,7 +4949,7 @@ const getReferenceContractStyles = () => `
     align-content: center;
     justify-items: center;
     gap: 1.4mm;
-    min-height: 23mm;
+    min-height: 30mm;
     padding: 1.4mm 2mm;
     border: .28mm solid #d8d0c4;
     border-radius: 1.7mm;
@@ -4934,20 +4967,35 @@ const getReferenceContractStyles = () => `
   }
   .rc-number span { font-size: 13px; }
   .rc-number strong { color: #a66a20; font-size: 22px; font-weight: 500; }
-  .rc-date { display: flex; align-items: center; gap: 2mm; font: 13px Georgia, "Times New Roman", serif; }
+  .rc-date {
+    display: grid;
+    grid-template-columns: 4mm minmax(0, 1fr);
+    align-items: center;
+    gap: 1.4mm;
+    width: 100%;
+    color: #6f5232;
+    font: 900 10px Arial, Helvetica, sans-serif;
+    line-height: 1.16;
+    text-align: left;
+  }
   .rc-date img { width: 4mm; height: 4mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
-  .rc-status {
-    min-width: 32mm;
-    padding: 1.4mm 2.5mm;
-    border-radius: 1.5mm;
-    color: #fff;
-    background: linear-gradient(135deg, #98611d, #bd8433);
-    text-align: center;
-    font-size: 11.5px;
+  .rc-event-date {
+    width: 100%;
+    padding-top: 1mm;
+    border-top: .25mm solid #d8d0c4;
+    color: #a66a20;
+    font-size: 9.6px;
     font-weight: 900;
+    line-height: 1.16;
+    text-align: center;
+  }
+  .rc-event-date span {
+    display: block;
+    color: #69503a;
+    font-size: 7.2px;
+    letter-spacing: .25px;
     text-transform: uppercase;
   }
-  .rc-status img { width: 3.8mm; height: 3.8mm; margin-right: 1.5mm; vertical-align: -1mm; filter: brightness(0) invert(1); }
   .rc-title { padding: 2mm 0 2mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
   .rc-title h1 { margin: 0; font-size: 25px; font-weight: 500; letter-spacing: 1.2px; }
   .rc-title p {
@@ -5256,10 +5304,10 @@ const getReferenceContractStyles = () => `
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
       position: relative;
-      width: auto;
-      min-height: auto;
+      width: 8.5in;
+      min-height: 14in;
       margin: 0;
-      padding: 0;
+      padding: .34in .42in .36in;
       box-shadow: none;
       background: #fffdfa;
     }
@@ -5267,16 +5315,6 @@ const getReferenceContractStyles = () => `
 `;
 
 const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, items = [] }) => {
-  const statusLabels = {
-    borrador: 'Borrador',
-    pendiente: 'Pendiente',
-    aprobado: 'Aprobado',
-    rechazado: 'Rechazado',
-    anulado: 'Anulado',
-  };
-  const currentStatus = String(contract?.status ?? '').trim().toLowerCase();
-  const statusLabel = statusLabels[currentStatus] ?? 'Sin estado';
-
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
   const company = getDocumentCompany(settings);
@@ -5307,7 +5345,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
-  const issuedAt = formatDocumentDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
+  const issuedAt = formatDocumentLongDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
+  const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
   const documentItems = Array.isArray(contract?.items) && contract.items.length > 0
     ? contract.items.map((line) => ({
@@ -5402,7 +5441,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>${escapeHtml(`Orden de servicio ${mainCode}`)}</title>
+    <title>${escapeHtml(`Contrato de alquiler ${mainCode}`)}</title>
     <style>${getReferenceContractStyles()}</style>
   </head>
   <body>
@@ -5413,7 +5452,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         <div class="rc-code">
           <div class="rc-number"><span>N&deg;</span><strong>${escapeHtml(mainCode)}</strong></div>
           <div class="rc-date">${contractPdfIcon('calendario.png')}<span>${escapeHtml(issuedAt)}</span></div>
-          <div class="rc-status"><img src="/imagenes/pdf%20contrato/verificado.png" alt="" />${escapeHtml(statusLabel)}</div>
+          <div class="rc-event-date"><span>Fecha del evento</span>${escapeHtml(eventLongDate)}</div>
         </div>
       </header>
 
@@ -6349,7 +6388,8 @@ const resolveOperationalItemFromLine = (state, line, now = new Date().toISOStrin
   const itemColor = toBusinessUppercase(quickItem.color ?? '');
   const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? quickItem.rentalPriceBs ?? 0));
   const duplicate = state.items.find((entry) => (
-    normalizeText(entry.name) === normalizeText(name)
+    !entry.deletedAt
+    && normalizeText(entry.name) === normalizeText(name)
     && normalizeText(entry.category) === normalizeText(category)
     && normalizeText(entry.itemColor) === normalizeText(itemColor)
   ));
@@ -6989,7 +7029,10 @@ const createWebBridge = () => ({
   inventory: {
     list: async () => {
       const { items } = readQueryState();
-      return items.slice().sort((a, b) => a.name.localeCompare(b.name, 'es'));
+      return items
+        .filter((item) => !item.deletedAt)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'));
     },
     listCombos: async () => {
       const { inventoryCombos } = readQueryState();
@@ -7243,28 +7286,34 @@ const createWebBridge = () => ({
         }
 
         const item = state.items[itemIndex];
+        if (item.deletedAt) {
+          deletedItem = deepClone(item);
+          return state;
+        }
+        const controlsOperationalStock = itemControlsStock(item);
         const hasActiveRentals = state.rentals.some(
           (rental) =>
-            rental.status === 'active'
+            normalizeRentalStatus(rental.status) === 'active'
             && !rental.deletedAt
             && Array.isArray(rental.items)
-            && rental.items.some((line) => line.itemId === item.id),
+            && rental.items.some((line) => String(line.itemId) === String(item.id) && lineControlsStock(line, item)),
         );
-        if (hasActiveRentals) {
+        if (controlsOperationalStock && hasActiveRentals) {
           throw new Error('No puedes eliminar un item con unidades alquiladas.');
         }
 
-        const hasRecoveryQueue = state.stockRecoveries.some((entry) => entry.itemId === item.id);
+        const hasRecoveryQueue = state.stockRecoveries.some((entry) => String(entry.itemId) === String(item.id));
         if (hasRecoveryQueue) {
           throw new Error('No puedes eliminar un item con unidades pendientes de lavado o reparacion.');
         }
 
-        if (item.availableStock < item.totalStock) {
+        if (controlsOperationalStock && Number(item.availableStock ?? 0) < Number(item.totalStock ?? 0)) {
           throw new Error('No puedes eliminar un item con unidades no operativas o faltantes pendientes.');
         }
 
         deletedItem = deepClone(item);
-        state.items.splice(itemIndex, 1);
+        item.deletedAt = new Date().toISOString();
+        item.updatedAt = item.deletedAt;
         return state;
       });
 
