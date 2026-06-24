@@ -5297,7 +5297,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   };
   const currentStatus = String(contract?.status ?? '').trim().toLowerCase();
   const statusLabel = statusLabels[currentStatus] ?? 'Sin estado';
-  const billingLabel = contract?.billingMode === 'con_factura' ? 'Con factura' : 'Sin factura';
 
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
@@ -5440,8 +5439,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       </header>
 
       <section class="rc-title">
-        <h1>ORDEN DE SERVICIO</h1>
-        <p>Contrato de alquiler</p>
+        <h1>CONTRATO DE ALQUILER</h1>
         <i></i>
       </section>
 
@@ -5460,7 +5458,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <strong>Telefono / CI:</strong><span>${escapeHtml(rental.customerPhone || '-')}</span>
             <strong>Evento:</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span>
             <strong>Direccion del servicio:</strong><span>${escapeHtml(eventAddress)}</span>
-            <strong>Facturacion:</strong><span>${escapeHtml(billingLabel)}</span>
             <strong>Tarifa:</strong><span>${escapeHtml(durationLabel)}</span>
             <strong>Logistica:</strong><span>${escapeHtml(logisticsLabel)}</span>
             <strong>Orden vinculada:</strong><span>${escapeHtml(linkedOrderCode)}</span>
