@@ -4968,29 +4968,7 @@ const getReferenceContractStyles = () => `
     background: #fffdfa;
     transform: translate(-50%, -50%) rotate(45deg);
   }
-  .rc-company {
-    display: grid;
-    grid-template-columns: 1.05fr 1.15fr .68fr .82fr;
-    min-height: 10.5mm;
-    border: .25mm solid #d8d0c4;
-    border-radius: 2mm;
-    overflow: hidden;
-    background: rgba(255, 255, 255, .66);
-  }
-  .rc-company > div {
-    display: grid;
-    grid-template-columns: 6.5mm minmax(0, 1fr);
-    align-items: center;
-    gap: 1.5mm;
-    padding: 1mm 1.6mm;
-    border-right: .25mm solid #d8d0c4;
-  }
-  .rc-company > div:last-child { border-right: 0; }
-  .rc-company img, .rc-schedule-meta img, .rc-mode-row img { filter: sepia(1) saturate(1.5) brightness(.72); }
-  .rc-company img { width: 4.7mm; height: 4.7mm; object-fit: contain; }
-  .rc-company strong { display: block; font: 800 9px Arial, sans-serif; text-transform: uppercase; }
-  .rc-company .company-name { font: 800 12px Arial, sans-serif; text-transform: uppercase; }
-  .rc-company span { display: block; margin-top: .35mm; font-size: 8.2px; line-height: 1.15; }
+  .rc-schedule-meta img, .rc-mode-row img { filter: sepia(1) saturate(1.5) brightness(.72); }
   .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 5mm; margin-top: 3mm; }
   .rc-block-title {
     display: flex;
@@ -5245,6 +5223,7 @@ const getReferenceContractStyles = () => `
     font-size: 8.5px;
   }
   .rc-footer strong { color: #a66a20; font-size: 9px; }
+  .rc-footer span { line-height: 1.2; }
   .rc-footer span:last-child { text-align: right; }
   .rc-page-bottom {
     position: static;
@@ -5256,8 +5235,6 @@ const getReferenceContractStyles = () => `
   }
   .rc-sheet.is-dense { font-size: 10px; }
   .rc-sheet.is-dense .rc-title { padding-top: 1mm; padding-bottom: 2.5mm; }
-  .rc-sheet.is-dense .rc-company { min-height: 12mm; }
-  .rc-sheet.is-dense .rc-company > div { padding-top: 1.4mm; padding-bottom: 1.4mm; }
   .rc-sheet.is-dense .rc-upper { margin-top: 2.5mm; }
   .rc-sheet.is-dense .rc-schedule-row { min-height: 9.6mm; }
   .rc-sheet.is-dense .rc-table th { padding-top: 1.05mm; padding-bottom: 1.05mm; font-size: 8.1px; }
@@ -5443,13 +5420,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         <i></i>
       </section>
 
-      <section class="rc-company">
-        <div>${contractPdfIcon('edificio-de-pisos.png')}<p><strong class="company-name">El Copetin</strong><span>${escapeHtml(company.fiscalCondition || 'Responsable inscrito')}</span></p></div>
-        <div>${contractPdfIcon('ubicacion.png')}<p><strong>Direccion:</strong><span>${escapeHtml(company.address)}</span></p></div>
-        <div>${contractPdfIcon('llamada-telefonica.png')}<p><strong>Celular:</strong><span>${escapeHtml([company.phone, '67402818'].filter(Boolean).join(' / ') || '-')}</span></p></div>
-        <div>${contractPdfIcon('documento.png')}<p><strong>Email:</strong><span>${escapeHtml(company.email || '-')}</span></p></div>
-      </section>
-
       <section class="rc-upper">
         <div class="rc-client">
           <h2 class="rc-block-title"><b>1.</b> Datos del cliente y evento</h2>
@@ -5568,9 +5538,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </section>
 
         <footer class="rc-footer">
-          <span>Documento generado por El Copetin</span>
-          <strong>${escapeHtml(company.website || 'www.copetin.com')}</strong>
-          <span>Contrato ${escapeHtml(mainCode)}</span>
+          <span>${escapeHtml(company.address || '-')}</span>
+          <strong>${escapeHtml(company.email || '-')}</strong>
+          <span>${escapeHtml([company.phone, '67402818'].filter(Boolean).join(' / ') || '-')}</span>
         </footer>
       </div>
     </main>
