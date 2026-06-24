@@ -12,6 +12,25 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+const expandSearchAliases = (value) => {
+  const base = normalizeText(value);
+  if (!base) return '';
+  const aliases = new Set(base.split(' ').filter(Boolean));
+  const compact = base.replace(/\s+/g, '');
+  if (compact.includes('crossback') || compact.includes('crosback')) {
+    aliases.add('crossback');
+    aliases.add('crosback');
+    aliases.add('cruz');
+  }
+  if (compact.includes('infantil') || compact.includes('nino') || compact.includes('nina')) {
+    aliases.add('infantil');
+    aliases.add('nino');
+    aliases.add('nina');
+    aliases.add('kids');
+  }
+  return [base, ...aliases].join(' ');
+};
+
 const isPickupDeliveryRecord = (delivery) => {
   const routeType = normalizeText(delivery?.routeType);
   const notes = normalizeText(delivery?.notes);
@@ -2719,11 +2738,19 @@ function InventoryDashboardSection({
     .filter((row) => {
       const text = normalizeText(comboIngredientQuery);
       if (!text) return true;
-      return normalizeText(row.name).includes(text)
-        || normalizeText(row.category).includes(text)
-        || normalizeText(row.sku).includes(text);
+      const tokens = text.split(' ').filter(Boolean);
+      const searchable = expandSearchAliases([
+        row.name,
+        row.category,
+        row.brand,
+        row.itemColor,
+        row.sku,
+        getInventoryAreaLabel(row.resolvedInventoryArea),
+      ].filter(Boolean).join(' '));
+      return searchable.includes(text)
+        || tokens.every((token) => searchable.includes(token));
     })
-    .slice(0, 10);
+    .slice(0, 30);
 
   const renderComboRowMenu = (row, openUp = false) => (
     <div
@@ -4222,8 +4249,11 @@ function InventoryDashboardSection({
                       type="search"
                       value={comboIngredientQuery}
                       onChange={(event) => setComboIngredientQuery(event.target.value)}
-                      placeholder="Buscar productos permitidos..."
+                      placeholder="Buscar por nombre, categoria, color, material o codigo..."
                     />
+                    <p className="inventory-combo-search-hint">
+                      {comboSelectableRows.length} resultado{comboSelectableRows.length === 1 ? '' : 's'} visibles. Puedes seleccionar uno o varios modelos para este componente.
+                    </p>
                     <div className="inventory-movement-gallery inventory-combo-options-gallery">
                       {comboSelectableRows.map((row) => (
                         <button
