@@ -15,7 +15,6 @@ import {
   MessageCircle,
   PackageOpen,
   Phone,
-  Save,
   Search,
   RefreshCw,
   Truck,
@@ -5276,7 +5275,7 @@ function ServiceOrdersSection({
       ) : null}
 
       {modalOpen ? (
-        <div className="orders-modal-backdrop" onClick={closeModal}>
+        <div className="orders-modal-backdrop">
           <div
             className={`orders-modal orders-wizard-modal${currentStep === 2 ? ' is-items-step' : ''}`}
             onClick={(event) => event.stopPropagation()}
@@ -5299,15 +5298,6 @@ function ServiceOrdersSection({
                 </p>
               </div>
               <div className="orders-modal-head-actions">
-                <button
-                  type="button"
-                  className="ghost-button orders-wizard-save"
-                  onClick={() => handleSaveQuote({ approveNow: false })}
-                  disabled={isSubmitting || !isLastStep}
-                >
-                  <Save aria-hidden="true" />
-                  {draft.entityType === 'contract' ? 'Guardar contrato' : 'Guardar borrador'}
-                </button>
                 <button type="button" className="orders-modal-close" onClick={closeModal} aria-label="Cerrar">
                   <X aria-hidden="true" />
                 </button>
