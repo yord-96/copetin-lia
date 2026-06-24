@@ -2061,10 +2061,10 @@ const RESET_MODULES = [
     id: 'cash_accounting',
     level: 'safe',
     risk: 'medio',
-    name: 'Borrar movimientos de caja de prueba',
-    description: 'Borra movimientos de Caja Grande y Caja Chica que no esten vinculados a contratos, cobros, saldos pendientes ni garantias.',
+    name: 'Reiniciar contabilidad de caja',
+    description: 'Borra todos los movimientos y sesiones de Caja Grande y Caja Chica para dejar contabilidad limpia. Las garantias activas se recalculan desde contratos vigentes.',
     deletes: ['cashMovements', 'cashSessions'],
-    warnings: ['Conserva garantias, cuentas por cobrar y movimientos enlazados a contratos u ordenes.'],
+    warnings: ['No borra contratos, clientes ni inventario. Despues de ejecutar, Caja Grande queda sin ingresos operativos ni Caja Chica de prueba.'],
   },
   {
     id: 'trial_cleanup',
@@ -2215,39 +2215,6 @@ const linkedToRental = (entry, rental) =>
         || (entry.reference && rental.orderCode && entry.reference === rental.orderCode)
       ),
   );
-
-const isProtectedCashMovement = (movement) => {
-  const source = normalizeText(movement?.sourceType ?? movement?.source ?? '');
-  const type = normalizeText(movement?.type);
-  const category = normalizeText(movement?.category);
-  const tag = normalizeText(movement?.accountingTag);
-  const description = normalizeText(movement?.description);
-  const notes = normalizeText(movement?.notes);
-  const linked = Boolean(
-    movement?.rentalId
-      || movement?.contractId
-      || movement?.clientId
-      || movement?.orderCode
-      || movement?.linkedRentalId
-      || movement?.linkedContractId
-      || movement?.linkedOrderCode
-      || (movement?.sourceId && ['rental', 'contract', 'return', 'client', 'prepaid'].some((token) => source.includes(token)))
-  );
-  const protectedText = `${source} ${type} ${category} ${tag} ${description} ${notes}`;
-  const protectedTokens = [
-    'garantia',
-    'cobro',
-    'saldo',
-    'pendiente',
-    'contrato',
-    'alquiler',
-    'devolucion garantia',
-    'liquidacion',
-    'prepaid',
-    'prepago',
-  ];
-  return linked || protectedTokens.some((token) => protectedText.includes(token));
-};
 
 const addBlocked = (target, record, reason) => {
   target.blocked.push({
@@ -2511,24 +2478,9 @@ const analyzeResetModule = (state, moduleId) => {
   if (moduleId === 'cash_accounting') {
     result.total = cashMovements.length + (Array.isArray(state.cashSessions) ? state.cashSessions.length : 0);
     cashMovements.forEach((movement) => {
-      if (isProtectedCashMovement(movement)) {
-        addBlocked(result.records, movement, 'Movimiento protegido: contrato, cobro, saldo pendiente o garantia.');
-        return;
-      }
       addDeletable(result.records, movement, 'cashMovements');
     });
     activeRows(state.cashSessions).forEach((session) => {
-      if (session.status === 'open') {
-        addBlocked(result.records, session, 'No se puede borrar una caja abierta.');
-        return;
-      }
-      const hasProtectedMovements = cashMovements.some(
-        (movement) => movement.sessionId === session.id && isProtectedCashMovement(movement),
-      );
-      if (hasProtectedMovements) {
-        addBlocked(result.records, session, 'Sesion con movimientos protegidos por contratos, cobros o garantias.');
-        return;
-      }
       addDeletable(result.records, session, 'cashSessions');
     });
   }
@@ -2713,6 +2665,52 @@ const applyTrialCleanup = (state) => {
   return deletedByCollection;
 };
 
+const applyCashAccountingReset = (state) => {
+  const deletedByCollection = {};
+  const previousMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const previousSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+
+  if (previousMovements.length > 0) {
+    deletedByCollection.cashMovements = previousMovements.length;
+  }
+  if (previousSessions.length > 0) {
+    deletedByCollection.cashSessions = previousSessions.length;
+  }
+
+  state.cashSessions = [];
+  state.cashMovements = [];
+
+  const activeGuaranteeRentals = Array.isArray(state.rentals)
+    ? state.rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'active')
+      .filter((rental) => Number(rental?.depositBs ?? 0) > 0)
+    : [];
+  const contractByRentalId = new Map(
+    (Array.isArray(state.contracts) ? state.contracts : [])
+      .filter((contract) => !contract?.deletedAt)
+      .map((contract) => [String(contract.rentalId ?? ''), contract]),
+  );
+
+  activeGuaranteeRentals.forEach((rental) => {
+    const contract = contractByRentalId.get(String(rental.id ?? ''));
+    state.cashMovements.push(buildCashMovement({
+      type: 'ingreso_garantia',
+      amountBs: Number(rental.depositBs ?? 0),
+      description: `Ingreso garantia: ${rental.customerName ?? 'Cliente'}`,
+      sourceType: 'rental',
+      sourceId: rental.id,
+      cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      category: 'garantia',
+      linkedRentalId: rental.id,
+      linkedContractId: rental.contractId ?? contract?.id ?? '',
+      linkedOrderCode: rental.orderCode ?? contract?.orderCode ?? '',
+      notes: 'Regenerado por reset contable: solo garantia activa.',
+    }));
+  });
+
+  return deletedByCollection;
+};
+
 const applyFactoryReset = (state, analysis) => {
   const preservedDevelopers = activeRows(state.users)
     .filter((user) => isDeveloperUser(user))
@@ -2760,7 +2758,11 @@ const applyResetAnalysis = (state, analysis) => {
 
   const deletedByCollection = {};
   const now = new Date().toISOString();
+  if (analysis.selectedModules.includes('cash_accounting')) {
+    Object.assign(deletedByCollection, applyCashAccountingReset(state));
+  }
   analysis.modules.forEach((module) => {
+    if (module.id === 'cash_accounting') return;
     module.records.deletable.forEach((entry) => {
       const rows = state[entry.collection];
       if (!Array.isArray(rows)) return;
