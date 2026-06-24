@@ -1233,19 +1233,31 @@ function InventoryDashboardSection({
       const ingredients = (Array.isArray(combo.ingredients) ? combo.ingredients : [])
         .map((line) => {
           const item = itemById.get(String(line?.itemId ?? ''));
+          const selectionMode = line?.selectionMode ?? 'item';
+          const categoryRule = line?.category ?? '';
+          const optionRows = selectionMode === 'category' && categoryRule
+            ? inventoryRows.filter((row) => normalizeText(row.category) === normalizeText(categoryRule))
+            : (Array.isArray(line?.optionItemIds) && line.optionItemIds.length > 0 ? line.optionItemIds : [line?.itemId])
+              .map((id) => itemById.get(String(id ?? '')))
+              .filter(Boolean);
           const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+          const available = optionRows.reduce((sum, option) => (
+            option.controlsStock ? sum + Number(option.available ?? 0) : sum
+          ), 0);
+          const controlsStock = optionRows.length > 0 && optionRows.every((option) => option.controlsStock);
           return {
             itemId: line?.itemId ?? '',
             itemName: item?.name ?? line?.itemName ?? 'Producto',
             category: item?.category ?? '',
             quantity,
             unitPriceBs: Number(item?.price ?? line?.unitPriceBs ?? 0),
-            controlsStock: item ? item.controlsStock : Boolean(line?.controlsStock),
-            available: Number(item?.available ?? 0),
-            selectionMode: line?.selectionMode ?? 'item',
-            optionItemIds: Array.isArray(line?.optionItemIds) ? line.optionItemIds : [line?.itemId].filter(Boolean),
+            controlsStock,
+            available,
+            selectionMode,
+            optionItemIds: optionRows.map((option) => option.id),
             slotLabel: line?.slotLabel ?? line?.itemName ?? '',
-            categoryRule: line?.category ?? '',
+            categoryRule,
+            optionsCount: optionRows.length,
           };
         })
         .filter((line) => line.itemId);
