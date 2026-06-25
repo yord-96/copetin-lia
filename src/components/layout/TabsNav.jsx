@@ -18,6 +18,7 @@ const operationTabs = [
   { id: 'caja', label: 'Calendario', icon: 'calendar', hint: '' },
   { id: 'items', label: 'Clientes', icon: 'customerService', hint: '' },
   { id: 'alquiler', label: 'Ordenes de Servicio', icon: 'serviceChecklist', hint: '' },
+  { id: 'asistencia', label: 'Asistencia', icon: 'attendance', hint: '' },
   { id: 'proveedores', label: 'Proveedores', icon: 'provider', hint: '' },
   { id: 'personal', label: 'Personal', icon: 'personnel', hint: '' },
   {
@@ -81,6 +82,16 @@ function renderIcon(icon) {
 
   if (icon === 'serviceChecklist') {
     return <img className="asset-icon service-checklist-asset-icon" src="/imagenes/lista-de-verificacion.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'attendance') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M7 3.8h10a2 2 0 0 1 2 2v14.4H5V5.8a2 2 0 0 1 2-2Z" />
+        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M9 8h6M9 12h3" />
+        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="m14 15.5 1.5 1.5 3-3" />
+      </svg>
+    );
   }
 
   if (icon === 'provider') {

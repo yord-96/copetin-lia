@@ -14,42 +14,42 @@ const ROLE_DEFINITIONS = {
   developer: {
     label: 'Developer',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias', 'contabilidad'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias', 'contabilidad'],
   },
   super_admin: {
     label: 'Super admin',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias'],
   },
   admin: {
     label: 'Admin',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias', 'contabilidad'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias', 'contabilidad'],
   },
   user: {
     label: 'User',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'caja'],
   },
   ventas: {
     label: 'Ventas',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'caja'],
   },
   inventario: {
     label: 'Inventario',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'caja', 'inventario'],
+    allowedTabs: ['resumen', 'asistencia', 'caja', 'inventario'],
   },
   transporte: {
     label: 'Transporte',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'devolucion', 'caja'],
+    allowedTabs: ['resumen', 'asistencia', 'devolucion', 'caja'],
   },
   contabilidad: {
     label: 'Contabilidad',
     defaultTab: 'contabilidad',
-    allowedTabs: ['resumen', 'personal', 'devolucion', 'contabilidad', 'recibos', 'caja'],
+    allowedTabs: ['resumen', 'asistencia', 'personal', 'devolucion', 'contabilidad', 'recibos', 'caja'],
   },
 };
 
@@ -201,6 +201,19 @@ const getAllowedTabsForRoles = (roleIds) => [...new Set(
 const getDisplayRoleForIds = (roleIds) =>
   normalizeRoleIds(roleIds).map((roleId) => ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas').join(', ');
 
+const DEFAULT_USER_PERMISSIONS = {
+  attendanceEnabled: true,
+  calendarReadOnly: false,
+  ordersReadOnly: false,
+};
+
+const normalizeUserPermissions = (permissions = {}) => ({
+  ...DEFAULT_USER_PERMISSIONS,
+  attendanceEnabled: permissions?.attendanceEnabled !== false,
+  calendarReadOnly: Boolean(permissions?.calendarReadOnly),
+  ordersReadOnly: Boolean(permissions?.ordersReadOnly),
+});
+
 const hashPassword = (password) => {
   const input = String(password ?? '');
   let hash = 2166136261;
@@ -239,6 +252,8 @@ const sanitizeUserForSession = (user) => {
       ? 'super_admin'
       : getPrimaryRoleId(user);
   const role = ROLE_DEFINITIONS[roleId] ?? ROLE_DEFINITIONS.ventas;
+  const permissions = normalizeUserPermissions(user.permissions);
+  const allowedTabs = getAllowedTabsForRoles(roleIds).filter((tabId) => tabId !== 'asistencia' || permissions.attendanceEnabled);
   return {
     id: user.id,
     fullName: user.fullName,
@@ -246,7 +261,8 @@ const sanitizeUserForSession = (user) => {
     roleIds,
     roleId,
     role: getDisplayRoleForIds(roleIds),
-    allowedTabs: getAllowedTabsForRoles(roleIds),
+    permissions,
+    allowedTabs,
     defaultTab: role.defaultTab,
     status: user.status,
     lastAccessAt: user.lastAccessAt ?? null,
@@ -924,6 +940,8 @@ const createSeedData = () => {
     stockRecoveries: [],
     cashSessions: [],
     cashMovements: [],
+    cashDebts: [],
+    attendanceRecords: [],
     resetLogs: [],
     userPresence: [],
   };
@@ -1054,6 +1072,7 @@ const normalizeState = (state) => {
           ? 'super_admin'
           : getPrimaryRoleId(user),
       role: getDisplayRoleForIds(getUserRoleIds(user)),
+      permissions: normalizeUserPermissions(user?.permissions),
       status: String(user?.status ?? 'active').trim() || 'active',
       phone: String(user?.phone ?? '').trim(),
       isCurrentUser: Boolean(user?.isCurrentUser),
@@ -2000,6 +2019,62 @@ const normalizeState = (state) => {
       };
     })
     : [];
+  source.cashDebts = Array.isArray(source.cashDebts)
+    ? source.cashDebts.map((debt, index) => {
+      const amountBs = toPositiveRoundedNumber(debt?.amountBs ?? debt?.totalBs ?? 0);
+      const paidBs = toPositiveRoundedNumber(debt?.paidBs ?? 0);
+      const balanceBs = toPositiveRoundedNumber(Math.max(0, Number(debt?.balanceBs ?? amountBs - paidBs)));
+      const status = balanceBs <= 0
+        ? 'pagada'
+        : paidBs > 0
+          ? 'parcial'
+          : String(debt?.status ?? 'pendiente').trim() || 'pendiente';
+      return {
+        id: String(debt?.id ?? makeId('debt')).trim(),
+        code: String(debt?.code ?? `DEU-${String(index + 1).padStart(5, '0')}`).trim(),
+        description: String(debt?.description ?? debt?.detail ?? '').trim(),
+        personName: String(debt?.personName ?? debt?.debtorName ?? debt?.responsible ?? '').trim(),
+        amountBs,
+        paidBs,
+        balanceBs,
+        debtDate: debt?.debtDate ?? debt?.date ?? debt?.createdAt ?? now,
+        dueDate: debt?.dueDate ?? null,
+        status,
+        notes: String(debt?.notes ?? '').trim(),
+        createdAt: debt?.createdAt ?? now,
+        createdBy: String(debt?.createdBy ?? '').trim(),
+        paidAt: debt?.paidAt ?? null,
+        payments: Array.isArray(debt?.payments)
+          ? debt.payments.map((payment) => ({
+            id: String(payment?.id ?? makeId('debtpay')).trim(),
+            movementId: String(payment?.movementId ?? '').trim(),
+            amountBs: toPositiveRoundedNumber(payment?.amountBs ?? 0),
+            paidAt: payment?.paidAt ?? now,
+            paidBy: String(payment?.paidBy ?? payment?.createdBy ?? '').trim(),
+            notes: String(payment?.notes ?? '').trim(),
+          }))
+          : [],
+      };
+    }).filter((debt) => debt.description && debt.amountBs > 0)
+    : [];
+  source.attendanceRecords = Array.isArray(source.attendanceRecords)
+    ? source.attendanceRecords.map((record) => ({
+      id: String(record?.id ?? makeId('att')).trim(),
+      code: String(record?.code ?? '').trim(),
+      type: ['entrada', 'salida'].includes(String(record?.type ?? '').trim()) ? String(record?.type).trim() : 'entrada',
+      location: String(record?.location ?? '').trim(),
+      reason: String(record?.reason ?? record?.motivo ?? '').trim(),
+      photoDataUrl: String(record?.photoDataUrl ?? record?.photo ?? '').trim(),
+      latitude: record?.latitude ?? null,
+      longitude: record?.longitude ?? null,
+      capturedAt: record?.capturedAt ?? record?.createdAt ?? now,
+      createdAt: record?.createdAt ?? record?.capturedAt ?? now,
+      userId: String(record?.userId ?? '').trim(),
+      userName: String(record?.userName ?? record?.createdBy ?? 'Usuario').trim() || 'Usuario',
+      role: String(record?.role ?? '').trim(),
+      notes: String(record?.notes ?? '').trim(),
+    }))
+    : [];
   source.userPresence = Array.isArray(source.userPresence)
     ? source.userPresence.map((presence) => ({
       sessionId: String(presence?.sessionId ?? presence?.id ?? presence?.userId ?? '').trim(),
@@ -2172,6 +2247,7 @@ const TRIAL_CLEANUP_COLLECTIONS = [
   'supplierLoans',
   'cashSessions',
   'cashMovements',
+  'cashDebts',
   'userPresence',
 ];
 
@@ -2207,6 +2283,8 @@ const FACTORY_RESET_COLLECTIONS = [
   'stockRecoveries',
   'cashSessions',
   'cashMovements',
+  'cashDebts',
+  'attendanceRecords',
   'userPresence',
 ];
 
@@ -2984,6 +3062,22 @@ const nextCashReceiptCode = (state) => {
   }, 0);
   const next = maxPersisted > 0 ? maxPersisted + 1 : (state.cashMovements?.length ?? 0) + 1;
   return `RC-${String(next).padStart(4, '0')}`;
+};
+
+const nextDebtCode = (state) => {
+  const maxPersisted = (state.cashDebts ?? []).reduce((max, debt) => {
+    const match = String(debt?.code ?? '').match(/^DEU-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `DEU-${String(maxPersisted + 1).padStart(5, '0')}`;
+};
+
+const nextAttendanceCode = (state) => {
+  const maxPersisted = (state.attendanceRecords ?? []).reduce((max, record) => {
+    const match = String(record?.code ?? '').match(/^ASI-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `ASI-${String(maxPersisted + 1).padStart(5, '0')}`;
 };
 
 const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
@@ -8161,6 +8255,7 @@ const createWebBridge = () => ({
           roleId,
           roleIds,
           role: getDisplayRoleForIds(roleIds),
+          permissions: normalizeUserPermissions(payload?.permissions),
           status: String(payload?.status ?? 'active').trim() || 'active',
           phone: String(payload?.phone ?? '').trim(),
           isCurrentUser: false,
@@ -8238,6 +8333,7 @@ const createWebBridge = () => ({
         }
         if (payload.status !== undefined) user.status = String(payload.status ?? '').trim() || user.status;
         if (payload.phone !== undefined) user.phone = String(payload.phone ?? '').trim();
+        if (payload.permissions !== undefined) user.permissions = normalizeUserPermissions(payload.permissions);
         user.updatedAt = new Date().toISOString();
         updated = deepClone(user);
         return state;
@@ -11330,6 +11426,123 @@ const createWebBridge = () => ({
 
       return filtered.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
+    listDebts: async () => {
+      const { cashDebts } = readQueryState();
+      return cashDebts.slice().sort((a, b) => new Date(b.createdAt ?? b.debtDate) - new Date(a.createdAt ?? a.debtDate));
+    },
+    createDebt: async (payload) => {
+      const description = String(payload?.description ?? payload?.detail ?? '').trim();
+      const amountBs = toNumber(payload?.amountBs ?? 0, 'monto de deuda');
+      const personName = String(payload?.personName ?? payload?.responsible ?? '').trim();
+      const debtDate = String(payload?.debtDate ?? '').trim() || new Date().toISOString();
+      const dueDate = String(payload?.dueDate ?? '').trim() || null;
+      const notes = String(payload?.notes ?? '').trim();
+      const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
+
+      if (!description) {
+        throw new Error('Debes escribir el detalle de la deuda.');
+      }
+      if (amountBs <= 0) {
+        throw new Error('El monto de la deuda debe ser mayor a 0.');
+      }
+
+      let createdDebt = null;
+      transaction((state) => {
+        createdDebt = {
+          id: makeId('debt'),
+          code: nextDebtCode(state),
+          description,
+          personName,
+          amountBs: toPositiveRoundedNumber(amountBs),
+          paidBs: 0,
+          balanceBs: toPositiveRoundedNumber(amountBs),
+          debtDate,
+          dueDate,
+          status: 'pendiente',
+          notes,
+          createdAt: new Date().toISOString(),
+          createdBy,
+          paidAt: null,
+          payments: [],
+        };
+        state.cashDebts.push(createdDebt);
+        return state;
+      });
+
+      return createdDebt;
+    },
+    payDebt: async (payload) => {
+      const debtId = String(payload?.debtId ?? payload?.id ?? '').trim();
+      const amountBs = toNumber(payload?.amountBs ?? 0, 'monto de pago');
+      const paymentDate = payload?.paymentDate ? new Date(payload.paymentDate).toISOString() : new Date().toISOString();
+      const paymentMethod = String(payload?.paymentMethod ?? 'efectivo').trim() || 'efectivo';
+      const notes = String(payload?.notes ?? '').trim();
+      const paidBy = String(payload?.paidBy ?? payload?.createdBy ?? '').trim() || 'Contabilidad';
+      let result = null;
+
+      if (!debtId) {
+        throw new Error('Debes seleccionar una deuda para pagar.');
+      }
+      if (amountBs <= 0) {
+        throw new Error('El pago de deuda debe ser mayor a 0.');
+      }
+
+      transaction((state) => {
+        const debt = state.cashDebts.find((entry) => entry.id === debtId);
+        if (!debt) {
+          throw new Error('No se encontro la deuda seleccionada.');
+        }
+        if (String(debt.status ?? '').toLowerCase() === 'pagada' || Number(debt.balanceBs ?? 0) <= 0) {
+          throw new Error('Esta deuda ya esta pagada.');
+        }
+
+        const activeSession = getActiveSession(state);
+        if (!activeSession) {
+          throw new Error('Debes abrir caja chica antes de pagar una deuda.');
+        }
+        const availablePettyCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH);
+        const payableBs = Math.min(toPositiveRoundedNumber(amountBs), toPositiveRoundedNumber(debt.balanceBs));
+        if (payableBs > availablePettyCashBs) {
+          throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
+        }
+
+        const movement = buildCashMovement({
+          sessionId: activeSession.id,
+          type: 'egreso_pago_deuda',
+          amountBs: -payableBs,
+          description: `Pago deuda ${debt.code}: ${debt.description}`,
+          sourceType: 'cash_debt',
+          sourceId: debt.id,
+          createdBy: paidBy,
+          cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
+          category: 'pago_deuda',
+          paymentMethod,
+          responsible: debt.personName || paidBy,
+          receipt: debt.code,
+          receiptCode: nextCashReceiptCode(state),
+          notes,
+          accountingTag: 'petty_debt_payment',
+        });
+        const payment = {
+          id: makeId('debtpay'),
+          movementId: movement.id,
+          amountBs: payableBs,
+          paidAt: paymentDate,
+          paidBy,
+          notes,
+        };
+        debt.paidBs = toPositiveRoundedNumber(Number(debt.paidBs ?? 0) + payableBs);
+        debt.balanceBs = toPositiveRoundedNumber(Math.max(0, Number(debt.amountBs ?? 0) - debt.paidBs));
+        debt.status = debt.balanceBs <= 0 ? 'pagada' : 'parcial';
+        debt.paidAt = debt.balanceBs <= 0 ? paymentDate : null;
+        debt.payments = Array.isArray(debt.payments) ? [...debt.payments, payment] : [payment];
+        state.cashMovements.push(movement);
+        result = { debt: deepClone(debt), movement };
+        return state;
+      });
+
+      return result;
+    },
     openSession: async (payload) => {
       const openingBigCashBs = toNumber(payload?.openingBigCashBs ?? payload?.openingAmountBs ?? 0, 'monto de apertura caja grande');
       const openingPettyCashBs = toNumber(payload?.openingPettyCashBs ?? 0, 'monto de apertura caja chica');
@@ -12346,6 +12559,62 @@ const createWebBridge = () => ({
       const state = readState();
       assertDeveloperResetAccess(state, payload?.code);
       throw new Error('El reset general fue deshabilitado. Usa el Panel de Reset del Sistema con analisis de impacto.');
+    },
+  },
+
+  attendance: {
+    listRecords: async () => {
+      const { attendanceRecords } = readQueryState();
+      return attendanceRecords.slice().sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt));
+    },
+    createRecord: async (payload) => {
+      const type = String(payload?.type ?? '').trim();
+      const location = String(payload?.location ?? '').trim();
+      const reason = String(payload?.reason ?? '').trim();
+      const userName = String(payload?.userName ?? payload?.createdBy ?? '').trim() || 'Usuario';
+      const userId = String(payload?.userId ?? '').trim();
+      const role = String(payload?.role ?? '').trim();
+      const photoDataUrl = String(payload?.photoDataUrl ?? '').trim();
+      const latitude = payload?.latitude ?? null;
+      const longitude = payload?.longitude ?? null;
+
+      if (!['entrada', 'salida'].includes(type)) {
+        throw new Error('Debes seleccionar si es entrada o salida.');
+      }
+      if (!location) {
+        throw new Error('Debes registrar la ubicacion.');
+      }
+      if (!reason) {
+        throw new Error('Debes indicar el motivo.');
+      }
+      if (!photoDataUrl) {
+        throw new Error('Debes tomar o subir una foto para respaldar la marca.');
+      }
+
+      let createdRecord = null;
+      transaction((state) => {
+        const capturedAt = new Date().toISOString();
+        createdRecord = {
+          id: makeId('att'),
+          code: nextAttendanceCode(state),
+          type,
+          location,
+          reason,
+          photoDataUrl,
+          latitude,
+          longitude,
+          capturedAt,
+          createdAt: capturedAt,
+          userId,
+          userName,
+          role,
+          notes: String(payload?.notes ?? '').trim(),
+        };
+        state.attendanceRecords.push(createdRecord);
+        return state;
+      });
+
+      return createdRecord;
     },
   },
 

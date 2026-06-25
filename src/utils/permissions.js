@@ -7,6 +7,7 @@ export const ROLE_DEFINITIONS = {
       'resumen',
       'items',
       'alquiler',
+      'asistencia',
       'proveedores',
       'personal',
       'contabilidad',
@@ -26,6 +27,7 @@ export const ROLE_DEFINITIONS = {
       'resumen',
       'items',
       'alquiler',
+      'asistencia',
       'proveedores',
       'personal',
       'contabilidad',
@@ -44,6 +46,7 @@ export const ROLE_DEFINITIONS = {
       'resumen',
       'items',
       'alquiler',
+      'asistencia',
       'proveedores',
       'personal',
       'contabilidad',
@@ -58,31 +61,31 @@ export const ROLE_DEFINITIONS = {
     label: 'User',
     description: 'Acceso basico de operacion diaria.',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'caja'],
   },
   ventas: {
     label: 'Ventas',
     description: 'Clientes, cotizaciones, contratos y agenda comercial.',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'proveedores', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'caja'],
   },
   inventario: {
     label: 'Inventario',
     description: 'Productos, stock, movimientos y ajustes.',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'caja', 'inventario'],
+    allowedTabs: ['resumen', 'asistencia', 'caja', 'inventario'],
   },
   transporte: {
     label: 'Transporte',
     description: 'Entregas, recojos, flota, choferes y calendario.',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'devolucion', 'caja'],
+    allowedTabs: ['resumen', 'asistencia', 'devolucion', 'caja'],
   },
   contabilidad: {
     label: 'Contabilidad',
     description: 'Reportes, caja operativa, personal y transporte.',
     defaultTab: 'contabilidad',
-    allowedTabs: ['resumen', 'personal', 'devolucion', 'contabilidad', 'recibos', 'caja'],
+    allowedTabs: ['resumen', 'asistencia', 'personal', 'devolucion', 'contabilidad', 'recibos', 'caja'],
   },
 };
 
@@ -129,6 +132,21 @@ export const getUserRoleDefinitions = (user) => getUserRoleIds(user).map((roleId
 
 export const getUserDisplayRole = (user) => getUserRoleDefinitions(user).map((role) => role.label).join(', ');
 
+export const DEFAULT_USER_PERMISSIONS = {
+  attendanceEnabled: true,
+  calendarReadOnly: false,
+  ordersReadOnly: false,
+};
+
+export const normalizeUserPermissions = (permissions = {}) => ({
+  ...DEFAULT_USER_PERMISSIONS,
+  attendanceEnabled: permissions?.attendanceEnabled !== false,
+  calendarReadOnly: Boolean(permissions?.calendarReadOnly),
+  ordersReadOnly: Boolean(permissions?.ordersReadOnly),
+});
+
+export const getUserPermissions = (user) => normalizeUserPermissions(user?.permissions);
+
 export const isDeveloper = (user) => getUserRoleIds(user).includes('developer');
 
 export const isSuperAdmin = (user) => getUserRoleIds(user).includes('super_admin');
@@ -147,10 +165,21 @@ export const getAllowedTabRoots = (user) => new Set(
 export const canAccessTab = (user, tabId) => {
   if (!user) return false;
   const target = String(tabId ?? '');
+  const permissions = getUserPermissions(user);
+  if (target === 'asistencia' && !permissions.attendanceEnabled) return false;
   const roots = getAllowedTabRoots(user);
   if (roots.has(target)) return true;
   if (target.startsWith('inventario')) return roots.has('inventario');
   if (target.startsWith('devolucion')) return roots.has('devolucion');
   if (target.startsWith('contabilidad')) return roots.has('contabilidad');
   return false;
+};
+
+export const canWriteTab = (user, tabId) => {
+  if (!canAccessTab(user, tabId)) return false;
+  const target = String(tabId ?? '');
+  const permissions = getUserPermissions(user);
+  if (target === 'caja' && permissions.calendarReadOnly) return false;
+  if (target === 'alquiler' && permissions.ordersReadOnly) return false;
+  return true;
 };

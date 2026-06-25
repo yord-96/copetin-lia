@@ -39,6 +39,7 @@ let syncPollTimer = null;
 const syncSubscribers = new Set();
 const inFlightMutations = new Map();
 let mutationQueue = Promise.resolve();
+let remotePresenceUnsupported = false;
 
 const getBridge = () => getWebBridge();
 
@@ -155,6 +156,8 @@ const businessCollections = [
   'reports',
   'cashSessions',
   'cashMovements',
+  'cashDebts',
+  'attendanceRecords',
   'resetLogs',
   'inventoryMovements',
   'stockRecoveries',
@@ -366,7 +369,7 @@ const uploadProductImage = async (file, { itemId } = {}) => {
 };
 
 const callServerPresence = async (action, payload) => {
-  if (!shouldUseServerState()) {
+  if (!shouldUseServerState() || isLocalHost() || remotePresenceUnsupported) {
     return null;
   }
 
@@ -379,6 +382,10 @@ const callServerPresence = async (action, payload) => {
     announceDataChange({ domain: 'presence', method: action });
     return action === 'leave' ? result?.active ?? [] : result;
   } catch (error) {
+    if (error?.status === 404 || error?.status === 405) {
+      remotePresenceUnsupported = true;
+      return null;
+    }
     applyRemoteBackoff(error);
     if (isLocalHost()) {
       return null;
@@ -599,6 +606,10 @@ const callBridge = async (domain, method, mutates, ...args) => {
       }
 
       const result = await getBridge()[domain][method](...args);
+      if (isPresenceMutation) {
+        announceDataChange({ domain, method });
+        return result;
+      }
       try {
         await pushServerState();
         announceDataChange({ domain, method });
@@ -744,8 +755,27 @@ export const api = {
       await syncServerState({ required: true, reason: 'auth-session' });
       return bridge.auth.getSession();
     },
-    login: (payload) => callBridge('auth', 'login', true, payload),
-    logout: () => callBridge('auth', 'logout', true),
+    login: async (payload) => {
+      await syncServerState({ required: true, reason: 'auth-login' });
+      const session = await getBridge().auth.login(payload);
+      pushServerState()
+        .then(() => announceDataChange({ domain: 'auth', method: 'login' }))
+        .catch((error) => {
+          applyRemoteBackoff(error);
+          console.warn('[copetin-sync] No se pudo guardar ultimo acceso en segundo plano.', error);
+        });
+      return session;
+    },
+    logout: async () => {
+      const result = await getBridge().auth.logout();
+      pushServerState()
+        .then(() => announceDataChange({ domain: 'auth', method: 'logout' }))
+        .catch((error) => {
+          applyRemoteBackoff(error);
+          console.warn('[copetin-sync] No se pudo guardar cierre de sesion en segundo plano.', error);
+        });
+      return result;
+    },
   },
   presence: {
     listActive: async () => {
@@ -809,13 +839,20 @@ export const api = {
     getSummary: () => callBridge('cash', 'getSummary', false),
     listSessions: () => callBridge('cash', 'listSessions', false),
     listMovements: (payload) => callBridge('cash', 'listMovements', false, payload),
+    listDebts: () => callBridge('cash', 'listDebts', false),
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
     createManualMovement: (payload) => callBridge('cash', 'createManualMovement', true, payload),
     voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
     collectReceivable: (payload) => callBridge('cash', 'collectReceivable', true, payload),
+    createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
+    payDebt: (payload) => callBridge('cash', 'payDebt', true, payload),
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
+  },
+  attendance: {
+    listRecords: () => callBridge('attendance', 'listRecords', false),
+    createRecord: (payload) => callBridge('attendance', 'createRecord', true, payload),
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),

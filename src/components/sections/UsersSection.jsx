@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
+  DEFAULT_USER_PERMISSIONS,
   ROLE_OPTIONS,
   getUserRoleDefinitions,
   getUserRoleIds,
   isDeveloper,
+  normalizeUserPermissions,
   normalizeRoleIds,
 } from '../../utils/permissions';
 
@@ -29,6 +31,7 @@ const EMPTY_USER_FORM = {
   username: '',
   password: '',
   roleIds: ['ventas'],
+  permissions: DEFAULT_USER_PERMISSIONS,
   phone: '',
   status: 'active',
 };
@@ -159,6 +162,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       username: user.username ?? '',
       password: '',
       roleIds: getUserRoleIds(user),
+      permissions: normalizeUserPermissions(user.permissions),
       phone: user.phone ?? '',
       status: user.status ?? 'active',
     });
@@ -212,6 +216,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
         fullName: form.fullName.trim(),
         username: form.username.trim(),
         roleIds: normalizeRoleIds(form.roleIds),
+        permissions: normalizeUserPermissions(form.permissions),
         phone: form.phone.trim(),
         status: form.status,
       };
@@ -234,6 +239,16 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
     if (!isModalOpen) return null;
     const selectedRoleIds = normalizeRoleIds(form.roleIds);
     const selectedRoles = selectedRoleIds.map((roleId) => ROLE_OPTIONS.find((option) => option.id === roleId)).filter(Boolean);
+    const permissions = normalizeUserPermissions(form.permissions);
+    const setPermission = (key, value) => {
+      setForm((current) => ({
+        ...current,
+        permissions: normalizeUserPermissions({
+          ...current.permissions,
+          [key]: value,
+        }),
+      }));
+    };
     const toggleRole = (roleId) => {
       setForm((current) => {
         const currentRoleIds = normalizeRoleIds(current.roleIds);
@@ -295,6 +310,44 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                     </span>
                   </label>
                 ))}
+              </div>
+            </fieldset>
+            <fieldset className="user-access-picker user-permissions-picker">
+              <legend>Permisos finos</legend>
+              <div className="user-access-options user-permission-options">
+                <label className="user-access-option">
+                  <input
+                    type="checkbox"
+                    checked={permissions.attendanceEnabled}
+                    onChange={(event) => setPermission('attendanceEnabled', event.target.checked)}
+                  />
+                  <span>
+                    <strong>Puede marcar asistencia</strong>
+                    <small>Activa el módulo Asistencia como biométrico remoto.</small>
+                  </span>
+                </label>
+                <label className="user-access-option">
+                  <input
+                    type="checkbox"
+                    checked={permissions.calendarReadOnly}
+                    onChange={(event) => setPermission('calendarReadOnly', event.target.checked)}
+                  />
+                  <span>
+                    <strong>Calendario solo lectura</strong>
+                    <small>Puede ver agenda y documentos, pero no crear eventos.</small>
+                  </span>
+                </label>
+                <label className="user-access-option">
+                  <input
+                    type="checkbox"
+                    checked={permissions.ordersReadOnly}
+                    onChange={(event) => setPermission('ordersReadOnly', event.target.checked)}
+                  />
+                  <span>
+                    <strong>Órdenes solo lectura</strong>
+                    <small>Puede consultar contratos, sin crear ni modificar.</small>
+                  </span>
+                </label>
               </div>
             </fieldset>
             <label>

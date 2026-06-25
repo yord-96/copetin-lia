@@ -25,6 +25,7 @@ const PAGE_LABELS = {
   caja: 'Calendario',
   items: 'Clientes',
   alquiler: 'Ordenes',
+  asistencia: 'Asistencia',
   proveedores: 'Proveedores',
   personal: 'Personal',
   inventario: 'Inventario',
@@ -124,4 +125,3 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
 }
 
 export default TopBar;
-

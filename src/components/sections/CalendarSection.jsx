@@ -318,6 +318,7 @@ function CalendarSection({
   contracts = [],
   deliveries = [],
   supplierBundle = null,
+  readOnly = false,
   onCreateEvent,
   onPrintContractDocument,
 }) {
@@ -895,6 +896,7 @@ function CalendarSection({
   };
 
   const openCreateModal = () => {
+    if (readOnly) return;
     setEventForm({ ...EMPTY_EVENT_FORM, date: selectedDateKey || todayKey });
     setFormError('');
     setIsCreateOpen(true);
@@ -907,6 +909,7 @@ function CalendarSection({
 
   const handleSubmitEvent = async (event) => {
     event.preventDefault();
+    if (readOnly) return;
     setFormError('');
     const payload = {
       title: eventForm.title.trim(),
@@ -1320,7 +1323,7 @@ function CalendarSection({
             <span className="calendar-empty-day-icon"><KpiIcon kind="calendar" /></span>
             <strong>Tu agenda está libre</strong>
             <p>No hay actividades programadas para este día.</p>
-            <button type="button" className="primary-button" onClick={openCreateModal}>Crear evento</button>
+            {!readOnly ? <button type="button" className="primary-button" onClick={openCreateModal}>Crear evento</button> : null}
           </div>
         ) : null}
       </div>
@@ -1798,7 +1801,7 @@ function CalendarSection({
         </div>
         <div className="calendar-header-actions">
           <button type="button" className="ghost-button" onClick={goToday}>Hoy</button>
-          <button type="button" className="primary-button" onClick={openCreateModal}>+ Nuevo Evento</button>
+          {!readOnly ? <button type="button" className="primary-button" onClick={openCreateModal}>+ Nuevo Evento</button> : null}
         </div>
       </header>
 

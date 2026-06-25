@@ -206,6 +206,7 @@ function AccountingSection({
   activeModule = 'contabilidad',
   cashSummary = null,
   cashMovements = [],
+  cashDebts = [],
   cashSessions = [],
   rentals = [],
   contracts = [],
@@ -216,6 +217,8 @@ function AccountingSection({
   onOpenCashSession,
   onCloseCashSession,
   onCreateCashMovement,
+  onCreateCashDebt,
+  onPayCashDebt,
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
@@ -250,6 +253,9 @@ function AccountingSection({
     receipt: '',
     notes: '',
     linkedRentalId: '',
+    debtId: '',
+    debtDate: '',
+    dueDate: '',
   });
   const [cashForm, setCashForm] = useState({
     amountBs: '',
@@ -260,6 +266,9 @@ function AccountingSection({
     receipt: '',
     notes: '',
     linkedRentalId: '',
+    debtId: '',
+    debtDate: '',
+    dueDate: '',
   });
   const [collectModal, setCollectModal] = useState(null);
   const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', receipt: '', note: '' });
@@ -317,6 +326,16 @@ function AccountingSection({
   const postedMovements = useMemo(
     () => sortedMovements.filter((movement) => !isVoidedCashMovement(movement)),
     [sortedMovements],
+  );
+
+  const sortedCashDebts = useMemo(
+    () => [...cashDebts].sort((a, b) => new Date(b.createdAt ?? b.debtDate ?? 0) - new Date(a.createdAt ?? a.debtDate ?? 0)),
+    [cashDebts],
+  );
+
+  const pendingCashDebts = useMemo(
+    () => sortedCashDebts.filter((debt) => Number(debt?.balanceBs ?? debt?.amountBs ?? 0) > 0),
+    [sortedCashDebts],
   );
 
   const bigCashPositiveRows = useMemo(
@@ -770,6 +789,9 @@ function AccountingSection({
       receipt: '',
       notes: '',
       linkedRentalId: '',
+      debtId: '',
+      debtDate: '',
+      dueDate: '',
       ...patch,
     });
     setCashActionError('');
@@ -1031,6 +1053,29 @@ function AccountingSection({
         });
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
+      } else if (cashModal === 'debt') {
+        await onCreateCashDebt?.({
+          description: cashForm.description,
+          personName: cashForm.responsible,
+          amountBs,
+          debtDate: cashForm.debtDate || selectedDate,
+          dueDate: cashForm.dueDate || null,
+          notes: cashForm.notes,
+          createdBy: currentUserName,
+        });
+        setCashActionFeedback('Deuda registrada. No afecta el saldo hasta que se pague.');
+      } else if (cashModal === 'payDebt') {
+        const paid = await onPayCashDebt?.({
+          debtId: cashForm.debtId,
+          amountBs,
+          paymentDate: selectedDate,
+          paymentMethod: cashForm.paymentMethod,
+          notes: cashForm.notes,
+          paidBy: currentUserName,
+          createdBy: currentUserName,
+        });
+        await printCashReceipt(resolvePrintableCashMovementId(paid, 'PETTY_CASH'));
+        setCashActionFeedback('Pago de deuda registrado en Caja Chica.');
       } else if (cashModal === 'income') {
         const created = await onCreateCashMovement?.({
           type: 'ingreso',
@@ -1091,6 +1136,8 @@ function AccountingSection({
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
     if (cashModal === 'expense') return 'Registrar gasto de Caja Chica';
+    if (cashModal === 'debt') return 'Registrar deuda';
+    if (cashModal === 'payDebt') return 'Pagar deuda';
     if (cashModal === 'income') return 'Registrar ingreso de Caja Grande';
     if (cashModal === 'closePetty') return 'Cerrar Caja Chica';
     return 'Movimiento de caja';
@@ -1450,6 +1497,10 @@ function AccountingSection({
                 <small>
                   {cashModal === 'income'
                     ? 'Los ingresos manuales entran a Caja Grande.'
+                    : cashModal === 'debt'
+                    ? 'Registra una deuda pendiente sin tocar el saldo de Caja Chica.'
+                    : cashModal === 'payDebt'
+                    ? 'El pago sale de Caja Chica y genera recibo.'
                     : cashModal === 'expense'
                     ? 'Los gastos salen de la Caja Chica abierta.'
                     : cashModal === 'closePetty'
@@ -1459,6 +1510,33 @@ function AccountingSection({
               </div>
               <button type="button" className="orders-modal-close" onClick={closeCashAction}>x</button>
             </header>
+
+            {cashModal === 'payDebt' ? (
+              <label>
+                Deuda a pagar
+                <select
+                  value={cashForm.debtId}
+                  onChange={(event) => {
+                    const debt = pendingCashDebts.find((entry) => entry.id === event.target.value);
+                    setCashForm((current) => ({
+                      ...current,
+                      debtId: event.target.value,
+                      amountBs: debt ? String(Number(debt.balanceBs ?? debt.amountBs ?? 0)) : current.amountBs,
+                      description: debt?.description ?? current.description,
+                      responsible: debt?.personName ?? current.responsible,
+                    }));
+                  }}
+                  required
+                >
+                  <option value="">Seleccionar deuda pendiente</option>
+                  {pendingCashDebts.map((debt) => (
+                    <option key={debt.id} value={debt.id}>
+                      {debt.code} - {debt.description} - saldo {formatBs(debt.balanceBs)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <div className="accounting-form-grid two">
               <label>
@@ -1493,8 +1571,12 @@ function AccountingSection({
                     placeholder={
                       cashModal === 'expense'
                         ? 'Ej: almuerzo, taxi, reparacion, sueldo...'
+                        : cashModal === 'debt'
+                        ? 'Ej: deuda pendiente por compra, prestamo o servicio'
                         : cashModal === 'transfer'
                         ? 'Ej: reposicion para gastos operativos'
+                        : cashModal === 'payDebt'
+                        ? 'Detalle del pago de deuda'
                         : 'Detalle del movimiento'
                     }
                     required={cashModal !== 'openPetty'}
@@ -1513,6 +1595,13 @@ function AccountingSection({
                           <option value="sueldos">Pago de sueldos</option>
                           <option value="varios">Varios</option>
                         </>
+                      ) : cashModal === 'debt' || cashModal === 'payDebt' ? (
+                        <>
+                          <option value="deuda_operativa">Deuda operativa</option>
+                          <option value="proveedor">Proveedor</option>
+                          <option value="prestamo">Prestamo</option>
+                          <option value="varios">Varios</option>
+                        </>
                       ) : cashModal === 'transfer' ? (
                         <>
                           <option value="reposicion_caja_chica">Reposicion caja chica</option>
@@ -1529,14 +1618,35 @@ function AccountingSection({
                     </select>
                   </label>
                   <label>
-                    Responsable / destino
+                    {cashModal === 'debt' ? 'A quien se debe' : 'Responsable / destino'}
                     <input
                       value={cashForm.responsible}
                       onChange={(event) => setCashForm((current) => ({ ...current, responsible: event.target.value }))}
-                      placeholder="Persona, proveedor o destino"
+                      placeholder={cashModal === 'debt' ? 'Persona, proveedor o entidad' : 'Persona, proveedor o destino'}
                     />
                   </label>
                 </div>
+                {cashModal === 'debt' ? (
+                  <div className="accounting-form-grid two">
+                    <label>
+                      Fecha de deuda
+                      <input
+                        type="date"
+                        value={cashForm.debtDate}
+                        onChange={(event) => setCashForm((current) => ({ ...current, debtDate: event.target.value }))}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Fecha límite / vencimiento
+                      <input
+                        type="date"
+                        value={cashForm.dueDate}
+                        onChange={(event) => setCashForm((current) => ({ ...current, dueDate: event.target.value }))}
+                      />
+                    </label>
+                  </div>
+                ) : null}
                 {cashModal === 'expense' ? (
                   <label>
                     Enlazar gasto de transporte
@@ -1588,7 +1698,7 @@ function AccountingSection({
             <footer>
               <button type="button" className="ghost-button" onClick={closeCashAction}>Cancelar</button>
               <button type="submit" className="primary-button" disabled={isSubmittingCash}>
-                {isSubmittingCash ? 'Guardando...' : 'Guardar movimiento'}
+                {isSubmittingCash ? 'Guardando...' : cashModal === 'payDebt' ? 'Pagar y generar recibo' : cashModal === 'debt' ? 'Registrar deuda' : 'Guardar movimiento'}
               </button>
             </footer>
           </form>
@@ -2068,14 +2178,23 @@ function AccountingSection({
           <article className="bigcash-card petty-expenses-card">
             <header className="petty-table-head">
               <h3>GASTOS DE CAJA CHICA - {formatDate(selectedDate)}</h3>
-              <button
-                type="button"
-                className="petty-primary-button small"
-                onClick={() => openCashAction('expense', { category: 'varios' })}
-                disabled={pettyCashBalanceBs <= 0}
-              >
-                + Registrar gasto
-              </button>
+              <div className="petty-action-pair">
+                <button
+                  type="button"
+                  className="petty-secondary-button small"
+                  onClick={() => openCashAction('debt', { category: 'deuda_operativa', debtDate: selectedDate })}
+                >
+                  + Registrar deuda
+                </button>
+                <button
+                  type="button"
+                  className="petty-primary-button small"
+                  onClick={() => openCashAction('expense', { category: 'varios' })}
+                  disabled={pettyCashBalanceBs <= 0}
+                >
+                  + Registrar gasto
+                </button>
+              </div>
             </header>
 
             <div className="petty-toolbar">
@@ -2153,6 +2272,84 @@ function AccountingSection({
             >
               Ver historial completo
             </button>
+          </article>
+
+          <article className="bigcash-card petty-debts-card">
+            <header className="petty-table-head">
+              <div>
+                <h3>DEUDAS REGISTRADAS</h3>
+                <p>Control de compromisos pendientes y pagos hechos desde Caja Chica.</p>
+              </div>
+              <button
+                type="button"
+                className="petty-secondary-button small"
+                onClick={() => openCashAction('payDebt', {
+                  debtId: pendingCashDebts[0]?.id ?? '',
+                  amountBs: pendingCashDebts[0] ? String(Number(pendingCashDebts[0].balanceBs ?? 0)) : '',
+                  description: pendingCashDebts[0]?.description ?? '',
+                  responsible: pendingCashDebts[0]?.personName ?? currentUserName,
+                  category: 'deuda_operativa',
+                })}
+                disabled={pendingCashDebts.length === 0 || pettyCashBalanceBs <= 0}
+              >
+                Pagar deuda
+              </button>
+            </header>
+            <div className="bigcash-table-wrap petty-table-wrap">
+              <table className="accounting-table petty-table petty-debt-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Fecha</th>
+                    <th>Detalle / a quién</th>
+                    <th>Monto</th>
+                    <th>Pagado</th>
+                    <th>Saldo</th>
+                    <th>Estado</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCashDebts.slice(0, 8).map((debt) => {
+                    const balance = Number(debt.balanceBs ?? debt.amountBs ?? 0);
+                    const isPaid = balance <= 0;
+                    return (
+                      <tr key={debt.id}>
+                        <td><strong>{debt.code}</strong></td>
+                        <td>{formatDate(debt.debtDate ?? debt.createdAt)}</td>
+                        <td>
+                          <strong>{debt.description}</strong>
+                          <small>{debt.personName || 'Sin responsable'}{debt.dueDate ? ` | vence ${formatDate(debt.dueDate)}` : ''}</small>
+                        </td>
+                        <td>{formatBs(debt.amountBs)}</td>
+                        <td>{formatBs(debt.paidBs)}</td>
+                        <td><strong className={isPaid ? 'value-green' : 'value-orange'}>{formatBs(balance)}</strong></td>
+                        <td><span className={`petty-debt-status ${isPaid ? 'paid' : 'pending'}`}>{isPaid ? 'Pagada' : debt.status === 'parcial' ? 'Parcial' : 'Pendiente'}</span></td>
+                        <td>
+                          {!isPaid ? (
+                            <button
+                              type="button"
+                              className="cash-receipt-button"
+                              onClick={() => openCashAction('payDebt', {
+                                debtId: debt.id,
+                                amountBs: String(balance),
+                                description: debt.description,
+                                responsible: debt.personName || currentUserName,
+                                category: 'deuda_operativa',
+                              })}
+                              disabled={pettyCashBalanceBs <= 0}
+                            >
+                              Pagar
+                            </button>
+                          ) : <span className="cash-receipt-muted">Cerrada</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {sortedCashDebts.length === 0 ? <tr><td colSpan={8}><p className="status">Sin deudas registradas.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
           </article>
 
           <aside className="petty-side">

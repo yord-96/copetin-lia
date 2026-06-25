@@ -8,6 +8,7 @@ export const tabs = [
   { id: 'caja', label: 'Calendario' },
   { id: 'items', label: 'Clientes' },
   { id: 'alquiler', label: 'Ordenes de Servicio' },
+  { id: 'asistencia', label: 'Asistencia' },
   { id: 'inventario', label: 'Inventario' },
   { id: 'devolucion', label: 'Transporte' },
   { id: 'recibos', label: 'Reportes' },

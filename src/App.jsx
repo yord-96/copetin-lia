@@ -9,7 +9,7 @@ import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
-import { canAccessTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
+import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
 const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
 const SIDEBAR_SEEN_STORAGE_KEY = 'copetin-sidebar-seen-counts-v3-empty';
@@ -22,6 +22,7 @@ const CalendarSection = lazy(() => import('./components/sections/CalendarSection
 const ClientsSection = lazy(() => import('./components/sections/ClientsSection'));
 const UsersSection = lazy(() => import('./components/sections/UsersSection'));
 const ServiceOrdersSection = lazy(() => import('./components/sections/ServiceOrdersSection'));
+const AttendanceSection = lazy(() => import('./components/sections/AttendanceSection'));
 const InventoryDashboardSection = lazy(() => import('./components/sections/InventoryDashboardSection'));
 const SuppliersSection = lazy(() => import('./components/sections/SuppliersSection'));
 const PersonnelSection = lazy(() => import('./components/sections/PersonnelSection'));
@@ -33,6 +34,7 @@ const prefetchersByTab = {
   caja: () => import('./components/sections/CalendarSection'),
   items: () => import('./components/sections/ClientsSection'),
   alquiler: () => import('./components/sections/ServiceOrdersSection'),
+  asistencia: () => import('./components/sections/AttendanceSection'),
   proveedores: () => import('./components/sections/SuppliersSection'),
   personal: () => import('./components/sections/PersonnelSection'),
   inventario: () => import('./components/sections/InventoryDashboardSection'),
@@ -182,7 +184,9 @@ function App() {
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [developerCompanyChoice, setDeveloperCompanyChoice] = useState(readDeveloperCompanyChoice);
   const allowedTabRoots = useMemo(
-    () => (controller.currentUser ? Array.from(getAllowedTabRoots(controller.currentUser)) : []),
+    () => (controller.currentUser
+      ? Array.from(getAllowedTabRoots(controller.currentUser)).filter((tab) => canAccessTab(controller.currentUser, tab))
+      : []),
     [controller.currentUser],
   );
 
@@ -309,11 +313,15 @@ function App() {
       && controller.activeTab !== 'categorias'
       && controller.activeTab !== 'alquiler'
       && controller.activeTab !== 'proveedores'
+      && controller.activeTab !== 'asistencia'
       && controller.activeTab !== 'personal'
       && controller.activeTab !== 'caja'
       && !String(controller.activeTab).startsWith('inventario')
       && !String(controller.activeTab).startsWith('devolucion')
       && !String(controller.activeTab).startsWith('contabilidad');
+    const canWriteCalendar = canWriteTab(controller.currentUser, 'caja');
+    const canWriteOrders = canWriteTab(controller.currentUser, 'alquiler');
+    const canMarkAttendance = canAccessTab(controller.currentUser, 'asistencia');
 
     return (
       <>
@@ -347,7 +355,8 @@ function App() {
             contracts={controller.contracts}
             deliveries={controller.deliveries}
             supplierBundle={controller.supplierBundle}
-            onCreateEvent={controller.handleCreateCalendarEvent}
+            readOnly={!canWriteCalendar}
+            onCreateEvent={canWriteCalendar ? controller.handleCreateCalendarEvent : undefined}
             onPrintContractDocument={controller.handlePrintContractDocument}
           />
         )}
@@ -414,6 +423,16 @@ function App() {
           />
         )}
 
+        {controller.activeTab === 'asistencia' && (
+          <AttendanceSection
+            records={controller.attendanceRecords}
+            currentUser={controller.currentUser}
+            formatDateTime={formatDateTime}
+            canMark={canMarkAttendance}
+            onCreateRecord={canMarkAttendance ? controller.handleCreateAttendanceRecord : undefined}
+          />
+        )}
+
         {controller.activeTab === 'personal' && (
           <PersonnelSection
             personnelBundle={controller.personnelBundle}
@@ -440,6 +459,7 @@ function App() {
             cashSummary={controller.cashSummary}
             cashSessions={controller.cashSessions}
             cashMovements={controller.cashMovements}
+            cashDebts={controller.cashDebts}
             currentUser={controller.currentUser}
             formatBs={formatBs}
             formatDate={formatDate}
@@ -447,6 +467,8 @@ function App() {
             onOpenCashSession={controller.handleOpenCashSession}
             onCloseCashSession={controller.handleCloseCashSession}
             onCreateCashMovement={controller.handleCreateCashMovement}
+            onCreateCashDebt={controller.handleCreateCashDebt}
+            onPayCashDebt={controller.handlePayCashDebt}
             onVoidAndReplaceCashMovementReceipt={controller.handleVoidAndReplaceCashMovementReceipt}
             onCollectReceivable={controller.handleCollectReceivable}
             onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}
@@ -503,24 +525,25 @@ function App() {
             users={controller.users}
             personnelBundle={controller.personnelBundle}
             currentUser={controller.currentUser}
+            readOnly={!canWriteOrders}
             formatDate={formatDate}
             formatDateTime={formatDateTime}
             formatBs={formatBs}
-            onCreateQuote={controller.handleCreateQuote}
-            onUpdateQuote={controller.handleUpdateQuote}
-            onRemoveQuote={controller.handleRemoveQuote}
-            onApproveQuote={controller.handleApproveQuote}
-            onUpdateOrderOperational={controller.handleUpdateOrderOperational}
-            onCancelOrderContract={controller.handleCancelOrderContract}
-            onCreateContract={controller.handleCreateContract}
-            onUpdateContract={controller.handleUpdateContract}
-            onRemoveContract={controller.handleRemoveContract}
-            onCreateContractFromQuote={controller.handleCreateContractFromQuote}
-            onCreateContractFromOrder={controller.handleCreateContractFromOrder}
-            onApproveContract={controller.handleApproveContract}
+            onCreateQuote={canWriteOrders ? controller.handleCreateQuote : undefined}
+            onUpdateQuote={canWriteOrders ? controller.handleUpdateQuote : undefined}
+            onRemoveQuote={canWriteOrders ? controller.handleRemoveQuote : undefined}
+            onApproveQuote={canWriteOrders ? controller.handleApproveQuote : undefined}
+            onUpdateOrderOperational={canWriteOrders ? controller.handleUpdateOrderOperational : undefined}
+            onCancelOrderContract={canWriteOrders ? controller.handleCancelOrderContract : undefined}
+            onCreateContract={canWriteOrders ? controller.handleCreateContract : undefined}
+            onUpdateContract={canWriteOrders ? controller.handleUpdateContract : undefined}
+            onRemoveContract={canWriteOrders ? controller.handleRemoveContract : undefined}
+            onCreateContractFromQuote={canWriteOrders ? controller.handleCreateContractFromQuote : undefined}
+            onCreateContractFromOrder={canWriteOrders ? controller.handleCreateContractFromOrder : undefined}
+            onApproveContract={canWriteOrders ? controller.handleApproveContract : undefined}
             onGenerateOrderDocuments={controller.handleGenerateOrderDocuments}
-            onCreateSupplier={controller.handleCreateSupplier}
-            onCreateSupplierQuote={controller.handleCreateSupplierQuote}
+            onCreateSupplier={canWriteOrders ? controller.handleCreateSupplier : undefined}
+            onCreateSupplierQuote={canWriteOrders ? controller.handleCreateSupplierQuote : undefined}
             onOpenTransportModule={() => {
               markSidebarModuleAsSeen('devolucion_entregas');
               controller.setActiveTab('devolucion_entregas');

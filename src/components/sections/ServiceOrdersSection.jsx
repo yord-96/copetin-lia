@@ -849,6 +849,7 @@ function ServiceOrdersSection({
   users = [],
   personnelBundle = { employees: [] },
   currentUser = null,
+  readOnly = false,
   formatDate,
   formatDateTime,
   formatBs,
@@ -2106,6 +2107,7 @@ function ServiceOrdersSection({
   });
 
   const openCreateModal = (mode, entityType = 'quote', sourceRecord = null) => {
+    if (readOnly) return;
     setActionFeedback('');
     setFormError('');
     setItemSearch('');
@@ -3610,14 +3612,18 @@ function ServiceOrdersSection({
             {quoteRows.length} cotizaciones · {contractRows.length} contratos
           </span>
         </div>
-        <div className="orders-header-actions">
-          <button type="button" className="primary-button orders-new-btn" onClick={() => openCreateModal('order', 'contract')}>
-            + Nuevo Contrato
-          </button>
-          <button type="button" className="ghost-button orders-new-btn" onClick={() => openCreateModal('quote')}>
-            + Cotizacion
-          </button>
-        </div>
+        {!readOnly ? (
+          <div className="orders-header-actions">
+            <button type="button" className="primary-button orders-new-btn" onClick={() => openCreateModal('order', 'contract')}>
+              + Nuevo Contrato
+            </button>
+            <button type="button" className="ghost-button orders-new-btn" onClick={() => openCreateModal('quote')}>
+              + Cotizacion
+            </button>
+          </div>
+        ) : (
+          <span className="orders-readonly-badge">Modo consulta</span>
+        )}
       </header>
 
       <article className="orders-table-card">
@@ -3807,10 +3813,12 @@ function ServiceOrdersSection({
                         <div className="orders-empty-state">
                           <span className="orders-empty-icon"><OrdersKpiIcon kind="orders" /></span>
                           <strong>No hay ordenes con esos filtros</strong>
-                          <p>Ajusta la busqueda o crea una nueva orden para iniciar el flujo operativo.</p>
-                          <button type="button" className="primary-button" onClick={() => openCreateModal('order', 'contract')}>
-                            + Nueva Orden
-                          </button>
+                          <p>{readOnly ? 'Ajusta la busqueda para revisar ordenes anteriores.' : 'Ajusta la busqueda o crea una nueva orden para iniciar el flujo operativo.'}</p>
+                          {!readOnly ? (
+                            <button type="button" className="primary-button" onClick={() => openCreateModal('order', 'contract')}>
+                              + Nueva Orden
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -4039,10 +4047,12 @@ function ServiceOrdersSection({
                         <div className="orders-empty-state">
                           <span className="orders-empty-icon"><OrdersKpiIcon kind="quote" /></span>
                           <strong>No hay cotizaciones con esos filtros</strong>
-                          <p>Crea una cotizacion o limpia los filtros para revisar propuestas anteriores.</p>
-                          <button type="button" className="primary-button" onClick={() => openCreateModal('quote')}>
-                            + Cotizacion
-                          </button>
+                          <p>{readOnly ? 'Limpia los filtros para revisar propuestas anteriores.' : 'Crea una cotizacion o limpia los filtros para revisar propuestas anteriores.'}</p>
+                          {!readOnly ? (
+                            <button type="button" className="primary-button" onClick={() => openCreateModal('quote')}>
+                              + Cotizacion
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -4355,7 +4365,7 @@ function ServiceOrdersSection({
         >
           {menuState.type === 'order' && activeOrderMenuRow ? (
             <>
-              {!activeOrderMenuRow.contractId ? (
+              {!readOnly && !activeOrderMenuRow.contractId ? (
                 <button type="button" onClick={() => handleCreateContractFromOrderClick(activeOrderMenuRow)}>
                   Generar contrato
                 </button>
@@ -4366,9 +4376,11 @@ function ServiceOrdersSection({
               <button type="button" onClick={() => openWhatsAppModal('order', activeOrderMenuRow)}>
                 Contactar por WhatsApp
               </button>
-              <button type="button" onClick={() => handleOpenOperationalPanel(activeOrderMenuRow)}>
-                Revisar orden operativa
-              </button>
+              {!readOnly ? (
+                <button type="button" onClick={() => handleOpenOperationalPanel(activeOrderMenuRow)}>
+                  Revisar orden operativa
+                </button>
+              ) : null}
               {canAccessTransport ? (
                 <button
                   type="button"
@@ -4394,101 +4406,119 @@ function ServiceOrdersSection({
               <button type="button" onClick={handleOpenReportsClick}>
                 Ver en reportes
               </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => handleCancelOrderClick(activeOrderMenuRow)}
-                disabled={activeOrderMenuRow.status === 'cancelled'}
-              >
-                {activeOrderMenuRow.status === 'cancelled' ? 'Contrato anulado' : 'Anular contrato'}
-              </button>
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => handleCancelOrderClick(activeOrderMenuRow)}
+                  disabled={activeOrderMenuRow.status === 'cancelled'}
+                >
+                  {activeOrderMenuRow.status === 'cancelled' ? 'Contrato anulado' : 'Anular contrato'}
+                </button>
+              ) : null}
             </>
           ) : null}
 
           {menuState.type === 'quote' && activeQuoteMenuRow ? (
             <>
-              <button type="button" onClick={() => handleEditQuoteClick(activeQuoteMenuRow)}>
-                Editar cotizacion
-              </button>
+              {!readOnly ? (
+                <button type="button" onClick={() => handleEditQuoteClick(activeQuoteMenuRow)}>
+                  Editar cotizacion
+                </button>
+              ) : null}
               <button type="button" onClick={() => openWhatsAppModal('quote', activeQuoteMenuRow)}>
                 Enviar por WhatsApp
               </button>
-              <button
-                type="button"
-                onClick={() => handleApproveQuoteClick(activeQuoteMenuRow)}
-                disabled={activeQuoteHasContract}
-              >
-                {activeQuoteHasContract ? 'Contrato ya generado' : 'Aprobar y crear contrato'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleRejectQuoteClick(activeQuoteMenuRow)}
-                disabled={activeQuoteMenuRow.status === 'rechazada'}
-              >
-                Marcar rechazada
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuState(null);
-                  openCreateModal('quote', 'quote', {
-                    ...activeQuoteMenuRow,
-                    id: '',
-                    status: 'borrador',
-                  });
-                }}
-              >
-                Duplicar cotizacion
-              </button>
-              <button type="button" className="danger" onClick={() => handleDeleteQuoteClick(activeQuoteMenuRow)}>
-                Eliminar cotizacion
-              </button>
+              {!readOnly ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleApproveQuoteClick(activeQuoteMenuRow)}
+                    disabled={activeQuoteHasContract}
+                  >
+                    {activeQuoteHasContract ? 'Contrato ya generado' : 'Aprobar y crear contrato'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectQuoteClick(activeQuoteMenuRow)}
+                    disabled={activeQuoteMenuRow.status === 'rechazada'}
+                  >
+                    Marcar rechazada
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuState(null);
+                      openCreateModal('quote', 'quote', {
+                        ...activeQuoteMenuRow,
+                        id: '',
+                        status: 'borrador',
+                      });
+                    }}
+                  >
+                    Duplicar cotizacion
+                  </button>
+                  <button type="button" className="danger" onClick={() => handleDeleteQuoteClick(activeQuoteMenuRow)}>
+                    Eliminar cotizacion
+                  </button>
+                </>
+              ) : null}
             </>
           ) : null}
 
           {menuState.type === 'contract' && activeContractMenuRow ? (
             <>
-              <button
-                type="button"
-                onClick={() => handleApproveContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
-              >
-                Aprobar contrato
-              </button>
-              <button
-                type="button"
-                onClick={() => handleEditContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'anulado'}
-              >
-                Editar contrato
-              </button>
+              {!readOnly ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleApproveContractClick(activeContractMenuRow)}
+                    disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
+                  >
+                    Aprobar contrato
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEditContractClick(activeContractMenuRow)}
+                    disabled={activeContractMenuRow.status === 'anulado'}
+                  >
+                    Editar contrato
+                  </button>
+                </>
+              ) : null}
               <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
                 Enviar por WhatsApp
               </button>
-              <button
-                type="button"
-                onClick={() => handleRejectContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'rechazado' || activeContractMenuRow.status === 'anulado'}
-              >
-                Marcar rechazado
-              </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => handleCancelContractClick(activeContractMenuRow)}
-                disabled={activeContractMenuRow.status === 'anulado'}
-              >
-                {activeContractMenuRow.status === 'anulado' ? 'Ya anulado' : 'Anular contrato'}
-              </button>
+              {!readOnly ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectContractClick(activeContractMenuRow)}
+                    disabled={activeContractMenuRow.status === 'rechazado' || activeContractMenuRow.status === 'anulado'}
+                  >
+                    Marcar rechazado
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleCancelContractClick(activeContractMenuRow)}
+                    disabled={activeContractMenuRow.status === 'anulado'}
+                  >
+                    {activeContractMenuRow.status === 'anulado' ? 'Ya anulado' : 'Anular contrato'}
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
               >
                 Abrir contrato
               </button>
-              <button type="button" className="danger" onClick={() => handleDeleteContractClick(activeContractMenuRow)}>
-                Eliminar
-              </button>
+              {!readOnly ? (
+                <button type="button" className="danger" onClick={() => handleDeleteContractClick(activeContractMenuRow)}>
+                  Eliminar
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>

@@ -98,6 +98,8 @@ export const useAppController = () => {
   const [cashSummary, setCashSummary] = useState(null);
   const [cashSessions, setCashSessions] = useState([]);
   const [cashMovements, setCashMovements] = useState([]);
+  const [cashDebts, setCashDebts] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [userPresence, setUserPresence] = useState([]);
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
@@ -144,6 +146,7 @@ export const useAppController = () => {
         cashSummaryData,
         cashSessionsData,
         cashMovementsData,
+        cashDebtsData,
         clientsData,
         usersData,
         deliveriesData,
@@ -154,6 +157,7 @@ export const useAppController = () => {
         settingsData,
         reportsData,
         presenceData,
+        attendanceRecordsData,
       ] = await Promise.all([
         api.dashboard.get(),
         api.inventory.list(),
@@ -169,6 +173,7 @@ export const useAppController = () => {
         api.cash.getSummary(),
         api.cash.listSessions(),
         api.cash.listMovements(),
+        api.cash.listDebts(),
         api.clients.list(),
         api.users.list(),
         api.transport.listDeliveries(),
@@ -179,6 +184,7 @@ export const useAppController = () => {
         api.settings.get(),
         api.reports.listGenerated(),
         api.presence.listActive(),
+        api.attendance.listRecords(),
       ]);
 
       setDashboard(dashboardData);
@@ -195,6 +201,7 @@ export const useAppController = () => {
       setCashSummary(cashSummaryData);
       setCashSessions(cashSessionsData);
       setCashMovements(cashMovementsData);
+      setCashDebts(cashDebtsData);
       setClients(clientsData);
       setUsers(usersData);
       setDeliveries(deliveriesData);
@@ -205,6 +212,7 @@ export const useAppController = () => {
       setSettingsBundle(settingsData);
       setGeneratedReports(reportsData);
       setUserPresence(normalizePresenceList(presenceData));
+      setAttendanceRecords(attendanceRecordsData);
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -365,6 +373,7 @@ export const useAppController = () => {
     || activeTab === 'items'
     || activeTab === 'usuarios'
     || activeTab === 'proveedores'
+    || activeTab === 'asistencia'
     || activeTab === 'personal'
     || activeTab === 'contabilidad'
     || String(activeTab).startsWith('inventario')
@@ -386,6 +395,8 @@ export const useAppController = () => {
       ? 'Gestiona usuarios, roles y permisos de operacion.'
       : activeTab === 'proveedores'
       ? 'Gestiona proveedores, listas de precios y solicitudes de abastecimiento con costo.'
+      : activeTab === 'asistencia'
+      ? 'Registra entradas, salidas, ubicaciones y respaldos de asistencia fuera de oficina.'
       : activeTab === 'personal'
       ? 'Gestiona personal, asistencia, permisos y horas trabajadas.'
       : activeTab === 'contabilidad'
@@ -858,6 +869,37 @@ export const useAppController = () => {
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el movimiento de caja.');
+      throw requestError;
+    }
+  };
+
+  const handleCreateCashDebt = async (payload) => {
+    setError('');
+    try {
+      const created = await api.cash.createDebt({
+        ...payload,
+        createdBy: payload?.createdBy || getCurrentUserTrace().createdByName,
+      });
+      await loadData();
+      return created;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo registrar la deuda.');
+      throw requestError;
+    }
+  };
+
+  const handlePayCashDebt = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.payDebt({
+        ...payload,
+        paidBy: payload?.paidBy || getCurrentUserTrace().createdByName,
+        createdBy: payload?.createdBy || getCurrentUserTrace().createdByName,
+      });
+      await loadData();
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo pagar la deuda.');
       throw requestError;
     }
   };
@@ -1699,6 +1741,25 @@ export const useAppController = () => {
     }
   };
 
+  const handleCreateAttendanceRecord = async (payload) => {
+    setError('');
+    try {
+      const trace = getCurrentUserTrace();
+      const created = await api.attendance.createRecord({
+        ...payload,
+        userId: currentUser?.id ?? payload?.userId ?? '',
+        userName: currentUser?.fullName || currentUser?.username || payload?.userName || 'Usuario',
+        role: currentUser ? getUserDisplayRole(currentUser) : payload?.role ?? 'Usuario',
+        createdBy: trace.createdByName,
+      });
+      await loadData();
+      return created;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo registrar la asistencia.');
+      throw requestError;
+    }
+  };
+
   const handleVerifyResetAccess = async ({ code }) => {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) {
@@ -1819,6 +1880,8 @@ export const useAppController = () => {
     cashSummary,
     cashSessions,
     cashMovements,
+    cashDebts,
+    attendanceRecords,
     userPresence,
     activeCashSession,
     clients,
@@ -1870,6 +1933,8 @@ export const useAppController = () => {
     handleCreateInventoryMovement,
     handleOpenCashSession,
     handleCloseCashSession,
+    handleCreateCashDebt,
+    handlePayCashDebt,
     handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
     handleVoidAndReplaceCashMovementReceipt,
@@ -1904,6 +1969,7 @@ export const useAppController = () => {
     handlePrintRentalReceipt,
     handlePrintReturnReceipt,
     handlePrintCashMovementReceipt,
+    handleCreateAttendanceRecord,
     handleVerifyResetAccess,
     handleAnalyzeSystemReset,
     handleExecuteSystemReset,
