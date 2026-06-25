@@ -1216,7 +1216,7 @@ function ServiceOrdersSection({
       const linkedOrder = orderByContractId.get(String(contract.id)) ?? null;
       const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
-      const isSent = normalizeText(linkedOrder?.inventoryStatus) === 'salio';
+      const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
       const refundBs = Math.max(0, Number(linkedOrder?.refundBs ?? 0));
       const guaranteeStatus = guaranteeBs <= 0
@@ -2420,7 +2420,15 @@ function ServiceOrdersSection({
   const getComboOptionAvailable = (item) => {
     if (!item) return 0;
     const availability = availabilityByItemId.get(item.id);
-    return Math.max(0, Math.trunc(Number(availability?.projectedAvailable ?? item.availableStock ?? 0)));
+    const projected = Math.max(0, Math.trunc(Number(availability?.projectedAvailable ?? item.availableStock ?? 0)));
+    if (projected > 0) return projected;
+    const stockValue = Math.max(0, Math.trunc(Number(item.totalStock ?? item.availableStock ?? 0)));
+    if (stockValue > 0) return stockValue;
+    const verificationStatus = normalizeText(item.verificationStatus);
+    if (item.controlsStock === false || verificationStatus.includes('pending') || verificationStatus.includes('validar')) {
+      return 999;
+    }
+    return 0;
   };
 
   const getSelectedComboOptionIds = (selectionValue, fallbackOptions = []) => {
@@ -2429,12 +2437,27 @@ function ServiceOrdersSection({
     return fallbackOptions.map((option) => option.id).filter(Boolean);
   };
 
+  const getComboSelectionQuantityMap = (selections = {}) => (
+    selections && typeof selections.__quantities === 'object' && selections.__quantities
+      ? selections.__quantities
+      : {}
+  );
+
+  const getComboSelectedUnitsForRule = (ruleIndex, selectedIds = [], selections = {}) => {
+    const quantityMap = getComboSelectionQuantityMap(selections);
+    return selectedIds.reduce((sum, itemId) => {
+      const key = `${ruleIndex}:${itemId}`;
+      return sum + Math.max(0, Math.trunc(Number(quantityMap[key] ?? 0)));
+    }, 0);
+  };
+
   const getComboMaxQuantity = (combo, selections = {}) => {
     const ingredients = Array.isArray(combo?.ingredients) ? combo.ingredients : [];
     const groupMaximums = ingredients.map((rule, index) => {
       const options = getComboRuleOptions(rule);
-      const selectedIds = getSelectedComboOptionIds(selections[index], options);
+      const selectedIds = getSelectedComboOptionIds(selections[index], []);
       const selectedOptions = options.filter((option) => selectedIds.includes(option.id));
+      if (selectedOptions.length === 0) return 0;
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
       const availableUnits = selectedOptions.reduce((sum, option) => sum + getComboOptionAvailable(option), 0);
       return Math.floor(availableUnits / requiredPerCombo);
@@ -2447,18 +2470,27 @@ function ServiceOrdersSection({
     const ingredients = Array.isArray(combo?.ingredients) ? combo.ingredients : [];
     const allocations = [];
     let shortageMessage = '';
+    const quantityMap = getComboSelectionQuantityMap(selections);
 
     ingredients.forEach((rule, index) => {
       const options = getComboRuleOptions(rule);
-      const selectedIds = getSelectedComboOptionIds(selections[index], options);
+      const selectedIds = getSelectedComboOptionIds(selections[index], []);
       const selectedOptions = options.filter((option) => selectedIds.includes(option.id));
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
       let remaining = requiredPerCombo * comboQuantity;
 
+      if (selectedOptions.length === 0) {
+        if (!shortageMessage) {
+          shortageMessage = `Selecciona al menos una opcion para "${rule.slotLabel || rule.itemName || `Componente ${index + 1}`}".`;
+        }
+        return;
+      }
+
       selectedOptions.forEach((item) => {
         if (remaining <= 0) return;
         const available = getComboOptionAvailable(item);
-        const quantity = Math.min(remaining, available);
+        const manualQuantity = Math.max(0, Math.trunc(Number(quantityMap[`${index}:${item.id}`] ?? 0)));
+        const quantity = Math.min(remaining, manualQuantity > 0 ? manualQuantity : available, available);
         if (quantity <= 0) return;
         allocations.push({
           rule,
@@ -2485,7 +2517,11 @@ function ServiceOrdersSection({
     const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
     const requestedComboQuantity = Math.max(1, Math.trunc(Number(selections.__comboQuantity ?? 1)));
     const maxQuantity = getComboMaxQuantity(combo, selections);
-    if (maxQuantity > 0 && requestedComboQuantity > maxQuantity) {
+    if (maxQuantity <= 0) {
+      setFormError('Selecciona opciones disponibles para poder armar este combo.');
+      return false;
+    }
+    if (requestedComboQuantity > maxQuantity) {
       setFormError(`Solo puedes armar ${maxQuantity} combo(s) con las opciones seleccionadas.`);
       return false;
     }
@@ -2551,27 +2587,120 @@ function ServiceOrdersSection({
 
   const openComboConfigurator = (combo, existingComboLineKey = '') => {
     const selections = {};
+    const quantityMap = {};
     const existingLines = existingComboLineKey
       ? draft.items.filter((entry) => entry.comboLineKey === existingComboLineKey)
       : [];
     (combo.ingredients ?? []).forEach((line, index) => {
-      const options = getComboRuleOptions(line);
       const existingIds = existingLines
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .map((entry) => entry.itemId)
         .filter(Boolean);
-      selections[index] = existingIds.length > 0
-        ? existingIds
-        : options.map((option) => option.id).filter(Boolean);
+      selections[index] = existingIds.length > 0 ? existingIds : [];
+      existingLines
+        .filter((entry) => Number(entry.comboRuleIndex) === index)
+        .forEach((entry) => {
+          quantityMap[`${index}:${entry.itemId}`] = Math.max(1, Math.trunc(Number(entry.quantity ?? 1)));
+        });
     });
-    const maxQuantity = getComboMaxQuantity(combo, selections);
+    selections.__quantities = quantityMap;
     const existingQuantity = Math.max(1, Math.trunc(Number(existingLines[0]?.comboQuantity ?? 0)));
     setComboConfigurator({
       combo,
       existingComboLineKey,
       selections,
       search: {},
-      quantity: String(existingComboLineKey ? existingQuantity : Math.max(1, maxQuantity)),
+      quantity: String(existingComboLineKey ? existingQuantity : 1),
+    });
+  };
+
+  const normalizeComboConfiguratorQuantities = (current, nextComboQuantity) => {
+    if (!current) return current;
+    const comboQty = Math.max(1, Math.trunc(Number(nextComboQuantity ?? current.quantity ?? 1)));
+    const nextSelections = { ...(current.selections ?? {}) };
+    const nextQuantityMap = { ...getComboSelectionQuantityMap(nextSelections) };
+
+    (current.combo?.ingredients ?? []).forEach((rule, index) => {
+      const selectedIds = getSelectedComboOptionIds(nextSelections[index], []);
+      if (selectedIds.length === 0) return;
+      const requiredUnits = Math.max(1, Math.trunc(Number(rule.quantity ?? 1))) * comboQty;
+      let assignedUnits = getComboSelectedUnitsForRule(index, selectedIds, { __quantities: nextQuantityMap });
+      if (assignedUnits >= requiredUnits) return;
+      selectedIds.forEach((itemId, optionIndex) => {
+        if (assignedUnits >= requiredUnits) return;
+        const item = items.find((entry) => entry.id === itemId);
+        const available = getComboOptionAvailable(item);
+        const key = `${index}:${itemId}`;
+        const currentQty = Math.max(0, Math.trunc(Number(nextQuantityMap[key] ?? 0)));
+        const missing = requiredUnits - assignedUnits;
+        const extra = Math.min(missing, Math.max(0, available - currentQty));
+        const fallbackExtra = optionIndex === selectedIds.length - 1 && extra <= 0 ? missing : extra;
+        nextQuantityMap[key] = currentQty + Math.max(0, fallbackExtra);
+        assignedUnits += Math.max(0, fallbackExtra);
+      });
+    });
+
+    nextSelections.__quantities = nextQuantityMap;
+    return {
+      ...current,
+      quantity: String(comboQty),
+      selections: nextSelections,
+    };
+  };
+
+  const updateComboOptionQuantity = (ruleIndex, itemId, value) => {
+    setComboConfigurator((current) => {
+      if (!current) return current;
+      const parsedQty = Math.max(0, Math.trunc(Number(value ?? 0)));
+      const rule = current.combo?.ingredients?.[ruleIndex] ?? {};
+      const requiredPerCombo = Math.max(1, Math.trunc(Number(rule.quantity ?? 1)));
+      const currentSelectedIds = getSelectedComboOptionIds(current.selections?.[ruleIndex], []);
+      const selectedIds = currentSelectedIds.includes(itemId)
+        ? currentSelectedIds
+        : [...currentSelectedIds, itemId];
+      const quantityMap = { ...getComboSelectionQuantityMap(current.selections) };
+      quantityMap[`${ruleIndex}:${itemId}`] = parsedQty;
+      const selectedUnits = getComboSelectedUnitsForRule(ruleIndex, selectedIds, { __quantities: quantityMap });
+      const nextComboQuantity = Math.max(1, Math.ceil(selectedUnits / requiredPerCombo));
+      const nextState = {
+        ...current,
+        selections: {
+          ...current.selections,
+          [ruleIndex]: selectedIds,
+          __quantities: quantityMap,
+        },
+      };
+      return normalizeComboConfiguratorQuantities(nextState, nextComboQuantity);
+    });
+  };
+
+  const toggleComboOption = (ruleIndex, itemId, requiredPerCombo, comboQty) => {
+    setComboConfigurator((current) => {
+      if (!current) return current;
+      const selectedIds = getSelectedComboOptionIds(current.selections?.[ruleIndex], []);
+      const selected = selectedIds.includes(itemId);
+      const nextSelectedIds = selected
+        ? selectedIds.filter((id) => id !== itemId)
+        : [...selectedIds, itemId];
+      const quantityMap = { ...getComboSelectionQuantityMap(current.selections) };
+      if (selected) {
+        delete quantityMap[`${ruleIndex}:${itemId}`];
+      } else {
+        const item = items.find((entry) => entry.id === itemId);
+        const neededUnits = Math.max(1, Math.trunc(Number(requiredPerCombo ?? 1))) * Math.max(1, Math.trunc(Number(comboQty ?? current.quantity ?? 1)));
+        const selectedUnits = getComboSelectedUnitsForRule(ruleIndex, selectedIds, { __quantities: quantityMap });
+        const missingUnits = Math.max(1, neededUnits - selectedUnits);
+        quantityMap[`${ruleIndex}:${itemId}`] = Math.min(missingUnits, Math.max(1, getComboOptionAvailable(item)));
+      }
+      const nextState = {
+        ...current,
+        selections: {
+          ...current.selections,
+          [ruleIndex]: nextSelectedIds,
+          __quantities: quantityMap,
+        },
+      };
+      return normalizeComboConfiguratorQuantities(nextState, current.quantity);
     });
   };
 
@@ -5268,10 +5397,9 @@ function ServiceOrdersSection({
                   max={Math.max(1, getComboMaxQuantity(comboConfigurator.combo, comboConfigurator.selections))}
                   value={comboConfigurator.quantity ?? '1'}
                   onFocus={selectNumericInput}
-                  onChange={(event) => setComboConfigurator((current) => ({
-                    ...current,
-                    quantity: event.target.value,
-                  }))}
+                  onChange={(event) => setComboConfigurator((current) => (
+                    normalizeComboConfiguratorQuantities(current, event.target.value)
+                  ))}
                 />
                 <small>Max. {getComboMaxQuantity(comboConfigurator.combo, comboConfigurator.selections)}</small>
               </label>
@@ -5291,8 +5419,7 @@ function ServiceOrdersSection({
                   || normalizeText(item.brand).includes(search)
                 ));
                 const selectedIds = getSelectedComboOptionIds(comboConfigurator.selections[index], []);
-                const selectedOptions = allOptions.filter((item) => selectedIds.includes(item.id));
-                const availableUnits = selectedOptions.reduce((sum, item) => sum + getComboOptionAvailable(item), 0);
+                const selectedUnits = getComboSelectedUnitsForRule(index, selectedIds, comboConfigurator.selections);
                 const requiredPerCombo = Math.max(1, Math.trunc(Number(rule.quantity ?? 1)));
                 const comboQty = Math.max(1, Math.trunc(Number(comboConfigurator.quantity ?? 1)));
                 const neededUnits = requiredPerCombo * comboQty;
@@ -5301,11 +5428,11 @@ function ServiceOrdersSection({
                     <header>
                       <div>
                         <strong>{rule.slotLabel || rule.itemName || `Componente ${index + 1}`}</strong>
-                        <span>{requiredPerCombo} por combo · {allOptions.length} opciones · {selectedIds.length} seleccionadas</span>
+                        <span>{requiredPerCombo} por combo · {allOptions.length} opciones · {selectedIds.length} seleccionadas · {selectedUnits} unidades marcadas</span>
                       </div>
                       <div className="orders-combo-group-summary">
-                        <span className={availableUnits >= neededUnits ? 'ok' : 'danger'}>
-                          {availableUnits} disp. / {neededUnits} nec.
+                        <span className={selectedUnits >= neededUnits ? 'ok' : 'danger'}>
+                          {selectedUnits} marc. / {neededUnits} nec.
                         </span>
                         <small>{rule.selectionMode === 'category' ? rule.category : 'Productos elegidos'}</small>
                       </div>
@@ -5330,33 +5457,46 @@ function ServiceOrdersSection({
                       {visibleOptions.map((item) => {
                         const selected = selectedIds.includes(item.id);
                         const optionAvailable = getComboOptionAvailable(item);
+                        const quantityKey = `${index}:${item.id}`;
+                        const selectedQuantity = Math.max(0, Math.trunc(Number(
+                          comboConfigurator.selections?.__quantities?.[quantityKey] ?? 0,
+                        )));
                         return (
-                          <button
+                          <article
                             key={item.id}
-                            type="button"
-                            className={selected ? 'selected' : ''}
-                            onClick={() => setComboConfigurator((current) => ({
-                              ...current,
-                              selections: {
-                                ...current.selections,
-                                [index]: selected
-                                  ? selectedIds.filter((id) => id !== item.id)
-                                  : [...selectedIds, item.id],
-                              },
-                            }))}
+                            className={`orders-combo-option-card ${selected ? 'selected' : ''}`}
                           >
-                            <span className="orders-combo-option-image">
-                              {getProductImageSrc(item) ? (
-                                <ProductImage item={item} alt={item.name} fallback={<Box aria-hidden="true" />} />
-                              ) : <Box aria-hidden="true" />}
-                            </span>
-                            <span>
-                              <strong>{item.name}</strong>
-                              <small>{[item.itemColor, item.brand, item.category].filter(Boolean).join(' · ')}</small>
-                              <em>{optionAvailable} disponibles</em>
-                            </span>
-                            <i aria-hidden="true">{selected ? '✓' : ''}</i>
-                          </button>
+                            <button
+                              type="button"
+                              className="orders-combo-option-pick"
+                              onClick={() => toggleComboOption(index, item.id, requiredPerCombo, comboQty)}
+                            >
+                              <span className="orders-combo-option-image">
+                                {getProductImageSrc(item) ? (
+                                  <ProductImage item={item} alt={item.name} fallback={<Box aria-hidden="true" />} />
+                                ) : <Box aria-hidden="true" />}
+                              </span>
+                              <span>
+                                <strong>{item.name}</strong>
+                                <small>{[item.itemColor, item.brand, item.category].filter(Boolean).join(' · ')}</small>
+                                <em>{optionAvailable >= 999 ? 'Sin control de stock' : `${optionAvailable} disponibles`}</em>
+                              </span>
+                              <i aria-hidden="true">{selected ? '✓' : ''}</i>
+                            </button>
+                            {selected ? (
+                              <label className="orders-combo-option-qty">
+                                <span>Cantidad a usar</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={optionAvailable >= 999 ? undefined : optionAvailable}
+                                  value={selectedQuantity}
+                                  onFocus={selectNumericInput}
+                                  onChange={(event) => updateComboOptionQuantity(index, item.id, event.target.value)}
+                                />
+                              </label>
+                            ) : null}
+                          </article>
                         );
                       })}
                     </div>

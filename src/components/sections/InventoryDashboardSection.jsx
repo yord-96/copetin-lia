@@ -95,6 +95,8 @@ const DEFAULT_PRODUCT_FILTERS = {
   sortFilter: 'default',
 };
 
+const INVENTORY_OPS_FILTERS_STORAGE_KEY = 'copetin.inventory.opsFilters';
+
 const readStoredProductFilters = () => {
   if (typeof window === 'undefined') return DEFAULT_PRODUCT_FILTERS;
   try {
@@ -116,12 +118,43 @@ const readStoredProductFilters = () => {
   }
 };
 
+const readStoredInventoryOpsFilters = () => {
+  const weekRange = getCurrentWeekRange();
+  const defaults = {
+    query: '',
+    dateFrom: weekRange.from,
+    dateTo: weekRange.to,
+  };
+  if (typeof window === 'undefined') return defaults;
+  try {
+    const rawValue = window.sessionStorage.getItem(INVENTORY_OPS_FILTERS_STORAGE_KEY);
+    if (!rawValue) return defaults;
+    const parsed = JSON.parse(rawValue);
+    return {
+      query: typeof parsed.query === 'string' ? parsed.query : defaults.query,
+      dateFrom: typeof parsed.dateFrom === 'string' ? parsed.dateFrom : defaults.dateFrom,
+      dateTo: typeof parsed.dateTo === 'string' ? parsed.dateTo : defaults.dateTo,
+    };
+  } catch {
+    return defaults;
+  }
+};
+
 const writeStoredProductFilters = (filters) => {
   if (typeof window === 'undefined') return;
   try {
     window.sessionStorage.setItem(PRODUCT_FILTERS_STORAGE_KEY, JSON.stringify(filters));
   } catch {
     // El filtro es comodidad de UI; si el navegador no permite guardarlo, el sistema sigue funcionando.
+  }
+};
+
+const writeStoredInventoryOpsFilters = (filters) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(INVENTORY_OPS_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // Persistencia de comodidad; si falla, la operacion principal no se afecta.
   }
 };
 
@@ -775,10 +808,15 @@ function InventoryDashboardSection({
   onUpdateOrderOperational,
   onReceiveReturnedOrder,
   onPrintInventoryWeekDocument,
+  rentals = [],
 }) {
   const initialProductFiltersRef = useRef(null);
   if (!initialProductFiltersRef.current) {
     initialProductFiltersRef.current = readStoredProductFilters();
+  }
+  const initialInventoryOpsFiltersRef = useRef(null);
+  if (!initialInventoryOpsFiltersRef.current) {
+    initialInventoryOpsFiltersRef.current = readStoredInventoryOpsFilters();
   }
   const [query, setQuery] = useState(initialProductFiltersRef.current.query);
   const [page, setPage] = useState(initialProductFiltersRef.current.page);
@@ -828,9 +866,9 @@ function InventoryDashboardSection({
   const [detailRow, setDetailRow] = useState(null);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
-  const [inventoryOrderQuery, setInventoryOrderQuery] = useState('');
-  const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(() => getCurrentWeekRange().from);
-  const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(() => getCurrentWeekRange().to);
+  const [inventoryOrderQuery, setInventoryOrderQuery] = useState(initialInventoryOpsFiltersRef.current.query);
+  const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(initialInventoryOpsFiltersRef.current.dateFrom);
+  const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(initialInventoryOpsFiltersRef.current.dateTo);
   const [showAllInventoryOrders, setShowAllInventoryOrders] = useState(false);
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
@@ -973,6 +1011,20 @@ function InventoryDashboardSection({
   ]);
 
   useEffect(() => {
+    if (!isMovementsModule) return;
+    writeStoredInventoryOpsFilters({
+      query: inventoryOrderQuery,
+      dateFrom: inventoryOperationDateFrom,
+      dateTo: inventoryOperationDateTo,
+    });
+  }, [
+    inventoryOperationDateFrom,
+    inventoryOperationDateTo,
+    inventoryOrderQuery,
+    isMovementsModule,
+  ]);
+
+  useEffect(() => {
     if (!rowMenuOpenId) return undefined;
     const closeOnOutside = (event) => {
       if (rowMenuRef.current && !rowMenuRef.current.contains(event.target)) {
@@ -1039,6 +1091,14 @@ function InventoryDashboardSection({
     return map;
   }, [stockRecoveries]);
 
+  const operationalRentals = useMemo(() => {
+    const source = Array.isArray(rentals) && rentals.length > 0 ? rentals : activeRentals;
+    return source.filter((rental) => {
+      const status = String(rental?.status ?? '').toLowerCase();
+      return !rental?.deletedAt && status !== 'cancelled' && status !== 'anulado';
+    });
+  }, [activeRentals, rentals]);
+
   const prepOrderRows = useMemo(() => {
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
@@ -1075,6 +1135,9 @@ function InventoryDashboardSection({
     };
 
     const getInventoryMeta = (status) => {
+      if (status === 'devuelto') {
+        return { sortWeight: 0, secondarySortWeight: 1, text: 'Devuelto', actionLabel: 'Devuelto', action: 'returned', canConfirm: false };
+      }
       if (status === 'salio') {
         return { sortWeight: 0, secondarySortWeight: 0, text: 'Fuera de almacen', actionLabel: 'Marcar que volvio', action: 'return', canConfirm: true };
       }
@@ -1087,7 +1150,7 @@ function InventoryDashboardSection({
       return { sortWeight: 3, secondarySortWeight: 0, text: 'Por alistar', actionLabel: 'Marcar lista', action: 'ready', canConfirm: true };
     };
 
-    return activeRentals
+    return operationalRentals
       .map((rental) => {
         const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
         const linkedDeliveries = (deliveryByRental.get(String(rental.id)) ?? []).slice();
@@ -1146,7 +1209,7 @@ function InventoryDashboardSection({
         if (b.priority.weight !== a.priority.weight) return b.priority.weight - a.priority.weight;
         return new Date(a.operationSortDate ?? a.deliveryDate ?? 0) - new Date(b.operationSortDate ?? b.deliveryDate ?? 0);
       });
-  }, [activeRentals, contracts, deliveries]);
+  }, [contracts, deliveries, operationalRentals]);
 
   const filteredPrepOrderRows = useMemo(() => {
     const normalizedQuery = normalizeText(inventoryOrderQuery);
@@ -3151,7 +3214,7 @@ function InventoryDashboardSection({
                     </div>
                     <div className="inventory-ops-state">
                       <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
-                      <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : 'Pendiente'}</strong>
+                      <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : row.inventoryStatus === 'devuelto' ? 'Devuelto' : 'Pendiente'}</strong>
                     </div>
                     <div className="inventory-ops-actions">
                       <button
