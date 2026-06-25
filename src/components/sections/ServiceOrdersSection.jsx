@@ -4282,18 +4282,22 @@ function ServiceOrdersSection({
             <div className="orders-mobile-commercial-list">
               {filteredContracts.map((row) => {
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
+                const transportMeta = getContractTransportLabel(row);
                 return (
-                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}`}>
+                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}`}>
                     <header>
-                      <strong>{row.contractCode}</strong>
+                      <div className={row.isSent ? 'orders-mobile-sent-zone' : ''}>
+                        <strong>{row.contractCode}</strong>
+                        <span>{formatLongSpanishDate(row.eventDate)}</span>
+                      </div>
                       <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
                       <b>{formatBs(row.totalBs)}</b>
                     </header>
-                    <div className="orders-mobile-contract-main">
+                    <div className={`orders-mobile-contract-main ${row.isSent ? 'orders-mobile-sent-zone' : ''}`}>
                       <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
-                      <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
+                      <p><span>Celular:</span> <strong>{row.customerPhone || 'Sin WhatsApp/celular'}</strong></p>
                     </div>
-                    <div className="orders-mobile-contract-bottom">
+                    <div className={`orders-mobile-contract-bottom ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
                       <div className="orders-responsible-cell">
                         <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
                         <div>
@@ -4306,9 +4310,21 @@ function ServiceOrdersSection({
                         <strong>{row.orderCode || '-'}</strong>
                       </div>
                     </div>
-                    <div className="orders-mobile-contract-meta">
-                      <span className="orders-mobile-date-line">Fecha: {[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</span>
+                    <div className={`orders-mobile-contract-meta ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
+                      <span className="orders-mobile-date-line">Servicio: {[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</span>
                       <span>Entrega / recojo</span>
+                    </div>
+                    <div className="orders-mobile-contract-details">
+                      <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
+                        <small>Garantía</small>
+                        <strong>{row.guaranteePrimary}</strong>
+                        <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
+                      </div>
+                      <div className="orders-transport-cell">
+                        <small>Transporte</small>
+                        <strong>{transportMeta.title}</strong>
+                        <span>{transportMeta.detail}</span>
+                      </div>
                     </div>
                     <div className="orders-mobile-contract-actions">
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>

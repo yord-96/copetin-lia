@@ -81,6 +81,7 @@ function AttendanceSection({
   const [isLocating, setIsLocating] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [photoPreview, setPhotoPreview] = useState(null);
 
   const currentTimeLabel = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   const todayLabel = new Date().toLocaleDateString('es-BO', {
@@ -343,6 +344,17 @@ function AttendanceSection({
                 <span className={`attendance-type ${record.type}`}>{record.type === 'entrada' ? 'Entrada' : 'Salida'}</span>
                 <p>{record.location}</p>
                 <small>{record.reason}</small>
+                {record.photoDataUrl ? (
+                  <button
+                    type="button"
+                    className="attendance-mobile-photo-button"
+                    onClick={() => setPhotoPreview({ src: record.photoDataUrl, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
+                    aria-label={`Ver foto de asistencia de ${record.userName}`}
+                  >
+                    <img src={record.photoDataUrl} alt={`Foto de asistencia de ${record.userName}`} />
+                    <span>Ver foto</span>
+                  </button>
+                ) : null}
               </article>
             ))}
             {filteredRecords.length === 0 ? (
@@ -377,7 +389,16 @@ function AttendanceSection({
                       <small>{record.reason}</small>
                     </td>
                     <td>
-                      {record.photoDataUrl ? <img className="attendance-thumb" src={record.photoDataUrl} alt="Asistencia" /> : '-'}
+                      {record.photoDataUrl ? (
+                        <button
+                          type="button"
+                          className="attendance-thumb-button"
+                          onClick={() => setPhotoPreview({ src: record.photoDataUrl, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
+                          aria-label={`Ver foto de asistencia de ${record.userName}`}
+                        >
+                          <img className="attendance-thumb" src={record.photoDataUrl} alt={`Foto de asistencia de ${record.userName}`} />
+                        </button>
+                      ) : '-'}
                     </td>
                   </tr>
                 ))}
@@ -389,6 +410,20 @@ function AttendanceSection({
           </div>
         </article>
       </section>
+      {photoPreview ? (
+        <div className="attendance-photo-modal-backdrop" onClick={() => setPhotoPreview(null)}>
+          <section className="attendance-photo-modal" onClick={(event) => event.stopPropagation()} aria-label="Vista previa de foto de asistencia">
+            <header>
+              <div>
+                <span>Evidencia fotográfica</span>
+                <h3>{photoPreview.title}</h3>
+              </div>
+              <button type="button" onClick={() => setPhotoPreview(null)} aria-label="Cerrar foto">×</button>
+            </header>
+            <img src={photoPreview.src} alt={photoPreview.title} />
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

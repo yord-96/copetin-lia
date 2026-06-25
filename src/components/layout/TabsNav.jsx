@@ -85,13 +85,7 @@ function renderIcon(icon) {
   }
 
   if (icon === 'attendance') {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="M7 3.8h10a2 2 0 0 1 2 2v14.4H5V5.8a2 2 0 0 1 2-2Z" />
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" d="M9 8h6M9 12h3" />
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d="m14 15.5 1.5 1.5 3-3" />
-      </svg>
-    );
+    return <img className="asset-icon attendance-asset-icon" src="/imagenes/reconocimiento-biometrico.png" alt="" aria-hidden="true" />;
   }
 
   if (icon === 'provider') {

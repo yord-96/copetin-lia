@@ -52,6 +52,22 @@ const getMondayDateKey = (value = new Date()) => {
   ].join('-');
 };
 
+const addDaysToDateKey = (dateKey, days) => {
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + days);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
+const getCurrentWeekRange = () => {
+  const from = getMondayDateKey(new Date());
+  return { from, to: addDaysToDateKey(from, 6) };
+};
+
 const toCategoryClass = (category) => {
   const value = normalizeText(category);
   if (value.includes('silla')) return 'cat-violet';
@@ -813,8 +829,9 @@ function InventoryDashboardSection({
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
   const [inventoryOrderQuery, setInventoryOrderQuery] = useState('');
-  const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState('');
-  const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState('');
+  const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(() => getCurrentWeekRange().from);
+  const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(() => getCurrentWeekRange().to);
+  const [showAllInventoryOrders, setShowAllInventoryOrders] = useState(false);
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
@@ -1152,6 +1169,11 @@ function InventoryDashboardSection({
       return matchesQuery && matchesDate;
     });
   }, [inventoryOperationDateFrom, inventoryOperationDateTo, inventoryOrderQuery, prepOrderRows]);
+
+  const inventoryFiltersAreCleared = !inventoryOrderQuery && !inventoryOperationDateFrom && !inventoryOperationDateTo;
+  const visiblePrepOrderRows = inventoryFiltersAreCleared
+    ? filteredPrepOrderRows.slice(0, 7)
+    : filteredPrepOrderRows;
 
   const cancelledOrderRows = useMemo(() => {
     return cancelledRentals
@@ -3088,7 +3110,7 @@ function InventoryDashboardSection({
                       setInventoryOperationDateTo('');
                     }}
                   >
-                    Limpiar filtros
+                    Limpiar
                   </button>
                 ) : null}
               </div>
@@ -3101,7 +3123,7 @@ function InventoryDashboardSection({
                   <span>Estado</span>
                   <span>Acciones</span>
                 </div>
-                {filteredPrepOrderRows.map((row) => (
+                {visiblePrepOrderRows.map((row) => (
                   <div key={row.id} className="inventory-ops-row">
                     <div className="inventory-ops-identity">
                       <div className="inventory-ops-contract-line">
@@ -3137,16 +3159,37 @@ function InventoryDashboardSection({
                         className="ghost-button"
                         onClick={() => openInventorySingleOrderDocument(row)}
                       >
-                        Impresion individual
+                        Imprimir
                       </button>
-                      <button
-                        type="button"
-                        className="link-button"
-                        disabled={!row.canConfirmInventory}
-                        onClick={() => handleInventoryOrderAction(row)}
-                      >
-                        {row.inventoryActionLabel}
-                      </button>
+                      <div className="inventory-ops-process" aria-label={`Proceso de inventario para ${row.contractCode}`}>
+                        <button
+                          type="button"
+                          className={`inventory-ops-check ${['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus) ? 'done' : ''}`}
+                          disabled={!row.canConfirmInventory || ['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus)}
+                          onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'ready' })}
+                        >
+                          <span aria-hidden="true">{['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus) ? '✓' : ''}</span>
+                          Alistado
+                        </button>
+                        <button
+                          type="button"
+                          className={`inventory-ops-check ${['salio', 'devuelto'].includes(row.inventoryStatus) ? 'done' : ''}`}
+                          disabled={!row.canConfirmInventory || row.inventoryStatus !== 'confirmado'}
+                          onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'dispatch' })}
+                        >
+                          <span aria-hidden="true">{['salio', 'devuelto'].includes(row.inventoryStatus) ? '✓' : ''}</span>
+                          Salió
+                        </button>
+                        <button
+                          type="button"
+                          className={`inventory-ops-check ${row.inventoryStatus === 'devuelto' ? 'done' : ''}`}
+                          disabled={!row.canConfirmInventory || row.inventoryStatus !== 'salio'}
+                          onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'return' })}
+                        >
+                          <span aria-hidden="true">{row.inventoryStatus === 'devuelto' ? '✓' : ''}</span>
+                          Volvió
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -3157,8 +3200,107 @@ function InventoryDashboardSection({
                       : 'No hay ordenes que coincidan con la busqueda.'}
                   </p>
                 ) : null}
+                {inventoryFiltersAreCleared && filteredPrepOrderRows.length > visiblePrepOrderRows.length ? (
+                  <div className="inventory-ops-view-all">
+                    <span>Mostrando 7 de {filteredPrepOrderRows.length} órdenes.</span>
+                    <button type="button" className="ghost-button" onClick={() => setShowAllInventoryOrders(true)}>
+                      Ver todas
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </article>
+          ) : null}
+
+          {showAllInventoryOrders ? (
+            <div className="reset-modal-backdrop" onClick={() => setShowAllInventoryOrders(false)}>
+              <section className="reset-modal inventory-ops-all-modal" onClick={(event) => event.stopPropagation()}>
+                <header className="inventory-ops-all-head">
+                  <div>
+                    <span className="inventory-detail-kicker">Inventario operativo</span>
+                    <h3>Todas las órdenes visibles</h3>
+                    <p>{filteredPrepOrderRows.length} órdenes según los filtros actuales.</p>
+                  </div>
+                  <button type="button" className="modal-close" onClick={() => setShowAllInventoryOrders(false)}>×</button>
+                </header>
+                <div className="inventory-ops-list inventory-ops-list-modal">
+                  <div className="inventory-ops-table-head" aria-hidden="true">
+                    <span>Contrato y cliente</span>
+                    <span>Inventario</span>
+                    <span>Entrega / alistamiento</span>
+                    <span>Recojo</span>
+                    <span>Estado</span>
+                    <span>Acciones</span>
+                  </div>
+                  {filteredPrepOrderRows.map((row) => (
+                    <div key={`all-${row.id}`} className="inventory-ops-row">
+                      <div className="inventory-ops-identity">
+                        <div className="inventory-ops-contract-line">
+                          <strong>Contrato {row.contractCode}</strong>
+                          <span>{row.orderCode}</span>
+                        </div>
+                        <span className="inventory-ops-customer">{row.customerName}</span>
+                        <span className="inventory-ops-address">{row.address}</span>
+                      </div>
+                      <div className="inventory-ops-inventory">
+                        <strong>{row.itemsText}</strong>
+                        <span className={`inventory-ops-stock-state state-${row.inventoryStatus}`}>
+                          {row.inventoryStatusText}
+                        </span>
+                      </div>
+                      <div className="inventory-ops-schedule-line">
+                        <span className="inventory-ops-label">{row.deliveryLabel}</span>
+                        <strong>{row.deliveryDate ? formatDateTime(row.deliveryDate).split(',')[0] : 'Sin fecha'}</strong>
+                        <span>{row.deliveryWindow}</span>
+                      </div>
+                      <div className="inventory-ops-schedule-line">
+                        <span className="inventory-ops-label">Recojo</span>
+                        <strong>{row.pickupDate ? formatDateTime(row.pickupDate).split(',')[0] : 'Sin fecha'}</strong>
+                        <span>{row.pickupWindow}</span>
+                      </div>
+                      <div className="inventory-ops-state">
+                        <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
+                        <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : row.inventoryStatus === 'devuelto' ? 'Devuelto' : 'Pendiente'}</strong>
+                      </div>
+                      <div className="inventory-ops-actions">
+                        <button type="button" className="ghost-button" onClick={() => openInventorySingleOrderDocument(row)}>
+                          Imprimir
+                        </button>
+                        <div className="inventory-ops-process" aria-label={`Proceso de inventario para ${row.contractCode}`}>
+                          <button
+                            type="button"
+                            className={`inventory-ops-check ${['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus) ? 'done' : ''}`}
+                            disabled={!row.canConfirmInventory || ['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus)}
+                            onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'ready' })}
+                          >
+                            <span aria-hidden="true">{['confirmado', 'salio', 'devuelto'].includes(row.inventoryStatus) ? '✓' : ''}</span>
+                            Alistado
+                          </button>
+                          <button
+                            type="button"
+                            className={`inventory-ops-check ${['salio', 'devuelto'].includes(row.inventoryStatus) ? 'done' : ''}`}
+                            disabled={!row.canConfirmInventory || row.inventoryStatus !== 'confirmado'}
+                            onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'dispatch' })}
+                          >
+                            <span aria-hidden="true">{['salio', 'devuelto'].includes(row.inventoryStatus) ? '✓' : ''}</span>
+                            Salió
+                          </button>
+                          <button
+                            type="button"
+                            className={`inventory-ops-check ${row.inventoryStatus === 'devuelto' ? 'done' : ''}`}
+                            disabled={!row.canConfirmInventory || row.inventoryStatus !== 'salio'}
+                            onClick={() => handleInventoryOrderAction({ ...row, inventoryAction: 'return' })}
+                          >
+                            <span aria-hidden="true">{row.inventoryStatus === 'devuelto' ? '✓' : ''}</span>
+                            Volvió
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
           ) : null}
 
           {isMovementsModule ? (
