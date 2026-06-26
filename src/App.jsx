@@ -516,6 +516,7 @@ function App() {
             contracts={controller.contracts}
             rentals={controller.rentals}
             deliveries={controller.deliveries}
+            cashMovements={controller.cashMovements}
             supplierBundle={controller.supplierBundle}
             generatedReports={controller.generatedReports}
             clients={controller.clients}

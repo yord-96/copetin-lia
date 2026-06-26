@@ -14,6 +14,13 @@ const toNumber = (value) => {
 
 const sumBy = (rows, getter) => Number(rows.reduce((sum, row) => sum + toNumber(getter(row)), 0).toFixed(2));
 
+const normalizeText = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
 const getDateKey = (value) => {
   const parsed = new Date(value ?? '');
   if (Number.isNaN(parsed.getTime())) return '';
@@ -70,6 +77,10 @@ const isPettyCash = (movement) => String(movement?.cashBoxType ?? '').toUpperCas
 const isGuaranteeMovement = (movement) =>
   String(movement?.type ?? '').toLowerCase() === 'ingreso_garantia'
   || String(movement?.category ?? '').toLowerCase() === 'garantia';
+const isConfirmedGuaranteeReturnMovement = (movement) =>
+  normalizeText(movement?.accountingTag) === 'guarantee_refund'
+  || normalizeText(movement?.category) === 'garantia_devuelta_manual'
+  || normalizeText(movement?.type) === 'egreso_devolucion_garantia_manual';
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
@@ -228,7 +239,6 @@ function AccountingSection({
   const [bigCashTypeFilter, setBigCashTypeFilter] = useState('all');
   const [bigCashPeriod, setBigCashPeriod] = useState('month');
   const [bigCashQuery, setBigCashQuery] = useState('');
-  const [bigCashVisibleRows, setBigCashVisibleRows] = useState(7);
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyCashVisibleRows] = useState(5);
@@ -241,6 +251,8 @@ function AccountingSection({
     query: '',
   });
   const [cashModal, setCashModal] = useState(null);
+  const [bigCashListModal, setBigCashListModal] = useState(null);
+  const [bigCashListQuery, setBigCashListQuery] = useState('');
   const [voidReceiptModal, setVoidReceiptModal] = useState(null);
   const [voidReceiptStep, setVoidReceiptStep] = useState('reason');
   const [voidReceiptReason, setVoidReceiptReason] = useState('');
@@ -297,6 +309,7 @@ function AccountingSection({
     });
     return map;
   }, [contracts]);
+  const contractById = useMemo(() => new Map(contracts.map((contract) => [contract.id, contract])), [contracts]);
 
   const transportContractOptions = useMemo(
     () => rentals
@@ -647,21 +660,110 @@ function AccountingSection({
 
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
 
+  const getRentalContract = useCallback((rental) => (
+    contractByRentalId.get(rental?.id)
+    ?? contractById.get(rental?.contractId)
+    ?? null
+  ), [contractById, contractByRentalId]);
+
+  const getRentalResponsibleName = useCallback((rental, contract = null) => {
+    const primaryResponsible = Array.isArray(contract?.responsibles) ? contract.responsibles[0] : null;
+    return String(
+      primaryResponsible?.name
+      ?? contract?.responsibleName
+      ?? contract?.createdByName
+      ?? rental?.createdByName
+      ?? rental?.responsibleName
+      ?? rental?.createdBy
+      ?? '-',
+    ).trim() || '-';
+  }, []);
+
+  const returnedGuaranteeReferences = useMemo(() => {
+    const references = new Set();
+    postedMovements.forEach((movement) => {
+      if (!isConfirmedGuaranteeReturnMovement(movement)) return;
+      [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractCode,
+        movement?.reference,
+        movement?.sourceId,
+      ].forEach((value) => {
+        const normalized = normalizeText(value);
+        if (normalized) references.add(normalized);
+      });
+    });
+    return references;
+  }, [postedMovements]);
+
+  const hasReturnedGuarantee = useCallback((rental, contract = null) => {
+    const keys = [
+      rental?.id,
+      rental?.orderCode,
+      rental?.contractCode,
+      contract?.id,
+      contract?.contractCode,
+      contract?.orderCode,
+    ].map(normalizeText);
+    return keys.some((key) => key && returnedGuaranteeReferences.has(key));
+  }, [returnedGuaranteeReferences]);
+
   const activeGuaranteeRows = useMemo(
     () => rentals
-      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'active')
-      .filter((rental) => toNumber(rental?.depositBs) > 0),
-    [rentals],
+      .filter((rental) => {
+        if (rental?.deletedAt) return false;
+        const contract = getRentalContract(rental);
+        if (toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs) <= 0) return false;
+        const status = String(rental?.status ?? '').toLowerCase();
+        if (status === 'active') return true;
+        if (status !== 'returned') return false;
+        return !hasReturnedGuarantee(rental, contract);
+      }),
+    [getRentalContract, hasReturnedGuarantee, rentals],
   );
 
+  const guaranteesToReturnRows = useMemo(() => rentals
+    .filter((rental) => !rental?.deletedAt)
+    .map((rental) => {
+      const contract = getRentalContract(rental);
+      const guaranteeBs = toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs);
+      const settlement = rental?.returnSettlement ?? {};
+      const status = String(rental?.status ?? '').toLowerCase();
+      const isReturned = status === 'returned';
+      const refundBs = isReturned ? toNumber(settlement?.refundBs ?? rental?.refundBs ?? guaranteeBs) : guaranteeBs;
+      if (!['active', 'returned'].includes(status)) return null;
+      if (guaranteeBs <= 0 || refundBs <= 0 || hasReturnedGuarantee(rental, contract)) return null;
+      return {
+        id: rental.id,
+        rentalId: rental.id,
+        contractId: contract?.id ?? rental?.contractId ?? '',
+        orderCode: rental.orderCode ?? '',
+        contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental.id,
+        customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
+        responsibleName: getRentalResponsibleName(rental, contract),
+        eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
+        amountBs: refundBs,
+        isReadyToReturn: isReturned,
+        statusLabel: isReturned ? 'Lista para devolver' : 'Material pendiente',
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
+  [getRentalContract, getRentalResponsibleName, hasReturnedGuarantee, rentals]);
+
   const calculatedGuaranteesHeldBs = useMemo(
-    () => sumBy(activeGuaranteeRows, (rental) => rental.depositBs),
-    [activeGuaranteeRows],
+    () => sumBy(activeGuaranteeRows, (rental) => {
+      const contract = getRentalContract(rental);
+      return toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs);
+    }),
+    [activeGuaranteeRows, getRentalContract],
   );
-  const guaranteesHeldBs = toNumber(cashSummary?.guaranteeHeldBs ?? calculatedGuaranteesHeldBs);
-  const operationalBigCashBs = toNumber(
-    cashSummary?.operationalBigCashBs
-    ?? Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
+  const guaranteesHeldBs = calculatedGuaranteesHeldBs;
+  const operationalBigCashBs = useMemo(
+    () => Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
+    [bigCashBalanceBs, guaranteesHeldBs],
   );
   const dayGuaranteeIncomeBs = useMemo(
     () => sumBy(bigCashGuaranteeRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate), (movement) => movement.amountBs),
@@ -684,6 +786,8 @@ function AccountingSection({
           orderCode: rental.orderCode ?? rental.id,
           contractCode: contract?.contractCode ?? '',
           customerName: rental.customerName ?? 'Cliente',
+          responsibleName: getRentalResponsibleName(rental, contract),
+          eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
           status: isReturned ? 'Liquidacion' : 'Contrato',
           pendingBs,
           totalBs: toNumber(rental?.totals?.totalBs),
@@ -696,7 +800,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => b.pendingBs - a.pendingBs),
-    [contractByRentalId, rentals],
+    [contractByRentalId, getRentalResponsibleName, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -1132,6 +1236,39 @@ function AccountingSection({
     }
   };
 
+  const handleReturnGuarantee = async (row) => {
+    if (row && !row.isReadyToReturn) {
+      setCashActionError('Todavia no se puede devolver esta garantia: primero debe volver el material.');
+      return;
+    }
+    if (!row || !beginCashSubmit()) return;
+    setCashActionError('');
+    try {
+      const created = await onCreateCashMovement?.({
+        type: 'egreso',
+        cashBoxType: 'BIG_CASH',
+        amountBs: row.amountBs,
+        description: `Devolucion garantia: ${row.customerName}`,
+        category: 'garantia_devuelta_manual',
+        paymentMethod: 'efectivo',
+        responsible: currentUserName,
+        receipt: '',
+        notes: `Devolucion de garantia del contrato ${row.contractCode}`,
+        linkedRentalId: row.rentalId,
+        linkedContractId: row.contractId,
+        linkedOrderCode: row.orderCode,
+        accountingTag: 'guarantee_refund',
+        createdBy: currentUserName,
+      });
+      await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
+      setCashActionFeedback(`Garantia devuelta para contrato ${row.contractCode}.`);
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo devolver la garantia.');
+    } finally {
+      endCashSubmit();
+    }
+  };
+
   const getCashModalTitle = () => {
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
@@ -1173,6 +1310,174 @@ function AccountingSection({
         >
           Anular
         </button>
+      </div>
+    );
+  };
+
+  const renderBigCashListModal = () => {
+    if (!bigCashListModal) return null;
+    const modalConfig = {
+      receivables: {
+        title: 'Contratos por cobrar',
+        subtitle: 'Saldos pendientes organizados por contrato, cliente, responsable y fecha del evento.',
+        rows: pendingReceivableRows,
+        colSpan: 6,
+        searchText: (row) => [
+          row.contractCode,
+          row.orderCode,
+          row.customerName,
+          row.responsibleName,
+          row.eventDate,
+          row.pendingBs,
+        ].join(' '),
+        renderHeader: () => (
+          <tr>
+            <th>Contrato</th>
+            <th>Cliente</th>
+            <th>Responsable</th>
+            <th>Fecha evento</th>
+            <th>A cobrar</th>
+            <th />
+          </tr>
+        ),
+        renderRow: (row) => (
+          <tr key={row.id}>
+            <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+            <td>{row.customerName}</td>
+            <td>{row.responsibleName}</td>
+            <td>{formatDate(row.eventDate)}</td>
+            <td className="amount">{formatBs(row.pendingBs)}</td>
+            <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
+          </tr>
+        ),
+      },
+      guarantees: {
+        title: 'Garantias por devolver',
+        subtitle: 'Garantias retenidas de contratos cuyo material ya volvió y siguen pendientes de devolución.',
+        rows: guaranteesToReturnRows,
+        colSpan: 7,
+        searchText: (row) => [
+          row.contractCode,
+          row.orderCode,
+          row.customerName,
+          row.responsibleName,
+          row.eventDate,
+          row.statusLabel,
+          row.amountBs,
+        ].join(' '),
+        renderHeader: () => (
+          <tr>
+            <th>Contrato</th>
+            <th>Cliente</th>
+            <th>Responsable</th>
+            <th>Fecha evento</th>
+            <th>Estado</th>
+            <th>Garantia</th>
+            <th />
+          </tr>
+        ),
+        renderRow: (row) => (
+          <tr key={row.id}>
+            <td><strong>{row.contractCode}</strong><small>{row.orderCode}</small></td>
+            <td>{row.customerName}</td>
+            <td>{row.responsibleName}</td>
+            <td>{formatDate(row.eventDate)}</td>
+            <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
+            <td className="amount">{formatBs(row.amountBs)}</td>
+            <td>
+              <button
+                type="button"
+                className="accounting-inline-action"
+                onClick={() => handleReturnGuarantee(row)}
+                disabled={!row.isReadyToReturn || isSubmittingCash}
+                title={row.isReadyToReturn ? 'Devolver garantía y generar recibo' : 'Primero debe volver el material'}
+              >
+                {row.isReadyToReturn ? 'Devolver' : 'No listo'}
+              </button>
+            </td>
+          </tr>
+        ),
+      },
+      movements: {
+        title: 'Movimientos de Caja Grande',
+        subtitle: 'Historial completo filtrado por el periodo actual.',
+        rows: filteredBigCashRows,
+        colSpan: 7,
+        searchText: (movement) => [
+          movement.description,
+          getMovementReference(movement),
+          movement.responsible,
+          movement.createdBy,
+          movement.createdAt,
+          movement.amountBs,
+        ].join(' '),
+        renderHeader: () => (
+          <tr>
+            <th>Fecha</th>
+            <th>Concepto</th>
+            <th>Referencia</th>
+            <th>Ingreso</th>
+            <th>Retiro</th>
+            <th>Usuario</th>
+            <th />
+          </tr>
+        ),
+        renderRow: (movement) => {
+          const meta = getBigCashMovementType(movement);
+          return (
+            <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
+              <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
+              <td><strong>{movement.description}</strong></td>
+              <td>{getMovementReference(movement)}</td>
+              <td className="amount">{meta.income}</td>
+              <td className="negative amount">{meta.withdrawal}</td>
+              <td>{movement.responsible || movement.createdBy || '-'}</td>
+              <td>{renderReceiptActions(movement)}</td>
+            </tr>
+          );
+        },
+      },
+    }[bigCashListModal];
+
+    if (!modalConfig) return null;
+    const normalizedQuery = normalizeText(bigCashListQuery);
+    const modalRows = normalizedQuery
+      ? modalConfig.rows.filter((row) => normalizeText(modalConfig.searchText(row)).includes(normalizedQuery))
+      : modalConfig.rows;
+
+    return (
+      <div className="accounting-modal-backdrop" onClick={() => setBigCashListModal(null)}>
+        <section className="accounting-modal bigcash-list-modal" onClick={(event) => event.stopPropagation()}>
+          <header>
+            <div>
+              <h3>{modalConfig.title}</h3>
+              <small>{modalConfig.subtitle}</small>
+            </div>
+            <button type="button" className="modal-close" onClick={() => setBigCashListModal(null)}>×</button>
+          </header>
+          <div className="bigcash-list-toolbar">
+            <label>
+              <MiniIcon kind="search" />
+              <input
+                value={bigCashListQuery}
+                onChange={(event) => setBigCashListQuery(event.target.value)}
+                placeholder="Buscar por contrato, cliente, responsable, fecha o monto..."
+              />
+            </label>
+            <span>{modalRows.length} de {modalConfig.rows.length} registros</span>
+          </div>
+          <div className="bigcash-table-wrap">
+            <table className="accounting-table bigcash-table">
+              <thead>{modalConfig.renderHeader()}</thead>
+              <tbody>
+                {modalRows.map(modalConfig.renderRow)}
+                {modalRows.length === 0 ? (
+                  <tr><td colSpan={modalConfig.colSpan}><p className="status">No hay registros para mostrar.</p></td></tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     );
   };
@@ -1870,24 +2175,134 @@ function AccountingSection({
           </article>
         </section>
 
-        <section className="bigcash-main-grid">
-          <div className="bigcash-left">
-            <article className="bigcash-card bigcash-movements">
+        <section className="bigcash-command-grid">
+          <article className="bigcash-card bigcash-command-card receivables">
             <header>
-              <h3><span className="bigcash-title-icon blue"><CashIcon kind="table" /></span>MOVIMIENTOS DE CAJA GRANDE</h3>
+              <div>
+                <span>01 · Seguimiento</span>
+                <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Contratos por cobrar</h3>
+                <p>Contratos con saldo pendiente, cliente, responsable y fecha de evento.</p>
+              </div>
+              <strong>{formatBs(pendingReceivableBs)}</strong>
+            </header>
+            <div className="bigcash-table-wrap bigcash-command-table-wrap">
+              <table className="accounting-table bigcash-table bigcash-command-table">
+                <thead>
+                  <tr>
+                    <th>Contrato</th>
+                    <th>Cliente</th>
+                    <th>Responsable</th>
+                    <th>Fecha evento</th>
+                    <th>A cobrar</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingReceivableRows.slice(0, 5).map((row) => (
+                    <tr key={row.id}>
+                      <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                      <td><strong>{row.customerName}</strong></td>
+                      <td>{row.responsibleName}</td>
+                      <td>{formatDate(row.eventDate)}</td>
+                      <td className="amount">{formatBs(row.pendingBs)}</td>
+                      <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
+                    </tr>
+                  ))}
+                  {pendingReceivableRows.length === 0 ? <tr><td colSpan={6}><p className="status">Sin saldos pendientes por cobrar.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListModal('receivables'); }}>Ver más contratos</button>
+          </article>
+
+          <article className="bigcash-card bigcash-command-card guarantees">
+            <header>
+              <div>
+                <span>02 · Control</span>
+                <h3><span className="bigcash-title-icon violet"><MiniIcon kind="lock" /></span>Garantías retenidas / por devolver</h3>
+                <p>Todo el dinero retenido. Solo se devuelve cuando el material ya volvió.</p>
+              </div>
+              <strong>{formatBs(guaranteesHeldBs)}</strong>
+            </header>
+            <div className="bigcash-table-wrap bigcash-command-table-wrap">
+              <table className="accounting-table bigcash-table bigcash-command-table">
+                <thead>
+                  <tr>
+                    <th>Contrato</th>
+                    <th>Cliente</th>
+                    <th>Responsable</th>
+                    <th>Estado</th>
+                    <th>Garantía</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {guaranteesToReturnRows.slice(0, 5).map((row) => (
+                    <tr key={row.id} className={row.isReadyToReturn ? 'guarantee-ready-row' : ''}>
+                      <td><strong>{row.contractCode}</strong><small>{formatDate(row.eventDate)}</small></td>
+                      <td><strong>{row.customerName}</strong></td>
+                      <td>{row.responsibleName}</td>
+                      <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
+                      <td className="amount">{formatBs(row.amountBs)}</td>
+                      <td>
+                        {row.isReadyToReturn ? (
+                          <button
+                            type="button"
+                            className="accounting-inline-action"
+                            onClick={() => handleReturnGuarantee(row)}
+                            disabled={isSubmittingCash}
+                            title="Devolver garantía y generar recibo"
+                          >
+                            Devolver
+                          </button>
+                        ) : (
+                          <span className="bigcash-action-muted">No listo</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {guaranteesToReturnRows.length === 0 ? <tr><td colSpan={6}><p className="status">Sin garantías retenidas pendientes.</p></td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListModal('guarantees'); }}>Ver más garantías</button>
+          </article>
+        </section>
+
+        <section className="bigcash-operations-grid">
+          <article className="bigcash-card bigcash-movements">
+            <header>
+              <div>
+                <h3><span className="bigcash-title-icon blue"><CashIcon kind="table" /></span>Movimientos de Caja Grande</h3>
+                <p>Últimos 5 movimientos del periodo seleccionado.</p>
+              </div>
+              <button
+                type="button"
+                className="bigcash-export-button"
+                onClick={() => printCashHistoryReport({
+                  cashBoxType: 'BIG_CASH',
+                  rows: filteredBigCashRows,
+                  title: 'Libro de Caja Grande',
+                  dateFrom: bigCashPeriodRange.dateFrom,
+                  dateTo: bigCashPeriodRange.dateTo,
+                })}
+              >
+                <MiniIcon kind="report" />
+                Reporte
+              </button>
             </header>
             <div className="bigcash-toolbar">
               <label>
                 <select value={bigCashTypeFilter} onChange={(event) => setBigCashTypeFilter(event.target.value)}>
                   <option value="all">Todos los tipos</option>
                   <option value="income">Ingresos operativos</option>
-                  <option value="guarantee">Garantias retenidas</option>
+                  <option value="guarantee">Garantías retenidas</option>
                   <option value="transfer">Retiros</option>
                 </select>
               </label>
               <label>
                 <select value={bigCashPeriod} onChange={(event) => setBigCashPeriod(event.target.value)}>
-                  <option value="day">Dia</option>
+                  <option value="day">Día</option>
                   <option value="week">Semana</option>
                   <option value="month">Mes</option>
                 </select>
@@ -1904,20 +2319,6 @@ function AccountingSection({
                 />
                 <MiniIcon kind="search" />
               </label>
-              <button
-                type="button"
-                className="bigcash-export-button"
-                onClick={() => printCashHistoryReport({
-                  cashBoxType: 'BIG_CASH',
-                  rows: filteredBigCashRows,
-                  title: 'Libro de Caja Grande',
-                  dateFrom: bigCashPeriodRange.dateFrom,
-                  dateTo: bigCashPeriodRange.dateTo,
-                })}
-              >
-                <MiniIcon kind="report" />
-                Reporte
-              </button>
             </div>
 
             <div className="bigcash-table-wrap">
@@ -1936,7 +2337,7 @@ function AccountingSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBigCashRows.slice(0, bigCashVisibleRows).map((movement, index) => {
+                  {filteredBigCashRows.slice(0, 5).map((movement, index) => {
                     const meta = getBigCashMovementType(movement);
                     const hasTransportRevenue = toNumber(movement?.transportRevenueBs) > 0
                       || String(movement?.accountingTag ?? '') === 'transport_revenue'
@@ -1967,124 +2368,42 @@ function AccountingSection({
                 </tbody>
               </table>
             </div>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListModal('movements'); }}>Ver más movimientos</button>
+          </article>
 
-            <button
-              type="button"
-              className="section-link blue"
-              onClick={() => setBigCashVisibleRows((current) => (current >= filteredBigCashRows.length ? 7 : current + 7))}
-            >
-              {bigCashVisibleRows >= filteredBigCashRows.length && bigCashVisibleRows > 7 ? 'Ver menos' : 'Ver todos los movimientos'}
-            </button>
-            </article>
-
+          <aside className="bigcash-insights">
             <section className="bigcash-card bigcash-summary-card">
-              <h3><span className="bigcash-title-icon neutral"><CashIcon kind="summary" /></span>COMPOSICION DEL DINERO EN CAJA GRANDE</h3>
-              <p className="bigcash-summary-note">Las garantias pertenecen temporalmente a los clientes y no forman parte del dinero operativo disponible.</p>
+              <h3><span className="bigcash-title-icon neutral"><CashIcon kind="summary" /></span>Composición</h3>
+              <p className="bigcash-summary-note">Las garantías pertenecen al cliente y no son dinero operativo.</p>
               <div className="bigcash-summary-formula cash-composition">
                 <span>
-                  <small>Dinero operativo</small>
+                  <small>Operativo</small>
                   <b className="value-green">{formatBs(operationalBigCashBs)}</b>
-                  <em>Disponible para la operacion</em>
                 </span>
                 <i>+</i>
                 <span>
-                  <small>Garantias retenidas</small>
+                  <small>Garantías</small>
                   <b className="value-violet">{formatBs(guaranteesHeldBs)}</b>
-                  <em>No disponible</em>
                 </span>
                 <i>=</i>
                 <span className="current">
-                  <small>Total fisico en caja</small>
+                  <small>Total físico</small>
                   <b className="value-blue">{formatBs(bigCashBalanceBs)}</b>
-                  <em>{formatDate(selectedDate)}</em>
                 </span>
               </div>
             </section>
 
             <section className="bigcash-card transport-margin-card">
-              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="chart" /></span>RENDICION DE TRANSPORTE</h3>
-              <p>Ingresos por envio cobrados al cliente contra gastos de taxis, fletes o movilidad enlazados desde Caja Chica.</p>
+              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="chart" /></span>Transporte</h3>
               <div className="transport-margin-grid">
-                <span>
-                  <small>Cobrado este mes</small>
-                  <b className="value-green">{formatBs(monthTransportRevenueBs)}</b>
-                </span>
-                <span>
-                  <small>Gastado en envios</small>
-                  <b className="value-orange">{formatBs(monthTransportExpenseBs)}</b>
-                </span>
-                <span className={monthTransportMarginBs >= 0 ? 'positive' : 'negative'}>
-                  <small>Resultado transporte</small>
-                  <b>{formatBs(monthTransportMarginBs)}</b>
-                </span>
+                <span><small>Cobrado</small><b className="value-green">{formatBs(monthTransportRevenueBs)}</b></span>
+                <span><small>Gastado</small><b className="value-orange">{formatBs(monthTransportExpenseBs)}</b></span>
+                <span className={monthTransportMarginBs >= 0 ? 'positive' : 'negative'}><small>Resultado</small><b>{formatBs(monthTransportMarginBs)}</b></span>
               </div>
             </section>
-          </div>
-
-          <aside className="bigcash-side">
-            <article className="bigcash-card bigcash-about">
-              <h3>ACERCA DE CAJA GRANDE</h3>
-              <div>
-                <span className="bigcash-about-icon">
-                  <img src="/imagenes/caja-fuerte.png" alt="" />
-                </span>
-                <ul>
-                  <li>Su función principal es recibir ingresos.</li>
-                  <li>Todos los pagos de contratos, alquiler, cuotas y servicios se registran aquí.</li>
-                  <li>Las garantias se reciben aqui, pero se mantienen separadas del dinero operativo.</li>
-                  <li>No se realizan gastos desde Caja Grande.</li>
-                  <li>Los retiros solo pueden ser para reposición de Caja Chica.</li>
-                </ul>
-              </div>
-            </article>
-
-            <article className="bigcash-card bigcash-mini-list-card">
-              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>COBROS PENDIENTES</h3>
-              <div className="bigcash-mini-list">
-                {pendingReceivableRows.slice(0, 4).map((row) => (
-                  <div key={row.id}>
-                    <span>{row.orderCode} {row.contractCode ? `| ${row.contractCode}` : ''}</span>
-                    <strong>{row.customerName}</strong>
-                    <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>
-                      Cobrar {formatBs(row.pendingBs)}
-                    </button>
-                  </div>
-                ))}
-                {pendingReceivableRows.length === 0 ? <p className="status">Sin saldos pendientes por cobrar.</p> : null}
-              </div>
-            </article>
-
-            <article className="bigcash-card bigcash-mini-list-card">
-              <h3><span className="bigcash-title-icon green"><CashIcon kind="table" /></span>ULTIMOS INGRESOS</h3>
-              <div className="bigcash-mini-list">
-                {bigCashIncomeRows.slice(0, 5).map((movement) => (
-                  <div key={movement.id}>
-                    <span>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></span>
-                    <strong>{movement.description}</strong>
-                    <b>{formatBs(movement.amountBs)}</b>
-                  </div>
-                ))}
-                {bigCashIncomeRows.length === 0 ? <p className="status">Sin ingresos registrados.</p> : null}
-              </div>
-              <button type="button" className="section-link blue">Ver todos</button>
-            </article>
-
-            <article className="bigcash-card bigcash-mini-list-card">
-              <h3><span className="bigcash-title-icon orange"><CashIcon kind="table" /></span>RETIROS RECIENTES A CAJA CHICA</h3>
-              <div className="bigcash-mini-list">
-                {pettyTransfersRows.slice(0, 4).map((movement) => (
-                  <div key={movement.id}>
-                    <span>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></span>
-                    <strong>{movement.description}</strong>
-                    <b>{formatBs(Math.abs(movement.amountBs))}</b>
-                  </div>
-                ))}
-                {pettyTransfersRows.length === 0 ? <p className="status">Sin retiros registrados.</p> : null}
-              </div>
-              <button type="button" className="section-link blue">Ver todos</button>
-            </article>
           </aside>
         </section>
+        {renderBigCashListModal()}
         {renderCashModals()}
       </section>
     );

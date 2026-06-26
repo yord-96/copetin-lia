@@ -23,6 +23,710 @@
   --nav-to: var(--c500);
 }
 
+/* Caja Grande · rediseño final operativo */
+.accounting-bigcash-view {
+  width: min(100%, 1320px);
+  margin-inline: auto;
+  padding: 0 0.85rem 1.4rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head {
+  align-items: center;
+  padding: 0.15rem 0.1rem 0.1rem;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head h2 {
+  color: #061f49;
+  font-size: clamp(2.05rem, 2.8vw, 2.65rem);
+  font-weight: 950;
+  letter-spacing: -0.045em;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head p {
+  color: #68758c;
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.accounting-bigcash-view .bigcash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.78rem;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card,
+.accounting-bigcash-view .bigcash-card {
+  border: 1px solid rgba(226, 213, 205, 0.98);
+  border-radius: 1.05rem;
+  background: #fff;
+  box-shadow: 0 1rem 2.2rem rgba(24, 34, 54, 0.06);
+}
+
+.accounting-bigcash-view .bigcash-kpi-card {
+  min-height: 7.2rem;
+  padding: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-hero-icon {
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 0.9rem;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card h3 {
+  font-size: clamp(1.42rem, 1.7vw, 1.75rem);
+}
+
+.accounting-bigcash-view .bigcash-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.92rem;
+  align-items: stretch;
+}
+
+.accounting-bigcash-view .bigcash-command-card {
+  min-height: 25rem;
+  padding: 1.05rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.82rem;
+  overflow: hidden;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: start;
+  padding-bottom: 0.78rem;
+  border-bottom: 1px solid rgba(11, 45, 99, 0.09);
+}
+
+.accounting-bigcash-view .bigcash-command-card > header > div > span:first-child {
+  color: #ef4b0a;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header h3 {
+  margin: 0.15rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #09275b;
+  font-size: 1.06rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header p {
+  margin-top: 0.22rem;
+  color: #68758c;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header > strong {
+  border-radius: 999px;
+  padding: 0.45rem 0.72rem;
+  background: #fff3ea;
+  color: #dc4c05;
+  font-size: 0.98rem;
+  font-weight: 950;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(239, 75, 10, 0.14);
+}
+
+.accounting-bigcash-view .bigcash-command-card.guarantees > header > strong {
+  background: #f5efff;
+  color: #7138bd;
+  box-shadow: inset 0 0 0 1px rgba(113, 56, 189, 0.16);
+}
+
+.accounting-bigcash-view .bigcash-command-list {
+  display: grid;
+  gap: 0.66rem;
+  align-content: start;
+  min-height: 0;
+}
+
+.accounting-bigcash-view .bigcash-action-row {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.18rem 0.72rem;
+  align-items: center;
+  min-height: 4.9rem;
+  padding: 0.78rem 0.85rem 0.78rem 1rem !important;
+  border: 1px solid rgba(11, 45, 99, 0.1);
+  border-radius: 0.92rem;
+  background: #f8fbff;
+  overflow: hidden;
+}
+
+.accounting-bigcash-view .bigcash-action-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.22rem;
+  background: #ef4b0a;
+}
+
+.accounting-bigcash-view .bigcash-action-row.guarantee::before {
+  background: #7c3aed;
+}
+
+.accounting-bigcash-view .bigcash-action-row.ready {
+  background: #fffaf0;
+}
+
+.accounting-bigcash-view .bigcash-action-row.waiting {
+  background: #f8fbff;
+}
+
+.accounting-bigcash-view .bigcash-action-row span,
+.accounting-bigcash-view .bigcash-action-row small {
+  grid-column: 1 / -1;
+  color: #697790;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.accounting-bigcash-view .bigcash-action-row strong {
+  min-width: 0;
+  color: #071f49;
+  font-size: 0.91rem;
+  font-weight: 950;
+  line-height: 1.16;
+}
+
+.accounting-bigcash-view .bigcash-action-row b {
+  color: #08275b;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-action-row .accounting-inline-action {
+  justify-self: end;
+  min-height: 2rem;
+  border-radius: 999px;
+  padding-inline: 0.88rem;
+}
+
+.accounting-bigcash-view .bigcash-action-row .accounting-inline-action:disabled {
+  cursor: not-allowed;
+  border-color: #dce3ef;
+  background: #f4f7fb;
+  color: #8794a8;
+  box-shadow: none;
+}
+
+.accounting-bigcash-view .section-link.blue {
+  justify-self: center;
+  margin-top: 0.1rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-operations-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(18rem, 0.78fr);
+  gap: 0.92rem;
+  align-items: start;
+}
+
+.accounting-bigcash-view .bigcash-movements,
+.accounting-bigcash-view .bigcash-summary-card,
+.accounting-bigcash-view .transport-margin-card {
+  padding: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-movements > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.72rem;
+}
+
+.accounting-bigcash-view .bigcash-movements > header h3,
+.accounting-bigcash-view .bigcash-summary-card h3,
+.accounting-bigcash-view .transport-margin-card h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #08275b;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-movements > header p,
+.accounting-bigcash-view .bigcash-summary-note {
+  margin: 0.22rem 0 0;
+  color: #68758c;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.accounting-bigcash-view .bigcash-toolbar {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(8rem, 0.55fr) minmax(13rem, 0.9fr) minmax(14rem, 1.2fr);
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.accounting-bigcash-view .bigcash-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid rgba(11, 45, 99, 0.13);
+  border-radius: 0.9rem;
+}
+
+.accounting-bigcash-view .bigcash-table thead th {
+  background: #0b2d63;
+  color: #fff;
+  font-size: 0.72rem;
+  letter-spacing: 0.025em;
+}
+
+.accounting-bigcash-view .bigcash-table tbody td {
+  border-bottom: 1px solid rgba(11, 45, 99, 0.1);
+  color: #10254f;
+  font-size: 0.78rem;
+}
+
+.accounting-bigcash-view .bigcash-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.accounting-bigcash-view .bigcash-insights {
+  display: grid;
+  gap: 0.92rem;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  border-radius: 0.92rem;
+}
+
+.accounting-bigcash-view .transport-margin-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.58rem;
+}
+
+.accounting-bigcash-view .bigcash-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.65rem;
+  border-radius: 999px;
+  padding: 0.18rem 0.56rem;
+  font-size: 0.68rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-status-pill.ready {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.accounting-bigcash-view .bigcash-status-pill.waiting {
+  border: 1px solid #dbe3ef;
+  background: #f5f7fb;
+  color: #64748b;
+}
+
+@media (max-width: 1180px) {
+  .accounting-bigcash-view .bigcash-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-bigcash-view .bigcash-command-grid,
+  .accounting-bigcash-view .bigcash-operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-bigcash-view .bigcash-command-card {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .accounting-bigcash-view {
+    padding-inline: 0.55rem;
+  }
+
+  .accounting-bigcash-view .accounting-bigcash-head,
+  .accounting-bigcash-view .accounting-overview-actions,
+  .accounting-bigcash-view .accounting-bigcash-action-group {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-bigcash-view .bigcash-kpi-grid,
+  .accounting-bigcash-view .bigcash-toolbar,
+  .accounting-bigcash-view .bigcash-summary-formula.cash-composition {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Caja Grande: tablero operativo rediseñado */
+.accounting-bigcash-view .bigcash-side {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-mini-list-card {
+  border: 1px solid rgba(224, 94, 18, 0.18);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(255, 122, 0, 0.08), transparent 34%),
+    #fff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
+}
+
+.accounting-bigcash-view .bigcash-mini-list-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #0b2d63;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+.accounting-bigcash-view .bigcash-action-row {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.18rem 0.65rem;
+  align-items: center;
+  padding: 0.78rem 0.82rem !important;
+  border: 1px solid rgba(11, 45, 99, 0.09);
+  border-radius: 0.85rem;
+  background: #f8fbff;
+}
+
+.accounting-bigcash-view .bigcash-action-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.22rem;
+  border-radius: 0.85rem 0 0 0.85rem;
+  background: #f05a05;
+}
+
+.accounting-bigcash-view .bigcash-action-row.guarantee::before {
+  background: #7c3aed;
+}
+
+.accounting-bigcash-view .bigcash-action-row span,
+.accounting-bigcash-view .bigcash-action-row small {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.accounting-bigcash-view .bigcash-action-row strong {
+  min-width: 0;
+  color: #071f49;
+  font-size: 0.9rem;
+  line-height: 1.15;
+}
+
+.accounting-bigcash-view .bigcash-action-row b {
+  color: #0b2d63;
+  font-size: 0.88rem;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-action-row .accounting-inline-action {
+  justify-self: end;
+  min-height: 2rem;
+  border-radius: 999px;
+  padding-inline: 0.85rem;
+}
+
+.accounting-bigcash-view .bigcash-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid rgba(11, 45, 99, 0.12);
+  border-radius: 0.9rem;
+}
+
+.accounting-bigcash-view .bigcash-table thead th {
+  background: #0b2d63;
+  color: #fff;
+  font-size: 0.72rem;
+  letter-spacing: 0.025em;
+}
+
+.accounting-bigcash-view .bigcash-table tbody td {
+  border-bottom: 1px solid rgba(11, 45, 99, 0.11);
+  color: #10254f;
+  font-size: 0.78rem;
+}
+
+.accounting-bigcash-view .bigcash-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.bigcash-list-modal {
+  width: min(980px, calc(100vw - 2rem));
+  max-height: min(82vh, 760px);
+  overflow: hidden;
+}
+
+.bigcash-list-modal .bigcash-table-wrap {
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.bigcash-list-modal .accounting-table strong {
+  display: block;
+  color: #071f49;
+}
+
+.bigcash-list-modal .accounting-table small {
+  display: block;
+  margin-top: 0.12rem;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+/* Caja Grande v2: layout simétrico y operativo */
+.accounting-bigcash-view {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-inline: clamp(0.35rem, 1vw, 0.9rem);
+}
+
+.accounting-bigcash-view .bigcash-kpi-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card,
+.accounting-bigcash-view .bigcash-card {
+  border-radius: 1rem;
+  border-color: rgba(226, 215, 206, 0.92);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.055);
+}
+
+.bigcash-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.bigcash-command-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  min-height: 28rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.bigcash-command-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(11, 45, 99, 0.08);
+}
+
+.bigcash-command-card > header > div {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.bigcash-command-card > header span {
+  color: #f05a05;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.bigcash-command-card > header h3 {
+  color: #08275b;
+  font-size: 1.05rem;
+}
+
+.bigcash-command-card > header p {
+  margin: 0;
+  max-width: 32rem;
+  color: #667085;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.bigcash-command-card > header > strong {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #fff4ed;
+  color: #d94b00;
+  padding: 0.42rem 0.72rem;
+  font-size: 1rem;
+  font-weight: 950;
+  box-shadow: inset 0 0 0 1px rgba(240, 90, 5, 0.14);
+}
+
+.bigcash-command-card.guarantees > header > strong {
+  background: #f3edff;
+  color: #7138bd;
+  box-shadow: inset 0 0 0 1px rgba(113, 56, 189, 0.14);
+}
+
+.bigcash-command-list {
+  display: grid;
+  gap: 0.64rem;
+  align-content: start;
+  min-height: 0;
+}
+
+.accounting-bigcash-view .bigcash-action-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 0.8rem 0.86rem 0.8rem 1rem !important;
+  background: #f8fbff;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.accounting-bigcash-view .bigcash-action-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(240, 90, 5, 0.22);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.accounting-bigcash-view .bigcash-action-row span,
+.accounting-bigcash-view .bigcash-action-row small {
+  grid-column: 1 / -1;
+}
+
+.accounting-bigcash-view .bigcash-action-row.waiting {
+  background: #fbfdff;
+}
+
+.accounting-bigcash-view .bigcash-action-row.waiting::before {
+  background: #94a3b8;
+}
+
+.accounting-bigcash-view .bigcash-action-row.ready {
+  background: #fffaf0;
+}
+
+.accounting-bigcash-view .bigcash-action-row .accounting-inline-action:disabled {
+  cursor: not-allowed;
+  border-color: #dbe3ef;
+  background: #f3f6fa;
+  color: #8a97ab;
+  box-shadow: none;
+}
+
+.bigcash-operations-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(20rem, 0.82fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.accounting-bigcash-view .bigcash-movements {
+  padding: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-movements > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-movements > header p {
+  margin: 0.22rem 0 0;
+  color: #667085;
+  font-size: 0.78rem;
+}
+
+.accounting-bigcash-view .bigcash-toolbar {
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(8rem, 0.55fr) minmax(13rem, 0.9fr) minmax(14rem, 1.3fr);
+  gap: 0.65rem;
+}
+
+.bigcash-insights {
+  display: grid;
+  gap: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-summary-card,
+.accounting-bigcash-view .transport-margin-card {
+  padding: 1rem;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  border-radius: 0.85rem;
+}
+
+.accounting-bigcash-view .transport-margin-grid {
+  grid-template-columns: 1fr;
+}
+
+.bigcash-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.65rem;
+  border-radius: 999px;
+  padding: 0.18rem 0.56rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.bigcash-status-pill.ready {
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.bigcash-status-pill.waiting {
+  border: 1px solid #dbe3ef;
+  background: #f5f7fb;
+  color: #64748b;
+}
+
+@media (max-width: 1100px) {
+  .accounting-bigcash-view .bigcash-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bigcash-command-grid,
+  .bigcash-operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bigcash-command-card {
+    min-height: auto;
+  }
+}
+
 @media (max-width: 920px) {
   .petty-main-grid,
   .petty-side,
@@ -31942,8 +32646,8 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-view .orders-contracts-table td.orders-contract-returned-cell {
-    background: #22f2ff !important;
-    box-shadow: inset 0 0 0 1px rgba(0, 156, 180, 0.42);
+    background: #fff200 !important;
+    box-shadow: inset 0 0 0 1px rgba(182, 153, 0, 0.44);
   }
 
   .orders-view .orders-contracts-table tbody tr:hover td.orders-contract-sent-cell {
@@ -31951,7 +32655,7 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-view .orders-contracts-table tbody tr:hover td.orders-contract-returned-cell {
-    background: #0ee6ff !important;
+    background: #fff65a !important;
   }
 
   .orders-guarantee-cell {
@@ -49054,9 +49758,9 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-mobile-returned-zone {
-    border: 1px solid rgba(0, 174, 205, 0.28) !important;
+    border: 1px solid rgba(182, 153, 0, 0.34) !important;
     border-radius: 0.72rem !important;
-    background: #24e6f2 !important;
+    background: #fff200 !important;
     padding: 0.52rem !important;
   }
 
@@ -49465,4 +50169,761 @@ button.calendar-dispatch-row:focus-visible {
     font-size: 0.78rem;
     font-weight: 750;
   }
+}
+
+/* Caja Grande · ajuste final de ancho, tablas y modales */
+body:has(.accounting-bigcash-view) .app-content,
+body:has(.accounting-bigcash-view) .workspace {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+body:has(.accounting-bigcash-view) .workspace {
+  padding-inline: clamp(1rem, 1.8vw, 1.8rem) !important;
+}
+
+.accounting-bigcash-view.panel {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 1.1rem clamp(0.75rem, 1.2vw, 1.25rem) 1.6rem !important;
+  border: 0 !important;
+  background:
+    radial-gradient(circle at top right, rgba(255, 122, 0, 0.06), transparent 22rem),
+    linear-gradient(180deg, rgba(255, 250, 247, 0.82), rgba(255, 255, 255, 0.95)) !important;
+  box-shadow: none !important;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head {
+  width: 100%;
+  max-width: none;
+  margin: 0 0 0.2rem;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head h2 {
+  color: #061f49 !important;
+  font-size: clamp(2.15rem, 2.9vw, 2.9rem) !important;
+  font-weight: 950 !important;
+  letter-spacing: -0.055em !important;
+}
+
+.accounting-bigcash-view .accounting-bigcash-head p {
+  color: #62708a !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-grid {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 0.86rem !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card,
+.accounting-bigcash-view .bigcash-card {
+  border: 1px solid rgba(226, 213, 205, 0.98) !important;
+  border-radius: 1.12rem !important;
+  background: #fff !important;
+  box-shadow: 0 1rem 2.6rem rgba(15, 23, 42, 0.065) !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card {
+  min-height: 7.35rem !important;
+  padding: 1.05rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-grid {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 1rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-card {
+  min-height: 27rem !important;
+  padding: 1.05rem !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+  gap: 0.9rem !important;
+  align-items: start !important;
+  border-bottom: 1px solid #dce4f0 !important;
+  padding-bottom: 0.85rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header h3 {
+  color: #08275b !important;
+  font-size: 1.12rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header p {
+  color: #65738d !important;
+  font-size: 0.84rem !important;
+  font-weight: 750 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-card > header > strong {
+  border-radius: 999px !important;
+  padding: 0.5rem 0.8rem !important;
+  font-size: 1.08rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-list {
+  gap: 0.72rem !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row {
+  display: grid !important;
+  grid-template-columns: minmax(12rem, 1.35fr) minmax(9rem, 0.9fr) max-content max-content !important;
+  grid-template-areas:
+    "meta responsible amount action"
+    "client responsible amount action" !important;
+  gap: 0.2rem 0.85rem !important;
+  align-items: center !important;
+  min-height: 5rem !important;
+  padding: 0.88rem 0.95rem 0.88rem 1.1rem !important;
+  border: 1px solid #d8e1ee !important;
+  border-radius: 0.95rem !important;
+  background: #f8fbff !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row.ready {
+  background: #fffaf0 !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row span {
+  grid-area: meta !important;
+  color: #60708d !important;
+  font-size: 0.78rem !important;
+  font-weight: 900 !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row strong {
+  grid-area: client !important;
+  color: #071f49 !important;
+  font-size: 1rem !important;
+  font-weight: 950 !important;
+  line-height: 1.12 !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row small {
+  grid-area: responsible !important;
+  color: #5e6d87 !important;
+  font-size: 0.82rem !important;
+  font-weight: 850 !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row b {
+  grid-area: amount !important;
+  color: #08275b !important;
+  font-size: 1rem !important;
+  font-weight: 950 !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-action-row .accounting-inline-action {
+  grid-area: action !important;
+  min-width: 5.7rem !important;
+  min-height: 2.25rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-operations-grid {
+  width: 100%;
+  display: grid !important;
+  grid-template-columns: minmax(0, 2.15fr) minmax(18rem, 0.76fr) !important;
+  gap: 1rem !important;
+}
+
+.accounting-bigcash-view .bigcash-movements,
+.accounting-bigcash-view .bigcash-summary-card,
+.accounting-bigcash-view .transport-margin-card {
+  padding: 1.05rem !important;
+}
+
+.accounting-bigcash-view .bigcash-toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(9rem, 0.75fr) minmax(7.5rem, 0.55fr) minmax(13rem, 0.9fr) minmax(16rem, 1.35fr) !important;
+  gap: 0.7rem !important;
+}
+
+.accounting-bigcash-view .bigcash-table-wrap {
+  border: 1px solid #d9e2ef !important;
+  border-radius: 0.95rem !important;
+  overflow: auto !important;
+  background: #fff !important;
+}
+
+.accounting-bigcash-view .bigcash-table {
+  min-width: 0 !important;
+  width: 100% !important;
+  border: 0 !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.accounting-bigcash-view .bigcash-table thead th,
+.accounting-bigcash-view .bigcash-table th {
+  background: #0b2d63 !important;
+  color: #fff !important;
+  padding: 0.86rem 0.78rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-table tbody td,
+.accounting-bigcash-view .bigcash-table td {
+  padding: 0.86rem 0.78rem !important;
+  border-bottom: 1px solid #dce4f0 !important;
+  color: #10254f !important;
+  font-size: 0.84rem !important;
+  font-weight: 780 !important;
+  vertical-align: middle !important;
+}
+
+.accounting-bigcash-view .bigcash-table td strong {
+  color: #071f49 !important;
+  font-size: 0.88rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-table td small {
+  display: block !important;
+  margin: 0.16rem 0 0 !important;
+  color: #6b7890 !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+}
+
+.accounting-bigcash-view .bigcash-table .amount {
+  color: #06285c !important;
+  font-size: 0.88rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-table .negative {
+  color: #dc2626 !important;
+}
+
+.bigcash-list-modal.accounting-modal {
+  width: min(1180px, calc(100vw - 3rem)) !important;
+  max-width: none !important;
+  max-height: min(86vh, 820px) !important;
+  padding: 1.05rem !important;
+  border-radius: 1rem !important;
+  gap: 0.9rem !important;
+  overflow: hidden !important;
+}
+
+.bigcash-list-modal.accounting-modal header {
+  padding-bottom: 0.75rem !important;
+  border-bottom: 1px solid #dce4f0 !important;
+}
+
+.bigcash-list-modal.accounting-modal h3 {
+  color: #061f49 !important;
+  font-size: 1.32rem !important;
+  font-weight: 950 !important;
+}
+
+.bigcash-list-modal.accounting-modal header small {
+  color: #63718a !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+}
+
+.bigcash-list-modal .bigcash-table-wrap {
+  max-height: calc(86vh - 9.5rem) !important;
+  overflow: auto !important;
+  border-radius: 0.95rem !important;
+}
+
+.bigcash-list-modal .bigcash-table {
+  min-width: 980px !important;
+}
+
+.bigcash-list-modal .accounting-table th {
+  padding: 0.95rem 0.9rem !important;
+  font-size: 0.78rem !important;
+}
+
+.bigcash-list-modal .accounting-table td {
+  padding: 0.92rem 0.9rem !important;
+  font-size: 0.86rem !important;
+}
+
+.bigcash-list-modal .accounting-table td strong {
+  font-size: 0.95rem !important;
+}
+
+@media (min-width: 1400px) {
+  body:has(.accounting-bigcash-view) .workspace {
+    padding-inline: 2.2rem !important;
+  }
+}
+
+@media (max-width: 1180px) {
+  .accounting-bigcash-view .bigcash-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .accounting-bigcash-view .bigcash-command-grid,
+  .accounting-bigcash-view .bigcash-operations-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 860px) {
+  .accounting-bigcash-view .bigcash-action-row {
+    grid-template-columns: 1fr auto !important;
+    grid-template-areas:
+      "meta amount"
+      "client action"
+      "responsible action" !important;
+  }
+
+  .accounting-bigcash-view .bigcash-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+
+  .bigcash-list-modal.accounting-modal {
+    width: calc(100vw - 1rem) !important;
+    max-height: calc(100vh - 1rem) !important;
+  }
+}
+
+/* Caja Grande · tablas superiores y búsqueda en modales */
+.accounting-bigcash-view .bigcash-command-card {
+  min-height: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table-wrap {
+  min-height: 25.2rem !important;
+  border-radius: 1rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table {
+  min-width: 760px !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th {
+  padding: 0.78rem 0.72rem !important;
+  font-size: 0.72rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td {
+  padding: 0.86rem 0.72rem !important;
+  font-size: 0.84rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:first-child strong,
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) strong {
+  color: #071f49 !important;
+  font-size: 0.92rem !important;
+  font-weight: 950 !important;
+  line-height: 1.1 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:first-child {
+  width: 7.6rem;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) {
+  min-width: 11rem;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:nth-child(3) {
+  color: #50617e !important;
+  font-size: 0.8rem !important;
+  font-weight: 900 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:last-child {
+  text-align: right !important;
+  width: 7.5rem;
+}
+
+.accounting-bigcash-view .bigcash-command-table .accounting-inline-action {
+  min-height: 2.15rem !important;
+  min-width: 5.8rem !important;
+  border-radius: 999px !important;
+  font-size: 0.74rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .accounting-inline-action:disabled {
+  background: #f3f6fb !important;
+  color: #8b98aa !important;
+  border-color: #dce4ef !important;
+  box-shadow: none !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .guarantee-ready-row td {
+  background: #fffaf0 !important;
+}
+
+.bigcash-list-modal .bigcash-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.bigcash-list-modal .bigcash-list-toolbar label {
+  min-height: 2.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.85rem;
+  border: 1px solid #d8e1ee;
+  border-radius: 0.82rem;
+  background: #f8fbff;
+}
+
+.bigcash-list-modal .bigcash-list-toolbar svg {
+  width: 1rem;
+  height: 1rem;
+  color: #64748b;
+  flex: 0 0 auto;
+}
+
+.bigcash-list-modal .bigcash-list-toolbar input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #10254f;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 780;
+}
+
+.bigcash-list-modal .bigcash-list-toolbar span {
+  min-height: 2.4rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 0.78rem;
+  background: #fff4ed;
+  color: #d94b00;
+  font-size: 0.78rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.bigcash-list-modal .accounting-inline-action {
+  min-height: 2.18rem !important;
+  min-width: 5.75rem !important;
+  border-radius: 999px !important;
+  font-size: 0.76rem !important;
+  font-weight: 950 !important;
+}
+
+.bigcash-list-modal .accounting-inline-action:disabled {
+  background: #f3f6fb !important;
+  color: #8b98aa !important;
+  border-color: #dce4ef !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 860px) {
+  .accounting-bigcash-view .bigcash-command-table {
+    min-width: 680px !important;
+  }
+
+  .bigcash-list-modal .bigcash-list-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Caja Grande · sin scroll horizontal y ancho como Ordenes */
+body:has(.accounting-bigcash-view) .workspace {
+  padding-inline: clamp(0.45rem, 1vw, 0.75rem) !important;
+}
+
+.accounting-bigcash-view.panel {
+  padding-inline: clamp(0.4rem, 0.9vw, 0.75rem) !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-grid,
+.accounting-bigcash-view .bigcash-command-grid,
+.accounting-bigcash-view .bigcash-operations-grid {
+  max-width: none !important;
+}
+
+.accounting-bigcash-view .bigcash-table-wrap,
+.bigcash-list-modal .bigcash-table-wrap {
+  overflow-x: hidden !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table,
+.accounting-bigcash-view .bigcash-table,
+.bigcash-list-modal .bigcash-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th,
+.accounting-bigcash-view .bigcash-command-table td {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(1),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(1) {
+  width: 15% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(2),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) {
+  width: 25% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(3),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(3) {
+  width: 20% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(4),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(4) {
+  width: 16% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(5),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(5) {
+  width: 14% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(6),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(6) {
+  width: 10% !important;
+  text-align: right !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) {
+  min-width: 0 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:first-child {
+  width: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:first-child strong,
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) strong {
+  font-size: 0.86rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td {
+  font-size: 0.78rem !important;
+  line-height: 1.18 !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .amount {
+  font-size: 0.82rem !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .accounting-inline-action {
+  min-width: 0 !important;
+  width: 100% !important;
+  padding-inline: 0.45rem !important;
+  font-size: 0.68rem !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .bigcash-status-pill {
+  max-width: 100% !important;
+  padding-inline: 0.42rem !important;
+  font-size: 0.66rem !important;
+  white-space: normal !important;
+  line-height: 1.05 !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th,
+.accounting-bigcash-view .bigcash-movements .bigcash-table td {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(1),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(1) {
+  width: 12% !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(2),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(2) {
+  width: 7% !important;
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(3),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(3) {
+  width: 26% !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(4),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(4) {
+  width: 10% !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(5),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(5),
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(6),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(6),
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(7),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(7) {
+  width: 9% !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(8),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(8) {
+  width: 11% !important;
+}
+
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(9),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(9) {
+  width: 7% !important;
+}
+
+.bigcash-list-modal .bigcash-table th,
+.bigcash-list-modal .bigcash-table td {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+@media (max-width: 1180px) {
+  .accounting-bigcash-view .bigcash-command-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .accounting-bigcash-view .bigcash-command-table td:first-child strong,
+  .accounting-bigcash-view .bigcash-command-table td:nth-child(2) strong {
+    font-size: 0.92rem !important;
+  }
+}
+
+/* Caja Grande · limpieza final de columnas derechas y composición */
+.accounting-bigcash-view .bigcash-command-table th:nth-child(1),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(1) {
+  width: 14% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(2),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(2) {
+  width: 24% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(3),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(3) {
+  width: 18% !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table th:nth-child(6),
+.accounting-bigcash-view .bigcash-command-table td:nth-child(6) {
+  width: 14% !important;
+  text-align: right !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table td:last-child {
+  overflow: visible !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .accounting-inline-action,
+.bigcash-list-modal .accounting-inline-action {
+  width: auto !important;
+  min-width: 5.35rem !important;
+  max-width: 100% !important;
+  min-height: 2.1rem !important;
+  border-radius: 0.68rem !important;
+  padding: 0 0.68rem !important;
+  font-size: 0.72rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.accounting-bigcash-view .bigcash-command-table .accounting-inline-action:hover,
+.bigcash-list-modal .accounting-inline-action:hover {
+  transform: none !important;
+}
+
+.accounting-bigcash-view .bigcash-action-muted {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.05rem;
+  max-width: 100%;
+  border: 1px solid #dbe4ef;
+  border-radius: 0.68rem;
+  background: #f6f8fb;
+  color: #78869a;
+  padding: 0 0.64rem;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.accounting-bigcash-view .bigcash-command-table .bigcash-status-pill {
+  border-radius: 0.68rem !important;
+  padding: 0.28rem 0.46rem !important;
+  font-size: 0.66rem !important;
+  line-height: 1.08 !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.58rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition i {
+  display: none !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition span {
+  min-height: 3.1rem !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  border: 1px solid #dce4f0 !important;
+  border-radius: 0.85rem !important;
+  background: #f8fbff !important;
+  padding: 0.62rem 0.75rem !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition span.current {
+  border-color: #bcd3ff !important;
+  background: #eef5ff !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition small {
+  color: #61708a !important;
+  font-size: 0.76rem !important;
+  font-weight: 850 !important;
+}
+
+.accounting-bigcash-view .bigcash-summary-formula.cash-composition b {
+  font-size: 0.92rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
 }

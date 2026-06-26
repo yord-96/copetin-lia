@@ -3248,20 +3248,6 @@ const addReturnCashMovements = (state, rental) => {
     }),
   );
 
-  if (refundBs > 0) {
-    state.cashMovements.push(
-      buildCashMovement({
-        sessionId,
-        type: 'egreso_devolucion_garantia',
-        amountBs: -refundBs,
-        description: `Devolucion garantia: ${customerName}`,
-        sourceType: 'return',
-        sourceId: rental.id,
-        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-      }),
-    );
-  }
-
   if (pendingCollectionBs > 0) {
     state.cashMovements.push(
       buildCashMovement({
@@ -11811,7 +11797,13 @@ const createWebBridge = () => ({
         if (requiresPettySession && !activeSession) {
           throw new Error('Debes abrir caja chica antes de registrar este movimiento.');
         }
-        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.BIG_CASH) {
+        const isBigCashGuaranteeRefund = movementType === 'egreso'
+          && cashBoxType === CASH_BOX_TYPES.BIG_CASH
+          && (
+            String(accountingTag ?? '') === 'guarantee_refund'
+            || String(category ?? '').toLowerCase() === 'garantia_devuelta_manual'
+          );
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.BIG_CASH && !isBigCashGuaranteeRefund) {
           throw new Error('Caja Grande no registra gastos directos. Transfiere fondos a Caja Chica y registra el egreso alli.');
         }
         const availableBigCashBs = calculateOperationalBigCashBalance(state);

@@ -841,6 +841,7 @@ function ServiceOrdersSection({
   deliveries = [],
   supplierBundle = { suppliers: [], quotes: [], loans: [] },
   generatedReports = [],
+  cashMovements = [],
   clients = [],
   items = [],
   combos = [],
@@ -1209,6 +1210,32 @@ function ServiceOrdersSection({
     return map;
   }, [orderRowsWithMeta]);
 
+  const returnedGuaranteeReferences = useMemo(() => {
+    const references = new Set();
+    cashMovements.forEach((movement) => {
+      const tag = normalizeText(movement?.accountingTag);
+      const category = normalizeText(movement?.category);
+      const type = normalizeText(movement?.type);
+      const isConfirmedGuaranteeReturn =
+        tag === 'guarantee_refund'
+        || category === 'garantia_devuelta_manual'
+        || type === 'egreso_devolucion_garantia_manual';
+      if (!isConfirmedGuaranteeReturn) return;
+      [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractCode,
+        movement?.reference,
+        movement?.sourceId,
+      ].forEach((value) => {
+        const normalized = normalizeText(value);
+        if (normalized) references.add(normalized);
+      });
+    });
+    return references;
+  }, [cashMovements]);
+
   const contractRows = useMemo(() => {
     return contracts.map((contract) => {
       const itemsCount = (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
@@ -1218,10 +1245,18 @@ function ServiceOrdersSection({
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
       const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
-      const refundBs = Math.max(0, Number(linkedOrder?.refundBs ?? 0));
+      const guaranteeReferenceKeys = [
+        contract.id,
+        contract.rentalId,
+        contract.contractCode,
+        contract.orderCode,
+        linkedOrder?.id,
+        linkedOrder?.orderCode,
+      ].map(normalizeText);
+      const hasReturnedGuarantee = guaranteeReferenceKeys.some((key) => key && returnedGuaranteeReferences.has(key));
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : refundBs > 0
+        : hasReturnedGuarantee
           ? 'returned'
           : 'held';
       return {
@@ -1241,7 +1276,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [contracts, formatBs, orderByContractId]);
+  }, [contracts, formatBs, orderByContractId, returnedGuaranteeReferences]);
 
   const contractCounts = useMemo(() => {
     const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
