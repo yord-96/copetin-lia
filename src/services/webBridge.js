@@ -2960,6 +2960,8 @@ const CASH_BOX_TYPES = {
 const normalizeCashBoxType = (value, fallback = CASH_BOX_TYPES.BIG_CASH) =>
   Object.values(CASH_BOX_TYPES).includes(value) ? value : fallback;
 
+const normalizeCashCategory = (value) => String(value ?? '').trim().toLowerCase();
+
 const PETTY_CASH_CATEGORY_HINTS = [
   'gasto_menor',
   'materiales_menores',
@@ -2973,7 +2975,11 @@ const PETTY_CASH_CATEGORY_HINTS = [
 const inferCashBoxType = ({ movementType, category, cashBoxType }) => {
   const normalized = normalizeCashBoxType(cashBoxType, null);
   if (normalized) return normalized;
-  if (movementType === 'egreso' && PETTY_CASH_CATEGORY_HINTS.includes(String(category ?? ''))) {
+  const normalizedCategory = normalizeCashCategory(category);
+  if (
+    normalizedCategory === 'reposicion_caja_chica'
+    || (movementType === 'egreso' && PETTY_CASH_CATEGORY_HINTS.includes(normalizedCategory))
+  ) {
     return CASH_BOX_TYPES.PETTY_CASH;
   }
   return CASH_BOX_TYPES.BIG_CASH;
@@ -5348,7 +5354,8 @@ const getReferenceContractStyles = () => `
   .rc-mode-row img { width: 4.8mm; height: 4.8mm; object-fit: contain; }
   .rc-mode-row strong { display: block; }
   .rc-mode-row span { display: block; margin-top: .35mm; }
-  .rc-items { margin-top: 3mm; }
+  .rc-items { margin-top: 1mm; }
+  .rc-items .rc-block-title { margin-bottom: 0; }
   .rc-table {
     width: 100%;
     border-collapse: separate;
@@ -5361,7 +5368,7 @@ const getReferenceContractStyles = () => `
   .rc-table thead { display: table-header-group; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
-    padding: 1.45mm 1.7mm;
+    padding: 1.2mm 1.7mm;
     color: #fff;
     background: linear-gradient(90deg, #181818, #323232);
     font-size: 8.9px;
@@ -5371,7 +5378,7 @@ const getReferenceContractStyles = () => `
   .rc-table th.num, .rc-table td.num, .rc-table th.check, .rc-table td.check { text-align: center; white-space: nowrap; }
   .rc-table th.check { font-size: 7px; letter-spacing: 0; overflow-wrap: anywhere; white-space: normal; }
   .rc-table td {
-    padding: 1.1mm 1.55mm;
+    padding: .95mm 1.55mm;
     border-right: .25mm solid #e8ded0;
     border-bottom: .25mm solid #e8ded0;
     vertical-align: middle;
@@ -5412,7 +5419,8 @@ const getReferenceContractStyles = () => `
   }
   .rc-financial-item strong {
     color: #181818;
-    font-size: 9.2px;
+    font-size: 10.6px;
+    font-weight: 900;
     line-height: 1;
     white-space: nowrap;
   }
@@ -5421,10 +5429,10 @@ const getReferenceContractStyles = () => `
   .rc-financial-item.guarantee strong { color: #96570f; }
   .rc-financial-item.total { background: #f3e4cf; }
   .rc-financial-item.total span { color: #4b3218; }
-  .rc-financial-item.total strong { color: #161616; font-size: 11px; }
+  .rc-financial-item.total strong { color: #161616; font-size: 12.4px; }
   .rc-financial-item.managed { background: #2e241a; }
   .rc-financial-item.managed span { color: #f5dfbe; }
-  .rc-financial-item.managed strong { color: #fff; font-size: 10px; }
+  .rc-financial-item.managed strong { color: #fff; font-size: 12px; }
   .rc-financial-item.manual { background: #fff; }
   .rc-financial-item.manual strong {
     width: 82%;
@@ -5462,6 +5470,37 @@ const getReferenceContractStyles = () => `
   .rc-observations p { margin: 0; text-transform: uppercase; }
   .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
   .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
+  .rc-client-materials {
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .rc-material-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.5mm;
+  }
+  .rc-material-box {
+    min-height: 20mm;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    border: .25mm solid #e4d3bb;
+    background: #fffefa;
+  }
+  .rc-material-box h4 {
+    margin: 0;
+    padding: 1mm 1.2mm;
+    border-bottom: .25mm solid #e4d3bb;
+    color: #7c4610;
+    font-size: 8.2px;
+    text-transform: uppercase;
+  }
+  .rc-material-lines {
+    display: grid;
+    gap: 1.6mm;
+    padding: 1mm 1.2mm 1.4mm;
+  }
+  .rc-material-lines span { display: block; height: 3.5mm; border-bottom: .25mm solid #777; }
   .rc-terms-section {
     margin-top: 4mm;
     padding-top: 0;
@@ -5495,19 +5534,6 @@ const getReferenceContractStyles = () => `
     background: #a66a20;
     font-size: 7px;
   }
-  .rc-revisions {
-    margin-top: 3mm;
-    padding: 2.5mm 3mm;
-    border: .25mm solid #e4d3bb;
-    border-radius: 1.5mm;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .rc-revisions-title { color: #a66a20; font: 700 12px Georgia, "Times New Roman", serif; text-transform: uppercase; }
-  .rc-revision { display: grid; grid-template-columns: 47mm minmax(0, 1fr); gap: 3mm; padding-top: 1.5mm; font-size: 8.5px; }
-  .rc-revision + .rc-revision { margin-top: 1.5mm; border-top: .2mm solid #eee; }
-  .rc-revision strong { text-transform: uppercase; }
-  .rc-revision span { color: #444; }
   .rc-signatures {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5546,10 +5572,12 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-title { padding-top: 1mm; padding-bottom: 2.5mm; }
   .rc-sheet.is-dense .rc-upper { margin-top: 2.5mm; }
   .rc-sheet.is-dense .rc-schedule-row { min-height: 9.6mm; }
-  .rc-sheet.is-dense .rc-table th { padding-top: 1.05mm; padding-bottom: 1.05mm; font-size: 8.1px; }
-  .rc-sheet.is-dense .rc-table td { padding-top: .75mm; padding-bottom: .75mm; }
+  .rc-sheet.is-dense .rc-items { margin-top: .5mm; }
+  .rc-sheet.is-dense .rc-table th { padding-top: .9mm; padding-bottom: .9mm; font-size: 8.1px; }
+  .rc-sheet.is-dense .rc-table td { padding-top: .68mm; padding-bottom: .68mm; }
   .rc-sheet.is-dense .rc-bottom { margin-top: 1.2mm; }
   .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-guarantee-control { min-height: 22mm; }
+  .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
   @media print {
@@ -5579,7 +5607,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const company = getDocumentCompany(settings);
   const subtotalBs = contract?.totals?.subtotalBs ?? rental?.totals?.subtotalBs ?? rental?.totals?.totalBs ?? 0;
   const discountBs = contract?.totals?.discountBs ?? rental?.totals?.discountBs ?? 0;
-  const deliveryFeeBs = contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0;
   const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
   const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
   const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
@@ -5666,30 +5693,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = documentItems.length + contractServices.length + 3;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
-  const primaryResponsible = contract?.responsibles?.[0] ?? null;
-  const responsibleName = primaryResponsible?.name ?? contract?.createdByName ?? rental?.createdByName ?? company.name;
-  const responsibleRole = primaryResponsible?.role ?? contract?.createdByRole ?? rental?.createdByRole ?? 'Responsable del contrato';
-  const revisions = (Array.isArray(contract?.revisionHistory) ? contract.revisionHistory : [])
-    .slice()
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
-    .slice(0, 2);
-  const formatRevisionDate = (value) => {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return '-';
-    return new Intl.DateTimeFormat('es-BO', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(parsed);
-  };
-  const revisionRows = revisions.map((revision) => `
-        <div class="rc-revision">
-          <strong>${escapeHtml(`${formatRevisionDate(revision.updatedAt)} | ${revision.updatedByName || 'Sistema'} (${revision.updatedByRole || 'Operacion'})`)}</strong>
-          <span>${escapeHtml((revision.changes ?? []).slice(0, 3).join(' · '))}</span>
-        </div>`).join('');
   const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
   const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
@@ -5769,7 +5772,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <col style="width: 23%;" />
           </colgroup>
           <thead>
-            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes / observacion</th></tr>
+            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="7">Sin items registrados</td></tr>'}</tbody>
           <tfoot>
@@ -5779,7 +5782,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
                   ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
                   ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-                  ${!isCustomerPickup ? `<div class="rc-financial-item"><span>Envio</span><strong>${Number(deliveryFeeBs ?? 0) > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
                   <div class="rc-financial-item guarantee"><span>Garantia reembolsable</span><strong>${formatBs(guaranteeBs)}</strong></div>
                   ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
@@ -5801,9 +5803,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <p>${escapeHtml(observations)}</p>
         </div>
         <div class="rc-guarantee-control">
-          <h3 class="rc-bottom-title">Control de garantia o cambios del momento</h3>
+          <h3 class="rc-bottom-title">Control de garantia</h3>
           <div class="rc-change-lines">
-            <span class="rc-change-line"></span>
             <span class="rc-change-line"></span>
             <span class="rc-change-line"></span>
             <span class="rc-change-line"></span>
@@ -5812,19 +5813,26 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </div>
       </section>
 
-      ${revisionRows ? `
-      <section class="rc-revisions">
-        <h3 class="rc-revisions-title">Control de cambios</h3>
-        ${revisionRows}
-      </section>` : ''}
+      <section class="rc-client-materials">
+        <div class="rc-material-grid">
+          <div class="rc-material-box">
+            <h4>Material dejado al cliente</h4>
+            <div class="rc-material-lines"><span></span><span></span><span></span><span></span></div>
+          </div>
+          <div class="rc-material-box">
+            <h4>Material que falta entregar al cliente</h4>
+            <div class="rc-material-lines"><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </section>
 
       <div class="rc-page-bottom">
         <section class="rc-terms-section">
           <div class="rc-terms-head">
             <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
             <section class="rc-signatures">
-              <div class="rc-signature"><div class="rc-signature-line"><strong>Firma cliente</strong><span>${escapeHtml(rental.customerName)} | CI: ${escapeHtml(rental.customerPhone || '-')}</span></div></div>
-              <div class="rc-signature"><div class="rc-signature-line"><strong>Responsable del contrato</strong><span>${escapeHtml(responsibleName)} | ${escapeHtml(responsibleRole)}</span></div></div>
+              <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div>
+              <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>
             </section>
           </div>
           <div class="rc-terms">
@@ -11865,6 +11873,9 @@ const createWebBridge = () => ({
       const accountingTag = String(payload?.accountingTag ?? '').trim();
       const transportExpenseBs = Math.max(0, Number(payload?.transportExpenseBs ?? 0));
       const cashBoxType = inferCashBoxType({ movementType, category, cashBoxType: payload?.cashBoxType });
+      const isPettyCashRepositionIncome = movementType === 'ingreso'
+        && cashBoxType === CASH_BOX_TYPES.PETTY_CASH
+        && normalizeCashCategory(category) === 'reposicion_caja_chica';
 
       if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
         throw new Error('Tipo de movimiento invalido. Usa ingreso, egreso o transferencia.');
@@ -11879,7 +11890,7 @@ const createWebBridge = () => ({
       let createdMovement = null;
       transaction((state) => {
         let activeSession = getActiveSession(state);
-        if (!activeSession && movementType === 'transferencia') {
+        if (!activeSession && (movementType === 'transferencia' || isPettyCashRepositionIncome)) {
           activeSession = {
             id: makeId('cash'),
             status: 'open',

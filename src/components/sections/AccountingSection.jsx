@@ -1917,7 +1917,6 @@ function AccountingSection({
                       ) : (
                         <>
                           <option value="ingreso_manual">Ingreso manual</option>
-                          <option value="reposicion_caja_chica">Reposicion caja chica</option>
                           <option value="ajuste">Ajuste</option>
                         </>
                       )}

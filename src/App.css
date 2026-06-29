@@ -10255,7 +10255,7 @@ textarea:focus {
 
 .orders-documents-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.46rem;
 }
 
@@ -10476,7 +10476,57 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.orders-change-table-wrap {
+  border: 1px solid #e6ebf9;
+  border-radius: 0.6rem;
+  overflow: auto;
+  background: #fbfcff;
+}
+
+.orders-change-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 620px;
+}
+
+.orders-change-table th {
+  padding: 0.52rem 0.58rem;
+  background: #f2f5fc;
+  color: #24346a;
+  font-size: 0.68rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.orders-change-table td {
+  padding: 0.5rem 0.58rem;
+  border-top: 1px solid #e6ebf9;
+  color: #33406f;
+  font-size: 0.72rem;
+  vertical-align: top;
+}
+
+.orders-change-table td:first-child,
+.orders-change-table td:nth-child(2) {
+  width: 10.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.orders-change-table td span {
+  display: block;
+  line-height: 1.3;
+}
+
+.orders-change-table td span + span {
+  margin-top: 0.22rem;
+}
+
 @media (max-width: 1024px) {
+  .orders-documents-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .orders-documents-main-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -10491,6 +10541,10 @@ textarea:focus {
 }
 
 @media (max-width: 720px) {
+  .orders-documents-summary {
+    grid-template-columns: 1fr;
+  }
+
   .orders-documents-main-grid {
     grid-template-columns: 1fr;
   }

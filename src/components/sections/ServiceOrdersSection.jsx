@@ -1404,6 +1404,23 @@ function ServiceOrdersSection({
     ) ?? null;
   }, [contracts, documentsOrder]);
 
+  const selectedDocumentsChangeRows = useMemo(() => {
+    const revisions = Array.isArray(selectedDocumentsContract?.revisionHistory)
+      ? selectedDocumentsContract.revisionHistory
+      : [];
+    return revisions
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt ?? 0) - new Date(a.updatedAt ?? 0))
+      .map((revision, index) => ({
+        id: `${revision.updatedAt ?? 'revision'}-${index}`,
+        updatedAt: revision.updatedAt,
+        updatedBy: [revision.updatedByName || 'Sistema', revision.updatedByRole].filter(Boolean).join(' | '),
+        changes: Array.isArray(revision.changes) && revision.changes.length > 0
+          ? revision.changes
+          : ['Cambio registrado sin detalle.'],
+      }));
+  }, [selectedDocumentsContract]);
+
   const documentOverviewRows = useMemo(() => {
     if (!documentsOrder) return [];
 
@@ -4942,6 +4959,10 @@ function ServiceOrdersSection({
                   <small>Orden vinculada</small>
                   <strong>{documentsOrder.orderCode || 'Pendiente'}</strong>
                 </article>
+                <article>
+                  <small>Tabla de cambios</small>
+                  <strong>{selectedDocumentsChangeRows.length} cambios</strong>
+                </article>
               </section>
 
               <section className="orders-documents-panel">
@@ -4978,6 +4999,43 @@ function ServiceOrdersSection({
                       </div>
                     </article>
                   ))}
+                </div>
+              </section>
+
+              <section className="orders-documents-panel">
+                <div className="orders-documents-section-head">
+                  <div>
+                    <h4>Tabla de cambios</h4>
+                    <p>Historial completo del contrato, separado del documento imprimible.</p>
+                  </div>
+                </div>
+
+                <div className="orders-change-table-wrap">
+                  <table className="orders-change-table">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Usuario</th>
+                        <th>Cambios</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDocumentsChangeRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.updatedAt ? formatDateTime(row.updatedAt) : '-'}</td>
+                          <td>{row.updatedBy}</td>
+                          <td>
+                            {row.changes.map((change, index) => (
+                              <span key={`${row.id}-${index}`}>{change}</span>
+                            ))}
+                          </td>
+                        </tr>
+                      ))}
+                      {selectedDocumentsChangeRows.length === 0 ? (
+                        <tr><td colSpan={3}>Sin cambios registrados para este contrato.</td></tr>
+                      ) : null}
+                    </tbody>
+                  </table>
                 </div>
               </section>
 
