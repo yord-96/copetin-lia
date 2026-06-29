@@ -1255,6 +1255,13 @@ const normalizeState = (state) => {
         ?? rental?.totals?.pendingPaymentBs
         ?? Math.max(0, totalBs - paidAtRentalBs),
       );
+      const normalizedPendingPaymentBs = Math.max(0, pendingPaymentBs);
+      const overpaidBs = Math.max(
+        0,
+        Number(
+          (Number(rental?.payment?.overpaidBs ?? rental?.totals?.overpaidBs ?? paidAtRentalBs - totalBs)).toFixed(2),
+        ),
+      );
       const guaranteeDeclaredBs = Math.max(0, Number(rental?.guaranteeDeclaredBs ?? rental?.guarantee?.amountBs ?? rental?.depositBs ?? 0));
       const guaranteeStatus = String(rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'no_validado'
         ? 'no_validado'
@@ -1319,17 +1326,19 @@ const normalizeState = (state) => {
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
           totalBs,
           paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
-          pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
+          pendingPaymentBs: Number(normalizedPendingPaymentBs.toFixed(2)),
+          overpaidBs: Number(overpaidBs.toFixed(2)),
         },
         payment: {
           mode:
             rental?.payment?.mode
-            ?? (pendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
+            ?? (normalizedPendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
           status:
             rental?.payment?.status
-            ?? (pendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
+            ?? (normalizedPendingPaymentBs <= 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago'),
           paidAtRentalBs: Number(paidAtRentalBs.toFixed(2)),
-          pendingPaymentBs: Number(pendingPaymentBs.toFixed(2)),
+          pendingPaymentBs: Number(normalizedPendingPaymentBs.toFixed(2)),
+          overpaidBs: Number(overpaidBs.toFixed(2)),
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
           deliveryFeeCollectedBs: Number(deliveryFeeCollectedBs.toFixed(2)),
           rentalCollectedBs: Number(rentalCollectedBs.toFixed(2)),
@@ -1508,6 +1517,7 @@ const normalizeState = (state) => {
       const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
       const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+      const overpaidBs = Math.max(0, Number((Number(quote?.payment?.overpaidBs ?? paidAtApprovalBs - totalBs)).toFixed(2)));
       const responsibles = normalizeRecordResponsibles(quote);
       const primaryResponsible = responsibles[0] ?? null;
 
@@ -1553,7 +1563,8 @@ const normalizeState = (state) => {
         pricingPlan,
         payment: {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
-          pendingBs: Number(pendingBs.toFixed(2)),
+          pendingBs: Number(Math.max(0, pendingBs).toFixed(2)),
+          overpaidBs: Number(overpaidBs.toFixed(2)),
           initialPaymentMethod: normalizePaymentMethod(quote?.payment?.initialPaymentMethod ?? quote?.payment?.paymentMethod),
           guaranteeStatus,
           guaranteePaymentMethod,
@@ -1633,6 +1644,7 @@ const normalizeState = (state) => {
       const totalBs = Number(contract?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(contract?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
+      const overpaidBs = Math.max(0, Number((Number(contract?.payment?.overpaidBs ?? paidAtApprovalBs - totalBs)).toFixed(2)));
       const prepaidAppliedBs = Number(contract?.payment?.prepaidAppliedBs ?? contract?.totals?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0);
       const responsibles = normalizeRecordResponsibles(contract);
       const primaryResponsible = responsibles[0] ?? null;
@@ -1680,7 +1692,8 @@ const normalizeState = (state) => {
         pricingPlan,
         payment: {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
-          pendingBs: Number(pendingBs.toFixed(2)),
+          pendingBs: Number(Math.max(0, pendingBs).toFixed(2)),
+          overpaidBs: Number(overpaidBs.toFixed(2)),
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
           initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod),
           guaranteeStatus,
@@ -4121,10 +4134,12 @@ const buildRentalSnapshotFromContract = (contract) => {
     ...(contract?.totals ?? {}),
     paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
     pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
+    overpaidBs: Number(contract?.payment?.overpaidBs ?? 0),
   },
   payment: {
     paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
     pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
+    overpaidBs: Number(contract?.payment?.overpaidBs ?? 0),
     initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod),
     guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
     guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
@@ -7104,6 +7119,7 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
   const paidAtRentalBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
   const pendingPaymentBs = Math.max(0, Number((totalBs - paidAtRentalBs).toFixed(2)));
+  const overpaidBs = Math.max(0, Number((paidAtRentalBs - totalBs).toFixed(2)));
   rental.totals = {
     ...(rental.totals ?? {}),
     itemsSubtotalBs: Number((contract.items ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0).toFixed(2)),
@@ -7111,11 +7127,13 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     ...deepClone(contract.totals),
     paidAtRentalBs,
     pendingPaymentBs,
+    overpaidBs,
   };
   rental.payment = {
     ...(rental.payment ?? {}),
     paidAtRentalBs,
     pendingPaymentBs,
+    overpaidBs,
     initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? rental?.payment?.initialPaymentMethod),
     guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
     guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.payment?.guaranteePaymentMethod),
@@ -9985,9 +10003,7 @@ const createWebBridge = () => ({
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
-        if (paidAtApprovalBs > totalBs) {
-          throw new Error('El pago inicial no puede superar el total de la cotizacion.');
-        }
+        const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
         const responsibles = normalizeRecordResponsibles(payload);
         const primaryResponsible = responsibles[0] ?? null;
 
@@ -10034,6 +10050,7 @@ const createWebBridge = () => ({
           payment: {
             paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+            overpaidBs,
             prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? 0)),
             initialPaymentMethod,
             guaranteeStatus,
@@ -10180,9 +10197,7 @@ const createWebBridge = () => ({
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? quote?.payment?.paidAtApprovalBs ?? 0));
-        if (paidAtApprovalBs > totalBs) {
-          throw new Error('El pago inicial no puede superar el total de la cotizacion.');
-        }
+        const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
 
         quote.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
         quote.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
@@ -10201,6 +10216,7 @@ const createWebBridge = () => ({
         quote.payment = {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          overpaidBs,
           initialPaymentMethod,
           guaranteeStatus,
           guaranteePaymentMethod,
@@ -10336,9 +10352,7 @@ const createWebBridge = () => ({
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
-        if (paidAtApprovalBs > totalBs) {
-          throw new Error('El pago inicial no puede superar el total del contrato.');
-        }
+        const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
         const responsibles = normalizeRecordResponsibles(payload);
         const primaryResponsible = responsibles[0] ?? null;
 
@@ -10386,6 +10400,7 @@ const createWebBridge = () => ({
           payment: {
             paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+            overpaidBs,
             initialPaymentMethod,
             guaranteeStatus,
             guaranteePaymentMethod,
@@ -10531,9 +10546,7 @@ const createWebBridge = () => ({
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const paidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? contract?.payment?.paidAtApprovalBs ?? 0));
-        if (paidAtApprovalBs > totalBs) {
-          throw new Error('El pago inicial no puede superar el total del contrato.');
-        }
+        const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
 
         contract.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
         contract.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
@@ -10552,6 +10565,7 @@ const createWebBridge = () => ({
         contract.payment = {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          overpaidBs,
           prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
           initialPaymentMethod,
           guaranteeStatus,
@@ -11118,19 +11132,20 @@ const createWebBridge = () => ({
         if (paymentMode === 'sin_pago') {
           paidAtRentalBs = 0;
         } else if (paymentMode === 'cancelado') {
-          paidAtRentalBs = totalBs;
+          paidAtRentalBs = paidAtRentalBs > 0 ? paidAtRentalBs : totalBs;
         } else {
           if (paidAtRentalBs <= 0) {
             throw new Error('Si el pago es a cuenta, el monto inicial debe ser mayor a 0.');
           }
-          if (paidAtRentalBs >= totalBs) {
-            throw new Error('Si el pago es a cuenta, el monto inicial debe ser menor al total.');
-          }
         }
 
-        const pendingPaymentBs = Number((totalBs - paidAtRentalBs).toFixed(2));
-        const paymentStatus =
-          paymentMode === 'cancelado' ? 'cancelado' : paymentMode === 'a_cuenta' ? 'a_cuenta' : 'sin_pago';
+        const pendingPaymentBs = Number(Math.max(0, totalBs - paidAtRentalBs).toFixed(2));
+        const overpaidBs = Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2));
+        const paymentStatus = paidAtRentalBs >= totalBs && totalBs > 0
+          ? 'cancelado'
+          : paidAtRentalBs > 0
+          ? 'a_cuenta'
+          : 'sin_pago';
         const cashCollectedAtApprovalBs = Math.max(0, Number((paidAtRentalBs - prepaidAppliedBs).toFixed(2)));
         const deliveryFeeCollectedAtApprovalBs = Math.min(
           toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
@@ -11189,12 +11204,14 @@ const createWebBridge = () => ({
             totalBs: toPositiveRoundedNumber(totalBs),
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
             pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
+            overpaidBs: toPositiveRoundedNumber(overpaidBs),
           },
           payment: {
-            mode: paymentMode,
+            mode: paymentStatus === 'cancelado' ? 'cancelado' : paymentMode,
             status: paymentStatus,
             paidAtRentalBs: toPositiveRoundedNumber(paidAtRentalBs),
             pendingPaymentBs: toPositiveRoundedNumber(pendingPaymentBs),
+            overpaidBs: toPositiveRoundedNumber(overpaidBs),
             prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),
             deliveryFeeCollectedBs: toPositiveRoundedNumber(deliveryFeeCollectedAtApprovalBs),
             rentalCollectedBs: toPositiveRoundedNumber(rentalCollectedAtApprovalBs),
@@ -12408,12 +12425,11 @@ const createWebBridge = () => ({
         if (currentPending <= 0) {
           throw new Error('Esta orden no tiene saldo pendiente por cobrar.');
         }
-        if (amountRaw > currentPending) {
-          throw new Error(`El monto no puede superar el saldo pendiente de Bs ${currentPending.toFixed(2)}.`);
-        }
 
         const amountBs = Number(amountRaw.toFixed(2));
         const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
+        const overpaidNowBs = Number(Math.max(0, amountBs - currentPending).toFixed(2));
+        const previousOverpaidBs = Number(rental?.payment?.overpaidBs ?? rental?.totals?.overpaidBs ?? 0);
         const previousPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
         const deliveryFeeBs = !isReturned
           ? Math.max(0, Number(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0))
@@ -12428,6 +12444,7 @@ const createWebBridge = () => ({
           ...(rental.payment ?? {}),
           paidAtRentalBs: Number((previousPaidBs + amountBs).toFixed(2)),
           pendingPaymentBs: remainingBs,
+          overpaidBs: Number((previousOverpaidBs + overpaidNowBs).toFixed(2)),
           deliveryFeeCollectedBs: Number((previousDeliveryFeeCollectedBs + transportCollectedNowBs).toFixed(2)),
           rentalCollectedBs: Number((Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0) + rentalCollectedNowBs).toFixed(2)),
           status: remainingBs > 0
@@ -12444,6 +12461,7 @@ const createWebBridge = () => ({
           ...(rental.totals ?? {}),
           paidAtRentalBs: rental.payment.paidAtRentalBs,
           pendingPaymentBs: remainingBs,
+          overpaidBs: rental.payment.overpaidBs,
           deliveryFeeCollectedBs: rental.payment.deliveryFeeCollectedBs,
           rentalCollectedBs: rental.payment.rentalCollectedBs,
         };

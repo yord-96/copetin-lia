@@ -99,14 +99,13 @@ function RentalSection({
   const paymentMode = rentalForm.paymentMode ?? 'sin_pago';
   const rawPaidInput = Number.parseFloat(rentalForm.paidAtRentalBs ?? '0');
   const paidAtRentalPreview =
-    paymentMode === 'cancelado'
-      ? Number(rentalTotalPreview)
-      : paymentMode === 'sin_pago'
+    paymentMode === 'sin_pago'
       ? 0
       : Number.isFinite(rawPaidInput)
-      ? Math.max(0, Math.min(rawPaidInput, Number(rentalTotalPreview)))
+      ? Math.max(0, rawPaidInput)
       : 0;
   const pendingPaymentPreview = Math.max(0, Number(rentalTotalPreview) - paidAtRentalPreview);
+  const overpaidPreview = Math.max(0, paidAtRentalPreview - Number(rentalTotalPreview));
 
   return (
     <section className="panel rental-panel">
@@ -180,7 +179,7 @@ function RentalSection({
                       paymentMode: nextMode,
                       paidAtRentalBs:
                         nextMode === 'cancelado'
-                          ? String(rentalTotalPreview)
+                          ? (Number(current.paidAtRentalBs) > 0 ? current.paidAtRentalBs : String(rentalTotalPreview))
                           : nextMode === 'sin_pago'
                           ? '0'
                           : current.paidAtRentalBs,
@@ -199,12 +198,12 @@ function RentalSection({
                   type="number"
                   min="0"
                   step="0.01"
-                  value={paymentMode === 'cancelado' ? rentalTotalPreview : rentalForm.paidAtRentalBs}
+                  value={rentalForm.paidAtRentalBs}
                   onChange={(event) =>
                     setRentalForm((current) => ({ ...current, paidAtRentalBs: event.target.value }))
                   }
-                  readOnly={paymentMode !== 'a_cuenta'}
-                  required={paymentMode === 'a_cuenta'}
+                  readOnly={paymentMode === 'sin_pago'}
+                  required={paymentMode !== 'sin_pago'}
                 />
               </label>
             </div>
@@ -224,6 +223,7 @@ function RentalSection({
                 <p>Total alquiler: {formatBs(rentalTotalPreview)}</p>
                 <p>Pagado al prestar: {formatBs(paidAtRentalPreview)}</p>
                 <p>Saldo pendiente: {formatBs(pendingPaymentPreview)}</p>
+                {overpaidPreview > 0 ? <p>Saldo a favor: {formatBs(overpaidPreview)}</p> : null}
               </div>
 
               <button type="submit" className="primary-button rental-v2-submit">

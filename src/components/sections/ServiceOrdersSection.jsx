@@ -1979,6 +1979,11 @@ function ServiceOrdersSection({
     return Math.max(0, quoteTotalBs - paid);
   }, [draft.paidAtApprovalBs, quoteTotalBs]);
 
+  const overpaidAtApprovalBs = useMemo(() => {
+    const paid = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
+    return Math.max(0, Number((paid - quoteTotalBs).toFixed(2)));
+  }, [draft.paidAtApprovalBs, quoteTotalBs]);
+
   const selectedClientForDraft = useMemo(
     () => clients.find((client) => client.id === draft.clientId) ?? null,
     [clients, draft.clientId],
@@ -3123,9 +3128,6 @@ function ServiceOrdersSection({
     }
 
     const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
-    if (paidAtApprovalBs > quoteTotalBs) {
-      throw new Error('El pago inicial no puede superar el total.');
-    }
 
     const supplierFulfillmentPlan = supplierCoverageRows
       .filter((line) => line.coveredQty > 0 && line.supplierId && line.supplierName)
@@ -7177,6 +7179,12 @@ function ServiceOrdersSection({
                     <div className="orders-money-row muted">
                       <span>Metodo pago inicial</span>
                       <strong>{draft.initialPaymentMethod === 'qr' ? 'QR' : draft.initialPaymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}</strong>
+                    </div>
+                  ) : null}
+                  {overpaidAtApprovalBs > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Saldo a favor</span>
+                      <strong>{formatBs(overpaidAtApprovalBs)}</strong>
                     </div>
                   ) : null}
                   {draft.logisticsMode === 'envio' ? (

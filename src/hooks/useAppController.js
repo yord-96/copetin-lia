@@ -982,7 +982,10 @@ export const useAppController = () => {
         ...payload,
         ...getCurrentUserTrace(),
       });
-      await loadData();
+      setRentals((current) => current.map((rental) => (
+        rental.id === updated.id ? updated : rental
+      )));
+      void loadData({ silent: true });
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la orden operativa.');
