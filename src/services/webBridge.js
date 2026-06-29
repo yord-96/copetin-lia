@@ -3387,6 +3387,53 @@ const amountToBolivianosText = (value) => {
 
 const buildCashReceiptHtml = ({ state, movement }) => {
   const company = getDocumentCompany(state.settings ?? {});
+  const rentals = Array.isArray(state.rentals) ? state.rentals : [];
+  const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+  const contractById = new Map(contracts.map((contract) => [String(contract?.id ?? ''), contract]));
+  const contractByCode = new Map(contracts.map((contract) => [String(contract?.contractCode ?? ''), contract]));
+  const contractByOrderCode = new Map(
+    contracts
+      .filter((contract) => contract?.orderCode)
+      .map((contract) => [String(contract.orderCode), contract]),
+  );
+  const rentalById = new Map(rentals.map((rental) => [String(rental?.id ?? ''), rental]));
+  const rentalByOrderCode = new Map(
+    rentals
+      .filter((rental) => rental?.orderCode)
+      .map((rental) => [String(rental.orderCode), rental]),
+  );
+  const linkedRentalId = String(movement?.linkedRentalId ?? movement?.rentalId ?? '').trim();
+  const linkedContractId = String(movement?.linkedContractId ?? movement?.contractId ?? '').trim();
+  const linkedOrderCode = String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim();
+  const sourceId = String(movement?.sourceId ?? '').trim();
+  const rentalContext = (linkedRentalId && rentalById.get(linkedRentalId))
+    || (String(movement?.sourceType ?? '').trim() === 'rental' && sourceId && rentalById.get(sourceId))
+    || (linkedOrderCode && rentalByOrderCode.get(linkedOrderCode))
+    || null;
+  const contractContext = (linkedContractId && contractById.get(linkedContractId))
+    || (rentalContext?.contractId && contractById.get(String(rentalContext.contractId)))
+    || (rentalContext?.contractCode && contractByCode.get(String(rentalContext.contractCode)))
+    || (rentalContext?.orderCode && contractByOrderCode.get(String(rentalContext.orderCode)))
+    || (linkedOrderCode && contractByOrderCode.get(linkedOrderCode))
+    || (linkedOrderCode && contractByCode.get(linkedOrderCode))
+    || null;
+  const contractCode = String(
+    contractContext?.contractCode
+    ?? rentalContext?.contractCode
+    ?? movement?.contractCode
+    ?? '',
+  ).trim();
+  const primaryContractResponsible = Array.isArray(contractContext?.responsibles) ? contractContext.responsibles[0] : null;
+  const contractResponsible = String(
+    primaryContractResponsible?.name
+    ?? contractContext?.responsibleName
+    ?? contractContext?.createdByName
+    ?? rentalContext?.responsibleName
+    ?? rentalContext?.createdByName
+    ?? rentalContext?.createdBy
+    ?? '-',
+  ).trim() || '-';
+  const collectionUser = String(movement?.createdBy ?? movement?.responsible ?? 'Administracion').trim() || 'Administracion';
   const cashBoxType = normalizeCashBoxType(movement.cashBoxType);
   const amount = Math.abs(Number(movement.amountBs ?? 0));
   const isOut = Number(movement.amountBs ?? 0) < 0
@@ -3402,10 +3449,14 @@ const buildCashReceiptHtml = ({ state, movement }) => {
   const dateLabel = formatDate(createdAt);
   const timeLabel = createdAt.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
   const receiptCode = getCashReceiptCode(state, movement);
-  const reference = movement.receipt || movement.sourceId || receiptCode;
-  const responsible = movement.responsible || movement.createdBy || 'Administracion';
-  const detail = movement.description || movement.category || 'Movimiento de caja';
-  const observation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
+  const reference = contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
+  const detail = contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
+    ? `${movementLabel} por contrato ${contractCode}`
+    : movement.description || movement.category || 'Movimiento de caja';
+  const rawObservation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
+  const observation = contractCode
+    ? String(rawObservation).replace(/OS-\d+/gi, `Contrato ${contractCode}`)
+    : rawObservation;
 
   return `<!doctype html>
   <html>
@@ -3419,10 +3470,10 @@ const buildCashReceiptHtml = ({ state, movement }) => {
         body {
           margin: 0;
           padding: 8px 8px 12px;
-          color: #111827;
+          color: #06183f;
           font-family: Arial, Helvetica, sans-serif;
-          font-size: 10px;
-          line-height: 1.16;
+          font-size: 10.4px;
+          line-height: 1.22;
           overflow: auto;
         }
         h1, h2, h3, p { margin: 0; }
@@ -3430,19 +3481,20 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           width: 8.5in;
           height: 5.5in;
           margin: 0 auto;
-          padding: 4.6mm 6mm 3mm;
-          background: #fff;
+          padding: 4.4mm 6mm 3.2mm;
+          background:
+            linear-gradient(135deg, rgba(255, 247, 237, 0.85), rgba(255, 255, 255, 0) 42%),
+            #fff;
           border: 2px solid #f04b10;
-          outline: 1px solid #f04b10;
-          outline-offset: -3px;
+          outline: 0;
           overflow: hidden;
           display: flex;
           flex-direction: column;
         }
         .receipt-top {
           display: grid;
-          grid-template-columns: 74mm minmax(0, 1fr) 41mm;
-          gap: 4.2mm;
+          grid-template-columns: 72mm minmax(0, 1fr) 43mm;
+          gap: 4mm;
           align-items: center;
           padding: 0 3mm 3mm;
           border-bottom: 2px solid #f04b10;
@@ -3478,24 +3530,60 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           padding: 1mm 3mm 0;
         }
         .receipt-title h1 {
-          font-size: 14.5px;
+          font-size: 15.2px;
           font-weight: 900;
           letter-spacing: 0;
           line-height: 1.02;
           white-space: normal;
           overflow-wrap: anywhere;
         }
-        .receipt-code { display: inline-block; margin-top: 2.2mm; padding: 1.1mm 7mm; border: 1.5px solid #f04b10; border-radius: 4px; color: #f04b10; font-size: 16px; font-weight: 900; }
-        .receipt-datebox { display: grid; gap: 3.4mm; font-size: 11.5px; min-width: 0; }
+        .receipt-code { display: inline-block; margin-top: 2.2mm; padding: 1.1mm 7mm; border: 1.5px solid #f04b10; border-radius: 7px; background: #fff7ed; color: #ea580c; font-size: 16px; font-weight: 900; }
+        .receipt-contract-code {
+          display: block;
+          margin-top: 1.7mm;
+          color: #f04b10;
+          font-size: 18px;
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: 0.035em;
+          text-transform: uppercase;
+        }
+        .receipt-contract-code small {
+          display: block;
+          margin-bottom: 0.6mm;
+          color: #7c2d12;
+          font-size: 7.4px;
+          letter-spacing: 0.08em;
+        }
+        .receipt-datebox { display: grid; gap: 2.5mm; font-size: 11.5px; min-width: 0; }
         .receipt-datebox span { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
         .receipt-datebox strong { font-size: 11px; font-weight: 900; }
+        .receipt-datebox .contract-chip {
+          display: block;
+          padding: 1.2mm 2.5mm;
+          border: 1.4px solid #fdba74;
+          border-radius: 8px;
+          background: #fff7ed;
+          color: #ea580c;
+          text-align: center;
+          font-size: 12.5px;
+          font-weight: 950;
+          letter-spacing: 0.02em;
+        }
+        .receipt-datebox .contract-chip small {
+          display: block;
+          color: #7c2d12;
+          font-size: 7.5px;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
         .receipt-contact {
           display: grid;
           grid-template-columns: 1fr 1.25fr 1.7fr;
           gap: 3mm;
           align-items: center;
           padding: 1.8mm 7mm;
-          border-bottom: 1.5px solid #111;
+          border-bottom: 1.5px solid #0f2a5f;
           color: #111;
           font-size: 9.5px;
           text-align: center;
@@ -3506,7 +3594,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           align-items: center;
           gap: 6px;
           min-width: 0;
-          border-right: 1.5px solid #111;
+          border-right: 1.5px solid #0f2a5f;
         }
         .receipt-contact span:last-child { border-right: 0; }
         .cash-receipt-icon {
@@ -3520,18 +3608,26 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           grid-template-columns: 1fr 1fr;
           gap: 4mm;
           padding: 2.6mm 4mm;
-          border: 1.4px solid #111;
+          border: 1.3px solid #c7d2fe;
+          border-radius: 8px;
+          background: #ffffff;
           margin-top: 2.6mm;
-          height: 25mm;
+          height: 28mm;
           overflow: hidden;
         }
-        .info-col + .info-col { border-left: 1.4px solid #111; padding-left: 4mm; }
-        .info-line { display: grid; grid-template-columns: 31mm 4mm minmax(0, 1fr); gap: 1.6mm; margin-bottom: 1.35mm; font-size: 10px; line-height: 1.1; }
-        .info-line strong { text-transform: uppercase; font-weight: 900; }
+        .info-col + .info-col { border-left: 1.3px solid #c7d2fe; padding-left: 4mm; }
+        .info-line { display: grid; grid-template-columns: 32mm 4mm minmax(0, 1fr); gap: 1.6mm; margin-bottom: 1.25mm; font-size: 10.2px; line-height: 1.1; }
+        .info-line strong { color: #0f2a5f; text-transform: uppercase; font-weight: 900; }
         .info-line span { max-height: 7.4mm; overflow: hidden; overflow-wrap: anywhere; }
+        .info-line.is-important span {
+          color: #ea580c;
+          font-size: 11px;
+          font-weight: 950;
+          text-transform: uppercase;
+        }
         table { width: 100%; border-collapse: collapse; margin-top: 2.6mm; table-layout: fixed; }
-        th, td { border: 1.4px solid #111; padding: 2.35mm 2.6mm; text-align: center; font-size: 10.2px; line-height: 1.12; overflow-wrap: anywhere; }
-        th { background: #fff4ed; font-size: 10.5px; letter-spacing: 0.035em; text-transform: uppercase; font-weight: 900; }
+        th, td { border: 1.25px solid #0f2a5f; padding: 2.25mm 2.5mm; text-align: center; font-size: 10.4px; line-height: 1.12; overflow-wrap: anywhere; }
+        th { background: #0f2a5f; color: #fff; font-size: 10.6px; letter-spacing: 0.035em; text-transform: uppercase; font-weight: 900; }
         td.detail { text-align: left; max-height: 11mm; overflow: hidden; }
         .receipt-total-row {
           display: grid;
@@ -3541,12 +3637,13 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           margin-top: 2.2mm;
         }
         .amount-words { display: flex; gap: 3mm; justify-content: flex-end; align-items: flex-end; font-size: 9.5px; min-width: 0; }
-        .amount-words span { min-width: 66mm; border-bottom: 1.4px solid #111; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .amount-words span { min-width: 66mm; border-bottom: 1.4px solid #0f2a5f; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .total-box {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          border: 1.4px solid #111;
+          border: 1.4px solid #0f2a5f;
+          background: #f8fafc;
           padding: 1.8mm 4.8mm;
           font-size: 12.5px;
           font-weight: 900;
@@ -3562,7 +3659,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           padding-top: 7mm;
           text-align: center;
         }
-        .signature-line { border-top: 1.4px solid #111; padding-top: 1.6mm; }
+        .signature-line { border-top: 1.4px solid #0f2a5f; padding-top: 1.6mm; }
         .signature-line strong { display: block; font-size: 10.5px; }
         .signature-line span { font-size: 9px; }
         .receipt-warning {
@@ -3657,8 +3754,10 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           <div class="receipt-title">
             <h1>${escapeHtml(title)}</h1>
             <span class="receipt-code">${escapeHtml(receiptCode)}</span>
+            ${contractCode ? `<span class="receipt-contract-code"><small>N&deg; contrato</small>${escapeHtml(contractCode)}</span>` : ''}
           </div>
           <div class="receipt-datebox">
+            ${contractCode ? `<span class="contract-chip"><small>Contrato</small>${escapeHtml(contractCode)}</span>` : ''}
             <span><strong>FECHA:</strong> ${escapeHtml(dateLabel)}</span>
             <span><strong>HORA:</strong> ${escapeHtml(timeLabel)}</span>
           </div>
@@ -3674,11 +3773,12 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           <div class="info-col">
             <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
             <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
-            <p class="info-line"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(responsible)}</span></p>
+            <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(collectionUser)}</span></p>
             <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(movement.paymentMethod || 'Efectivo')}</span></p>
           </div>
           <div class="info-col">
-            <p class="info-line"><strong>Referencia</strong><b>:</b><span>${escapeHtml(reference)}</span></p>
+            <p class="info-line is-important"><strong>Contrato</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
+            <p class="info-line is-important"><strong>Resp. contrato</strong><b>:</b><span>${escapeHtml(contractResponsible)}</span></p>
             <p class="info-line"><strong>Concepto</strong><b>:</b><span>${escapeHtml(detail)}</span></p>
             <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
           </div>
@@ -3687,11 +3787,12 @@ const buildCashReceiptHtml = ({ state, movement }) => {
         <table>
           <thead>
             <tr>
-              <th style="width: 13mm;">Nro</th>
+              <th style="width: 10mm;">Nro</th>
               <th>Detalle</th>
-              <th style="width: 40mm;">Caja</th>
-              <th style="width: 48mm;">Responsable</th>
-              <th style="width: 42mm;">${escapeHtml(totalLabel)}</th>
+              <th style="width: 26mm;">Caja</th>
+              <th style="width: 34mm;">Usuario que cobra</th>
+              <th style="width: 34mm;">Resp. contrato</th>
+              <th style="width: 32mm;">${escapeHtml(totalLabel)}</th>
             </tr>
           </thead>
           <tbody>
@@ -3699,7 +3800,8 @@ const buildCashReceiptHtml = ({ state, movement }) => {
               <td>1</td>
               <td class="detail">${escapeHtml(detail)}</td>
               <td>${escapeHtml(cashBoxLabel)}</td>
-              <td>${escapeHtml(responsible)}</td>
+              <td>${escapeHtml(collectionUser)}</td>
+              <td>${escapeHtml(contractResponsible)}</td>
               <td>${formatBs(amount)}</td>
             </tr>
           </tbody>

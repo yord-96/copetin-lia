@@ -929,14 +929,15 @@ function AccountingSection({
   };
 
   const openCollectAction = (row) => {
+    const contractReference = row.contractCode || row.orderCode;
     setCollectModal(row);
     setCollectForm({
       amountBs: String(row.pendingBs ?? ''),
       paymentMethod: 'efectivo',
       receipt: '',
       note: row.status === 'Liquidacion'
-        ? `Cobro liquidacion ${row.orderCode}`
-        : `Cobro saldo contrato ${row.orderCode}`,
+        ? `Cobro liquidacion contrato ${contractReference}`
+        : `Cobro saldo contrato ${contractReference}`,
     });
     setCashActionError('');
     setCashActionFeedback('');
