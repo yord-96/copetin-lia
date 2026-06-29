@@ -1255,6 +1255,15 @@ const normalizeState = (state) => {
         ?? rental?.totals?.pendingPaymentBs
         ?? Math.max(0, totalBs - paidAtRentalBs),
       );
+      const guaranteeDeclaredBs = Math.max(0, Number(rental?.guaranteeDeclaredBs ?? rental?.guarantee?.amountBs ?? rental?.depositBs ?? 0));
+      const guaranteeStatus = String(rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'no_validado'
+        ? 'no_validado'
+        : Number(rental?.depositBs ?? 0) > 0
+        ? 'validado'
+        : 'no_validado';
+      const guaranteeValidatedBs = guaranteeStatus === 'validado' ? Math.max(0, Number(rental?.depositBs ?? guaranteeDeclaredBs ?? 0)) : 0;
+      const initialPaymentMethod = normalizePaymentMethod(rental?.payment?.initialPaymentMethod ?? rental?.payment?.paymentMethod);
+      const guaranteePaymentMethod = normalizePaymentMethod(rental?.guarantee?.paymentMethod ?? rental?.payment?.guaranteePaymentMethod);
 
       return {
         ...rental,
@@ -1271,6 +1280,14 @@ const normalizeState = (state) => {
         deliveryFeeReason: deliveryCharge.deliveryFeeReason,
         prepaidClientId: rental?.prepaidClientId ?? null,
         prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
+        depositBs: Number(guaranteeValidatedBs.toFixed(2)),
+        guaranteeDeclaredBs: Number(guaranteeDeclaredBs.toFixed(2)),
+        guarantee: {
+          amountBs: Number(guaranteeDeclaredBs.toFixed(2)),
+          validatedBs: Number(guaranteeValidatedBs.toFixed(2)),
+          status: guaranteeStatus,
+          paymentMethod: guaranteePaymentMethod,
+        },
         status: normalizeRentalStatus(rental?.status),
         operational: {
           inventoryStatus:
@@ -1317,6 +1334,9 @@ const normalizeState = (state) => {
           deliveryFeeCollectedBs: Number(deliveryFeeCollectedBs.toFixed(2)),
           rentalCollectedBs: Number(rentalCollectedBs.toFixed(2)),
           cashCollectedBs: Number(Math.max(0, paidAtRentalBs - prepaidAppliedBs).toFixed(2)),
+          initialPaymentMethod,
+          guaranteeStatus,
+          guaranteePaymentMethod,
         },
         createdById: rental?.createdById ?? rental?.userId ?? null,
         createdByName: String(rental?.createdByName ?? rental?.userName ?? rental?.createdBy ?? 'Sistema').trim() || 'Sistema',
@@ -1474,6 +1494,15 @@ const normalizeState = (state) => {
       const subtotalBs = Number(quote?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs);
       const discountBs = Number(quote?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
+      const rawGuaranteeStatus = String(quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? '').trim();
+      const guaranteeStatus = rawGuaranteeStatus === 'validado'
+        ? 'validado'
+        : rawGuaranteeStatus === 'no_validado'
+        ? 'no_validado'
+        : guaranteeBs > 0
+        ? 'validado'
+        : 'no_validado';
+      const guaranteePaymentMethod = normalizePaymentMethod(quote?.guarantee?.paymentMethod ?? quote?.payment?.guaranteePaymentMethod);
       const logisticsMode = ['envio', 'recojo'].includes(quote?.logisticsMode) ? quote.logisticsMode : 'envio';
       const deliveryCharge = normalizeDeliveryCharge({ ...quote, logisticsMode });
       const totalBs = Number(quote?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
@@ -1525,6 +1554,14 @@ const normalizeState = (state) => {
         payment: {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(pendingBs.toFixed(2)),
+          initialPaymentMethod: normalizePaymentMethod(quote?.payment?.initialPaymentMethod ?? quote?.payment?.paymentMethod),
+          guaranteeStatus,
+          guaranteePaymentMethod,
+        },
+        guarantee: {
+          amountBs: Number(guaranteeBs.toFixed(2)),
+          status: guaranteeStatus,
+          paymentMethod: guaranteePaymentMethod,
         },
         items,
         services,
@@ -1582,6 +1619,15 @@ const normalizeState = (state) => {
       const subtotalBs = Number(contract?.totals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs);
       const discountBs = Number(contract?.totals?.discountBs ?? 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
+      const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+      const guaranteeStatus = rawGuaranteeStatus === 'validado'
+        ? 'validado'
+        : rawGuaranteeStatus === 'no_validado'
+        ? 'no_validado'
+        : guaranteeBs > 0
+        ? 'validado'
+        : 'no_validado';
+      const guaranteePaymentMethod = normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
       const logisticsMode = ['envio', 'recojo'].includes(contract?.logisticsMode) ? contract.logisticsMode : 'envio';
       const deliveryCharge = normalizeDeliveryCharge({ ...contract, logisticsMode });
       const totalBs = Number(contract?.totals?.totalBs ?? Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
@@ -1636,6 +1682,14 @@ const normalizeState = (state) => {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(pendingBs.toFixed(2)),
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
+          initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod),
+          guaranteeStatus,
+          guaranteePaymentMethod,
+        },
+        guarantee: {
+          amountBs: Number(guaranteeBs.toFixed(2)),
+          status: guaranteeStatus,
+          paymentMethod: guaranteePaymentMethod,
         },
         items,
         services,
@@ -3006,6 +3060,11 @@ const normalizeCashBoxType = (value, fallback = CASH_BOX_TYPES.BIG_CASH) =>
 
 const normalizeCashCategory = (value) => String(value ?? '').trim().toLowerCase();
 
+const normalizePaymentMethod = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['efectivo', 'qr', 'transferencia'].includes(normalized) ? normalized : 'efectivo';
+};
+
 const PETTY_CASH_CATEGORY_HINTS = [
   'gasto_menor',
   'materiales_menores',
@@ -3177,6 +3236,8 @@ const addRentalCashMovements = (state, rental) => {
   const rentalCashCollectedBs = Math.max(0, Number((cashCollectedBs - deliveryFeeCollectedBs).toFixed(2)));
   const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
   const depositBs = Number(rental?.depositBs ?? 0);
+  const initialPaymentMethod = normalizePaymentMethod(rental?.payment?.initialPaymentMethod ?? rental?.payment?.paymentMethod);
+  const guaranteePaymentMethod = normalizePaymentMethod(rental?.guarantee?.paymentMethod ?? rental?.payment?.guaranteePaymentMethod);
   const movementResponsible = String(
     rental?.createdByName
     ?? rental?.createdBy
@@ -3197,6 +3258,7 @@ const addRentalCashMovements = (state, rental) => {
         responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'cobro_contrato',
+        paymentMethod: initialPaymentMethod,
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -3217,6 +3279,7 @@ const addRentalCashMovements = (state, rental) => {
         responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'transporte_cobrado',
+        paymentMethod: initialPaymentMethod,
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -3239,6 +3302,11 @@ const addRentalCashMovements = (state, rental) => {
         createdBy: movementResponsible,
         responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+        category: 'garantia',
+        paymentMethod: guaranteePaymentMethod,
+        linkedRentalId: rental.id,
+        linkedContractId: rental.contractId,
+        linkedOrderCode: rental.orderCode,
       }),
     );
   }
@@ -4028,7 +4096,11 @@ const resolveContractForRental = (state, rental) =>
       ),
   ) ?? null;
 
-const buildRentalSnapshotFromContract = (contract) => ({
+const buildRentalSnapshotFromContract = (contract) => {
+  const guaranteeDeclaredBs = Number(contract?.totals?.guaranteeBs ?? 0);
+  const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+  const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeDeclaredBs > 0);
+  return ({
   id: contract?.rentalId ?? `contract-${contract?.id ?? 'sin-id'}`,
   orderCode: contract?.orderCode ?? contract?.contractCode ?? 'SIN-ORDEN',
   clientId: contract?.clientId ?? null,
@@ -4043,7 +4115,8 @@ const buildRentalSnapshotFromContract = (contract) => ({
   logisticsMode: contract?.logisticsMode,
   pricingPlan: contract?.pricingPlan ?? null,
   observations: contract?.observations,
-  depositBs: Number(contract?.totals?.guaranteeBs ?? 0),
+  depositBs: isGuaranteeValidated ? guaranteeDeclaredBs : 0,
+  guaranteeDeclaredBs,
   totals: {
     ...(contract?.totals ?? {}),
     paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
@@ -4052,6 +4125,15 @@ const buildRentalSnapshotFromContract = (contract) => ({
   payment: {
     paidAtRentalBs: Number(contract?.payment?.paidAtApprovalBs ?? 0),
     pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
+    initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod),
+    guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
+    guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
+  },
+  guarantee: {
+    amountBs: guaranteeDeclaredBs,
+    validatedBs: isGuaranteeValidated ? guaranteeDeclaredBs : 0,
+    status: isGuaranteeValidated ? 'validado' : 'no_validado',
+    paymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
   },
   items: (contract?.items ?? []).map((line) => ({
     itemId: line.itemId,
@@ -4061,7 +4143,8 @@ const buildRentalSnapshotFromContract = (contract) => ({
     lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
   })),
   services: normalizeContractServices(contract?.services),
-});
+  });
+};
 
 const formatDocumentDate = (value) => {
   const text = String(value ?? '').trim();
@@ -5653,7 +5736,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const discountBs = contract?.totals?.discountBs ?? rental?.totals?.discountBs ?? 0;
   const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
   const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
-  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
+  const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
+  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + (isGuaranteeValidated ? Math.max(0, Number(guaranteeBs ?? 0)) : 0);
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
   const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
   const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
@@ -5826,7 +5910,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
                   ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
                   ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-                  <div class="rc-financial-item guarantee"><span>Garantia reembolsable</span><strong>${formatBs(guaranteeBs)}</strong></div>
+                  <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'validada' : 'no validada'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
                   ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
                   <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
@@ -6997,7 +7081,18 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
   rental.deliveryChargeMode = contract.deliveryChargeMode;
   rental.deliveryFeeBs = contract.deliveryFeeBs;
   rental.deliveryFeeReason = contract.deliveryFeeReason;
-  rental.depositBs = Number(contract?.totals?.guaranteeBs ?? rental.depositBs ?? 0);
+  const guaranteeDeclaredBs = Number(contract?.totals?.guaranteeBs ?? rental.guaranteeDeclaredBs ?? rental.depositBs ?? 0);
+  const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+  const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeDeclaredBs > 0);
+  rental.depositBs = isGuaranteeValidated ? guaranteeDeclaredBs : 0;
+  rental.guaranteeDeclaredBs = guaranteeDeclaredBs;
+  rental.guarantee = {
+    ...(rental.guarantee ?? {}),
+    amountBs: guaranteeDeclaredBs,
+    validatedBs: isGuaranteeValidated ? guaranteeDeclaredBs : 0,
+    status: isGuaranteeValidated ? 'validado' : 'no_validado',
+    paymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
+  };
   rental.pricingPlan = deepClone(contract.pricingPlan);
   rental.supplierFulfillmentPlan = deepClone(contract.supplierFulfillmentPlan ?? []);
   const primaryResponsible = contract?.responsibles?.[0] ?? null;
@@ -7021,6 +7116,9 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     ...(rental.payment ?? {}),
     paidAtRentalBs,
     pendingPaymentBs,
+    initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? rental?.payment?.initialPaymentMethod),
+    guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
+    guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.payment?.guaranteePaymentMethod),
   };
   const dueAt = new Date(`${contract.pickupDate}T${contract.pickupWindowEnd || '23:59'}:00`);
   if (!Number.isNaN(dueAt.getTime())) rental.dueAt = dueAt.toISOString();
@@ -9839,6 +9937,9 @@ const createWebBridge = () => ({
         const now = new Date().toISOString();
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
+        const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
+        const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
+        const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
         const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
@@ -9934,6 +10035,14 @@ const createWebBridge = () => ({
             paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
             prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? 0)),
+            initialPaymentMethod,
+            guaranteeStatus,
+            guaranteePaymentMethod,
+          },
+          guarantee: {
+            amountBs: Number(guaranteeBs.toFixed(2)),
+            status: guaranteeStatus,
+            paymentMethod: guaranteePaymentMethod,
           },
           items: normalizedItems,
           services: requestedServices,
@@ -10058,6 +10167,11 @@ const createWebBridge = () => ({
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
+        const guaranteeStatus = String(payload?.guaranteeStatus ?? quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? '').trim() === 'validado'
+          ? 'validado'
+          : 'no_validado';
+        const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? quote?.guarantee?.paymentMethod ?? quote?.payment?.guaranteePaymentMethod);
+        const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? quote?.payment?.initialPaymentMethod);
         const deliveryCharge = normalizeDeliveryCharge({
           logisticsMode: quote.logisticsMode,
           deliveryChargeMode: payload?.deliveryChargeMode ?? quote?.deliveryChargeMode,
@@ -10087,6 +10201,14 @@ const createWebBridge = () => ({
         quote.payment = {
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+          initialPaymentMethod,
+          guaranteeStatus,
+          guaranteePaymentMethod,
+        };
+        quote.guarantee = {
+          amountBs: Number(guaranteeBs.toFixed(2)),
+          status: guaranteeStatus,
+          paymentMethod: guaranteePaymentMethod,
         };
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
@@ -10165,6 +10287,9 @@ const createWebBridge = () => ({
         const now = new Date().toISOString();
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
+        const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
+        const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
+        const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
         const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
@@ -10261,6 +10386,14 @@ const createWebBridge = () => ({
           payment: {
             paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
+            initialPaymentMethod,
+            guaranteeStatus,
+            guaranteePaymentMethod,
+          },
+          guarantee: {
+            amountBs: Number(guaranteeBs.toFixed(2)),
+            status: guaranteeStatus,
+            paymentMethod: guaranteePaymentMethod,
           },
           items: normalizedItems,
           services: requestedServices,
@@ -10385,6 +10518,11 @@ const createWebBridge = () => ({
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
+        const guaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim() === 'validado'
+          ? 'validado'
+          : 'no_validado';
+        const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
+        const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? contract?.payment?.initialPaymentMethod);
         const deliveryCharge = normalizeDeliveryCharge({
           logisticsMode: contract.logisticsMode,
           deliveryChargeMode: payload?.deliveryChargeMode ?? contract?.deliveryChargeMode,
@@ -10415,6 +10553,14 @@ const createWebBridge = () => ({
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
+          initialPaymentMethod,
+          guaranteeStatus,
+          guaranteePaymentMethod,
+        };
+        contract.guarantee = {
+          amountBs: Number(guaranteeBs.toFixed(2)),
+          status: guaranteeStatus,
+          paymentMethod: guaranteePaymentMethod,
         };
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
@@ -10750,6 +10896,12 @@ const createWebBridge = () => ({
 
         const settings = state.settings ?? {};
         const depositBs = toNumber(payload?.depositBs ?? settings.defaultDepositBs ?? 200, 'garantia');
+        const guaranteeDeclaredBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeDeclaredBs ?? depositBs));
+        const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' && depositBs > 0
+          ? 'validado'
+          : 'no_validado';
+        const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
+        const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
@@ -11008,6 +11160,13 @@ const createWebBridge = () => ({
           pickupWindowEnd: String(payload?.pickupWindowEnd ?? '').trim() || dueTime,
           idCardHeld,
           depositBs: toPositiveRoundedNumber(depositBs),
+          guaranteeDeclaredBs,
+          guarantee: {
+            amountBs: guaranteeDeclaredBs,
+            validatedBs: guaranteeStatus === 'validado' ? toPositiveRoundedNumber(depositBs) : 0,
+            status: guaranteeStatus,
+            paymentMethod: guaranteePaymentMethod,
+          },
           deliveryChargeMode: deliveryCharge.deliveryChargeMode,
           deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
           deliveryFeeReason: deliveryCharge.deliveryFeeReason,
@@ -11040,6 +11199,9 @@ const createWebBridge = () => ({
             deliveryFeeCollectedBs: toPositiveRoundedNumber(deliveryFeeCollectedAtApprovalBs),
             rentalCollectedBs: toPositiveRoundedNumber(rentalCollectedAtApprovalBs),
             cashCollectedBs: toPositiveRoundedNumber(cashCollectedAtApprovalBs),
+            initialPaymentMethod,
+            guaranteeStatus,
+            guaranteePaymentMethod,
           },
           notes,
           billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',

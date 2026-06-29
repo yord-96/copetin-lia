@@ -1166,7 +1166,10 @@ export const useAppController = () => {
         supplierFulfillmentPlan: quote.supplierFulfillmentPlan ?? [],
         discountBs: Number(quote?.totals?.discountBs ?? 0),
         guaranteeBs: Number(quote?.totals?.guaranteeBs ?? 0),
+        guaranteeStatus: quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? 'no_validado',
+        guaranteePaymentMethod: quote?.guarantee?.paymentMethod ?? quote?.payment?.guaranteePaymentMethod ?? 'efectivo',
         paidAtApprovalBs: Number(quote?.payment?.paidAtApprovalBs ?? 0),
+        initialPaymentMethod: quote?.payment?.initialPaymentMethod ?? 'efectivo',
         status: 'pendiente',
         responsibles: quote.responsibles ?? [],
         createdBy: quote.createdBy ?? quote.createdByName ?? undefined,
@@ -1435,6 +1438,9 @@ export const useAppController = () => {
 
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const totalBs = Number(contract?.totals?.totalBs ?? 0);
+      const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+      const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && Number(contract?.totals?.guaranteeBs ?? 0) > 0);
+      const guaranteeForCashBs = isGuaranteeValidated ? Number(contract?.totals?.guaranteeBs ?? 0) : 0;
       const allClients = await api.clients.list();
       const contractClient =
         clients.find((entry) => entry.id === contract.clientId)
@@ -1472,8 +1478,12 @@ export const useAppController = () => {
         deliveryWindowEnd: contract.deliveryWindowEnd || contract.eventTime || null,
         pickupWindowStart: contract.pickupWindowStart || null,
         pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
-        depositBs: Number(contract?.totals?.guaranteeBs ?? 0),
+        depositBs: guaranteeForCashBs,
+        guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? 0),
+        guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
+        guaranteePaymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
         paidAtRentalBs: coveredAtApprovalBs,
+        initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
         paymentMode,
         prepaidClientId: prepaidAppliedBs > 0 ? contractClient.id : null,
         prepaidAppliedBs,

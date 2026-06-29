@@ -699,7 +699,10 @@ const buildEmptyDraft = (mode = 'quote') => {
     vehicleId: '',
     discountBs: '0',
     guaranteeBs: '0',
+    guaranteeStatus: 'no_validado',
+    guaranteePaymentMethod: 'efectivo',
     paidAtApprovalBs: '0',
+    initialPaymentMethod: 'efectivo',
     pricingMode: 'simple',
     pricingDays: '1',
     pricingTiers: DURATION_PRICING_DEFAULT_TIERS,
@@ -1254,9 +1257,13 @@ function ServiceOrdersSection({
         linkedOrder?.orderCode,
       ].map(normalizeText);
       const hasReturnedGuarantee = guaranteeReferenceKeys.some((key) => key && returnedGuaranteeReferences.has(key));
+      const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+      const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeBs > 0);
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : hasReturnedGuarantee
+        : !isGuaranteeValidated
+          ? 'pending'
+          : hasReturnedGuarantee
           ? 'returned'
           : 'held';
       return {
@@ -1272,7 +1279,7 @@ function ServiceOrdersSection({
         guaranteeStatus,
         guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
-          ? guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
+          ? guaranteeStatus === 'pending' ? 'No validada' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
           : '',
       };
     });
@@ -2091,7 +2098,10 @@ function ServiceOrdersSection({
     vehicleId: record?.vehicleId ?? '',
     discountBs: String(record?.totals?.discountBs ?? 0),
     guaranteeBs: String(record?.totals?.guaranteeBs ?? 0),
+    guaranteeStatus: record?.guarantee?.status ?? record?.payment?.guaranteeStatus ?? (Number(record?.totals?.guaranteeBs ?? 0) > 0 ? 'validado' : 'no_validado'),
+    guaranteePaymentMethod: record?.guarantee?.paymentMethod ?? record?.payment?.guaranteePaymentMethod ?? 'efectivo',
     paidAtApprovalBs: String(record?.payment?.paidAtApprovalBs ?? 0),
+    initialPaymentMethod: record?.payment?.initialPaymentMethod ?? record?.payment?.paymentMethod ?? 'efectivo',
     pricingMode: record?.pricingPlan?.mode === 'duration' ? 'duration' : 'simple',
     pricingDays: String(record?.pricingPlan?.days ?? 1),
     pricingTiers: (Array.isArray(record?.pricingPlan?.tiers) && record.pricingPlan.tiers.length > 0
@@ -3167,7 +3177,10 @@ function ServiceOrdersSection({
       observations: draft.observations.trim(),
       discountBs: Math.max(0, Number(draft.discountBs ?? 0)),
       guaranteeBs: Math.max(0, Number(draft.guaranteeBs ?? 0)),
+      guaranteeStatus: draft.guaranteeStatus === 'validado' ? 'validado' : 'no_validado',
+      guaranteePaymentMethod: draft.guaranteePaymentMethod || 'efectivo',
       paidAtApprovalBs,
+      initialPaymentMethod: draft.initialPaymentMethod || 'efectivo',
       pricingPlan: quotePricingPlan,
       status: draft.mode === 'order' ? 'enviada' : 'borrador',
       items: selectedItems.map((line) => ({
@@ -6880,8 +6893,31 @@ function ServiceOrdersSection({
                         <input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(event) => setDraftField('guaranteeBs', event.target.value)} />
                       </label>
                       <label>
+                        Estado garantia
+                        <select value={draft.guaranteeStatus} onChange={(event) => setDraftField('guaranteeStatus', event.target.value)}>
+                          <option value="no_validado">No validado</option>
+                          <option value="validado">Validado</option>
+                        </select>
+                      </label>
+                      <label>
+                        Metodo garantia
+                        <select value={draft.guaranteePaymentMethod} onChange={(event) => setDraftField('guaranteePaymentMethod', event.target.value)} disabled={draft.guaranteeStatus !== 'validado'}>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="qr">QR</option>
+                          <option value="transferencia">Transferencia</option>
+                        </select>
+                      </label>
+                      <label>
                         Pago inicial (Bs)
                         <input type="number" min="0" step="0.01" value={draft.paidAtApprovalBs} onChange={(event) => setDraftField('paidAtApprovalBs', event.target.value)} />
+                      </label>
+                      <label>
+                        Metodo pago inicial
+                        <select value={draft.initialPaymentMethod} onChange={(event) => setDraftField('initialPaymentMethod', event.target.value)} disabled={Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0}>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="qr">QR</option>
+                          <option value="transferencia">Transferencia</option>
+                        </select>
                       </label>
                     </div>
 
@@ -7122,12 +7158,27 @@ function ServiceOrdersSection({
                   </div>
                   <div className="orders-money-row muted">
                     <span>Garantia</span>
-                    <strong>{formatBs(Math.max(0, Number(draft.guaranteeBs ?? 0)))}</strong>
+                    <strong>
+                      {formatBs(Math.max(0, Number(draft.guaranteeBs ?? 0)))}
+                      {Math.max(0, Number(draft.guaranteeBs ?? 0)) > 0 ? ` | ${draft.guaranteeStatus === 'validado' ? 'Validada' : 'No validada'}` : ''}
+                    </strong>
                   </div>
+                  {draft.guaranteeStatus === 'validado' && Math.max(0, Number(draft.guaranteeBs ?? 0)) > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Metodo garantia</span>
+                      <strong>{draft.guaranteePaymentMethod === 'qr' ? 'QR' : draft.guaranteePaymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}</strong>
+                    </div>
+                  ) : null}
                   <div className="orders-money-row muted">
                     <span>Pago inicial</span>
                     <strong>{formatBs(Math.max(0, Number(draft.paidAtApprovalBs ?? 0)))}</strong>
                   </div>
+                  {Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Metodo pago inicial</span>
+                      <strong>{draft.initialPaymentMethod === 'qr' ? 'QR' : draft.initialPaymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}</strong>
+                    </div>
+                  ) : null}
                   {draft.logisticsMode === 'envio' ? (
                     <div className="orders-money-row muted">
                       <span>Envio por equipo</span>
