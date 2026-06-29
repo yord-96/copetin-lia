@@ -2019,6 +2019,50 @@ const normalizeState = (state) => {
       };
     })
     : [];
+  const legacyPettyRepositionRows = source.cashMovements.filter((movement) =>
+    normalizeCashBoxType(movement?.cashBoxType) === CASH_BOX_TYPES.BIG_CASH
+    && !movement?.isInternalTransfer
+    && Number(movement?.amountBs ?? 0) > 0
+    && normalizeCashCategory(movement?.category) === 'reposicion_caja_chica'
+    && !isVoidedCashMovement(movement)
+  );
+  if (legacyPettyRepositionRows.length > 0) {
+    let activeSession = source.cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open');
+    if (!activeSession) {
+      const firstReposition = legacyPettyRepositionRows
+        .slice()
+        .sort((left, right) => new Date(left.createdAt ?? 0) - new Date(right.createdAt ?? 0))[0];
+      activeSession = {
+        id: makeId('cash'),
+        status: 'open',
+        openingAmountBs: 0,
+        openingBigCashBs: 0,
+        openingPettyCashBs: 0,
+        openedBy: firstReposition?.createdBy || firstReposition?.responsible || 'Sistema',
+        openedAt: firstReposition?.createdAt ?? now,
+        openNotes: `Apertura automatica por reparacion de reposicion a caja chica: ${firstReposition?.description || ''}`.trim(),
+        expectedBigCashBs: null,
+        expectedPettyCashBs: null,
+        countedBigCashBs: null,
+        countedPettyCashBs: null,
+        differenceBigCashBs: null,
+        differencePettyCashBs: null,
+        treasuryAccounts: [],
+        treasuryUpdatedAt: null,
+        treasuryUpdatedBy: '',
+      };
+      source.cashSessions.push(activeSession);
+    }
+    legacyPettyRepositionRows.forEach((movement) => {
+      const repairNote = 'Reclasificado automaticamente: reposicion de Caja Chica registrada anteriormente como ingreso de Caja Grande.';
+      movement.cashBoxType = CASH_BOX_TYPES.PETTY_CASH;
+      movement.sessionId = movement.sessionId || activeSession.id;
+      movement.category = 'reposicion_caja_chica';
+      movement.notes = String(movement.notes ?? '').includes(repairNote)
+        ? movement.notes
+        : [movement.notes, repairNote].map((entry) => String(entry ?? '').trim()).filter(Boolean).join('\n');
+    });
+  }
   source.cashDebts = Array.isArray(source.cashDebts)
     ? source.cashDebts.map((debt, index) => {
       const amountBs = toPositiveRoundedNumber(debt?.amountBs ?? debt?.totalBs ?? 0);
