@@ -446,13 +446,17 @@ const escapeDocText = (value) =>
     .replace(/'/g, '&#039;');
 
 const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
-  const cleanPart = (value) =>
-    normalizeText(value)
-      .replace(/[^a-z0-9]+/g, '')
+  const cleanFilePart = (value) =>
+    String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[<>:"/\\|?*]+/g, ' ')
+      .replace(/[^a-zA-Z0-9 _-]+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
-  const customer = cleanPart(customerName);
-  const code = cleanPart(documentCode);
-  return `${customer}${code}` || cleanPart(fallback) || 'copetin';
+  const customer = cleanFilePart(customerName).split(' ').filter(Boolean).slice(0, 2).join(' ');
+  const code = cleanFilePart(documentCode);
+  return [customer, code].filter(Boolean).join(' ').toUpperCase() || cleanFilePart(fallback).toUpperCase() || 'COPETIN';
 };
 
 const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
@@ -482,6 +486,11 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
     </tr>
   `).join('');
   const rows = `${itemRows}${serviceRows}`;
+  const subtotalBs = Number(quote?.totals?.subtotalBs ?? 0);
+  const discountBs = Number(quote?.totals?.discountBs ?? 0);
+  const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
+  const totalBs = Number(quote?.totals?.totalBs ?? 0);
+  const totalWithGuaranteeBs = totalBs + guaranteeBs;
   const durationRows = hasDuration
     ? durationPricing.breakdown.map((day) => `
       <tr>
@@ -516,9 +525,18 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
           th { text-align: left; background: #fff3e8; color: #7a3a13; font-size: 12px; text-transform: uppercase; }
           th, td { border-bottom: 1px solid #eaded4; padding: 10px; font-size: 13px; }
           td:nth-child(n+2), th:nth-child(n+2) { text-align: right; }
-          .totals { margin-top: 18px; margin-left: auto; width: 330px; border: 1px solid #eaded4; border-radius: 12px; padding: 12px 14px; }
-          .line { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; color: #5f5047; }
-          .line.total { border-top: 1px solid #eaded4; margin-top: 8px; padding-top: 12px; color: #1f1f1f; font-size: 16px; font-weight: 800; }
+          .totals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 18px; width: 100%; }
+          .line { min-height: 70px; display: flex; flex-direction: column; justify-content: center; gap: 6px; border: 1px solid #eaded4; border-radius: 12px; padding: 10px; color: #5f5047; background: #fffdfb; text-align: center; }
+          .line span { font-size: 11px; font-weight: 800; text-transform: uppercase; }
+          .line strong { color: #3c2f28; font-size: 15px; white-space: nowrap; }
+          .line.total { color: #1f1f1f; background: #fff7ef; border-color: #efc7a5; }
+          .line.managed { color: #1f1f1f; background: #f5fff8; border-color: #adddc0; }
+          .line.managed strong { color: #087a36; }
+          @media print {
+            body { padding: 18px; }
+            .page { max-width: none; border-radius: 12px; padding: 24px; }
+            .totals { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+          }
         </style>
       </head>
       <body>
@@ -558,12 +576,13 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
           ` : ''}
 
           <section class="totals">
-            <div class="line"><span>Subtotal</span><strong>${formatBs(Number(quote?.totals?.subtotalBs ?? 0))}</strong></div>
+            <div class="line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
             ${hasDuration ? `<div class="line"><span>Promocion duracion</span><strong>${formatBs(Number(quote?.totals?.durationDiscountBs ?? 0))}</strong></div>` : ''}
-            <div class="line"><span>Descuento</span><strong>${formatBs(Number(quote?.totals?.discountBs ?? 0))}</strong></div>
-            <div class="line"><span>Garantia</span><strong>${formatBs(Number(quote?.totals?.guaranteeBs ?? 0))}</strong></div>
+            <div class="line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>
+            <div class="line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${quote?.logisticsMode === 'envio' ? `<div class="line"><span>Envio por equipo</span><strong>${deliveryFeeBs > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
-            <div class="line total"><span>Total</span><strong>${formatBs(Number(quote?.totals?.totalBs ?? 0))}</strong></div>
+            <div class="line total"><span>Total</span><strong>${formatBs(totalBs)}</strong></div>
+            <div class="line managed"><span>Total + garantia</span><strong>${formatBs(totalWithGuaranteeBs)}</strong></div>
           </section>
         </main>
       </body>
@@ -3705,8 +3724,17 @@ function ServiceOrdersSection({
   const handlePrintPreview = () => {
     const frame = document.getElementById('orders-document-preview-frame');
     const frameDocument = frame?.contentDocument ?? frame?.contentWindow?.document;
+    const previousTitle = document.title;
     if (frameDocument && documentPreview?.fileName) {
       frameDocument.title = documentPreview.fileName;
+      document.title = documentPreview.fileName;
+      const restoreTitle = () => {
+        document.title = previousTitle;
+        window.removeEventListener('focus', restoreTitle);
+        frame?.contentWindow?.removeEventListener?.('afterprint', restoreTitle);
+      };
+      window.addEventListener('focus', restoreTitle);
+      frame?.contentWindow?.addEventListener?.('afterprint', restoreTitle, { once: true });
     }
     frame?.contentWindow?.focus();
     frame?.contentWindow?.print();

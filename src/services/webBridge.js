@@ -60,13 +60,17 @@ const normalizeText = (value) =>
     .toLowerCase();
 
 const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
-  const cleanPart = (value) =>
-    normalizeText(value)
-      .replace(/[^a-z0-9]+/g, '')
+  const cleanFilePart = (value) =>
+    String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[<>:"/\\|?*]+/g, ' ')
+      .replace(/[^a-zA-Z0-9 _-]+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
-  const customer = cleanPart(customerName);
-  const code = cleanPart(documentCode);
-  return `${customer}${code}` || cleanPart(fallback) || 'copetin';
+  const customer = cleanFilePart(customerName).split(' ').filter(Boolean).slice(0, 2).join(' ');
+  const code = cleanFilePart(documentCode);
+  return [customer, code].filter(Boolean).join(' ').toUpperCase() || cleanFilePart(fallback).toUpperCase() || 'COPETIN';
 };
 
 const toBusinessUppercase = (value) =>
