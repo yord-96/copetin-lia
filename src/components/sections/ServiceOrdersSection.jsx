@@ -445,6 +445,16 @@ const escapeDocText = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
+const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
+  const cleanPart = (value) =>
+    normalizeText(value)
+      .replace(/[^a-z0-9]+/g, '')
+      .trim();
+  const customer = cleanPart(customerName);
+  const code = cleanPart(documentCode);
+  return `${customer}${code}` || cleanPart(fallback) || 'copetin';
+};
+
 const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
   const pricingPlan = quote?.pricingPlan ?? {};
   const durationPricing = calculateDurationPricing({
@@ -455,7 +465,7 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
   });
   const hasDuration = durationPricing.mode === 'duration';
   const deliveryFeeBs = Number(quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0);
-  const rows = (quote?.items ?? []).map((line) => `
+  const itemRows = (quote?.items ?? []).map((line) => `
     <tr>
       <td>${escapeDocText(line.itemName)}</td>
       <td>${Number(line.quantity ?? 0)}</td>
@@ -463,6 +473,15 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
       <td>${formatBs(Number(line.lineTotalBs ?? 0))}</td>
     </tr>
   `).join('');
+  const serviceRows = (quote?.services ?? []).map((service) => `
+    <tr>
+      <td>SERVICIO: ${escapeDocText(service.name)}${service.detail ? `<br /><small>${escapeDocText(service.detail)}</small>` : ''}</td>
+      <td>${Number(service.quantity ?? 0)}</td>
+      <td>${formatBs(Number(service.unitPriceBs ?? 0))}</td>
+      <td>${formatBs(Number(service.lineTotalBs ?? Number(service.quantity ?? 0) * Number(service.unitPriceBs ?? 0)))}</td>
+    </tr>
+  `).join('');
+  const rows = `${itemRows}${serviceRows}`;
   const durationRows = hasDuration
     ? durationPricing.breakdown.map((day) => `
       <tr>
@@ -474,10 +493,14 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
     `).join('')
     : '';
 
+  const documentCode = quote?.quoteCode ?? quote?.id ?? '';
+  const documentTitle = buildDocumentFileBase(quote?.customerName, documentCode, 'cotizacion');
+
   return `<!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
+        <title>${escapeDocText(documentTitle)}</title>
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; padding: 32px; color: #1f1f1f; font-family: Inter, Arial, sans-serif; background: #faf7f3; }
@@ -506,7 +529,7 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
               <p>Documento previo para revision y aprobacion comercial.</p>
             </div>
             <div class="code">
-              <strong>${escapeDocText(quote?.quoteCode)}</strong>
+              <strong>${escapeDocText(documentCode)}</strong>
               <p>${formatDate(quote?.createdAt)}</p>
             </div>
           </header>
@@ -3444,6 +3467,17 @@ function ServiceOrdersSection({
     openCreateModal('quote', 'quote', quote);
   };
 
+  const handleOpenQuoteDocument = (quote) => {
+    setMenuState(null);
+    setDocumentPreview({
+      kind: 'quote',
+      orderCode: quote.quoteCode ?? quote.id,
+      title: `Cotizacion ${quote.quoteCode || quote.id}`,
+      fileName: buildDocumentFileBase(quote.customerName, quote.quoteCode || quote.id, 'cotizacion'),
+      html: buildQuoteApprovalDocumentHtml({ quote, formatDate, formatBs }),
+    });
+  };
+
   const handleDeleteQuoteClick = async (quote) => {
     setQuoteToDelete(quote);
     setMenuState(null);
@@ -3636,10 +3670,16 @@ function ServiceOrdersSection({
         };
       }
       if (preview?.html) {
+        const documentCode = kind === 'contract'
+          ? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id
+          : orderRow.orderCode ?? orderRow.id;
         setDocumentPreview({
           kind,
           orderCode: orderRow.orderCode,
           title: preview.title ?? `${kind === 'contract' ? 'Contrato' : kind === 'inventory' ? 'Orden de inventario' : kind === 'route' ? 'Hoja de ruta' : 'Resumen proveedor'} ${orderRow.orderCode}`,
+          fileName: kind === 'contract'
+            ? buildDocumentFileBase(orderRow.customerName ?? orderRow.client, documentCode, 'contrato')
+            : undefined,
           html: preview.html,
         });
       }
@@ -3664,6 +3704,10 @@ function ServiceOrdersSection({
 
   const handlePrintPreview = () => {
     const frame = document.getElementById('orders-document-preview-frame');
+    const frameDocument = frame?.contentDocument ?? frame?.contentWindow?.document;
+    if (frameDocument && documentPreview?.fileName) {
+      frameDocument.title = documentPreview.fileName;
+    }
     frame?.contentWindow?.focus();
     frame?.contentWindow?.print();
   };
@@ -3769,6 +3813,7 @@ function ServiceOrdersSection({
           kind: 'quote',
           orderCode: row.quoteCode,
           title: `Cotizacion ${row.quoteCode || row.id}`,
+          fileName: buildDocumentFileBase(row.customerName, row.quoteCode || row.id, 'cotizacion'),
           html: buildQuoteApprovalDocumentHtml({ quote: row, formatDate, formatBs }),
         });
         return;
@@ -3785,6 +3830,7 @@ function ServiceOrdersSection({
             kind: 'contract',
             orderCode: row.orderCode ?? row.contractCode,
             title: preview.title ?? `Contrato ${row.contractCode ?? row.id}`,
+            fileName: buildDocumentFileBase(row.customerName, row.contractCode || row.id, 'contrato'),
             html: preview.html,
           });
         }
@@ -4329,7 +4375,7 @@ function ServiceOrdersSection({
                         <td className="orders-total">{formatBs(row.totalBs)}</td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
-                            <button type="button" className="orders-open-btn" onClick={() => handleEditQuoteClick(row)}>
+                            <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
                               Abrir
                             </button>
                             <button
@@ -4400,7 +4446,7 @@ function ServiceOrdersSection({
                         </div>
                       </div>
                       <div className="orders-row-actions">
-                        <button type="button" className="orders-open-btn" onClick={() => handleEditQuoteClick(row)}>
+                        <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
                           Abrir
                         </button>
                         <button

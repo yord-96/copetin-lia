@@ -59,6 +59,16 @@ const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
+const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
+  const cleanPart = (value) =>
+    normalizeText(value)
+      .replace(/[^a-z0-9]+/g, '')
+      .trim();
+  const customer = cleanPart(customerName);
+  const code = cleanPart(documentCode);
+  return `${customer}${code}` || cleanPart(fallback) || 'copetin';
+};
+
 const toBusinessUppercase = (value) =>
   String(value ?? '').trim().toLocaleUpperCase('es-BO');
 
@@ -5784,6 +5794,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
+  const documentTitle = buildDocumentFileBase(rental.customerName, mainCode, 'contrato');
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentLongDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
@@ -5857,7 +5868,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>${escapeHtml(`Contrato de alquiler ${mainCode}`)}</title>
+    <title>${escapeHtml(documentTitle)}</title>
     <style>${getReferenceContractStyles()}</style>
   </head>
   <body>
