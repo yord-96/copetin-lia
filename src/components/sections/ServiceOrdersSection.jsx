@@ -2886,21 +2886,6 @@ function ServiceOrdersSection({
     }
     const parsed = Math.max(1, parseIntegerInput(cleanedValue, 1));
     if (draftLine?.comboId && draftLine.comboLineKey) {
-      if (draftLine.comboDistributed) {
-        setDraft((current) => ({
-          ...current,
-          items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId
-            ? {
-              ...line,
-              quantity: parsed,
-              lineTotalBs: line.comboPricingRole === 'price'
-                ? Number(line.lineTotalBs ?? 0)
-                : 0,
-            }
-            : line)),
-        }));
-        return;
-      }
       const baseComponentQuantity = Math.max(
         1,
         Math.trunc(Number(
@@ -3034,6 +3019,42 @@ function ServiceOrdersSection({
   };
 
   const normalizeDraftItemQuantity = (lineKeyOrItemId) => {
+    const draftLine = draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId);
+    if (draftLine?.comboId && draftLine.comboLineKey) {
+      const parsed = Math.max(1, parseIntegerInput(draftLine.quantity, 1));
+      const baseComponentQuantity = Math.max(
+        1,
+        Math.trunc(Number(
+          draftLine.comboComponentQuantity
+          ?? (Number(draftLine.quantity ?? 1) / Math.max(1, Number(draftLine.comboQuantity ?? 1))),
+        )),
+      );
+      const nextComboQuantity = Math.max(1, Math.ceil(parsed / baseComponentQuantity));
+      setDraft((current) => ({
+        ...current,
+        items: current.items.map((line) => {
+          if (line.comboLineKey !== draftLine.comboLineKey) return line;
+          const componentQuantity = Math.max(
+            1,
+            Math.trunc(Number(
+              line.comboComponentQuantity
+              ?? (Number(line.quantity ?? 1) / Math.max(1, Number(line.comboQuantity ?? 1))),
+            )),
+          );
+          const nextQuantity = componentQuantity * nextComboQuantity;
+          return {
+            ...line,
+            quantity: nextQuantity,
+            comboQuantity: nextComboQuantity,
+            comboComponentQuantity: componentQuantity,
+            lineTotalBs: line.comboPricingRole === 'price'
+              ? Number((Math.max(0, Number(line.unitPriceBs ?? 0)) * nextComboQuantity).toFixed(2))
+              : 0,
+          };
+        }),
+      }));
+      return;
+    }
     setDraft((current) => ({
       ...current,
       items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
