@@ -2530,64 +2530,66 @@ function AccountingSection({
           </article>
         </section>
 
-        {prepaidClientRows.length > 0 ? (
-          <section className="bigcash-card bigcash-vip-prepaid-card">
-            <header>
-              <div>
-                <span>Clientes VIP</span>
-                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="lock" /></span>Saldos prepago no fisicos</h3>
-                <p>Dinero abonado anteriormente. Se descuenta al aprobar contratos y no aumenta Caja Grande fisica.</p>
-              </div>
-              <div className="bigcash-vip-summary">
-                <span><small>Saldo disponible</small><strong>{formatBs(totalPrepaidBalanceBs)}</strong></span>
-                <span><small>Consumido</small><strong>{formatBs(totalPrepaidUsedBs)}</strong></span>
-              </div>
-            </header>
-
-            <div className="bigcash-table-wrap bigcash-vip-table-wrap">
-              <table className="accounting-table bigcash-table bigcash-vip-table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Cliente VIP</th>
-                    <th>Movimiento</th>
-                    <th>Contrato / Orden</th>
-                    <th>Monto</th>
-                    <th>Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {prepaidLedgerRows.slice(0, 8).map((row) => (
-                    <tr key={row.id}>
-                      <td>{formatDate(row.createdAt)} <small>{getHourLabel(row.createdAt)}</small></td>
-                      <td>
-                        <strong>{row.customerName}</strong>
-                        <small>{row.client.whatsapp || row.client.phone || 'Sin telefono'}</small>
-                      </td>
-                      <td>
-                        <strong>{row.description || (row.amountBs >= 0 ? 'Abono prepago' : 'Consumo prepago')}</strong>
-                        {row.amountBs > 0 && !row.rental ? (
-                          <small className="cash-linked-reference">Saldo inicial o abono registrado en cliente</small>
-                        ) : null}
-                      </td>
-                      <td>
-                        <strong>{row.reference}</strong>
-                        {row.eventDate ? <small>Evento {formatDate(row.eventDate)}</small> : null}
-                      </td>
-                      <td className={row.amountBs < 0 ? 'negative amount' : 'amount'}>
-                        {row.amountBs < 0 ? `- ${formatBs(Math.abs(row.amountBs))}` : formatBs(row.amountBs)}
-                      </td>
-                      <td className="amount">{formatBs(row.balanceAfterBs)}</td>
-                    </tr>
-                  ))}
-                  {prepaidLedgerRows.length === 0 ? (
-                    <tr><td colSpan={6}><p className="status">Hay clientes VIP sin movimientos todavia.</p></td></tr>
-                  ) : null}
-                </tbody>
-              </table>
+        <section className="bigcash-card bigcash-vip-prepaid-card">
+          <header>
+            <div>
+              <span>Clientes VIP</span>
+              <h3><span className="bigcash-title-icon blue"><MiniIcon kind="lock" /></span>Saldos prepago no fisicos</h3>
+              <p>Dinero abonado anteriormente. Se descuenta al aprobar contratos y no aumenta Caja Grande fisica.</p>
             </div>
-          </section>
-        ) : null}
+            <div className="bigcash-vip-summary">
+              <span><small>Saldo disponible</small><strong>{formatBs(totalPrepaidBalanceBs)}</strong></span>
+              <span><small>Consumido</small><strong>{formatBs(totalPrepaidUsedBs)}</strong></span>
+            </div>
+          </header>
+
+          <div className="bigcash-table-wrap bigcash-vip-table-wrap">
+            <table className="accounting-table bigcash-table bigcash-vip-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente VIP</th>
+                  <th>Movimiento</th>
+                  <th>Contrato / Orden</th>
+                  <th>Monto</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prepaidLedgerRows.slice(0, 8).map((row) => (
+                  <tr key={row.id}>
+                    <td>{formatDate(row.createdAt)} <small>{getHourLabel(row.createdAt)}</small></td>
+                    <td>
+                      <strong>{row.customerName}</strong>
+                      <small>{row.client.whatsapp || row.client.phone || 'Sin telefono'}</small>
+                    </td>
+                    <td>
+                      <strong>{row.description || (row.amountBs >= 0 ? 'Abono prepago' : 'Consumo prepago')}</strong>
+                      {row.amountBs > 0 && !row.rental ? (
+                        <small className="cash-linked-reference">Saldo inicial o abono registrado en cliente</small>
+                      ) : null}
+                    </td>
+                    <td>
+                      <strong>{row.reference}</strong>
+                      {row.eventDate ? <small>Evento {formatDate(row.eventDate)}</small> : null}
+                    </td>
+                    <td className={row.amountBs < 0 ? 'negative amount' : 'amount'}>
+                      {row.amountBs < 0 ? `- ${formatBs(Math.abs(row.amountBs))}` : formatBs(row.amountBs)}
+                    </td>
+                    <td className="amount">{formatBs(row.balanceAfterBs)}</td>
+                  </tr>
+                ))}
+                {prepaidLedgerRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <p className="status">Aun no hay clientes VIP con cuenta prepago activa. Activalo en Clientes, dentro de Cuenta prepago.</p>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section className="bigcash-command-grid">
           <article className="bigcash-card bigcash-command-card receivables">
