@@ -1489,6 +1489,9 @@ const normalizeState = (state) => {
             itemName: String(line?.itemName ?? '').trim(),
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
             unitPriceBs: Number(line?.unitPriceBs ?? 0),
+            grossLineTotalBs: Number(line?.grossLineTotalBs ?? 0),
+            discountPercent: Math.max(0, Number(line?.discountPercent ?? 0)),
+            discountBs: Math.max(0, Number(line?.discountBs ?? 0)),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
             comboId: String(line?.comboId ?? '').trim() || null,
             comboName: String(line?.comboName ?? '').trim(),
@@ -1570,6 +1573,7 @@ const normalizeState = (state) => {
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          discountPercent: Math.max(0, Number(quote?.totals?.discountPercent ?? quote?.discountPercent ?? 0)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
@@ -1616,6 +1620,9 @@ const normalizeState = (state) => {
             itemName: String(line?.itemName ?? '').trim(),
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
             unitPriceBs: Number(line?.unitPriceBs ?? 0),
+            grossLineTotalBs: Number(line?.grossLineTotalBs ?? 0),
+            discountPercent: Math.max(0, Number(line?.discountPercent ?? 0)),
+            discountBs: Math.max(0, Number(line?.discountBs ?? 0)),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
             comboId: String(line?.comboId ?? '').trim() || null,
             comboName: String(line?.comboName ?? '').trim(),
@@ -1675,6 +1682,7 @@ const normalizeState = (state) => {
         eventType: String(contract?.eventType ?? 'general').trim() || 'general',
         eventDate: String(contract?.eventDate ?? '').trim(),
         eventTime: String(contract?.eventTime ?? '').trim(),
+        contractDate: String(contract?.contractDate ?? contract?.createdAt ?? '').trim(),
         address: String(contract?.address ?? '').trim(),
         city: String(contract?.city ?? '').trim(),
         deliveryDate: String(contract?.deliveryDate ?? '').trim(),
@@ -1699,6 +1707,7 @@ const normalizeState = (state) => {
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          discountPercent: Math.max(0, Number(contract?.totals?.discountPercent ?? contract?.discountPercent ?? 0)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
@@ -4135,6 +4144,7 @@ const buildRentalSnapshotFromContract = (contract) => {
   customerPhone: contract?.customerPhone ?? '',
   rentalDate: contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
   dueDate: contract?.pickupDate || contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
+  contractDate: contract?.contractDate ?? contract?.createdAt,
   createdAt: contract?.createdAt,
   eventType: contract?.eventType,
   eventAddress: contract?.address,
@@ -5400,7 +5410,8 @@ const getReferenceContractStyles = () => `
     text-align: left;
   }
   .rc-date img { width: 4mm; height: 4mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
-  .rc-event-date {
+  .rc-event-date,
+  .rc-responsible-date {
     width: 100%;
     padding-top: 1mm;
     border-top: .25mm solid #d8d0c4;
@@ -5410,7 +5421,13 @@ const getReferenceContractStyles = () => `
     line-height: 1.16;
     text-align: center;
   }
-  .rc-event-date span {
+  .rc-responsible-date {
+    margin-top: 1mm;
+    color: #2d241a;
+    font-size: 8.2px;
+  }
+  .rc-event-date span,
+  .rc-responsible-date span {
     display: block;
     color: #69503a;
     font-size: 7.2px;
@@ -5800,9 +5817,16 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
   const documentTitle = buildDocumentFileBase(rental.customerName, mainCode, 'contrato');
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
-  const issuedAt = formatDocumentLongDate(contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
+  const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
+  const responsibleName = String(
+    contract?.responsibles?.[0]?.name
+    ?? contract?.createdByName
+    ?? rental?.createdByName
+    ?? contract?.createdBy
+    ?? 'Sin responsable',
+  ).trim() || 'Sin responsable';
   const documentItems = Array.isArray(contract?.items) && contract.items.length > 0
     ? contract.items.map((line) => ({
       ...line,
@@ -5884,6 +5908,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <div class="rc-number"><span>N&deg;</span><strong>${escapeHtml(mainCode)}</strong></div>
           <div class="rc-date">${contractPdfIcon('calendario.png')}<span>${escapeHtml(issuedAt)}</span></div>
           <div class="rc-event-date"><span>Fecha del evento</span>${escapeHtml(eventLongDate)}</div>
+          <div class="rc-responsible-date"><span>Responsable</span>${escapeHtml(responsibleName)}</div>
         </div>
       </header>
 
@@ -7106,6 +7131,8 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
 
   rental.items = nextLines;
   rental.services = normalizeContractServices(contract.services);
+  rental.contractCode = contract.contractCode;
+  rental.contractDate = contract.contractDate ?? rental.contractDate ?? contract.createdAt;
   rental.customerName = contract.customerName;
   rental.customerPhone = contract.customerPhone;
   rental.rentalDate = contract.deliveryDate;
@@ -9981,6 +10008,7 @@ const createWebBridge = () => ({
       transaction((state) => {
         const now = new Date().toISOString();
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const generalDiscountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
@@ -9996,14 +10024,22 @@ const createWebBridge = () => ({
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
           const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
+            : Number((quantity * unitPriceBs).toFixed(2));
           const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
-            : Number((quantity * unitPriceBs).toFixed(2));
+            : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
           return {
             itemId: item.id,
             itemName: item.name,
             quantity,
             unitPriceBs,
+            grossLineTotalBs,
+            discountPercent,
+            discountBs,
             lineTotalBs,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
@@ -10070,6 +10106,7 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
             discountBs: Number(discountBs.toFixed(2)),
+            discountPercent: Number(generalDiscountPercent.toFixed(2)),
             deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
             guaranteeBs: Number(guaranteeBs.toFixed(2)),
             totalBs: Number(totalBs.toFixed(2)),
@@ -10167,14 +10204,22 @@ const createWebBridge = () => ({
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+            const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+            const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+              ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
+              : Number((quantity * unitPriceBs).toFixed(2));
             const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
-              : Number((quantity * unitPriceBs).toFixed(2));
+              : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
               itemId: item.id,
               itemName: item.name,
               quantity,
               unitPriceBs,
+              grossLineTotalBs,
+              discountPercent,
+              discountBs,
               lineTotalBs,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
@@ -10210,6 +10255,7 @@ const createWebBridge = () => ({
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
+        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? quote?.totals?.discountPercent ?? 0)));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? '').trim() === 'validado'
           ? 'validado'
@@ -10235,6 +10281,7 @@ const createWebBridge = () => ({
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          discountPercent: Number(discountPercent.toFixed(2)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
@@ -10329,6 +10376,7 @@ const createWebBridge = () => ({
       transaction((state) => {
         const now = new Date().toISOString();
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)));
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
@@ -10345,14 +10393,22 @@ const createWebBridge = () => ({
 
           const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
           const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const lineDiscountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const lineDiscountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
+            : Number((quantity * unitPriceBs).toFixed(2));
           const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
-            : Number((quantity * unitPriceBs).toFixed(2));
+            : Number(Math.max(0, grossLineTotalBs - lineDiscountBs).toFixed(2));
           return {
             itemId: item.id,
             itemName: item.name,
             quantity,
             unitPriceBs,
+            grossLineTotalBs,
+            discountPercent: lineDiscountPercent,
+            discountBs: lineDiscountBs,
             lineTotalBs,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
@@ -10395,6 +10451,7 @@ const createWebBridge = () => ({
           eventType: String(payload?.eventType ?? 'general').trim() || 'general',
           eventDate,
           eventTime,
+          contractDate: String(payload?.contractDate ?? '').trim() || now,
           address: String(payload?.address ?? '').trim(),
           city: String(payload?.city ?? '').trim(),
           deliveryDate,
@@ -10420,6 +10477,7 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
             discountBs: Number(discountBs.toFixed(2)),
+            discountPercent: Number(discountPercent.toFixed(2)),
             deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
             guaranteeBs: Number(guaranteeBs.toFixed(2)),
             totalBs: Number(totalBs.toFixed(2)),
@@ -10471,6 +10529,22 @@ const createWebBridge = () => ({
         const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
         if (!contract) throw new Error('Contrato no encontrado.');
         const beforeContract = deepClone(contract);
+        const requestedContractCode = String(payload?.manualDocumentCode ?? payload?.contractCode ?? '').trim();
+        if (requestedContractCode && requestedContractCode !== String(contract.contractCode ?? '').trim()) {
+          const duplicate = state.contracts.some(
+            (entry) => entry.id !== contract.id && !entry.deletedAt && String(entry.contractCode ?? '').trim() === requestedContractCode,
+          );
+          if (duplicate) throw new Error('Ya existe un contrato con ese numero.');
+          const previousContractCode = String(contract.contractCode ?? '').trim();
+          contract.contractCode = requestedContractCode;
+          if (Array.isArray(state.rentals)) {
+            state.rentals.forEach((rental) => {
+              const isLinkedRental = String(rental.contractId ?? '') === String(contract.id)
+                || (previousContractCode && String(rental.contractCode ?? '').trim() === previousContractCode);
+              if (isLinkedRental) rental.contractCode = requestedContractCode;
+            });
+          }
+        }
 
         if (payload.customerName !== undefined) contract.customerName = String(payload.customerName ?? '').trim() || contract.customerName;
         if (payload.customerPhone !== undefined) contract.customerPhone = String(payload.customerPhone ?? '').trim() || contract.customerPhone;
@@ -10479,6 +10553,7 @@ const createWebBridge = () => ({
         if (payload.eventType !== undefined) contract.eventType = String(payload.eventType ?? '').trim() || contract.eventType;
         if (payload.eventDate !== undefined) contract.eventDate = String(payload.eventDate ?? '').trim() || contract.eventDate;
         if (payload.eventTime !== undefined) contract.eventTime = String(payload.eventTime ?? '').trim() || contract.eventTime;
+        if (payload.contractDate !== undefined) contract.contractDate = String(payload.contractDate ?? '').trim() || contract.contractDate || contract.createdAt;
         if (payload.address !== undefined) contract.address = String(payload.address ?? '').trim();
         if (payload.city !== undefined) contract.city = String(payload.city ?? '').trim();
         if (payload.deliveryDate !== undefined) contract.deliveryDate = String(payload.deliveryDate ?? '').trim() || contract.deliveryDate;
@@ -10515,14 +10590,22 @@ const createWebBridge = () => ({
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+            const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+            const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+              ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
+              : Number((quantity * unitPriceBs).toFixed(2));
             const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
-              : Number((quantity * unitPriceBs).toFixed(2));
+              : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
               itemId: item.id,
               itemName: item.name,
               quantity,
               unitPriceBs,
+              grossLineTotalBs,
+              discountPercent,
+              discountBs,
               lineTotalBs,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
@@ -10559,6 +10642,7 @@ const createWebBridge = () => ({
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
+        const discountPercent = Math.min(100, Math.max(0, Number(payload?.discountPercent ?? contract?.totals?.discountPercent ?? 0)));
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim() === 'validado'
           ? 'validado'
@@ -10584,6 +10668,7 @@ const createWebBridge = () => ({
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           discountBs: Number(discountBs.toFixed(2)),
+          discountPercent: Number(discountPercent.toFixed(2)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
           guaranteeBs: Number(guaranteeBs.toFixed(2)),
           totalBs: Number(totalBs.toFixed(2)),
@@ -11054,6 +11139,11 @@ const createWebBridge = () => ({
           );
           const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
           const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+            ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
+            : Number((quantity * rentalPriceBs).toFixed(2));
           const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : null;
@@ -11112,7 +11202,10 @@ const createWebBridge = () => ({
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
-            lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * rentalPriceBs,
+            grossLineTotalBs,
+            discountPercent,
+            discountBs,
+            lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2)),
           };
         });
 
@@ -11131,6 +11224,7 @@ const createWebBridge = () => ({
           quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs,
         ));
         const discountBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountBs ?? 0));
+        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountPercent ?? payload?.discountPercent ?? 0)));
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({
           ...payload,
@@ -11191,6 +11285,7 @@ const createWebBridge = () => ({
           orderCode,
           customerName,
           customerPhone,
+          contractDate: String(payload?.contractDate ?? '').trim() || now.toISOString(),
           rentalDate,
           rentalAt: now.toISOString(),
           dueDate,
@@ -11225,6 +11320,7 @@ const createWebBridge = () => ({
             theoreticalSubtotalBs: toPositiveRoundedNumber(quotedTotals?.theoreticalSubtotalBs ?? pricingPlan.theoreticalSubtotalBs),
             durationDiscountBs: toPositiveRoundedNumber(quotedTotals?.durationDiscountBs ?? pricingPlan.durationDiscountBs),
             discountBs: toPositiveRoundedNumber(discountBs),
+            discountPercent: toPositiveRoundedNumber(discountPercent),
             deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
             deliveryFeeCollectedBs: toPositiveRoundedNumber(deliveryFeeCollectedAtApprovalBs),
             prepaidAppliedBs: toPositiveRoundedNumber(prepaidAppliedBs),

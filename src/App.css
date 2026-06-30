@@ -43243,6 +43243,22 @@ button.calendar-dispatch-row:focus-visible {
   max-height: 20rem;
 }
 
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-table-head,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+  grid-template-columns: minmax(210px, 1.35fr) 86px 104px 96px 92px 86px 62px !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-discount select {
+  min-height: 2rem;
+  border: 1px solid #dbe4f1;
+  border-radius: 0.55rem;
+  padding: 0 0.45rem;
+  color: #0a2557;
+  background: #fff;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
 .inventory-usage-section {
   display: grid;
   gap: 0.7rem;
@@ -51269,58 +51285,69 @@ body:has(.accounting-bigcash-view) .workspace {
 .accounting-bigcash-view .bigcash-movements .bigcash-table th,
 .accounting-bigcash-view .bigcash-movements .bigcash-table td {
   white-space: normal !important;
-  overflow-wrap: anywhere !important;
+  overflow-wrap: break-word !important;
+  padding-inline: 0.5rem !important;
+  font-size: 0.76rem !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table {
-  min-width: 1180px !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(1),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(1) {
-  width: 12% !important;
+  width: 11% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(2),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(2) {
-  width: 7% !important;
+  width: 5% !important;
   text-align: center !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(3),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(3) {
-  width: 24% !important;
+  width: 27% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(4),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(4) {
-  width: 10% !important;
+  width: 8% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(5),
-.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(5),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(5) {
+  width: 8% !important;
+}
+
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(6),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(6),
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(7),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(7) {
-  width: 9% !important;
+  width: 8% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(8),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(8) {
-  width: 10% !important;
+  width: 9% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(9),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(9) {
-  width: 13% !important;
+  width: 16% !important;
   overflow-wrap: normal !important;
   word-break: normal !important;
 }
 
+.accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(10),
+.accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(10) {
+  display: none !important;
+}
+
 .bigcash-user-label {
   display: inline-block !important;
-  max-width: 10.5rem !important;
+  max-width: 100% !important;
   color: #08275b !important;
   font-weight: 900 !important;
   line-height: 1.15 !important;

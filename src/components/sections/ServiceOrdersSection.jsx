@@ -715,6 +715,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     recordStatus: 'borrador',
     documentCodeMode: 'auto',
     manualDocumentCode: '',
+    contractDate: deliveryDate,
     clientId: '',
     customerName: '',
     customerPhone: '',
@@ -740,6 +741,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     driverId: '',
     vehicleId: '',
     discountBs: '0',
+    discountPercent: '0',
     guaranteeBs: '0',
     guaranteeStatus: 'no_validado',
     guaranteePaymentMethod: 'efectivo',
@@ -1689,7 +1691,12 @@ function ServiceOrdersSection({
         const availability = availabilityByItemId.get(line.itemId) ?? null;
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
         const unitPriceBs = Math.max(0, Number(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+        const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
+        const grossLineTotalBs = explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
+        const lineGrossTotalBs = explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
+        const discountPercent = Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
+        const lineDiscountBs = Number((lineGrossTotalBs * (discountPercent / 100)).toFixed(2));
         const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
         return {
           ...line,
@@ -1700,7 +1707,10 @@ function ServiceOrdersSection({
           unitPriceInput: line.unitPriceBs === '' ? '' : String(line.unitPriceBs ?? unitPriceBs),
           item,
           availability,
-          lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs,
+          discountPercent,
+          grossLineTotalBs: lineGrossTotalBs,
+          lineDiscountBs,
+          lineTotalBs: Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
         };
       })
       .filter(Boolean);
@@ -2036,10 +2046,15 @@ function ServiceOrdersSection({
     return Math.max(0, Number.isFinite(parsed) ? parsed : 0);
   }, [draft.deliveryChargeMode, draft.deliveryFeeBs, draft.logisticsMode]);
 
-  const quoteTotalBs = useMemo(() => {
-    const discount = Math.max(0, Number(draft.discountBs ?? 0));
-    return Math.max(0, quoteSubtotalBs - discount + quoteDeliveryFeeBs);
-  }, [draft.discountBs, quoteDeliveryFeeBs, quoteSubtotalBs]);
+  const generalDiscountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent ?? 0)));
+  const generalDiscountBs = useMemo(
+    () => Number((quoteSubtotalBs * (generalDiscountPercent / 100)).toFixed(2)),
+    [generalDiscountPercent, quoteSubtotalBs],
+  );
+
+  const quoteTotalBs = useMemo(() => (
+    Math.max(0, quoteSubtotalBs - generalDiscountBs + quoteDeliveryFeeBs)
+  ), [generalDiscountBs, quoteDeliveryFeeBs, quoteSubtotalBs]);
 
   const pendingAtApprovalBs = useMemo(() => {
     const paid = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
@@ -2142,6 +2157,9 @@ function ServiceOrdersSection({
     recordId: record?.id ?? '',
     quoteId: entityType === 'contract' ? String(record?.quoteId ?? '').trim() : '',
     recordStatus: record?.status ?? (entityType === 'contract' ? 'pendiente' : 'borrador'),
+    documentCodeMode: record?.contractCode || record?.quoteCode ? 'manual' : 'auto',
+    manualDocumentCode: entityType === 'contract' ? String(record?.contractCode ?? '').trim() : String(record?.quoteCode ?? '').trim(),
+    contractDate: (record?.contractDate ?? record?.createdAt ?? '').slice(0, 10) || getInputDate(new Date()),
     clientId: record?.clientId ?? '',
     customerName: record?.customerName ?? '',
     customerPhone: record?.customerPhone ?? '',
@@ -2169,6 +2187,7 @@ function ServiceOrdersSection({
     driverId: record?.driverId ?? '',
     vehicleId: record?.vehicleId ?? '',
     discountBs: String(record?.totals?.discountBs ?? 0),
+    discountPercent: String(record?.totals?.discountPercent ?? record?.discountPercent ?? 0),
     guaranteeBs: String(record?.totals?.guaranteeBs ?? 0),
     guaranteeStatus: record?.guarantee?.status ?? record?.payment?.guaranteeStatus ?? (Number(record?.totals?.guaranteeBs ?? 0) > 0 ? 'validado' : 'no_validado'),
     guaranteePaymentMethod: record?.guarantee?.paymentMethod ?? record?.payment?.guaranteePaymentMethod ?? 'efectivo',
@@ -2197,6 +2216,10 @@ function ServiceOrdersSection({
       quantity: line.quantity,
       unitPriceBs: line.unitPriceBs,
       lineTotalBs: line.lineTotalBs,
+      grossLineTotalBs: Number(line.grossLineTotalBs ?? 0) > 0
+        ? Number(line.grossLineTotalBs)
+        : Number(line.lineTotalBs ?? 0) + Number(line.discountBs ?? 0),
+      discountPercent: String(line.discountPercent ?? 0),
       controlsStock: line.controlsStock,
       verificationStatus: line.verificationStatus,
       quickItem: line.quickItem ?? null,
@@ -2967,6 +2990,7 @@ function ServiceOrdersSection({
         ? {
           ...line,
           quantity: parsed,
+          grossLineTotalBs: undefined,
           lineTotalBs: line.comboId ? Number(line.lineTotalBs ?? 0) : undefined,
         }
         : line)),
@@ -3052,10 +3076,21 @@ function ServiceOrdersSection({
         ? {
           ...line,
           unitPriceBs: isEmptyValue ? '' : cleanedValue,
+          grossLineTotalBs: undefined,
           lineTotalBs: line.comboId
             ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
             : undefined,
         }
+        : line)),
+    }));
+  };
+
+  const setDraftItemDiscountPercent = (lineKeyOrItemId, value) => {
+    const nextPercent = Math.min(100, Math.max(0, Number(value ?? 0)));
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
+        ? { ...line, discountPercent: String(nextPercent) }
         : line)),
     }));
   };
@@ -3089,6 +3124,7 @@ function ServiceOrdersSection({
             quantity: nextQuantity,
             comboQuantity: nextComboQuantity,
             comboComponentQuantity: componentQuantity,
+            grossLineTotalBs: undefined,
             lineTotalBs: line.comboPricingRole === 'price'
               ? Number((Math.max(0, Number(line.unitPriceBs ?? 0)) * nextComboQuantity).toFixed(2))
               : 0,
@@ -3100,7 +3136,7 @@ function ServiceOrdersSection({
     setDraft((current) => ({
       ...current,
       items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
-        ? { ...line, quantity: Math.max(1, parseIntegerInput(line.quantity, 1)) }
+        ? { ...line, quantity: Math.max(1, parseIntegerInput(line.quantity, 1)), grossLineTotalBs: undefined }
         : line)),
     }));
   };
@@ -3114,6 +3150,7 @@ function ServiceOrdersSection({
         return {
           ...line,
           unitPriceBs: Number(parsed.toFixed(2)),
+          grossLineTotalBs: undefined,
           lineTotalBs: line.comboId
             ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
             : undefined,
@@ -3308,6 +3345,7 @@ function ServiceOrdersSection({
       quoteId: draft.quoteId || null,
       documentCodeMode: draft.documentCodeMode,
       manualDocumentCode: draft.manualDocumentCode.trim(),
+      contractDate: draft.contractDate || null,
       clientId: draft.clientId || null,
       customerName: draft.customerName.trim(),
       customerPhone: draft.customerPhone.trim(),
@@ -3335,7 +3373,8 @@ function ServiceOrdersSection({
       vehicleId: draft.vehicleId || null,
       validUntil: draft.validUntil || null,
       observations: draft.observations.trim(),
-      discountBs: Math.max(0, Number(draft.discountBs ?? 0)),
+      discountBs: generalDiscountBs,
+      discountPercent: generalDiscountPercent,
       guaranteeBs: Math.max(0, Number(draft.guaranteeBs ?? 0)),
       guaranteeStatus: draft.guaranteeStatus === 'validado' ? 'validado' : 'no_validado',
       guaranteePaymentMethod: draft.guaranteePaymentMethod || 'efectivo',
@@ -3348,7 +3387,10 @@ function ServiceOrdersSection({
         itemId: String(line.itemId).startsWith('quick-') ? '' : line.itemId,
         quantity: line.quantity,
         unitPriceBs: line.unitPriceBs,
+        grossLineTotalBs: line.grossLineTotalBs,
         lineTotalBs: line.lineTotalBs,
+        discountPercent: line.discountPercent,
+        discountBs: line.lineDiscountBs,
         controlsStock: line.controlsStock,
         verificationStatus: line.verificationStatus,
         quickItem: line.quickItem ?? null,
@@ -6035,20 +6077,20 @@ function ServiceOrdersSection({
                           />
                         </span>
                       </label>
-                      {!draft.recordId ? (
+                      {(!draft.recordId || draft.entityType === 'contract') ? (
                         <>
                           <label className="orders-icon-field book">
                             Codigo del libro
                             <span>
                               <i aria-hidden="true"><BookOpen /></i>
-                              <select value={draft.documentCodeMode} onChange={(event) => setDraftField('documentCodeMode', event.target.value)}>
+                              <select value={draft.recordId ? 'manual' : draft.documentCodeMode} onChange={(event) => setDraftField('documentCodeMode', event.target.value)} disabled={Boolean(draft.recordId)}>
                                 <option value="auto">Automatico</option>
                                 <option value="manual">Pasado / manual</option>
                                 <option value="current">Actual y continuar desde aqui</option>
                               </select>
                             </span>
                           </label>
-                          {draft.documentCodeMode !== 'auto' ? (
+                          {(draft.recordId || draft.documentCodeMode !== 'auto') ? (
                             <label>
                               Numero o codigo *
                               <input
@@ -6056,6 +6098,19 @@ function ServiceOrdersSection({
                                 onChange={(event) => setDraftField('manualDocumentCode', event.target.value)}
                                 placeholder="Ej: 900 o 1700"
                               />
+                            </label>
+                          ) : null}
+                          {draft.entityType === 'contract' ? (
+                            <label className="orders-icon-field calendar">
+                              Fecha de contrato pasado
+                              <span>
+                                <i aria-hidden="true"><CalendarDays /></i>
+                                <input
+                                  type="date"
+                                  value={draft.contractDate || ''}
+                                  onChange={(event) => setDraftField('contractDate', event.target.value)}
+                                />
+                              </span>
                             </label>
                           ) : null}
                         </>
@@ -6677,6 +6732,7 @@ function ServiceOrdersSection({
                           <span>Cantidad</span>
                           <span>Disponibilidad</span>
                           <span>Precio unitario</span>
+                          <span>Desc.</span>
                           <span>Subtotal</span>
                           <span>Accion</span>
                         </div>
@@ -6890,6 +6946,20 @@ function ServiceOrdersSection({
                                 <small className="orders-available-note">Incluido en el precio del combo</small>
                               ) : null}
                             </label>
+                            <label className="orders-line-field orders-line-discount">
+                              <span>Descuento</span>
+                              <select
+                                value={String(line.discountPercent ?? 0)}
+                                onChange={(event) => setDraftItemDiscountPercent(line.lineKey, event.target.value)}
+                              >
+                                {[0, 5, 10, 15, 20, 25, 30, 40, 50].map((percent) => (
+                                  <option key={percent} value={percent}>{percent}%</option>
+                                ))}
+                              </select>
+                              <small className="orders-available-note">
+                                Rebaja: {formatBs(line.lineDiscountBs ?? 0)}
+                              </small>
+                            </label>
                             <strong>{formatBs(line.lineTotalBs)}</strong>
                             <button type="button" className="danger-button" onClick={() => removeDraftItem(line.lineKey)}>
                               Quitar
@@ -7075,8 +7145,13 @@ function ServiceOrdersSection({
                     <p className="orders-step-help">Revisa importes antes de guardar o aprobar la cotizacion.</p>
                     <div className="orders-money-grid">
                       <label>
-                        Descuento (Bs)
-                        <input type="number" min="0" step="0.01" value={draft.discountBs} onChange={(event) => setDraftField('discountBs', event.target.value)} />
+                        Descuento general
+                        <select value={String(draft.discountPercent ?? 0)} onChange={(event) => setDraftField('discountPercent', event.target.value)}>
+                          {[0, 5, 10, 15, 20, 25, 30, 40, 50].map((percent) => (
+                            <option key={percent} value={percent}>{percent}%</option>
+                          ))}
+                        </select>
+                        <small>Rebaja: {formatBs(generalDiscountBs)}</small>
                       </label>
                       <label>
                         Garantia (Bs)
@@ -7159,8 +7234,8 @@ function ServiceOrdersSection({
                         </div>
                       ) : null}
                       <div className="orders-money-row muted">
-                        <span>Descuento</span>
-                        <strong>{formatBs(Math.max(0, Number(draft.discountBs ?? 0)))}</strong>
+                        <span>Descuento ({generalDiscountPercent}%)</span>
+                        <strong>{formatBs(generalDiscountBs)}</strong>
                       </div>
                       <div className="orders-money-row muted">
                         <span>Garantia</span>
@@ -7343,8 +7418,8 @@ function ServiceOrdersSection({
                     </div>
                   ) : null}
                   <div className="orders-money-row muted">
-                    <span>Descuento</span>
-                    <strong>{formatBs(Math.max(0, Number(draft.discountBs ?? 0)))}</strong>
+                    <span>Descuento ({generalDiscountPercent}%)</span>
+                    <strong>{formatBs(generalDiscountBs)}</strong>
                   </div>
                   <div className="orders-money-row muted">
                     <span>Garantia</span>
