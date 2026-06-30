@@ -50287,6 +50287,26 @@ body:has(.accounting-bigcash-view) .workspace {
   padding: 1.05rem !important;
 }
 
+.accounting-bigcash-view .bigcash-kpi-card.is-clickable {
+  width: 100% !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  appearance: none !important;
+  font: inherit !important;
+  color: inherit !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card.is-clickable:hover {
+  transform: translateY(-2px) !important;
+  border-color: #f2a26c !important;
+  box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.09) !important;
+}
+
+.accounting-bigcash-view .bigcash-kpi-card.is-clickable:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.22) !important;
+  outline-offset: 3px !important;
+}
+
 .accounting-bigcash-view .bigcash-command-grid {
   width: 100%;
   display: grid !important;
@@ -51252,6 +51272,10 @@ body:has(.accounting-bigcash-view) .workspace {
   overflow-wrap: anywhere !important;
 }
 
+.accounting-bigcash-view .bigcash-movements .bigcash-table {
+  min-width: 1180px !important;
+}
+
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(1),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(1) {
   width: 12% !important;
@@ -51265,7 +51289,7 @@ body:has(.accounting-bigcash-view) .workspace {
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(3),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(3) {
-  width: 26% !important;
+  width: 24% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(4),
@@ -51284,12 +51308,25 @@ body:has(.accounting-bigcash-view) .workspace {
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(8),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(8) {
-  width: 11% !important;
+  width: 10% !important;
 }
 
 .accounting-bigcash-view .bigcash-movements .bigcash-table th:nth-child(9),
 .accounting-bigcash-view .bigcash-movements .bigcash-table td:nth-child(9) {
-  width: 7% !important;
+  width: 13% !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.bigcash-user-label {
+  display: inline-block !important;
+  max-width: 10.5rem !important;
+  color: #08275b !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
 }
 
 .bigcash-list-modal .bigcash-table th,
