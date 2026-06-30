@@ -50472,6 +50472,300 @@ body:has(.accounting-bigcash-view) .workspace {
   color: #dc2626 !important;
 }
 
+.accounting-bigcash-view .bigcash-ledger-overview {
+  display: grid !important;
+  grid-template-columns: minmax(22rem, 0.86fr) minmax(0, 1.14fr) !important;
+  gap: 1rem !important;
+  margin: 1rem 0 !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card {
+  border: 1px solid #d9e2ef !important;
+  border-radius: 1.12rem !important;
+  background: linear-gradient(180deg, #ffffff, #fbfdff) !important;
+  box-shadow: 0 1rem 2.4rem rgba(15, 23, 42, 0.06) !important;
+  padding: 1rem !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card.closing {
+  display: grid !important;
+  grid-template-columns: minmax(10rem, 0.78fr) minmax(0, 1.22fr) !important;
+  gap: 1rem !important;
+  align-items: center !important;
+  border-left: 4px solid #0b2d63 !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card span,
+.accounting-bigcash-view .bigcash-ledger-card small {
+  color: #64748b !important;
+  font-size: 0.76rem !important;
+  font-weight: 850 !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card h3 {
+  margin: 0.18rem 0 0 !important;
+  color: #08275b !important;
+  font-size: 1.05rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-totals {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0.64rem !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-totals span,
+.accounting-bigcash-view .bigcash-ledger-split span {
+  display: grid !important;
+  gap: 0.2rem !important;
+  min-width: 0 !important;
+  border: 1px solid #e0e8f3 !important;
+  border-radius: 0.78rem !important;
+  background: #f8fbff !important;
+  padding: 0.72rem !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-totals strong {
+  font-size: 1.05rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-split {
+  grid-column: 1 / -1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.64rem !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-split span {
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+  align-items: center !important;
+  color: #52627c !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-split b {
+  color: #08275b !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card.methods {
+  display: grid !important;
+  gap: 0.82rem !important;
+}
+
+.accounting-bigcash-view .bigcash-ledger-card.methods header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: end !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0.64rem !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card {
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  grid-template-areas:
+    "badge name"
+    "amount amount"
+    "out out" !important;
+  gap: 0.34rem 0.55rem !important;
+  align-items: center !important;
+  border: 1px solid #e0e8f3 !important;
+  border-radius: 0.88rem !important;
+  background: #ffffff !important;
+  padding: 0.76rem !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card > span {
+  grid-area: badge !important;
+  width: 2.2rem !important;
+  height: 2.2rem !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border-radius: 0.72rem !important;
+  background: #eef4ff !important;
+  color: #0b3b83 !important;
+  font-size: 0.72rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card.qr > span { background: #ecfdf5 !important; color: #047857 !important; }
+.accounting-bigcash-view .bigcash-payment-card.cash > span { background: #fff7ed !important; color: #c2410c !important; }
+.accounting-bigcash-view .bigcash-payment-card.transfer > span { background: #eef2ff !important; color: #4338ca !important; }
+.accounting-bigcash-view .bigcash-payment-card.missing > span { background: #f1f5f9 !important; color: #64748b !important; }
+
+.accounting-bigcash-view .bigcash-payment-card div {
+  grid-area: name !important;
+  min-width: 0 !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card strong {
+  display: block !important;
+  color: #0f254f !important;
+  font-size: 0.82rem !important;
+  font-weight: 950 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card small {
+  display: block !important;
+  margin-top: 0.12rem !important;
+  color: #718096 !important;
+  font-size: 0.68rem !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card b {
+  grid-area: amount !important;
+  color: #15803d !important;
+  font-size: 1rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-payment-card em {
+  grid-area: out !important;
+  color: #dc2626 !important;
+  font-size: 0.75rem !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+}
+
+.payment-method-pill {
+  min-height: 1.72rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 999px !important;
+  padding: 0 0.58rem !important;
+  border: 1px solid #dbe4f1 !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  font-size: 0.68rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+
+.payment-method-pill.cash { background: #fff7ed !important; border-color: #fed7aa !important; color: #c2410c !important; }
+.payment-method-pill.qr { background: #ecfdf5 !important; border-color: #bbf7d0 !important; color: #047857 !important; }
+.payment-method-pill.transfer { background: #eef2ff !important; border-color: #c7d2fe !important; color: #4338ca !important; }
+.payment-method-pill.missing { background: #f1f5f9 !important; border-color: #d9e2ef !important; color: #64748b !important; }
+
+/* Contratos · combos legibles en selector de items */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-table-head,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row {
+  grid-template-columns: 2.45rem minmax(160px, 1.05fr) minmax(240px, 1.35fr) 78px 88px 62px 72px !important;
+  gap: 0.46rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+  overflow-x: auto !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row {
+  min-width: 940px !important;
+  align-items: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row > .orders-product-info {
+  min-width: 0 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
+  line-height: 1.16 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-table-details {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-content: center !important;
+  gap: 0.22rem !important;
+  min-width: 0 !important;
+  max-height: 3.2rem !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-table-details span {
+  max-width: 100% !important;
+  display: inline-block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  border-color: #ffd8c2 !important;
+  background: #fff5ef !important;
+  color: #b63d09 !important;
+  line-height: 1.15 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+  background: linear-gradient(90deg, #fff8f3, #ffffff) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row > .orders-product-table-details {
+  max-height: none !important;
+}
+
+.orders-catalog-browser-list article {
+  grid-template-columns: 3rem minmax(420px, 1fr) 110px 120px 125px !important;
+}
+
+.orders-catalog-browser-list .orders-catalog-browser-card.is-combo {
+  min-width: 1080px !important;
+}
+
+.orders-catalog-browser-list .orders-catalog-browser-info small {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.orders-catalog-browser-list .orders-catalog-browser-card.is-combo .orders-catalog-browser-info small {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+}
+
+.orders-line-field input[inputmode="numeric"],
+.orders-line-field input[inputmode="decimal"],
+.supplier-coverage-field input[inputmode="numeric"],
+.supplier-coverage-field input[inputmode="decimal"],
+.orders-service-modal input[inputmode="numeric"],
+.orders-service-modal input[inputmode="decimal"] {
+  font-variant-numeric: tabular-nums !important;
+  caret-color: #e65313 !important;
+}
+
+.orders-line-field input[inputmode="numeric"]:focus,
+.orders-line-field input[inputmode="decimal"]:focus,
+.supplier-coverage-field input[inputmode="numeric"]:focus,
+.supplier-coverage-field input[inputmode="decimal"]:focus,
+.orders-service-modal input[inputmode="numeric"]:focus,
+.orders-service-modal input[inputmode="decimal"]:focus {
+  border-color: #f97316 !important;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.14) !important;
+}
+
+.orders-line-field input[type="number"]::-webkit-outer-spin-button,
+.orders-line-field input[type="number"]::-webkit-inner-spin-button,
+.supplier-coverage-field input[type="number"]::-webkit-outer-spin-button,
+.supplier-coverage-field input[type="number"]::-webkit-inner-spin-button,
+.orders-service-modal input[type="number"]::-webkit-outer-spin-button,
+.orders-service-modal input[type="number"]::-webkit-inner-spin-button {
+  margin: 0 !important;
+  appearance: none !important;
+}
+
 .bigcash-list-modal.accounting-modal {
   width: min(1180px, calc(100vw - 3rem)) !important;
   max-width: none !important;
@@ -50534,6 +50828,14 @@ body:has(.accounting-bigcash-view) .workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
+  .accounting-bigcash-view .bigcash-ledger-overview {
+    grid-template-columns: 1fr !important;
+  }
+
+  .accounting-bigcash-view .bigcash-payment-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
   .accounting-bigcash-view .bigcash-command-grid,
   .accounting-bigcash-view .bigcash-operations-grid {
     grid-template-columns: 1fr !important;
@@ -50550,6 +50852,13 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 
   .accounting-bigcash-view .bigcash-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+
+  .accounting-bigcash-view .bigcash-ledger-card.closing,
+  .accounting-bigcash-view .bigcash-ledger-totals,
+  .accounting-bigcash-view .bigcash-ledger-split,
+  .accounting-bigcash-view .bigcash-payment-grid {
     grid-template-columns: 1fr !important;
   }
 
@@ -50679,6 +50988,123 @@ body:has(.accounting-bigcash-view) .workspace {
   white-space: nowrap;
 }
 
+.bigcash-list-modal .bigcash-month-browser {
+  border: 1px solid #dbe4f1;
+  border-radius: 0.92rem;
+  background: #f8fbff;
+  padding: 0.78rem;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.bigcash-list-modal .bigcash-month-browser-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.bigcash-list-modal .bigcash-month-browser-head strong {
+  color: #0a2658;
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.bigcash-list-modal .bigcash-month-browser button {
+  border: 1px solid #d8e1ee;
+  background: #ffffff;
+  color: #52627c;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.bigcash-list-modal .bigcash-month-browser button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.bigcash-list-modal .bigcash-month-browser-head button {
+  min-height: 2.15rem;
+  border-radius: 999px;
+  padding: 0 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: #d94b00;
+}
+
+.bigcash-list-modal .bigcash-month-browser-head button span,
+.bigcash-list-modal .bigcash-month-grid button strong {
+  min-width: 1.38rem;
+  min-height: 1.38rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff0e6;
+  color: #d94b00;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.bigcash-list-modal .bigcash-month-browser button.active {
+  border-color: #f97316;
+  background: #fff4ed;
+  color: #c2410c;
+  box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.18) inset;
+}
+
+.bigcash-list-modal .bigcash-month-years {
+  display: grid;
+  gap: 0.64rem;
+  max-height: 12.5rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.bigcash-list-modal .bigcash-month-year {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.62rem;
+  align-items: start;
+}
+
+.bigcash-list-modal .bigcash-month-year h4 {
+  margin: 0;
+  min-height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.72rem;
+  background: #0d3470;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.bigcash-list-modal .bigcash-month-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.bigcash-list-modal .bigcash-month-grid button {
+  min-width: 0;
+  min-height: 2.2rem;
+  border-radius: 0.66rem;
+  padding: 0.28rem 0.32rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.26rem;
+}
+
+.bigcash-list-modal .bigcash-month-grid button span {
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+
 .bigcash-list-modal .accounting-inline-action {
   min-height: 2.18rem !important;
   min-width: 5.75rem !important;
@@ -50701,6 +51127,19 @@ body:has(.accounting-bigcash-view) .workspace {
 
   .bigcash-list-modal .bigcash-list-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .bigcash-list-modal .bigcash-month-browser-head,
+  .bigcash-list-modal .bigcash-month-year {
+    grid-template-columns: 1fr;
+  }
+
+  .bigcash-list-modal .bigcash-month-browser-head {
+    display: grid;
+  }
+
+  .bigcash-list-modal .bigcash-month-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

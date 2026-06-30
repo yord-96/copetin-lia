@@ -5566,6 +5566,9 @@ const getReferenceContractStyles = () => `
     line-height: 1;
     white-space: nowrap;
   }
+  .rc-financial-item.transport { background: #fff7ea; }
+  .rc-financial-item.transport span,
+  .rc-financial-item.transport strong { color: #8a4f12; }
   .rc-financial-item.guarantee { background: #fff0d7; }
   .rc-financial-item.guarantee span,
   .rc-financial-item.guarantee strong { color: #96570f; }
@@ -5751,6 +5754,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const discountBs = contract?.totals?.discountBs ?? rental?.totals?.discountBs ?? 0;
   const guaranteeBs = contract?.totals?.guaranteeBs ?? rental?.depositBs ?? 0;
   const totalBs = contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0;
+  const deliveryFeeBs = Number(
+    contract?.totals?.deliveryFeeBs
+      ?? contract?.deliveryFeeBs
+      ?? rental?.totals?.deliveryFeeBs
+      ?? rental?.deliveryFeeBs
+      ?? 0,
+  );
+  const hasDeliveryFee = Number.isFinite(deliveryFeeBs) && deliveryFeeBs > 0;
   const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
   const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + (isGuaranteeValidated ? Math.max(0, Number(guaranteeBs ?? 0)) : 0);
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
@@ -5924,6 +5935,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
                 <div class="rc-financial-summary">
                   ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
                   <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
+                  ${hasDeliveryFee ? `<div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>` : ''}
                   ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
                   <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'validada' : 'no validada'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
                   ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}

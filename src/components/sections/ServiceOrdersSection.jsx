@@ -731,7 +731,30 @@ const buildEmptyServiceDraft = () => ({
 });
 
 const selectNumericInput = (event) => {
-  event.target.select();
+  window.setTimeout(() => event.target.select(), 0);
+};
+
+const cleanIntegerInput = (value) => String(value ?? '').replace(/[^\d]/g, '');
+
+const cleanDecimalInput = (value) => {
+  const normalized = String(value ?? '').replace(',', '.').replace(/[^\d.]/g, '');
+  const [integerPart = '', ...decimalParts] = normalized.split('.');
+  const decimalPart = decimalParts.join('');
+  return decimalParts.length > 0 ? `${integerPart}.${decimalPart}` : integerPart;
+};
+
+const parseIntegerInput = (value, fallback = 1) => {
+  const cleaned = cleanIntegerInput(value);
+  if (!cleaned) return fallback;
+  const parsed = Math.trunc(Number(cleaned));
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseMoneyInput = (value, fallback = 0) => {
+  const cleaned = cleanDecimalInput(value);
+  if (!cleaned || cleaned === '.') return fallback;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const buildEmptySupplierCoverageDraft = () => ({
@@ -1630,7 +1653,9 @@ function ServiceOrdersSection({
           ...line,
           lineKey,
           quantity,
+          quantityInput: line.quantity === '' ? '' : String(line.quantity ?? quantity),
           unitPriceBs,
+          unitPriceInput: line.unitPriceBs === '' ? '' : String(line.unitPriceBs ?? unitPriceBs),
           item,
           availability,
           lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs,
@@ -2268,7 +2293,12 @@ function ServiceOrdersSection({
   };
 
   const setSupplierCoverageDraftField = (field, value) => {
-    setSupplierCoverageDraft((current) => ({ ...current, [field]: value }));
+    const nextValue = ['supplierUnitCostBs', 'saleUnitPriceBs'].includes(field)
+      ? cleanDecimalInput(value)
+      : field === 'quantity'
+      ? cleanIntegerInput(value)
+      : value;
+    setSupplierCoverageDraft((current) => ({ ...current, [field]: nextValue }));
   };
 
   const openSupplierCoverageModal = (line, availableStock) => {
@@ -2310,9 +2340,9 @@ function ServiceOrdersSection({
     if (!supplierCoverageModal) return;
     setSupplierCoverageError('');
     const shortageQty = Math.max(1, Math.trunc(Number(supplierCoverageModal.shortageQty ?? 1)));
-    const requestedQty = Math.max(1, Math.min(shortageQty, Math.trunc(Number(supplierCoverageDraft.quantity || 1))));
-    const supplierCost = Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs ?? 0));
-    const salePrice = Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs ?? 0));
+    const requestedQty = Math.max(1, Math.min(shortageQty, parseIntegerInput(supplierCoverageDraft.quantity, 1)));
+    const supplierCost = Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0));
+    const salePrice = Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0));
     const itemName = String(supplierCoverageDraft.itemName ?? '').trim();
     const category = String(supplierCoverageDraft.category ?? '').trim();
     const color = String(supplierCoverageDraft.color ?? '').trim();
@@ -2518,6 +2548,27 @@ function ServiceOrdersSection({
     }, 0);
   };
 
+  const buildDefaultComboSelections = (combo, comboQuantity = 1) => {
+    const selections = {};
+    const quantityMap = {};
+    const comboQty = Math.max(1, Math.trunc(Number(comboQuantity ?? 1)));
+    (combo?.ingredients ?? []).forEach((rule, index) => {
+      const options = getComboRuleOptions(rule);
+      const firstAvailable = options.find((option) => getComboOptionAvailable(option) > 0);
+      const selectedOption = firstAvailable ?? options[0] ?? null;
+      if (!selectedOption) {
+        selections[index] = [];
+        return;
+      }
+      const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
+      selections[index] = [selectedOption.id];
+      quantityMap[`${index}:${selectedOption.id}`] = requiredPerCombo * comboQty;
+    });
+    selections.__quantities = quantityMap;
+    selections.__comboQuantity = comboQty;
+    return selections;
+  };
+
   const getComboMaxQuantity = (combo, selections = {}) => {
     const ingredients = Array.isArray(combo?.ingredients) ? combo.ingredients : [];
     const groupMaximums = ingredients.map((rule, index) => {
@@ -2653,8 +2704,9 @@ function ServiceOrdersSection({
   };
 
   const openComboConfigurator = (combo, existingComboLineKey = '') => {
-    const selections = {};
-    const quantityMap = {};
+    const defaultSelections = buildDefaultComboSelections(combo);
+    const selections = { ...defaultSelections };
+    const quantityMap = { ...getComboSelectionQuantityMap(defaultSelections) };
     const existingLines = existingComboLineKey
       ? draft.items.filter((entry) => entry.comboLineKey === existingComboLineKey)
       : [];
@@ -2663,7 +2715,7 @@ function ServiceOrdersSection({
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .map((entry) => entry.itemId)
         .filter(Boolean);
-      selections[index] = existingIds.length > 0 ? existingIds : [];
+      selections[index] = existingIds.length > 0 ? existingIds : selections[index] ?? [];
       existingLines
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .forEach((entry) => {
@@ -2779,7 +2831,7 @@ function ServiceOrdersSection({
       openComboConfigurator(combo);
       return;
     }
-    appendConfiguredCombo(combo);
+    appendConfiguredCombo(combo, buildDefaultComboSelections(combo));
   };
 
   const setQuickItemField = (field, value) => {
@@ -2822,7 +2874,17 @@ function ServiceOrdersSection({
     const itemId = draftLine?.itemId ?? lineKeyOrItemId;
     const item = items.find((entry) => entry.id === itemId) ?? draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId && line.quickItem);
     if (!item) return;
-    const parsed = Math.max(1, Math.trunc(Number(quantityValue ?? 1)));
+    const cleanedValue = cleanIntegerInput(quantityValue);
+    if (String(quantityValue ?? '') === '' || cleanedValue === '') {
+      setDraft((current) => ({
+        ...current,
+        items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
+          ? { ...line, quantity: '' }
+          : line)),
+      }));
+      return;
+    }
+    const parsed = Math.max(1, parseIntegerInput(cleanedValue, 1));
     if (draftLine?.comboId && draftLine.comboLineKey) {
       if (draftLine.comboDistributed) {
         setDraft((current) => ({
@@ -2897,7 +2959,12 @@ function ServiceOrdersSection({
   };
 
   const setServiceDraftField = (field, value) => {
-    setServiceDraft((current) => ({ ...current, [field]: value }));
+    const nextValue = field === 'unitPriceBs'
+      ? cleanDecimalInput(value)
+      : field === 'quantity'
+      ? cleanIntegerInput(value)
+      : value;
+    setServiceDraft((current) => ({ ...current, [field]: nextValue }));
   };
 
   const openServiceModal = () => {
@@ -2914,8 +2981,8 @@ function ServiceOrdersSection({
 
   const addDraftService = () => {
     const name = serviceDraft.name.trim();
-    const quantity = Math.max(1, Math.trunc(Number(serviceDraft.quantity ?? 1)));
-    const unitPriceBs = Math.max(0, Number(serviceDraft.unitPriceBs ?? 0));
+    const quantity = Math.max(1, parseIntegerInput(serviceDraft.quantity, 1));
+    const unitPriceBs = Math.max(0, parseMoneyInput(serviceDraft.unitPriceBs, 0));
     if (!name) {
       setFormError('Indica el nombre del servicio.');
       return;
@@ -2949,18 +3016,46 @@ function ServiceOrdersSection({
   };
 
   const setDraftItemPrice = (lineKeyOrItemId, value) => {
-    const parsed = Math.max(0, Number(value ?? 0));
+    const cleanedValue = cleanDecimalInput(value);
+    const isEmptyValue = String(value ?? '') === '' || cleanedValue === '';
+    const parsed = Math.max(0, parseMoneyInput(cleanedValue, 0));
     setDraft((current) => ({
       ...current,
       items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
         ? {
           ...line,
-          unitPriceBs: parsed,
+          unitPriceBs: isEmptyValue ? '' : cleanedValue,
           lineTotalBs: line.comboId
             ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
             : undefined,
         }
         : line)),
+    }));
+  };
+
+  const normalizeDraftItemQuantity = (lineKeyOrItemId) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((line) => ((line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId
+        ? { ...line, quantity: Math.max(1, parseIntegerInput(line.quantity, 1)) }
+        : line)),
+    }));
+  };
+
+  const normalizeDraftItemPrice = (lineKeyOrItemId) => {
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((line) => {
+        if ((line.lineKey ?? line.itemId) !== lineKeyOrItemId && line.itemId !== lineKeyOrItemId) return line;
+        const parsed = Math.max(0, parseMoneyInput(line.unitPriceBs, 0));
+        return {
+          ...line,
+          unitPriceBs: Number(parsed.toFixed(2)),
+          lineTotalBs: line.comboId
+            ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
+            : undefined,
+        };
+      }),
     }));
   };
 
@@ -4899,16 +4994,16 @@ function ServiceOrdersSection({
                 </label>
                 <label className="supplier-coverage-field">
                   Cantidad a cubrir
-                  <input type="number" min="1" max={supplierCoverageModal.shortageQty} value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
+                  <input type="text" inputMode="numeric" value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
                   <small>Faltante maximo: {supplierCoverageModal.shortageQty} u.</small>
                 </label>
                 <label className="supplier-coverage-field">
                   Costo proveedor Bs *
-                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.supplierUnitCostBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
+                  <input type="text" inputMode="decimal" value={supplierCoverageDraft.supplierUnitCostBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
                 </label>
                 <label className="supplier-coverage-field">
                   Precio cliente Bs *
-                  <input type="number" min="0" step="0.01" value={supplierCoverageDraft.saleUnitPriceBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
+                  <input type="text" inputMode="decimal" value={supplierCoverageDraft.saleUnitPriceBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
                   <small>Este precio queda en el item del contrato.</small>
                 </label>
                 <label className="supplier-coverage-field wide">
@@ -4920,15 +5015,15 @@ function ServiceOrdersSection({
               <div className="supplier-coverage-summary">
                 <article>
                   <span>Costo proveedor</span>
-                  <strong>{formatBs(Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs || 0)))}</strong>
+                  <strong>{formatBs(Math.max(0, parseIntegerInput(supplierCoverageDraft.quantity, 0)) * Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0)))}</strong>
                 </article>
                 <article>
                   <span>Venta al cliente</span>
-                  <strong>{formatBs(Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs || 0)))}</strong>
+                  <strong>{formatBs(Math.max(0, parseIntegerInput(supplierCoverageDraft.quantity, 0)) * Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0)))}</strong>
                 </article>
                 <article>
                   <span>Margen estimado</span>
-                  <strong>{formatBs((Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.saleUnitPriceBs || 0))) - (Math.max(0, Number(supplierCoverageDraft.quantity || 0)) * Math.max(0, Number(supplierCoverageDraft.supplierUnitCostBs || 0))))}</strong>
+                  <strong>{formatBs((Math.max(0, parseIntegerInput(supplierCoverageDraft.quantity, 0)) * Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0))) - (Math.max(0, parseIntegerInput(supplierCoverageDraft.quantity, 0)) * Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0))))}</strong>
                 </article>
               </div>
 
@@ -5676,9 +5771,8 @@ function ServiceOrdersSection({
               <label>
                 Cantidad
                 <input
-                  type="number"
-                  min="1"
-                  step="1"
+                  type="text"
+                  inputMode="numeric"
                   value={serviceDraft.quantity}
                   onFocus={selectNumericInput}
                   onChange={(event) => setServiceDraftField('quantity', event.target.value)}
@@ -5687,9 +5781,8 @@ function ServiceOrdersSection({
               <label>
                 Precio unitario (Bs) *
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={serviceDraft.unitPriceBs}
                   onFocus={selectNumericInput}
                   onChange={(event) => setServiceDraftField('unitPriceBs', event.target.value)}
@@ -5700,8 +5793,8 @@ function ServiceOrdersSection({
                 <span>
                   <small>Total del servicio</small>
                   <strong>{formatBs(
-                    Math.max(1, Math.trunc(Number(serviceDraft.quantity ?? 1)))
-                    * Math.max(0, Number(serviceDraft.unitPriceBs ?? 0)),
+                    Math.max(1, parseIntegerInput(serviceDraft.quantity, 1))
+                    * Math.max(0, parseMoneyInput(serviceDraft.unitPriceBs, 0)),
                   )}</strong>
                 </span>
               </div>
@@ -6550,11 +6643,12 @@ function ServiceOrdersSection({
                             <label className={`orders-line-field${isOverAvailable ? ' has-error' : ''}`}>
                               <span>Cant.</span>
                               <input
-                                type="number"
-                                min="1"
-                                value={line.quantity}
+                                type="text"
+                                inputMode="numeric"
+                                value={line.quantityInput}
                                 onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
+                                onBlur={() => normalizeDraftItemQuantity(line.lineKey)}
                                 aria-label={`Cantidad de ${line.item.name}`}
                                 aria-invalid={isOverAvailable ? 'true' : 'false'}
                               />
@@ -6674,13 +6768,12 @@ function ServiceOrdersSection({
                               <label className="orders-line-field">
                                 <span>Costo proveedor (Bs)</span>
                                 <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={Math.max(0, Number(supplierFulfillmentDraftByItem[line.itemId]?.supplierUnitCostBs ?? 0))}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={supplierFulfillmentDraftByItem[line.itemId]?.supplierUnitCostBs ?? ''}
                                   onFocus={selectNumericInput}
                                   onChange={(event) => {
-                                    const nextValue = Math.max(0, Number(event.target.value ?? 0));
+                                    const nextValue = cleanDecimalInput(event.target.value);
                                     setSupplierCoverageField(line.itemId, { supplierUnitCostBs: nextValue });
                                   }}
                                 />
@@ -6689,12 +6782,12 @@ function ServiceOrdersSection({
                             <label className="orders-line-field">
                               <span>Precio</span>
                               <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={line.unitPriceBs}
+                                type="text"
+                                inputMode="decimal"
+                                value={line.unitPriceInput}
                                 onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
+                                onBlur={() => normalizeDraftItemPrice(line.lineKey)}
                                 aria-label={`Precio unitario de ${line.item.name}`}
                                 readOnly={Boolean(line.comboId && line.comboPricingRole !== 'price')}
                               />

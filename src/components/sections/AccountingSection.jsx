@@ -45,6 +45,14 @@ const getMonthKey = (value) => {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
 };
 
+const MONTH_SHORT_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+const getMonthLabel = (monthKey) => {
+  const [, month] = String(monthKey ?? '').split('-');
+  const index = Number(month) - 1;
+  return MONTH_SHORT_LABELS[index] ?? monthKey;
+};
+
 const getMonthStartInput = (dateKey) => {
   const parsed = new Date(`${dateKey}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return dateKey;
@@ -84,6 +92,31 @@ const isConfirmedGuaranteeReturnMovement = (movement) =>
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
+
+const PAYMENT_METHOD_META = {
+  efectivo: { label: 'Efectivo', shortLabel: 'EFE', className: 'cash' },
+  qr: { label: 'QR', shortLabel: 'QR', className: 'qr' },
+  transferencia: { label: 'Transferencia', shortLabel: 'TRF', className: 'transfer' },
+  sin_metodo: { label: 'Sin metodo', shortLabel: 'S/M', className: 'missing' },
+};
+
+const normalizePaymentMethod = (value) => {
+  const normalized = normalizeText(value).replace(/\s+/g, '_');
+  if (!normalized) return 'sin_metodo';
+  if (normalized.includes('qr')) return 'qr';
+  if (normalized.includes('transfer')) return 'transferencia';
+  if (normalized.includes('efect')) return 'efectivo';
+  return normalized;
+};
+
+const getPaymentMethodMeta = (value) => {
+  const key = normalizePaymentMethod(value);
+  return PAYMENT_METHOD_META[key] ?? {
+    label: String(value ?? 'Otro').trim() || 'Otro',
+    shortLabel: 'OTR',
+    className: 'other',
+  };
+};
 
 function CashIcon({ kind }) {
   if (kind === 'safe') {
@@ -253,6 +286,7 @@ function AccountingSection({
   const [cashModal, setCashModal] = useState(null);
   const [bigCashListModal, setBigCashListModal] = useState(null);
   const [bigCashListQuery, setBigCashListQuery] = useState('');
+  const [bigCashListMonth, setBigCashListMonth] = useState('');
   const [voidReceiptModal, setVoidReceiptModal] = useState(null);
   const [voidReceiptStep, setVoidReceiptStep] = useState('reason');
   const [voidReceiptReason, setVoidReceiptReason] = useState('');
@@ -534,6 +568,79 @@ function AccountingSection({
       ].some((value) => String(value ?? '').toLowerCase().includes(text));
     });
   }, [bigCashMovementRows, bigCashPeriodRange, bigCashQuery, bigCashTypeFilter, getMovementReference]);
+
+  const periodBigCashRows = useMemo(
+    () => bigCashMovementRows.filter((movement) => {
+      const dateKey = getDateKey(movement.createdAt);
+      return dateKey >= bigCashPeriodRange.dateFrom
+        && dateKey <= bigCashPeriodRange.dateTo
+        && !isVoidedCashMovement(movement);
+    }),
+    [bigCashMovementRows, bigCashPeriodRange],
+  );
+
+  const periodBigCashCollectedBs = useMemo(
+    () => sumBy(periodBigCashRows.filter((movement) => toNumber(movement.amountBs) > 0), (movement) => movement.amountBs),
+    [periodBigCashRows],
+  );
+
+  const periodBigCashOutBs = useMemo(
+    () => Math.abs(sumBy(periodBigCashRows.filter((movement) => toNumber(movement.amountBs) < 0 || movement.isInternalTransfer), (movement) => movement.amountBs)),
+    [periodBigCashRows],
+  );
+
+  const periodOperationalIncomeBs = useMemo(
+    () => sumBy(
+      periodBigCashRows.filter((movement) => toNumber(movement.amountBs) > 0 && !isGuaranteeMovement(movement)),
+      (movement) => movement.amountBs,
+    ),
+    [periodBigCashRows],
+  );
+
+  const periodGuaranteeIncomeBs = useMemo(
+    () => sumBy(
+      periodBigCashRows.filter((movement) => toNumber(movement.amountBs) > 0 && isGuaranteeMovement(movement)),
+      (movement) => movement.amountBs,
+    ),
+    [periodBigCashRows],
+  );
+
+  const periodBigCashNetBs = Number((periodBigCashCollectedBs - periodBigCashOutBs).toFixed(2));
+
+  const periodPaymentMethodRows = useMemo(() => {
+    const summary = new Map();
+    periodBigCashRows.forEach((movement) => {
+      const methodKey = normalizePaymentMethod(movement.paymentMethod);
+      const meta = getPaymentMethodMeta(movement.paymentMethod);
+      const current = summary.get(methodKey) ?? {
+        key: methodKey,
+        ...meta,
+        collectedBs: 0,
+        outBs: 0,
+        count: 0,
+      };
+      const amount = toNumber(movement.amountBs);
+      if (amount > 0) current.collectedBs += amount;
+      if (amount < 0 || movement.isInternalTransfer) current.outBs += Math.abs(amount);
+      current.count += 1;
+      summary.set(methodKey, current);
+    });
+    return ['efectivo', 'qr', 'transferencia', 'sin_metodo']
+      .map((key) => summary.get(key) ?? {
+        key,
+        ...PAYMENT_METHOD_META[key],
+        collectedBs: 0,
+        outBs: 0,
+        count: 0,
+      })
+      .concat([...summary.values()].filter((entry) => !['efectivo', 'qr', 'transferencia', 'sin_metodo'].includes(entry.key)))
+      .map((entry) => ({
+        ...entry,
+        collectedBs: Number(entry.collectedBs.toFixed(2)),
+        outBs: Number(entry.outBs.toFixed(2)),
+        netBs: Number((entry.collectedBs - entry.outBs).toFixed(2)),
+      }));
+  }, [periodBigCashRows]);
 
   const getPettyExpenseCategory = useCallback((movement) => {
     const raw = String(movement?.category ?? '').trim();
@@ -1351,6 +1458,8 @@ function AccountingSection({
             <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
           </tr>
         ),
+        monthlyBrowser: true,
+        getMonthKey: (row) => getMonthKey(row.eventDate),
       },
       guarantees: {
         title: 'Garantias por devolver',
@@ -1398,12 +1507,14 @@ function AccountingSection({
             </td>
           </tr>
         ),
+        monthlyBrowser: true,
+        getMonthKey: (row) => getMonthKey(row.eventDate),
       },
       movements: {
         title: 'Movimientos de Caja Grande',
         subtitle: 'Historial completo filtrado por el periodo actual.',
         rows: filteredBigCashRows,
-        colSpan: 7,
+        colSpan: 8,
         searchText: (movement) => [
           movement.description,
           getMovementReference(movement),
@@ -1417,6 +1528,7 @@ function AccountingSection({
             <th>Fecha</th>
             <th>Concepto</th>
             <th>Referencia</th>
+            <th>Metodo</th>
             <th>Ingreso</th>
             <th>Retiro</th>
             <th>Usuario</th>
@@ -1425,11 +1537,13 @@ function AccountingSection({
         ),
         renderRow: (movement) => {
           const meta = getBigCashMovementType(movement);
+          const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
           return (
             <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
               <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
               <td><strong>{movement.description}</strong></td>
               <td>{getMovementReference(movement)}</td>
+              <td><span className={`payment-method-pill ${paymentMeta.className}`}>{paymentMeta.label}</span></td>
               <td className="amount">{meta.income}</td>
               <td className="negative amount">{meta.withdrawal}</td>
               <td>{movement.responsible || movement.createdBy || '-'}</td>
@@ -1442,9 +1556,29 @@ function AccountingSection({
 
     if (!modalConfig) return null;
     const normalizedQuery = normalizeText(bigCashListQuery);
-    const modalRows = normalizedQuery
+    const searchedRows = normalizedQuery
       ? modalConfig.rows.filter((row) => normalizeText(modalConfig.searchText(row)).includes(normalizedQuery))
       : modalConfig.rows;
+    const shouldShowMonthlyBrowser = Boolean(modalConfig.monthlyBrowser);
+    const availableYears = shouldShowMonthlyBrowser
+      ? [...new Set(modalConfig.rows.map((row) => modalConfig.getMonthKey(row).slice(0, 4)).filter(Boolean))]
+        .sort((a, b) => Number(b) - Number(a))
+      : [];
+    const monthCounts = shouldShowMonthlyBrowser
+      ? searchedRows.reduce((counts, row) => {
+        const monthKey = modalConfig.getMonthKey(row);
+        if (!monthKey) return counts;
+        counts.set(monthKey, (counts.get(monthKey) ?? 0) + 1);
+        return counts;
+      }, new Map())
+      : new Map();
+    const selectedMonthHasRows = shouldShowMonthlyBrowser && bigCashListMonth
+      ? monthCounts.has(bigCashListMonth)
+      : false;
+    const activeMonth = selectedMonthHasRows ? bigCashListMonth : '';
+    const modalRows = activeMonth
+      ? searchedRows.filter((row) => modalConfig.getMonthKey(row) === activeMonth)
+      : searchedRows;
 
     return (
       <div className="accounting-modal-backdrop" onClick={() => setBigCashListModal(null)}>
@@ -1461,12 +1595,52 @@ function AccountingSection({
               <MiniIcon kind="search" />
               <input
                 value={bigCashListQuery}
-                onChange={(event) => setBigCashListQuery(event.target.value)}
+                onChange={(event) => {
+                  setBigCashListQuery(event.target.value);
+                  setBigCashListMonth('');
+                }}
                 placeholder="Buscar por contrato, cliente, responsable, fecha o monto..."
               />
             </label>
             <span>{modalRows.length} de {modalConfig.rows.length} registros</span>
           </div>
+          {shouldShowMonthlyBrowser ? (
+            <div className="bigcash-month-browser">
+              <div className="bigcash-month-browser-head">
+                <strong>{activeMonth ? `Mostrando ${getMonthLabel(activeMonth)} ${activeMonth.slice(0, 4)}` : 'Todos los meses'}</strong>
+                <button type="button" className={!activeMonth ? 'active' : ''} onClick={() => setBigCashListMonth('')}>
+                  Todos <span>{searchedRows.length}</span>
+                </button>
+              </div>
+              <div className="bigcash-month-years">
+                {availableYears.map((year) => (
+                  <section className="bigcash-month-year" key={year}>
+                    <h4>{year}</h4>
+                    <div className="bigcash-month-grid">
+                      {MONTH_SHORT_LABELS.map((label, index) => {
+                        const monthKey = `${year}-${String(index + 1).padStart(2, '0')}`;
+                        const count = monthCounts.get(monthKey) ?? 0;
+                        const isActive = activeMonth === monthKey;
+                        return (
+                          <button
+                            type="button"
+                            key={monthKey}
+                            className={isActive ? 'active' : ''}
+                            onClick={() => count > 0 && setBigCashListMonth(monthKey)}
+                            disabled={count === 0}
+                            title={count > 0 ? `${count} registros en ${label} ${year}` : `Sin registros en ${label} ${year}`}
+                          >
+                            <span>{label}</span>
+                            <strong>{count}</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="bigcash-table-wrap">
             <table className="accounting-table bigcash-table">
               <thead>{modalConfig.renderHeader()}</thead>
@@ -2175,6 +2349,46 @@ function AccountingSection({
           </article>
         </section>
 
+        <section className="bigcash-ledger-overview">
+          <article className="bigcash-ledger-card closing">
+            <div>
+              <span>Cierre del periodo</span>
+              <h3>{formatDate(bigCashPeriodRange.dateFrom)} - {formatDate(bigCashPeriodRange.dateTo)}</h3>
+            </div>
+            <div className="bigcash-ledger-totals">
+              <span><small>Cobrado</small><strong className="value-green">{formatBs(periodBigCashCollectedBs)}</strong></span>
+              <span><small>Egresos</small><strong className="value-orange">{formatBs(periodBigCashOutBs)}</strong></span>
+              <span><small>Neto</small><strong className={periodBigCashNetBs < 0 ? 'value-orange' : 'value-blue'}>{formatBs(periodBigCashNetBs)}</strong></span>
+            </div>
+            <div className="bigcash-ledger-split">
+              <span>Operativo <b>{formatBs(periodOperationalIncomeBs)}</b></span>
+              <span>Garantias <b>{formatBs(periodGuaranteeIncomeBs)}</b></span>
+            </div>
+          </article>
+
+          <article className="bigcash-ledger-card methods">
+            <header>
+              <div>
+                <span>Metodos de pago</span>
+                <h3>Cobrado y egresado</h3>
+              </div>
+            </header>
+            <div className="bigcash-payment-grid">
+              {periodPaymentMethodRows.map((method) => (
+                <div className={`bigcash-payment-card ${method.className}`} key={method.key}>
+                  <span>{method.shortLabel}</span>
+                  <div>
+                    <strong>{method.label}</strong>
+                    <small>{method.count} movimiento{method.count === 1 ? '' : 's'}</small>
+                  </div>
+                  <b>{formatBs(method.collectedBs)}</b>
+                  <em>{method.outBs > 0 ? `-${formatBs(method.outBs)}` : formatBs(0)}</em>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
         <section className="bigcash-command-grid">
           <article className="bigcash-card bigcash-command-card receivables">
             <header>
@@ -2212,7 +2426,7 @@ function AccountingSection({
                 </tbody>
               </table>
             </div>
-            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListModal('receivables'); }}>Ver más contratos</button>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('receivables'); }}>Ver más contratos</button>
           </article>
 
           <article className="bigcash-card bigcash-command-card guarantees">
@@ -2265,7 +2479,7 @@ function AccountingSection({
                 </tbody>
               </table>
             </div>
-            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListModal('guarantees'); }}>Ver más garantías</button>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guarantees'); }}>Ver más garantías</button>
           </article>
         </section>
 
@@ -2329,6 +2543,7 @@ function AccountingSection({
                     <th>Tipo</th>
                     <th>Concepto</th>
                     <th>Referencia</th>
+                    <th>Método</th>
                     <th>Ingreso</th>
                     <th>Retiro</th>
                     <th>Saldo</th>
@@ -2339,6 +2554,7 @@ function AccountingSection({
                 <tbody>
                   {filteredBigCashRows.slice(0, 5).map((movement, index) => {
                     const meta = getBigCashMovementType(movement);
+                    const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
                     const hasTransportRevenue = toNumber(movement?.transportRevenueBs) > 0
                       || String(movement?.accountingTag ?? '') === 'transport_revenue'
                       || String(movement?.category ?? '').toLowerCase() === 'transporte_cobrado'
@@ -2356,6 +2572,7 @@ function AccountingSection({
                           ) : null}
                         </td>
                         <td>{getMovementReference(movement)}</td>
+                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{paymentMeta.label}</span></td>
                         <td className="amount">{meta.income}</td>
                         <td className="negative amount">{meta.withdrawal}</td>
                         <td>{formatBs(runningBigCashBalance(index))}</td>
@@ -2364,7 +2581,7 @@ function AccountingSection({
                       </tr>
                     );
                   })}
-                  {filteredBigCashRows.length === 0 ? <tr><td colSpan={9}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+                  {filteredBigCashRows.length === 0 ? <tr><td colSpan={10}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
