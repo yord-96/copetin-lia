@@ -469,6 +469,7 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
         sourceId: String(movement?.sourceId ?? '').trim() || null,
         orderCode: String(movement?.orderCode ?? '').trim() || null,
         balanceAfterBs: Number(Number(movement?.balanceAfterBs ?? runningBalance ?? fallbackBalance).toFixed(2)),
+        nonPhysical: Boolean(movement?.nonPhysical),
         createdAt: movement?.createdAt ?? new Date().toISOString(),
       };
     })
@@ -8303,11 +8304,12 @@ const createWebBridge = () => ({
             id: makeId('pre'),
             type: 'deposit',
             amountBs: prepaidOpeningBs,
-            description: String(payload?.prepaidTopUpNotes ?? 'Abono inicial prepago').trim() || 'Abono inicial prepago',
+            description: String(payload?.prepaidTopUpNotes ?? 'Saldo inicial prepago historico').trim() || 'Saldo inicial prepago historico',
             sourceType: 'client',
             sourceId: null,
             orderCode: null,
             balanceAfterBs: prepaidOpeningBs,
+            nonPhysical: true,
             createdAt: now,
           }]
           : [];
@@ -8365,17 +8367,6 @@ const createWebBridge = () => ({
           updatedAt: now,
         };
         state.clients.push(created);
-        if (prepaidOpeningBs > 0) {
-          state.cashMovements.push(buildCashMovement({
-            sessionId: getActiveSession(state)?.id ?? null,
-            type: 'ingreso_prepago_cliente',
-            amountBs: prepaidOpeningBs,
-            description: `Abono prepago cliente: ${name}`,
-            sourceType: 'client',
-            sourceId: created.id,
-            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-          }));
-        }
         return state;
       });
 

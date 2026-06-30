@@ -449,6 +449,7 @@ function App() {
         {String(controller.activeTab).startsWith('contabilidad') && (
           <AccountingSection
             activeModule={controller.activeTab}
+            clients={controller.clients}
             rentals={controller.rentals}
             contracts={controller.contracts}
             quotes={controller.quotes}

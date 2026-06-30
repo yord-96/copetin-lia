@@ -51362,6 +51362,110 @@ body:has(.accounting-bigcash-view) .workspace {
   overflow-wrap: anywhere !important;
 }
 
+.accounting-bigcash-view .bigcash-vip-prepaid-card {
+  margin-top: 1rem !important;
+  display: grid !important;
+  gap: 0.9rem !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-prepaid-card > header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  padding-bottom: 0.8rem !important;
+  border-bottom: 1px solid #dbe5f4 !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-prepaid-card > header span {
+  color: #ea580c !important;
+  font-size: 0.72rem !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-prepaid-card > header h3 {
+  margin: 0.18rem 0 0 !important;
+  color: #08275b !important;
+  font-size: 1.08rem !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-prepaid-card > header p {
+  margin: 0.28rem 0 0 !important;
+  color: #5d6b86 !important;
+  font-size: 0.82rem !important;
+  font-weight: 750 !important;
+}
+
+.bigcash-vip-summary {
+  display: flex !important;
+  gap: 0.55rem !important;
+  flex: 0 0 auto !important;
+}
+
+.bigcash-vip-summary span {
+  min-width: 9.5rem !important;
+  border: 1px solid #cfe0f6 !important;
+  border-radius: 0.55rem !important;
+  background: #f8fbff !important;
+  padding: 0.55rem 0.7rem !important;
+  display: grid !important;
+  gap: 0.18rem !important;
+  color: inherit !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.bigcash-vip-summary small {
+  color: #65738d !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+}
+
+.bigcash-vip-summary strong {
+  color: #0f7a3a !important;
+  font-size: 1rem !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-table {
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-table th,
+.accounting-bigcash-view .bigcash-vip-table td {
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(1),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(1) { width: 12% !important; }
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(2),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(2) { width: 18% !important; }
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(3),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(3) { width: 32% !important; }
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(4),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(4) { width: 16% !important; }
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(5),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(5),
+.accounting-bigcash-view .bigcash-vip-table th:nth-child(6),
+.accounting-bigcash-view .bigcash-vip-table td:nth-child(6) { width: 11% !important; }
+
+.accounting-bigcash-view .bigcash-vip-table td strong {
+  color: #08275b !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-vip-table td small {
+  display: block !important;
+  margin-top: 0.16rem !important;
+  color: #667797 !important;
+  font-size: 0.68rem !important;
+  font-weight: 800 !important;
+}
+
 @media (max-width: 1180px) {
   .accounting-bigcash-view .bigcash-command-grid {
     grid-template-columns: 1fr !important;

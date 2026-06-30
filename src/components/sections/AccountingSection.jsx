@@ -252,6 +252,7 @@ function MiniIcon({ kind }) {
 
 function AccountingSection({
   activeModule = 'contabilidad',
+  clients = [],
   cashSummary = null,
   cashMovements = [],
   cashDebts = [],
@@ -348,6 +349,69 @@ function AccountingSection({
     return map;
   }, [contracts]);
   const contractById = useMemo(() => new Map(contracts.map((contract) => [contract.id, contract])), [contracts]);
+
+  const prepaidClientRows = useMemo(
+    () => clients
+      .filter((client) => Boolean(client?.prepaidEnabled))
+      .map((client) => {
+        const movements = Array.isArray(client?.prepaidMovements) ? client.prepaidMovements : [];
+        const lastMovement = movements
+          .slice()
+          .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0))[0] ?? null;
+        return {
+          id: client.id,
+          client,
+          movements,
+          name: client.name ?? client.companyName ?? 'Cliente VIP',
+          phone: client.whatsapp ?? client.phone ?? '',
+          balanceBs: Math.max(0, toNumber(client.prepaidBalanceBs)),
+          depositedBs: Math.max(0, toNumber(client.prepaidTotalDepositedBs)),
+          usedBs: Math.max(0, toNumber(client.prepaidTotalUsedBs)),
+          lastMovement,
+        };
+      })
+      .sort((a, b) => b.balanceBs - a.balanceBs || a.name.localeCompare(b.name, 'es')),
+    [clients],
+  );
+
+  const prepaidLedgerRows = useMemo(
+    () => prepaidClientRows
+      .flatMap((entry) => entry.movements.map((movement) => {
+        const rental = movement?.sourceType === 'rental'
+          ? rentalById.get(String(movement.sourceId ?? ''))
+          : null;
+        const contract = rental?.contractId
+          ? contractById.get(String(rental.contractId))
+          : rental?.id
+          ? contractByRentalId.get(rental.id)
+          : null;
+        return {
+          id: movement.id ?? `${entry.id}-${movement.createdAt}-${movement.amountBs}`,
+          client: entry.client,
+          customerName: entry.name,
+          movement,
+          rental,
+          contract,
+          amountBs: toNumber(movement.amountBs),
+          balanceAfterBs: toNumber(movement.balanceAfterBs),
+          createdAt: movement.createdAt,
+          description: movement.description ?? '',
+          reference: contract?.contractCode ?? rental?.contractCode ?? movement.orderCode ?? rental?.orderCode ?? '-',
+          eventDate: contract?.eventDate ?? rental?.rentalDate ?? '',
+        };
+      }))
+      .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
+    [contractById, contractByRentalId, prepaidClientRows, rentalById],
+  );
+
+  const totalPrepaidBalanceBs = useMemo(
+    () => sumBy(prepaidClientRows, (row) => row.balanceBs),
+    [prepaidClientRows],
+  );
+  const totalPrepaidUsedBs = useMemo(
+    () => sumBy(prepaidClientRows, (row) => row.usedBs),
+    [prepaidClientRows],
+  );
 
   const transportContractOptions = useMemo(
     () => rentals
@@ -2465,6 +2529,65 @@ function AccountingSection({
             </div>
           </article>
         </section>
+
+        {prepaidClientRows.length > 0 ? (
+          <section className="bigcash-card bigcash-vip-prepaid-card">
+            <header>
+              <div>
+                <span>Clientes VIP</span>
+                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="lock" /></span>Saldos prepago no fisicos</h3>
+                <p>Dinero abonado anteriormente. Se descuenta al aprobar contratos y no aumenta Caja Grande fisica.</p>
+              </div>
+              <div className="bigcash-vip-summary">
+                <span><small>Saldo disponible</small><strong>{formatBs(totalPrepaidBalanceBs)}</strong></span>
+                <span><small>Consumido</small><strong>{formatBs(totalPrepaidUsedBs)}</strong></span>
+              </div>
+            </header>
+
+            <div className="bigcash-table-wrap bigcash-vip-table-wrap">
+              <table className="accounting-table bigcash-table bigcash-vip-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cliente VIP</th>
+                    <th>Movimiento</th>
+                    <th>Contrato / Orden</th>
+                    <th>Monto</th>
+                    <th>Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prepaidLedgerRows.slice(0, 8).map((row) => (
+                    <tr key={row.id}>
+                      <td>{formatDate(row.createdAt)} <small>{getHourLabel(row.createdAt)}</small></td>
+                      <td>
+                        <strong>{row.customerName}</strong>
+                        <small>{row.client.whatsapp || row.client.phone || 'Sin telefono'}</small>
+                      </td>
+                      <td>
+                        <strong>{row.description || (row.amountBs >= 0 ? 'Abono prepago' : 'Consumo prepago')}</strong>
+                        {row.amountBs > 0 && !row.rental ? (
+                          <small className="cash-linked-reference">Saldo inicial o abono registrado en cliente</small>
+                        ) : null}
+                      </td>
+                      <td>
+                        <strong>{row.reference}</strong>
+                        {row.eventDate ? <small>Evento {formatDate(row.eventDate)}</small> : null}
+                      </td>
+                      <td className={row.amountBs < 0 ? 'negative amount' : 'amount'}>
+                        {row.amountBs < 0 ? `- ${formatBs(Math.abs(row.amountBs))}` : formatBs(row.amountBs)}
+                      </td>
+                      <td className="amount">{formatBs(row.balanceAfterBs)}</td>
+                    </tr>
+                  ))}
+                  {prepaidLedgerRows.length === 0 ? (
+                    <tr><td colSpan={6}><p className="status">Hay clientes VIP sin movimientos todavia.</p></td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
 
         <section className="bigcash-command-grid">
           <article className="bigcash-card bigcash-command-card receivables">
