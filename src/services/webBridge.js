@@ -2088,6 +2088,7 @@ const normalizeState = (state) => {
         cashBoxType: normalizeCashBoxType(movement?.cashBoxType),
         category: String(movement?.category ?? '').trim(),
         paymentMethod: String(movement?.paymentMethod ?? '').trim(),
+        paymentAccount: normalizePaymentMethod(movement?.paymentMethod) === 'qr' ? normalizeQrPaymentAccount(movement?.paymentAccount) : '',
         responsible,
         createdBy: responsible || String(movement?.createdBy ?? '').trim(),
         receipt: String(movement?.receipt ?? '').trim(),
@@ -3102,6 +3103,13 @@ const normalizePaymentMethod = (value) => {
   return ['efectivo', 'qr', 'transferencia'].includes(normalized) ? normalized : 'efectivo';
 };
 
+const QR_PAYMENT_ACCOUNTS = ['CIDRE', 'BCP', 'MERCANTIL'];
+
+const normalizeQrPaymentAccount = (value) => {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return QR_PAYMENT_ACCOUNTS.includes(normalized) ? normalized : '';
+};
+
 const PETTY_CASH_CATEGORY_HINTS = [
   'gasto_menor',
   'materiales_menores',
@@ -3136,6 +3144,7 @@ const buildCashMovement = ({
   cashBoxType = CASH_BOX_TYPES.BIG_CASH,
   category = '',
   paymentMethod = '',
+  paymentAccount = '',
   responsible = '',
   receipt = '',
   receiptCode = '',
@@ -3166,6 +3175,7 @@ const buildCashMovement = ({
   cashBoxType: normalizeCashBoxType(cashBoxType),
   category: String(category ?? '').trim(),
   paymentMethod: String(paymentMethod ?? '').trim(),
+  paymentAccount: normalizePaymentMethod(paymentMethod) === 'qr' ? normalizeQrPaymentAccount(paymentAccount) : '',
   responsible: String(responsible ?? createdBy ?? '').trim(),
   receipt: String(receipt ?? '').trim(),
   receiptCode: String(receiptCode ?? '').trim(),
@@ -3275,6 +3285,8 @@ const addRentalCashMovements = (state, rental) => {
   const depositBs = Number(rental?.depositBs ?? 0);
   const initialPaymentMethod = normalizePaymentMethod(rental?.payment?.initialPaymentMethod ?? rental?.payment?.paymentMethod);
   const guaranteePaymentMethod = normalizePaymentMethod(rental?.guarantee?.paymentMethod ?? rental?.payment?.guaranteePaymentMethod);
+  const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(rental?.payment?.initialPaymentAccount ?? rental?.payment?.paymentAccount) : '';
+  const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(rental?.guarantee?.paymentAccount ?? rental?.payment?.guaranteePaymentAccount) : '';
   const movementResponsible = String(
     rental?.createdByName
     ?? rental?.createdBy
@@ -3296,6 +3308,7 @@ const addRentalCashMovements = (state, rental) => {
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'cobro_contrato',
         paymentMethod: initialPaymentMethod,
+        paymentAccount: initialPaymentAccount,
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -3317,6 +3330,7 @@ const addRentalCashMovements = (state, rental) => {
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'transporte_cobrado',
         paymentMethod: initialPaymentMethod,
+        paymentAccount: initialPaymentAccount,
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -3341,6 +3355,7 @@ const addRentalCashMovements = (state, rental) => {
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
         category: 'garantia',
         paymentMethod: guaranteePaymentMethod,
+        paymentAccount: guaranteePaymentAccount,
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -3360,6 +3375,12 @@ const addRentalCashMovements = (state, rental) => {
         createdBy: movementResponsible,
         responsible: movementResponsible,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+        category: 'garantia',
+        paymentMethod: guaranteePaymentMethod,
+        paymentAccount: guaranteePaymentAccount,
+        linkedRentalId: rental.id,
+        linkedContractId: rental.contractId,
+        linkedOrderCode: rental.orderCode,
       }),
     );
   }
@@ -3628,6 +3649,9 @@ const buildCashReceiptHtml = ({ state, movement }) => {
   const contextResponsibleLabel = isPersonnelAdvance ? 'Registrado por' : 'Resp. contrato';
   const contextResponsibleValue = isPersonnelAdvance ? movementCreator || 'Administracion' : contractResponsible;
   const receiptUserHeader = isPersonnelAdvance ? 'Trabajador' : 'Usuario que cobra';
+  const paymentMethodLabel = normalizePaymentMethod(movement.paymentMethod) === 'qr' && movement.paymentAccount
+    ? `QR - ${movement.paymentAccount}`
+    : movement.paymentMethod || 'Efectivo';
 
   return `<!doctype html>
   <html>
@@ -3945,7 +3969,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
             <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
             <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
             <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(collectionUser)}</span></p>
-            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(movement.paymentMethod || 'Efectivo')}</span></p>
+            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(paymentMethodLabel)}</span></p>
           </div>
           <div class="info-col">
             <p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
@@ -4182,14 +4206,17 @@ const buildRentalSnapshotFromContract = (contract) => {
     pendingPaymentBs: Number(contract?.payment?.pendingBs ?? 0),
     overpaidBs: Number(contract?.payment?.overpaidBs ?? 0),
     initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod),
+    initialPaymentAccount: normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount),
     guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
     guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
+    guaranteePaymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
   },
   guarantee: {
     amountBs: guaranteeDeclaredBs,
     validatedBs: isGuaranteeValidated ? guaranteeDeclaredBs : 0,
     status: isGuaranteeValidated ? 'validado' : 'no_validado',
     paymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
+    paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
   },
   items: (contract?.items ?? []).map((line) => ({
     itemId: line.itemId,
@@ -7280,6 +7307,7 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     validatedBs: isGuaranteeValidated ? guaranteeDeclaredBs : 0,
     status: isGuaranteeValidated ? 'validado' : 'no_validado',
     paymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
+    paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
   };
   rental.pricingPlan = deepClone(contract.pricingPlan);
   rental.supplierFulfillmentPlan = deepClone(contract.supplierFulfillmentPlan ?? []);
@@ -7308,8 +7336,10 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     pendingPaymentBs,
     overpaidBs,
     initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? rental?.payment?.initialPaymentMethod),
+    initialPaymentAccount: normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount ?? rental?.payment?.initialPaymentAccount),
     guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
     guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.payment?.guaranteePaymentMethod),
+    guaranteePaymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.payment?.guaranteePaymentAccount),
   };
   const dueAt = new Date(`${contract.pickupDate}T${contract.pickupWindowEnd || '23:59'}:00`);
   if (!Number.isNaN(dueAt.getTime())) rental.dueAt = dueAt.toISOString();
@@ -10122,6 +10152,8 @@ const createWebBridge = () => ({
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
+        const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
+        const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
         const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
@@ -10226,13 +10258,16 @@ const createWebBridge = () => ({
             overpaidBs,
             prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? 0)),
             initialPaymentMethod,
+            initialPaymentAccount,
             guaranteeStatus,
             guaranteePaymentMethod,
+            guaranteePaymentAccount,
           },
           guarantee: {
             amountBs: Number(guaranteeBs.toFixed(2)),
             status: guaranteeStatus,
             paymentMethod: guaranteePaymentMethod,
+            paymentAccount: guaranteePaymentAccount,
           },
           items: normalizedItems,
           services: requestedServices,
@@ -10371,6 +10406,12 @@ const createWebBridge = () => ({
           : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? quote?.guarantee?.paymentMethod ?? quote?.payment?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? quote?.payment?.initialPaymentMethod);
+        const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
+          ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount ?? quote?.guarantee?.paymentAccount ?? quote?.payment?.guaranteePaymentAccount)
+          : '';
+        const initialPaymentAccount = initialPaymentMethod === 'qr'
+          ? normalizeQrPaymentAccount(payload?.initialPaymentAccount ?? quote?.payment?.initialPaymentAccount ?? quote?.payment?.paymentAccount)
+          : '';
         const deliveryCharge = normalizeDeliveryCharge({
           logisticsMode: quote.logisticsMode,
           deliveryChargeMode: payload?.deliveryChargeMode ?? quote?.deliveryChargeMode,
@@ -10401,13 +10442,16 @@ const createWebBridge = () => ({
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           overpaidBs,
           initialPaymentMethod,
+          initialPaymentAccount,
           guaranteeStatus,
           guaranteePaymentMethod,
+          guaranteePaymentAccount,
         };
         quote.guarantee = {
           amountBs: Number(guaranteeBs.toFixed(2)),
           status: guaranteeStatus,
           paymentMethod: guaranteePaymentMethod,
+          paymentAccount: guaranteePaymentAccount,
         };
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
@@ -10490,6 +10534,8 @@ const createWebBridge = () => ({
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
+        const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
+        const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
         const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
         if (payload?.clientId) {
@@ -10596,13 +10642,16 @@ const createWebBridge = () => ({
             pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
             overpaidBs,
             initialPaymentMethod,
+            initialPaymentAccount,
             guaranteeStatus,
             guaranteePaymentMethod,
+            guaranteePaymentAccount,
           },
           guarantee: {
             amountBs: Number(guaranteeBs.toFixed(2)),
             status: guaranteeStatus,
             paymentMethod: guaranteePaymentMethod,
+            paymentAccount: guaranteePaymentAccount,
           },
           items: normalizedItems,
           services: requestedServices,
@@ -10758,6 +10807,12 @@ const createWebBridge = () => ({
           : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? contract?.payment?.initialPaymentMethod);
+        const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
+          ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount ?? contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+          : '';
+        const initialPaymentAccount = initialPaymentMethod === 'qr'
+          ? normalizeQrPaymentAccount(payload?.initialPaymentAccount ?? contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount)
+          : '';
         const deliveryCharge = normalizeDeliveryCharge({
           logisticsMode: contract.logisticsMode,
           deliveryChargeMode: payload?.deliveryChargeMode ?? contract?.deliveryChargeMode,
@@ -10789,13 +10844,16 @@ const createWebBridge = () => ({
           overpaidBs,
           prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
           initialPaymentMethod,
+          initialPaymentAccount,
           guaranteeStatus,
           guaranteePaymentMethod,
+          guaranteePaymentAccount,
         };
         contract.guarantee = {
           amountBs: Number(guaranteeBs.toFixed(2)),
           status: guaranteeStatus,
           paymentMethod: guaranteePaymentMethod,
+          paymentAccount: guaranteePaymentAccount,
         };
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
@@ -11137,6 +11195,8 @@ const createWebBridge = () => ({
           : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
+        const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
+        const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
@@ -11412,6 +11472,7 @@ const createWebBridge = () => ({
             validatedBs: guaranteeStatus === 'validado' ? toPositiveRoundedNumber(depositBs) : 0,
             status: guaranteeStatus,
             paymentMethod: guaranteePaymentMethod,
+            paymentAccount: guaranteePaymentAccount,
           },
           deliveryChargeMode: deliveryCharge.deliveryChargeMode,
           deliveryFeeBs: toPositiveRoundedNumber(deliveryCharge.deliveryFeeBs),
@@ -11449,8 +11510,10 @@ const createWebBridge = () => ({
             rentalCollectedBs: toPositiveRoundedNumber(rentalCollectedAtApprovalBs),
             cashCollectedBs: toPositiveRoundedNumber(cashCollectedAtApprovalBs),
             initialPaymentMethod,
+            initialPaymentAccount,
             guaranteeStatus,
             guaranteePaymentMethod,
+            guaranteePaymentAccount,
           },
           notes,
           billingMode: ['con_factura', 'sin_factura'].includes(payload?.billingMode) ? payload.billingMode : 'sin_factura',
@@ -12319,6 +12382,7 @@ const createWebBridge = () => ({
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Admin';
       const category = String(payload?.category ?? '').trim();
       const paymentMethod = String(payload?.paymentMethod ?? '').trim();
+      const paymentAccount = normalizePaymentMethod(paymentMethod) === 'qr' ? normalizeQrPaymentAccount(payload?.paymentAccount) : '';
       const responsible = String(payload?.responsible ?? createdBy).trim() || createdBy;
       const receipt = String(payload?.receipt ?? '').trim();
       const notes = String(payload?.notes ?? '').trim();
@@ -12400,6 +12464,7 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.BIG_CASH,
             category: category || 'reposicion_caja_chica',
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12423,6 +12488,7 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
             category: category || 'reposicion_caja_chica',
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12454,6 +12520,7 @@ const createWebBridge = () => ({
             cashBoxType,
             category,
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12480,6 +12547,7 @@ const createWebBridge = () => ({
       const description = String(replacement?.description ?? '').trim();
       const category = String(replacement?.category ?? '').trim();
       const paymentMethod = String(replacement?.paymentMethod ?? '').trim();
+      const paymentAccount = normalizePaymentMethod(paymentMethod) === 'qr' ? normalizeQrPaymentAccount(replacement?.paymentAccount) : '';
       const responsible = String(replacement?.responsible ?? createdBy).trim() || createdBy;
       const receipt = String(replacement?.receipt ?? '').trim();
       const notes = String(replacement?.notes ?? '').trim();
@@ -12544,6 +12612,7 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.BIG_CASH,
             category: category || original.category || 'reposicion_caja_chica',
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12569,6 +12638,7 @@ const createWebBridge = () => ({
             cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
             category: category || original.category || 'reposicion_caja_chica',
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12602,6 +12672,7 @@ const createWebBridge = () => ({
             cashBoxType: original.cashBoxType,
             category: category || original.category,
             paymentMethod,
+            paymentAccount,
             responsible,
             receipt,
             receiptCode,
@@ -12749,6 +12820,7 @@ const createWebBridge = () => ({
           createdBy,
           cashBoxType: CASH_BOX_TYPES.BIG_CASH,
           paymentMethod: String(payload?.paymentMethod ?? '').trim(),
+          paymentAccount: normalizePaymentMethod(payload?.paymentMethod) === 'qr' ? normalizeQrPaymentAccount(payload?.paymentAccount) : '',
           responsible: createdBy,
           receipt: String(payload?.receipt ?? '').trim(),
           receiptCode,

@@ -103,6 +103,7 @@ const PAYMENT_METHOD_META = {
   transferencia: { label: 'Transferencia', shortLabel: 'TRF', className: 'transfer' },
   sin_metodo: { label: 'Sin metodo', shortLabel: 'S/M', className: 'missing' },
 };
+const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL'];
 
 const normalizePaymentMethod = (value) => {
   const normalized = normalizeText(value).replace(/\s+/g, '_');
@@ -120,6 +121,13 @@ const getPaymentMethodMeta = (value) => {
     shortLabel: 'OTR',
     className: 'other',
   };
+};
+
+const getPaymentMethodLabel = (movement) => {
+  const method = normalizePaymentMethod(movement?.paymentMethod);
+  const meta = getPaymentMethodMeta(method);
+  const account = String(movement?.paymentAccount ?? '').trim();
+  return method === 'qr' && account ? `${meta.label} - ${account}` : meta.label;
 };
 
 function CashIcon({ kind }) {
@@ -301,6 +309,7 @@ function AccountingSection({
     description: '',
     category: '',
     paymentMethod: 'efectivo',
+    paymentAccount: '',
     responsible: '',
     receipt: '',
     notes: '',
@@ -317,6 +326,7 @@ function AccountingSection({
     description: '',
     category: 'varios',
     paymentMethod: 'efectivo',
+    paymentAccount: '',
     responsible: '',
     receipt: '',
     notes: '',
@@ -329,7 +339,7 @@ function AccountingSection({
     requestDate: '',
   });
   const [collectModal, setCollectModal] = useState(null);
-  const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', receipt: '', note: '' });
+  const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', receipt: '', note: '' });
   const [isSubmittingCash, setIsSubmittingCash] = useState(false);
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
@@ -1143,6 +1153,7 @@ function AccountingSection({
       description: '',
       category: 'varios',
       paymentMethod: 'efectivo',
+      paymentAccount: '',
       responsible: currentUserName,
       receipt: '',
       notes: '',
@@ -1202,6 +1213,7 @@ function AccountingSection({
     setCollectForm({
       amountBs: String(row.pendingBs ?? ''),
       paymentMethod: 'efectivo',
+      paymentAccount: '',
       receipt: '',
       note: row.status === 'Liquidacion'
         ? `Cobro liquidacion contrato ${contractReference}`
@@ -1316,6 +1328,7 @@ function AccountingSection({
       description: String(movement.description ?? '').replace(/^Reposicion caja chica:\s*/i, ''),
       category: movement.category || (movement.isInternalTransfer ? 'reposicion_caja_chica' : 'varios'),
       paymentMethod: movement.paymentMethod || 'efectivo',
+      paymentAccount: movement.paymentAccount || '',
       responsible: movement.responsible || movement.createdBy || currentUserName,
       receipt: movement.receipt || '',
       notes: movement.notes || '',
@@ -1353,6 +1366,7 @@ function AccountingSection({
           description: voidReceiptForm.description,
           category: voidReceiptForm.category,
           paymentMethod: voidReceiptForm.paymentMethod,
+          paymentAccount: voidReceiptForm.paymentMethod === 'qr' ? voidReceiptForm.paymentAccount : '',
           responsible: voidReceiptForm.responsible || currentUserName,
           receipt: voidReceiptForm.receipt,
           notes: voidReceiptForm.notes,
@@ -1397,6 +1411,7 @@ function AccountingSection({
           description: cashForm.description || 'Reposicion de Caja Chica',
           category: 'reposicion_caja_chica',
           paymentMethod: cashForm.paymentMethod,
+          paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
           notes: cashForm.notes,
@@ -1414,6 +1429,7 @@ function AccountingSection({
           description: cashForm.description,
           category: cashForm.category,
           paymentMethod: cashForm.paymentMethod,
+          paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
           notes: cashForm.notes,
@@ -1483,6 +1499,7 @@ function AccountingSection({
           description: cashForm.description,
           category: cashForm.category || 'ingreso_manual',
           paymentMethod: cashForm.paymentMethod,
+          paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
           responsible: cashForm.responsible || currentUserName,
           receipt: cashForm.receipt,
           notes: cashForm.notes,
@@ -1517,6 +1534,7 @@ function AccountingSection({
         rentalId: collectModal.id,
         amountBs: Math.max(0, toNumber(collectForm.amountBs)),
         paymentMethod: collectForm.paymentMethod,
+        paymentAccount: collectForm.paymentMethod === 'qr' ? collectForm.paymentAccount : '',
         receipt: collectForm.receipt,
         note: collectForm.note,
         createdBy: currentUserName,
@@ -1648,7 +1666,7 @@ function AccountingSection({
             <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
             <td><strong>{movement.description}</strong></td>
             <td>{getMovementReference(movement)}</td>
-            <td><span className={`payment-method-pill ${paymentMeta.className}`}>{paymentMeta.label}</span></td>
+            <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
             <td className="amount">{meta.income}</td>
             <td className="negative amount">{meta.withdrawal}</td>
             <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
@@ -2113,7 +2131,7 @@ function AccountingSection({
                 </label>
                 <label>
                   Metodo
-                  <select value={voidReceiptForm.paymentMethod} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                  <select value={voidReceiptForm.paymentMethod} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
                     <option value="efectivo">Efectivo</option>
                     <option value="qr">QR</option>
                     <option value="transferencia">Transferencia</option>
@@ -2121,6 +2139,15 @@ function AccountingSection({
                   </select>
                 </label>
               </div>
+              {voidReceiptForm.paymentMethod === 'qr' ? (
+                <label>
+                  Cuenta destino QR
+                  <select value={voidReceiptForm.paymentAccount} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                    <option value="">Seleccionar cuenta</option>
+                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  </select>
+                </label>
+              ) : null}
               <label>
                 Concepto
                 <input
@@ -2294,7 +2321,7 @@ function AccountingSection({
                 Metodo
                 <select
                   value={cashModal === 'advance' ? 'efectivo' : cashForm.paymentMethod}
-                  onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value }))}
+                  onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
                   disabled={cashModal === 'advance'}
                 >
                   <option value="efectivo">Efectivo</option>
@@ -2304,6 +2331,15 @@ function AccountingSection({
                 </select>
               </label>
             </div>
+            {cashModal !== 'advance' && cashForm.paymentMethod === 'qr' ? (
+              <label>
+                Cuenta destino QR
+                <select value={cashForm.paymentAccount} onChange={(event) => setCashForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                  <option value="">Seleccionar cuenta</option>
+                  {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                </select>
+              </label>
+            ) : null}
 
             {cashModal !== 'closePetty' && cashModal !== 'advance' ? (
               <>
@@ -2502,7 +2538,7 @@ function AccountingSection({
               </label>
               <label>
                 Metodo
-                <select value={collectForm.paymentMethod} onChange={(event) => setCollectForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                <select value={collectForm.paymentMethod} onChange={(event) => setCollectForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
                   <option value="efectivo">Efectivo</option>
                   <option value="qr">QR</option>
                   <option value="transferencia">Transferencia</option>
@@ -2510,6 +2546,15 @@ function AccountingSection({
                 </select>
               </label>
             </div>
+            {collectForm.paymentMethod === 'qr' ? (
+              <label>
+                Cuenta destino QR
+                <select value={collectForm.paymentAccount} onChange={(event) => setCollectForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                  <option value="">Seleccionar cuenta</option>
+                  {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                </select>
+              </label>
+            ) : null}
             <label>
               Comprobante
               <input value={collectForm.receipt} onChange={(event) => setCollectForm((current) => ({ ...current, receipt: event.target.value }))} />
@@ -2905,7 +2950,7 @@ function AccountingSection({
                           ) : null}
                         </td>
                         <td>{getMovementReference(movement)}</td>
-                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{paymentMeta.label}</span></td>
+                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
                         <td className="amount">{meta.income}</td>
                         <td className="negative amount">{meta.withdrawal}</td>
                         <td>{formatBs(runningBigCashBalance(index))}</td>
