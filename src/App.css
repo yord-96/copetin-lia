@@ -41446,6 +41446,15 @@ button.calendar-dispatch-row:focus-visible {
   gap: 0.72rem;
 }
 
+.orders-wizard-modal .orders-wizard-step.is-jumpable {
+  cursor: pointer;
+}
+
+.orders-wizard-modal .orders-wizard-step.is-jumpable:hover,
+.orders-wizard-modal .orders-wizard-step.is-jumpable:focus-visible {
+  background: #fff7f0;
+}
+
 .orders-wizard-modal .orders-wizard-step::after {
   content: "";
   position: absolute;

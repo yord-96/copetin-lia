@@ -3274,6 +3274,14 @@ function ServiceOrdersSection({
     setCurrentStep((step) => Math.max(0, step - 1));
   };
 
+  const canJumpBetweenWizardSteps = Boolean(draft.recordId);
+
+  const handleWizardStepClick = (targetStep) => {
+    if (!canJumpBetweenWizardSteps && targetStep > currentStep) return;
+    setFormError('');
+    setCurrentStep(targetStep);
+  };
+
   const toggleDraftResponsible = (responsibleId) => {
     setDraft((current) => {
       const currentIds = Array.isArray(current.responsibleIds) ? current.responsibleIds : [];
@@ -5982,13 +5990,9 @@ function ServiceOrdersSection({
                 <button
                   key={step.id}
                   type="button"
-                  className={`orders-wizard-step ${index === currentStep ? 'active' : ''} ${index < currentStep ? 'done' : ''}`}
-                  onClick={() => {
-                    if (index <= currentStep) {
-                      setFormError('');
-                      setCurrentStep(index);
-                    }
-                  }}
+                  className={`orders-wizard-step ${index === currentStep ? 'active' : ''} ${index < currentStep ? 'done' : ''} ${canJumpBetweenWizardSteps ? 'is-jumpable' : ''}`}
+                  onClick={() => handleWizardStepClick(index)}
+                  aria-label={`Ir al paso ${index + 1}: ${step.title}`}
                 >
                   <span className="orders-wizard-step-index">
                     {index < currentStep ? <Check aria-hidden="true" /> : index + 1}
