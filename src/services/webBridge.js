@@ -5324,8 +5324,22 @@ const CONTRACT_LEGACY_DOCUMENT_STYLES = `
   }
 `;
 
-const getContractItemMeta = (line, item) => [
-  item?.category ? `Categoria: ${item.category}` : '',
+const CONTRACT_CATEGORY_ACCENTS = ['amber', 'blue', 'green', 'violet', 'rose', 'slate'];
+
+const getContractLineCategory = (line, item) =>
+  String(
+    item?.category
+    ?? line?.category
+    ?? line?.comboCategory
+    ?? line?.quickItem?.category
+    ?? 'Sin categoria',
+  ).trim() || 'Sin categoria';
+
+const getContractItemMeta = (line, _item) => [
+  line?.comboName ? `Combo: ${line.comboName}` : '',
+  line?.comboComponentName && normalizeText(line.comboComponentName) !== normalizeText(line.itemName)
+    ? `Pieza: ${line.comboComponentName}`
+    : '',
 ].filter(Boolean).join(' | ');
 
 const contractPdfIcon = (fileName) =>
@@ -5540,6 +5554,7 @@ const getReferenceContractStyles = () => `
     table-layout: fixed;
   }
   .rc-table thead { display: table-header-group; }
+  .rc-table tfoot { display: table-row-group; break-inside: avoid; page-break-inside: avoid; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
     padding: 1.2mm 1.7mm;
@@ -5558,6 +5573,34 @@ const getReferenceContractStyles = () => `
     vertical-align: middle;
     font-size: 10px;
   }
+  .rc-table tbody tr.rc-cat-amber td:first-child { box-shadow: inset 1.25mm 0 0 #c98a22; }
+  .rc-table tbody tr.rc-cat-blue td:first-child { box-shadow: inset 1.25mm 0 0 #315f9f; }
+  .rc-table tbody tr.rc-cat-green td:first-child { box-shadow: inset 1.25mm 0 0 #2e7d54; }
+  .rc-table tbody tr.rc-cat-violet td:first-child { box-shadow: inset 1.25mm 0 0 #7553a7; }
+  .rc-table tbody tr.rc-cat-rose td:first-child { box-shadow: inset 1.25mm 0 0 #ad4f64; }
+  .rc-table tbody tr.rc-cat-slate td:first-child { box-shadow: inset 1.25mm 0 0 #56616f; }
+  .rc-category-chip {
+    display: inline-block;
+    max-width: 36mm;
+    margin: 0 1.3mm .15mm 0;
+    padding: .25mm 1.1mm;
+    border-radius: 99mm;
+    background: #f4eadc;
+    color: #7a4b16;
+    font: 900 6.7px Arial, Helvetica, sans-serif;
+    letter-spacing: .18px;
+    line-height: 1.08;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: .35mm;
+  }
+  .rc-cat-blue .rc-category-chip { background: #e8f0fb; color: #18477d; }
+  .rc-cat-green .rc-category-chip { background: #e6f4eb; color: #1d6843; }
+  .rc-cat-violet .rc-category-chip { background: #eee8f8; color: #5b3e88; }
+  .rc-cat-rose .rc-category-chip { background: #f9e8ed; color: #8a374c; }
+  .rc-cat-slate .rc-category-chip { background: #eef1f4; color: #3e4b5a; }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
   .rc-table tfoot td {
@@ -5769,11 +5812,32 @@ const getReferenceContractStyles = () => `
     .rc-sheet {
       position: relative;
       width: 8.5in;
-      min-height: 14in;
+      min-height: auto;
       margin: 0;
       padding: .34in .42in .36in;
+      display: block;
       box-shadow: none;
       background: #fffdfa;
+    }
+    .rc-table {
+      border-collapse: collapse;
+      border-spacing: 0;
+      border-radius: 0;
+      overflow: visible;
+    }
+    .rc-table thead { display: table-header-group; }
+    .rc-table tfoot { display: table-row-group; }
+    .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
+    .rc-bottom,
+    .rc-client-materials,
+    .rc-terms-section,
+    .rc-page-bottom {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .rc-page-bottom {
+      margin-top: 4mm;
+      padding-top: 0;
     }
   }
 `;
@@ -5828,21 +5892,48 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     ?? contract?.createdBy
     ?? 'Sin responsable',
   ).trim() || 'Sin responsable';
-  const documentItems = Array.isArray(contract?.items) && contract.items.length > 0
+  const rawDocumentItems = Array.isArray(contract?.items) && contract.items.length > 0
     ? contract.items.map((line) => ({
       ...line,
       rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
       lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
     }))
     : (rental.items ?? []);
+  const categoryAccentMap = new Map();
+  const getCategoryAccent = (category) => {
+    const key = normalizeText(category) || 'sin_categoria';
+    if (!categoryAccentMap.has(key)) {
+      categoryAccentMap.set(key, CONTRACT_CATEGORY_ACCENTS[categoryAccentMap.size % CONTRACT_CATEGORY_ACCENTS.length]);
+    }
+    return categoryAccentMap.get(key);
+  };
+  const documentItems = rawDocumentItems
+    .map((line, index) => {
+      const item = catalogById.get(String(line.itemId ?? ''));
+      const category = getContractLineCategory(line, item);
+      return {
+        ...line,
+        _originalIndex: index,
+        _category: category,
+        _categoryKey: normalizeText(category),
+      };
+    })
+    .sort((left, right) =>
+      left._categoryKey.localeCompare(right._categoryKey, 'es')
+      || String(left.itemName ?? '').localeCompare(String(right.itemName ?? ''), 'es')
+      || left._originalIndex - right._originalIndex
+    );
   const itemRows = documentItems
     .map(
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
+        const category = line._category || getContractLineCategory(line, item);
+        const accent = getCategoryAccent(category);
         return `
-        <tr>
+        <tr class="rc-cat-${escapeHtml(accent)}">
           <td>
+            <span class="rc-category-chip">${escapeHtml(category)}</span>
             <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
             ${meta ? `<span class="rc-item-meta">${escapeHtml(meta)}</span>` : ''}
           </td>
