@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Box,
@@ -3274,6 +3274,34 @@ function ServiceOrdersSection({
     setCurrentStep((step) => Math.max(0, step - 1));
   };
 
+  const handleClientFieldsArrowNavigation = useCallback((event) => {
+    const keyDeltas = {
+      ArrowRight: 1,
+      ArrowLeft: -1,
+      ArrowDown: 2,
+      ArrowUp: -2,
+    };
+    const delta = keyDeltas[event.key];
+    if (!delta) return;
+
+    const currentField = event.target.closest?.('[data-client-nav-field]');
+    if (!currentField) return;
+    const fields = Array.from(event.currentTarget.querySelectorAll('[data-client-nav-field]'))
+      .map((field) => field.querySelector('input, select, textarea'))
+      .filter((field) => field && !field.disabled && field.offsetParent !== null);
+    const currentIndex = fields.findIndex((field) => field === event.target || field.contains?.(event.target));
+    if (currentIndex < 0) return;
+
+    const nextIndex = Math.max(0, Math.min(fields.length - 1, currentIndex + delta));
+    if (nextIndex === currentIndex) return;
+    event.preventDefault();
+    const nextField = fields[nextIndex];
+    nextField.focus();
+    if (nextField.tagName === 'INPUT' && nextField.type !== 'date') {
+      nextField.select?.();
+    }
+  }, []);
+
   const canJumpBetweenWizardSteps = Boolean(draft.recordId);
 
   const handleWizardStepClick = (targetStep) => {
@@ -6011,8 +6039,8 @@ function ServiceOrdersSection({
                   <>
                     <h4><span className="orders-section-icon"><UserRound aria-hidden="true" /></span>Informacion del cliente</h4>
                     <p className="orders-step-help">Busca un cliente registrado o completa los datos manualmente.</p>
-                    <div className="orders-form-grid">
-                      <label className="orders-icon-field search">
+                    <div className="orders-form-grid" onKeyDown={handleClientFieldsArrowNavigation}>
+                      <label className="orders-icon-field search" data-client-nav-field>
                         Cliente registrado
                         <span>
                           <i aria-hidden="true"><Search /></i>
@@ -6026,7 +6054,7 @@ function ServiceOrdersSection({
                           </select>
                         </span>
                       </label>
-                      <label className="orders-icon-field company">
+                      <label className="orders-icon-field company" data-client-nav-field>
                         Empresa / razon social
                         <span>
                           <i aria-hidden="true"><Building2 /></i>
@@ -6037,7 +6065,7 @@ function ServiceOrdersSection({
                           />
                         </span>
                       </label>
-                      <label className="orders-icon-field person">
+                      <label className="orders-icon-field person" data-client-nav-field>
                         Nombre cliente *
                         <span>
                           <i aria-hidden="true"><UserRound /></i>
@@ -6048,7 +6076,7 @@ function ServiceOrdersSection({
                           />
                         </span>
                       </label>
-                      <label className="orders-icon-field whatsapp">
+                      <label className="orders-icon-field whatsapp" data-client-nav-field>
                         WhatsApp / Celular *
                         <span>
                           <i aria-hidden="true"><MessageCircle /></i>
@@ -6059,7 +6087,7 @@ function ServiceOrdersSection({
                           />
                         </span>
                       </label>
-                      <label className="orders-icon-field phone">
+                      <label className="orders-icon-field phone" data-client-nav-field>
                         Telefono de referencia
                         <span>
                           <i aria-hidden="true"><Phone /></i>
@@ -6070,7 +6098,7 @@ function ServiceOrdersSection({
                           />
                         </span>
                       </label>
-                      <label className="orders-icon-field location">
+                      <label className="orders-icon-field location" data-client-nav-field>
                         Ciudad
                         <span>
                           <i aria-hidden="true"><MapPin /></i>
@@ -6083,7 +6111,7 @@ function ServiceOrdersSection({
                       </label>
                       {(!draft.recordId || draft.entityType === 'contract') ? (
                         <>
-                          <label className="orders-icon-field book">
+                          <label className="orders-icon-field book" data-client-nav-field>
                             Codigo del libro
                             <span>
                               <i aria-hidden="true"><BookOpen /></i>
@@ -6095,7 +6123,7 @@ function ServiceOrdersSection({
                             </span>
                           </label>
                           {(draft.recordId || draft.documentCodeMode !== 'auto') ? (
-                            <label>
+                            <label data-client-nav-field>
                               Numero o codigo *
                               <input
                                 value={draft.manualDocumentCode}
@@ -6105,7 +6133,7 @@ function ServiceOrdersSection({
                             </label>
                           ) : null}
                           {draft.entityType === 'contract' ? (
-                            <label className="orders-icon-field calendar">
+                            <label className="orders-icon-field calendar" data-client-nav-field>
                               Fecha de contrato pasado
                               <span>
                                 <i aria-hidden="true"><CalendarDays /></i>
