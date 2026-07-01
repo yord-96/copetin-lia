@@ -3588,30 +3588,46 @@ const buildCashReceiptHtml = ({ state, movement }) => {
     ?? rentalContext?.createdBy
     ?? '-',
   ).trim() || '-';
-  const collectionUser = String(movement?.createdBy ?? movement?.responsible ?? 'Administracion').trim() || 'Administracion';
   const cashBoxType = normalizeCashBoxType(movement.cashBoxType);
   const amount = Math.abs(Number(movement.amountBs ?? 0));
   const isOut = Number(movement.amountBs ?? 0) < 0
     || String(movement.type ?? '').toLowerCase().includes('salida')
     || String(movement.type ?? '').toLowerCase().includes('egreso');
+  const isPersonnelAdvance = String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance'
+    || String(movement?.category ?? '').toLowerCase() === 'adelanto_personal';
+  const movementResponsible = String(movement?.responsible ?? '').trim();
+  const movementCreator = String(movement?.createdBy ?? '').trim();
+  const collectionUser = (isOut
+    ? movementResponsible || movementCreator
+    : movementCreator || movementResponsible) || 'Administracion';
   const cashBoxLabel = cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
   const movementLabel = isOut ? 'Egreso' : 'Ingreso';
-  const title = `RECIBO DE ${movementLabel.toUpperCase()} DE ${cashBoxLabel.toUpperCase()}`;
-  const totalLabel = isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
-  const partyLabel = isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
+  const title = isPersonnelAdvance
+    ? 'RECIBO DE ADELANTO DE PERSONAL'
+    : `RECIBO DE ${movementLabel.toUpperCase()} DE ${cashBoxLabel.toUpperCase()}`;
+  const totalLabel = isPersonnelAdvance ? 'ADELANTO ENTREGADO' : isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
+  const partyLabel = isPersonnelAdvance ? 'TRABAJADOR' : isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
   const cashBoxRoleLabel = isOut ? 'Caja origen' : 'Caja destino';
   const createdAt = movement.createdAt ? new Date(movement.createdAt) : new Date();
   const dateLabel = formatDate(createdAt);
   const timeLabel = createdAt.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
   const receiptCode = getCashReceiptCode(state, movement);
-  const reference = contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
-  const detail = contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
+  const reference = isPersonnelAdvance
+    ? (movement.receipt || receiptCode)
+    : contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
+  const detail = isPersonnelAdvance
+    ? movement.description || 'Adelanto de personal'
+    : contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
     ? `${movementLabel} por contrato ${contractCode}`
     : movement.description || movement.category || 'Movimiento de caja';
   const rawObservation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
   const observation = contractCode
     ? String(rawObservation).replace(/OS-\d+/gi, `Contrato ${contractCode}`)
     : rawObservation;
+  const contextReferenceLabel = isPersonnelAdvance ? 'CI trabajador' : 'Contrato';
+  const contextResponsibleLabel = isPersonnelAdvance ? 'Registrado por' : 'Resp. contrato';
+  const contextResponsibleValue = isPersonnelAdvance ? movementCreator || 'Administracion' : contractResponsible;
+  const receiptUserHeader = isPersonnelAdvance ? 'Trabajador' : 'Usuario que cobra';
 
   return `<!doctype html>
   <html>
@@ -3932,8 +3948,8 @@ const buildCashReceiptHtml = ({ state, movement }) => {
             <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(movement.paymentMethod || 'Efectivo')}</span></p>
           </div>
           <div class="info-col">
-            <p class="info-line is-important"><strong>Contrato</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
-            <p class="info-line is-important"><strong>Resp. contrato</strong><b>:</b><span>${escapeHtml(contractResponsible)}</span></p>
+            <p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
+            <p class="info-line is-important"><strong>${escapeHtml(contextResponsibleLabel)}</strong><b>:</b><span>${escapeHtml(contextResponsibleValue)}</span></p>
             <p class="info-line"><strong>Concepto</strong><b>:</b><span>${escapeHtml(detail)}</span></p>
             <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
           </div>
@@ -3945,8 +3961,8 @@ const buildCashReceiptHtml = ({ state, movement }) => {
               <th style="width: 10mm;">Nro</th>
               <th>Detalle</th>
               <th style="width: 26mm;">Caja</th>
-              <th style="width: 34mm;">Usuario que cobra</th>
-              <th style="width: 34mm;">Resp. contrato</th>
+              <th style="width: 34mm;">${escapeHtml(receiptUserHeader)}</th>
+              <th style="width: 34mm;">${escapeHtml(contextResponsibleLabel)}</th>
               <th style="width: 32mm;">${escapeHtml(totalLabel)}</th>
             </tr>
           </thead>
@@ -3956,7 +3972,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
               <td class="detail">${escapeHtml(detail)}</td>
               <td>${escapeHtml(cashBoxLabel)}</td>
               <td>${escapeHtml(collectionUser)}</td>
-              <td>${escapeHtml(contractResponsible)}</td>
+              <td>${escapeHtml(contextResponsibleValue)}</td>
               <td>${formatBs(amount)}</td>
             </tr>
           </tbody>

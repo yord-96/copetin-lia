@@ -253,6 +253,7 @@ function MiniIcon({ kind }) {
 function AccountingSection({
   activeModule = 'contabilidad',
   clients = [],
+  personnelBundle = { employees: [] },
   cashSummary = null,
   cashMovements = [],
   cashDebts = [],
@@ -307,6 +308,9 @@ function AccountingSection({
     debtId: '',
     debtDate: '',
     dueDate: '',
+    employeeId: '',
+    documentId: '',
+    requestDate: '',
   });
   const [cashForm, setCashForm] = useState({
     amountBs: '',
@@ -320,6 +324,9 @@ function AccountingSection({
     debtId: '',
     debtDate: '',
     dueDate: '',
+    employeeId: '',
+    documentId: '',
+    requestDate: '',
   });
   const [collectModal, setCollectModal] = useState(null);
   const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', receipt: '', note: '' });
@@ -341,6 +348,13 @@ function AccountingSection({
   };
 
   const rentalById = useMemo(() => new Map(rentals.map((rental) => [rental.id, rental])), [rentals]);
+  const personnelEmployees = useMemo(
+    () => (personnelBundle?.employees ?? [])
+      .filter((employee) => !employee?.deletedAt && String(employee?.status ?? 'active') !== 'inactive')
+      .slice()
+      .sort((a, b) => String(a?.fullName ?? '').localeCompare(String(b?.fullName ?? ''), 'es')),
+    [personnelBundle?.employees],
+  );
   const contractByRentalId = useMemo(() => {
     const map = new Map();
     contracts.forEach((contract) => {
@@ -762,6 +776,9 @@ function AccountingSection({
     if (normalized.includes('aliment') || description.includes('refrigerio') || description.includes('comida')) {
       return { label: 'Alimentacion', className: 'food' };
     }
+    if (normalized.includes('adelanto') || normalized.includes('personal_advance') || description.includes('adelanto')) {
+      return { label: 'Adelanto', className: 'advance' };
+    }
     if (normalized.includes('oficina') || description.includes('oficina') || description.includes('impresion') || description.includes('fotocopia')) {
       return { label: 'Oficina', className: 'office' };
     }
@@ -787,6 +804,28 @@ function AccountingSection({
       ].some((value) => String(value ?? '').toLowerCase().includes(text));
     });
   }, [dayPettyExpensesRows, getMovementReference, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
+
+  const personnelAdvanceRows = useMemo(
+    () => visiblePettyExpenseRows
+      .filter((movement) => !isVoidedCashMovement(movement))
+      .filter((movement) => {
+        const category = normalizeText(movement?.category);
+        const tag = normalizeText(movement?.accountingTag);
+        return category.includes('adelanto') || tag === 'personnel_advance';
+      })
+      .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
+    [visiblePettyExpenseRows],
+  );
+
+  const selectedDayAdvanceRows = useMemo(
+    () => personnelAdvanceRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
+    [personnelAdvanceRows, selectedDate],
+  );
+
+  const selectedDayAdvanceBs = useMemo(
+    () => Math.abs(sumBy(selectedDayAdvanceRows, (movement) => movement.amountBs)),
+    [selectedDayAdvanceRows],
+  );
 
   const pettyHistoryRows = useMemo(() => {
     const rows = [];
@@ -1111,6 +1150,9 @@ function AccountingSection({
       debtId: '',
       debtDate: '',
       dueDate: '',
+      employeeId: '',
+      documentId: '',
+      requestDate: selectedDate,
       ...patch,
     });
     setCashActionError('');
@@ -1120,6 +1162,17 @@ function AccountingSection({
   const openCashAction = (type, patch = {}) => {
     resetCashForm(patch);
     setCashModal(type);
+  };
+
+  const handleAdvanceEmployeeChange = (employeeId) => {
+    const employee = personnelEmployees.find((entry) => String(entry.id) === String(employeeId)) ?? null;
+    setCashForm((current) => ({
+      ...current,
+      employeeId,
+      responsible: employee?.fullName ?? '',
+      documentId: employee?.documentId ?? '',
+      description: employee ? `Adelanto de sueldo - ${employee.fullName}` : 'Adelanto de sueldo',
+    }));
   };
 
   const openPettyHistory = (movement = 'all') => {
@@ -1373,6 +1426,32 @@ function AccountingSection({
         });
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
+      } else if (cashModal === 'advance') {
+        const employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
+        const employeeName = String(employee?.fullName ?? cashForm.responsible ?? '').trim();
+        const documentId = String(cashForm.documentId ?? employee?.documentId ?? '').trim();
+        const requestDate = cashForm.requestDate || selectedDate;
+        if (!employeeName) {
+          throw new Error('Selecciona el trabajador que solicita el adelanto.');
+        }
+        if (!documentId) {
+          throw new Error('Ingresa el numero de carnet del trabajador.');
+        }
+        const created = await onCreateCashMovement?.({
+          type: 'egreso',
+          cashBoxType: 'PETTY_CASH',
+          amountBs,
+          description: `Adelanto de sueldo - ${employeeName}`,
+          category: 'adelanto_personal',
+          paymentMethod: 'efectivo',
+          responsible: employeeName,
+          receipt: documentId ? `CI ${documentId}` : '',
+          notes: `Fecha de solicitud: ${formatDate(requestDate)} | CI: ${documentId}${cashForm.notes ? ` | ${cashForm.notes}` : ''}`,
+          accountingTag: 'personnel_advance',
+          createdBy: currentUserName,
+        });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
+        setCashActionFeedback('Adelanto registrado en Caja Chica y recibo generado.');
       } else if (cashModal === 'debt') {
         await onCreateCashDebt?.({
           description: cashForm.description,
@@ -1489,6 +1568,7 @@ function AccountingSection({
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
     if (cashModal === 'expense') return 'Registrar gasto de Caja Chica';
+    if (cashModal === 'advance') return 'Registrar adelanto de personal';
     if (cashModal === 'debt') return 'Registrar deuda';
     if (cashModal === 'payDebt') return 'Pagar deuda';
     if (cashModal === 'income') return 'Registrar ingreso de Caja Grande';
@@ -1870,6 +1950,7 @@ function AccountingSection({
                 <option value="office">Oficina</option>
                 <option value="mobility">Movilidad</option>
                 <option value="food">Alimentacion</option>
+                <option value="advance">Adelantos</option>
                 <option value="other">Varios</option>
               </select>
             </label>
@@ -2122,6 +2203,8 @@ function AccountingSection({
                     ? 'Registra una deuda pendiente sin tocar el saldo de Caja Chica.'
                     : cashModal === 'payDebt'
                     ? 'El pago sale de Caja Chica y genera recibo.'
+                    : cashModal === 'advance'
+                    ? 'El adelanto sale solo de Caja Chica y genera un recibo firmado.'
                     : cashModal === 'expense'
                     ? 'Los gastos salen de la Caja Chica abierta.'
                     : cashModal === 'closePetty'
@@ -2159,9 +2242,45 @@ function AccountingSection({
               </label>
             ) : null}
 
+            {cashModal === 'advance' ? (
+              <section className="petty-advance-form">
+                <label>
+                  Nombre y apellido
+                  <select value={cashForm.employeeId} onChange={(event) => handleAdvanceEmployeeChange(event.target.value)} required>
+                    <option value="">Seleccionar personal</option>
+                    {personnelEmployees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.fullName}{employee.documentId ? ` - CI ${employee.documentId}` : ' - CI pendiente'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="accounting-form-grid two">
+                  <label>
+                    Fecha de solicitud
+                    <input
+                      type="date"
+                      value={cashForm.requestDate}
+                      onChange={(event) => setCashForm((current) => ({ ...current, requestDate: event.target.value }))}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Numero de carnet
+                    <input
+                      value={cashForm.documentId}
+                      onChange={(event) => setCashForm((current) => ({ ...current, documentId: event.target.value }))}
+                      placeholder="CI del trabajador"
+                      required
+                    />
+                  </label>
+                </div>
+              </section>
+            ) : null}
+
             <div className="accounting-form-grid two">
               <label>
-                Monto (Bs)
+                {cashModal === 'advance' ? 'Monto a solicitar (Bs)' : 'Monto (Bs)'}
                 <input
                   type="number"
                   min="0.01"
@@ -2171,9 +2290,13 @@ function AccountingSection({
                   required
                 />
               </label>
-              <label>
+              <label className={cashModal === 'advance' ? 'is-readonly-method' : ''}>
                 Metodo
-                <select value={cashForm.paymentMethod} onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                <select
+                  value={cashModal === 'advance' ? 'efectivo' : cashForm.paymentMethod}
+                  onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value }))}
+                  disabled={cashModal === 'advance'}
+                >
                   <option value="efectivo">Efectivo</option>
                   <option value="qr">QR</option>
                   <option value="transferencia">Transferencia</option>
@@ -2182,7 +2305,7 @@ function AccountingSection({
               </label>
             </div>
 
-            {cashModal !== 'closePetty' ? (
+            {cashModal !== 'closePetty' && cashModal !== 'advance' ? (
               <>
                 <label>
                   Concepto
@@ -2318,7 +2441,15 @@ function AccountingSection({
             <footer>
               <button type="button" className="ghost-button" onClick={closeCashAction}>Cancelar</button>
               <button type="submit" className="primary-button" disabled={isSubmittingCash}>
-                {isSubmittingCash ? 'Guardando...' : cashModal === 'payDebt' ? 'Pagar y generar recibo' : cashModal === 'debt' ? 'Registrar deuda' : 'Guardar movimiento'}
+                {isSubmittingCash
+                  ? 'Guardando...'
+                  : cashModal === 'advance'
+                  ? 'Registrar adelanto y generar recibo'
+                  : cashModal === 'payDebt'
+                  ? 'Pagar y generar recibo'
+                  : cashModal === 'debt'
+                  ? 'Registrar deuda'
+                  : 'Guardar movimiento'}
               </button>
             </footer>
           </form>
@@ -2927,6 +3058,19 @@ function AccountingSection({
                 <button
                   type="button"
                   className="petty-primary-button small"
+                  onClick={() => openCashAction('advance', {
+                    category: 'adelanto_personal',
+                    paymentMethod: 'efectivo',
+                    requestDate: selectedDate,
+                    description: 'Adelanto de sueldo',
+                  })}
+                  disabled={pettyCashBalanceBs <= 0 || personnelEmployees.length === 0}
+                >
+                  + Adelanto
+                </button>
+                <button
+                  type="button"
+                  className="petty-primary-button small"
                   onClick={() => openCashAction('expense', { category: 'varios' })}
                   disabled={pettyCashBalanceBs <= 0}
                 >
@@ -2942,6 +3086,7 @@ function AccountingSection({
                   <option value="office">Oficina</option>
                   <option value="mobility">Movilidad</option>
                   <option value="food">Alimentación</option>
+                  <option value="advance">Adelantos</option>
                   <option value="other">Varios</option>
                 </select>
               </label>
@@ -3010,6 +3155,70 @@ function AccountingSection({
             >
               Ver historial completo
             </button>
+          </article>
+
+          <article className="bigcash-card petty-advances-card">
+            <header className="petty-table-head">
+              <div>
+                <h3>ADELANTOS AL PERSONAL</h3>
+                <p>Salida directa de Caja Chica con recibo y firmas del trabajador.</p>
+              </div>
+              <div className="petty-action-pair">
+                <span className="petty-advance-total">Hoy: {formatBs(selectedDayAdvanceBs)}</span>
+                <button
+                  type="button"
+                  className="petty-primary-button small"
+                  onClick={() => openCashAction('advance', {
+                    category: 'adelanto_personal',
+                    paymentMethod: 'efectivo',
+                    requestDate: selectedDate,
+                    description: 'Adelanto de sueldo',
+                  })}
+                  disabled={pettyCashBalanceBs <= 0 || personnelEmployees.length === 0}
+                >
+                  + Nuevo adelanto
+                </button>
+              </div>
+            </header>
+            <div className="bigcash-table-wrap petty-table-wrap">
+              <table className="accounting-table petty-table petty-advances-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Trabajador</th>
+                    <th>CI</th>
+                    <th>Monto</th>
+                    <th>Registrado por</th>
+                    <th>Recibo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {personnelAdvanceRows.slice(0, 8).map((movement) => {
+                    const ci = String(movement.receipt ?? '').replace(/^CI\s*/i, '').trim() || '-';
+                    const requestMatch = String(movement.notes ?? '').match(/Fecha de solicitud:\s*([^|]+)/i);
+                    return (
+                      <tr key={movement.id}>
+                        <td>
+                          <strong>{formatDate(movement.createdAt)}</strong>
+                          <small>{requestMatch?.[1]?.trim() ? `Solicitud ${requestMatch[1].trim()}` : getLongHourLabel(movement.createdAt)}</small>
+                        </td>
+                        <td>
+                          <strong>{movement.responsible || movement.description?.replace(/^Adelanto de sueldo\s*-\s*/i, '') || '-'}</strong>
+                          <small>{movement.description}</small>
+                        </td>
+                        <td>{ci}</td>
+                        <td><strong className="value-orange">- {formatBs(Math.abs(toNumber(movement.amountBs)))}</strong></td>
+                        <td>{movement.createdBy || '-'}</td>
+                        <td>{renderReceiptActions(movement)}</td>
+                      </tr>
+                    );
+                  })}
+                  {personnelAdvanceRows.length === 0 ? (
+                    <tr><td colSpan={6}><p className="status">Sin adelantos registrados todavia.</p></td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </article>
 
           <article className="bigcash-card petty-debts-card">
