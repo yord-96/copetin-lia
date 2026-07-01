@@ -3103,7 +3103,7 @@ const normalizePaymentMethod = (value) => {
   return ['efectivo', 'qr', 'transferencia'].includes(normalized) ? normalized : 'efectivo';
 };
 
-const QR_PAYMENT_ACCOUNTS = ['CIDRE', 'BCP', 'MERCANTIL'];
+const QR_PAYMENT_ACCOUNTS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
 const normalizeQrPaymentAccount = (value) => {
   const normalized = String(value ?? '').trim().toUpperCase();

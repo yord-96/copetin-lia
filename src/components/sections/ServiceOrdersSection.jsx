@@ -90,7 +90,7 @@ const DURATION_PRICING_DEFAULT_TIERS = [
 
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 5;
-const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL'];
+const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
 const formatPaymentMethodLabel = (method, account = '') => {
   if (method === 'qr') return account ? `QR - ${account}` : 'QR';

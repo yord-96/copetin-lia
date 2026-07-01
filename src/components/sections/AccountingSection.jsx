@@ -103,7 +103,7 @@ const PAYMENT_METHOD_META = {
   transferencia: { label: 'Transferencia', shortLabel: 'TRF', className: 'transfer' },
   sin_metodo: { label: 'Sin metodo', shortLabel: 'S/M', className: 'missing' },
 };
-const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL'];
+const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
 const normalizePaymentMethod = (value) => {
   const normalized = normalizeText(value).replace(/\s+/g, '_');
