@@ -5324,7 +5324,22 @@ const CONTRACT_LEGACY_DOCUMENT_STYLES = `
   }
 `;
 
-const CONTRACT_CATEGORY_ACCENTS = ['amber', 'blue', 'green', 'violet', 'rose', 'slate'];
+const CONTRACT_AREA_ORDER = [
+  { key: 'cristaleria', label: 'CRISTALERIA', className: 'blue' },
+  { key: 'manteleria', label: 'MANTELERIA', className: 'violet' },
+  { key: 'mobiliario', label: 'MOBILIARIO', className: 'green' },
+];
+
+const getContractAreaMeta = (category) => {
+  const normalized = normalizeText(category);
+  if (normalized.includes('cristal') || normalized.includes('vajilla') || normalized.includes('copa') || normalized.includes('vaso') || normalized.includes('plato') || normalized.includes('cubierto')) {
+    return CONTRACT_AREA_ORDER[0];
+  }
+  if (normalized.includes('mantel') || normalized.includes('servilleta') || normalized.includes('camino') || normalized.includes('faldin') || normalized.includes('tela')) {
+    return CONTRACT_AREA_ORDER[1];
+  }
+  return CONTRACT_AREA_ORDER[2];
+};
 
 const getContractLineCategory = (line, item) =>
   String(
@@ -5899,27 +5914,24 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
     }))
     : (rental.items ?? []);
-  const categoryAccentMap = new Map();
-  const getCategoryAccent = (category) => {
-    const key = normalizeText(category) || 'sin_categoria';
-    if (!categoryAccentMap.has(key)) {
-      categoryAccentMap.set(key, CONTRACT_CATEGORY_ACCENTS[categoryAccentMap.size % CONTRACT_CATEGORY_ACCENTS.length]);
-    }
-    return categoryAccentMap.get(key);
-  };
   const documentItems = rawDocumentItems
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
       const category = getContractLineCategory(line, item);
+      const area = getContractAreaMeta(category);
+      const areaIndex = CONTRACT_AREA_ORDER.findIndex((entry) => entry.key === area.key);
       return {
         ...line,
         _originalIndex: index,
         _category: category,
+        _area: area,
+        _areaIndex: areaIndex >= 0 ? areaIndex : CONTRACT_AREA_ORDER.length,
         _categoryKey: normalizeText(category),
       };
     })
     .sort((left, right) =>
-      left._categoryKey.localeCompare(right._categoryKey, 'es')
+      left._areaIndex - right._areaIndex
+      || left._categoryKey.localeCompare(right._categoryKey, 'es')
       || String(left.itemName ?? '').localeCompare(String(right.itemName ?? ''), 'es')
       || left._originalIndex - right._originalIndex
     );
@@ -5928,12 +5940,11 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
-        const category = line._category || getContractLineCategory(line, item);
-        const accent = getCategoryAccent(category);
+        const area = line._area || getContractAreaMeta(line._category || getContractLineCategory(line, item));
         return `
-        <tr class="rc-cat-${escapeHtml(accent)}">
+        <tr class="rc-cat-${escapeHtml(area.className)}">
           <td>
-            <span class="rc-category-chip">${escapeHtml(category)}</span>
+            <span class="rc-category-chip">${escapeHtml(area.label)}</span>
             <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
             ${meta ? `<span class="rc-item-meta">${escapeHtml(meta)}</span>` : ''}
           </td>
