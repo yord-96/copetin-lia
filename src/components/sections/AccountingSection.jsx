@@ -974,31 +974,64 @@ function AccountingSection({
     return keys.some((key) => key && returnedGuaranteeReferences.has(key));
   }, [returnedGuaranteeReferences]);
 
+  const getRentalGuaranteeInfo = useCallback((rental, contract = null) => {
+    const declaredBs = toNumber(
+      rental?.guaranteeDeclaredBs
+      ?? rental?.guarantee?.amountBs
+      ?? contract?.totals?.guaranteeBs
+      ?? rental?.depositBs,
+    );
+    const rawStatus = String(
+      rental?.guarantee?.status
+      ?? rental?.payment?.guaranteeStatus
+      ?? contract?.guarantee?.status
+      ?? contract?.payment?.guaranteeStatus
+      ?? '',
+    ).trim();
+    const storedDepositBs = toNumber(rental?.depositBs);
+    const storedValidatedBs = toNumber(rental?.guarantee?.validatedBs);
+    const isValidated = rawStatus === 'validado' || (rawStatus !== 'no_validado' && storedDepositBs > 0);
+    const validatedBs = isValidated
+      ? Math.max(0, storedDepositBs || storedValidatedBs || declaredBs)
+      : 0;
+    return {
+      declaredBs,
+      validatedBs,
+      unvalidatedBs: isValidated ? 0 : declaredBs,
+      status: isValidated ? 'validado' : 'no_validado',
+      isValidated,
+    };
+  }, []);
+
   const activeGuaranteeRows = useMemo(
     () => rentals
       .filter((rental) => {
         if (rental?.deletedAt) return false;
         const contract = getRentalContract(rental);
-        if (toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs) <= 0) return false;
+        const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
+        if (guaranteeInfo.declaredBs <= 0) return false;
         const status = String(rental?.status ?? '').toLowerCase();
         if (status === 'active') return true;
         if (status !== 'returned') return false;
         return !hasReturnedGuarantee(rental, contract);
       }),
-    [getRentalContract, hasReturnedGuarantee, rentals],
+    [getRentalContract, getRentalGuaranteeInfo, hasReturnedGuarantee, rentals],
   );
 
   const guaranteesToReturnRows = useMemo(() => rentals
     .filter((rental) => !rental?.deletedAt)
     .map((rental) => {
       const contract = getRentalContract(rental);
-      const guaranteeBs = toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs);
+      const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
+      const guaranteeBs = guaranteeInfo.declaredBs;
       const settlement = rental?.returnSettlement ?? {};
       const status = String(rental?.status ?? '').toLowerCase();
       const isReturned = status === 'returned';
-      const refundBs = isReturned ? toNumber(settlement?.refundBs ?? rental?.refundBs ?? guaranteeBs) : guaranteeBs;
+      const refundBs = guaranteeInfo.isValidated && isReturned
+        ? toNumber(settlement?.refundBs ?? rental?.refundBs ?? guaranteeInfo.validatedBs)
+        : guaranteeInfo.validatedBs;
       if (!['active', 'returned'].includes(status)) return null;
-      if (guaranteeBs <= 0 || refundBs <= 0 || hasReturnedGuarantee(rental, contract)) return null;
+      if (guaranteeBs <= 0 || hasReturnedGuarantee(rental, contract)) return null;
       return {
         id: rental.id,
         rentalId: rental.id,
@@ -1008,23 +1041,41 @@ function AccountingSection({
         customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
         responsibleName: getRentalResponsibleName(rental, contract),
         eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
-        amountBs: refundBs,
-        isReadyToReturn: isReturned,
-        statusLabel: isReturned ? 'Lista para devolver' : 'Material pendiente',
+        amountBs: guaranteeInfo.isValidated ? refundBs : guaranteeInfo.unvalidatedBs,
+        declaredBs: guaranteeInfo.declaredBs,
+        validatedBs: guaranteeInfo.isValidated ? refundBs : 0,
+        unvalidatedBs: guaranteeInfo.unvalidatedBs,
+        guaranteeStatus: guaranteeInfo.status,
+        isMoneyHeld: guaranteeInfo.isValidated && refundBs > 0,
+        isReadyToReturn: isReturned && guaranteeInfo.isValidated && refundBs > 0,
+        statusLabel: guaranteeInfo.isValidated
+          ? isReturned ? refundBs > 0 ? 'Lista para devolver' : 'Sin devolucion' : 'Material pendiente'
+          : 'No validada',
       };
     })
     .filter(Boolean)
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
-  [getRentalContract, getRentalResponsibleName, hasReturnedGuarantee, rentals]);
+  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, rentals]);
 
   const calculatedGuaranteesHeldBs = useMemo(
     () => sumBy(activeGuaranteeRows, (rental) => {
       const contract = getRentalContract(rental);
-      return toNumber(rental?.depositBs ?? contract?.totals?.guaranteeBs);
+      return getRentalGuaranteeInfo(rental, contract).validatedBs;
     }),
-    [activeGuaranteeRows, getRentalContract],
+    [activeGuaranteeRows, getRentalContract, getRentalGuaranteeInfo],
   );
   const guaranteesHeldBs = calculatedGuaranteesHeldBs;
+  const unvalidatedGuaranteesBs = useMemo(
+    () => sumBy(activeGuaranteeRows, (rental) => {
+      const contract = getRentalContract(rental);
+      return getRentalGuaranteeInfo(rental, contract).unvalidatedBs;
+    }),
+    [activeGuaranteeRows, getRentalContract, getRentalGuaranteeInfo],
+  );
+  const guaranteeCommitmentsBs = useMemo(
+    () => Number((guaranteesHeldBs + unvalidatedGuaranteesBs).toFixed(2)),
+    [guaranteesHeldBs, unvalidatedGuaranteesBs],
+  );
   const operationalBigCashBs = useMemo(
     () => Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
     [bigCashBalanceBs, guaranteesHeldBs],
@@ -1607,6 +1658,10 @@ function AccountingSection({
   };
 
   const handleReturnGuarantee = async (row) => {
+    if (row && !row.isMoneyHeld) {
+      setCashActionError('Esta garantia no esta validada: no hay dinero recibido para devolver.');
+      return;
+    }
     if (row && !row.isReadyToReturn) {
       setCashActionError('Todavia no se puede devolver esta garantia: primero debe volver el material.');
       return;
@@ -1617,7 +1672,7 @@ function AccountingSection({
       const created = await onCreateCashMovement?.({
         type: 'egreso',
         cashBoxType: 'BIG_CASH',
-        amountBs: row.amountBs,
+        amountBs: row.validatedBs,
         description: `Devolucion garantia: ${row.customerName}`,
         category: 'garantia_devuelta_manual',
         paymentMethod: 'efectivo',
@@ -1796,9 +1851,9 @@ function AccountingSection({
       },
       guarantees: {
         title: 'Garantias por devolver',
-        subtitle: 'Garantias retenidas de contratos cuyo material ya volvió y siguen pendientes de devolución.',
+        subtitle: 'Garantias validadas y no validadas separadas por contrato.',
         rows: guaranteesToReturnRows,
-        colSpan: 7,
+        colSpan: 8,
         searchText: (row) => [
           row.contractCode,
           row.orderCode,
@@ -1806,7 +1861,8 @@ function AccountingSection({
           row.responsibleName,
           row.eventDate,
           row.statusLabel,
-          row.amountBs,
+          row.validatedBs,
+          row.unvalidatedBs,
         ].join(' '),
         renderHeader: () => (
           <tr>
@@ -1815,7 +1871,8 @@ function AccountingSection({
             <th>Responsable</th>
             <th>Fecha evento</th>
             <th>Estado</th>
-            <th>Garantia</th>
+            <th>Validada</th>
+            <th>No validada</th>
             <th />
           </tr>
         ),
@@ -1826,16 +1883,17 @@ function AccountingSection({
             <td>{row.responsibleName}</td>
             <td>{formatDate(row.eventDate)}</td>
             <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
-            <td className="amount">{formatBs(row.amountBs)}</td>
+            <td className="amount">{formatBs(row.validatedBs)}</td>
+            <td className="amount">{formatBs(row.unvalidatedBs)}</td>
             <td>
               <button
                 type="button"
                 className="accounting-inline-action"
                 onClick={() => handleReturnGuarantee(row)}
-                disabled={!row.isReadyToReturn || isSubmittingCash}
-                title={row.isReadyToReturn ? 'Devolver garantía y generar recibo' : 'Primero debe volver el material'}
+                disabled={!row.isReadyToReturn || !row.isMoneyHeld || isSubmittingCash}
+                title={row.isMoneyHeld ? 'Devolver garantia y generar recibo' : 'Garantia no validada, no hay dinero para devolver'}
               >
-                {row.isReadyToReturn ? 'Devolver' : 'No listo'}
+                {row.isReadyToReturn && row.isMoneyHeld ? 'Devolver' : row.isMoneyHeld ? 'No listo' : 'Sin dinero'}
               </button>
             </td>
           </tr>
@@ -2676,18 +2734,18 @@ function AccountingSection({
               <div>
                 <strong>TOTAL EN CAJA GRANDE</strong>
                 <h3 className="value-blue">{formatBs(bigCashBalanceBs)}</h3>
-                <p>Incluye dinero operativo y garantias retenidas.</p>
+                <p>Fisico real: operativo + garantias validadas.</p>
               </div>
             </div>
           </button>
-          <button type="button" className="bigcash-kpi-card guarantee is-clickable" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guaranteeReceipts'); }}>
+          <button type="button" className="bigcash-kpi-card guarantee is-clickable" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guarantees'); }}>
             <small className="pill warning">No disponible</small>
             <div className="bigcash-kpi-content">
               <span className="bigcash-hero-icon violet"><MiniIcon kind="lock" /></span>
               <div>
                 <strong>GARANTIAS RETENIDAS</strong>
-                <h3 className="value-violet">{formatBs(guaranteesHeldBs)}</h3>
-                <p>{activeGuaranteeRows.length} contrato{activeGuaranteeRows.length === 1 ? '' : 's'} con garantia activa.</p>
+                <h3 className="value-violet">{formatBs(guaranteeCommitmentsBs)}</h3>
+                <p>Validadas {formatBs(guaranteesHeldBs)} | No validadas {formatBs(unvalidatedGuaranteesBs)}</p>
               </div>
             </div>
           </button>
@@ -2871,7 +2929,7 @@ function AccountingSection({
                 <h3><span className="bigcash-title-icon violet"><MiniIcon kind="lock" /></span>Garantías retenidas / por devolver</h3>
                 <p>Todo el dinero retenido. Solo se devuelve cuando el material ya volvió.</p>
               </div>
-              <strong>{formatBs(guaranteesHeldBs)}</strong>
+              <strong>{formatBs(guaranteeCommitmentsBs)}</strong>
             </header>
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
@@ -2881,7 +2939,8 @@ function AccountingSection({
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Estado</th>
-                    <th>Garantía</th>
+                    <th>Validada</th>
+                    <th>No validada</th>
                     <th />
                   </tr>
                 </thead>
@@ -2892,29 +2951,30 @@ function AccountingSection({
                       <td><strong>{row.customerName}</strong></td>
                       <td>{row.responsibleName}</td>
                       <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
-                      <td className="amount">{formatBs(row.amountBs)}</td>
+                      <td className="amount">{formatBs(row.validatedBs)}</td>
+                      <td className="amount">{formatBs(row.unvalidatedBs)}</td>
                       <td>
-                        {row.isReadyToReturn ? (
+                        {row.isReadyToReturn && row.isMoneyHeld ? (
                           <button
                             type="button"
                             className="accounting-inline-action"
                             onClick={() => handleReturnGuarantee(row)}
                             disabled={isSubmittingCash}
-                            title="Devolver garantía y generar recibo"
+                            title="Devolver garantia y generar recibo"
                           >
                             Devolver
                           </button>
                         ) : (
-                          <span className="bigcash-action-muted">No listo</span>
+                          <span className="bigcash-action-muted">{row.isMoneyHeld ? 'No listo' : 'Sin dinero'}</span>
                         )}
                       </td>
                     </tr>
                   ))}
-                  {guaranteesToReturnRows.length === 0 ? <tr><td colSpan={6}><p className="status">Sin garantías retenidas pendientes.</p></td></tr> : null}
+                  {guaranteesToReturnRows.length === 0 ? <tr><td colSpan={7}><p className="status">Sin garantias retenidas pendientes.</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
-            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guarantees'); }}>Ver más garantías</button>
+            <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guarantees'); }}>Ver mas garantias</button>
           </article>
         </section>
 
@@ -3087,12 +3147,12 @@ function AccountingSection({
                 </span>
                 <i>+</i>
                 <span>
-                  <small>Garantías</small>
+                  <small>Garantias validadas</small>
                   <b className="value-violet">{formatBs(guaranteesHeldBs)}</b>
                 </span>
                 <i>=</i>
                 <span className="current">
-                  <small>Total físico</small>
+                  <small>Total fisico</small>
                   <b className="value-blue">{formatBs(bigCashBalanceBs)}</b>
                 </span>
               </div>

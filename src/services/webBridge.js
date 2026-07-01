@@ -5940,7 +5940,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   );
   const hasDeliveryFee = Number.isFinite(deliveryFeeBs) && deliveryFeeBs > 0;
   const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
-  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + (isGuaranteeValidated ? Math.max(0, Number(guaranteeBs ?? 0)) : 0);
+  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
   const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
   const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
@@ -11488,7 +11488,7 @@ const createWebBridge = () => ({
           pickupWindowStart: String(payload?.pickupWindowStart ?? '').trim() || null,
           pickupWindowEnd: String(payload?.pickupWindowEnd ?? '').trim() || dueTime,
           idCardHeld,
-          depositBs: toPositiveRoundedNumber(depositBs),
+          depositBs: guaranteeStatus === 'validado' ? toPositiveRoundedNumber(depositBs) : 0,
           guaranteeDeclaredBs,
           guarantee: {
             amountBs: guaranteeDeclaredBs,
