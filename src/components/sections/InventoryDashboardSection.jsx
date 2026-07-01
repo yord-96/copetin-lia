@@ -96,6 +96,11 @@ const DEFAULT_PRODUCT_FILTERS = {
 };
 
 const INVENTORY_OPS_FILTERS_STORAGE_KEY = 'copetin.inventory.opsFilters';
+const RETURN_CHARGE_OWNER_OPTIONS = [
+  { value: 'cliente', label: 'Contrato / cliente' },
+  { value: 'transporte', label: 'Mal manejo transporte' },
+  { value: 'lavado', label: 'Lavado / post evento' },
+];
 
 const readStoredProductFilters = () => {
   if (typeof window === 'undefined') return DEFAULT_PRODUCT_FILTERS;
@@ -2720,6 +2725,9 @@ function InventoryDashboardSection({
           missingQty: picked?.condition === 'faltante'
             ? Number(line.quantity ?? 0)
             : Math.max(0, Number(line.quantity ?? 0) - Number(picked?.pickedQty ?? line.quantity ?? 0)),
+          damagedUnitChargeBs: Number(line.damagedUnitChargeBs ?? line.rentalPriceBs ?? 0),
+          missingUnitChargeBs: Number(line.missingUnitChargeBs ?? line.rentalPriceBs ?? 0),
+          chargeOwner: 'cliente',
           damageNote: picked?.note ?? '',
         };
       }),
@@ -2750,12 +2758,47 @@ function InventoryDashboardSection({
       if (!current) return current;
       return {
         ...current,
-        items: current.items.map((line) => (
-          line.itemId === itemId ? { ...line, [field]: value } : line
-        )),
+        items: current.items.map((line) => {
+          if (line.itemId !== itemId) return line;
+          const nextLine = { ...line, [field]: value };
+          if (field === 'returnedQty' || field === 'damagedQty') {
+            const expectedQty = Math.max(0, Math.trunc(Number(nextLine.expectedQty ?? 0)));
+            const returnedQty = Math.max(0, Math.trunc(Number(nextLine.returnedQty ?? 0)));
+            const damagedQty = Math.max(0, Math.trunc(Number(nextLine.damagedQty ?? 0)));
+            nextLine.missingQty = String(Math.max(0, expectedQty - returnedQty - damagedQty));
+          }
+          return nextLine;
+        }),
       };
     });
   };
+
+  const getReceivingLineNumbers = (line) => {
+    const expectedQty = Math.max(0, Math.trunc(Number(line.expectedQty ?? 0)));
+    const returnedQty = Math.max(0, Math.trunc(Number(line.returnedQty ?? 0)));
+    const damagedQty = Math.max(0, Math.trunc(Number(line.damagedQty ?? 0)));
+    const missingQty = Math.max(0, Math.trunc(Number(line.missingQty ?? 0)));
+    const damagedUnitChargeBs = Math.max(0, Number(line.damagedUnitChargeBs ?? 0));
+    const missingUnitChargeBs = Math.max(0, Number(line.missingUnitChargeBs ?? 0));
+    const penaltyBs = Number(((damagedQty * damagedUnitChargeBs) + (missingQty * missingUnitChargeBs)).toFixed(2));
+    const balanceQty = expectedQty - returnedQty - damagedQty - missingQty;
+    return { expectedQty, returnedQty, damagedQty, missingQty, damagedUnitChargeBs, missingUnitChargeBs, penaltyBs, balanceQty };
+  };
+
+  const receivingTotals = useMemo(() => {
+    if (!receivingModal) return { penaltyBs: 0, clientPenaltyBs: 0, internalPenaltyBs: 0, issueRows: 0 };
+    return receivingModal.items.reduce((totals, line) => {
+      const values = getReceivingLineNumbers(line);
+      if (values.damagedQty > 0 || values.missingQty > 0) totals.issueRows += 1;
+      totals.penaltyBs = Number((totals.penaltyBs + values.penaltyBs).toFixed(2));
+      if (line.chargeOwner === 'cliente') {
+        totals.clientPenaltyBs = Number((totals.clientPenaltyBs + values.penaltyBs).toFixed(2));
+      } else {
+        totals.internalPenaltyBs = Number((totals.internalPenaltyBs + values.penaltyBs).toFixed(2));
+      }
+      return totals;
+    }, { penaltyBs: 0, clientPenaltyBs: 0, internalPenaltyBs: 0, issueRows: 0 });
+  }, [receivingModal]);
 
   const submitReceiving = async (event) => {
     event.preventDefault();
@@ -2765,7 +2808,17 @@ function InventoryDashboardSection({
     try {
       await onReceiveReturnedOrder?.({
         rentalId: receivingModal.rental.id,
-        returnedItems: receivingModal.items,
+        returnedItems: receivingModal.items.map((line) => {
+          const values = getReceivingLineNumbers(line);
+          return {
+            ...line,
+            returnedQty: values.returnedQty,
+            damagedQty: values.damagedQty,
+            missingQty: values.missingQty,
+            damagedUnitChargeBs: values.damagedUnitChargeBs,
+            missingUnitChargeBs: values.missingUnitChargeBs,
+          };
+        }),
       });
       setReceivingModal(null);
       showMessage('Recepcion de inventario registrada correctamente.');
@@ -5005,6 +5058,12 @@ function InventoryDashboardSection({
               </button>
             </header>
             <div className="orders-preview-body inventory-receiving-body">
+              <div className="inventory-receiving-summary">
+                <span><small>Items revisados</small><strong>{receivingModal.items.length}</strong></span>
+                <span><small>Con novedad</small><strong>{receivingTotals.issueRows}</strong></span>
+                <span><small>Cobra cliente / garantia</small><strong>{formatBs(receivingTotals.clientPenaltyBs)}</strong></span>
+                <span><small>Perdida interna</small><strong>{formatBs(receivingTotals.internalPenaltyBs)}</strong></span>
+              </div>
               <div className="transport-checklist-table">
                 <div className="transport-checklist-head inventory-receiving-head">
                   <span>Item</span>
@@ -5012,18 +5071,44 @@ function InventoryDashboardSection({
                   <span>Bueno</span>
                   <span>Danado</span>
                   <span>Faltante</span>
+                  <span>Precio</span>
+                  <span>Origen</span>
+                  <span>Total</span>
                   <span>Observacion</span>
                 </div>
-                {receivingModal.items.map((line) => (
-                  <div key={line.itemId} className="transport-checklist-row inventory-receiving-row">
-                    <strong>{line.itemName}</strong>
-                    <span>{line.expectedQty}</span>
-                    <input type="number" min="0" max={line.expectedQty} value={line.returnedQty} onChange={(event) => updateReceivingLine(line.itemId, 'returnedQty', event.target.value)} />
-                    <input type="number" min="0" max={line.expectedQty} value={line.damagedQty} onChange={(event) => updateReceivingLine(line.itemId, 'damagedQty', event.target.value)} />
-                    <input type="number" min="0" max={line.expectedQty} value={line.missingQty} onChange={(event) => updateReceivingLine(line.itemId, 'missingQty', event.target.value)} />
-                    <input type="text" value={line.damageNote} onChange={(event) => updateReceivingLine(line.itemId, 'damageNote', event.target.value)} placeholder="Detalle si hay dano/faltante" />
-                  </div>
-                ))}
+                {receivingModal.items.map((line) => {
+                  const values = getReceivingLineNumbers(line);
+                  const hasMismatch = values.balanceQty !== 0;
+                  return (
+                    <div key={line.itemId} className={`transport-checklist-row inventory-receiving-row ${hasMismatch ? 'has-mismatch' : ''}`}>
+                      <strong>{line.itemName}</strong>
+                      <span>{line.expectedQty}</span>
+                      <input type="number" min="0" max={line.expectedQty} value={line.returnedQty} onChange={(event) => updateReceivingLine(line.itemId, 'returnedQty', event.target.value)} />
+                      <input type="number" min="0" max={line.expectedQty} value={line.damagedQty} onChange={(event) => updateReceivingLine(line.itemId, 'damagedQty', event.target.value)} />
+                      <input type="number" min="0" max={line.expectedQty} value={line.missingQty} onChange={(event) => updateReceivingLine(line.itemId, 'missingQty', event.target.value)} />
+                      <div className="inventory-receiving-price-stack">
+                        <label>
+                          <small>Dano</small>
+                          <input type="number" min="0" step="0.01" value={line.damagedUnitChargeBs} onChange={(event) => updateReceivingLine(line.itemId, 'damagedUnitChargeBs', event.target.value)} />
+                        </label>
+                        <label>
+                          <small>Falta</small>
+                          <input type="number" min="0" step="0.01" value={line.missingUnitChargeBs} onChange={(event) => updateReceivingLine(line.itemId, 'missingUnitChargeBs', event.target.value)} />
+                        </label>
+                      </div>
+                      <select value={line.chargeOwner} onChange={(event) => updateReceivingLine(line.itemId, 'chargeOwner', event.target.value)}>
+                        {RETURN_CHARGE_OWNER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                      <span className="inventory-receiving-total">
+                        <strong>{formatBs(values.penaltyBs)}</strong>
+                        {hasMismatch ? <small>Revisar suma: {values.balanceQty > 0 ? `faltan ${values.balanceQty}` : `sobran ${Math.abs(values.balanceQty)}`}</small> : null}
+                      </span>
+                      <input type="text" value={line.damageNote} onChange={(event) => updateReceivingLine(line.itemId, 'damageNote', event.target.value)} placeholder="Detalle si hay dano/faltante" />
+                    </div>
+                  );
+                })}
               </div>
               {receivingError ? <p className="status error">{receivingError}</p> : null}
             </div>

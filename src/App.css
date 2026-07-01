@@ -15312,9 +15312,132 @@ textarea:focus {
   padding: 1rem;
 }
 
+.inventory-receiving-body .transport-checklist-table {
+  overflow-x: auto;
+}
+
+.inventory-receiving-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.inventory-receiving-summary span {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #dbe3f4;
+  border-radius: 0.7rem;
+  background: #ffffff;
+}
+
+.inventory-receiving-summary small {
+  color: #66739d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.inventory-receiving-summary strong {
+  color: #09245c;
+  font-size: 1rem;
+}
+
 .inventory-receiving-head,
 .inventory-receiving-row {
-  grid-template-columns: minmax(180px, 1.4fr) 70px 80px 80px 80px minmax(170px, 1fr);
+  grid-template-columns: minmax(210px, 1.5fr) 68px 76px 76px 76px minmax(138px, 0.8fr) minmax(150px, 0.9fr) minmax(110px, 0.7fr) minmax(190px, 1fr);
+  min-width: 1180px;
+}
+
+.inventory-receiving-row.has-mismatch {
+  border-color: #f9b4a3;
+  background: #fff8f5;
+}
+
+.inventory-receiving-price-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.inventory-receiving-price-stack label {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.inventory-receiving-price-stack small,
+.inventory-receiving-total small {
+  color: #7b86a8;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.inventory-receiving-price-stack input {
+  padding-inline: 0.4rem;
+}
+
+.inventory-receiving-total {
+  display: grid;
+  gap: 0.15rem;
+  color: #09245c;
+}
+
+.inventory-receiving-total strong {
+  font-weight: 900;
+}
+
+.inventory-receiving-row.has-mismatch .inventory-receiving-total small {
+  color: #d94b18;
+}
+
+.bigcash-return-issues-card {
+  margin-top: 1.15rem;
+}
+
+.bigcash-return-issues-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid #dbe3f4;
+}
+
+.bigcash-return-issues-card > header > div > span {
+  color: #ef4b00;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bigcash-return-issues-card > header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.25rem 0;
+  color: #09245c;
+}
+
+.bigcash-return-issues-card > header p {
+  margin: 0;
+  color: #62708f;
+  font-size: 0.9rem;
+}
+
+.bigcash-return-issues-card > header > strong {
+  flex: 0 0 auto;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  color: #ea580c;
+  background: #fff7ed;
+  font-size: 1.05rem;
+}
+
+.bigcash-return-issues-table td:nth-child(2) {
+  min-width: 230px;
 }
 
 .orders-floating-menu.transport-row-dropdown {

@@ -3408,6 +3408,7 @@ const addReturnCashMovements = (state, rental) => {
   const customerName = String(rental.customerName ?? 'Cliente');
   const settlement = rental?.returnSettlement ?? {};
   const penaltiesBs = Number(settlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
+  const internalPenaltiesBs = Number(settlement?.internalPenaltiesBs ?? rental?.internalPenaltiesBs ?? 0);
   const outstandingRentalBs = Number(settlement?.outstandingRentalBs ?? 0);
   const pendingCollectionBs = Number(settlement?.pendingCollectionBs ?? 0);
   const refundBs = Number(settlement?.refundBs ?? rental?.refundBs ?? 0);
@@ -3417,7 +3418,7 @@ const addReturnCashMovements = (state, rental) => {
       sessionId,
       type: 'liquidacion_devolucion',
       amountBs: 0,
-      description: `Liquidacion devolucion (${customerName}) | Penalidad: Bs ${penaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
+      description: `Liquidacion devolucion (${customerName}) | Penalidad cliente: Bs ${penaltiesBs.toFixed(2)} | Perdida interna: Bs ${internalPenaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
       sourceType: 'return',
       sourceId: rental.id,
       cashBoxType: CASH_BOX_TYPES.BIG_CASH,
@@ -3432,6 +3433,20 @@ const addReturnCashMovements = (state, rental) => {
         amountBs: 0,
         description: `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`,
         sourceType: 'return',
+        sourceId: rental.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }),
+    );
+  }
+
+  if (internalPenaltiesBs > 0) {
+    state.cashMovements.push(
+      buildCashMovement({
+        sessionId,
+        type: 'perdida_interna_devolucion',
+        amountBs: 0,
+        description: `Perdida interna por devolucion (${customerName}): Bs ${internalPenaltiesBs.toFixed(2)}`,
+        sourceType: 'return_internal_loss',
         sourceId: rental.id,
         cashBoxType: CASH_BOX_TYPES.BIG_CASH,
       }),
@@ -4076,6 +4091,11 @@ const buildRentalReceiptHtml = (rental) => {
 };
 
 const buildReturnReceiptHtml = (rental) => {
+  const ownerLabel = (owner) => {
+    if (owner === 'transporte') return 'Transporte';
+    if (owner === 'lavado') return 'Lavado';
+    return 'Cliente';
+  };
   const rows = (rental.returnReport ?? [])
     .map(
       (line) => `
@@ -4085,6 +4105,8 @@ const buildReturnReceiptHtml = (rental) => {
         <td>${line.returnedQty}</td>
         <td>${line.damagedQty}</td>
         <td>${line.missingQty}</td>
+        <td>${escapeHtml(ownerLabel(line.chargeOwner))}</td>
+        <td>${escapeHtml(`${formatBs(line.damagedUnitChargeBs ?? 0)} / ${formatBs(line.missingUnitChargeBs ?? 0)}`)}</td>
         <td>${formatBs(line.penaltyBs ?? 0)}</td>
       </tr>`,
     )
@@ -4117,13 +4139,14 @@ const buildReturnReceiptHtml = (rental) => {
       <section class="box">
         <table>
           <thead>
-            <tr><th>Item</th><th>Esp.</th><th>Dev.</th><th>Dan.</th><th>Falt.</th><th>Cargo</th></tr>
+            <tr><th>Item</th><th>Esp.</th><th>Bueno</th><th>Dan.</th><th>Falt.</th><th>Origen</th><th>Precio d/f</th><th>Cargo</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
       </section>
       <section class="box">
-        <p><strong>Penalidades:</strong> ${formatBs(rental.penaltiesBs ?? 0)}</p>
+        <p><strong>Penalidades cliente:</strong> ${formatBs(rental.penaltiesBs ?? 0)}</p>
+        <p><strong>Perdida interna:</strong> ${formatBs(rental.internalPenaltiesBs ?? 0)}</p>
         <p><strong>Reembolso:</strong> ${formatBs(rental.refundBs ?? 0)}</p>
       </section>
     </body>
@@ -11757,7 +11780,14 @@ const createWebBridge = () => ({
           throw new Error('La orden esta anulada y no puede registrarse como devolucion.');
         }
 
+        const normalizeReturnChargeOwner = (value) => {
+          const normalized = normalizeText(value).replace(/\s+/g, '_');
+          if (['transporte', 'lavado'].includes(normalized)) return normalized;
+          return 'cliente';
+        };
+
         let penaltiesBs = 0;
+        let internalPenaltiesBs = 0;
         const returnReport = rental.items.map((rentalLine) => {
           const incomingLine = lines.find((entry) => entry.itemId === rentalLine.itemId);
           if (!incomingLine) {
@@ -11767,6 +11797,7 @@ const createWebBridge = () => ({
           const returnedQty = Math.max(0, toInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
           const damagedQty = Math.max(0, toInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));
           const missingQty = Math.max(0, toInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
+          const chargeOwner = normalizeReturnChargeOwner(incomingLine.chargeOwner);
           const damageNote = String(incomingLine.damageNote ?? '').trim();
           const expectedQty = rentalLine.quantity;
 
@@ -11775,21 +11806,29 @@ const createWebBridge = () => ({
               `La suma de devuelto + daniado + faltante para "${rentalLine.itemName}" debe ser ${expectedQty}.`,
             );
           }
-          if (damagedQty > 0 && !damageNote) {
-            throw new Error(`Debes registrar la nota del dano para "${rentalLine.itemName}".`);
+          if ((damagedQty > 0 || missingQty > 0) && !damageNote) {
+            throw new Error(`Debes registrar la observacion para "${rentalLine.itemName}".`);
           }
 
-          const damagedUnitChargeBs = Number.isFinite(Number(rentalLine.damagedUnitChargeBs))
-            ? Number(rentalLine.damagedUnitChargeBs)
+          const damagedUnitChargeBs = Number.isFinite(Number(incomingLine.damagedUnitChargeBs))
+            ? Math.max(0, Number(incomingLine.damagedUnitChargeBs))
+            : Number.isFinite(Number(rentalLine.damagedUnitChargeBs))
+            ? Math.max(0, Number(rentalLine.damagedUnitChargeBs))
             : Number((rentalLine.rentalPriceBs * damageMultiplier).toFixed(2));
-          const missingUnitChargeBs = Number.isFinite(Number(rentalLine.missingUnitChargeBs))
-            ? Number(rentalLine.missingUnitChargeBs)
+          const missingUnitChargeBs = Number.isFinite(Number(incomingLine.missingUnitChargeBs))
+            ? Math.max(0, Number(incomingLine.missingUnitChargeBs))
+            : Number.isFinite(Number(rentalLine.missingUnitChargeBs))
+            ? Math.max(0, Number(rentalLine.missingUnitChargeBs))
             : Number((rentalLine.rentalPriceBs * missingMultiplier).toFixed(2));
 
           const damagedFeeBs = Number((damagedQty * damagedUnitChargeBs).toFixed(2));
           const missingFeeBs = Number((missingQty * missingUnitChargeBs).toFixed(2));
           const linePenaltyBs = Number((damagedFeeBs + missingFeeBs).toFixed(2));
-          penaltiesBs = Number((penaltiesBs + linePenaltyBs).toFixed(2));
+          if (chargeOwner === 'cliente') {
+            penaltiesBs = Number((penaltiesBs + linePenaltyBs).toFixed(2));
+          } else {
+            internalPenaltiesBs = Number((internalPenaltiesBs + linePenaltyBs).toFixed(2));
+          }
 
           const item = state.items.find((entry) => entry.id === rentalLine.itemId);
           if (item) {
@@ -11861,8 +11900,11 @@ const createWebBridge = () => ({
               damagedQty,
               missingQty,
               damageNote,
+              chargeOwner,
               damagedUnitChargeBs,
               missingUnitChargeBs,
+              damagedFeeBs,
+              missingFeeBs,
               penaltyBs: linePenaltyBs,
             };
           }
@@ -11877,8 +11919,11 @@ const createWebBridge = () => ({
             damagedQty,
             missingQty,
             damageNote,
+            chargeOwner,
             damagedUnitChargeBs,
             missingUnitChargeBs,
+            damagedFeeBs,
+            missingFeeBs,
             penaltyBs: linePenaltyBs,
           };
         });
@@ -11904,6 +11949,7 @@ const createWebBridge = () => ({
           inventoryReturnedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
         };
         rental.penaltiesBs = penaltiesBs;
+        rental.internalPenaltiesBs = internalPenaltiesBs;
         rental.refundBs = refundBs;
         rental.payment = {
           ...(rental.payment ?? {}),
@@ -11914,6 +11960,7 @@ const createWebBridge = () => ({
         rental.returnSettlement = {
           outstandingRentalBs,
           penaltiesBs,
+          internalPenaltiesBs,
           totalDiscountAgainstDepositBs,
           discountCoveredByDepositBs,
           pendingCollectionBs,

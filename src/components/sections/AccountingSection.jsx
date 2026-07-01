@@ -1072,6 +1072,63 @@ function AccountingSection({
     [pendingReceivableRows],
   );
 
+  const returnIssueRows = useMemo(
+    () => rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
+      .flatMap((rental) => {
+        const contract = getRentalContract(rental);
+        const settlement = rental?.returnSettlement ?? {};
+        const pendingCollectionBs = toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs);
+        return (Array.isArray(rental.returnReport) ? rental.returnReport : [])
+          .filter((line) => toNumber(line.damagedQty) > 0 || toNumber(line.missingQty) > 0 || toNumber(line.penaltyBs) > 0)
+          .map((line, index) => {
+            const chargeOwner = ['transporte', 'lavado'].includes(String(line.chargeOwner ?? '').toLowerCase())
+              ? String(line.chargeOwner).toLowerCase()
+              : 'cliente';
+            return {
+              id: `${rental.id}-${line.itemId ?? index}`,
+              rentalId: rental.id,
+              orderCode: rental.orderCode ?? '',
+              contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental.id,
+              customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
+              responsibleName: getRentalResponsibleName(rental, contract),
+              eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
+              returnedAt: rental.returnedAt,
+              itemName: line.itemName ?? 'Item',
+              damagedQty: toNumber(line.damagedQty),
+              missingQty: toNumber(line.missingQty),
+              damagedUnitChargeBs: toNumber(line.damagedUnitChargeBs),
+              missingUnitChargeBs: toNumber(line.missingUnitChargeBs),
+              penaltyBs: toNumber(line.penaltyBs),
+              chargeOwner,
+              note: line.damageNote ?? '',
+              pendingCollectionBs,
+              pendingBs: pendingCollectionBs,
+              totalBs: toNumber(rental?.totals?.totalBs),
+              paidBs: toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+              guaranteeBs: toNumber(rental?.depositBs),
+              penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
+              outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
+              refundBs: toNumber(settlement.refundBs ?? rental?.refundBs),
+              status: 'Dano / faltante',
+            };
+          });
+      })
+      .sort((a, b) => new Date(b.returnedAt ?? 0) - new Date(a.returnedAt ?? 0)),
+    [getRentalContract, getRentalResponsibleName, rentals],
+  );
+
+  const returnIssueTotalBs = useMemo(
+    () => sumBy(returnIssueRows, (row) => row.penaltyBs),
+    [returnIssueRows],
+  );
+
+  const getReturnIssueOwnerLabel = (owner) => {
+    if (owner === 'transporte') return 'Transporte';
+    if (owner === 'lavado') return 'Lavado';
+    return 'Cliente / contrato';
+  };
+
   const quickReportLinks = [
     'Libro de Caja Grande',
     'Libro de Caja Chica',
@@ -2859,6 +2916,59 @@ function AccountingSection({
             </div>
             <button type="button" className="section-link blue" onClick={() => { setBigCashListQuery(''); setBigCashListMonth(''); setBigCashListModal('guarantees'); }}>Ver más garantías</button>
           </article>
+        </section>
+
+        <section className="bigcash-card bigcash-return-issues-card">
+          <header>
+            <div>
+              <span>03 - Recepcion</span>
+              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Danos y faltantes por contrato</h3>
+              <p>Registro separado de roturas, perdidas y cargos definidos al cerrar recepcion.</p>
+            </div>
+            <strong>{formatBs(returnIssueTotalBs)}</strong>
+          </header>
+          <div className="bigcash-table-wrap bigcash-command-table-wrap">
+            <table className="accounting-table bigcash-table bigcash-command-table bigcash-return-issues-table">
+              <thead>
+                <tr>
+                  <th>Contrato</th>
+                  <th>Item</th>
+                  <th>Novedad</th>
+                  <th>Origen</th>
+                  <th>Penalizacion</th>
+                  <th>Estado</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {returnIssueRows.slice(0, 6).map((row) => (
+                  <tr key={row.id}>
+                    <td><strong>{row.contractCode}</strong><small>{row.customerName}</small></td>
+                    <td><strong>{row.itemName}</strong>{row.note ? <small>{row.note}</small> : null}</td>
+                    <td>
+                      <strong>{row.damagedQty > 0 ? `${row.damagedQty} rotos` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltantes` : ''}</strong>
+                      <small>Dano {formatBs(row.damagedUnitChargeBs)} | Falta {formatBs(row.missingUnitChargeBs)}</small>
+                    </td>
+                    <td><span className={`bigcash-status-pill ${row.chargeOwner === 'cliente' ? 'ready' : 'waiting'}`}>{getReturnIssueOwnerLabel(row.chargeOwner)}</span></td>
+                    <td className="amount">{formatBs(row.penaltyBs)}</td>
+                    <td>
+                      {row.chargeOwner === 'cliente'
+                        ? <span className={`bigcash-status-pill ${row.pendingCollectionBs > 0 ? 'waiting' : 'ready'}`}>{row.pendingCollectionBs > 0 ? 'Por cobrar' : 'Cubierto / liquidado'}</span>
+                        : <span className="bigcash-status-pill waiting">Perdida interna</span>}
+                    </td>
+                    <td>
+                      {row.chargeOwner === 'cliente' && row.pendingCollectionBs > 0 ? (
+                        <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>
+                      ) : (
+                        <span className="bigcash-action-muted">Registro</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {returnIssueRows.length === 0 ? <tr><td colSpan={7}><p className="status">Sin danos ni faltantes registrados.</p></td></tr> : null}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="bigcash-operations-grid">
