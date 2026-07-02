@@ -6672,7 +6672,7 @@ const buildWeeklyInventoryHtml = ({
     <meta charset="utf-8" />
     <title>Inventario individual ${escapeHtml(documentCode)}</title>
     <style>
-      @page { size: letter portrait; margin: 0; }
+      @page { size: letter portrait; margin: 7mm 6mm 8mm; }
       * { box-sizing: border-box; }
       html { background: #f4f4f4; }
       body { margin: 0; padding: 8px 8px 12px; color: #09255a; background: #eef1f6; font: 12px Arial, sans-serif; overflow: auto; }
@@ -6748,11 +6748,37 @@ const buildWeeklyInventoryHtml = ({
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
-        html, body { width: 8.5in !important; margin: 0 !important; padding: 0 !important; background: #fff; }
+        html, body { width: auto !important; margin: 0 !important; padding: 0 !important; background: #fff; }
         body.individual-half { height: 11in !important; overflow: hidden !important; }
-        body.individual-half .wi-sheet { width: 8.5in !important; height: 5.5in !important; margin: 0 !important; box-shadow: none; page-break-after: avoid; break-after: avoid; }
+        body.individual-half .wi-sheet { width: auto !important; height: 5.5in !important; margin: 0 !important; padding: 0 !important; box-shadow: none; page-break-after: avoid; break-after: avoid; }
         body.individual-full { min-height: 11in !important; height: auto !important; overflow: visible !important; }
-        body.individual-full .wi-sheet { width: 8.5in !important; min-height: 11in !important; height: auto !important; margin: 0 !important; box-shadow: none; overflow: visible !important; }
+        body.individual-full .wi-sheet { width: auto !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; box-shadow: none; overflow: visible !important; }
+        .wi-sheet, .wi-sheet * { color: #000 !important; text-shadow: none !important; }
+        .wi-table th,
+        .wi-table .wi-group-delivery,
+        .wi-table .wi-group-pickup {
+          color: #000 !important;
+          background: transparent !important;
+          border-color: #000 !important;
+        }
+        .wi-table td,
+        .wi-category-row td,
+        .wi-order,
+        .wi-order-head,
+        .wi-order-meta,
+        .wi-order-meta > div,
+        .wi-period,
+        .wi-event-date,
+        .wi-ready-check i,
+        .wi-product-content img,
+        .wi-no-image {
+          border-color: #000 !important;
+        }
+        .wi-category-row td,
+        .wi-order-head,
+        .wi-event-date {
+          background: transparent !important;
+        }
       }
     </style>
   </head>
@@ -6844,6 +6870,29 @@ const buildWeeklyInventoryHtml = ({
         body { background: #fff; }
         .wi-sheet { max-width: none; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
         .wi-page::after { content: "Pagina " counter(page); }
+        .wi-sheet, .wi-sheet * { color: #000 !important; text-shadow: none !important; }
+        .wi-table th,
+        .wi-table .wi-group-delivery,
+        .wi-table .wi-group-pickup,
+        .wi-footer {
+          color: #000 !important;
+          background: transparent !important;
+          border-color: #000 !important;
+        }
+        .wi-table,
+        .wi-table td,
+        .wi-category-row td,
+        .wi-order,
+        .wi-order-head,
+        .wi-order-meta,
+        .wi-order-meta > div,
+        .wi-period,
+        .wi-ready-check i,
+        .wi-product img,
+        .wi-no-image,
+        .wi-empty {
+          border-color: #000 !important;
+        }
       }
     </style>
   </head>
