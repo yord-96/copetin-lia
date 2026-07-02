@@ -5486,7 +5486,7 @@ const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
 const getReferenceContractStyles = () => `
-  @page { size: legal portrait; margin: 9mm 10mm 10mm; }
+  @page { size: legal portrait; margin: 0; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -5694,7 +5694,6 @@ const getReferenceContractStyles = () => `
     table-layout: fixed;
   }
   .rc-table thead { display: table-header-group; }
-  .rc-table tfoot { display: table-row-group; break-inside: avoid; page-break-inside: avoid; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
     padding: 1.2mm 1.7mm;
@@ -5743,12 +5742,14 @@ const getReferenceContractStyles = () => `
   .rc-cat-slate .rc-category-chip { background: #eef1f4; color: #3e4b5a; }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
-  .rc-table tfoot td {
-    padding: 0;
-    border-right: 0;
+  .rc-financial-block {
+    border: .25mm solid #d8d0c4;
     border-top: .45mm solid #a66a20;
-    border-bottom: 0;
+    border-radius: 0 0 1.5mm 1.5mm;
+    overflow: hidden;
     background: #fffaf2;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .rc-financial-summary {
     display: flex;
@@ -5940,6 +5941,16 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
+  .rc-sheet.is-multipage .rc-financial-block {
+    margin-top: 0;
+    padding-top: 7mm;
+    border-top: 0;
+    break-before: page;
+    page-break-before: always;
+  }
+  .rc-sheet.is-multipage .rc-financial-summary {
+    border-top: .45mm solid #a66a20;
+  }
   @media print {
     html, body {
       width: auto;
@@ -5951,10 +5962,10 @@ const getReferenceContractStyles = () => `
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
       position: relative;
-      width: auto;
+      width: 8.5in;
       min-height: auto;
       margin: 0;
-      padding: 0;
+      padding: .28in .38in .32in;
       display: block;
       box-shadow: none;
       background: #fffdfa;
@@ -5966,7 +5977,6 @@ const getReferenceContractStyles = () => `
       overflow: visible;
     }
     .rc-table thead { display: table-header-group; }
-    .rc-table tfoot { display: table-row-group; }
     .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
     .rc-bottom,
     .rc-client-materials,
@@ -6114,6 +6124,21 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = documentItems.length + contractServices.length + 3;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
+  const multipageClass = itemCount >= 24 ? 'is-multipage' : '';
+  const financialSummaryHtml = `
+          <div class="rc-financial-summary">
+            ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
+            <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
+            ${hasDeliveryFee ? `<div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>` : ''}
+            ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
+            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'validada' : 'no validada'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
+            <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
+            <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+            <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
+            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
+            <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
+          </div>`;
   const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
   const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
@@ -6128,7 +6153,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     <style>${getReferenceContractStyles()}</style>
   </head>
   <body>
-    <main class="rc-sheet ${densityClass}">
+    <main class="rc-sheet ${densityClass} ${multipageClass}">
       <header class="rc-top">
         <div class="rc-logo"><img src="/imagenes/logo_el_copetin_redisenado.png" alt="El Copetin" /></div>
         <div class="rc-business">Alquiler de mobiliario, cristaleria<br />y equipos para eventos</div>
@@ -6197,26 +6222,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="7">Sin items registrados</td></tr>'}</tbody>
-          <tfoot>
-            <tr>
-              <td colspan="7">
-                <div class="rc-financial-summary">
-                  ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
-                  <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
-                  ${hasDeliveryFee ? `<div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>` : ''}
-                  ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-                  <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'validada' : 'no validada'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
-                  ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
-                  <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
-                  <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
-                  <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
-                  <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
-                  <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
-                </div>
-              </td>
-            </tr>
-          </tfoot>
         </table>
+        <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
 
       <section class="rc-bottom">
