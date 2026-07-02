@@ -758,6 +758,12 @@ const EMPTY_COMBO_FORM = {
   name: '',
   category: 'COMBOS',
   rentalPriceBs: '0',
+  pricingCondition: {
+    enabled: false,
+    upToQuantity: '3',
+    upToUnitPriceBs: '0',
+    aboveUnitPriceBs: '0',
+  },
   notes: '',
   ingredients: [],
   imageUrl: null,
@@ -1364,6 +1370,7 @@ function InventoryDashboardSection({
         category: combo.category || 'COMBOS',
         sku: String(combo.id ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COMBO',
         price: Number(combo.rentalPriceBs ?? 0),
+        pricingCondition: combo.pricingCondition ?? null,
         catalogValue,
         ingredients,
         ingredientsCount: ingredients.length,
@@ -2252,6 +2259,12 @@ function InventoryDashboardSection({
       name: row.name,
       category: row.category || 'COMBOS',
       rentalPriceBs: String(row.price ?? 0),
+      pricingCondition: {
+        enabled: Boolean(row.pricingCondition?.enabled),
+        upToQuantity: String(row.pricingCondition?.upToQuantity ?? 3),
+        upToUnitPriceBs: String(row.pricingCondition?.upToUnitPriceBs ?? row.price ?? 0),
+        aboveUnitPriceBs: String(row.pricingCondition?.aboveUnitPriceBs ?? 0),
+      },
       notes: row.notes ?? '',
       ingredients: row.ingredients.map((line) => ({
         itemId: line.itemId,
@@ -2610,6 +2623,12 @@ function InventoryDashboardSection({
       name: String(comboForm.name ?? '').trim(),
       category: String(comboForm.category ?? 'COMBOS').trim() || 'COMBOS',
       rentalPriceBs: Number(comboForm.rentalPriceBs ?? 0),
+      pricingCondition: {
+        enabled: Boolean(comboForm.pricingCondition?.enabled),
+        upToQuantity: Math.max(1, Math.trunc(Number(comboForm.pricingCondition?.upToQuantity ?? 3))),
+        upToUnitPriceBs: Number(comboForm.pricingCondition?.upToUnitPriceBs ?? 0),
+        aboveUnitPriceBs: Number(comboForm.pricingCondition?.aboveUnitPriceBs ?? 0),
+      },
       notes: String(comboForm.notes ?? '').trim(),
       imageUrl: comboForm.imageUrl || null,
       ingredients: comboForm.ingredients.map((line) => ({
@@ -2628,6 +2647,18 @@ function InventoryDashboardSection({
     }
     if (!Number.isFinite(payload.rentalPriceBs) || payload.rentalPriceBs < 0) {
       setComboError('El precio del combo no es valido.');
+      return;
+    }
+    if (
+      payload.pricingCondition.enabled
+      && (
+        !Number.isFinite(payload.pricingCondition.upToUnitPriceBs)
+        || !Number.isFinite(payload.pricingCondition.aboveUnitPriceBs)
+        || payload.pricingCondition.upToUnitPriceBs < 0
+        || payload.pricingCondition.aboveUnitPriceBs < 0
+      )
+    ) {
+      setComboError('Los precios condicionados del combo no son validos.');
       return;
     }
     if (payload.ingredients.length === 0) {
@@ -3926,7 +3957,14 @@ function InventoryDashboardSection({
                             {row.ingredients.length > 4 ? <span>+{row.ingredients.length - 4} mas</span> : null}
                           </div>
                         </td>
-                        <td><strong>{formatBs(row.price)}</strong></td>
+                        <td>
+                          <strong>{formatBs(row.price)}</strong>
+                          {row.pricingCondition?.enabled ? (
+                            <small className="inventory-combo-price-rule">
+                              1-{row.pricingCondition.upToQuantity}: {formatBs(row.pricingCondition.upToUnitPriceBs)} | Mas de {row.pricingCondition.upToQuantity}: {formatBs(row.pricingCondition.aboveUnitPriceBs)}
+                            </small>
+                          ) : null}
+                        </td>
                         <td>{formatBs(row.catalogValue)}</td>
                         <td className={row.controlsStock ? 'good' : 'muted'}>
                           {row.controlsStock ? row.availableCombos : 'Pendiente'}
@@ -4410,6 +4448,77 @@ function InventoryDashboardSection({
                 Precio del combo (Bs)
                 <input type="number" min="0" step="0.01" value={comboForm.rentalPriceBs} onChange={(event) => setComboForm((current) => ({ ...current, rentalPriceBs: event.target.value }))} required />
               </label>
+              <div className="full-width inventory-combo-pricing-condition">
+                <label className="inventory-toggle-line">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(comboForm.pricingCondition?.enabled)}
+                    onChange={(event) => setComboForm((current) => ({
+                      ...current,
+                      pricingCondition: {
+                        ...(current.pricingCondition ?? {}),
+                        enabled: event.target.checked,
+                        upToUnitPriceBs: event.target.checked && Number(current.pricingCondition?.upToUnitPriceBs ?? 0) <= 0
+                          ? current.rentalPriceBs
+                          : current.pricingCondition?.upToUnitPriceBs,
+                      },
+                    }))}
+                  />
+                  Precio condicionado por cantidad
+                </label>
+                {comboForm.pricingCondition?.enabled ? (
+                  <div className="inventory-modal-grid compact">
+                    <label>
+                      Hasta cantidad
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={comboForm.pricingCondition.upToQuantity}
+                        onChange={(event) => setComboForm((current) => ({
+                          ...current,
+                          pricingCondition: {
+                            ...(current.pricingCondition ?? {}),
+                            upToQuantity: event.target.value,
+                          },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      Precio unitario hasta ahi
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={comboForm.pricingCondition.upToUnitPriceBs}
+                        onChange={(event) => setComboForm((current) => ({
+                          ...current,
+                          pricingCondition: {
+                            ...(current.pricingCondition ?? {}),
+                            upToUnitPriceBs: event.target.value,
+                          },
+                        }))}
+                      />
+                    </label>
+                    <label>
+                      Precio unitario arriba
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={comboForm.pricingCondition.aboveUnitPriceBs}
+                        onChange={(event) => setComboForm((current) => ({
+                          ...current,
+                          pricingCondition: {
+                            ...(current.pricingCondition ?? {}),
+                            aboveUnitPriceBs: event.target.value,
+                          },
+                        }))}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
               <label className="full-width">
                 Notas internas
                 <input value={comboForm.notes} onChange={(event) => setComboForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Ej: Mesa coctelera + mantel + capuchon" />

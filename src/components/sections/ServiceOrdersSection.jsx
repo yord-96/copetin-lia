@@ -2245,6 +2245,7 @@ function ServiceOrdersSection({
           : 1
       ),
       comboPricingRole: line.comboPricingRole ?? '',
+      comboPricingCondition: line.comboPricingCondition ?? null,
       comboRuleIndex: line.comboRuleIndex ?? index,
       comboSlotLabel: line.comboSlotLabel ?? '',
       comboSelectionMode: line.comboSelectionMode ?? 'item',
@@ -2706,6 +2707,23 @@ function ServiceOrdersSection({
     return { allocations, shortageMessage };
   };
 
+  const getComboUnitPriceForQuantity = (combo, quantity) => {
+    const condition = combo?.pricingCondition ?? {};
+    if (!condition.enabled) return Math.max(0, Number(combo?.rentalPriceBs ?? 0));
+    const safeQuantity = Math.max(1, Math.trunc(Number(quantity ?? 1)));
+    const upToQuantity = Math.max(1, Math.trunc(Number(condition.upToQuantity ?? 3)));
+    const upToUnitPriceBs = Math.max(0, Number(condition.upToUnitPriceBs ?? combo?.rentalPriceBs ?? 0));
+    const aboveUnitPriceBs = Math.max(0, Number(condition.aboveUnitPriceBs ?? combo?.rentalPriceBs ?? 0));
+    return safeQuantity <= upToQuantity ? upToUnitPriceBs : aboveUnitPriceBs;
+  };
+
+  const getComboLineUnitPriceForQuantity = (line, quantity) => {
+    const combo = (combos ?? []).find((entry) => entry.id === line?.comboId);
+    const condition = line?.comboPricingCondition ?? combo?.pricingCondition ?? {};
+    if (!condition.enabled) return Math.max(0, Number(line?.unitPriceBs ?? combo?.rentalPriceBs ?? 0));
+    return getComboUnitPriceForQuantity({ rentalPriceBs: combo?.rentalPriceBs ?? line?.unitPriceBs ?? 0, pricingCondition: condition }, quantity);
+  };
+
   const appendConfiguredCombo = (combo, selections = {}, existingComboLineKey = '') => {
     const comboLineKey = existingComboLineKey || `combo-${combo.id}-${Date.now()}`;
     const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
@@ -2746,7 +2764,7 @@ function ServiceOrdersSection({
           const options = allocation.options;
           const item = allocation.item;
           const quantity = allocation.quantity;
-          const comboPrice = Math.max(0, Number(combo.rentalPriceBs ?? 0));
+          const comboPrice = getComboUnitPriceForQuantity(combo, requestedComboQuantity);
           const isPriceLine = !priceAssigned;
           priceAssigned = true;
           return {
@@ -2763,6 +2781,7 @@ function ServiceOrdersSection({
             comboComponentQuantity: allocation.requiredPerCombo,
             comboDistributed: true,
             comboPricingRole: isPriceLine ? 'price' : 'component',
+            comboPricingCondition: combo.pricingCondition ?? null,
             comboRuleIndex: index,
             comboSlotLabel: line.slotLabel ?? line.itemName ?? `Componente ${index + 1}`,
             comboSelectionMode: line.selectionMode ?? 'item',
@@ -2982,13 +3001,17 @@ function ServiceOrdersSection({
             )),
           );
           const nextQuantity = componentQuantity * nextComboQuantity;
+          const nextUnitPrice = line.comboPricingRole === 'price'
+            ? getComboLineUnitPriceForQuantity(line, nextComboQuantity)
+            : 0;
           return {
             ...line,
             quantity: nextQuantity,
+            unitPriceBs: line.comboPricingRole === 'price' ? nextUnitPrice : line.unitPriceBs,
             comboQuantity: nextComboQuantity,
             comboComponentQuantity: componentQuantity,
             lineTotalBs: line.comboPricingRole === 'price'
-              ? Number((Math.max(0, Number(line.unitPriceBs ?? 0)) * nextComboQuantity).toFixed(2))
+              ? Number((nextUnitPrice * nextComboQuantity).toFixed(2))
               : 0,
           };
         }),
@@ -3130,14 +3153,18 @@ function ServiceOrdersSection({
             )),
           );
           const nextQuantity = componentQuantity * nextComboQuantity;
+          const nextUnitPrice = line.comboPricingRole === 'price'
+            ? getComboLineUnitPriceForQuantity(line, nextComboQuantity)
+            : 0;
           return {
             ...line,
             quantity: nextQuantity,
+            unitPriceBs: line.comboPricingRole === 'price' ? nextUnitPrice : line.unitPriceBs,
             comboQuantity: nextComboQuantity,
             comboComponentQuantity: componentQuantity,
             grossLineTotalBs: undefined,
             lineTotalBs: line.comboPricingRole === 'price'
-              ? Number((Math.max(0, Number(line.unitPriceBs ?? 0)) * nextComboQuantity).toFixed(2))
+              ? Number((nextUnitPrice * nextComboQuantity).toFixed(2))
               : 0,
           };
         }),
@@ -3457,6 +3484,7 @@ function ServiceOrdersSection({
         comboQuantity: line.comboQuantity ?? 1,
         comboComponentQuantity: line.comboComponentQuantity ?? 1,
         comboPricingRole: line.comboPricingRole ?? '',
+        comboPricingCondition: line.comboPricingCondition ?? null,
         comboRuleIndex: line.comboRuleIndex ?? 0,
         comboSlotLabel: line.comboSlotLabel ?? '',
         comboSelectionMode: line.comboSelectionMode ?? 'item',

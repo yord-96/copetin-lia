@@ -118,6 +118,19 @@ const normalizeComboRule = (line, inventoryItems = []) => {
   };
 };
 
+const normalizeComboPricingCondition = (condition) => {
+  const enabled = Boolean(condition?.enabled);
+  const upToQuantity = Math.max(1, Math.trunc(Number(condition?.upToQuantity ?? 3)));
+  const upToUnitPriceBs = Math.max(0, toPositiveRoundedNumber(condition?.upToUnitPriceBs ?? 0));
+  const aboveUnitPriceBs = Math.max(0, toPositiveRoundedNumber(condition?.aboveUnitPriceBs ?? 0));
+  return {
+    enabled: enabled && upToUnitPriceBs >= 0 && aboveUnitPriceBs >= 0,
+    upToQuantity,
+    upToUnitPriceBs,
+    aboveUnitPriceBs,
+  };
+};
+
 const BUSINESS_UPPERCASE_KEYS = new Set([
   'name',
   'fullName',
@@ -1240,6 +1253,7 @@ const normalizeState = (state) => {
         name: toBusinessUppercase(combo?.name ?? ''),
         category: categoryName,
         rentalPriceBs: Math.max(0, toPositiveRoundedNumber(combo?.rentalPriceBs ?? combo?.priceBs ?? 0)),
+        pricingCondition: normalizeComboPricingCondition(combo?.pricingCondition),
         notes: String(combo?.notes ?? '').trim(),
         imageUrl: String(combo?.imageUrl ?? '').trim() || null,
         imageDataUrl: combo?.imageDataUrl ?? null,
@@ -1506,6 +1520,7 @@ const normalizeState = (state) => {
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
           }))
           .filter((line) => line.itemId && line.itemName)
         : [];
@@ -1637,6 +1652,7 @@ const normalizeState = (state) => {
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
           }))
           .filter((line) => line.itemId)
         : [];
@@ -7976,6 +7992,7 @@ const createWebBridge = () => ({
       const name = toBusinessUppercase(payload?.name ?? '');
       const category = toBusinessUppercase(payload?.category ?? 'COMBOS') || 'COMBOS';
       const rentalPriceBs = toNumber(payload?.rentalPriceBs ?? payload?.priceBs ?? 0, 'precio del combo');
+      const pricingCondition = normalizeComboPricingCondition(payload?.pricingCondition);
       const notes = String(payload?.notes ?? '').trim();
       const imageUrl = String(payload?.imageUrl ?? '').trim() || null;
       const imageDataUrl = payload?.imageDataUrl ?? null;
@@ -8010,6 +8027,7 @@ const createWebBridge = () => ({
           name,
           category,
           rentalPriceBs,
+          pricingCondition,
           notes,
           imageUrl,
           imageDataUrl,
@@ -8055,6 +8073,9 @@ const createWebBridge = () => ({
           const nextPrice = toNumber(payload.rentalPriceBs ?? payload.priceBs ?? 0, 'precio del combo');
           if (nextPrice < 0) throw new Error('El precio del combo no puede ser negativo.');
           combo.rentalPriceBs = nextPrice;
+        }
+        if (payload.pricingCondition !== undefined) {
+          combo.pricingCondition = normalizeComboPricingCondition(payload.pricingCondition);
         }
         if (payload.notes !== undefined) {
           combo.notes = String(payload.notes ?? '').trim();
@@ -10219,6 +10240,7 @@ const createWebBridge = () => ({
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
           };
         });
 
@@ -10402,6 +10424,7 @@ const createWebBridge = () => ({
               comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+              comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             };
           });
         }
@@ -10602,6 +10625,7 @@ const createWebBridge = () => ({
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
           };
         });
 
@@ -10802,6 +10826,7 @@ const createWebBridge = () => ({
               comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+              comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             };
           });
           contract.items = normalizedItems;
@@ -11394,6 +11419,7 @@ const createWebBridge = () => ({
             comboOptionItemIds: Array.isArray(line?.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
+            comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             grossLineTotalBs,
             discountPercent,
             discountBs,

@@ -13658,6 +13658,42 @@ textarea:focus {
   grid-column: 1 / -1;
 }
 
+.inventory-modal-grid.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.inventory-combo-pricing-condition {
+  border: 1px solid #eadfd8;
+  border-radius: 0.62rem;
+  background: #fffaf6;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.inventory-toggle-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 800;
+  color: #0b2554;
+}
+
+.inventory-toggle-line input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #e65000;
+}
+
+.inventory-combo-price-rule {
+  display: block;
+  margin-top: 0.25rem;
+  color: #6f7d9a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .inventory-image-editor {
   border: 1px dashed #d7dff2;
   border-radius: 0.56rem;
@@ -34009,6 +34045,10 @@ button.calendar-dispatch-row:focus-visible {
 
   .inventory-combo-modal > .inventory-modal-grid {
     padding: 0.72rem 0.75rem 1rem;
+  }
+
+  .inventory-modal-grid.compact {
+    grid-template-columns: 1fr;
   }
 
   .inventory-combo-modal > .reset-modal-actions {
