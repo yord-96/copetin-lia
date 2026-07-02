@@ -470,6 +470,7 @@ function App() {
             onCreateCashMovement={controller.handleCreateCashMovement}
             onCreateCashDebt={controller.handleCreateCashDebt}
             onPayCashDebt={controller.handlePayCashDebt}
+            onUpdateSupplierLoanStatus={controller.handleUpdateSupplierLoanStatus}
             onVoidAndReplaceCashMovementReceipt={controller.handleVoidAndReplaceCashMovementReceipt}
             onCollectReceivable={controller.handleCollectReceivable}
             onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}

@@ -268,6 +268,7 @@ function AccountingSection({
   cashSessions = [],
   rentals = [],
   contracts = [],
+  supplierBundle = { suppliers: [], quotes: [], loans: [] },
   currentUser = null,
   formatBs,
   formatDate,
@@ -277,6 +278,7 @@ function AccountingSection({
   onCreateCashMovement,
   onCreateCashDebt,
   onPayCashDebt,
+  onUpdateSupplierLoanStatus,
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
@@ -315,6 +317,7 @@ function AccountingSection({
     notes: '',
     linkedRentalId: '',
     debtId: '',
+    supplierLoanId: '',
     debtDate: '',
     dueDate: '',
     employeeId: '',
@@ -332,6 +335,7 @@ function AccountingSection({
     notes: '',
     linkedRentalId: '',
     debtId: '',
+    supplierLoanId: '',
     debtDate: '',
     dueDate: '',
     employeeId: '',
@@ -475,6 +479,39 @@ function AccountingSection({
   const pendingCashDebts = useMemo(
     () => sortedCashDebts.filter((debt) => Number(debt?.balanceBs ?? debt?.amountBs ?? 0) > 0),
     [sortedCashDebts],
+  );
+
+  const supplierLoanRows = useMemo(
+    () => (supplierBundle?.loans ?? [])
+      .filter((loan) => !loan?.deletedAt)
+      .map((loan) => {
+        const totalBs = toNumber(loan?.totals?.totalBs ?? loan?.totalBs);
+        const contract = loan?.sourceContractId ? contractById.get(String(loan.sourceContractId)) : null;
+        const rental = loan?.sourceRentalId ? rentalById.get(String(loan.sourceRentalId)) : null;
+        const reference = contract?.contractCode
+          ?? rental?.contractCode
+          ?? loan?.sourceOrderCode
+          ?? '-';
+        const items = Array.isArray(loan?.items) ? loan.items : [];
+        const statusKey = normalizeText(loan?.status || 'programado');
+        const isPaid = ['liquidado', 'pagado', 'cerrado'].includes(statusKey);
+        return {
+          ...loan,
+          totalBs,
+          items,
+          reference,
+          itemSummary: items.slice(0, 2).map((item) => `${item.quantity}x ${item.itemName}`).join(' | '),
+          isPaid,
+          requestDate: loan?.requestDate || loan?.createdAt,
+        };
+      })
+      .sort((a, b) => Number(a.isPaid) - Number(b.isPaid) || new Date(b.createdAt ?? b.requestDate ?? 0) - new Date(a.createdAt ?? a.requestDate ?? 0)),
+    [contractById, rentalById, supplierBundle?.loans],
+  );
+
+  const pendingSupplierLoanRows = useMemo(
+    () => supplierLoanRows.filter((loan) => !loan.isPaid && loan.totalBs > 0),
+    [supplierLoanRows],
   );
 
   const bigCashPositiveRows = useMemo(
@@ -788,6 +825,9 @@ function AccountingSection({
     }
     if (normalized.includes('adelanto') || normalized.includes('personal_advance') || description.includes('adelanto')) {
       return { label: 'Adelanto', className: 'advance' };
+    }
+    if (normalized.includes('proveedor') || normalized.includes('supplier') || description.includes('proveedor')) {
+      return { label: 'Proveedor', className: 'supplier' };
     }
     if (normalized.includes('oficina') || description.includes('oficina') || description.includes('impresion') || description.includes('fotocopia')) {
       return { label: 'Oficina', className: 'office' };
@@ -1267,6 +1307,7 @@ function AccountingSection({
       notes: '',
       linkedRentalId: '',
       debtId: '',
+      supplierLoanId: '',
       debtDate: '',
       dueDate: '',
       employeeId: '',
@@ -1599,6 +1640,34 @@ function AccountingSection({
         });
         await printCashReceipt(resolvePrintableCashMovementId(paid, 'PETTY_CASH'));
         setCashActionFeedback('Pago de deuda registrado en Caja Chica.');
+      } else if (cashModal === 'supplierLoan') {
+        const loan = supplierLoanRows.find((entry) => String(entry.id) === String(cashForm.supplierLoanId));
+        if (!loan) {
+          throw new Error('Selecciona el prestamo de proveedor que vas a pagar.');
+        }
+        if (amountBs < loan.totalBs) {
+          throw new Error(`El pago debe cubrir el total del prestamo: ${formatBs(loan.totalBs)}.`);
+        }
+        const created = await onCreateCashMovement?.({
+          type: 'egreso',
+          cashBoxType: 'PETTY_CASH',
+          amountBs,
+          description: cashForm.description || `Pago proveedor ${loan.supplierName}`,
+          category: 'pago_proveedor',
+          paymentMethod: cashForm.paymentMethod,
+          paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
+          responsible: loan.supplierName || cashForm.responsible || currentUserName,
+          receipt: cashForm.receipt || loan.loanCode,
+          notes: cashForm.notes || `Prestamo ${loan.loanCode} | Contrato ${loan.reference} | ${loan.itemSummary || 'Items de proveedor'}`,
+          accountingTag: 'supplier_loan_payment',
+          linkedRentalId: loan.sourceRentalId ?? '',
+          linkedContractId: loan.sourceContractId ?? '',
+          linkedOrderCode: loan.sourceOrderCode ?? '',
+          createdBy: currentUserName,
+        });
+        await onUpdateSupplierLoanStatus?.({ id: loan.id, status: 'liquidado' });
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
+        setCashActionFeedback('Prestamo de proveedor pagado desde Caja Chica.');
       } else if (cashModal === 'income') {
         const created = await onCreateCashMovement?.({
           type: 'ingreso',
@@ -1701,6 +1770,7 @@ function AccountingSection({
     if (cashModal === 'advance') return 'Registrar adelanto de personal';
     if (cashModal === 'debt') return 'Registrar deuda';
     if (cashModal === 'payDebt') return 'Pagar deuda';
+    if (cashModal === 'supplierLoan') return 'Pagar proveedor';
     if (cashModal === 'income') return 'Registrar ingreso de Caja Grande';
     if (cashModal === 'closePetty') return 'Cerrar Caja Chica';
     return 'Movimiento de caja';
@@ -2345,6 +2415,8 @@ function AccountingSection({
                     ? 'Registra una deuda pendiente sin tocar el saldo de Caja Chica.'
                     : cashModal === 'payDebt'
                     ? 'El pago sale de Caja Chica y genera recibo.'
+                    : cashModal === 'supplierLoan'
+                    ? 'El pago al proveedor sale de Caja Chica y deja el prestamo liquidado.'
                     : cashModal === 'advance'
                     ? 'El adelanto sale solo de Caja Chica y genera un recibo firmado.'
                     : cashModal === 'expense'
@@ -2378,6 +2450,35 @@ function AccountingSection({
                   {pendingCashDebts.map((debt) => (
                     <option key={debt.id} value={debt.id}>
                       {debt.code} - {debt.description} - saldo {formatBs(debt.balanceBs)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            {cashModal === 'supplierLoan' ? (
+              <label>
+                Prestamo de proveedor
+                <select
+                  value={cashForm.supplierLoanId}
+                  onChange={(event) => {
+                    const loan = pendingSupplierLoanRows.find((entry) => entry.id === event.target.value);
+                    setCashForm((current) => ({
+                      ...current,
+                      supplierLoanId: event.target.value,
+                      amountBs: loan ? String(Number(loan.totalBs ?? 0)) : current.amountBs,
+                      description: loan ? `Pago proveedor ${loan.supplierName} - ${loan.loanCode}` : current.description,
+                      responsible: loan?.supplierName ?? current.responsible,
+                      receipt: loan?.loanCode ?? current.receipt,
+                      notes: loan ? `Contrato ${loan.reference} | ${loan.itemSummary || 'Items de proveedor'}` : current.notes,
+                    }));
+                  }}
+                  required
+                >
+                  <option value="">Seleccionar prestamo pendiente</option>
+                  {pendingSupplierLoanRows.map((loan) => (
+                    <option key={loan.id} value={loan.id}>
+                      {loan.loanCode} - {loan.supplierName} - {loan.reference} - {formatBs(loan.totalBs)}
                     </option>
                   ))}
                 </select>
@@ -2468,6 +2569,8 @@ function AccountingSection({
                         ? 'Ej: almuerzo, taxi, reparacion, sueldo...'
                         : cashModal === 'debt'
                         ? 'Ej: deuda pendiente por compra, prestamo o servicio'
+                        : cashModal === 'supplierLoan'
+                        ? 'Pago de prestamo de proveedor'
                         : cashModal === 'transfer'
                         ? 'Ej: reposicion para gastos operativos'
                         : cashModal === 'payDebt'
@@ -2497,6 +2600,11 @@ function AccountingSection({
                           <option value="prestamo">Prestamo</option>
                           <option value="varios">Varios</option>
                         </>
+                      ) : cashModal === 'supplierLoan' ? (
+                        <>
+                          <option value="pago_proveedor">Pago proveedor</option>
+                          <option value="prestamo_proveedor">Prestamo proveedor</option>
+                        </>
                       ) : cashModal === 'transfer' ? (
                         <>
                           <option value="reposicion_caja_chica">Reposicion caja chica</option>
@@ -2512,11 +2620,11 @@ function AccountingSection({
                     </select>
                   </label>
                   <label>
-                    {cashModal === 'debt' ? 'A quien se debe' : 'Responsable / destino'}
+                    {cashModal === 'debt' ? 'A quien se debe' : cashModal === 'supplierLoan' ? 'Proveedor' : 'Responsable / destino'}
                     <input
                       value={cashForm.responsible}
                       onChange={(event) => setCashForm((current) => ({ ...current, responsible: event.target.value }))}
-                      placeholder={cashModal === 'debt' ? 'Persona, proveedor o entidad' : 'Persona, proveedor o destino'}
+                      placeholder={cashModal === 'debt' || cashModal === 'supplierLoan' ? 'Persona, proveedor o entidad' : 'Persona, proveedor o destino'}
                     />
                   </label>
                 </div>
@@ -2598,6 +2706,8 @@ function AccountingSection({
                   ? 'Registrar adelanto y generar recibo'
                   : cashModal === 'payDebt'
                   ? 'Pagar y generar recibo'
+                  : cashModal === 'supplierLoan'
+                  ? 'Pagar proveedor y generar recibo'
                   : cashModal === 'debt'
                   ? 'Registrar deuda'
                   : 'Guardar movimiento'}
@@ -3430,6 +3540,96 @@ function AccountingSection({
                   })}
                   {personnelAdvanceRows.length === 0 ? (
                     <tr><td colSpan={6}><p className="status">Sin adelantos registrados todavia.</p></td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="bigcash-card petty-supplier-loans-card">
+            <header className="petty-table-head">
+              <div>
+                <h3>PRESTAMOS DE PROVEEDORES</h3>
+                <p>Faltantes cubiertos por proveedor y pagos pendientes desde Caja Chica.</p>
+              </div>
+              <div className="petty-action-pair">
+                <span className="petty-advance-total">Pendiente: {formatBs(sumBy(pendingSupplierLoanRows, (loan) => loan.totalBs))}</span>
+                <button
+                  type="button"
+                  className="petty-primary-button small"
+                  onClick={() => {
+                    const loan = pendingSupplierLoanRows[0];
+                    openCashAction('supplierLoan', {
+                      supplierLoanId: loan?.id ?? '',
+                      amountBs: loan ? String(Number(loan.totalBs ?? 0)) : '',
+                      description: loan ? `Pago proveedor ${loan.supplierName} - ${loan.loanCode}` : '',
+                      responsible: loan?.supplierName ?? currentUserName,
+                      receipt: loan?.loanCode ?? '',
+                      category: 'pago_proveedor',
+                      notes: loan ? `Contrato ${loan.reference} | ${loan.itemSummary || 'Items de proveedor'}` : '',
+                    });
+                  }}
+                  disabled={pendingSupplierLoanRows.length === 0 || pettyCashBalanceBs <= 0}
+                >
+                  Pagar proveedor
+                </button>
+              </div>
+            </header>
+            <div className="bigcash-table-wrap petty-table-wrap">
+              <table className="accounting-table petty-table petty-supplier-loans-table">
+                <thead>
+                  <tr>
+                    <th>Prestamo</th>
+                    <th>Proveedor</th>
+                    <th>Contrato</th>
+                    <th>Items</th>
+                    <th>Costo</th>
+                    <th>Estado</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {supplierLoanRows.slice(0, 8).map((loan) => (
+                    <tr key={loan.id}>
+                      <td>
+                        <strong>{loan.loanCode}</strong>
+                        <small>{formatDate(loan.requestDate)}</small>
+                      </td>
+                      <td>{loan.supplierName}</td>
+                      <td>
+                        <strong>{loan.reference}</strong>
+                        <small>{loan.sourceOrderCode || loan.eventName || '-'}</small>
+                      </td>
+                      <td>
+                        <strong>{loan.items.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0)} u.</strong>
+                        <small>{loan.itemSummary || 'Sin detalle de items'}</small>
+                      </td>
+                      <td><strong className={loan.isPaid ? 'value-green' : 'value-orange'}>{formatBs(loan.totalBs)}</strong></td>
+                      <td><span className={`petty-debt-status ${loan.isPaid ? 'paid' : 'pending'}`}>{loan.isPaid ? 'Liquidado' : 'Pendiente'}</span></td>
+                      <td>
+                        {!loan.isPaid ? (
+                          <button
+                            type="button"
+                            className="cash-receipt-button"
+                            onClick={() => openCashAction('supplierLoan', {
+                              supplierLoanId: loan.id,
+                              amountBs: String(Number(loan.totalBs ?? 0)),
+                              description: `Pago proveedor ${loan.supplierName} - ${loan.loanCode}`,
+                              responsible: loan.supplierName,
+                              receipt: loan.loanCode,
+                              category: 'pago_proveedor',
+                              notes: `Contrato ${loan.reference} | ${loan.itemSummary || 'Items de proveedor'}`,
+                            })}
+                            disabled={pettyCashBalanceBs <= 0}
+                          >
+                            Pagar
+                          </button>
+                        ) : <span className="cash-receipt-muted">Pagado</span>}
+                      </td>
+                    </tr>
+                  ))}
+                  {supplierLoanRows.length === 0 ? (
+                    <tr><td colSpan={7}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
                   ) : null}
                 </tbody>
               </table>

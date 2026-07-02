@@ -30574,8 +30574,19 @@ button.calendar-dispatch-row:focus-visible {
   align-content: start;
 }
 
+.petty-supplier-loans-card {
+  display: grid;
+  gap: 0.76rem;
+  grid-column: 1;
+  align-content: start;
+}
+
 .petty-advances-table {
   min-width: 760px;
+}
+
+.petty-supplier-loans-table {
+  min-width: 860px;
 }
 
 .petty-advance-total {
@@ -30684,6 +30695,11 @@ button.calendar-dispatch-row:focus-visible {
   background: #f3e8ff;
 }
 
+.petty-category.supplier {
+  color: #075985;
+  background: #e0f2fe;
+}
+
 .petty-category.other {
   color: #667085;
   background: #eef1f5;
@@ -30693,7 +30709,7 @@ button.calendar-dispatch-row:focus-visible {
   display: grid;
   gap: 0.78rem;
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1 / span 3;
 }
 
 .petty-debts-card {

@@ -6942,12 +6942,18 @@ function ServiceOrdersSection({
                           const availableStock = Math.max(0, Number(availability?.projectedAvailable ?? line.item.availableStock ?? 0));
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = Math.max(0, requestedForItem - availableStock);
-                          const isOverAvailable = !isProvisionalItem && shortageForItem > 0;
+                          const supplierCoverageDraft = supplierFulfillmentDraftByItem[line.itemId] ?? {};
+                          const supplierCoveredQty = String(supplierCoverageDraft.supplierId ?? '').trim()
+                            ? Math.min(shortageForItem, Math.max(0, Math.trunc(Number(supplierCoverageDraft.neededQty ?? 0))))
+                            : 0;
+                          const uncoveredForItem = Math.max(0, shortageForItem - supplierCoveredQty);
+                          const hasStockShortage = !isProvisionalItem && shortageForItem > 0;
+                          const hasUncoveredShortage = !isProvisionalItem && uncoveredForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
                           return (
-                          <div key={line.lineKey} className={`orders-selected-row${isOverAvailable ? ' stock-warning' : ''}`}>
+                          <div key={line.lineKey} className={`orders-selected-row${hasUncoveredShortage ? ' stock-warning' : ''}`}>
                             <div>
                               <strong>{line.item.name}</strong>
                               {line.comboName ? (
@@ -6985,7 +6991,7 @@ function ServiceOrdersSection({
                                 {isProvisionalItem ? ' | Pendiente de verificacion' : ''}
                               </p>
                             </div>
-                            <label className={`orders-line-field${isOverAvailable ? ' has-error' : ''}`}>
+                            <label className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
                               <span>Cant.</span>
                               <input
                                 type="text"
@@ -6995,9 +7001,9 @@ function ServiceOrdersSection({
                                 onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
                                 onBlur={() => normalizeDraftItemQuantity(line.lineKey)}
                                 aria-label={`Cantidad de ${line.item.name}`}
-                                aria-invalid={isOverAvailable ? 'true' : 'false'}
+                                aria-invalid={hasUncoveredShortage ? 'true' : 'false'}
                               />
-                              <div className={`orders-selected-availability${isOverAvailable ? ' is-error' : ''}`}>
+                              <div className={`orders-selected-availability${hasUncoveredShortage ? ' is-error' : ''}`}>
                                 <span><small>Fecha</small><strong>{availableStock}</strong></span>
                                 <span><small>Ahora</small><strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong></span>
                               </div>
@@ -7006,7 +7012,7 @@ function ServiceOrdersSection({
                                   Item operativo: se guarda y vuelve en la orden, pero aun no descuenta stock.
                                 </small>
                               ) : (
-                                <small className={`orders-available-note${isOverAvailable ? ' is-error' : ''}`}>
+                                <small className={`orders-available-note${hasUncoveredShortage ? ' is-error' : ''}`}>
                                   Fecha {availableStock} · ahora {Math.max(0, Number(line.item.availableStock ?? 0))}
                                 </small>
                               )}
@@ -7043,11 +7049,16 @@ function ServiceOrdersSection({
                                   Riesgo blando: {softRecords.slice(0, 2).map((record) => `${record.quantity} ${record.code || ''}`).join(' · ')}
                                 </small>
                               ) : null}
-                              {isOverAvailable ? (
-                                <small className="orders-stock-error">Faltan {shortageForItem}. Coordinar proveedor.</small>
+                              {hasUncoveredShortage ? (
+                                <small className="orders-stock-error">Faltan {uncoveredForItem}. Coordinar proveedor.</small>
+                              ) : null}
+                              {hasStockShortage && !hasUncoveredShortage ? (
+                                <small className="orders-available-note is-positive">
+                                  Faltante cubierto por proveedor: {supplierCoveredQty} u.
+                                </small>
                               ) : null}
                             </label>
-                            {isOverAvailable ? (
+                            {hasStockShortage ? (
                               <label className="orders-line-field">
                                 <span>Proveedor para faltante</span>
                                 <select
@@ -7107,7 +7118,7 @@ function ServiceOrdersSection({
                                 </button>
                               </label>
                             ) : null}
-                            {isOverAvailable ? (
+                            {hasStockShortage ? (
                               <label className="orders-line-field">
                                 <span>Cubrir con proveedor</span>
                                 <input
@@ -7127,7 +7138,7 @@ function ServiceOrdersSection({
                                 </small>
                               </label>
                             ) : null}
-                            {isOverAvailable ? (
+                            {hasStockShortage ? (
                               <label className="orders-line-field">
                                 <span>Costo proveedor (Bs)</span>
                                 <input
