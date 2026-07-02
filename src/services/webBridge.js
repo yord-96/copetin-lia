@@ -5748,6 +5748,14 @@ const getReferenceContractStyles = () => `
   }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
+  .rc-manual-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .rc-manual-table {
+    border-top: 0;
+    border-radius: 0;
+  }
   .rc-financial-block {
     border: .25mm solid #d8d0c4;
     border-top: .45mm solid #a66a20;
@@ -5947,12 +5955,15 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
-  .rc-sheet.is-multipage .rc-financial-block {
+  .rc-sheet.is-multipage .rc-manual-block {
     margin-top: 0;
     padding-top: 7mm;
-    border-top: 0;
     break-before: page;
     page-break-before: always;
+  }
+  .rc-sheet.is-multipage .rc-financial-block {
+    margin-top: 0;
+    border-top: 0;
   }
   .rc-sheet.is-multipage .rc-financial-summary {
     border-top: .45mm solid #a66a20;
@@ -6133,7 +6144,18 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="check"><span class="rc-check"></span></td>
           <td></td>
         </tr>`).join('');
-  const rows = `${itemRows}${serviceRows}${manualRows}`;
+  const rows = `${itemRows}${serviceRows}`;
+  const contractTableCols = `
+          <colgroup>
+            <col style="width: 4.5%;" />
+            <col style="width: 33%;" />
+            <col style="width: 7%;" />
+            <col style="width: 11%;" />
+            <col style="width: 11%;" />
+            <col style="width: 6.5%;" />
+            <col style="width: 6.5%;" />
+            <col style="width: 20.5%;" />
+          </colgroup>`;
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = documentItems.length + contractServices.length + 3;
@@ -6223,21 +6245,18 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       <section class="rc-items">
         <h2 class="rc-block-title"><b>3.</b> Detalle de items contratados</h2>
         <table class="rc-table">
-          <colgroup>
-            <col style="width: 4.5%;" />
-            <col style="width: 33%;" />
-            <col style="width: 7%;" />
-            <col style="width: 11%;" />
-            <col style="width: 11%;" />
-            <col style="width: 6.5%;" />
-            <col style="width: 6.5%;" />
-            <col style="width: 20.5%;" />
-          </colgroup>
+          ${contractTableCols}
           <thead>
             <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>
+        <section class="rc-manual-block">
+          <table class="rc-table rc-manual-table">
+            ${contractTableCols}
+            <tbody>${manualRows}</tbody>
+          </table>
+        </section>
         <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
 
