@@ -5712,12 +5712,12 @@ const getReferenceContractStyles = () => `
     vertical-align: middle;
     font-size: 10px;
   }
-  .rc-table tbody tr.rc-cat-amber td:first-child { box-shadow: inset 1.25mm 0 0 #c98a22; }
-  .rc-table tbody tr.rc-cat-blue td:first-child { box-shadow: inset 1.25mm 0 0 #315f9f; }
-  .rc-table tbody tr.rc-cat-green td:first-child { box-shadow: inset 1.25mm 0 0 #2e7d54; }
-  .rc-table tbody tr.rc-cat-violet td:first-child { box-shadow: inset 1.25mm 0 0 #7553a7; }
-  .rc-table tbody tr.rc-cat-rose td:first-child { box-shadow: inset 1.25mm 0 0 #ad4f64; }
-  .rc-table tbody tr.rc-cat-slate td:first-child { box-shadow: inset 1.25mm 0 0 #56616f; }
+  .rc-table tbody tr.rc-cat-amber td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #c98a22; }
+  .rc-table tbody tr.rc-cat-blue td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #315f9f; }
+  .rc-table tbody tr.rc-cat-green td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #2e7d54; }
+  .rc-table tbody tr.rc-cat-violet td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #7553a7; }
+  .rc-table tbody tr.rc-cat-rose td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #ad4f64; }
+  .rc-table tbody tr.rc-cat-slate td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #56616f; }
   .rc-category-chip {
     display: inline-block;
     max-width: 36mm;
@@ -5740,6 +5740,12 @@ const getReferenceContractStyles = () => `
   .rc-cat-violet .rc-category-chip { background: #eee8f8; color: #5b3e88; }
   .rc-cat-rose .rc-category-chip { background: #f9e8ed; color: #8a374c; }
   .rc-cat-slate .rc-category-chip { background: #eef1f4; color: #3e4b5a; }
+  .rc-row-index {
+    color: #111;
+    font-size: 8.5px;
+    font-weight: 900;
+    text-align: center;
+  }
   .rc-table td:last-child { border-right: 0; }
   .rc-table tbody tr:last-child td { border-bottom: 0; }
   .rc-financial-block {
@@ -6070,14 +6076,17 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       || String(left.itemName ?? '').localeCompare(String(right.itemName ?? ''), 'es')
       || left._originalIndex - right._originalIndex
     );
+  let contractRowNumber = 0;
   const itemRows = documentItems
     .map(
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
         const area = line._area || getContractAreaMeta(line._category || getContractLineCategory(line, item));
+        contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
+          <td class="rc-row-index">${contractRowNumber}</td>
           <td>
             <span class="rc-category-chip">${escapeHtml(area.label)}</span>
             <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
@@ -6095,8 +6104,11 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .join('');
   const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
   const serviceRows = contractServices
-    .map((service) => `
+    .map((service) => {
+      contractRowNumber += 1;
+      return `
         <tr>
+          <td class="rc-row-index">${contractRowNumber}</td>
           <td>
             <span class="rc-item-name">SERVICIO: ${escapeHtml(service.name)}</span>
             ${service.detail ? `<span class="rc-item-meta">${escapeHtml(service.detail)}</span>` : ''}
@@ -6107,10 +6119,12 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="check"><span class="rc-check"></span></td>
           <td class="check"><span class="rc-check"></span></td>
           <td><span class="rc-observation-line"></span></td>
-        </tr>`)
+        </tr>`;
+    })
     .join('');
   const manualRows = Array.from({ length: 3 }, () => `
         <tr class="rc-manual-row">
+          <td class="rc-row-index"></td>
           <td><span class="rc-manual-write-line"></span></td>
           <td class="num"><span class="rc-manual-write-line"></span></td>
           <td class="num"><span class="rc-manual-write-line"></span></td>
@@ -6210,18 +6224,19 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         <h2 class="rc-block-title"><b>3.</b> Detalle de items contratados</h2>
         <table class="rc-table">
           <colgroup>
-            <col style="width: 35%;" />
+            <col style="width: 4.5%;" />
+            <col style="width: 33%;" />
             <col style="width: 7%;" />
             <col style="width: 11%;" />
             <col style="width: 11%;" />
             <col style="width: 6.5%;" />
             <col style="width: 6.5%;" />
-            <col style="width: 23%;" />
+            <col style="width: 20.5%;" />
           </colgroup>
           <thead>
-            <tr><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
+            <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="7">Sin items registrados</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>
         <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
@@ -6529,7 +6544,7 @@ const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
-  const renderGroupedItemRows = (lines) => {
+  const renderGroupedItemRows = (lines, manualRowsPerGroup = 0) => {
     let offset = 0;
     return groupInventoryLines(lines).map((group) => {
       const rows = renderItemRows(group.lines, offset);
@@ -6538,7 +6553,8 @@ const buildWeeklyInventoryHtml = ({
           <tr class="wi-category-row">
             <td colspan="8">${escapeHtml(group.label)}</td>
           </tr>
-          ${rows}`;
+          ${rows}
+          ${manualRowsPerGroup > 0 ? renderManualItemRows(manualRowsPerGroup) : ''}`;
     }).join('');
   };
   const renderManualItemRows = (count = 3) => Array.from({ length: count }, () => `
@@ -6581,12 +6597,12 @@ const buildWeeklyInventoryHtml = ({
       </tr>
     </thead>`;
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
-    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate, operationSummary } = entry;
+    const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
     const orderItems = rental.items ?? [];
     const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
-    const manualRows = format === 'individual' ? renderManualItemRows(3) : '';
-    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems) : renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
+    const manualRows = format === 'individual' ? '' : renderManualItemRows(3);
+    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems, 2) : renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
     const secondRows = splitItems
       ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize)}${manualRows}`
       : '';
@@ -6609,13 +6625,7 @@ const buildWeeklyInventoryHtml = ({
       ?? rental.createdByName
       ?? 'Sin responsable';
     const address = contract?.address ?? deliveryOut?.address ?? rental.eventAddress ?? '-';
-    const inventoryStatus = rental.status === 'returned'
-      ? 'Devuelto'
-      : rental.operational?.inventoryStatus === 'salio'
-        ? 'Salio'
-        : rental.operational?.inventoryStatus === 'confirmado'
-          ? 'Listo'
-          : 'Por alistar';
+    const deliveryLongDate = formatDocumentLongDate(deliveryDate);
     const contractIdentity = format === 'individual'
       ? ''
       : `<div class="wi-order-number"><span>${orderIndex + 1}</span><div><small>CONTRATO</small><strong>${escapeHtml(contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id)}</strong></div></div>`;
@@ -6626,7 +6636,7 @@ const buildWeeklyInventoryHtml = ({
           <div class="wi-client"><small>CLIENTE</small><strong>${escapeHtml(rental.customerName)}</strong></div>
           <div><small>RESPONSABLE</small><strong>${escapeHtml(responsible)}</strong></div>
           <div><small>DIRECCION</small><strong>${escapeHtml(address)}</strong></div>
-          <div><small>OPERACION / ESTADO</small><strong class="wi-operation">${escapeHtml(operationSummary)}</strong><strong class="wi-status">${escapeHtml(inventoryStatus)}</strong></div>
+          <div class="wi-ready-date"><small>FECHA DE ENTREGA</small><strong>${escapeHtml(deliveryLongDate)}</strong><span class="wi-ready-check"><i></i>Listo</span></div>
         </header>
         <div class="wi-order-meta">
           <div><small>ENTREGA / SALIDA</small><strong>${escapeHtml(formatWindow(deliveryDate, contract?.deliveryWindowStart ?? deliveryOut?.windowStart, contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd))}</strong></div>
@@ -6688,14 +6698,15 @@ const buildWeeklyInventoryHtml = ({
       .wi-event-date strong { display: block; margin-top: .6mm; color: #ef5000; font-size: 11.5px; line-height: 1.15; }
       .wi-order { margin-top: 0; border: .32mm solid #09255a; border-radius: 2mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
       .individual-full .wi-order { overflow: visible; break-inside: auto; page-break-inside: auto; }
-      .wi-order-head { display: grid; grid-template-columns: 54mm 40mm 1fr 31mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .28mm solid #09255a; }
+      .wi-order-head { display: grid; grid-template-columns: 54mm 40mm 1fr 37mm; gap: 2mm; align-items: center; padding: 1.8mm 2mm; background: #fbfcff; border-bottom: .28mm solid #09255a; }
       .wi-order-head strong { display: block; margin-top: .35mm; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; }
       .wi-order-head .wi-client strong { font-size: 13.2px; line-height: 1.08; }
       .wi-order-number { display: flex; align-items: center; gap: 2mm; }
       .wi-order-number.is-individual { display: block; }
       .wi-order-number > span { width: 9.5mm; height: 11mm; display: grid; place-items: center; border-radius: 2mm 2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 16px; font-weight: 900; }
-      .wi-status { display: inline-block !important; width: max-content; padding: .7mm 1.2mm; border: .22mm solid #ef5000; border-radius: .8mm; color: #ef5000 !important; background: #fff; font-size: 8.8px !important; }
-      .wi-operation { display: block; margin-bottom: .6mm; color: #09255a !important; font-size: 9.2px !important; line-height: 1.05 !important; }
+      .wi-ready-date strong { color: #ef5000; font-size: 10.2px; line-height: 1.12; }
+      .wi-ready-check { display: inline-flex; align-items: center; gap: 1.2mm; margin-top: .8mm; color: #09255a; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+      .wi-ready-check i { width: 4.4mm; height: 4.4mm; display: inline-block; border: .28mm solid #09255a; border-radius: .45mm; background: #fff; }
       .wi-order-meta { display: grid; grid-template-columns: 1.28fr 1.18fr .72fr .82fr; gap: 0; padding: 0; border-bottom: .28mm solid #09255a; }
       .wi-order-meta > div { min-height: 9.4mm; padding: 1.2mm 2.1mm 1mm 3.4mm; border-right: .24mm solid #09255a; }
       .wi-order-meta > div:last-child { border-right: 0; }
@@ -6786,12 +6797,13 @@ const buildWeeklyInventoryHtml = ({
       .wi-count { display: grid; place-items: center; min-height: 17mm; border-radius: 2.5mm; color: #fff; background: #ef5000; font-size: 10px; font-weight: 900; text-transform: uppercase; }
       .wi-count b { display: block; margin-bottom: -1mm; font-size: 25px; line-height: 1; }
       .wi-order { margin-top: 2mm; border: .25mm solid #d8deeb; border-radius: 2.5mm; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-      .wi-order-head { display: grid; grid-template-columns: 38mm 43mm 43mm 1fr 27mm; gap: 2.2mm; align-items: center; padding: 1.7mm 2.2mm; background: #fbfcff; border-bottom: .25mm solid #d8deeb; }
+      .wi-order-head { display: grid; grid-template-columns: 38mm 43mm 43mm 1fr 34mm; gap: 2.2mm; align-items: center; padding: 1.7mm 2.2mm; background: #fbfcff; border-bottom: .25mm solid #d8deeb; }
       .wi-order-head strong { display: block; margin-top: .4mm; color: #061b48; font-size: 11px; line-height: 1.1; text-transform: uppercase; }
       .wi-order-number { display: flex; align-items: center; gap: 2.2mm; }
       .wi-order-number > span { width: 10mm; height: 12.5mm; display: grid; place-items: center; border-radius: 2.2mm 2.2mm 0 0; color: #fff; background: linear-gradient(135deg, #ef5000 0%, #ef5000 62%, #c63d00 63%, #f58b35 100%); font-size: 17px; font-weight: 900; }
-      .wi-status { display: inline-block !important; width: max-content; padding: .8mm 1.4mm; border: .25mm solid #ef5000; border-radius: .9mm; color: #ef5000 !important; background: #fff; font-size: 9.2px !important; }
-      .wi-operation { display: block; margin-bottom: .7mm; color: #09255a !important; font-size: 9.5px !important; line-height: 1.05 !important; }
+      .wi-ready-date strong { color: #ef5000; font-size: 10px; line-height: 1.12; }
+      .wi-ready-check { display: inline-flex; align-items: center; gap: 1.2mm; margin-top: .8mm; color: #09255a; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+      .wi-ready-check i { width: 4.4mm; height: 4.4mm; display: inline-block; border: .28mm solid #09255a; border-radius: .45mm; background: #fff; }
       .wi-order-meta { display: grid; grid-template-columns: 1.25fr 1.25fr .85fr 1fr; gap: 0; padding: 0; border-bottom: .22mm solid #d8deeb; }
       .wi-order-meta > div { min-height: 10.2mm; padding: 1.45mm 3mm 1.25mm 5.8mm; border-right: .2mm solid #d8deeb; }
       .wi-order-meta > div:last-child { border-right: 0; }
