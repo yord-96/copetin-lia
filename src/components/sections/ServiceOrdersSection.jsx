@@ -742,9 +742,11 @@ const buildEmptyDraft = (mode = 'quote') => {
     deliveryFeeReason: 'covered',
     deliveryWindowStart: '08:00',
     deliveryWindowEnd: '10:00',
+    deliveryTimeMode: 'fixed',
     pickupDate,
     pickupWindowStart: '20:00',
     pickupWindowEnd: '22:00',
+    pickupTimeMode: 'fixed',
     driverId: '',
     vehicleId: '',
     discountBs: '0',
@@ -2191,9 +2193,11 @@ function ServiceOrdersSection({
     deliveryFeeReason: record?.deliveryFeeReason ?? (Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
     deliveryWindowStart: record?.deliveryWindowStart ?? '08:00',
     deliveryWindowEnd: record?.deliveryWindowEnd ?? '10:00',
+    deliveryTimeMode: record?.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
     pickupDate: record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
     pickupWindowStart: record?.pickupWindowStart ?? '20:00',
     pickupWindowEnd: record?.pickupWindowEnd ?? '22:00',
+    pickupTimeMode: record?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
     driverId: record?.driverId ?? '',
     vehicleId: record?.vehicleId ?? '',
     discountBs: String(record?.totals?.discountBs ?? 0),
@@ -3297,10 +3301,10 @@ function ServiceOrdersSection({
     if (stepIndex === 3) {
       if (!draft.deliveryDate) return 'Selecciona fecha de entrega.';
       if (!draft.pickupDate) return 'Selecciona fecha de recojo.';
-      if (!isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
+      if (draft.deliveryTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
         return 'La ventana de entrega debe terminar despues de la hora de inicio.';
       }
-      if (!isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
+      if (draft.pickupTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
         return 'La ventana de recojo debe terminar despues de la hora de inicio.';
       }
       return '';
@@ -3392,10 +3396,10 @@ function ServiceOrdersSection({
     if (!draft.address.trim()) throw new Error('Debes indicar la direccion del evento.');
     if (!draft.deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
     if (!draft.pickupDate) throw new Error('Debes indicar la fecha de recojo.');
-    if (!isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
+    if (draft.deliveryTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
       throw new Error('La ventana de entrega debe terminar despues de la hora de inicio.');
     }
-    if (!isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
+    if (draft.pickupTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.pickupWindowStart, draft.pickupWindowEnd)) {
       throw new Error('La ventana de recojo debe terminar despues de la hora de inicio.');
     }
     if (!selectedItems.length && !selectedServices.length) throw new Error('Debes agregar al menos un item o servicio.');
@@ -3458,9 +3462,11 @@ function ServiceOrdersSection({
         : 'covered',
       deliveryWindowStart: draft.deliveryWindowStart,
       deliveryWindowEnd: draft.deliveryWindowEnd,
+      deliveryTimeMode: draft.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
       pickupDate: draft.pickupDate,
       pickupWindowStart: draft.pickupWindowStart,
       pickupWindowEnd: draft.pickupWindowEnd,
+      pickupTimeMode: draft.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
       driverId: draft.driverId || null,
       vehicleId: draft.vehicleId || null,
       validUntil: draft.validUntil || null,
@@ -7307,19 +7313,35 @@ function ServiceOrdersSection({
                       <>
                         <label>
                           {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento inicio' : 'Ventana entrega inicio'}
-                          <input type="time" value={draft.deliveryWindowStart} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
+                          <input type="time" value={draft.deliveryWindowStart} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
                         </label>
                         <label>
                           {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento fin' : 'Ventana entrega fin'}
-                          <input type="time" value={draft.deliveryWindowEnd} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
+                          <input type="time" value={draft.deliveryWindowEnd} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
+                        </label>
+                        <label className="orders-time-coordinate">
+                          <input
+                            type="checkbox"
+                            checked={draft.deliveryTimeMode === 'coordinate'}
+                            onChange={(event) => setDraftField('deliveryTimeMode', event.target.checked ? 'coordinate' : 'fixed')}
+                          />
+                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de alistamiento con el cliente' : 'Coordinar horario de entrega con el cliente'}</span>
                         </label>
                         <label>
                           {draft.logisticsMode === 'recojo' ? 'Ventana devolucion inicio' : 'Ventana recojo inicio'}
-                          <input type="time" value={draft.pickupWindowStart} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
+                          <input type="time" value={draft.pickupWindowStart} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
                         </label>
                         <label>
                           {draft.logisticsMode === 'recojo' ? 'Ventana devolucion fin' : 'Ventana recojo fin'}
-                          <input type="time" value={draft.pickupWindowEnd} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
+                          <input type="time" value={draft.pickupWindowEnd} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
+                        </label>
+                        <label className="orders-time-coordinate">
+                          <input
+                            type="checkbox"
+                            checked={draft.pickupTimeMode === 'coordinate'}
+                            onChange={(event) => setDraftField('pickupTimeMode', event.target.checked ? 'coordinate' : 'fixed')}
+                          />
+                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de devolucion con el cliente' : 'Coordinar horario de recojo con el cliente'}</span>
                         </label>
                       </>
                       {draft.logisticsMode === 'envio' ? (
