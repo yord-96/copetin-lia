@@ -11313,8 +11313,12 @@ const createWebBridge = () => ({
         });
         if (projectedIssues.length) {
           const issue = projectedIssues[0];
+          const conflictText = (issue.hardConflicts ?? [])
+            .slice(0, 2)
+            .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || 'previo'} hasta ${record.endDate || 'fecha pendiente'}`)
+            .join(', ');
           throw new Error(
-            `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}. Coordina proveedor o cambia fechas.`,
+            `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Coordina proveedor o cambia fechas.`,
           );
         }
         const availabilityAtApproval = getProjectedInventoryAvailability({

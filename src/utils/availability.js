@@ -58,6 +58,13 @@ const overlaps = (left, right) =>
 const finishesBefore = (left, right) =>
   hasValidPeriod(left) && hasValidPeriod(right) && left.end <= right.start;
 
+const finishesByStartDate = (left, right) =>
+  hasValidPeriod(left)
+  && hasValidPeriod(right)
+  && left.endDate
+  && right.startDate
+  && left.endDate <= right.startDate;
+
 const getContractMaps = (contracts = []) => {
   const byRentalId = new Map();
   const byOrderCode = new Map();
@@ -123,6 +130,10 @@ const pushLineImpact = (summary, record, line, bucket) => {
   summary[`${bucket}Records`].push({
     id: record.id,
     code: record.code,
+    orderCode: record.orderCode,
+    contractCode: record.contractCode,
+    rentalId: record.rentalId,
+    contractId: record.contractId,
     customerName: record.customerName,
     quantity: line.quantity,
     startDate: record.period.startDate,
@@ -180,7 +191,11 @@ export function getProjectedInventoryAvailability({
     }
     hardRecords.push({
       id: rental.id,
-      code: rental.orderCode,
+      code: contract?.contractCode || rental.contractCode || rental.orderCode,
+      orderCode: rental.orderCode,
+      contractCode: contract?.contractCode || rental.contractCode || '',
+      rentalId: rental.id,
+      contractId: contract?.id || rental.contractId || '',
       customerName: rental.customerName,
       type: 'orden',
       period: periodFromRental(rental, contract),
@@ -196,6 +211,10 @@ export function getProjectedInventoryAvailability({
     const record = {
       id: contract.id,
       code: contract.contractCode,
+      orderCode: contract.orderCode || '',
+      contractCode: contract.contractCode,
+      rentalId: contract.rentalId || '',
+      contractId: contract.id,
       customerName: contract.customerName,
       type: 'contrato',
       period: periodFromCommercialRecord(contract),
@@ -215,10 +234,10 @@ export function getProjectedInventoryAvailability({
         summary.activeRentalQty += line.quantity;
       }
       if (!targetPeriod) return;
-      if (overlaps(record.period, targetPeriod)) {
-        pushLineImpact(summary, record, line, 'hardReservedQty');
-      } else if (finishesBefore(record.period, targetPeriod)) {
+      if (finishesBefore(record.period, targetPeriod) || finishesByStartDate(record.period, targetPeriod)) {
         pushLineImpact(summary, record, line, 'returningBeforeStartQty');
+      } else if (overlaps(record.period, targetPeriod)) {
+        pushLineImpact(summary, record, line, 'hardReservedQty');
       }
     });
   });
@@ -243,6 +262,10 @@ export function getProjectedInventoryAvailability({
     softRecords.push({
       id: quote.id,
       code: quote.quoteCode,
+      orderCode: quote.orderCode || '',
+      contractCode: '',
+      rentalId: quote.rentalId || '',
+      contractId: '',
       customerName: quote.customerName,
       type: 'cotizacion',
       period: periodFromCommercialRecord(quote),
@@ -257,6 +280,10 @@ export function getProjectedInventoryAvailability({
     softRecords.push({
       id: contract.id,
       code: contract.contractCode,
+      orderCode: contract.orderCode || '',
+      contractCode: contract.contractCode,
+      rentalId: contract.rentalId || '',
+      contractId: contract.id,
       customerName: contract.customerName,
       type: 'contrato',
       period: periodFromCommercialRecord(contract),

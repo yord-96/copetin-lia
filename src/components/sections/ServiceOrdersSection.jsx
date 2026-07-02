@@ -993,6 +993,7 @@ function ServiceOrdersSection({
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
   const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
+  const [availabilityContractDetail, setAvailabilityContractDetail] = useState(null);
   const [supplierCoverageDraft, setSupplierCoverageDraft] = useState(buildEmptySupplierCoverageDraft);
   const [supplierCoverageError, setSupplierCoverageError] = useState('');
   const [isSavingSupplierCoverage, setIsSavingSupplierCoverage] = useState(false);
@@ -3256,6 +3257,16 @@ function ServiceOrdersSection({
     });
   };
 
+  const getUncoveredStockIssueMessage = (issue) => {
+    const selectedLine = selectedItems.find((line) => line.itemId === issue.itemId);
+    const hardRecords = selectedLine?.availability?.hardReservedQtyRecords ?? [];
+    const conflictText = hardRecords
+      .slice(0, 2)
+      .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || ''} hasta ${formatDate(record.endDate)}`)
+      .join(', ');
+    return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Selecciona proveedor o reduce cantidad.`;
+  };
+
   const getStepValidationMessage = (stepIndex) => {
     if (stepIndex === 0) {
       if (!draft.customerName.trim()) return 'Completa el nombre del cliente para continuar.';
@@ -3276,7 +3287,7 @@ function ServiceOrdersSection({
       if (!selectedItems.length && !selectedServices.length) return 'Agrega al menos un item o servicio para continuar.';
       if (uncoveredStockIssues.length) {
         const issue = uncoveredStockIssues[0];
-        return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`;
+        return getUncoveredStockIssueMessage(issue);
       }
       if (draft.pricingMode === 'duration' && parsePositiveInteger(draft.pricingDays, 0) <= 0) {
         return 'Indica cuantos dias de uso se deben cobrar.';
@@ -3390,7 +3401,7 @@ function ServiceOrdersSection({
     if (!selectedItems.length && !selectedServices.length) throw new Error('Debes agregar al menos un item o servicio.');
     if (uncoveredStockIssues.length) {
       const issue = uncoveredStockIssues[0];
-      throw new Error(`${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades. Selecciona proveedor o reduce cantidad.`);
+      throw new Error(getUncoveredStockIssueMessage(issue));
     }
     if (draft.logisticsMode === 'envio' && draft.deliveryChargeMode === 'extra' && quoteDeliveryFeeBs <= 0) {
       throw new Error('Indica el costo extra de envio.');
@@ -3710,6 +3721,7 @@ function ServiceOrdersSection({
       rentalId: linkedOrder?.rentalId ?? contractRow.rentalId ?? null,
       contractId: contractRow.id,
       orderCode: linkedOrder?.orderCode ?? contractRow.orderCode ?? contractRow.contractCode,
+      contractCode: contractRow.contractCode ?? linkedOrder?.contractCode ?? null,
       client: linkedOrder?.client ?? contractRow.customerName,
       totalBs: linkedOrder?.totalBs ?? Number(contractRow?.totals?.totalBs ?? 0),
       status: linkedOrder?.status ?? (contractRow.status === 'anulado' ? 'cancelled' : 'pending'),
@@ -3731,7 +3743,7 @@ function ServiceOrdersSection({
       if (!contract) {
         throw new Error('No se pudo generar el contrato para esta orden.');
       }
-      setActionFeedback(`Contrato ${contract.contractCode ?? contract.id} generado desde ${orderRow.orderCode}.`);
+      setActionFeedback(`Contrato ${contract.contractCode ?? contract.id} generado correctamente.`);
       setContractFilter('all');
       setContractQuery(contract.contractCode ?? orderRow.orderCode);
       setActiveView('contracts');
@@ -3750,6 +3762,39 @@ function ServiceOrdersSection({
 
   const handleCloseDocumentsPanel = () => {
     setDocumentsOrder(null);
+  };
+
+  const getOrderContractLabel = (orderRow) =>
+    orderRow?.contractCode || orderRow?.orderCode || orderRow?.id || 'contrato';
+
+  const openAvailabilityContractDetail = (record) => {
+    const code = String(record?.contractCode || record?.code || '').trim();
+    const orderCode = String(record?.orderCode || '').trim();
+    const rentalId = String(record?.rentalId || record?.id || '').trim();
+    const contract = contracts.find((entry) =>
+      (record?.contractId && String(entry.id) === String(record.contractId))
+      || (code && String(entry.contractCode) === code)
+      || (orderCode && String(entry.orderCode) === orderCode)
+      || (rentalId && String(entry.rentalId) === rentalId),
+    ) ?? null;
+    const order = orderRowsWithMeta.find((entry) =>
+      (rentalId && String(entry.rentalId) === rentalId)
+      || (orderCode && String(entry.orderCode) === orderCode)
+      || (code && String(entry.contractCode) === code),
+    ) ?? null;
+    setAvailabilityContractDetail({
+      code: contract?.contractCode || order?.contractCode || code || orderCode || 'Sin numero',
+      orderCode: order?.orderCode || contract?.orderCode || orderCode || '',
+      customerName: contract?.customerName || order?.client || record?.customerName || 'Cliente',
+      phone: contract?.customerPhone || order?.customerPhone || '',
+      eventType: contract?.eventType || order?.event || 'Evento',
+      deliveryDate: contract?.deliveryDate || order?.deliveryAt || record?.startDate || '',
+      pickupDate: contract?.pickupDate || order?.serviceDate || record?.endDate || '',
+      pickupTime: contract?.pickupWindowEnd || order?.serviceTime || record?.endTime || '',
+      status: contract?.status || order?.contractStatus || order?.status || '',
+      totalBs: Number(contract?.totals?.totalBs ?? order?.totalBs ?? 0),
+      items: Array.isArray(contract?.items) && contract.items.length > 0 ? contract.items : order?.items ?? [],
+    });
   };
 
   const handleOpenDocumentsFromContract = (contractRow) => {
@@ -3828,7 +3873,7 @@ function ServiceOrdersSection({
           html: preview.html,
         });
       }
-      setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para ${orderRow.orderCode}.`);
+      setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para contrato ${getOrderContractLabel(orderRow)}.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo abrir el documento seleccionado.');
     } finally {
@@ -4018,7 +4063,7 @@ function ServiceOrdersSection({
         contractId: orderRow.contractId,
         contractCode: orderRow.contractCode,
       });
-      setActionFeedback(`Documentos generados para ${orderRow.orderCode}.`);
+      setActionFeedback(`Documentos generados para contrato ${getOrderContractLabel(orderRow)}.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudieron generar los documentos.');
     } finally {
@@ -4061,7 +4106,7 @@ function ServiceOrdersSection({
       if (target === 'transport') payload.transportStatus = status;
       await onUpdateOrderOperational?.(payload);
       setActionFeedback(
-        `${target === 'inventory' ? 'Inventario' : 'Transporte'} actualizado para ${orderRow.orderCode}.`,
+        `${target === 'inventory' ? 'Inventario' : 'Transporte'} actualizado para contrato ${getOrderContractLabel(orderRow)}.`,
       );
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo actualizar la orden operativa.');
@@ -4094,7 +4139,7 @@ function ServiceOrdersSection({
       });
       const penaltyBs = Number(cancelled?.cancellationPenaltyBs ?? orderToCancel.cancellationPenaltyBs ?? 0);
       setActionFeedback(
-        `Contrato/orden ${orderToCancel.orderCode} anulado. Penalidad aplicada: ${formatBs(penaltyBs)}.`,
+        `Contrato ${orderToCancel.contractCode || orderToCancel.orderCode} anulado. Penalidad aplicada: ${formatBs(penaltyBs)}.`,
       );
       setOrderToCancel(null);
       setCancelReason('');
@@ -5552,6 +5597,63 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
+      {availabilityContractDetail ? (
+        <div className="orders-modal-backdrop availability-contract-backdrop" onClick={() => setAvailabilityContractDetail(null)}>
+          <section className="orders-modal availability-contract-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Contrato {availabilityContractDetail.code}</h3>
+                <p>{availabilityContractDetail.customerName} · {availabilityContractDetail.eventType}</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setAvailabilityContractDetail(null)}>
+                x
+              </button>
+            </header>
+            <div className="availability-contract-body">
+              <section className="availability-contract-summary">
+                <article>
+                  <span>Cliente</span>
+                  <strong>{availabilityContractDetail.customerName}</strong>
+                  <small>{availabilityContractDetail.phone || 'Sin telefono'}</small>
+                </article>
+                <article>
+                  <span>Recojo / retorno</span>
+                  <strong>{formatDate(availabilityContractDetail.pickupDate)}</strong>
+                  <small>{availabilityContractDetail.pickupTime || 'Horario pendiente'}</small>
+                </article>
+                <article>
+                  <span>Estado</span>
+                  <strong>{availabilityContractDetail.status || 'Sin estado'}</strong>
+                  <small>{formatBs(availabilityContractDetail.totalBs)}</small>
+                </article>
+              </section>
+              <div className="availability-contract-items">
+                <div className="availability-contract-items-head">
+                  <span>Item</span>
+                  <span>Cantidad</span>
+                  <span>Precio</span>
+                </div>
+                {(availabilityContractDetail.items ?? []).slice(0, 8).map((item, index) => (
+                  <div key={`${item.itemId || item.name || index}`} className="availability-contract-item-row">
+                    <strong>{item.itemName || item.name || 'Item'}</strong>
+                    <span>{Math.max(0, Number(item.quantity ?? 0))} u.</span>
+                    <span>{formatBs(Number(item.rentalPriceBs ?? item.unitPriceBs ?? 0))}</span>
+                  </div>
+                ))}
+                {(availabilityContractDetail.items ?? []).length > 8 ? (
+                  <p className="status">Y {(availabilityContractDetail.items ?? []).length - 8} item(s) mas.</p>
+                ) : null}
+              </div>
+            </div>
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setAvailabilityContractDetail(null)}>
+                Cerrar
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
       {documentPreview ? (
         <div className="orders-modal-backdrop document-preview-backdrop" onClick={() => setDocumentPreview(null)}>
           <div className="orders-modal orders-preview-modal" onClick={(event) => event.stopPropagation()}>
@@ -5598,7 +5700,7 @@ function ServiceOrdersSection({
             </header>
 
             <div className="orders-confirm-summary">
-              <strong>{orderToCancel.orderCode}</strong>
+              <strong>{orderToCancel.contractCode || orderToCancel.orderCode}</strong>
               <span>{orderToCancel.client} · {formatBs(orderToCancel.totalBs)}</span>
               <small>
                 La penalidad se calculara segun el porcentaje vigente en Configuracion.
@@ -6561,11 +6663,11 @@ function ServiceOrdersSection({
                         <span>Devoluciones consideradas</span>
                         {returnSummaryRows.length > 0 ? (
                           <>
-                            <strong>{returnSummaryRows.reduce((sum, row) => sum + row.quantity, 0)} unidades vuelven antes</strong>
+                            <strong>{returnSummaryRows.reduce((sum, row) => sum + row.quantity, 0)} unidades vuelven para la fecha</strong>
                             <div className="orders-return-mini-list">
                               {returnSummaryRows.map((row) => (
                                 <small key={row.key}>
-                                  {formatDate(row.date)} {row.time || ''} · {row.code} · {row.quantity} u.
+                                  {formatDate(row.date)} {row.time || ''} · Contrato {row.code} · {row.quantity} u.
                                   {row.itemText ? ` (${row.itemText})` : ''}
                                 </small>
                               ))}
@@ -6682,6 +6784,8 @@ function ServiceOrdersSection({
                         const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
                         const returningQty = Math.max(0, Number(availability?.returningBeforeStartQty ?? 0));
                         const softQty = Math.max(0, Number(availability?.softReservedQty ?? 0));
+                        const catalogHardRecords = availability?.hardReservedQtyRecords ?? [];
+                        const catalogReturningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                         const detailParts = getOperationalItemDetails({ item });
                         return (
                         <article
@@ -6757,6 +6861,16 @@ function ServiceOrdersSection({
                                 ) : null}
                               </div>
                             )}
+                            {!isProvisionalCatalogItem && catalogReturningRecords.length > 0 ? (
+                              <small className="orders-available-note is-positive orders-catalog-availability-note">
+                                Vuelve para usar: contrato {catalogReturningRecords[0].contractCode || catalogReturningRecords[0].code || catalogReturningRecords[0].orderCode} el {formatDate(catalogReturningRecords[0].endDate)}
+                              </small>
+                            ) : null}
+                            {!isProvisionalCatalogItem && catalogHardRecords.length > 0 && projectedAvailable <= 0 ? (
+                              <small className="orders-available-note is-warning orders-catalog-availability-note">
+                                Usado por contrato {catalogHardRecords[0].contractCode || catalogHardRecords[0].code || catalogHardRecords[0].orderCode} hasta {formatDate(catalogHardRecords[0].endDate)}
+                              </small>
+                            ) : null}
                           </div>
                           <div className="orders-product-table-details">
                             {detailParts.length > 0
@@ -6897,13 +7011,31 @@ function ServiceOrdersSection({
                                 </small>
                               )}
                               {returningRecords.length > 0 ? (
-                                <small className="orders-available-note is-positive">
-                                  Vuelven antes: {returningRecords.slice(0, 2).map((record) => `${record.quantity} ${record.code || ''} ${formatDate(record.endDate)}`).join(' · ')}
+                                <small className="orders-available-note is-positive orders-return-contract-note">
+                                  <span>Depende de retorno:</span>
+                                  {returningRecords.slice(0, 2).map((record) => (
+                                    <button
+                                      key={`${record.id || record.code}-${record.endDate}`}
+                                      type="button"
+                                      onClick={() => openAvailabilityContractDetail(record)}
+                                    >
+                                      Contrato {record.contractCode || record.code || record.orderCode || 'previo'} · {record.quantity} u. · vuelve {formatDate(record.endDate)}
+                                    </button>
+                                  ))}
                                 </small>
                               ) : null}
                               {hardRecords.length > 0 ? (
-                                <small className="orders-available-note">
-                                  Cruces: {hardRecords.slice(0, 2).map((record) => `${record.quantity} ${record.code || ''}`).join(' · ')}
+                                <small className="orders-available-note is-warning orders-return-contract-note">
+                                  <span>Usado por:</span>
+                                  {hardRecords.slice(0, 2).map((record) => (
+                                    <button
+                                      key={`${record.id || record.code}-hard-${record.endDate}`}
+                                      type="button"
+                                      onClick={() => openAvailabilityContractDetail(record)}
+                                    >
+                                      Contrato {record.contractCode || record.code || record.orderCode || 'previo'} · {record.quantity} u. · hasta {formatDate(record.endDate)}
+                                    </button>
+                                  ))}
                                 </small>
                               ) : null}
                               {softRecords.length > 0 ? (
