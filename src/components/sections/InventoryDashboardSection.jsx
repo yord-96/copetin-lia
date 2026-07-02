@@ -817,6 +817,7 @@ function InventoryDashboardSection({
   onReloadData,
   onOpenImage,
   onUpdateOrderOperational,
+  onRemoveOrder,
   onReceiveReturnedOrder,
   onPrintInventoryWeekDocument,
   rentals = [],
@@ -877,6 +878,13 @@ function InventoryDashboardSection({
   const [detailRow, setDetailRow] = useState(null);
   const [valuationOpen, setValuationOpen] = useState(false);
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [operationalEditRow, setOperationalEditRow] = useState(null);
+  const [operationalEditForm, setOperationalEditForm] = useState({
+    inventoryStatus: 'pendiente',
+    inventoryNote: '',
+  });
+  const [operationalEditError, setOperationalEditError] = useState('');
+  const [isSavingOperationalEdit, setIsSavingOperationalEdit] = useState(false);
   const [inventoryOrderQuery, setInventoryOrderQuery] = useState(initialInventoryOpsFiltersRef.current.query);
   const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(initialInventoryOpsFiltersRef.current.dateFrom);
   const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(initialInventoryOpsFiltersRef.current.dateTo);
@@ -2784,6 +2792,54 @@ function InventoryDashboardSection({
     }
   };
 
+  const openOperationalEditModal = (row) => {
+    setRowMenuOpenId(null);
+    setOperationalEditError('');
+    setOperationalEditRow(row);
+    setOperationalEditForm({
+      inventoryStatus: row.inventoryStatus ?? 'pendiente',
+      inventoryNote: row.inventoryNote ?? '',
+    });
+  };
+
+  const submitOperationalEdit = async (event) => {
+    event.preventDefault();
+    if (!operationalEditRow || isSavingOperationalEdit) return;
+    setOperationalEditError('');
+    setIsSavingOperationalEdit(true);
+    try {
+      await onUpdateOrderOperational?.({
+        id: operationalEditRow.rentalId,
+        inventoryStatus: operationalEditForm.inventoryStatus,
+        inventoryNote: operationalEditForm.inventoryNote,
+      });
+      setOperationalEditRow(null);
+      showMessage(`Orden ${operationalEditRow.orderCode} actualizada correctamente.`);
+    } catch (error) {
+      setOperationalEditError(error?.message || 'No se pudo editar la orden operativa.');
+    } finally {
+      setIsSavingOperationalEdit(false);
+    }
+  };
+
+  const handleDeleteOperationalOrder = async (row) => {
+    setRowMenuOpenId(null);
+    if (!onRemoveOrder) {
+      setFeedback('No hay permisos para eliminar esta orden.');
+      setFeedbackType('error');
+      return;
+    }
+    const confirmed = window.confirm(`Eliminar la orden ${row.orderCode} del contrato ${row.contractCode}?`);
+    if (!confirmed) return;
+    try {
+      await onRemoveOrder({ id: row.rentalId });
+      showMessage(`Orden ${row.orderCode} eliminada correctamente.`);
+    } catch (error) {
+      setFeedback(error?.message || 'No se pudo eliminar la orden.');
+      setFeedbackType('error');
+    }
+  };
+
   const updateReceivingLine = (itemId, field, value) => {
     setReceivingModal((current) => {
       if (!current) return current;
@@ -2895,6 +2951,17 @@ function InventoryDashboardSection({
           left: rowMenuPosition.left,
         }
       : undefined;
+
+  const renderOperationalRowMenu = (row, openUp = false) => (
+    <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()} role="menu">
+      <button type="button" onClick={() => openOperationalEditModal(row)}>
+        Editar
+      </button>
+      <button type="button" className="danger" onClick={() => handleDeleteOperationalOrder(row)}>
+        Eliminar
+      </button>
+    </div>
+  );
 
   const comboIngredientRows = comboForm.ingredients
     .map((line, index) => {
@@ -3337,6 +3404,21 @@ function InventoryDashboardSection({
                           Volvió
                         </button>
                       </div>
+                      <div
+                        className="inventory-actions-menu-wrap inventory-ops-menu-wrap"
+                        ref={rowMenuOpenId === `ops-${row.id}` ? rowMenuRef : null}
+                      >
+                        <button
+                          type="button"
+                          className="inventory-row-menu-button inventory-ops-menu-button"
+                          aria-label={`Mas opciones para ${row.contractCode}`}
+                          aria-expanded={rowMenuOpenId === `ops-${row.id}`}
+                          onClick={(event) => toggleRowMenu(`ops-${row.id}`, event)}
+                        >
+                          ⋮
+                        </button>
+                        {rowMenuOpenId === `ops-${row.id}` ? renderOperationalRowMenu(row) : null}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -3442,11 +3524,74 @@ function InventoryDashboardSection({
                             Volvió
                           </button>
                         </div>
+                        <div
+                          className="inventory-actions-menu-wrap inventory-ops-menu-wrap"
+                          ref={rowMenuOpenId === `ops-all-${row.id}` ? rowMenuRef : null}
+                        >
+                          <button
+                            type="button"
+                            className="inventory-row-menu-button inventory-ops-menu-button"
+                            aria-label={`Mas opciones para ${row.contractCode}`}
+                            aria-expanded={rowMenuOpenId === `ops-all-${row.id}`}
+                            onClick={(event) => toggleRowMenu(`ops-all-${row.id}`, event)}
+                          >
+                            ⋮
+                          </button>
+                          {rowMenuOpenId === `ops-all-${row.id}` ? renderOperationalRowMenu(row) : null}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               </section>
+            </div>
+          ) : null}
+
+          {operationalEditRow ? (
+            <div className="reset-modal-backdrop" onClick={() => setOperationalEditRow(null)}>
+              <form className="reset-modal inventory-ops-edit-modal" onSubmit={submitOperationalEdit} onClick={(event) => event.stopPropagation()}>
+                <header className="inventory-ops-all-head">
+                  <div>
+                    <span className="inventory-detail-kicker">Inventario operativo</span>
+                    <h3>Editar {operationalEditRow.orderCode}</h3>
+                    <p>Contrato {operationalEditRow.contractCode} · {operationalEditRow.customerName}</p>
+                  </div>
+                  <button type="button" className="modal-close" onClick={() => setOperationalEditRow(null)}>×</button>
+                </header>
+                <div className="inventory-ops-edit-body">
+                  <label className="form-field">
+                    <span>Estado de inventario</span>
+                    <select
+                      value={operationalEditForm.inventoryStatus}
+                      onChange={(event) => setOperationalEditForm((current) => ({ ...current, inventoryStatus: event.target.value }))}
+                    >
+                      <option value="pendiente">Pendiente</option>
+                      <option value="enviado">Asignada / pendiente</option>
+                      <option value="confirmado">Alistado</option>
+                      <option value="salio">Salio</option>
+                      <option value="devuelto">Volvio</option>
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Observacion de inventario</span>
+                    <textarea
+                      rows={4}
+                      value={operationalEditForm.inventoryNote}
+                      onChange={(event) => setOperationalEditForm((current) => ({ ...current, inventoryNote: event.target.value }))}
+                      placeholder="Detalle operativo, novedades o aclaraciones."
+                    />
+                  </label>
+                  {operationalEditError ? <p className="form-error">{operationalEditError}</p> : null}
+                </div>
+                <footer className="inventory-ops-edit-actions">
+                  <button type="button" className="ghost-button" onClick={() => setOperationalEditRow(null)}>
+                    Cancelar
+                  </button>
+                  <button type="submit" className="primary-button" disabled={isSavingOperationalEdit}>
+                    {isSavingOperationalEdit ? 'Guardando...' : 'Guardar cambios'}
+                  </button>
+                </footer>
+              </form>
             </div>
           ) : null}
 

@@ -49562,6 +49562,8 @@ button.calendar-dispatch-row:focus-visible {
 /* Inventario movimientos: semana por defecto, acciones por proceso y panel completo */
 .inventory-ops-actions {
   align-items: center;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
 }
 
 .inventory-ops-actions .ghost-button {
@@ -49579,6 +49581,39 @@ button.calendar-dispatch-row:focus-visible {
   border: 1px solid #e4e9f2;
   border-radius: 0.62rem;
   background: #f8fafc;
+}
+
+.inventory-ops-menu-wrap {
+  flex: 0 0 auto;
+}
+
+.inventory-ops-menu-button {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-color: #e3e9f3;
+  background: #ffffff;
+  color: #1f2b46;
+}
+
+.inventory-ops-edit-modal {
+  width: min(560px, calc(100vw - 2rem));
+  padding: 0;
+  overflow: hidden;
+}
+
+.inventory-ops-edit-body {
+  padding: 1rem 1.08rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.inventory-ops-edit-actions {
+  padding: 0.9rem 1.08rem;
+  border-top: 1px solid #e4e9f2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  background: #fbfcff;
 }
 
 .inventory-ops-check {
@@ -49711,6 +49746,7 @@ button.calendar-dispatch-row:focus-visible {
 
   .inventory-ops-actions {
     justify-content: stretch;
+    flex-wrap: wrap;
   }
 
   .inventory-ops-actions .ghost-button {

@@ -506,6 +506,7 @@ function App() {
             onReloadData={controller.loadData}
             onOpenImage={controller.setImagePreview}
             onUpdateOrderOperational={controller.handleUpdateOrderOperational}
+            onRemoveOrder={controller.handleRemoveOrder}
             onReceiveReturnedOrder={controller.handleReceiveReturnedOrder}
             onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
           />

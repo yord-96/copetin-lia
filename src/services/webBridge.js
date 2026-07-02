@@ -3652,6 +3652,18 @@ const buildCashReceiptHtml = ({ state, movement }) => {
   const collectionUser = (isOut
     ? movementResponsible || movementCreator
     : movementCreator || movementResponsible) || 'Administracion';
+  const contractCustomer = String(
+    contractContext?.customerName
+    ?? rentalContext?.customerName
+    ?? movement?.customerName
+    ?? movement?.clientName
+    ?? '',
+  ).trim();
+  const partyName = isPersonnelAdvance
+    ? movementResponsible || contractCustomer || movementCreator || 'Administracion'
+    : isOut
+    ? movementResponsible || contractCustomer || movementCreator || 'Administracion'
+    : contractCustomer || movementResponsible || movementCreator || 'Administracion';
   const cashBoxLabel = cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
   const movementLabel = isOut ? 'Egreso' : 'Ingreso';
   const title = isPersonnelAdvance
@@ -3999,7 +4011,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
           <div class="info-col">
             <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
             <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
-            <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(collectionUser)}</span></p>
+            <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(partyName)}</span></p>
             <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(paymentMethodLabel)}</span></p>
           </div>
           <div class="info-col">
