@@ -5486,7 +5486,7 @@ const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
 const getReferenceContractStyles = () => `
-  @page { size: legal portrait; margin: 0; }
+  @page { size: legal portrait; margin: 9mm 10mm 10mm; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -5951,10 +5951,10 @@ const getReferenceContractStyles = () => `
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
       position: relative;
-      width: 8.5in;
+      width: auto;
       min-height: auto;
       margin: 0;
-      padding: .34in .42in .36in;
+      padding: 0;
       display: block;
       box-shadow: none;
       background: #fffdfa;
