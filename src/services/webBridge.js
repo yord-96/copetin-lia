@@ -3470,6 +3470,37 @@ const addReturnCashMovements = (state, rental) => {
   }
 };
 
+const revertReturnEffects = (state, rental) => {
+  const previousReport = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
+  const now = new Date().toISOString();
+
+  previousReport.forEach((line) => {
+    const returnedToAvailableQty = Math.max(0, Math.trunc(Number(line?.returnedToAvailableQty ?? 0)));
+    if (returnedToAvailableQty <= 0) return;
+    const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
+    if (!item) return;
+    item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - returnedToAvailableQty);
+    item.updatedAt = now;
+  });
+
+  state.stockRecoveries = (state.stockRecoveries ?? []).filter(
+    (entry) => String(entry?.sourceRentalId ?? '') !== String(rental.id),
+  );
+
+  const automaticReturnMovementTypes = new Set([
+    'liquidacion_devolucion',
+    'saldo_pendiente_cobro',
+    'perdida_interna_devolucion',
+  ]);
+  state.cashMovements = (state.cashMovements ?? []).filter((movement) => {
+    const belongsToReturn = String(movement?.sourceId ?? '') === String(rental.id)
+      && ['return', 'return_internal_loss'].includes(String(movement?.sourceType ?? ''));
+    if (!belongsToReturn) return true;
+    if (!automaticReturnMovementTypes.has(String(movement?.type ?? ''))) return true;
+    return Number(movement?.amountBs ?? 0) !== 0;
+  });
+};
+
 const getDueTimestamp = (rental) => {
   if (rental?.dueAt) {
     const parsed = new Date(rental.dueAt).getTime();
@@ -11816,11 +11847,11 @@ const createWebBridge = () => ({
         if (!rental) {
           throw new Error('No se encontro el alquiler seleccionado.');
         }
-        if (rental.status === 'returned') {
-          throw new Error('Este alquiler ya fue devuelto.');
-        }
         if (rental.status === 'cancelled') {
           throw new Error('La orden esta anulada y no puede registrarse como devolucion.');
+        }
+        if (rental.status === 'returned') {
+          revertReturnEffects(state, rental);
         }
 
         const normalizeReturnChargeOwner = (value) => {
