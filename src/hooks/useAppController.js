@@ -904,6 +904,21 @@ export const useAppController = () => {
     }
   };
 
+  const handleDeleteCashDebt = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.deleteDebt({
+        ...payload,
+        deletedBy: payload?.deletedBy || getCurrentUserTrace().createdByName,
+      });
+      await loadData();
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo eliminar la deuda.');
+      throw requestError;
+    }
+  };
+
   const handleVoidAndReplaceCashMovementReceipt = async (payload) => {
     setError('');
     try {
@@ -1965,6 +1980,7 @@ export const useAppController = () => {
     handleCloseCashSession,
     handleCreateCashDebt,
     handlePayCashDebt,
+    handleDeleteCashDebt,
     handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
     handleVoidAndReplaceCashMovementReceipt,

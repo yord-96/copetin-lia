@@ -2196,6 +2196,10 @@ const normalizeState = (state) => {
         debtDate: debt?.debtDate ?? debt?.date ?? debt?.createdAt ?? now,
         dueDate: debt?.dueDate ?? null,
         status,
+        debtKind: normalizeCashDebtKind(debt?.debtKind ?? debt?.kind ?? debt?.category),
+        category: String(debt?.category ?? '').trim(),
+        sourceMovementId: String(debt?.sourceMovementId ?? debt?.movementId ?? '').trim(),
+        sourceMovementReceipt: String(debt?.sourceMovementReceipt ?? debt?.receiptCode ?? debt?.receipt ?? '').trim(),
         notes: String(debt?.notes ?? '').trim(),
         createdAt: debt?.createdAt ?? now,
         createdBy: String(debt?.createdBy ?? '').trim(),
@@ -3246,6 +3250,12 @@ const nextDebtCode = (state) => {
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
   return `DEU-${String(maxPersisted + 1).padStart(5, '0')}`;
+};
+
+const normalizeCashDebtKind = (value) => {
+  const normalized = normalizeText(value).replace(/\s+/g, '_');
+  if (normalized.includes('lia') || normalized.includes('reembolso') || normalized.includes('cobrar')) return 'lia_reimbursement';
+  return 'payable';
 };
 
 const nextAttendanceCode = (state) => {
@@ -12321,6 +12331,10 @@ const createWebBridge = () => ({
       const personName = String(payload?.personName ?? payload?.responsible ?? '').trim();
       const debtDate = String(payload?.debtDate ?? '').trim() || new Date().toISOString();
       const dueDate = String(payload?.dueDate ?? '').trim() || null;
+      const debtKind = normalizeCashDebtKind(payload?.debtKind ?? payload?.kind ?? payload?.category);
+      const category = String(payload?.category ?? '').trim();
+      const sourceMovementId = String(payload?.sourceMovementId ?? '').trim();
+      const sourceMovementReceipt = String(payload?.sourceMovementReceipt ?? '').trim();
       const notes = String(payload?.notes ?? '').trim();
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
 
@@ -12343,6 +12357,10 @@ const createWebBridge = () => ({
           balanceBs: toPositiveRoundedNumber(amountBs),
           debtDate,
           dueDate,
+          debtKind,
+          category,
+          sourceMovementId,
+          sourceMovementReceipt,
           status: 'pendiente',
           notes,
           createdAt: new Date().toISOString(),
@@ -12376,6 +12394,9 @@ const createWebBridge = () => ({
         const debt = state.cashDebts.find((entry) => entry.id === debtId);
         if (!debt) {
           throw new Error('No se encontro la deuda seleccionada.');
+        }
+        if (normalizeCashDebtKind(debt.debtKind ?? debt.category) !== 'payable') {
+          throw new Error('Esta deuda es por cobrar/reembolsar y no se paga desde Caja Chica.');
         }
         if (String(debt.status ?? '').toLowerCase() === 'pagada' || Number(debt.balanceBs ?? 0) <= 0) {
           throw new Error('Esta deuda ya esta pagada.');
@@ -12427,6 +12448,23 @@ const createWebBridge = () => ({
       });
 
       return result;
+    },
+    deleteDebt: async (payload) => {
+      const debtId = String(payload?.debtId ?? payload?.id ?? '').trim();
+      if (!debtId) {
+        throw new Error('Debes seleccionar una deuda para eliminar.');
+      }
+      let deletedDebt = null;
+      transaction((state) => {
+        const index = (state.cashDebts ?? []).findIndex((entry) => entry.id === debtId);
+        if (index < 0) {
+          throw new Error('No se encontro la deuda seleccionada.');
+        }
+        deletedDebt = state.cashDebts[index];
+        state.cashDebts.splice(index, 1);
+        return state;
+      });
+      return { deleted: true, debt: deepClone(deletedDebt) };
     },
     openSession: async (payload) => {
       const openingBigCashBs = toNumber(payload?.openingBigCashBs ?? payload?.openingAmountBs ?? 0, 'monto de apertura caja grande');

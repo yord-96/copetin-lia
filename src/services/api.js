@@ -848,6 +848,7 @@ export const api = {
     collectReceivable: (payload) => callBridge('cash', 'collectReceivable', true, payload),
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
     payDebt: (payload) => callBridge('cash', 'payDebt', true, payload),
+    deleteDebt: (payload) => callBridge('cash', 'deleteDebt', true, payload),
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {

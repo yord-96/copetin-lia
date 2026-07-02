@@ -105,6 +105,40 @@ const PAYMENT_METHOD_META = {
 };
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
+const PETTY_EXPENSE_CATEGORIES = [
+  { id: 'servicios_basicos', label: 'Servicios Basicos', className: 'services', aliases: ['servicio', 'luz', 'agua', 'internet'] },
+  { id: 'alimentacion', label: 'Alimentacion', className: 'food', aliases: ['almuerzo', 'comida', 'refrigerio'] },
+  { id: 'taxis_pasajes', label: 'Taxis/Pasajes', className: 'mobility', aliases: ['taxi', 'pasaje', 'movilidad', 'transporte'] },
+  { id: 'mante_camiones', label: 'Mante. Camiones', className: 'maintenance', aliases: ['mante', 'camion', 'reparacion', 'mantenimiento'] },
+  { id: 'compras', label: 'Compras', className: 'purchase', aliases: ['compra'] },
+  { id: 'anticipo_sueldos', label: 'Anticipo Sueldos', className: 'advance', aliases: ['adelanto', 'anticipo'] },
+  { id: 'mate_limpieza', label: 'Mate. Limpieza', className: 'cleaning', aliases: ['limpieza', 'detergente'] },
+  { id: 'intereses', label: 'Intereses', className: 'interest', aliases: ['interes'] },
+  { id: 'eess_s_monica', label: 'EESS S. MONICA', className: 'fuel', aliases: ['eess', 'monica', 'combustible', 'gasolina'] },
+  { id: 'sueldos', label: 'Sueldos', className: 'payroll', aliases: ['sueldo', 'salario'] },
+];
+
+const PETTY_DEBT_TYPES = {
+  payable: {
+    label: 'Deuda por pagar',
+    shortLabel: 'Por pagar',
+    className: 'pending',
+  },
+  lia_reimbursement: {
+    label: 'Reembolso Sra. Lia',
+    shortLabel: 'Por cobrar Lia',
+    className: 'receivable',
+  },
+};
+
+const normalizeCashDebtKind = (value) => {
+  const normalized = normalizeText(value).replace(/\s+/g, '_');
+  if (normalized.includes('lia') || normalized.includes('reembolso') || normalized.includes('cobrar')) return 'lia_reimbursement';
+  return 'payable';
+};
+
+const getCashDebtMeta = (debt) => PETTY_DEBT_TYPES[normalizeCashDebtKind(debt?.debtKind ?? debt?.kind ?? debt?.category)] ?? PETTY_DEBT_TYPES.payable;
+
 const normalizePaymentMethod = (value) => {
   const normalized = normalizeText(value).replace(/\s+/g, '_');
   if (!normalized) return 'sin_metodo';
@@ -278,6 +312,7 @@ function AccountingSection({
   onCreateCashMovement,
   onCreateCashDebt,
   onPayCashDebt,
+  onDeleteCashDebt,
   onUpdateSupplierLoanStatus,
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
@@ -318,6 +353,7 @@ function AccountingSection({
     linkedRentalId: '',
     debtId: '',
     supplierLoanId: '',
+    debtKind: 'payable',
     debtDate: '',
     dueDate: '',
     employeeId: '',
@@ -336,6 +372,7 @@ function AccountingSection({
     linkedRentalId: '',
     debtId: '',
     supplierLoanId: '',
+    debtKind: 'payable',
     debtDate: '',
     dueDate: '',
     employeeId: '',
@@ -347,6 +384,7 @@ function AccountingSection({
   const [isSubmittingCash, setIsSubmittingCash] = useState(false);
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
+  const [debtActionMenuId, setDebtActionMenuId] = useState('');
   const cashSubmitLockRef = useRef(false);
 
   const beginCashSubmit = () => {
@@ -477,7 +515,7 @@ function AccountingSection({
   );
 
   const pendingCashDebts = useMemo(
-    () => sortedCashDebts.filter((debt) => Number(debt?.balanceBs ?? debt?.amountBs ?? 0) > 0),
+    () => sortedCashDebts.filter((debt) => normalizeCashDebtKind(debt?.debtKind ?? debt?.kind ?? debt?.category) === 'payable' && Number(debt?.balanceBs ?? debt?.amountBs ?? 0) > 0),
     [sortedCashDebts],
   );
 
@@ -602,6 +640,14 @@ function AccountingSection({
   const selectedMonthKey = getMonthKey(`${selectedDate}T12:00:00`);
   const monthStartDate = getMonthStartInput(selectedDate);
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
+  const isDeveloperUser = useMemo(() => {
+    const roles = [
+      ...(Array.isArray(currentUser?.roleIds) ? currentUser.roleIds : []),
+      currentUser?.roleId,
+      currentUser?.role,
+    ];
+    return roles.some((role) => normalizeText(role).replace(/\s+/g, '_').includes('developer'));
+  }, [currentUser]);
   const bigCashPeriodRange = useMemo(
     () => getPeriodRange(selectedDate, bigCashPeriod),
     [bigCashPeriod, selectedDate],
@@ -815,22 +861,19 @@ function AccountingSection({
 
   const getPettyExpenseCategory = useCallback((movement) => {
     const raw = String(movement?.category ?? '').trim();
-    const description = String(movement?.description ?? '').toLowerCase();
-    const normalized = raw.toLowerCase();
-    if (normalized.includes('movilidad') || description.includes('pasaje') || description.includes('movilidad')) {
-      return { label: 'Movilidad', className: 'mobility' };
-    }
-    if (normalized.includes('aliment') || description.includes('refrigerio') || description.includes('comida')) {
-      return { label: 'Alimentacion', className: 'food' };
-    }
+    const description = normalizeText(movement?.description);
+    const normalized = normalizeText(raw).replace(/\s+/g, '_');
+    const found = PETTY_EXPENSE_CATEGORIES.find((category) =>
+      normalized === category.id
+      || normalized.includes(category.id)
+      || category.aliases.some((alias) => normalized.includes(normalizeText(alias)) || description.includes(normalizeText(alias)))
+    );
+    if (found) return found;
     if (normalized.includes('adelanto') || normalized.includes('personal_advance') || description.includes('adelanto')) {
-      return { label: 'Adelanto', className: 'advance' };
+      return PETTY_EXPENSE_CATEGORIES.find((category) => category.id === 'anticipo_sueldos') ?? { label: 'Anticipo Sueldos', className: 'advance' };
     }
     if (normalized.includes('proveedor') || normalized.includes('supplier') || description.includes('proveedor')) {
       return { label: 'Proveedor', className: 'supplier' };
-    }
-    if (normalized.includes('oficina') || description.includes('oficina') || description.includes('impresion') || description.includes('fotocopia')) {
-      return { label: 'Oficina', className: 'office' };
     }
     return { label: raw || 'Varios', className: 'other' };
   }, []);
@@ -1308,6 +1351,7 @@ function AccountingSection({
       linkedRentalId: '',
       debtId: '',
       supplierLoanId: '',
+      debtKind: 'payable',
       debtDate: '',
       dueDate: '',
       employeeId: '',
@@ -1618,16 +1662,47 @@ function AccountingSection({
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Adelanto registrado en Caja Chica y recibo generado.');
       } else if (cashModal === 'debt') {
+        const debtKind = normalizeCashDebtKind(cashForm.debtKind);
+        let linkedMovementResult = null;
+        let linkedMovementId = '';
+        let linkedMovementReceipt = '';
+        if (debtKind === 'lia_reimbursement') {
+          linkedMovementResult = await onCreateCashMovement?.({
+            type: 'egreso',
+            cashBoxType: 'PETTY_CASH',
+            amountBs,
+            description: cashForm.description,
+            category: cashForm.category || 'reembolso_sra_lia',
+            paymentMethod: cashForm.paymentMethod,
+            paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
+            responsible: cashForm.responsible || 'SRA. LIA',
+            receipt: cashForm.receipt,
+            notes: cashForm.notes,
+            accountingTag: 'lia_reimbursement_debt',
+            createdBy: currentUserName,
+          });
+          linkedMovementId = resolvePrintableCashMovementId(linkedMovementResult, 'PETTY_CASH');
+          const movement = linkedMovementResult?.movement
+            ?? (Array.isArray(linkedMovementResult?.movements) ? linkedMovementResult.movements.find((entry) => entry.id === linkedMovementId) : null);
+          linkedMovementReceipt = movement?.receiptCode ?? movement?.receipt ?? '';
+          await printCashReceipt(linkedMovementId);
+        }
         await onCreateCashDebt?.({
           description: cashForm.description,
-          personName: cashForm.responsible,
+          personName: debtKind === 'lia_reimbursement' ? (cashForm.responsible || 'SRA. LIA') : cashForm.responsible,
           amountBs,
           debtDate: cashForm.debtDate || selectedDate,
           dueDate: cashForm.dueDate || null,
+          debtKind,
+          category: cashForm.category,
+          sourceMovementId: linkedMovementId,
+          sourceMovementReceipt: linkedMovementReceipt,
           notes: cashForm.notes,
           createdBy: currentUserName,
         });
-        setCashActionFeedback('Deuda registrada. No afecta el saldo hasta que se pague.');
+        setCashActionFeedback(debtKind === 'lia_reimbursement'
+          ? 'Gasto descontado de Caja Chica y reembolso registrado por cobrar a Sra. Lia.'
+          : 'Deuda registrada. No afecta el saldo hasta que se pague.');
       } else if (cashModal === 'payDebt') {
         const paid = await onPayCashDebt?.({
           debtId: cashForm.debtId,
@@ -1698,6 +1773,20 @@ function AccountingSection({
       setCashActionError(error.message || 'No se pudo completar la operacion.');
     } finally {
       endCashSubmit();
+    }
+  };
+
+  const handleDeleteCashDebt = async (debt) => {
+    if (!debt || !isDeveloperUser) return;
+    const confirmed = window.confirm(`Eliminar ${debt.code || 'esta deuda'}? Esta accion solo quitara el registro de deuda.`);
+    if (!confirmed) return;
+    setDebtActionMenuId('');
+    setCashActionError('');
+    try {
+      await onDeleteCashDebt?.({ debtId: debt.id, deletedBy: currentUserName });
+      setCashActionFeedback('Deuda eliminada correctamente.');
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo eliminar la deuda.');
     }
   };
 
@@ -2150,10 +2239,10 @@ function AccountingSection({
                 onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, category: event.target.value }))}
               >
                 <option value="all">Todos</option>
-                <option value="office">Oficina</option>
-                <option value="mobility">Movilidad</option>
-                <option value="food">Alimentacion</option>
-                <option value="advance">Adelantos</option>
+                {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                  <option key={category.id} value={category.className}>{category.label}</option>
+                ))}
+                <option value="supplier">Proveedor</option>
                 <option value="other">Varios</option>
               </select>
             </label>
@@ -2412,7 +2501,7 @@ function AccountingSection({
                   {cashModal === 'income'
                     ? 'Los ingresos manuales entran a Caja Grande.'
                     : cashModal === 'debt'
-                    ? 'Registra una deuda pendiente sin tocar el saldo de Caja Chica.'
+                    ? 'Registra una deuda por pagar o un gasto ya salido que debe reembolsar Sra. Lia.'
                     : cashModal === 'payDebt'
                     ? 'El pago sale de Caja Chica y genera recibo.'
                     : cashModal === 'supplierLoan'
@@ -2521,6 +2610,34 @@ function AccountingSection({
               </section>
             ) : null}
 
+            {cashModal === 'debt' ? (
+              <section className="petty-debt-kind-panel">
+                <label>
+                  Tipo de deuda
+                  <select
+                    value={cashForm.debtKind}
+                    onChange={(event) => {
+                      const debtKind = normalizeCashDebtKind(event.target.value);
+                      setCashForm((current) => ({
+                        ...current,
+                        debtKind,
+                        category: debtKind === 'lia_reimbursement' ? 'reembolso_sra_lia' : 'deuda_por_pagar',
+                        responsible: debtKind === 'lia_reimbursement' ? (current.responsible || 'SRA. LIA') : current.responsible,
+                      }));
+                    }}
+                  >
+                    <option value="payable">Deuda por pagar despues</option>
+                    <option value="lia_reimbursement">Gasto pagado por Caja Chica / cobrar a Sra. Lia</option>
+                  </select>
+                </label>
+                <p>
+                  {normalizeCashDebtKind(cashForm.debtKind) === 'lia_reimbursement'
+                    ? 'Este registro descuenta Caja Chica ahora y queda pendiente de reembolso.'
+                    : 'Este registro solo queda pendiente; Caja Chica se descuenta cuando se pague.'}
+                </p>
+              </section>
+            ) : null}
+
             <div className="accounting-form-grid two">
               <label>
                 {cashModal === 'advance' ? 'Monto a solicitar (Bs)' : 'Monto (Bs)'}
@@ -2586,19 +2703,17 @@ function AccountingSection({
                     <select value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
                       {cashModal === 'expense' ? (
                         <>
-                          <option value="alimentacion">Almuerzos / alimentacion</option>
-                          <option value="movilidad">Taxis / movilidad</option>
-                          <option value="reparacion_menor">Reparaciones</option>
-                          <option value="compras">Compras</option>
-                          <option value="sueldos">Pago de sueldos</option>
-                          <option value="varios">Varios</option>
+                          {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                            <option key={category.id} value={category.id}>{category.label}</option>
+                          ))}
                         </>
                       ) : cashModal === 'debt' || cashModal === 'payDebt' ? (
                         <>
-                          <option value="deuda_operativa">Deuda operativa</option>
-                          <option value="proveedor">Proveedor</option>
-                          <option value="prestamo">Prestamo</option>
-                          <option value="varios">Varios</option>
+                          <option value="deuda_por_pagar">Deuda por pagar</option>
+                          <option value="reembolso_sra_lia">Reembolso Sra. Lia</option>
+                          {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                            <option key={category.id} value={category.id}>{category.label}</option>
+                          ))}
                         </>
                       ) : cashModal === 'supplierLoan' ? (
                         <>
@@ -2620,7 +2735,11 @@ function AccountingSection({
                     </select>
                   </label>
                   <label>
-                    {cashModal === 'debt' ? 'A quien se debe' : cashModal === 'supplierLoan' ? 'Proveedor' : 'Responsable / destino'}
+                    {cashModal === 'debt'
+                      ? normalizeCashDebtKind(cashForm.debtKind) === 'lia_reimbursement'
+                        ? 'Quien debe reembolsar'
+                        : 'A quien se debe'
+                      : cashModal === 'supplierLoan' ? 'Proveedor' : 'Responsable / destino'}
                     <input
                       value={cashForm.responsible}
                       onChange={(event) => setCashForm((current) => ({ ...current, responsible: event.target.value }))}
@@ -3376,7 +3495,7 @@ function AccountingSection({
                 <button
                   type="button"
                   className="petty-secondary-button small"
-                  onClick={() => openCashAction('debt', { category: 'deuda_operativa', debtDate: selectedDate })}
+                  onClick={() => openCashAction('debt', { category: 'deuda_por_pagar', debtKind: 'payable', debtDate: selectedDate })}
                 >
                   + Registrar deuda
                 </button>
@@ -3396,7 +3515,7 @@ function AccountingSection({
                 <button
                   type="button"
                   className="petty-primary-button small"
-                  onClick={() => openCashAction('expense', { category: 'varios' })}
+                  onClick={() => openCashAction('expense', { category: 'compras' })}
                   disabled={pettyCashBalanceBs <= 0}
                 >
                   + Registrar gasto
@@ -3408,10 +3527,10 @@ function AccountingSection({
               <label>
                 <select value={pettyCashTypeFilter} onChange={(event) => setPettyCashTypeFilter(event.target.value)}>
                   <option value="all">Todos los tipos</option>
-                  <option value="office">Oficina</option>
-                  <option value="mobility">Movilidad</option>
-                  <option value="food">Alimentación</option>
-                  <option value="advance">Adelantos</option>
+                  {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                    <option key={category.id} value={category.className}>{category.label}</option>
+                  ))}
+                  <option value="supplier">Proveedor</option>
                   <option value="other">Varios</option>
                 </select>
               </label>
@@ -3640,7 +3759,7 @@ function AccountingSection({
             <header className="petty-table-head">
               <div>
                 <h3>DEUDAS REGISTRADAS</h3>
-                <p>Control de compromisos pendientes y pagos hechos desde Caja Chica.</p>
+                <p>Separa deudas por pagar y gastos ya salidos que debe reembolsar Sra. Lia.</p>
               </div>
               <button
                 type="button"
@@ -3650,7 +3769,7 @@ function AccountingSection({
                   amountBs: pendingCashDebts[0] ? String(Number(pendingCashDebts[0].balanceBs ?? 0)) : '',
                   description: pendingCashDebts[0]?.description ?? '',
                   responsible: pendingCashDebts[0]?.personName ?? currentUserName,
-                  category: 'deuda_operativa',
+                  category: 'deuda_por_pagar',
                 })}
                 disabled={pendingCashDebts.length === 0 || pettyCashBalanceBs <= 0}
               >
@@ -3663,6 +3782,7 @@ function AccountingSection({
                   <tr>
                     <th>Código</th>
                     <th>Fecha</th>
+                    <th>Tipo</th>
                     <th>Detalle / a quién</th>
                     <th>Monto</th>
                     <th>Pagado</th>
@@ -3675,40 +3795,67 @@ function AccountingSection({
                   {sortedCashDebts.slice(0, 8).map((debt) => {
                     const balance = Number(debt.balanceBs ?? debt.amountBs ?? 0);
                     const isPaid = balance <= 0;
+                    const debtKind = normalizeCashDebtKind(debt.debtKind ?? debt.kind ?? debt.category);
+                    const debtMeta = getCashDebtMeta(debt);
+                    const canPayDebt = debtKind === 'payable' && !isPaid;
                     return (
                       <tr key={debt.id}>
                         <td><strong>{debt.code}</strong></td>
                         <td>{formatDate(debt.debtDate ?? debt.createdAt)}</td>
+                        <td><span className={`petty-debt-type ${debtMeta.className}`}>{debtMeta.shortLabel}</span></td>
                         <td>
                           <strong>{debt.description}</strong>
-                          <small>{debt.personName || 'Sin responsable'}{debt.dueDate ? ` | vence ${formatDate(debt.dueDate)}` : ''}</small>
+                          <small>
+                            {debt.personName || 'Sin responsable'}
+                            {debt.dueDate ? ` | vence ${formatDate(debt.dueDate)}` : ''}
+                            {debt.sourceMovementReceipt ? ` | recibo ${debt.sourceMovementReceipt}` : ''}
+                          </small>
                         </td>
                         <td>{formatBs(debt.amountBs)}</td>
                         <td>{formatBs(debt.paidBs)}</td>
                         <td><strong className={isPaid ? 'value-green' : 'value-orange'}>{formatBs(balance)}</strong></td>
                         <td><span className={`petty-debt-status ${isPaid ? 'paid' : 'pending'}`}>{isPaid ? 'Pagada' : debt.status === 'parcial' ? 'Parcial' : 'Pendiente'}</span></td>
                         <td>
-                          {!isPaid ? (
-                            <button
-                              type="button"
-                              className="cash-receipt-button"
-                              onClick={() => openCashAction('payDebt', {
-                                debtId: debt.id,
-                                amountBs: String(balance),
-                                description: debt.description,
-                                responsible: debt.personName || currentUserName,
-                                category: 'deuda_operativa',
-                              })}
-                              disabled={pettyCashBalanceBs <= 0}
-                            >
-                              Pagar
-                            </button>
-                          ) : <span className="cash-receipt-muted">Cerrada</span>}
+                          <div className="petty-debt-actions">
+                            {canPayDebt ? (
+                              <button
+                                type="button"
+                                className="cash-receipt-button"
+                                onClick={() => openCashAction('payDebt', {
+                                  debtId: debt.id,
+                                  amountBs: String(balance),
+                                  description: debt.description,
+                                  responsible: debt.personName || currentUserName,
+                                  category: 'deuda_por_pagar',
+                                })}
+                                disabled={pettyCashBalanceBs <= 0}
+                              >
+                                Pagar
+                              </button>
+                            ) : <span className="cash-receipt-muted">{isPaid ? 'Cerrada' : 'Por cobrar'}</span>}
+                            {isDeveloperUser ? (
+                              <div className="petty-debt-menu">
+                                <button
+                                  type="button"
+                                  className="petty-debt-menu-button"
+                                  aria-label={`Opciones de ${debt.code}`}
+                                  onClick={() => setDebtActionMenuId((current) => current === debt.id ? '' : debt.id)}
+                                >
+                                  ⋮
+                                </button>
+                                {debtActionMenuId === debt.id ? (
+                                  <div className="petty-debt-menu-popover">
+                                    <button type="button" onClick={() => handleDeleteCashDebt(debt)}>Eliminar</button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
                   })}
-                  {sortedCashDebts.length === 0 ? <tr><td colSpan={8}><p className="status">Sin deudas registradas.</p></td></tr> : null}
+                  {sortedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Sin deudas registradas.</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
