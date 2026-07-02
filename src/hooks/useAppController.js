@@ -1503,6 +1503,7 @@ export const useAppController = () => {
         eventAddress: contract.address,
         contractId: contract.id,
         contractCode: contract.contractCode,
+        allowPastDueDate: true,
         items: (contract.items ?? []).map((line) => ({
           itemId: line.itemId,
           quantity: line.quantity,

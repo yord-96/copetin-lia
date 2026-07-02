@@ -11404,7 +11404,8 @@ const createWebBridge = () => ({
         const [year, month, day] = dueDate.split('-').map((value) => Number.parseInt(value, 10));
         const [dueHours, dueMinutes] = dueTime.split(':').map((value) => Number.parseInt(value, 10));
         const dueAt = new Date(year, month - 1, day, dueHours, dueMinutes, 0, 0);
-        if (Number.isNaN(dueAt.getTime()) || dueAt <= now) {
+        const allowPastDueDate = Boolean(payload?.allowPastDueDate) && Boolean(contractId);
+        if (Number.isNaN(dueAt.getTime()) || (!allowPastDueDate && dueAt <= now)) {
           throw new Error('La fecha y hora maxima de devolucion deben ser posteriores al momento actual.');
         }
 
