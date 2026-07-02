@@ -5454,12 +5454,17 @@ const CONTRACT_LEGACY_DOCUMENT_STYLES = `
 `;
 
 const CONTRACT_AREA_ORDER = [
-  { key: 'cristaleria', label: 'CRISTALERIA', className: 'blue' },
+  { key: 'vajilla', label: 'VAJILLA', className: 'blue' },
   { key: 'manteleria', label: 'MANTELERIA', className: 'violet' },
   { key: 'mobiliario', label: 'MOBILIARIO', className: 'green' },
 ];
 
 const getContractAreaMeta = (category) => {
+  const assignedArea = normalizeInventoryArea(category);
+  if (assignedArea === 'vajilla') return CONTRACT_AREA_ORDER[0];
+  if (assignedArea === 'manteleria') return CONTRACT_AREA_ORDER[1];
+  if (assignedArea === 'mobiliario') return CONTRACT_AREA_ORDER[2];
+
   const normalized = normalizeText(category);
   if (normalized.includes('cristal') || normalized.includes('vajilla') || normalized.includes('copa') || normalized.includes('vaso') || normalized.includes('plato') || normalized.includes('cubierto')) {
     return CONTRACT_AREA_ORDER[0];
@@ -5478,6 +5483,16 @@ const getContractLineCategory = (line, item) =>
     ?? line?.quickItem?.category
     ?? 'Sin categoria',
   ).trim() || 'Sin categoria';
+
+const getContractAreaSource = (line, item) => ({
+  ...(line ?? {}),
+  ...(item ?? {}),
+  inventoryArea: item?.inventoryArea ?? line?.inventoryArea ?? line?.quickItem?.inventoryArea ?? '',
+  category: item?.category ?? line?.category ?? line?.comboCategory ?? line?.quickItem?.category ?? '',
+  name: item?.name ?? line?.itemName ?? line?.quickItem?.name ?? '',
+  itemName: line?.itemName ?? item?.name ?? line?.quickItem?.name ?? '',
+  description: item?.description ?? line?.description ?? line?.quickItem?.description ?? '',
+});
 
 const getContractItemMeta = (line, _item) => [
   line?.comboName ? `Combo: ${line.comboName}` : '',
@@ -6096,7 +6111,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
       const category = getContractLineCategory(line, item);
-      const area = getContractAreaMeta(category);
+      const area = getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
       const areaIndex = CONTRACT_AREA_ORDER.findIndex((entry) => entry.key === area.key);
       return {
         ...line,
@@ -6119,7 +6134,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       (line) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
-        const area = line._area || getContractAreaMeta(line._category || getContractLineCategory(line, item));
+        const area = line._area || getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
