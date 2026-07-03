@@ -3356,6 +3356,7 @@ function ServiceOrdersSection({
   }, []);
 
   const canJumpBetweenWizardSteps = Boolean(draft.recordId);
+  const isEditingContract = draft.entityType === 'contract' && Boolean(draft.recordId);
 
   const handleWizardStepClick = (targetStep) => {
     if (!canJumpBetweenWizardSteps && targetStep > currentStep) return;
@@ -7764,6 +7765,10 @@ function ServiceOrdersSection({
                 {!isLastStep ? (
                   <button type="button" className="primary-button" onClick={handleNextStep} disabled={isSubmitting}>
                     Continuar <ChevronRight aria-hidden="true" />
+                  </button>
+                ) : isEditingContract ? (
+                  <button type="button" className="primary-button" onClick={() => handleSaveQuote({ approveNow: false })} disabled={isSubmitting}>
+                    {isSubmitting ? 'Guardando...' : 'Guardar contrato'}
                   </button>
                 ) : (
                   <>

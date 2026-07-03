@@ -6098,7 +6098,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
-  const documentTitle = buildDocumentFileBase(rental.customerName, mainCode, 'contrato');
+  const documentCustomerName = contract?.customerName ?? rental?.customerName ?? '';
+  const documentCustomerPhone = contract?.customerPhone ?? rental?.customerPhone ?? '';
+  const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, 'contrato');
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
@@ -6269,8 +6271,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         <div class="rc-client">
           <h2 class="rc-block-title"><b>1.</b> Datos del cliente y evento</h2>
           <div class="rc-fields">
-            <strong>Cliente:</strong><span>${escapeHtml(rental.customerName)}</span>
-            <strong>Telefono / CI:</strong><span>${escapeHtml(rental.customerPhone || '-')}</span>
+            <strong>Cliente:</strong><span>${escapeHtml(documentCustomerName)}</span>
+            <strong>Telefono / CI:</strong><span>${escapeHtml(documentCustomerPhone || '-')}</span>
             <strong>Evento:</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span>
             <strong>Direccion del servicio:</strong><span>${escapeHtml(eventAddress)}</span>
             <strong>Tarifa:</strong><span>${escapeHtml(durationLabel)}</span>
@@ -7286,6 +7288,9 @@ const summarizeContractChanges = (beforeContract, contract) => {
     }
   };
 
+  addTextChange('Cliente', beforeContract?.customerName, contract?.customerName);
+  addTextChange('Telefono cliente', beforeContract?.customerPhone, contract?.customerPhone);
+  addTextChange('Telefono de referencia', beforeContract?.customerReferencePhone, contract?.customerReferencePhone);
   addTextChange('Tipo de evento', beforeContract?.eventType, contract?.eventType);
   addTextChange('Fecha del evento', beforeContract?.eventDate, contract?.eventDate);
   addTextChange('Hora del evento', beforeContract?.eventTime, contract?.eventTime);
