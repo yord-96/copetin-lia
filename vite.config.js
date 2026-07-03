@@ -9,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sharedDbPath = path.join(__dirname, '.copetin-shared-db.json')
 const maxSharedDbPayloadBytes = 64 * 1024 * 1024
 const defaultProductUploadDirectory = path.join(__dirname, 'uploads', 'products')
+const defaultAttendanceUploadDirectory = path.join(__dirname, 'uploads', 'attendance')
 
 const getSharedDbRevision = () => {
   if (!fs.existsSync(sharedDbPath)) {
@@ -80,8 +81,11 @@ const sanitizeIdentifier = (value) =>
 
 const sharedDemoDbPlugin = (env) => {
   const productUploadDirectory = path.resolve(env.PRODUCT_UPLOAD_DIR || defaultProductUploadDirectory)
+  const attendanceUploadDirectory = path.resolve(env.ATTENDANCE_UPLOAD_DIR || defaultAttendanceUploadDirectory)
   const maxProductImageBytes = Number(env.PRODUCT_IMAGE_MAX_BYTES || 8 * 1024 * 1024)
+  const maxAttendancePhotoBytes = Number(env.ATTENDANCE_PHOTO_MAX_BYTES || 1024 * 1024)
   fs.mkdirSync(productUploadDirectory, { recursive: true })
+  fs.mkdirSync(attendanceUploadDirectory, { recursive: true })
 
   return {
   name: 'copetin-shared-demo-db',
@@ -132,6 +136,50 @@ const sharedDemoDbPlugin = (env) => {
       }
     })
 
+    server.middlewares.use('/api/uploads/attendance', async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'Metodo no permitido.' })
+        return
+      }
+      try {
+        const chunks = []
+        let bytes = 0
+        for await (const chunk of req) {
+          bytes += chunk.length
+          if (bytes > maxAttendancePhotoBytes) {
+            sendJson(res, 413, { error: 'La foto supera el tamano maximo permitido.' })
+            return
+          }
+          chunks.push(chunk)
+        }
+        const buffer = Buffer.concat(chunks)
+        const type = detectImageType(buffer)
+        if (!type) {
+          sendJson(res, 400, { error: 'El archivo no es una imagen JPG, PNG o WEBP valida.' })
+          return
+        }
+        const declaredMime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
+        if (declaredMime && declaredMime !== 'application/octet-stream' && declaredMime !== type.mimeType) {
+          sendJson(res, 400, { error: 'El contenido de la foto no coincide con su tipo declarado.' })
+          return
+        }
+        const hash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 20)
+        const filename = `${sanitizeIdentifier(req.headers['x-attendance-id'] || 'attendance')}-${Date.now()}-${hash}.${type.extension}`
+        const destination = path.join(attendanceUploadDirectory, filename)
+        fs.writeFileSync(destination, buffer, { flag: 'wx' })
+        sendJson(res, 201, {
+          ok: true,
+          photoUrl: `/uploads/attendance/${filename}`,
+          filename,
+          mimeType: type.mimeType,
+          bytes: buffer.length,
+        })
+      } catch (error) {
+        server.config.logger.error(error)
+        sendJson(res, 500, { error: error.message || 'No se pudo guardar la foto.' })
+      }
+    })
+
     server.middlewares.use('/uploads/products', (req, res) => {
       const filename = path.basename(decodeURIComponent(String(req.url || '').replace(/^\/+/, '')))
       if (!filename || filename !== decodeURIComponent(String(req.url || '').replace(/^\/+/, ''))) {
@@ -141,6 +189,29 @@ const sharedDemoDbPlugin = (env) => {
       const filePath = path.join(productUploadDirectory, filename)
       if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
         sendJson(res, 404, { error: 'Imagen no encontrada.' })
+        return
+      }
+      const extension = path.extname(filename).toLowerCase()
+      const mimeType = extension === '.png'
+        ? 'image/png'
+        : extension === '.webp'
+          ? 'image/webp'
+          : 'image/jpeg'
+      res.statusCode = 200
+      res.setHeader('Content-Type', mimeType)
+      res.setHeader('Cache-Control', 'public, max-age=2592000, immutable')
+      fs.createReadStream(filePath).pipe(res)
+    })
+
+    server.middlewares.use('/uploads/attendance', (req, res) => {
+      const filename = path.basename(decodeURIComponent(String(req.url || '').replace(/^\/+/, '')))
+      if (!filename || filename !== decodeURIComponent(String(req.url || '').replace(/^\/+/, ''))) {
+        sendJson(res, 400, { error: 'Nombre de archivo invalido.' })
+        return
+      }
+      const filePath = path.join(attendanceUploadDirectory, filename)
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        sendJson(res, 404, { error: 'Foto no encontrada.' })
         return
       }
       const extension = path.extname(filename).toLowerCase()

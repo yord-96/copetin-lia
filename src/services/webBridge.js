@@ -2227,6 +2227,11 @@ const normalizeState = (state) => {
       location: String(record?.location ?? '').trim(),
       reason: String(record?.reason ?? record?.motivo ?? '').trim(),
       photoDataUrl: String(record?.photoDataUrl ?? record?.photo ?? '').trim(),
+      photoUrl: String(record?.photoUrl ?? '').trim(),
+      photoMimeType: String(record?.photoMimeType ?? '').trim(),
+      photoSizeBytes: Number(record?.photoSizeBytes ?? 0) || 0,
+      photoWidth: record?.photoWidth ?? null,
+      photoHeight: record?.photoHeight ?? null,
       latitude: record?.latitude ?? null,
       longitude: record?.longitude ?? null,
       capturedAt: record?.capturedAt ?? record?.createdAt ?? now,
@@ -8926,7 +8931,14 @@ const createWebBridge = () => ({
   users: {
     list: async () => {
       const { users } = readQueryState();
-      return users.filter((user) => !user.deletedAt).slice().sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+      const currentUserId = readSessionUserId();
+      return users
+        .filter((user) => !user.deletedAt)
+        .map((user) => ({
+          ...user,
+          isCurrentUser: Boolean(currentUserId && user.id === currentUserId),
+        }))
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
     },
     create: async (payload) => {
       const fullName = String(payload?.fullName ?? '').trim();
@@ -9550,35 +9562,37 @@ const createWebBridge = () => ({
       if (!password) throw new Error('Ingresa tu contrasena.');
 
       let sessionUser = null;
-      transaction((state) => {
-        const user = state.users.find((entry) => entry.username === username);
-        if (!user) {
-          throw new Error('Usuario o contrasena incorrectos.');
-        }
-        if (user.status !== 'active') {
-          throw new Error('Este usuario no esta activo. Consulta con administracion.');
-        }
+      let requiresFullStatePush = false;
+      const state = readQueryState();
+      const user = state.users.find((entry) => entry.username === username);
+      if (!user) {
+        throw new Error('Usuario o contrasena incorrectos.');
+      }
+      if (user.status !== 'active') {
+        throw new Error('Este usuario no esta activo. Consulta con administracion.');
+      }
 
+      if (user.mustChangePassword && !user.passwordHash) {
         const now = new Date().toISOString();
-        if (user.mustChangePassword && !user.passwordHash) {
+        transaction((draft) => {
+          const draftUser = draft.users.find((entry) => entry.id === user.id);
+          if (!draftUser) throw new Error('Usuario o contrasena incorrectos.');
           if (password.length < 8) {
             throw new Error('Define una contrasena inicial de al menos 8 caracteres.');
           }
-          user.passwordHash = passwordHash;
-          user.mustChangePassword = false;
-          user.passwordChangedAt = now;
-        } else if (user.passwordHash !== passwordHash) {
-          throw new Error('Usuario o contrasena incorrectos.');
-        }
-
-        state.users.forEach((entry) => {
-          entry.isCurrentUser = entry.id === user.id;
+          draftUser.passwordHash = passwordHash;
+          draftUser.mustChangePassword = false;
+          draftUser.passwordChangedAt = now;
+          draftUser.updatedAt = now;
+          sessionUser = sanitizeUserForSession(draftUser);
+          requiresFullStatePush = true;
+          return draft;
         });
-        user.lastAccessAt = now;
-        user.updatedAt = now;
+      } else if (user.passwordHash !== passwordHash) {
+        throw new Error('Usuario o contrasena incorrectos.');
+      } else {
         sessionUser = sanitizeUserForSession(user);
-        return state;
-      });
+      }
 
       const sessionRecord = createSessionRecord(sessionUser.id);
       return {
@@ -9586,20 +9600,11 @@ const createWebBridge = () => ({
         sessionId: sessionRecord.sessionId,
         device: sessionRecord.device,
         sessionExpiresAt: sessionRecord.expiresAt,
+        __requiresFullStatePush: requiresFullStatePush,
       };
     },
     logout: async () => {
-      const sessionRecord = readSessionRecord();
       clearSessionUserId();
-      transaction((state) => {
-        state.users.forEach((entry) => {
-          entry.isCurrentUser = false;
-        });
-        if (sessionRecord?.sessionId) {
-          state.userPresence = (state.userPresence ?? []).filter((presence) => presence.sessionId !== sessionRecord.sessionId);
-        }
-        return state;
-      });
       return { ok: true };
     },
   },
@@ -13706,6 +13711,11 @@ const createWebBridge = () => ({
       const userId = String(payload?.userId ?? '').trim();
       const role = String(payload?.role ?? '').trim();
       const photoDataUrl = String(payload?.photoDataUrl ?? '').trim();
+      const photoUrl = String(payload?.photoUrl ?? '').trim();
+      const photoMimeType = String(payload?.photoMimeType ?? '').trim();
+      const photoSizeBytes = Number(payload?.photoSizeBytes ?? 0) || 0;
+      const photoWidth = payload?.photoWidth ?? null;
+      const photoHeight = payload?.photoHeight ?? null;
       const latitude = payload?.latitude ?? null;
       const longitude = payload?.longitude ?? null;
 
@@ -13718,7 +13728,7 @@ const createWebBridge = () => ({
       if (!reason) {
         throw new Error('Debes indicar el motivo.');
       }
-      if (!photoDataUrl) {
+      if (!photoUrl && !photoDataUrl) {
         throw new Error('Debes tomar o subir una foto para respaldar la marca.');
       }
 
@@ -13732,6 +13742,11 @@ const createWebBridge = () => ({
           location,
           reason,
           photoDataUrl,
+          photoUrl,
+          photoMimeType,
+          photoSizeBytes,
+          photoWidth,
+          photoHeight,
           latitude,
           longitude,
           capturedAt,

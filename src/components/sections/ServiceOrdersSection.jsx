@@ -394,12 +394,6 @@ const normalizeDurationTiers = (tiers = []) => {
     .sort((a, b) => a.fromDay - b.fromDay);
 };
 
-const getDurationDaysFromTiers = (tiers = []) =>
-  normalizeDurationTiers(tiers).reduce(
-    (maxDay, tier) => Math.max(maxDay, tier.toDay > 0 ? tier.toDay : tier.fromDay),
-    1,
-  );
-
 const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
   const safeBase = Math.max(0, Number(baseSubtotalBs ?? 0));
   const safeMode = mode === 'duration' ? 'duration' : 'simple';

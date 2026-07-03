@@ -13,6 +13,10 @@ import {
   ensureProductUploadDirectory,
   getProductUploadInfo,
 } from './storage/productImageStore.js';
+import {
+  ensureAttendanceUploadDirectory,
+  getAttendanceUploadInfo,
+} from './storage/attendancePhotoStore.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -114,6 +118,16 @@ app.use(
   }),
 );
 
+const attendanceUploadInfo = getAttendanceUploadInfo();
+app.use(
+  '/uploads/attendance',
+  express.static(attendanceUploadInfo.uploadDirectory, {
+    immutable: true,
+    maxAge: '30d',
+    index: false,
+  }),
+);
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.use((req, res, next) => {
@@ -149,6 +163,7 @@ app.use((error, _req, res, _next) => {
 const start = async () => {
   await ensureStateStore();
   await ensureProductUploadDirectory();
+  await ensureAttendanceUploadDirectory();
   app.listen(port, () => {
     console.log(`Copetin API escuchando en puerto ${port}`);
   });

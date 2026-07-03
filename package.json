@@ -14,7 +14,9 @@
     "start": "node server/index.js",
     "backup": "node scripts/backup/backup-state.cjs",
     "restore": "node scripts/backup/restore-state.cjs",
-    "migrate:product-images": "node scripts/migrate/migrate-product-images.cjs"
+    "migrate:product-images": "node scripts/migrate/migrate-product-images.cjs",
+    "migrate:attendance-photos:dry": "node scripts/migrate-attendance-photos.mjs --dry-run",
+    "migrate:attendance-photos": "node scripts/migrate-attendance-photos.mjs --apply"
   },
   "dependencies": {
     "cors": "^2.8.6",

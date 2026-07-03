@@ -1,25 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../../services/api';
+import { compressAttendanceImage } from '../../utils/attendancePhotos';
 
 const getInputDate = (date = new Date()) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
 };
 
-const readImageAsDataUrl = (file) => new Promise((resolve, reject) => {
-  if (!file) {
-    resolve('');
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result ?? ''));
-  reader.onerror = () => reject(new Error('No se pudo leer la foto.'));
-  reader.readAsDataURL(file);
-});
-
 const normalizeText = (value) => String(value ?? '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase();
+
+const getAttendancePhotoSource = (record) =>
+  String(record?.photoUrl || record?.photoDataUrl || '').trim();
+
+function AttendancePhoto({ src, alt, className = '' }) {
+  const [failedSrc, setFailedSrc] = useState('');
+  const failed = failedSrc === src;
+  if (!src || failed) {
+    return <span className="attendance-photo-placeholder">Foto no disponible</span>;
+  }
+  return <img className={className} src={src} alt={alt} onError={() => setFailedSrc(src)} />;
+}
 
 const buildReadableAddress = (payload, latitude, longitude) => {
   const address = payload?.address ?? {};
@@ -67,10 +70,10 @@ function AttendanceSection({
     type: 'entrada',
     location: '',
     reason: '',
-    photoDataUrl: '',
     latitude: null,
     longitude: null,
   });
+  const [photoDraft, setPhotoDraft] = useState(null);
   const [filters, setFilters] = useState({
     dateFrom: getInputDate(),
     dateTo: getInputDate(),
@@ -82,6 +85,12 @@ function AttendanceSection({
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
+
+  useEffect(() => () => {
+    if (photoDraft?.previewUrl) {
+      URL.revokeObjectURL(photoDraft.previewUrl);
+    }
+  }, [photoDraft?.previewUrl]);
 
   const currentTimeLabel = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   const todayLabel = new Date().toLocaleDateString('es-BO', {
@@ -115,8 +124,16 @@ function AttendanceSection({
     if (!file) return;
     setError('');
     try {
-      const dataUrl = await readImageAsDataUrl(file);
-      setForm((current) => ({ ...current, photoDataUrl: dataUrl }));
+      const processed = await compressAttendanceImage(file);
+      setPhotoDraft((current) => {
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+        return processed;
+      });
+      console.info('[copetin-attendance] Foto comprimida para asistencia.', {
+        originalBytes: processed.originalSizeBytes,
+        finalBytes: processed.sizeBytes,
+        durationMs: processed.durationMs,
+      });
     } catch (photoError) {
       setError(photoError.message || 'No se pudo cargar la foto.');
     }
@@ -166,16 +183,39 @@ function AttendanceSection({
     }
     setError('');
     setStatus('');
+    if (!photoDraft?.blob) {
+      setError('Debes tomar o subir una foto para respaldar la marca.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await onCreateRecord?.(form);
+      const uploadStartedAt = performance.now();
+      const uploadedPhoto = await api.uploads.attendancePhoto(photoDraft.blob, {
+        recordId: `${currentUser?.id ?? 'attendance'}-${Date.now()}`,
+      });
+      console.info('[copetin-attendance] Foto de asistencia subida.', {
+        originalBytes: photoDraft.originalSizeBytes,
+        finalBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
+        durationMs: Math.round(performance.now() - uploadStartedAt),
+      });
+      await onCreateRecord?.({
+        ...form,
+        photoUrl: uploadedPhoto.photoUrl,
+        photoMimeType: uploadedPhoto.mimeType ?? photoDraft.mimeType,
+        photoSizeBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
+        photoWidth: photoDraft.width,
+        photoHeight: photoDraft.height,
+      });
       setForm({
         type: 'entrada',
         location: '',
         reason: '',
-        photoDataUrl: '',
         latitude: null,
         longitude: null,
+      });
+      setPhotoDraft((current) => {
+        if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+        return null;
       });
       setStatus('Marca registrada correctamente.');
     } catch (submitError) {
@@ -295,11 +335,11 @@ function AttendanceSection({
           <label className="attendance-photo-picker">
             Evidencia fotográfica
             <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} disabled={!canMark} />
-            <span>{form.photoDataUrl ? 'Foto cargada correctamente' : 'Tomar foto o seleccionar imagen'}</span>
+            <span>{photoDraft ? 'Foto preparada correctamente' : 'Tomar foto o seleccionar imagen'}</span>
           </label>
 
-          {form.photoDataUrl ? (
-            <img className="attendance-photo-preview" src={form.photoDataUrl} alt="Vista previa de asistencia" />
+          {photoDraft?.previewUrl ? (
+            <AttendancePhoto className="attendance-photo-preview" src={photoDraft.previewUrl} alt="Vista previa de asistencia" />
           ) : null}
 
           {error ? <p className="status error">{error}</p> : null}
@@ -335,7 +375,9 @@ function AttendanceSection({
           </div>
 
           <div className="attendance-mobile-records">
-            {filteredRecords.map((record) => (
+            {filteredRecords.map((record) => {
+              const photoSource = getAttendancePhotoSource(record);
+              return (
               <article key={`mobile-${record.id}`} className="attendance-mobile-record">
                 <div>
                   <strong>{record.userName}</strong>
@@ -344,19 +386,20 @@ function AttendanceSection({
                 <span className={`attendance-type ${record.type}`}>{record.type === 'entrada' ? 'Entrada' : 'Salida'}</span>
                 <p>{record.location}</p>
                 <small>{record.reason}</small>
-                {record.photoDataUrl ? (
+                {photoSource ? (
                   <button
                     type="button"
                     className="attendance-mobile-photo-button"
-                    onClick={() => setPhotoPreview({ src: record.photoDataUrl, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
+                    onClick={() => setPhotoPreview({ src: photoSource, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
                     aria-label={`Ver foto de asistencia de ${record.userName}`}
                   >
-                    <img src={record.photoDataUrl} alt={`Foto de asistencia de ${record.userName}`} />
+                    <AttendancePhoto src={photoSource} alt={`Foto de asistencia de ${record.userName}`} />
                     <span>Ver foto</span>
                   </button>
                 ) : null}
               </article>
-            ))}
+              );
+            })}
             {filteredRecords.length === 0 ? (
               <p className="attendance-mobile-empty">Sin marcas en el rango seleccionado.</p>
             ) : null}
@@ -375,7 +418,9 @@ function AttendanceSection({
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.map((record) => (
+                {filteredRecords.map((record) => {
+                  const photoSource = getAttendancePhotoSource(record);
+                  return (
                   <tr key={record.id}>
                     <td><strong>{record.code}</strong></td>
                     <td>{formatDateTime ? formatDateTime(record.capturedAt) : record.capturedAt}</td>
@@ -389,19 +434,20 @@ function AttendanceSection({
                       <small>{record.reason}</small>
                     </td>
                     <td>
-                      {record.photoDataUrl ? (
+                      {photoSource ? (
                         <button
                           type="button"
                           className="attendance-thumb-button"
-                          onClick={() => setPhotoPreview({ src: record.photoDataUrl, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
+                          onClick={() => setPhotoPreview({ src: photoSource, title: `${record.userName} · ${record.type === 'entrada' ? 'Entrada' : 'Salida'}` })}
                           aria-label={`Ver foto de asistencia de ${record.userName}`}
                         >
-                          <img className="attendance-thumb" src={record.photoDataUrl} alt={`Foto de asistencia de ${record.userName}`} />
+                          <AttendancePhoto className="attendance-thumb" src={photoSource} alt={`Foto de asistencia de ${record.userName}`} />
                         </button>
                       ) : '-'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {filteredRecords.length === 0 ? (
                   <tr><td colSpan={6}><p className="status">Sin marcas en el rango seleccionado.</p></td></tr>
                 ) : null}
@@ -420,7 +466,7 @@ function AttendanceSection({
               </div>
               <button type="button" onClick={() => setPhotoPreview(null)} aria-label="Cerrar foto">×</button>
             </header>
-            <img src={photoPreview.src} alt={photoPreview.title} />
+            <AttendancePhoto src={photoPreview.src} alt={photoPreview.title} />
           </section>
         </div>
       ) : null}

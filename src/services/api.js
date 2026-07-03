@@ -368,6 +368,24 @@ const uploadProductImage = async (file, { itemId } = {}) => {
   return response.json();
 };
 
+const uploadAttendancePhoto = async (file, { recordId } = {}) => {
+  if (!(file instanceof Blob)) {
+    throw new Error('Selecciona una foto valida para subir.');
+  }
+  const response = await fetch(getApiUrl('/api/uploads/attendance'), {
+    method: 'POST',
+    headers: getInternalHeaders({
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Attendance-Id': String(recordId ?? 'attendance').trim() || 'attendance',
+    }),
+    body: file,
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo subir la foto de asistencia.');
+  }
+  return response.json();
+};
+
 const callServerPresence = async (action, payload) => {
   if (!shouldUseServerState() || isLocalHost() || remotePresenceUnsupported) {
     return null;
@@ -696,6 +714,7 @@ export const api = {
   },
   uploads: {
     productImage: uploadProductImage,
+    attendancePhoto: uploadAttendancePhoto,
   },
   categories: {
     list: () => callBridge('categories', 'list', false),
@@ -759,22 +778,25 @@ export const api = {
     login: async (payload) => {
       await syncServerState({ required: true, reason: 'auth-login' });
       const session = await getBridge().auth.login(payload);
-      pushServerState()
-        .then(() => announceDataChange({ domain: 'auth', method: 'login' }))
-        .catch((error) => {
-          applyRemoteBackoff(error);
-          console.warn('[copetin-sync] No se pudo guardar ultimo acceso en segundo plano.', error);
+      const { __requiresFullStatePush, ...publicSession } = session;
+      if (__requiresFullStatePush) {
+        pushServerState()
+          .then(() => announceDataChange({ domain: 'auth', method: 'login-initial-password' }))
+          .catch((error) => {
+            applyRemoteBackoff(error);
+            console.warn('[copetin-sync] No se pudo guardar cambio inicial de contrasena.', error);
+          });
+      } else {
+        console.info('[copetin-sync] Login sin mutacion persistible; se omite push completo.', {
+          downloaded: hasLoadedServerState,
         });
-      return session;
+      }
+      return publicSession;
     },
     logout: async () => {
       const result = await getBridge().auth.logout();
-      pushServerState()
-        .then(() => announceDataChange({ domain: 'auth', method: 'logout' }))
-        .catch((error) => {
-          applyRemoteBackoff(error);
-          console.warn('[copetin-sync] No se pudo guardar cierre de sesion en segundo plano.', error);
-        });
+      announceDataChange({ domain: 'auth', method: 'logout' });
+      console.info('[copetin-sync] Logout local sin mutacion persistible; se omite push completo.');
       return result;
     },
   },
