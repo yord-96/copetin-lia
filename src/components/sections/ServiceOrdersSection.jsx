@@ -404,8 +404,7 @@ const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
   const safeBase = Math.max(0, Number(baseSubtotalBs ?? 0));
   const safeMode = mode === 'duration' ? 'duration' : 'simple';
   const normalizedTiers = normalizeDurationTiers(tiers);
-  const inferredDays = getDurationDaysFromTiers(normalizedTiers);
-  const safeDays = safeMode === 'duration' ? Math.max(parsePositiveInteger(days, 1), inferredDays) : 1;
+  const safeDays = safeMode === 'duration' ? parsePositiveInteger(days, 1) : 1;
 
   if (safeMode !== 'duration') {
     return {
@@ -3206,7 +3205,7 @@ function ServiceOrdersSection({
     setDraft((current) => ({
       ...current,
       pricingMode: value === 'duration' ? 'duration' : 'simple',
-      pricingDays: String(Math.max(parsePositiveInteger(current.pricingDays, 1), getDurationDaysFromTiers(current.pricingTiers))),
+      pricingDays: String(parsePositiveInteger(current.pricingDays, 1)),
       pricingTiers: Array.isArray(current.pricingTiers) && current.pricingTiers.length > 0
         ? current.pricingTiers
         : DURATION_PRICING_DEFAULT_TIERS,
@@ -3224,7 +3223,7 @@ function ServiceOrdersSection({
       ));
       return {
         ...current,
-        pricingDays: String(Math.max(parsePositiveInteger(current.pricingDays, 1), getDurationDaysFromTiers(nextTiers))),
+        pricingDays: String(parsePositiveInteger(current.pricingDays, 1)),
         pricingTiers: nextTiers,
       };
     });
