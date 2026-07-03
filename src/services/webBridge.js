@@ -1492,6 +1492,8 @@ const normalizeState = (state) => {
       generatedAt: report?.generatedAt ?? now,
       sourceType: String(report?.sourceType ?? '').trim() || null,
       sourceId: String(report?.sourceId ?? '').trim() || null,
+      updatedAt: report?.updatedAt ?? null,
+      deletedAt: report?.deletedAt ?? null,
     })).filter((report) => report.name)
     : [];
 
@@ -7189,6 +7191,20 @@ const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, c
   return manualCode;
 };
 
+const releaseLatestCommercialDocumentCode = (state, code, fieldPrefix, fieldNext) => {
+  const numericPart = parseDocumentNumericPart(code);
+  if (!numericPart) return;
+  if (!state.settings) state.settings = {};
+  if (!state.settings.numbering) state.settings.numbering = {};
+  const numbering = state.settings.numbering;
+  const currentPrefix = String(numbering[fieldPrefix] ?? '');
+  const codePrefix = parseDocumentPrefix(code);
+  const currentNext = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
+  if (currentPrefix === codePrefix && currentNext === numericPart + 1) {
+    numbering[fieldNext] = numericPart;
+  }
+};
+
 const findOrCreateCategoryByName = (state, categoryName) => {
   const name = toBusinessUppercase(categoryName ?? '') || 'SIN CATEGORIA';
   const existing = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(name));
@@ -10317,7 +10333,7 @@ const createWebBridge = () => ({
         sourceId: rental.id,
       }));
 
-      const merged = [...state.generatedReports, ...receiptReports];
+      const merged = [...state.generatedReports.filter((report) => !report.deletedAt), ...receiptReports];
       return merged
         .slice()
         .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt))
@@ -11154,6 +11170,174 @@ const createWebBridge = () => ({
       });
 
       return updated;
+    },
+    revertToQuote: async (payload) => {
+      const id = String(payload?.id ?? payload?.contractId ?? '').trim();
+      if (!id) throw new Error('Debes indicar el contrato.');
+
+      let reverted = null;
+      transaction((state) => {
+        const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!contract) throw new Error('Contrato no encontrado.');
+        const quoteId = String(contract.quoteId ?? '').trim();
+        if (!quoteId) {
+          throw new Error('Este contrato no proviene de una cotizacion y no se puede volver automaticamente.');
+        }
+        const quote = state.quotes.find((entry) => entry.id === quoteId && !entry.deletedAt);
+        if (!quote) {
+          throw new Error('No se encontro la cotizacion original para restaurarla.');
+        }
+
+        const now = new Date().toISOString();
+        const rental = state.rentals.find((entry) => (
+          !entry.deletedAt
+          && (
+            String(entry.id ?? '') === String(contract.rentalId ?? '')
+            || String(entry.contractId ?? '') === String(contract.id)
+            || (contract.orderCode && String(entry.orderCode ?? '') === String(contract.orderCode))
+          )
+        )) ?? null;
+
+        if (rental) {
+          if (rental.status === 'returned') {
+            throw new Error('No se puede volver a cotizacion porque la orden ya fue devuelta/cerrada.');
+          }
+
+          (rental.items ?? []).forEach((line) => {
+            const item = state.items.find((entry) => entry.id === line.itemId);
+            if (!item || lineControlsStock(line, item) === false) return;
+            const reservedQty = Number.isFinite(Number(line.internalReservedQty))
+              ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+              : Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+            if (reservedQty <= 0) return;
+            const beforeTotalStock = Number(item.totalStock ?? 0);
+            const beforeAvailableStock = Number(item.availableStock ?? 0);
+            item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + reservedQty);
+            item.updatedAt = now;
+            state.inventoryMovements.push({
+              id: makeId('mov'),
+              itemId: item.id,
+              itemName: item.name,
+              category: item.category,
+              type: 'reinsercion',
+              reason: `Reversion de contrato ${contract.contractCode}`,
+              detail: `Liberacion de ${reservedQty} unidades de ${rental.orderCode}`,
+              reference: rental.orderCode,
+              deltaUnits: reservedQty,
+              beforeTotalStock,
+              afterTotalStock: beforeTotalStock,
+              beforeAvailableStock,
+              afterAvailableStock: item.availableStock,
+              reservedStockAfter: beforeTotalStock - item.availableStock,
+              userName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+              userRole: String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion',
+              createdAt: now,
+            });
+          });
+
+          const prepaidAppliedBs = Math.max(0, toPositiveRoundedNumber(rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0));
+          if (prepaidAppliedBs > 0 && rental.prepaidClientId) {
+            const prepaidClient = state.clients.find((entry) => entry.id === rental.prepaidClientId && !entry.deletedAt);
+            if (prepaidClient) {
+              prepaidClient.prepaidBalanceBs = Number((Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0)) + prepaidAppliedBs).toFixed(2));
+              prepaidClient.prepaidTotalUsedBs = Math.max(0, Number((toPositiveRoundedNumber(prepaidClient.prepaidTotalUsedBs ?? 0) - prepaidAppliedBs).toFixed(2)));
+              prepaidClient.prepaidMovements = normalizePrepaidMovements(prepaidClient.prepaidMovements, prepaidClient.prepaidBalanceBs);
+              prepaidClient.prepaidMovements.push({
+                id: makeId('pre'),
+                type: 'adjustment',
+                amountBs: prepaidAppliedBs,
+                description: `Reversion prepago ${rental.orderCode}`,
+                sourceType: 'rental_reversal',
+                sourceId: rental.id,
+                orderCode: rental.orderCode,
+                balanceAfterBs: prepaidClient.prepaidBalanceBs,
+                createdAt: now,
+              });
+              prepaidClient.updatedAt = now;
+            }
+          }
+
+          state.deliveries.forEach((delivery) => {
+            if (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode) {
+              delivery.status = 'cancelada';
+              delivery.deletedAt = now;
+              delivery.updatedAt = now;
+            }
+          });
+
+          state.transportRoutes.forEach((route) => {
+            const hasLinkedStop = Array.isArray(route.stops)
+              && route.stops.some((stop) =>
+                state.deliveries.some((delivery) =>
+                  (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode)
+                  && String(delivery.id ?? '') === String(stop.deliveryId ?? ''),
+                ),
+              );
+            if (hasLinkedStop) {
+              route.deletedAt = now;
+              route.updatedAt = now;
+            }
+          });
+
+          state.cashMovements.forEach((movement) => {
+            const linkedToRental = String(movement.sourceType ?? '') === 'rental' && String(movement.sourceId ?? '') === String(rental.id);
+            const linkedByOrder = rental.orderCode && String(movement.linkedOrderCode ?? '') === String(rental.orderCode);
+            if (linkedToRental || linkedByOrder) {
+              movement.voidedAt = movement.voidedAt ?? now;
+              movement.voidedBy = movement.voidedBy || (String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema');
+              movement.updatedAt = now;
+              movement.notes = [movement.notes, `Anulado por reversion del contrato ${contract.contractCode}.`].filter(Boolean).join(' | ');
+            }
+          });
+
+          state.generatedReports.forEach((report) => {
+            if (String(report.sourceId ?? '') === String(rental.id)) {
+              report.deletedAt = now;
+              report.updatedAt = now;
+            }
+          });
+
+          state.supplierLoans.forEach((loan) => {
+            const linkedToContract = String(loan.sourceContractId ?? '') === String(contract.id);
+            const linkedToRental = String(loan.sourceRentalId ?? '') === String(rental.id);
+            if ((linkedToContract || linkedToRental) && loan.autoCreated) {
+              loan.deletedAt = now;
+              loan.updatedAt = now;
+              loan.status = 'anulado';
+            }
+          });
+
+          rental.deletedAt = now;
+          rental.status = 'cancelled';
+          rental.updatedAt = now;
+        }
+
+        quote.status = 'borrador';
+        quote.approvedAt = null;
+        quote.rejectedAt = null;
+        quote.rentalId = null;
+        quote.orderCode = null;
+        quote.updatedAt = now;
+
+        releaseLatestCommercialDocumentCode(state, contract.contractCode, 'contractPrefix', 'contractNext');
+        contract.deletedAt = now;
+        contract.status = 'revertido';
+        contract.revertedToQuoteAt = now;
+        contract.revertedQuoteId = quote.id;
+        contract.rentalId = null;
+        contract.orderCode = null;
+        contract.updatedAt = now;
+
+        reverted = {
+          ok: true,
+          contract: deepClone(contract),
+          quote: deepClone(quote),
+          rental: rental ? deepClone(rental) : null,
+        };
+        return state;
+      });
+
+      return reverted;
     },
   },
 

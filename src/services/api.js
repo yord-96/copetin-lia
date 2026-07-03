@@ -714,6 +714,7 @@ export const api = {
     create: (payload) => callBridge('contracts', 'create', true, payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
+    revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },
   suppliers: {
     listBundle: () => callBridge('suppliers', 'listBundle', false),

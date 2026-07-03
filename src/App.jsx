@@ -544,6 +544,7 @@ function App() {
             onCreateContract={canWriteOrders ? controller.handleCreateContract : undefined}
             onUpdateContract={canWriteOrders ? controller.handleUpdateContract : undefined}
             onRemoveContract={canWriteOrders ? controller.handleRemoveContract : undefined}
+            onRevertContractToQuote={canWriteOrders ? controller.handleRevertContractToQuote : undefined}
             onCreateContractFromQuote={canWriteOrders ? controller.handleCreateContractFromQuote : undefined}
             onCreateContractFromOrder={canWriteOrders ? controller.handleCreateContractFromOrder : undefined}
             onApproveContract={canWriteOrders ? controller.handleApproveContract : undefined}

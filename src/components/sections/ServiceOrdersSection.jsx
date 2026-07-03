@@ -943,6 +943,7 @@ function ServiceOrdersSection({
   onCreateContract,
   onUpdateContract,
   onRemoveContract,
+  onRevertContractToQuote,
   onCreateContractFromOrder,
   onApproveContract,
   onGenerateOrderDocuments,
@@ -986,6 +987,7 @@ function ServiceOrdersSection({
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
+  const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   const [operationalOrder, setOperationalOrder] = useState(null);
@@ -3710,6 +3712,33 @@ function ServiceOrdersSection({
     }
   };
 
+  const handleRevertContractClick = (contract) => {
+    setMenuState(null);
+    setFormError('');
+    setContractToRevert(contract);
+  };
+
+  const closeRevertContractDialog = () => {
+    if (isSubmitting) return;
+    setContractToRevert(null);
+  };
+
+  const confirmRevertContract = async () => {
+    if (!contractToRevert) return;
+    if (!beginSubmit()) return;
+    setFormError('');
+    try {
+      await onRevertContractToQuote?.({ id: contractToRevert.id });
+      setActionFeedback(`Contrato ${contractToRevert.contractCode} vuelto a cotizacion. Items, fecha y numero quedaron liberados.`);
+      setContractToRevert(null);
+      setActiveView('quotes');
+    } catch (requestError) {
+      setFormError(requestError.message || 'No se pudo volver el contrato a cotizacion.');
+    } finally {
+      endSubmit();
+    }
+  };
+
   const handleEditContractClick = (contract) => {
     setMenuState(null);
     openCreateModal('order', 'contract', contract);
@@ -5077,6 +5106,15 @@ function ServiceOrdersSection({
                   >
                     Marcar rechazado
                   </button>
+                  {activeContractMenuRow.quoteId ? (
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => handleRevertContractClick(activeContractMenuRow)}
+                    >
+                      Volver a cotizacion
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="danger"
@@ -5093,7 +5131,7 @@ function ServiceOrdersSection({
               >
                 Abrir contrato
               </button>
-              {!readOnly ? (
+              {!readOnly && !activeContractMenuRow.quoteId ? (
                 <button type="button" className="danger" onClick={() => handleDeleteContractClick(activeContractMenuRow)}>
                   Eliminar
                 </button>
@@ -5760,6 +5798,36 @@ function ServiceOrdersSection({
               </button>
               <button type="button" className="danger-button" onClick={confirmDeleteQuote} disabled={isSubmitting}>
                 {isSubmitting ? 'Eliminando...' : 'Eliminar cotizacion'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {contractToRevert ? (
+        <div className="orders-modal-backdrop" onClick={closeRevertContractDialog}>
+          <div className="orders-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <span className="orders-confirm-icon">!</span>
+              <div>
+                <h3>Volver contrato a cotizacion</h3>
+                <p>Esta accion elimina el contrato del flujo, libera inventario y fechas, anula movimientos vinculados y deja la cotizacion original en borrador.</p>
+              </div>
+            </header>
+
+            <div className="orders-confirm-summary">
+              <strong>{contractToRevert.contractCode}</strong>
+              <span>{contractToRevert.customerName} · {formatBs(contractToRevert.totalBs)}</span>
+            </div>
+
+            {formError ? <p className="status error">{formError}</p> : null}
+
+            <footer>
+              <button type="button" className="ghost-button" onClick={closeRevertContractDialog} disabled={isSubmitting}>
+                Cancelar
+              </button>
+              <button type="button" className="danger-button" onClick={confirmRevertContract} disabled={isSubmitting}>
+                {isSubmitting ? 'Revirtiendo...' : 'Volver a cotizacion'}
               </button>
             </footer>
           </div>
@@ -7764,6 +7832,10 @@ function ServiceOrdersSection({
                 {!isLastStep ? (
                   <button type="button" className="primary-button" onClick={handleNextStep} disabled={isSubmitting}>
                     Continuar <ChevronRight aria-hidden="true" />
+                  </button>
+                ) : draft.entityType !== 'contract' ? (
+                  <button type="button" className="primary-button" onClick={() => handleSaveQuote({ approveNow: false })} disabled={isSubmitting}>
+                    {isSubmitting ? 'Guardando...' : 'Guardar cotizacion'}
                   </button>
                 ) : isEditingContract ? (
                   <button type="button" className="primary-button" onClick={() => handleSaveQuote({ approveNow: false })} disabled={isSubmitting}>

@@ -1077,6 +1077,24 @@ export const useAppController = () => {
     }
   };
 
+  const handleRevertContractToQuote = async (payload) => {
+    setError('');
+    try {
+      const trace = getCurrentUserTrace();
+      const reverted = await api.contracts.revertToQuote({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
+      await loadData();
+      return reverted;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo volver el contrato a cotizacion.');
+      throw requestError;
+    }
+  };
+
   const handleCreateSupplier = async (payload) => {
     setError('');
     try {
@@ -1998,6 +2016,7 @@ export const useAppController = () => {
     handleCreateContract,
     handleUpdateContract,
     handleRemoveContract,
+    handleRevertContractToQuote,
     handleCreateSupplier,
     handleUpdateSupplier,
     handleCreateSupplierQuote,
