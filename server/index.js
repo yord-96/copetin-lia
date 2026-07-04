@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
+import { getDatabaseMode, isPostgresMode } from './database/mode.js';
+import { prisma } from './database/prisma.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import {
   ensureProductUploadDirectory,
@@ -92,11 +94,27 @@ app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 
 app.get('/health', async (_req, res, next) => {
   try {
+    const databaseMode = getDatabaseMode();
+    let postgres = { enabled: false, ok: null };
+    if (isPostgresMode()) {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        postgres = { enabled: true, ok: true };
+      } catch (error) {
+        postgres = { enabled: true, ok: false, error: isProduction ? 'postgres_unavailable' : error?.message };
+      }
+    }
     res.json({
       ok: true,
       service: 'copetin-api',
+      databaseMode,
+      postgres,
       storage: getStateStoreInfo().storage,
       stateFile: getStateStoreInfo().stateFilePath,
+      uploads: {
+        products: productUploadInfo.uploadDirectory,
+        attendance: attendanceUploadInfo.uploadDirectory,
+      },
       time: new Date().toISOString(),
     });
   } catch (error) {

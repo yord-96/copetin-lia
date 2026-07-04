@@ -819,6 +819,7 @@ function InventoryDashboardSection({
   onUpdateOrderOperational,
   onRemoveOrder,
   onReceiveReturnedOrder,
+  onPrintContractDocument,
   onPrintInventoryWeekDocument,
   rentals = [],
 }) {
@@ -946,6 +947,30 @@ function InventoryDashboardSection({
       }
     } catch (error) {
       setFeedback(error.message || 'No se pudo abrir la impresion individual.');
+      setFeedbackType('error');
+    }
+  };
+
+  const openContractDocument = async (row) => {
+    try {
+      const preview = await onPrintContractDocument?.({
+        rentalId: row.rentalId,
+        orderCode: row.orderCode,
+        contractId: row.contractId,
+        contractCode: row.contractCode,
+      });
+      if (preview?.html) {
+        setDocumentPreview({
+          title: preview.title ?? `Contrato ${row.contractCode}`,
+          html: preview.html,
+          format: 'contract',
+        });
+        return;
+      }
+      setFeedback('No se pudo generar la vista del contrato.');
+      setFeedbackType('error');
+    } catch (error) {
+      setFeedback(error.message || 'No se pudo abrir el contrato.');
       setFeedbackType('error');
     }
   };
@@ -1196,6 +1221,7 @@ function InventoryDashboardSection({
           id: rental.id,
           rental,
           rentalId: rental.id,
+          contractId: contract?.id ?? rental.contractId ?? null,
           orderCode: rental.orderCode ?? rental.id,
           contractCode: contract?.contractCode ?? rental.contractCode ?? rental.orderCode ?? rental.id,
           customerName: contract?.customerName ?? rental.customerName,
@@ -3341,7 +3367,14 @@ function InventoryDashboardSection({
                   <div key={row.id} className="inventory-ops-row">
                     <div className="inventory-ops-identity">
                       <div className="inventory-ops-contract-line">
-                        <strong>Contrato {row.contractCode}</strong>
+                        <button
+                          type="button"
+                          className="inventory-ops-contract-link"
+                          onClick={() => openContractDocument(row)}
+                          title={`Ver contrato ${row.contractCode}`}
+                        >
+                          Contrato {row.contractCode}
+                        </button>
                         <span>{row.orderCode}</span>
                       </div>
                       <span className="inventory-ops-customer">{row.customerName}</span>
@@ -3465,7 +3498,14 @@ function InventoryDashboardSection({
                     <div key={`all-${row.id}`} className="inventory-ops-row">
                       <div className="inventory-ops-identity">
                         <div className="inventory-ops-contract-line">
-                          <strong>Contrato {row.contractCode}</strong>
+                          <button
+                            type="button"
+                            className="inventory-ops-contract-link"
+                            onClick={() => openContractDocument(row)}
+                            title={`Ver contrato ${row.contractCode}`}
+                          >
+                            Contrato {row.contractCode}
+                          </button>
                           <span>{row.orderCode}</span>
                         </div>
                         <span className="inventory-ops-customer">{row.customerName}</span>
@@ -5385,7 +5425,9 @@ function InventoryDashboardSection({
               <div>
                 <h3>{documentPreview.title}</h3>
               <p>
-                {documentPreview.format === 'individual'
+                {documentPreview.format === 'contract'
+                  ? 'Vista previa del contrato comercial.'
+                  : documentPreview.format === 'individual'
                   ? 'Formato individual en media carta o carta completa segun la cantidad de items.'
                   : 'Vista previa del control operativo de inventario.'}
               </p>

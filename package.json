@@ -16,9 +16,26 @@
     "restore": "node scripts/backup/restore-state.cjs",
     "migrate:product-images": "node scripts/migrate/migrate-product-images.cjs",
     "migrate:attendance-photos:dry": "node scripts/migrate-attendance-photos.mjs --dry-run",
-    "migrate:attendance-photos": "node scripts/migrate-attendance-photos.mjs --apply"
+    "migrate:attendance-photos": "node scripts/migrate-attendance-photos.mjs --apply",
+    "db:analyze": "node scripts/analyze-json-schema.mjs",
+    "postgres:up": "docker compose -f docker-compose.postgres.yml up -d",
+    "postgres:down": "docker compose -f docker-compose.postgres.yml down",
+    "postgres:logs": "docker compose -f docker-compose.postgres.yml logs -f postgres",
+    "postgres:reset": "docker compose -f docker-compose.postgres.yml down -v",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "db:migrate:dry": "node scripts/migrate-json-to-postgres.mjs --dry-run",
+    "db:migrate": "node scripts/migrate-json-to-postgres.mjs --apply",
+    "db:verify": "node scripts/verify-postgres-migration.mjs --verify",
+    "db:reset-local": "node scripts/migrate-json-to-postgres.mjs --apply --reset-target"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "bcryptjs": "^3.0.3",
+    "cookie": "^2.0.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
@@ -26,8 +43,10 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.1.0",
     "lucide-react": "^1.18.0",
+    "pg": "^8.22.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -38,6 +57,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "prisma": "^7.8.0",
     "vite": "^8.0.1"
   },
   "overrides": {

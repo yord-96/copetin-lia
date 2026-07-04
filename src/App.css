@@ -8394,15 +8394,20 @@ textarea:focus {
 }
 
 .clients-detail-modal {
-  width: min(980px, 100%);
+  width: min(1240px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   max-height: 88vh;
-  overflow: auto;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .clients-detail-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.48rem;
+  min-width: 0;
 }
 
 .clients-detail-kpis article {
@@ -8428,6 +8433,7 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.56rem;
+  min-width: 0;
 }
 
 .clients-detail-card {
@@ -8458,19 +8464,22 @@ textarea:focus {
   border-radius: 0.55rem;
   background: #ffffff;
   padding: 0.58rem 0.62rem;
+  min-width: 0;
 }
 
 .clients-detail-table-wrap {
   border: 1px solid #e8ecf8;
   border-radius: 0.52rem;
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   margin-top: 0.45rem;
 }
 
 .clients-detail-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: min(760px, 100%);
 }
 
 .clients-detail-table th,
@@ -13041,6 +13050,26 @@ textarea:focus {
 .inventory-ops-contract-line strong {
   color: #0f2f68;
   font-size: 0.86rem;
+}
+
+.inventory-ops-contract-link {
+  border: 0;
+  background: transparent;
+  color: #0f2f68;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 900;
+  line-height: 1.2;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inventory-ops-contract-link:hover,
+.inventory-ops-contract-link:focus-visible {
+  color: #e84a00;
+  text-decoration: underline;
+  outline: none;
 }
 
 .inventory-ops-contract-line > span {
@@ -25533,6 +25562,20 @@ button.calendar-dispatch-row:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
+}
+
+.clients-detail-head > div {
+  min-width: 0;
+}
+
+.clients-detail-head h3,
+.clients-detail-head p {
+  overflow-wrap: anywhere;
+}
+
+.clients-detail-head .whatsapp-send-button {
+  flex: 0 0 auto;
 }
 
 .whatsapp-inline-link {
