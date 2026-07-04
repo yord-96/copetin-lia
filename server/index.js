@@ -9,7 +9,6 @@ import rateLimit from 'express-rate-limit';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
-import { prisma } from './database/prisma.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import {
   ensureProductUploadDirectory,
@@ -98,6 +97,7 @@ app.get('/health', async (_req, res, next) => {
     let postgres = { enabled: false, ok: null };
     if (isPostgresMode()) {
       try {
+        const { prisma } = await import('./database/prisma.js');
         await prisma.$queryRaw`SELECT 1`;
         postgres = { enabled: true, ok: true };
       } catch (error) {
