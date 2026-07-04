@@ -7173,16 +7173,64 @@ const parseDocumentNumericPart = (code) => {
 
 const parseDocumentPrefix = (code) => String(code ?? '').trim().replace(/\d+\s*$/, '');
 
+const normalizeCommercialDocumentCode = (code) => String(code ?? '').trim();
+
+const isActiveRentalRecord = (rental) => rental && !rental.deletedAt && rental.status !== 'cancelled';
+
+const commercialDocumentCodeExists = (state, collectionName, codeField, code, exclude = {}) => {
+  const normalizedCode = normalizeCommercialDocumentCode(code);
+  if (!normalizedCode) return false;
+  const normalizedExcludeId = String(exclude.id ?? '').trim();
+  const normalizedExcludeContractId = String(exclude.contractId ?? '').trim();
+  const normalizedExcludeRentalId = String(exclude.rentalId ?? '').trim();
+  const collectionHasCode = (state[collectionName] ?? []).some((entry) => (
+    entry
+    && !entry.deletedAt
+    && (!normalizedExcludeId || String(entry.id ?? '') !== normalizedExcludeId)
+    && normalizeCommercialDocumentCode(entry?.[codeField]) === normalizedCode
+  ));
+  if (collectionHasCode) return true;
+
+  if (collectionName !== 'contracts' || codeField !== 'contractCode') return false;
+  return (state.rentals ?? []).some((rental) => (
+    isActiveRentalRecord(rental)
+    && (!normalizedExcludeRentalId || String(rental.id ?? '') !== normalizedExcludeRentalId)
+    && (!normalizedExcludeContractId || String(rental.contractId ?? '') !== normalizedExcludeContractId)
+    && normalizeCommercialDocumentCode(rental.contractCode) === normalizedCode
+  ));
+};
+
+const consumeUniqueCommercialDocumentCode = (state, fieldPrefix, fieldNext, collectionName, codeField, size = 5) => {
+  if (!state.settings) state.settings = {};
+  if (!state.settings.numbering) state.settings.numbering = {};
+  const numbering = state.settings.numbering;
+  const prefix = String(numbering[fieldPrefix] ?? '');
+  let next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
+  let attempts = 0;
+
+  while (attempts < 100000) {
+    const code = prefix ? `${prefix}${formatDocNumber(next, size)}` : String(next);
+    if (!commercialDocumentCodeExists(state, collectionName, codeField, code)) {
+      numbering[fieldNext] = next + 1;
+      return code;
+    }
+    next += 1;
+    attempts += 1;
+  }
+
+  throw new Error('No se pudo encontrar un numero disponible para el documento.');
+};
+
 const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, collectionName, codeField, size = 5) => {
   const codeMode = ['manual', 'current'].includes(payload?.documentCodeMode) ? payload.documentCodeMode : 'auto';
   const manualCode = String(payload?.manualDocumentCode ?? '').trim();
   if (codeMode === 'auto') {
-    return consumeDocumentCode(state, fieldPrefix, fieldNext, size);
+    return consumeUniqueCommercialDocumentCode(state, fieldPrefix, fieldNext, collectionName, codeField, size);
   }
   if (!manualCode) {
     throw new Error('Debes indicar el codigo del libro.');
   }
-  const exists = (state[collectionName] ?? []).some((entry) => !entry.deletedAt && String(entry?.[codeField] ?? '').trim() === manualCode);
+  const exists = commercialDocumentCodeExists(state, collectionName, codeField, manualCode);
   if (exists) {
     throw new Error(`Ya existe un registro con el codigo ${manualCode}.`);
   }
@@ -10963,9 +11011,11 @@ const createWebBridge = () => ({
         const beforeContract = deepClone(contract);
         const requestedContractCode = String(payload?.manualDocumentCode ?? payload?.contractCode ?? '').trim();
         if (requestedContractCode && requestedContractCode !== String(contract.contractCode ?? '').trim()) {
-          const duplicate = state.contracts.some(
-            (entry) => entry.id !== contract.id && !entry.deletedAt && String(entry.contractCode ?? '').trim() === requestedContractCode,
-          );
+          const duplicate = commercialDocumentCodeExists(state, 'contracts', 'contractCode', requestedContractCode, {
+            id: contract.id,
+            contractId: contract.id,
+            rentalId: contract.rentalId,
+          });
           if (duplicate) throw new Error('Ya existe un contrato con ese numero.');
           const previousContractCode = String(contract.contractCode ?? '').trim();
           contract.contractCode = requestedContractCode;
@@ -11617,14 +11667,34 @@ const createWebBridge = () => ({
       let createdRental = null;
       transaction((state) => {
         const contractId = String(payload?.contractId ?? '').trim();
-        const existingContractRental = contractId
+        const requestedContractCode = String(payload?.contractCode ?? '').trim();
+        const existingContractRental = contractId || requestedContractCode
           ? state.rentals.find((entry) => (
-            !entry.deletedAt
-            && entry.status !== 'cancelled'
-            && String(entry.contractId ?? '') === contractId
+            isActiveRentalRecord(entry)
+            && (
+              (contractId && String(entry.contractId ?? '') === contractId)
+              || (requestedContractCode && String(entry.contractCode ?? '').trim() === requestedContractCode)
+            )
           ))
           : null;
         if (existingContractRental) {
+          const existingContractId = String(existingContractRental.contractId ?? '').trim();
+          if (contractId && existingContractId && existingContractId !== contractId) {
+            throw new Error(`Ya existe una orden activa para el contrato ${requestedContractCode || existingContractRental.contractCode}.`);
+          }
+          const nowIso = new Date().toISOString();
+          let repairedLink = false;
+          if (contractId && !existingContractId) {
+            existingContractRental.contractId = contractId;
+            repairedLink = true;
+          }
+          if (requestedContractCode && !String(existingContractRental.contractCode ?? '').trim()) {
+            existingContractRental.contractCode = requestedContractCode;
+            repairedLink = true;
+          }
+          if (repairedLink) {
+            existingContractRental.updatedAt = nowIso;
+          }
           createdRental = {
             ...deepClone(existingContractRental),
             reusedExisting: true,
