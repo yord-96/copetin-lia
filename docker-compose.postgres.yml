@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: copetin-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-copetin_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-copetin_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-copetin_local_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - copetin_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-copetin_local} -d ${POSTGRES_DB:-copetin_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - copetin_local
+
+volumes:
+  copetin_postgres_data:
+
+networks:
+  copetin_local:
+    driver: bridge

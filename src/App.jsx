@@ -510,6 +510,7 @@ function App() {
             onUpdateOrderOperational={controller.handleUpdateOrderOperational}
             onRemoveOrder={controller.handleRemoveOrder}
             onReceiveReturnedOrder={controller.handleReceiveReturnedOrder}
+            onPrintContractDocument={controller.handlePrintContractDocument}
             onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
           />
         )}

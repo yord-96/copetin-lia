@@ -1,0 +1,797 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CompanyStatus {
+  active
+  inactive
+  suspended
+}
+
+enum UserStatus {
+  active
+  suspended
+  inactive
+}
+
+enum RecordStatus {
+  draft
+  pending
+  active
+  approved
+  rejected
+  cancelled
+  completed
+  archived
+}
+
+enum UploadedFileCategory {
+  product
+  attendance
+  contract
+  report
+  logo
+  attachment
+  other
+}
+
+model Company {
+  id        String        @id
+  code      String        @unique
+  name      String
+  legalName String?
+  taxId     String?
+  status    CompanyStatus @default(active)
+  settings  Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  userCompanies      UserCompany[]
+  roles              Role[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  clients            Client[]
+  categories         Category[]
+  items              Item[]
+  inventoryCombos    InventoryCombo[]
+  inventoryMovements InventoryMovement[]
+  stockRecoveries    StockRecovery[]
+  suppliers          Supplier[]
+  supplierQuotes     SupplierQuote[]
+  contracts          Contract[]
+  quotes             Quote[]
+  rentals            Rental[]
+  deliveries         Delivery[]
+  transportRoutes    TransportRoute[]
+  vehicles           Vehicle[]
+  drivers            Driver[]
+  cashSessions       CashSession[]
+  cashMovements      CashMovement[]
+  cashDebts          CashDebt[]
+  personnelEmployees PersonnelEmployee[]
+  attendanceRecords  AttendanceRecord[]
+  personnelAttendance PersonnelAttendance[]
+  personnelIncidents PersonnelIncident[]
+  calendarEvents     CalendarEvent[]
+  calendarBoardNotes CalendarBoardNote[]
+  generatedReports   GeneratedReport[]
+  resetLogs          ResetLog[]
+  companySettings    CompanySettings?
+  uploadedFiles      UploadedFile[]
+
+  @@index([status])
+}
+
+model User {
+  id             String     @id
+  username       String     @unique
+  email          String?
+  displayName    String
+  passwordHash   String?
+  status         UserStatus @default(active)
+  lastAccessAt   DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+  legacyData     Json?
+
+  companies      UserCompany[]
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  uploadedFiles  UploadedFile[]
+  createdClients Client[]   @relation("ClientCreatedBy")
+  updatedClients Client[]   @relation("ClientUpdatedBy")
+
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model UserCompany {
+  userId    String
+  companyId String
+  roleId    String
+  status    UserStatus @default(active)
+  isDefault Boolean    @default(false)
+  createdAt DateTime   @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  role    Role    @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, companyId])
+  @@index([companyId])
+  @@index([roleId])
+}
+
+model Role {
+  id          String  @id
+  code        String
+  name        String
+  companyId   String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  users       UserCompany[]
+  permissions RolePermission[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model Permission {
+  id          String @id
+  code        String @unique
+  description String?
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+}
+
+model Session {
+  id              String    @id
+  userId          String
+  activeCompanyId String
+  tokenHash       String    @unique
+  ipAddress       String?
+  userAgent       String?
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  user          User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  activeCompany Company @relation(fields: [activeCompanyId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([activeCompanyId])
+  @@index([expiresAt])
+}
+
+model AuditLog {
+  id         String   @id
+  companyId  String?
+  userId     String?
+  entityType String
+  entityId   String?
+  action     String
+  beforeData Json?
+  afterData  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Client {
+  id          String    @id
+  companyId   String
+  code        String?
+  name        String
+  phone       String?
+  ci          String?
+  email       String?
+  address     String?
+  status      RecordStatus @default(active)
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+  updatedById String?
+  legacyData  Json?
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy User?   @relation("ClientCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User?   @relation("ClientUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  contracts Contract[]
+  quotes    Quote[]
+  rentals   Rental[]
+
+  @@index([companyId, name])
+  @@index([companyId, phone])
+  @@index([companyId, status])
+}
+
+model Category {
+  id        String   @id
+  companyId String
+  name      String
+  type      String?
+  status    RecordStatus @default(active)
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items   Item[]
+
+  @@index([companyId, name])
+}
+
+model Item {
+  id           String   @id
+  companyId    String
+  categoryId   String?
+  code         String?
+  name         String
+  description  String?
+  color        String?
+  material     String?
+  unitPriceBs  Decimal? @db.Decimal(14, 2)
+  stock        Int?
+  imageUrl     String?
+  status       RecordStatus @default(active)
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+  legacyData   Json?
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  comboItems InventoryComboItem[]
+  contractItems ContractItem[]
+  quoteItems QuoteItem[]
+  rentalItems RentalItem[]
+  movements InventoryMovement[]
+
+  @@index([companyId, name])
+  @@index([companyId, categoryId])
+}
+
+model InventoryCombo {
+  id          String   @id
+  companyId   String
+  name        String
+  description String?
+  priceBs     Decimal? @db.Decimal(14, 2)
+  status      RecordStatus @default(active)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  legacyData  Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  items   InventoryComboItem[]
+
+  @@index([companyId, name])
+}
+
+model InventoryComboItem {
+  id        String @id
+  comboId   String
+  itemId    String
+  quantity  Int    @default(1)
+  legacyData Json?
+
+  combo InventoryCombo @relation(fields: [comboId], references: [id], onDelete: Restrict)
+  item  Item           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([comboId, itemId])
+}
+
+model InventoryMovement {
+  id          String   @id
+  companyId   String
+  itemId      String?
+  type        String
+  quantity    Int      @default(0)
+  amountBs    Decimal? @db.Decimal(14, 2)
+  reason      String?
+  referenceId String?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  legacyData  Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  item    Item?   @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, itemId])
+  @@index([companyId, type])
+}
+
+model StockRecovery {
+  id         String   @id
+  companyId  String
+  status     RecordStatus @default(pending)
+  totalBs    Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model Supplier {
+  id         String   @id
+  companyId  String
+  name       String
+  phone      String?
+  email      String?
+  status     RecordStatus @default(active)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  quotes  SupplierQuote[]
+
+  @@index([companyId, name])
+}
+
+model SupplierQuote {
+  id         String   @id
+  companyId  String
+  supplierId String?
+  status     RecordStatus @default(pending)
+  totalBs    Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items    SupplierQuoteItem[]
+
+  @@index([companyId, supplierId])
+}
+
+model SupplierQuoteItem {
+  id              String   @id
+  supplierQuoteId String
+  description     String
+  quantity        Int      @default(1)
+  unitPriceBs     Decimal? @db.Decimal(14, 2)
+  subtotalBs      Decimal? @db.Decimal(14, 2)
+  legacyData      Json?
+
+  supplierQuote SupplierQuote @relation(fields: [supplierQuoteId], references: [id], onDelete: Restrict)
+}
+
+model Contract {
+  id         String   @id
+  companyId  String
+  clientId   String?
+  number     String?
+  status     RecordStatus @default(pending)
+  eventType  String?
+  eventDate  DateTime?
+  totalBs    Decimal? @db.Decimal(14, 2)
+  balanceBs  Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  client  Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  items   ContractItem[]
+
+  @@index([companyId, number])
+  @@index([companyId, clientId])
+  @@index([companyId, status])
+}
+
+model ContractItem {
+  id          String   @id
+  contractId  String
+  itemId      String?
+  description String
+  quantity    Int      @default(1)
+  unitPriceBs Decimal? @db.Decimal(14, 2)
+  subtotalBs  Decimal? @db.Decimal(14, 2)
+  legacyData  Json?
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  item     Item?    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+}
+
+model Quote {
+  id         String   @id
+  companyId  String
+  clientId   String?
+  code       String?
+  status     RecordStatus @default(draft)
+  eventType  String?
+  eventDate  DateTime?
+  totalBs    Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  client  Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  items   QuoteItem[]
+
+  @@index([companyId, code])
+  @@index([companyId, status])
+}
+
+model QuoteItem {
+  id          String   @id
+  quoteId     String
+  itemId      String?
+  description String
+  quantity    Int      @default(1)
+  unitPriceBs Decimal? @db.Decimal(14, 2)
+  subtotalBs  Decimal? @db.Decimal(14, 2)
+  legacyData  Json?
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  item  Item? @relation(fields: [itemId], references: [id], onDelete: Restrict)
+}
+
+model Rental {
+  id         String   @id
+  companyId  String
+  clientId   String?
+  status     RecordStatus @default(active)
+  startDate  DateTime?
+  endDate    DateTime?
+  totalBs    Decimal? @db.Decimal(14, 2)
+  balanceBs  Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  client  Client? @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  items   RentalItem[]
+
+  @@index([companyId, clientId])
+  @@index([companyId, status])
+}
+
+model RentalItem {
+  id          String   @id
+  rentalId    String
+  itemId      String?
+  description String
+  quantity    Int      @default(1)
+  unitPriceBs Decimal? @db.Decimal(14, 2)
+  subtotalBs  Decimal? @db.Decimal(14, 2)
+  legacyData  Json?
+
+  rental Rental @relation(fields: [rentalId], references: [id], onDelete: Restrict)
+  item   Item?  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+}
+
+model Delivery {
+  id         String   @id
+  companyId  String
+  status     RecordStatus @default(pending)
+  scheduledAt DateTime?
+  completedAt DateTime?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, status])
+}
+
+model TransportRoute {
+  id         String   @id
+  companyId  String
+  name       String?
+  status     RecordStatus @default(pending)
+  routeDate  DateTime?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  stops   TransportRouteStop[]
+
+  @@index([companyId, status])
+}
+
+model TransportRouteStop {
+  id        String @id
+  routeId   String
+  sortOrder Int    @default(0)
+  address   String?
+  legacyData Json?
+
+  route TransportRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+}
+
+model Vehicle {
+  id         String   @id
+  companyId  String
+  plate      String?
+  name       String?
+  status     RecordStatus @default(active)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model Driver {
+  id         String   @id
+  companyId  String
+  name       String
+  phone      String?
+  status     RecordStatus @default(active)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model CashSession {
+  id         String   @id
+  companyId  String
+  status     String
+  openedAt   DateTime?
+  closedAt   DateTime?
+  openingBigCashBs Decimal? @db.Decimal(14, 2)
+  openingPettyCashBs Decimal? @db.Decimal(14, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  movements CashMovement[]
+
+  @@index([companyId, status])
+}
+
+model CashMovement {
+  id          String   @id
+  companyId   String
+  sessionId   String?
+  type        String
+  cashBoxType String?
+  amountBs    Decimal  @db.Decimal(14, 2)
+  description String?
+  sourceType  String?
+  sourceId    String?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  legacyData  Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  session CashSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, sessionId])
+  @@index([companyId, type])
+}
+
+model CashDebt {
+  id         String   @id
+  companyId  String
+  description String
+  amountBs   Decimal @db.Decimal(14, 2)
+  status     RecordStatus @default(pending)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model PersonnelEmployee {
+  id         String   @id
+  companyId  String
+  name       String
+  phone      String?
+  role       String?
+  status     RecordStatus @default(active)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  attendance PersonnelAttendance[]
+  incidents  PersonnelIncident[]
+
+  @@index([companyId, name])
+}
+
+model AttendanceRecord {
+  id             String   @id
+  companyId      String
+  userId         String?
+  userName       String?
+  type           String
+  location       String
+  reason         String?
+  photoUrl       String?
+  photoMimeType  String?
+  photoSizeBytes Int?
+  capturedAt     DateTime
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  legacyData     Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, capturedAt])
+  @@index([companyId, userId])
+}
+
+model PersonnelAttendance {
+  id         String   @id
+  companyId  String
+  employeeId String?
+  type       String?
+  checkedAt  DateTime?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company  Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee PersonnelEmployee? @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+}
+
+model PersonnelIncident {
+  id         String   @id
+  companyId  String
+  employeeId String?
+  type       String?
+  status     RecordStatus @default(pending)
+  occurredAt DateTime?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company  Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee PersonnelEmployee? @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+}
+
+model CalendarEvent {
+  id         String   @id
+  companyId  String
+  title      String
+  startAt    DateTime?
+  endAt      DateTime?
+  status     RecordStatus @default(active)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model CalendarBoardNote {
+  id         String   @id
+  companyId  String
+  title      String?
+  content    String?
+  noteDate   DateTime?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model GeneratedReport {
+  id         String   @id
+  companyId  String
+  type       String?
+  title      String?
+  url        String?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model ResetLog {
+  id         String   @id
+  companyId  String
+  userId     String?
+  action     String
+  createdAt  DateTime @default(now())
+  legacyData Json?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model CompanySettings {
+  id         String   @id
+  companyId  String   @unique
+  settings   Json
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+}
+
+model UploadedFile {
+  id           String   @id
+  companyId    String
+  category     UploadedFileCategory
+  url          String
+  storagePath  String?
+  mimeType     String?
+  sizeBytes    Int?
+  checksum     String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  legacyData   Json?
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  uploadedBy User?   @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, category])
+  @@index([checksum])
+}
