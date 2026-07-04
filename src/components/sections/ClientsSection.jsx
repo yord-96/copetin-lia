@@ -1,3 +1,4 @@
+import { CalendarDays, Clock3, MapPin, Pencil, ReceiptText, Tag } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const initialsFromName = (name) =>
@@ -64,6 +65,15 @@ const getTodayDateKey = () => {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   return `${today.getFullYear()}-${month}-${day}`;
+};
+
+const formatCompactBolivianos = (value) => {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return 'Bs 0';
+  const absolute = Math.abs(amount);
+  if (absolute >= 1000000) return `Bs ${(amount / 1000000).toFixed(1).replace('.', ',')}M`;
+  if (absolute >= 1000) return `Bs ${(amount / 1000).toFixed(1).replace('.', ',')}k`;
+  return `Bs ${Math.round(amount)}`;
 };
 
 const getQuoteTimelineLabel = (quote) => {
@@ -496,10 +506,10 @@ function ClientsSection({
       : 0;
 
     return [
-      { tone: 'lilac', value: String(activeClients), label: 'Clientes registrados', icon: 'customerService' },
-      { tone: 'mint', value: formatBs(revenueMonth), label: 'Generado este mes', icon: 'salesPoint' },
-      { tone: 'sky', value: String(avgOrders), label: 'Ordenes promedio', icon: 'averageOrders' },
-      { tone: 'peach', value: String(newMonth), label: 'Clientes nuevos este mes', icon: 'newClients' },
+      { tone: 'lilac', value: String(activeClients), mobileValue: String(activeClients), label: 'Clientes registrados', mobileLabel: 'Clientes registrados', icon: 'customerService' },
+      { tone: 'mint', value: formatBs(revenueMonth), mobileValue: formatCompactBolivianos(revenueMonth), label: 'Generado este mes', mobileLabel: 'Generado mes', icon: 'salesPoint' },
+      { tone: 'sky', value: String(avgOrders), mobileValue: String(avgOrders), label: 'Ordenes promedio', mobileLabel: 'Ordenes promedio', icon: 'averageOrders' },
+      { tone: 'peach', value: String(newMonth), mobileValue: String(newMonth), label: 'Clientes nuevos este mes', mobileLabel: 'Nuevos este mes', icon: 'newClients' },
     ];
   }, [clients, formatBs, rentals]);
 
@@ -2163,6 +2173,70 @@ function ClientsSection({
     );
   };
 
+  const renderRowActionsDropdown = (row) => (
+    <div
+      className="clients-row-dropdown clients-row-dropdown-floating"
+      style={rowMenuPosition ? { top: rowMenuPosition.top, left: rowMenuPosition.left } : undefined}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          setDetailClient(row);
+          closeRowMenu();
+        }}
+      >
+        Ver detalle e historial
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          openEditModal(row);
+          closeRowMenu();
+        }}
+      >
+        Editar cliente
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          openClientWhatsAppModal(row);
+          closeRowMenu();
+        }}
+      >
+        Contactar por WhatsApp
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          handleGoToOrdersWithClient(row);
+          closeRowMenu();
+        }}
+      >
+        Nueva orden
+      </button>
+      <button
+        type="button"
+        className="danger"
+        onClick={async () => {
+          await handleToggleBlacklist(row);
+          closeRowMenu();
+        }}
+      >
+        {row.isBlacklisted ? 'Quitar de lista negra' : 'Marcar no deseado'}
+      </button>
+      <button
+        type="button"
+        className="danger"
+        onClick={async () => {
+          await handleToggleStatus(row);
+          closeRowMenu();
+        }}
+      >
+        {String(row.status).toLowerCase() === 'active' ? 'Inactivar cliente' : 'Activar cliente'}
+      </button>
+    </div>
+  );
+
   return (
     <section className="panel clients-view">
       <header className="clients-header">
@@ -2184,14 +2258,36 @@ function ClientsSection({
 
       {importFeedback ? <p className="status">{importFeedback}</p> : null}
 
+      <section className="clients-mobile-hero" aria-label="Resumen de clientes">
+        <div className="clients-mobile-hero-copy">
+          <span>Base comercial</span>
+          <h2>Clientes</h2>
+          <p>{clients.length} registrados - {filteredRows.length} visibles</p>
+        </div>
+        <div className="clients-mobile-hero-actions">
+          <button type="button" className="clients-mobile-import" onClick={handleOpenImport}>
+            Importar
+          </button>
+          <button type="button" className="clients-mobile-new" onClick={openCreateModal}>
+            + Cliente
+          </button>
+        </div>
+      </section>
+
       <div className="clients-kpi-grid">
         {cards.map((card) => (
           <article key={card.label} className={`clients-kpi-card ${card.tone}`}>
             <span className={`clients-kpi-icon ${card.tone}`}>
               <CardIcon kind={card.icon} />
             </span>
-            <strong>{card.value}</strong>
-            <p>{card.label}</p>
+            <strong>
+              <span className="clients-kpi-value-desktop">{card.value}</span>
+              <span className="clients-kpi-value-mobile">{card.mobileValue ?? card.value}</span>
+            </strong>
+            <p>
+              <span className="clients-kpi-label-desktop">{card.label}</span>
+              <span className="clients-kpi-label-mobile">{card.mobileLabel ?? card.label}</span>
+            </p>
           </article>
         ))}
       </div>
@@ -2314,68 +2410,7 @@ function ClientsSection({
                       >
                         {'\u22ee'}
                       </button>
-                      {rowMenuOpenId === row.id ? (
-                        <div
-                          className="clients-row-dropdown clients-row-dropdown-floating"
-                          style={rowMenuPosition ? { top: rowMenuPosition.top, left: rowMenuPosition.left } : undefined}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDetailClient(row);
-                              closeRowMenu();
-                            }}
-                          >
-                            Ver detalle e historial
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openEditModal(row);
-                              closeRowMenu();
-                            }}
-                          >
-                            Editar cliente
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              openClientWhatsAppModal(row);
-                            }}
-                          >
-                            Contactar por WhatsApp
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleGoToOrdersWithClient(row);
-                              closeRowMenu();
-                            }}
-                          >
-                            Nueva orden
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={async () => {
-                              await handleToggleBlacklist(row);
-                              closeRowMenu();
-                            }}
-                          >
-                            {row.isBlacklisted ? 'Quitar de lista negra' : 'Marcar no deseado'}
-                          </button>
-                          <button
-                            type="button"
-                            className="danger"
-                            onClick={async () => {
-                              await handleToggleStatus(row);
-                              closeRowMenu();
-                            }}
-                          >
-                            {String(row.status).toLowerCase() === 'active' ? 'Inactivar cliente' : 'Activar cliente'}
-                          </button>
-                        </div>
-                      ) : null}
+                      {rowMenuOpenId === row.id ? renderRowActionsDropdown(row) : null}
                     </div>
                   </td>
                 </tr>
@@ -2389,6 +2424,113 @@ function ClientsSection({
               ) : null}
             </tbody>
           </table>
+        </div>
+
+        <div className="clients-mobile-list" aria-label="Clientes encontrados">
+          {pagedRows.map((row, index) => {
+            const primaryAddress = Array.isArray(row.deliveryAddresses) && row.deliveryAddresses.length > 0
+              ? row.deliveryAddresses.find((entry) => entry.isPrimary) ?? row.deliveryAddresses[0]
+              : null;
+            const addressText = [primaryAddress?.address ?? row.address, primaryAddress?.city ?? row.city]
+              .filter(Boolean)
+              .join(' - ');
+            const isActive = String(row.status).toLowerCase() === 'active';
+
+            return (
+              <article key={`mobile-${row.id}`} className={`clients-mobile-card ${row.isBlacklisted ? 'is-blacklisted' : ''}`}>
+                <header className="clients-mobile-card-head">
+                  <span className={`client-avatar ${toneFromIndex(index)}`}>{initialsFromName(row.name)}</span>
+                  <div>
+                    <strong>{row.name}</strong>
+                    <small>{row.companyName || row.contactName || 'Sin empresa registrada'}</small>
+                  </div>
+                  <div className="clients-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
+                    <button
+                      type="button"
+                      className="clients-row-menu-button"
+                      aria-label={`Acciones para ${row.name}`}
+                      onClick={(event) => toggleRowMenu(row.id, event)}
+                    >
+                      {'\u22ee'}
+                    </button>
+                    {rowMenuOpenId === row.id ? renderRowActionsDropdown(row) : null}
+                  </div>
+                </header>
+
+                <div className="clients-mobile-badges">
+                  <span className={`client-status ${isActive ? '' : 'inactive'}`}>{isActive ? 'Activo' : 'Inactivo'}</span>
+                  <button
+                    type="button"
+                    className={`clients-mobile-orders ${Number(row.ordersCount ?? 0) > 0 ? 'has-orders' : ''}`}
+                    onClick={() => setDetailClient(row)}
+                    disabled={Number(row.ordersCount ?? 0) <= 0}
+                  >
+                    {row.ordersCount ?? 0} ordenes
+                  </button>
+                  {row.prepaidEnabled ? <span className="clients-mobile-prepaid">Especial {formatBs(Number(row.prepaidBalanceBs ?? 0))}</span> : null}
+                  {row.isBlacklisted ? <span className="client-status blacklisted">No atender</span> : null}
+                </div>
+
+                <div className="clients-mobile-native-facts">
+                  <button
+                    type="button"
+                    className="clients-mobile-native-fact clients-mobile-native-phone"
+                    onClick={() => openClientWhatsAppModal(row)}
+                    disabled={!row.whatsapp && !row.phone}
+                  >
+                    <WhatsAppGlyph />
+                    <span>
+                      <small>Telefono</small>
+                      <strong>{row.whatsapp || row.phone || '-'}</strong>
+                    </span>
+                  </button>
+                  <article className="clients-mobile-native-fact">
+                    <ReceiptText aria-hidden="true" />
+                    <span>
+                      <small>Ingreso</small>
+                      <strong>{formatBs(Number(row.totalBilledBs ?? 0))}</strong>
+                    </span>
+                  </article>
+                  <article className="clients-mobile-native-fact">
+                    <CalendarDays aria-hidden="true" />
+                    <span>
+                      <small>Ultima orden</small>
+                      <strong>{row.lastOrderAt ? formatDate(row.lastOrderAt) : '-'}</strong>
+                    </span>
+                  </article>
+                  <article className="clients-mobile-native-fact">
+                    <Tag aria-hidden="true" />
+                    <span>
+                      <small>Referencia</small>
+                      <strong>{row.referencePhone || '-'}</strong>
+                    </span>
+                  </article>
+                  <article className="clients-mobile-native-fact clients-mobile-native-address">
+                    <MapPin aria-hidden="true" />
+                    <span>
+                      <small>Direccion</small>
+                      <strong>{addressText || '-'}</strong>
+                    </span>
+                  </article>
+                </div>
+
+                <footer className="clients-mobile-card-actions">
+                  <button type="button" className="ghost-button" onClick={() => setDetailClient(row)}>
+                    <Clock3 aria-hidden="true" />
+                    Historial
+                  </button>
+                  <button type="button" className="primary-button" onClick={() => openEditModal(row)}>
+                    <Pencil aria-hidden="true" />
+                    Editar
+                  </button>
+                </footer>
+              </article>
+            );
+          })}
+
+          {pagedRows.length === 0 ? (
+            <p className="clients-mobile-empty">No hay clientes con esos filtros.</p>
+          ) : null}
         </div>
 
         <footer className="clients-table-footer">

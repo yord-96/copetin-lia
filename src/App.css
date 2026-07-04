@@ -52145,3 +52145,1599 @@ body:has(.accounting-bigcash-view) .workspace {
   font-weight: 950 !important;
   white-space: nowrap !important;
 }
+
+/* Clientes movil: experiencia compacta tipo contratos/calendario */
+.clients-mobile-hero,
+.clients-mobile-list {
+  display: none;
+}
+
+.clients-kpi-value-mobile,
+.clients-kpi-label-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .clients-view.panel {
+    gap: 0.85rem !important;
+    padding: 1.02rem 0.85rem 5.95rem !important;
+    background:
+      radial-gradient(circle at top right, rgba(255, 109, 45, 0.11), transparent 13rem),
+      #fbf7f1 !important;
+  }
+
+  .clients-view > .clients-header {
+    display: none !important;
+  }
+
+  .clients-mobile-hero {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 0.9rem !important;
+    overflow: hidden !important;
+    min-height: 12.35rem !important;
+    border-radius: 1.1rem !important;
+    padding: 1.2rem 1.05rem !important;
+    color: #ffffff !important;
+    background:
+      radial-gradient(circle at 88% 80%, rgba(255, 255, 255, 0.19) 0 4.8rem, transparent 4.9rem),
+      radial-gradient(circle at 92% 21%, rgba(123, 45, 8, 0.16) 0 3.9rem, transparent 4rem),
+      linear-gradient(135deg, #ff4f13 0%, #ff7a45 100%) !important;
+    box-shadow: 0 1.15rem 2.35rem rgba(234, 88, 12, 0.16) !important;
+  }
+
+  .clients-mobile-hero-copy {
+    min-width: 0 !important;
+  }
+
+  .clients-mobile-hero-copy span {
+    display: block !important;
+    margin-bottom: 0.34rem !important;
+    color: rgba(255, 255, 255, 0.86) !important;
+    font-size: 0.68rem !important;
+    font-weight: 950 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+  }
+
+  .clients-mobile-hero-copy h2 {
+    margin: 0 !important;
+    color: #ffffff !important;
+    font-size: 2rem !important;
+    line-height: 0.98 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .clients-mobile-hero-copy p {
+    width: fit-content !important;
+    max-width: 100% !important;
+    margin: 0.86rem 0 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+    color: #fff7ed !important;
+    padding: 0.32rem 0.55rem !important;
+    font-size: 0.72rem !important;
+    font-weight: 850 !important;
+  }
+
+  .clients-mobile-hero-actions {
+    display: grid !important;
+    gap: 0.5rem !important;
+    min-width: 5.9rem !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  .clients-mobile-hero-actions button {
+    min-height: 2.55rem !important;
+    border-radius: 0.85rem !important;
+    padding: 0 0.64rem !important;
+    font-size: 0.76rem !important;
+    font-weight: 950 !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+  }
+
+  .clients-mobile-new {
+    border: 0 !important;
+    background: #ffffff !important;
+    color: #e9490a !important;
+    box-shadow: 0 0.55rem 1.2rem rgba(113, 29, 8, 0.14) !important;
+  }
+
+  .clients-mobile-import {
+    border: 1px solid rgba(255, 255, 255, 0.52) !important;
+    background: rgba(255, 255, 255, 0.13) !important;
+    color: #ffffff !important;
+  }
+
+  .clients-view .clients-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.58rem !important;
+    margin: 0 !important;
+  }
+
+  .clients-view .clients-kpi-card {
+    min-height: 5.65rem !important;
+    border-color: #efe0d0 !important;
+    border-radius: 0.9rem !important;
+    box-shadow: 0 0.55rem 1.45rem rgba(64, 44, 24, 0.07) !important;
+    padding: 0.68rem !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: 0.58rem !important;
+    row-gap: 0.1rem !important;
+  }
+
+  .clients-view .clients-kpi-icon {
+    width: 2.18rem !important;
+    height: 2.18rem !important;
+    grid-row: span 2 !important;
+    margin: 0 !important;
+  }
+
+  .clients-view .clients-kpi-card strong {
+    min-width: 0 !important;
+    color: #173262 !important;
+    font-size: 1.22rem !important;
+    line-height: 1.02 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-view .clients-kpi-card p {
+    min-width: 0 !important;
+    color: #62708c !important;
+    font-size: 0.72rem !important;
+    line-height: 1.18 !important;
+  }
+
+  .clients-view .clients-table-card {
+    border-color: #edd7c7 !important;
+    border-radius: 1rem !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    box-shadow: 0 1rem 2rem rgba(67, 43, 21, 0.08) !important;
+    padding: 0.76rem !important;
+    gap: 0.72rem !important;
+  }
+
+  .clients-view .clients-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 0.55rem !important;
+  }
+
+  .clients-view .clients-search {
+    grid-column: 1 / -1 !important;
+    min-height: 3.35rem !important;
+    border-color: #ead4c6 !important;
+    border-radius: 0.86rem !important;
+    background: #fffaf6 !important;
+    padding: 0 0.78rem !important;
+  }
+
+  .clients-view .clients-search input {
+    width: 100% !important;
+    min-width: 0 !important;
+    color: #102657 !important;
+    font-size: 0.85rem !important;
+  }
+
+  .clients-view .clients-filter-btn,
+  .clients-view .clients-export-btn {
+    width: 100% !important;
+    min-height: 2.65rem !important;
+    border-radius: 0.78rem !important;
+    font-size: 0.77rem !important;
+    justify-self: stretch !important;
+  }
+
+  .clients-view .clients-filter-btn {
+    min-width: 0 !important;
+    border-color: #e8d2c2 !important;
+    background: #ffffff !important;
+    color: #102657 !important;
+  }
+
+  .clients-view .clients-export-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid #f2c4a7 !important;
+    background: #fff7ed !important;
+    color: #e9490a !important;
+  }
+
+  .clients-view .clients-table-wrap {
+    display: none !important;
+  }
+
+  .clients-mobile-list {
+    display: grid !important;
+    gap: 0.7rem !important;
+  }
+
+  .clients-mobile-card {
+    display: grid !important;
+    gap: 0.7rem !important;
+    border: 1px solid #e4eaf5 !important;
+    border-radius: 0.95rem !important;
+    background: #ffffff !important;
+    padding: 0.78rem !important;
+    box-shadow: 0 0.55rem 1.35rem rgba(31, 45, 82, 0.07) !important;
+  }
+
+  .clients-mobile-card.is-blacklisted {
+    border-color: #fecaca !important;
+    background: #fff8f8 !important;
+  }
+
+  .clients-mobile-card-head {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 0.62rem !important;
+  }
+
+  .clients-mobile-card-head .client-avatar {
+    width: 2.35rem !important;
+    height: 2.35rem !important;
+    font-size: 0.78rem !important;
+    font-weight: 950 !important;
+  }
+
+  .clients-mobile-card-head strong {
+    display: block !important;
+    color: #08275b !important;
+    font-size: 0.94rem !important;
+    font-weight: 950 !important;
+    line-height: 1.12 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-mobile-card-head small {
+    display: block !important;
+    margin-top: 0.12rem !important;
+    color: #63708b !important;
+    font-size: 0.74rem !important;
+    font-weight: 800 !important;
+    line-height: 1.18 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-mobile-card .clients-row-menu-button {
+    width: 2.34rem !important;
+    height: 2.34rem !important;
+    border: 1px solid #efcdb8 !important;
+    border-radius: 0.72rem !important;
+    background: #fffaf6 !important;
+    color: #ea580c !important;
+  }
+
+  .clients-mobile-badges {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.42rem !important;
+  }
+
+  .clients-mobile-orders,
+  .clients-mobile-prepaid {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 1.65rem !important;
+    border-radius: 999px !important;
+    padding: 0 0.58rem !important;
+    font-size: 0.69rem !important;
+    font-weight: 900 !important;
+  }
+
+  .clients-mobile-orders {
+    border: 1px solid #dae2f2 !important;
+    background: #f5f7fb !important;
+    color: #66738f !important;
+  }
+
+  .clients-mobile-orders.has-orders {
+    border-color: #fed7aa !important;
+    background: #fff7ed !important;
+    color: #c2410c !important;
+  }
+
+  .clients-mobile-prepaid {
+    border: 1px solid #bbf7d0 !important;
+    background: #ecfdf3 !important;
+    color: #166534 !important;
+  }
+
+  .clients-mobile-contact {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) !important;
+    gap: 0.56rem !important;
+  }
+
+  .clients-mobile-whatsapp,
+  .clients-mobile-contact > div {
+    min-width: 0 !important;
+    min-height: 3.25rem !important;
+    border: 1px solid #dce8f4 !important;
+    border-radius: 0.82rem !important;
+    background: #f8fbff !important;
+    padding: 0.52rem 0.62rem !important;
+  }
+
+  .clients-mobile-whatsapp {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.42rem !important;
+    color: #047857 !important;
+    font-size: 0.84rem !important;
+    font-weight: 950 !important;
+    cursor: pointer !important;
+  }
+
+  .clients-mobile-whatsapp:disabled {
+    cursor: not-allowed !important;
+    color: #8190a8 !important;
+    background: #f5f6f9 !important;
+  }
+
+  .clients-mobile-whatsapp svg {
+    flex: 0 0 1.08rem !important;
+  }
+
+  .clients-mobile-whatsapp span {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .clients-mobile-contact > div {
+    display: grid !important;
+    align-content: center !important;
+    gap: 0.16rem !important;
+    text-align: right !important;
+  }
+
+  .clients-mobile-contact > div span {
+    color: #64748b !important;
+    font-size: 0.68rem !important;
+    font-weight: 850 !important;
+  }
+
+  .clients-mobile-contact > div strong {
+    color: #08275b !important;
+    font-size: 0.92rem !important;
+    font-weight: 950 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-mobile-facts {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.48rem !important;
+    margin: 0 !important;
+  }
+
+  .clients-mobile-facts div {
+    min-width: 0 !important;
+    border: 1px solid #edf1f7 !important;
+    border-radius: 0.72rem !important;
+    background: #fbfcff !important;
+    padding: 0.52rem !important;
+  }
+
+  .clients-mobile-facts dt {
+    margin: 0 0 0.18rem !important;
+    color: #7b86a2 !important;
+    font-size: 0.66rem !important;
+    font-weight: 950 !important;
+    text-transform: uppercase !important;
+  }
+
+  .clients-mobile-facts dd {
+    margin: 0 !important;
+    color: #102657 !important;
+    font-size: 0.75rem !important;
+    font-weight: 820 !important;
+    line-height: 1.2 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-mobile-card-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.52rem !important;
+  }
+
+  .clients-mobile-card-actions button {
+    width: 100% !important;
+    min-height: 2.55rem !important;
+    border-radius: 0.78rem !important;
+    font-size: 0.78rem !important;
+    font-weight: 950 !important;
+  }
+
+  .clients-mobile-empty {
+    margin: 0 !important;
+    border: 1px dashed #d9e2f2 !important;
+    border-radius: 0.9rem !important;
+    background: #f8fbff !important;
+    color: #6b7896 !important;
+    padding: 1rem !important;
+    text-align: center !important;
+    font-size: 0.82rem !important;
+    font-weight: 800 !important;
+  }
+
+  .clients-view .clients-table-footer {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0.58rem !important;
+    padding-top: 0.08rem !important;
+  }
+
+  .clients-view .clients-table-footer > span {
+    text-align: center !important;
+    font-size: 0.76rem !important;
+  }
+
+  .clients-view .clients-pagination {
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    gap: 0.38rem !important;
+  }
+
+  .clients-view .clients-page-size-select {
+    min-height: 2.2rem !important;
+    border-radius: 0.62rem !important;
+    font-size: 0.74rem !important;
+  }
+
+  .clients-view .clients-row-dropdown.clients-row-dropdown-floating {
+    position: fixed !important;
+    top: auto !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: 5.45rem !important;
+    transform: translateX(-50%) !important;
+    width: min(21rem, calc(100vw - 2rem)) !important;
+    border-radius: 1rem !important;
+    padding: 0.46rem !important;
+    z-index: 10020 !important;
+    box-shadow: 0 1.2rem 2.6rem rgba(15, 23, 42, 0.28) !important;
+  }
+
+  .clients-view .clients-row-dropdown button {
+    min-height: 2.55rem !important;
+    border-radius: 0.7rem !important;
+    padding: 0 0.72rem !important;
+    font-size: 0.82rem !important;
+    font-weight: 850 !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .clients-mobile-hero {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-height: 0 !important;
+  }
+
+  .clients-mobile-hero-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    min-width: 0 !important;
+  }
+
+  .clients-mobile-contact,
+  .clients-mobile-facts {
+    grid-template-columns: 1fr !important;
+  }
+
+  .clients-mobile-contact > div {
+    text-align: left !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body:has(.clients-view) .app-content {
+    padding-right: 0.38rem !important;
+    padding-left: 0.38rem !important;
+  }
+
+  body:has(.clients-view) .workspace {
+    gap: 0.48rem !important;
+  }
+
+  body:has(.clients-view) .workspace > .panel.clients-view,
+  .clients-view.panel {
+    width: 100% !important;
+    max-width: none !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+    padding-right: 0.38rem !important;
+    padding-left: 0.38rem !important;
+  }
+
+  .clients-mobile-hero,
+  .clients-view .clients-kpi-grid,
+  .clients-view .clients-table-card {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .clients-mobile-hero {
+    padding-right: 0.88rem !important;
+    padding-left: 0.88rem !important;
+  }
+
+  .clients-view .clients-table-card {
+    padding-right: 0.58rem !important;
+    padding-left: 0.58rem !important;
+  }
+}
+
+@media (max-width: 430px) {
+  body:has(.clients-view) .app-content {
+    padding-right: 0.2rem !important;
+    padding-left: 0.2rem !important;
+  }
+
+  body:has(.clients-view) .workspace > .panel.clients-view,
+  .clients-view.panel {
+    padding-right: 0.25rem !important;
+    padding-left: 0.25rem !important;
+  }
+
+  .clients-mobile-hero {
+    padding-right: 0.72rem !important;
+    padding-left: 0.72rem !important;
+  }
+
+  .clients-view .clients-table-card {
+    padding-right: 0.48rem !important;
+    padding-left: 0.48rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body:has(.calendar-dashboard) .app-content,
+  body:has(.orders-view) .app-content {
+    padding-right: 0.38rem !important;
+    padding-left: 0.38rem !important;
+  }
+
+  body:has(.calendar-dashboard) .workspace,
+  body:has(.orders-view) .workspace {
+    gap: 0.48rem !important;
+  }
+
+  body:has(.calendar-dashboard) .workspace > .panel.calendar-dashboard,
+  body:has(.orders-view) .workspace > .panel.orders-view,
+  .calendar-dashboard.panel,
+  .orders-view.panel {
+    width: 100% !important;
+    max-width: none !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+    padding-right: 0.38rem !important;
+    padding-left: 0.38rem !important;
+  }
+
+  .calendar-dashboard > .calendar-header,
+  .calendar-dashboard > .calendar-kpis,
+  .calendar-dashboard > .calendar-redesign-stack,
+  .calendar-dashboard > .calendar-bottom-grid,
+  .calendar-dashboard .calendar-main-card,
+  .calendar-dashboard .calendar-board-card,
+  .calendar-dashboard .calendar-bottom-grid > section,
+  .orders-view > .orders-header,
+  .orders-view > .orders-table-card,
+  .orders-view .orders-mobile-order-list,
+  .orders-view .orders-mobile-commercial-list,
+  .orders-view .orders-view-switch,
+  .orders-view .orders-toolbar {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .calendar-dashboard .calendar-header,
+  .calendar-dashboard .calendar-main-card,
+  .calendar-dashboard .calendar-board-card,
+  .calendar-dashboard .calendar-bottom-grid > section,
+  .orders-view > .orders-table-card {
+    padding-right: 0.58rem !important;
+    padding-left: 0.58rem !important;
+  }
+}
+
+@media (max-width: 430px) {
+  body:has(.calendar-dashboard) .app-content,
+  body:has(.orders-view) .app-content {
+    padding-right: 0.2rem !important;
+    padding-left: 0.2rem !important;
+  }
+
+  body:has(.calendar-dashboard) .workspace > .panel.calendar-dashboard,
+  body:has(.orders-view) .workspace > .panel.orders-view,
+  .calendar-dashboard.panel,
+  .orders-view.panel {
+    padding-right: 0.25rem !important;
+    padding-left: 0.25rem !important;
+  }
+
+  .calendar-dashboard .calendar-header,
+  .calendar-dashboard .calendar-main-card,
+  .calendar-dashboard .calendar-board-card,
+  .calendar-dashboard .calendar-bottom-grid > section,
+  .orders-view > .orders-table-card {
+    padding-right: 0.48rem !important;
+    padding-left: 0.48rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .clients-view .clients-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 0.38rem !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    margin: -0.12rem 0 0 !important;
+  }
+
+  .clients-view .clients-kpi-card {
+    min-width: 0 !important;
+    min-height: 7.15rem !important;
+    border: 0 !important;
+    border-radius: 0.82rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.55rem 1.15rem rgba(42, 29, 18, 0.08) !important;
+    padding: 0.56rem 0.28rem 0.48rem !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 2.15rem 1.55rem minmax(1.9rem, auto) !important;
+    place-items: center !important;
+    align-content: start !important;
+    gap: 0.12rem !important;
+  }
+
+  .clients-view .clients-kpi-icon {
+    grid-row: auto !important;
+    width: 2.15rem !important;
+    height: 2.15rem !important;
+    margin: 0 !important;
+    border: 0 !important;
+    background: #fff1ea !important;
+  }
+
+  .clients-view .clients-kpi-icon svg {
+    width: 1.28rem !important;
+    height: 1.28rem !important;
+  }
+
+  .clients-view .clients-kpi-card strong {
+    display: block !important;
+    max-width: 100% !important;
+    color: #5f57ef !important;
+    font-size: 1.16rem !important;
+    font-weight: 950 !important;
+    line-height: 0.96 !important;
+    text-align: center !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  .clients-view .clients-kpi-value-desktop,
+  .clients-view .clients-kpi-label-desktop {
+    display: none !important;
+  }
+
+  .clients-view .clients-kpi-value-mobile,
+  .clients-view .clients-kpi-label-mobile {
+    display: block !important;
+  }
+
+  .clients-view .clients-kpi-card.mint strong {
+    color: #15916b !important;
+  }
+
+  .clients-view .clients-kpi-card.sky strong {
+    color: #0f8f72 !important;
+  }
+
+  .clients-view .clients-kpi-card.peach strong {
+    color: #ea580c !important;
+  }
+
+  .clients-view .clients-kpi-card p {
+    max-width: 4.5rem !important;
+    min-width: 0 !important;
+    min-height: 1.55rem !important;
+    color: #53617f !important;
+    font-size: 0.56rem !important;
+    font-weight: 800 !important;
+    line-height: 1.12 !important;
+    text-align: center !important;
+    overflow-wrap: anywhere !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .clients-view .clients-kpi-grid {
+    gap: 0.28rem !important;
+  }
+
+  .clients-view .clients-kpi-card {
+    min-height: 6.8rem !important;
+    padding-right: 0.18rem !important;
+    padding-left: 0.18rem !important;
+  }
+
+  .clients-view .clients-kpi-icon {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+
+  .clients-view .clients-kpi-card strong {
+    font-size: 1rem !important;
+  }
+
+  .clients-view .clients-kpi-card p {
+    font-size: 0.5rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .clients-mobile-card {
+    gap: 0.58rem !important;
+    border-color: #e8edf6 !important;
+    border-radius: 0.82rem !important;
+    padding: 0.72rem !important;
+  }
+
+  .clients-mobile-card-head {
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    gap: 0.55rem !important;
+  }
+
+  .clients-mobile-card-head .client-avatar {
+    width: 2.42rem !important;
+    height: 2.42rem !important;
+    align-self: start !important;
+  }
+
+  .clients-mobile-card-head strong {
+    font-size: 0.86rem !important;
+    line-height: 1.08 !important;
+  }
+
+  .clients-mobile-card-head small {
+    color: #52607c !important;
+    font-size: 0.68rem !important;
+    text-transform: uppercase !important;
+  }
+
+  .clients-mobile-badges {
+    margin-top: -0.12rem !important;
+  }
+
+  .clients-mobile-card .client-status,
+  .clients-mobile-card .clients-mobile-orders,
+  .clients-mobile-card .clients-mobile-prepaid {
+    min-height: 1.52rem !important;
+    padding: 0 0.5rem !important;
+    font-size: 0.63rem !important;
+  }
+
+  .clients-mobile-native-facts {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    border-top: 1px solid #eef2f7 !important;
+    border-bottom: 1px solid #eef2f7 !important;
+  }
+
+  .clients-mobile-native-fact {
+    min-width: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    padding: 0.62rem 0.44rem !important;
+    display: grid !important;
+    grid-template-columns: 1.15rem minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 0.38rem !important;
+    color: #09255a !important;
+    text-align: left !important;
+    box-shadow: none !important;
+  }
+
+  .clients-mobile-native-fact:nth-child(2),
+  .clients-mobile-native-fact:nth-child(3),
+  .clients-mobile-native-address {
+    border-left: 1px solid #eef2f7 !important;
+  }
+
+  .clients-mobile-native-fact:nth-child(n + 4) {
+    border-top: 1px solid #eef2f7 !important;
+  }
+
+  .clients-mobile-native-fact svg {
+    width: 1rem !important;
+    height: 1rem !important;
+    color: #172554 !important;
+    stroke-width: 2.2 !important;
+  }
+
+  .clients-mobile-native-phone svg {
+    color: #009f68 !important;
+  }
+
+  .clients-mobile-native-fact span {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: 0.08rem !important;
+  }
+
+  .clients-mobile-native-fact small {
+    color: #6f7a95 !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+    line-height: 1.05 !important;
+  }
+
+  .clients-mobile-native-fact strong {
+    color: #08275b !important;
+    font-size: 0.68rem !important;
+    font-weight: 950 !important;
+    line-height: 1.14 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .clients-mobile-native-phone {
+    cursor: pointer !important;
+  }
+
+  .clients-mobile-native-phone:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.62 !important;
+  }
+
+  .clients-mobile-native-address {
+    grid-column: span 2 !important;
+  }
+
+  .clients-mobile-card-actions {
+    gap: 0.5rem !important;
+  }
+
+  .clients-mobile-card-actions button {
+    min-height: 2.38rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.34rem !important;
+    border-radius: 0.5rem !important;
+    font-size: 0.76rem !important;
+  }
+
+  .clients-mobile-card-actions button svg {
+    width: 0.9rem !important;
+    height: 0.9rem !important;
+    stroke-width: 2.4 !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .clients-mobile-card {
+    padding: 0.62rem !important;
+  }
+
+  .clients-mobile-native-fact {
+    grid-template-columns: 0.95rem minmax(0, 1fr) !important;
+    gap: 0.26rem !important;
+    padding: 0.56rem 0.28rem !important;
+  }
+
+  .clients-mobile-native-fact svg {
+    width: 0.9rem !important;
+    height: 0.9rem !important;
+  }
+
+  .clients-mobile-native-fact small {
+    font-size: 0.5rem !important;
+  }
+
+  .clients-mobile-native-fact strong {
+    font-size: 0.62rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .orders-mobile-contract-card {
+    gap: 0.58rem !important;
+    border: 1px solid #e8edf6 !important;
+    border-radius: 0.82rem !important;
+    background: #ffffff !important;
+    padding: 0.72rem !important;
+    box-shadow: 0 0.65rem 1.25rem rgba(31, 45, 82, 0.08) !important;
+  }
+
+  .orders-mobile-contract-card::before,
+  .orders-mobile-contract-card::after {
+    display: none !important;
+  }
+
+  .orders-mobile-contract-card header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 0.28rem 0.55rem !important;
+    align-items: start !important;
+  }
+
+  .orders-mobile-contract-card header > div {
+    min-width: 0 !important;
+    display: flex !important;
+    align-items: baseline !important;
+    gap: 0.44rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .orders-mobile-contract-card header > div strong {
+    color: #08275b !important;
+    font-size: 1.18rem !important;
+    font-weight: 950 !important;
+    line-height: 1 !important;
+  }
+
+  .orders-mobile-contract-card header > div span {
+    min-width: 0 !important;
+    color: #7a86a2 !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+    line-height: 1.05 !important;
+    text-transform: uppercase !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .orders-mobile-contract-card header .orders-status-badge {
+    justify-self: end !important;
+    min-height: 1.58rem !important;
+    border-radius: 999px !important;
+    padding: 0 0.58rem !important;
+    font-size: 0.7rem !important;
+    font-weight: 950 !important;
+  }
+
+  .orders-mobile-contract-card header > b {
+    grid-column: 1 / -1 !important;
+    justify-self: start !important;
+    color: #ea580c !important;
+    font-size: 1rem !important;
+    font-weight: 950 !important;
+    line-height: 1 !important;
+  }
+
+  .orders-mobile-contract-main {
+    display: grid !important;
+    gap: 0.08rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .orders-mobile-contract-main p {
+    margin: 0 !important;
+    color: #092255 !important;
+    font-size: 0.72rem !important;
+    font-weight: 850 !important;
+    line-height: 1.22 !important;
+  }
+
+  .orders-mobile-contract-main p span {
+    color: #6c7894 !important;
+    font-weight: 900 !important;
+  }
+
+  .orders-mobile-contract-main p strong {
+    color: #08275b !important;
+    font-weight: 950 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .orders-mobile-contract-bottom {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 0.7rem !important;
+    border-top: 1px solid #eef2f7 !important;
+    border-bottom: 1px solid #eef2f7 !important;
+    background: transparent !important;
+    padding: 0.54rem 0 !important;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell {
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell > span {
+    width: 2rem !important;
+    height: 2rem !important;
+    border-radius: 50% !important;
+    background: #fff1ea !important;
+    color: #ea580c !important;
+    font-size: 0.66rem !important;
+    font-weight: 950 !important;
+    display: grid !important;
+    place-items: center !important;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell strong {
+    color: #08275b !important;
+    font-size: 0.68rem !important;
+    font-weight: 950 !important;
+    line-height: 1.1 !important;
+  }
+
+  .orders-mobile-contract-card .orders-responsible-cell small {
+    color: #7b86a2 !important;
+    font-size: 0.52rem !important;
+    font-weight: 850 !important;
+    line-height: 1.1 !important;
+  }
+
+  .orders-mobile-contract-order {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.22rem !important;
+    color: #52617f !important;
+    white-space: nowrap !important;
+  }
+
+  .orders-mobile-contract-order span,
+  .orders-mobile-contract-order strong {
+    font-size: 0.72rem !important;
+    font-weight: 850 !important;
+  }
+
+  .orders-mobile-contract-order strong {
+    color: #08275b !important;
+    font-weight: 950 !important;
+  }
+
+  .orders-mobile-contract-meta {
+    display: none !important;
+  }
+
+  .orders-mobile-contract-details {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.46rem !important;
+  }
+
+  .orders-mobile-contract-service,
+  .orders-mobile-contract-details > div {
+    min-width: 0 !important;
+    border: 0 !important;
+    border-radius: 0.68rem !important;
+    background: #f8fbff !important;
+    padding: 0.56rem 0.58rem !important;
+    display: grid !important;
+    grid-template-columns: 1.08rem minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 0.42rem !important;
+  }
+
+  .orders-mobile-contract-service {
+    grid-column: 1 / -1 !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell.has-guarantee {
+    background: #fff6dc !important;
+  }
+
+  .orders-mobile-contract-service > svg,
+  .orders-mobile-contract-details > div > svg {
+    width: 0.95rem !important;
+    height: 0.95rem !important;
+    color: #173262 !important;
+    stroke-width: 2.4 !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell > svg {
+    color: #f59e0b !important;
+  }
+
+  .orders-mobile-contract-details .orders-transport-cell > svg {
+    color: #2563eb !important;
+  }
+
+  .orders-mobile-contract-service span,
+  .orders-mobile-contract-details > div span:not(.orders-guarantee-state) {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: 0.08rem !important;
+  }
+
+  .orders-mobile-contract-service small,
+  .orders-mobile-contract-details small {
+    color: #6f7a95 !important;
+    font-size: 0.52rem !important;
+    font-weight: 900 !important;
+    line-height: 1.05 !important;
+  }
+
+  .orders-mobile-contract-service strong,
+  .orders-mobile-contract-details strong {
+    color: #08275b !important;
+    font-size: 0.66rem !important;
+    font-weight: 950 !important;
+    line-height: 1.12 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .orders-mobile-contract-service em,
+  .orders-mobile-contract-details span,
+  .orders-mobile-contract-details .orders-guarantee-state {
+    color: #64748b !important;
+    font-size: 0.55rem !important;
+    font-style: normal !important;
+    font-weight: 850 !important;
+    line-height: 1.1 !important;
+  }
+
+  .orders-mobile-contract-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 2.45rem 2.45rem !important;
+    gap: 0.52rem !important;
+    align-items: center !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .orders-mobile-contract-card .orders-open-btn {
+    min-height: 2.32rem !important;
+    border: 0 !important;
+    border-radius: 0.5rem !important;
+    background: #ea580c !important;
+    color: #ffffff !important;
+    font-size: 0.78rem !important;
+    font-weight: 950 !important;
+    box-shadow: 0 0.45rem 0.9rem rgba(234, 88, 12, 0.18) !important;
+  }
+
+  .orders-mobile-contract-card .whatsapp-bubble-button,
+  .orders-mobile-contract-card .transport-row-menu-button {
+    width: 2.45rem !important;
+    height: 2.32rem !important;
+    border-radius: 0.5rem !important;
+    border: 1px solid #e8edf6 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .orders-mobile-contract-card {
+    padding: 0.62rem !important;
+  }
+
+  .orders-mobile-contract-details {
+    gap: 0.38rem !important;
+  }
+
+  .orders-mobile-contract-service,
+  .orders-mobile-contract-details > div {
+    padding: 0.5rem 0.42rem !important;
+    gap: 0.3rem !important;
+  }
+
+  .orders-mobile-contract-service strong,
+  .orders-mobile-contract-details strong {
+    font-size: 0.61rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .orders-mobile-contract-details .orders-guarantee-cell,
+  .orders-mobile-contract-details .orders-transport-cell {
+    grid-template-columns: 1rem minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    align-items: start !important;
+    row-gap: 0.04rem !important;
+    column-gap: 0.42rem !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell > svg,
+  .orders-mobile-contract-details .orders-transport-cell > svg {
+    grid-column: 1 !important;
+    grid-row: 1 / span 3 !important;
+    margin-top: 0.06rem !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell > small,
+  .orders-mobile-contract-details .orders-guarantee-cell > strong,
+  .orders-mobile-contract-details .orders-guarantee-cell > span,
+  .orders-mobile-contract-details .orders-transport-cell > small,
+  .orders-mobile-contract-details .orders-transport-cell > strong,
+  .orders-mobile-contract-details .orders-transport-cell > span {
+    grid-column: 2 !important;
+    min-width: 0 !important;
+    display: block !important;
+    text-align: left !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell > strong,
+  .orders-mobile-contract-details .orders-transport-cell > strong {
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell > span,
+  .orders-mobile-contract-details .orders-transport-cell > span {
+    color: #64748b !important;
+    font-size: 0.55rem !important;
+    font-weight: 850 !important;
+    line-height: 1.1 !important;
+  }
+
+  .orders-mobile-contract-service {
+    min-height: 2.85rem !important;
+    background: #f8fbff !important;
+  }
+
+  .orders-mobile-contract-details .orders-guarantee-cell,
+  .orders-mobile-contract-details .orders-transport-cell {
+    min-height: 3.85rem !important;
+  }
+
+  .orders-mobile-contract-actions {
+    border-top: 1px solid #eef2f7 !important;
+    padding-top: 0.5rem !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .orders-mobile-contract-details .orders-guarantee-cell,
+  .orders-mobile-contract-details .orders-transport-cell {
+    column-gap: 0.3rem !important;
+  }
+}
+
+/* Ordenes movil: estructura superior compacta tipo app nativa */
+@media (max-width: 768px) {
+  .orders-view > .orders-table-card {
+    gap: 0.68rem !important;
+    border: 0 !important;
+    border-radius: 1.05rem !important;
+    background: #fffdfa !important;
+    padding: 0.58rem 0.42rem 0.72rem !important;
+    box-shadow: none !important;
+  }
+
+  .orders-view .orders-board-head {
+    min-height: 3.25rem !important;
+    padding: 0.05rem 3.65rem 0 0 !important;
+    display: grid !important;
+    align-items: start !important;
+  }
+
+  .orders-view .orders-board-eyebrow {
+    width: fit-content !important;
+    border-radius: 999px !important;
+    background: #fff1ea !important;
+    color: #ea580c !important;
+    padding: 0.14rem 0.46rem !important;
+    font-size: 0.64rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
+
+  .orders-view .orders-board-head h3 {
+    margin: 0.22rem 0 0 !important;
+    color: #08275b !important;
+    font-size: 1.45rem !important;
+    line-height: 1 !important;
+  }
+
+  .orders-view .orders-board-head p {
+    display: none !important;
+  }
+
+  .orders-view .orders-board-count {
+    top: 0 !important;
+    right: 0 !important;
+    min-width: 3.15rem !important;
+    min-height: 3.15rem !important;
+    border: 1px solid #dce4f0 !important;
+    border-radius: 0.78rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.45rem 1rem rgba(31, 45, 82, 0.06) !important;
+    padding: 0.38rem 0.34rem !important;
+    display: grid !important;
+    place-items: center !important;
+    align-content: center !important;
+  }
+
+  .orders-view .orders-board-count strong {
+    color: #0b2a60 !important;
+    font-size: 1.25rem !important;
+    line-height: 0.95 !important;
+  }
+
+  .orders-view .orders-board-count span {
+    color: #6b7896 !important;
+    font-size: 0.54rem !important;
+    font-weight: 850 !important;
+    line-height: 1 !important;
+  }
+
+  .orders-view .orders-view-switch.orders-workflow-tabs,
+  .orders-view .orders-view-switch.orders-workflow-tabs.is-two-up {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid #f0d8c8 !important;
+    border-radius: 0.82rem !important;
+    background: #ffffff !important;
+  }
+
+  .orders-view .orders-workflow-tabs button {
+    min-height: 3.55rem !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    padding: 0.48rem 0.5rem !important;
+    grid-template-columns: 2.28rem minmax(0, 1fr) auto !important;
+    gap: 0.48rem !important;
+    box-shadow: none !important;
+  }
+
+  .orders-view .orders-workflow-tabs button + button {
+    border-left: 1px solid #f0d8c8 !important;
+  }
+
+  .orders-view .orders-workflow-tabs button.active {
+    background: #fff7f0 !important;
+    box-shadow: inset 0 0 0 1px #ffb083 !important;
+  }
+
+  .orders-view .orders-workflow-icon {
+    width: 2.18rem !important;
+    height: 2.18rem !important;
+    border-radius: 0.65rem !important;
+  }
+
+  .orders-view .orders-workflow-copy strong {
+    color: #08275b !important;
+    font-size: 0.76rem !important;
+    line-height: 1.08 !important;
+  }
+
+  .orders-view .orders-workflow-copy small {
+    max-width: 6.3rem !important;
+    color: #6b7896 !important;
+    font-size: 0.53rem !important;
+    font-weight: 750 !important;
+    line-height: 1.12 !important;
+  }
+
+  .orders-view .orders-workflow-count {
+    min-width: 1.42rem !important;
+    height: 1.42rem !important;
+    border-radius: 999px !important;
+    background: #f2f5fa !important;
+    color: #52617f !important;
+    font-size: 0.66rem !important;
+    font-weight: 950 !important;
+  }
+
+  .orders-view .orders-workflow-tabs button.active .orders-workflow-count {
+    background: #ea580c !important;
+    color: #ffffff !important;
+  }
+
+  .orders-view .orders-notification-badge {
+    top: 0.36rem !important;
+    right: 0.34rem !important;
+    min-width: 1.18rem !important;
+    height: 1.18rem !important;
+    font-size: 0.58rem !important;
+  }
+
+  .orders-view .status.success {
+    margin: -0.18rem 0 0 !important;
+    min-height: 1.35rem !important;
+    border-radius: 999px !important;
+    padding: 0.16rem 0.48rem !important;
+    font-size: 0.62rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .orders-view .orders-filter-panel {
+    gap: 0.64rem !important;
+    padding: 0 !important;
+  }
+
+  .orders-view .orders-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.52rem !important;
+  }
+
+  .orders-view .orders-search {
+    position: relative !important;
+    min-height: 2.72rem !important;
+    border: 1px solid #e5eaf3 !important;
+    border-radius: 0.74rem !important;
+    background: #ffffff !important;
+    padding: 0 0.78rem 0 2.18rem !important;
+    box-shadow: 0 0.35rem 0.9rem rgba(31, 45, 82, 0.04) !important;
+  }
+
+  .orders-view .orders-search::before {
+    content: "";
+    position: absolute;
+    left: 0.78rem;
+    top: 50%;
+    width: 0.82rem;
+    height: 0.82rem;
+    border: 1.7px solid #8b9ab4;
+    border-radius: 50%;
+    transform: translateY(-56%);
+    pointer-events: none;
+  }
+
+  .orders-view .orders-search::after {
+    content: "";
+    position: absolute;
+    left: 1.43rem;
+    top: 1.58rem;
+    width: 0.4rem;
+    height: 1.7px;
+    border-radius: 999px;
+    background: #8b9ab4;
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+
+  .orders-view .orders-search input {
+    font-size: 0.76rem !important;
+    font-weight: 650 !important;
+  }
+
+  .orders-view .orders-date-range-filter {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto !important;
+    gap: 0.48rem !important;
+    align-items: center !important;
+  }
+
+  .orders-view .orders-date-range-filter label {
+    min-width: 0 !important;
+    min-height: 2.62rem !important;
+    border: 1px solid #f0d8c8 !important;
+    border-radius: 0.68rem !important;
+    background: #ffffff !important;
+    padding: 0.34rem 0.48rem !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 0.34rem !important;
+  }
+
+  .orders-view .orders-date-range-filter label span {
+    color: #c2410c !important;
+    font-size: 0.52rem !important;
+    font-weight: 950 !important;
+    text-transform: capitalize !important;
+  }
+
+  .orders-view .orders-date-range-filter input {
+    min-width: 0 !important;
+    width: 100% !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #08275b !important;
+    font-size: 0.72rem !important;
+    font-weight: 950 !important;
+    padding: 0 !important;
+  }
+
+  .orders-view .orders-date-range-filter > .link-button {
+    min-height: 2.62rem !important;
+    padding: 0 0.28rem !important;
+    color: #ea580c !important;
+    font-size: 0.72rem !important;
+    font-weight: 900 !important;
+  }
+
+  .orders-view .orders-toolbar > .orders-export-btn {
+    display: none !important;
+  }
+
+  .orders-view .orders-status-tabs {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 0.42rem !important;
+    overflow-x: auto !important;
+    padding: 0.02rem 0 0.16rem !important;
+    scrollbar-width: none !important;
+  }
+
+  .orders-view .orders-status-tabs::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .orders-view .orders-status-tabs button {
+    flex: 0 0 auto !important;
+    min-height: 2.1rem !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: #f3f5f8 !important;
+    color: #52617f !important;
+    padding: 0 0.68rem !important;
+    font-size: 0.64rem !important;
+    font-weight: 900 !important;
+    gap: 0.36rem !important;
+  }
+
+  .orders-view .orders-status-tabs button.active {
+    border: 1px solid #ffb083 !important;
+    background: #fff7f0 !important;
+    color: #ea580c !important;
+  }
+
+  .orders-view .orders-status-tabs button span {
+    min-width: 1.22rem !important;
+    height: 1.22rem !important;
+    background: #e9eef6 !important;
+    color: #52617f !important;
+    font-size: 0.58rem !important;
+  }
+
+  .orders-view .orders-status-tabs button.active span {
+    background: #ea580c !important;
+    color: #ffffff !important;
+  }
+
+  .orders-view .orders-contract-legend {
+    display: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .orders-view .orders-table-card {
+    padding-right: 0.36rem !important;
+    padding-left: 0.36rem !important;
+  }
+
+  .orders-view .orders-workflow-copy small {
+    max-width: 5.1rem !important;
+  }
+
+  .orders-view .orders-date-range-filter {
+    gap: 0.36rem !important;
+  }
+
+  .orders-view .orders-date-range-filter label {
+    padding-right: 0.36rem !important;
+    padding-left: 0.36rem !important;
+  }
+
+  .orders-view .orders-date-range-filter label span,
+  .orders-view .orders-date-range-filter input {
+    font-size: 0.58rem !important;
+  }
+}

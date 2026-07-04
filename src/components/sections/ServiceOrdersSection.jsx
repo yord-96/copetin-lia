@@ -4901,12 +4901,22 @@ function ServiceOrdersSection({
                       <span>Entrega / recojo</span>
                     </div>
                     <div className="orders-mobile-contract-details">
+                      <div className="orders-mobile-contract-service">
+                        <CalendarDays aria-hidden="true" />
+                        <span>
+                          <small>Servicio</small>
+                          <strong>{[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</strong>
+                          <em>Entrega / recojo</em>
+                        </span>
+                      </div>
                       <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
+                        <Check aria-hidden="true" />
                         <small>Garantía</small>
                         <strong>{row.guaranteePrimary}</strong>
                         <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
                       </div>
                       <div className="orders-transport-cell">
+                        <Truck aria-hidden="true" />
                         <small>Transporte</small>
                         <strong>{transportMeta.title}</strong>
                         <span>{transportMeta.detail}</span>
