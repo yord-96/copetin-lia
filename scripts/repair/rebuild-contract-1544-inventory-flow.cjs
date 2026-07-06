@@ -3,8 +3,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
-const statePath = path.join(projectRoot, 'data', 'app-state.json');
-const repairDir = path.join(projectRoot, 'data', 'repairs');
+const statePath = path.resolve(process.env.APP_STATE_FILE || path.join(projectRoot, 'data', 'app-state.json'));
+const repairDir = path.join(path.dirname(statePath), 'repairs');
 
 const checksumForState = (state) =>
   crypto.createHash('sha256').update(JSON.stringify(state ?? null)).digest('hex').slice(0, 16);

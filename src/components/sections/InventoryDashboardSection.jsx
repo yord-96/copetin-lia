@@ -1475,6 +1475,7 @@ function InventoryDashboardSection({
         imageUrl: movement.imageUrl ?? itemRow?.imageUrl ?? null,
         imageDataUrl: movement.imageDataUrl ?? itemRow?.imageDataUrl ?? null,
         sku: String(movement.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
+        contractCode: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.contractCode ?? '',
         reference: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.reference ?? movement.id,
         deltaUnits: Number(movement.deltaUnits ?? 0),
         beforeStock: Number(movement.beforeAvailableStock ?? movement.beforeTotalStock ?? 0),
@@ -1529,6 +1530,7 @@ function InventoryDashboardSection({
             registeredByName: rental.createdByName ?? rental.createdBy ?? 'Sistema',
             registeredByRole: rental.createdByRole ?? 'Inventario',
             observation: `Reservado para contrato ${displayReference} - ${rental.customerName ?? 'Cliente'}`,
+            contractCode: displayReference,
             valueAmount: Number(line.lineTotalBs ?? 0),
             status: rental.operational?.inventoryStatus ?? 'pendiente',
             isPendingReservation: !['confirmado', 'salio', 'devuelto', 'anulado'].includes(rental.operational?.inventoryStatus ?? 'pendiente'),
@@ -1789,6 +1791,7 @@ function InventoryDashboardSection({
       || normalizeText(row.brand).includes(text)
       || normalizeText(row.itemColor).includes(text)
       || normalizeText(row.sku).includes(text)
+      || normalizeText(row.contractCode).includes(text)
       || normalizeText(row.reference).includes(text)
       || normalizeText(row.userName).includes(text)
       || normalizeText(row.registeredByName).includes(text)
