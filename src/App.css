@@ -42179,6 +42179,149 @@ button.calendar-dispatch-row:focus-visible {
   opacity: 1;
 }
 
+.orders-code-current-card {
+  min-height: 3.35rem;
+  border: 1px solid #fed7aa;
+  border-radius: 0.72rem;
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+  padding: 0.56rem 0.72rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.1rem 0.7rem;
+}
+
+.orders-code-current-card span {
+  color: #c2410c;
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.orders-code-current-card strong {
+  grid-row: span 2;
+  color: #08275b;
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.orders-code-current-card small {
+  color: #53617f;
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.orders-code-current-card em {
+  grid-column: 1 / -1;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.12rem;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #315f9d;
+  padding: 0.16rem 0.48rem;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.orders-code-current-card.mode-current {
+  border-color: #fdba74;
+  background: linear-gradient(135deg, #ffedd5, #fffaf4);
+}
+
+.orders-board-next-code {
+  justify-self: end;
+  min-width: 13.2rem;
+  border: 1px solid #fed7aa;
+  border-radius: 0.78rem;
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+  padding: 0.46rem 0.58rem;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "label label"
+    "current next";
+  gap: 0.28rem 0.72rem;
+  box-shadow: 0 0.45rem 1rem rgba(31, 45, 82, 0.05);
+}
+
+.orders-board-next-code span {
+  grid-area: label;
+  color: #c2410c;
+  font-size: 0.64rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.orders-board-next-code strong {
+  display: grid;
+  gap: 0.06rem;
+  color: #08275b;
+  font-size: 1.16rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.orders-board-next-code strong small {
+  color: #53617f;
+  font-size: 0.58rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.orders-board-next-code.can-edit {
+  cursor: pointer;
+}
+
+.orders-board-next-code.can-edit:hover {
+  border-color: #fb923c;
+  background: linear-gradient(135deg, #ffedd5, #ffffff);
+}
+
+.orders-numbering-modal {
+  width: min(460px, calc(100vw - 2rem));
+}
+
+.orders-numbering-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.78rem;
+  padding: 0.2rem 0;
+}
+
+.orders-numbering-form label {
+  display: grid;
+  gap: 0.34rem;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.orders-numbering-form input {
+  min-height: 2.65rem;
+  border: 1px solid #dfe7f2;
+  border-radius: 0.68rem;
+  color: #08275b;
+  font-size: 1rem;
+  font-weight: 900;
+  padding: 0.52rem 0.72rem;
+}
+
+.orders-numbering-form p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
 .orders-wizard-modal .orders-wizard-panel-step-2 .orders-form-grid {
   align-items: end;
   gap: 1rem 1.35rem;
@@ -52620,6 +52763,266 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 }
 
+/* Numeracion de contratos: tarjeta principal y modal pulido */
+.orders-view .orders-workflow-tabs.has-numbering {
+  grid-template-columns: minmax(0, 1fr) minmax(18.5rem, 22rem) minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 0.75rem !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+  position: relative !important;
+  width: 100% !important;
+  min-width: 18.5rem !important;
+  min-height: 7.6rem !important;
+  align-self: stretch !important;
+  justify-self: center !important;
+  border: 1px solid #e3e9f3 !important;
+  border-radius: 1.12rem !important;
+  background: #ffffff !important;
+  padding: 1.25rem 1.55rem !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-areas:
+    "label label"
+    "current next" !important;
+  gap: 1.05rem 1.55rem !important;
+  box-shadow: 0 1rem 2.4rem rgba(15, 35, 80, 0.08) !important;
+  overflow: hidden !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 3.35rem;
+  bottom: 1.4rem;
+  width: 1px;
+  background: #e6ebf4;
+  transform: translateX(-50%);
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code span {
+  grid-area: label !important;
+  color: #e84a0a !important;
+  font-size: 0.78rem !important;
+  font-weight: 950 !important;
+  letter-spacing: 0 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  text-transform: uppercase !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 0.3rem !important;
+  color: #08275b !important;
+  font-size: 2rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong:first-of-type {
+  grid-area: current !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong:last-of-type {
+  grid-area: next !important;
+  padding-left: 0.45rem;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong small {
+  display: block !important;
+  color: #737d99 !important;
+  font-size: 0.86rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code.can-edit:hover {
+  border-color: #fdba74 !important;
+  box-shadow: 0 1.15rem 2.65rem rgba(234, 88, 12, 0.12) !important;
+  transform: translateY(-1px);
+}
+
+.orders-numbering-modal {
+  width: min(560px, calc(100vw - 2rem));
+  border-radius: 1.05rem;
+  overflow: hidden;
+}
+
+.orders-numbering-modal .orders-modal-head {
+  align-items: flex-start;
+  padding: 1.05rem 1.15rem 0.95rem;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.orders-numbering-modal .orders-modal-head h3 {
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
+.orders-numbering-modal .orders-modal-head p {
+  max-width: 27rem;
+  color: #667089;
+  line-height: 1.4;
+}
+
+.orders-numbering-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  padding: 1rem 1.15rem 0.95rem;
+}
+
+.orders-numbering-preview {
+  position: relative;
+  border: 1px solid #e3e9f3;
+  border-radius: 1.05rem;
+  background: #ffffff;
+  padding: 1.15rem 1.35rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "label label"
+    "current next";
+  gap: 1.1rem 1.4rem;
+  box-shadow: 0 0.9rem 2.2rem rgba(15, 35, 80, 0.08);
+}
+
+.orders-numbering-preview::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 3.2rem;
+  bottom: 1.25rem;
+  width: 1px;
+  background: #e6ebf4;
+  transform: translateX(-50%);
+}
+
+.orders-numbering-preview > span {
+  grid-area: label;
+  color: #e84a0a;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.orders-numbering-preview strong {
+  display: grid;
+  gap: 0.3rem;
+  color: #08275b;
+  font-size: 2rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.orders-numbering-preview strong:first-of-type {
+  grid-area: current;
+}
+
+.orders-numbering-preview strong:last-of-type {
+  grid-area: next;
+  padding-left: 0.45rem;
+}
+
+.orders-numbering-preview small {
+  color: #737d99;
+  font-size: 0.86rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.orders-numbering-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.orders-numbering-fields label {
+  display: grid;
+  gap: 0.38rem;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.orders-numbering-fields input {
+  min-height: 3rem;
+  border: 1px solid #dfe7f2;
+  border-radius: 0.82rem;
+  background: #ffffff;
+  color: #08275b;
+  font-size: 1.08rem;
+  font-weight: 900;
+  padding: 0.58rem 0.78rem;
+}
+
+.orders-numbering-fields input:focus {
+  border-color: #fb923c;
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.18);
+  outline: none;
+}
+
+.orders-numbering-help,
+.orders-numbering-form .status {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.orders-numbering-form .status.error {
+  border: 1px solid #fecaca;
+  border-radius: 0.78rem;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 0.7rem 0.8rem;
+}
+
+.orders-numbering-modal .orders-modal-foot {
+  padding: 0.95rem 1.15rem 1.05rem;
+  border-top: 1px solid #eef2f7;
+}
+
+@media (max-width: 768px) {
+  .orders-view .orders-workflow-tabs.has-numbering,
+  .orders-view .orders-view-switch.orders-workflow-tabs.has-numbering.is-two-up {
+    grid-template-columns: 1fr !important;
+    gap: 0.62rem !important;
+    overflow: visible !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+    min-width: 0 !important;
+    min-height: 7rem !important;
+    padding: 1.05rem 1.18rem !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code::after {
+    top: 3rem;
+    bottom: 1.2rem;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong {
+    font-size: 1.65rem !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong small {
+    font-size: 0.72rem !important;
+  }
+
+  .orders-numbering-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 430px) {
   .clients-mobile-hero {
     grid-template-columns: minmax(0, 1fr) !important;
@@ -53429,7 +53832,10 @@ body:has(.accounting-bigcash-view) .workspace {
     min-height: 3.25rem !important;
     padding: 0.05rem 3.65rem 0 0 !important;
     display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     align-items: start !important;
+    position: relative !important;
+    gap: 0.5rem !important;
   }
 
   .orders-view .orders-board-eyebrow {
@@ -53455,6 +53861,7 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 
   .orders-view .orders-board-count {
+    position: absolute !important;
     top: 0 !important;
     right: 0 !important;
     min-width: 3.15rem !important;
@@ -53480,6 +53887,41 @@ body:has(.accounting-bigcash-view) .workspace {
     font-size: 0.54rem !important;
     font-weight: 850 !important;
     line-height: 1 !important;
+  }
+
+  .orders-view .orders-board-next-code {
+    position: static !important;
+    width: fit-content !important;
+    min-width: 10.4rem !important;
+    min-height: 2.58rem !important;
+    margin-top: 0.45rem !important;
+    border-color: #fed7aa !important;
+    border-radius: 0.74rem !important;
+    background: #fffaf6 !important;
+    padding: 0.34rem 0.48rem !important;
+    grid-template-columns: auto auto !important;
+    gap: 0.2rem 0.58rem !important;
+    align-content: center !important;
+    justify-self: start !important;
+    box-shadow: 0 0.45rem 1rem rgba(31, 45, 82, 0.06) !important;
+  }
+
+  .orders-view .orders-board-next-code span {
+    color: #ea580c !important;
+    font-size: 0.48rem !important;
+    line-height: 1 !important;
+  }
+
+  .orders-view .orders-board-next-code strong {
+    color: #0b2a60 !important;
+    font-size: 0.94rem !important;
+    line-height: 0.95 !important;
+  }
+
+  .orders-view .orders-board-next-code strong small {
+    display: block !important;
+    color: #6b7896 !important;
+    font-size: 0.45rem !important;
   }
 
   .orders-view .orders-view-switch.orders-workflow-tabs,
@@ -53739,5 +54181,200 @@ body:has(.accounting-bigcash-view) .workspace {
   .orders-view .orders-date-range-filter label span,
   .orders-view .orders-date-range-filter input {
     font-size: 0.58rem !important;
+  }
+}
+
+/* Numeracion de contratos entre Cotizaciones y Contratos */
+.orders-view .orders-workflow-tabs.has-numbering {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+  align-items: stretch;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+  width: 12.5rem !important;
+  min-width: 12.5rem !important;
+  min-height: 100% !important;
+  border-radius: 0.82rem !important;
+  align-self: stretch !important;
+  justify-self: center !important;
+  opacity: 1 !important;
+}
+
+@media (max-width: 768px) {
+  .orders-view .orders-workflow-tabs.has-numbering,
+  .orders-view .orders-view-switch.orders-workflow-tabs.has-numbering.is-two-up {
+    grid-template-columns: minmax(0, 1fr) minmax(6.8rem, 0.72fr) minmax(0, 1fr) !important;
+    gap: 0.38rem !important;
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering > button {
+    border: 1px solid #e6edf7 !important;
+    border-radius: 0.82rem !important;
+    overflow: hidden !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering > button + button {
+    border-left: 1px solid #e6edf7 !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 3.55rem !important;
+    margin: 0 !important;
+    border: 1px solid #fed7aa !important;
+    border-radius: 0.82rem !important;
+    background: #fffaf6 !important;
+    padding: 0.42rem 0.38rem !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-areas:
+      "label label"
+      "current next" !important;
+    align-content: center !important;
+    justify-content: center !important;
+    gap: 0.18rem 0.28rem !important;
+    box-shadow: none !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code span {
+    grid-area: label !important;
+    text-align: center !important;
+    color: #ea580c !important;
+    font-size: 0.45rem !important;
+    font-weight: 950 !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: 0.06rem !important;
+    color: #08275b !important;
+    font-size: 0.78rem !important;
+    font-weight: 950 !important;
+    text-align: center !important;
+    line-height: 1 !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong small {
+    display: block !important;
+    color: #6b7896 !important;
+    font-size: 0.38rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
+}
+
+/* Ajuste final: numeracion compacta entre pestañas */
+.orders-view .orders-workflow-tabs.has-numbering {
+  grid-template-columns: minmax(0, 1fr) minmax(11.5rem, 12.8rem) minmax(0, 1fr) !important;
+  gap: 0.65rem !important;
+  align-items: stretch !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+  position: relative !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 4.9rem !important;
+  border: 1px solid #e3e9f3 !important;
+  border-radius: 0.92rem !important;
+  background: #ffffff !important;
+  padding: 0.82rem 0.95rem !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-areas:
+    "label label"
+    "current next" !important;
+  gap: 0.48rem 0.74rem !important;
+  box-shadow: 0 0.55rem 1.35rem rgba(15, 35, 80, 0.06) !important;
+  align-self: stretch !important;
+  justify-self: center !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 2.45rem;
+  bottom: 0.8rem;
+  width: 1px;
+  background: #e6ebf4;
+  transform: translateX(-50%);
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code span {
+  grid-area: label !important;
+  color: #e84a0a !important;
+  font-size: 0.62rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+  text-transform: uppercase !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong {
+  display: grid !important;
+  gap: 0.16rem !important;
+  color: #08275b !important;
+  font-size: 1.48rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong:first-of-type {
+  grid-area: current !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong:last-of-type {
+  grid-area: next !important;
+  padding-left: 0.25rem !important;
+}
+
+.orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong small {
+  display: block !important;
+  color: #737d99 !important;
+  font-size: 0.58rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+}
+
+@media (max-width: 768px) {
+  .orders-view .orders-workflow-tabs.has-numbering,
+  .orders-view .orders-view-switch.orders-workflow-tabs.has-numbering.is-two-up {
+    grid-template-columns: minmax(0, 1fr) minmax(6.8rem, 0.74fr) minmax(0, 1fr) !important;
+    gap: 0.4rem !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code {
+    min-height: 3.75rem !important;
+    padding: 0.46rem 0.42rem !important;
+    border-radius: 0.78rem !important;
+    box-shadow: none !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code::after {
+    top: 1.92rem;
+    bottom: 0.55rem;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code span {
+    font-size: 0.43rem !important;
+    text-align: center !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong {
+    font-size: 0.82rem !important;
+    text-align: center !important;
+  }
+
+  .orders-view .orders-workflow-tabs.has-numbering .orders-board-next-code strong small {
+    font-size: 0.36rem !important;
   }
 }

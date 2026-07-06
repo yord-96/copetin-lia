@@ -531,6 +531,7 @@ function App() {
             drivers={controller.drivers}
             users={controller.users}
             personnelBundle={controller.personnelBundle}
+            settings={controller.settingsBundle?.settings}
             currentUser={controller.currentUser}
             readOnly={!canWriteOrders}
             formatDate={formatDate}
@@ -552,6 +553,7 @@ function App() {
             onGenerateOrderDocuments={controller.handleGenerateOrderDocuments}
             onCreateSupplier={canWriteOrders ? controller.handleCreateSupplier : undefined}
             onCreateSupplierQuote={canWriteOrders ? controller.handleCreateSupplierQuote : undefined}
+            onUpdateSettings={isDeveloper(controller.currentUser) ? controller.handleUpdateSettings : undefined}
             onOpenTransportModule={() => {
               markSidebarModuleAsSeen('devolucion_entregas');
               controller.setActiveTab('devolucion_entregas');

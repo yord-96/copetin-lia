@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Box,
@@ -87,6 +87,19 @@ const DURATION_PRICING_DEFAULT_TIERS = [
   { id: 'tier-2', fromDay: '2', toDay: '3', percent: '85' },
   { id: 'tier-3', fromDay: '4', toDay: '', percent: '50' },
 ];
+
+const formatCommercialDocumentCode = (prefix, value, size = 5) => {
+  const nextValue = Math.max(1, Math.trunc(Number(value ?? 1)));
+  const normalizedPrefix = String(prefix ?? '');
+  return normalizedPrefix ? `${normalizedPrefix}${String(nextValue).padStart(size, '0')}` : String(nextValue);
+};
+
+const parseCommercialCodeNumericPart = (code) => {
+  const match = String(code ?? '').trim().match(/(\d+)\s*$/);
+  return match ? Math.max(1, Math.trunc(Number(match[1]))) : null;
+};
+
+const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\d+\s*$/, '');
 
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 5;
@@ -923,6 +936,7 @@ function ServiceOrdersSection({
   drivers = [],
   users = [],
   personnelBundle = { employees: [] },
+  settings = null,
   currentUser = null,
   readOnly = false,
   formatDate,
@@ -943,6 +957,7 @@ function ServiceOrdersSection({
   onGenerateOrderDocuments,
   onCreateSupplier,
   onCreateSupplierQuote,
+  onUpdateSettings,
   onOpenTransportModule,
   onOpenInventoryModule,
   onOpenReportsModule,
@@ -994,12 +1009,107 @@ function ServiceOrdersSection({
   const [supplierCoverageDraft, setSupplierCoverageDraft] = useState(buildEmptySupplierCoverageDraft);
   const [supplierCoverageError, setSupplierCoverageError] = useState('');
   const [isSavingSupplierCoverage, setIsSavingSupplierCoverage] = useState(false);
+  const [numberingEditorOpen, setNumberingEditorOpen] = useState(false);
+  const [numberingDraft, setNumberingDraft] = useState({ currentCode: '', followingCode: '' });
+  const [numberingError, setNumberingError] = useState('');
+  const [isSavingNumbering, setIsSavingNumbering] = useState(false);
 
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const canChooseResponsibles = isDeveloper(currentUser);
+  const contractNumberingInfo = useMemo(() => {
+    const numbering = settings?.numbering ?? {};
+    const prefix = String(numbering.contractPrefix ?? '');
+    const configuredNext = Math.max(1, Math.trunc(Number(numbering.contractNext ?? 1)));
+    const occupiedCodes = new Set();
+    const matchingNumbers = [];
+    const addCode = (code) => {
+      const normalizedCode = String(code ?? '').trim();
+      if (!normalizedCode) return;
+      occupiedCodes.add(normalizedCode);
+      if (parseCommercialCodePrefix(normalizedCode) === prefix) {
+        const numericPart = parseCommercialCodeNumericPart(normalizedCode);
+        if (numericPart) matchingNumbers.push(numericPart);
+      }
+    };
+
+    contracts.forEach((contract) => addCode(contract?.contractCode));
+    rentals
+      .filter((rental) => rental && !rental.deletedAt && rental.status !== 'cancelled')
+      .forEach((rental) => addCode(rental?.contractCode));
+
+    let next = configuredNext;
+    let attempts = 0;
+    while (attempts < 100000 && occupiedCodes.has(formatCommercialDocumentCode(prefix, next))) {
+      next += 1;
+      attempts += 1;
+    }
+
+    const latest = matchingNumbers.length > 0 ? Math.max(...matchingNumbers) : null;
+    return {
+      prefix,
+      configuredNext,
+      next,
+      nextCode: formatCommercialDocumentCode(prefix, next),
+      followingCode: formatCommercialDocumentCode(prefix, next + 1),
+      latestCode: latest ? formatCommercialDocumentCode(prefix, latest) : '',
+      nextAfterLatestCode: latest ? formatCommercialDocumentCode(prefix, latest + 1) : '',
+    };
+  }, [contracts, rentals, settings]);
+
+  const canEditContractNumbering = Boolean(onUpdateSettings) && isDeveloper(currentUser);
+
+  const openContractNumberingEditor = () => {
+    if (!canEditContractNumbering) return;
+    setNumberingDraft({
+      currentCode: contractNumberingInfo.nextCode,
+      followingCode: contractNumberingInfo.followingCode,
+    });
+    setNumberingError('');
+    setNumberingEditorOpen(true);
+  };
+
+  const saveContractNumbering = async () => {
+    if (!canEditContractNumbering) return;
+    const currentCode = String(numberingDraft.currentCode ?? '').trim();
+    const followingCode = String(numberingDraft.followingCode ?? '').trim();
+    const currentNumber = parseCommercialCodeNumericPart(currentCode);
+    const followingNumber = parseCommercialCodeNumericPart(followingCode);
+    const currentPrefix = parseCommercialCodePrefix(currentCode);
+    const followingPrefix = parseCommercialCodePrefix(followingCode);
+
+    if (!currentNumber || !followingNumber) {
+      setNumberingError('Ambos codigos deben terminar en un numero.');
+      return;
+    }
+    if (currentPrefix !== followingPrefix) {
+      setNumberingError('Actual y siguiente deben usar el mismo prefijo.');
+      return;
+    }
+    if (followingNumber !== currentNumber + 1) {
+      setNumberingError('El siguiente debe ser exactamente el numero posterior al actual.');
+      return;
+    }
+
+    setIsSavingNumbering(true);
+    setNumberingError('');
+    try {
+      await onUpdateSettings?.({
+        numbering: {
+          contractPrefix: currentPrefix,
+          contractNext: currentNumber,
+        },
+      });
+      setNumberingEditorOpen(false);
+      setActionFeedback(`Numeracion de contratos actualizada: actual ${currentCode}, siguiente ${followingCode}.`);
+    } catch (requestError) {
+      setNumberingError(requestError.message || 'No se pudo actualizar la numeracion.');
+    } finally {
+      setIsSavingNumbering(false);
+    }
+  };
 
   const responsibleOptions = useMemo(() => {
     const entries = [];
@@ -4225,24 +4335,38 @@ function ServiceOrdersSection({
           </div>
         </div>
 
-        <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''}`}>
-          {workflowTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`${activeView === tab.id ? 'active' : ''} ${tab.accent}`}
-              onClick={() => setActiveView(tab.id)}
-            >
-              <span className="orders-workflow-icon">
-                <OrdersKpiIcon kind={tab.icon} />
-              </span>
-              <span className="orders-workflow-copy">
-                <strong>{tab.title}</strong>
-                <small>{tab.subtitle}</small>
-              </span>
-              <span className="orders-workflow-count">{tab.count}</span>
-              {tab.badge > 0 ? <span className="orders-notification-badge">{tab.badge}</span> : null}
-            </button>
+        <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''} ${activeView === 'contracts' ? 'has-numbering' : ''}`}>
+          {workflowTabs.map((tab, index) => (
+            <Fragment key={tab.id}>
+              <button
+                type="button"
+                className={`${activeView === tab.id ? 'active' : ''} ${tab.accent}`}
+                onClick={() => setActiveView(tab.id)}
+              >
+                <span className="orders-workflow-icon">
+                  <OrdersKpiIcon kind={tab.icon} />
+                </span>
+                <span className="orders-workflow-copy">
+                  <strong>{tab.title}</strong>
+                  <small>{tab.subtitle}</small>
+                </span>
+                <span className="orders-workflow-count">{tab.count}</span>
+                {tab.badge > 0 ? <span className="orders-notification-badge">{tab.badge}</span> : null}
+              </button>
+              {activeView === 'contracts' && index === 0 ? (
+                <button
+                  type="button"
+                  className={`orders-board-next-code ${canEditContractNumbering ? 'can-edit' : ''}`}
+                  onClick={openContractNumberingEditor}
+                  disabled={!canEditContractNumbering}
+                  title={canEditContractNumbering ? 'Editar numeracion de contratos' : 'Numeracion actual de contratos'}
+                >
+                  <span>Numeracion</span>
+                  <strong><small>Actual</small>{contractNumberingInfo.nextCode}</strong>
+                  <strong><small>Siguiente</small>{contractNumberingInfo.followingCode}</strong>
+                </button>
+              ) : null}
+            </Fragment>
           ))}
         </div>
 
@@ -7866,6 +7990,78 @@ function ServiceOrdersSection({
               </div>
             </footer>
           </div>
+        </div>
+      ) : null}
+
+      {numberingEditorOpen ? (
+        <div className="orders-modal-backdrop" onClick={() => setNumberingEditorOpen(false)}>
+          <section className="orders-modal orders-numbering-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Numeracion de contratos</h3>
+                <p>Ajusta el correlativo automatico que se usara al crear contratos o aprobar cotizaciones.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setNumberingEditorOpen(false)}>
+                x
+              </button>
+            </header>
+
+            <div className="orders-numbering-form">
+              <div className="orders-numbering-preview" aria-label="Vista previa de numeracion">
+                <span>Numeracion</span>
+                <strong>
+                  <small>Actual</small>
+                  {numberingDraft.currentCode || '-'}
+                </strong>
+                <strong>
+                  <small>Siguiente</small>
+                  {numberingDraft.followingCode || '-'}
+                </strong>
+              </div>
+
+              <div className="orders-numbering-fields">
+                <label>
+                  Codigo actual
+                  <input
+                    value={numberingDraft.currentCode}
+                    onChange={(event) => {
+                      const currentCode = event.target.value;
+                      const currentNumber = parseCommercialCodeNumericPart(currentCode);
+                      const currentPrefix = parseCommercialCodePrefix(currentCode);
+                      setNumberingDraft({
+                        currentCode,
+                        followingCode: currentNumber ? formatCommercialDocumentCode(currentPrefix, currentNumber + 1) : numberingDraft.followingCode,
+                      });
+                      setNumberingError('');
+                    }}
+                    placeholder="Ej: 1573"
+                  />
+                </label>
+                <label>
+                  Codigo siguiente
+                  <input
+                    value={numberingDraft.followingCode}
+                    onChange={(event) => {
+                      setNumberingDraft((current) => ({ ...current, followingCode: event.target.value }));
+                      setNumberingError('');
+                    }}
+                    placeholder="Ej: 1574"
+                  />
+                </label>
+              </div>
+              <p className="orders-numbering-help">El codigo actual sera el proximo contrato automatico. El siguiente debe ser el correlativo inmediato.</p>
+              {numberingError ? <p className="status error">{numberingError}</p> : null}
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setNumberingEditorOpen(false)} disabled={isSavingNumbering}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={saveContractNumbering} disabled={isSavingNumbering}>
+                {isSavingNumbering ? 'Guardando...' : 'Guardar numeracion'}
+              </button>
+            </footer>
+          </section>
         </div>
       ) : null}
     </section>
