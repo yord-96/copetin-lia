@@ -59,6 +59,12 @@ const normalizeText = (value) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
+const getInventoryLineKey = (line, index = 0) => String(
+  line?.lineKey
+  ?? line?.returnLineKey
+  ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
+).trim();
+
 const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
   const cleanFilePart = (value) =>
     String(value ?? '')
@@ -1047,11 +1053,12 @@ const repairContract1544InventoryFlow = (state, now) => {
       deliveryFeeReason: contract.deliveryFeeReason ?? 'covered',
       prepaidClientId: null,
       prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
-      items: (contract.items ?? []).map((line) => {
+      items: (contract.items ?? []).map((line, index) => {
         const item = state.items.find((entry) => entry.id === line.itemId);
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
         const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
         return {
+          lineKey: getInventoryLineKey(line, index),
           itemId: line.itemId,
           itemName: line.itemName || item?.name || 'Item',
           rentalPriceBs,
@@ -1544,7 +1551,12 @@ const normalizeState = (state) => {
         contractCode: String(rental?.contractCode ?? '').trim() || null,
         customerName: String(rental?.customerName ?? '').trim(),
         customerPhone: String(rental?.customerPhone ?? '').trim(),
-        items: Array.isArray(rental?.items) ? rental.items : [],
+        items: Array.isArray(rental?.items)
+          ? rental.items.map((line, index) => ({
+            ...line,
+            lineKey: getInventoryLineKey(line, index),
+          }))
+          : [],
         services: normalizeContractServices(rental?.services),
         logisticsMode,
         deliveryChargeMode: deliveryCharge.deliveryChargeMode,
@@ -1737,7 +1749,8 @@ const normalizeState = (state) => {
     ? source.quotes.map((quote) => {
       const items = Array.isArray(quote?.items)
         ? quote.items
-          .map((line) => ({
+          .map((line, index) => ({
+            lineKey: getInventoryLineKey(line, index),
             itemId: String(line?.itemId ?? '').trim(),
             itemName: String(line?.itemName ?? '').trim(),
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
@@ -1871,7 +1884,8 @@ const normalizeState = (state) => {
     ? source.contracts.map((contract) => {
       const items = Array.isArray(contract?.items)
         ? contract.items
-          .map((line) => ({
+          .map((line, index) => ({
+            lineKey: getInventoryLineKey(line, index),
             itemId: String(line?.itemId ?? '').trim(),
             itemName: String(line?.itemName ?? '').trim(),
             quantity: Math.max(1, Math.trunc(Number(line?.quantity ?? 1))),
@@ -2523,6 +2537,35 @@ const normalizeState = (state) => {
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
     })).filter((presence) => presence.userId && presence.sessionId)
     : [];
+
+  const activeReservedByItem = new Map();
+  source.rentals
+    .filter((rental) => ['active', 'confirmed', 'pending'].includes(normalizeRentalStatus(rental?.status)) && !rental?.deletedAt)
+    .forEach((rental) => {
+      (Array.isArray(rental?.items) ? rental.items : []).forEach((line) => {
+        const itemId = String(line?.itemId ?? '').trim();
+        if (!itemId) return;
+        const reservedQty = Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? line?.quantity ?? 0)));
+        if (reservedQty <= 0) return;
+        activeReservedByItem.set(itemId, Number(activeReservedByItem.get(itemId) ?? 0) + reservedQty);
+      });
+    });
+  const recoveryByItem = new Map();
+  source.stockRecoveries.forEach((entry) => {
+    const itemId = String(entry?.itemId ?? '').trim();
+    if (!itemId) return;
+    recoveryByItem.set(itemId, Number(recoveryByItem.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))));
+  });
+  source.items.forEach((item) => {
+    if (!item || item.controlsStock === false) return;
+    const totalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
+    const reservedQty = Math.max(0, Math.trunc(Number(activeReservedByItem.get(String(item.id)) ?? 0)));
+    const recoveryQty = Math.max(0, Math.trunc(Number(recoveryByItem.get(String(item.id)) ?? 0)));
+    if (reservedQty <= 0 && recoveryQty <= 0) return;
+    const maxAvailable = Math.max(0, totalStock - reservedQty - recoveryQty);
+    item.availableStock = Math.min(Math.max(0, Math.trunc(Number(item.availableStock ?? 0))), maxAvailable);
+  });
+
   return normalizeBusinessTextInState(source);
 };
 
@@ -10950,7 +10993,7 @@ const createWebBridge = () => ({
           syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
         }
 
-        const normalizedItems = requestedItems.map((line) => {
+        const normalizedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now);
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
@@ -10964,6 +11007,7 @@ const createWebBridge = () => ({
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
           return {
+            lineKey: getInventoryLineKey(line, index),
             itemId: item.id,
             itemName: item.name,
             quantity,
@@ -11138,7 +11182,7 @@ const createWebBridge = () => ({
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
-          quote.items = requestedItems.map((line) => {
+          quote.items = requestedItems.map((line, index) => {
             const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
@@ -11152,6 +11196,7 @@ const createWebBridge = () => ({
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
               : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
+              lineKey: getInventoryLineKey(line, index),
               itemId: item.id,
               itemName: item.name,
               quantity,
@@ -11340,7 +11385,7 @@ const createWebBridge = () => ({
           syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
         }
 
-        const normalizedItems = requestedItems.map((line) => {
+        const normalizedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now);
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
 
@@ -11355,6 +11400,7 @@ const createWebBridge = () => ({
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : Number(Math.max(0, grossLineTotalBs - lineDiscountBs).toFixed(2));
           return {
+            lineKey: getInventoryLineKey(line, index),
             itemId: item.id,
             itemName: item.name,
             quantity,
@@ -11548,7 +11594,7 @@ const createWebBridge = () => ({
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
-          const normalizedItems = requestedItems.map((line) => {
+          const normalizedItems = requestedItems.map((line, index) => {
             const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
@@ -11562,6 +11608,7 @@ const createWebBridge = () => ({
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
               : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
+              lineKey: getInventoryLineKey(line, index),
               itemId: item.id,
               itemName: item.name,
               quantity,
@@ -12210,11 +12257,12 @@ const createWebBridge = () => ({
           const current = Number(supplierSupportByItem.get(line.itemId) ?? 0);
           supplierSupportByItem.set(line.itemId, current + Math.max(0, Number(line.neededQty ?? 0)));
         });
-        const operationalRequestedItems = requestedItems.map((line) => {
+        const operationalRequestedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now.toISOString());
           if (!item) throw new Error('Uno de los items seleccionados ya no existe.');
           return {
             ...line,
+            lineKey: getInventoryLineKey(line, index),
             itemId: item.id,
             _resolvedItem: item,
           };
@@ -12295,7 +12343,7 @@ const createWebBridge = () => ({
           })
           .filter(Boolean);
 
-        const rentalItems = operationalRequestedItems.map((line) => {
+        const rentalItems = operationalRequestedItems.map((line, index) => {
           const item = line._resolvedItem ?? state.items.find((entry) => entry.id === line.itemId);
           if (!item) {
             throw new Error('Uno de los items seleccionados ya no existe.');
@@ -12348,6 +12396,7 @@ const createWebBridge = () => ({
           }
 
           return {
+            lineKey: getInventoryLineKey(line, index),
             itemId: item.id,
             itemName: item.name,
             rentalPriceBs,
@@ -12770,8 +12819,14 @@ const createWebBridge = () => ({
 
         let penaltiesBs = 0;
         let internalPenaltiesBs = 0;
-        const returnReport = rental.items.map((rentalLine) => {
-          const incomingLine = lines.find((entry) => entry.itemId === rentalLine.itemId);
+        const returnReport = rental.items.map((rentalLine, index) => {
+          const rentalLineKey = getInventoryLineKey(rentalLine, index);
+          const incomingLine = lines.find((entry) => String(entry?.lineKey ?? entry?.returnLineKey ?? '') === rentalLineKey)
+            ?? lines.find((entry) => (
+              !entry?.lineKey
+              && !entry?.returnLineKey
+              && entry.itemId === rentalLine.itemId
+            ));
           if (!incomingLine) {
             throw new Error(`Falta detalle de devolucion para "${rentalLine.itemName}".`);
           }
@@ -12871,6 +12926,7 @@ const createWebBridge = () => ({
             }
 
             return {
+              lineKey: rentalLineKey,
               itemId: rentalLine.itemId,
               itemName: rentalLine.itemName,
               expectedQty,
@@ -12892,6 +12948,7 @@ const createWebBridge = () => ({
           }
 
           return {
+            lineKey: rentalLineKey,
             itemId: rentalLine.itemId,
             itemName: rentalLine.itemName,
             expectedQty,
