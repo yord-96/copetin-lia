@@ -2,6 +2,7 @@ import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
+const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
 const SYNC_THROTTLE_MS = 2000;
 const REMOTE_POLL_MS = 30000;
 const REMOTE_POLL_HIDDEN_MS = 120000;
@@ -171,6 +172,29 @@ const hasBusinessData = (state) =>
 
 const getLocalStorageBridge = () => getWebBridge().__storage;
 
+const canUseBrowserStorage = () => {
+  try {
+    return typeof window !== 'undefined' && Boolean(window.localStorage);
+  } catch {
+    return false;
+  }
+};
+
+const getCachedServerRevision = () => {
+  if (!canUseBrowserStorage()) return null;
+  return window.localStorage.getItem(SERVER_REVISION_STORAGE_KEY);
+};
+
+const setCachedServerRevision = (revision) => {
+  if (!canUseBrowserStorage() || !revision) return;
+  window.localStorage.setItem(SERVER_REVISION_STORAGE_KEY, String(revision));
+};
+
+const hasCachedLocalState = () => {
+  if (!canUseBrowserStorage()) return false;
+  return Boolean(window.localStorage.getItem(WEB_DB_STORAGE_KEY));
+};
+
 const replaceLocalState = async (state) => {
   const storage = getLocalStorageBridge();
   if (storage?.replaceState && state) {
@@ -207,6 +231,7 @@ const fetchServerState = async (reason = 'sync') => {
   });
   if (payload && Object.prototype.hasOwnProperty.call(payload, 'revision')) {
     lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
   }
   return payload;
 };
@@ -318,6 +343,7 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
   const payload = await response.json().catch(() => null);
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
   }
   return payload;
 };
@@ -434,10 +460,27 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
 
   sharedSyncPromise = (async () => {
   try {
+    if (!force && hasCachedLocalState()) {
+      const meta = await fetchServerMeta();
+      const remoteRevision = meta?.revision ?? null;
+      const cachedRevision = getCachedServerRevision();
+      if (remoteRevision && cachedRevision && remoteRevision === cachedRevision) {
+        resetRemoteBackoff();
+        lastSharedRevision = remoteRevision;
+        lastSharedSyncAt = Date.now();
+        hasLoadedServerState = true;
+        return;
+      }
+    }
+
     const payload = await fetchServerState(reason);
     resetRemoteBackoff();
     if (payload?.initialized && payload.state) {
       await replaceLocalState(payload.state);
+      if (payload.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
       lastSharedSyncAt = Date.now();
       hasLoadedServerState = true;
       return;
