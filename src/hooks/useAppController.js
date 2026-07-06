@@ -1788,7 +1788,9 @@ export const useAppController = () => {
     }
   };
 
-  const handlePrintCashMovementReceipt = async (movementId) => {
+  const handlePrintCashMovementReceipt = async (payload) => {
+    const requestPayload = payload && typeof payload === 'object' ? payload : { movementId: payload };
+    const movementId = requestPayload.movementId;
     if (!movementId) {
       setError('No se pudo identificar el movimiento de caja.');
       return;
@@ -1796,7 +1798,7 @@ export const useAppController = () => {
 
     setError('');
     try {
-      return await api.printer.printCashMovementReceipt({ movementId });
+      return await api.printer.printCashMovementReceipt(requestPayload);
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo imprimir el recibo de caja.');

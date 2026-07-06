@@ -932,6 +932,12 @@ function AccountingSection({
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
     [visiblePettyExpenseRows],
   );
+  const getPersonnelAdvanceRegisteredBy = useCallback((movement) => {
+    const creator = String(movement?.createdByName ?? movement?.userName ?? movement?.createdBy ?? '').trim();
+    const worker = String(movement?.responsible ?? '').trim();
+    if (creator && normalizeText(creator) !== normalizeText(worker)) return creator;
+    return currentUserName || creator || '-';
+  }, [currentUserName]);
 
   const selectedDayAdvanceRows = useMemo(
     () => personnelAdvanceRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
@@ -1527,10 +1533,10 @@ function AccountingSection({
     try {
       printWindow = openReceiptWindow();
       let result = onPrintCashMovementReceipt
-        ? await onPrintCashMovementReceipt(movementId)
+        ? await onPrintCashMovementReceipt({ movementId, printedByName: currentUserName })
         : null;
       if (!result?.html) {
-        result = await api.printer.printCashMovementReceipt({ movementId });
+        result = await api.printer.printCashMovementReceipt({ movementId, printedByName: currentUserName });
       }
       writeReceiptWindow(printWindow, result);
     } catch (error) {
@@ -3665,6 +3671,12 @@ function AccountingSection({
                 <tbody>
                   {filteredPettyExpenseRows.slice(0, pettyCashVisibleRows).map((movement) => {
                     const category = getPettyExpenseCategory(movement);
+                    const isPersonnelAdvanceMovement =
+                      normalizeText(movement?.accountingTag) === 'personnel_advance'
+                      || normalizeText(movement?.category).includes('adelanto');
+                    const registeredBy = isPersonnelAdvanceMovement
+                      ? getPersonnelAdvanceRegisteredBy(movement)
+                      : movement.createdBy || movement.responsible || '-';
                     const hasTransportExpense = toNumber(movement?.transportExpenseBs) > 0
                       || String(movement?.accountingTag ?? '') === 'transport_expense'
                       || (
@@ -3686,7 +3698,7 @@ function AccountingSection({
                         <td><span className={`petty-category ${category.className}`}>{category.label}</span></td>
                         <td>{formatBs(Math.abs(movement.amountBs))}</td>
                         <td>{movement.receipt || '-'}</td>
-                        <td>{movement.createdBy || movement.responsible || '-'}</td>
+                        <td>{registeredBy}</td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
@@ -3756,7 +3768,7 @@ function AccountingSection({
                         </td>
                         <td>{ci}</td>
                         <td><strong className="value-orange">- {formatBs(Math.abs(toNumber(movement.amountBs)))}</strong></td>
-                        <td>{movement.createdBy || '-'}</td>
+                        <td>{getPersonnelAdvanceRegisteredBy(movement)}</td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );

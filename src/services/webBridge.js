@@ -2371,6 +2371,8 @@ const normalizeState = (state) => {
         createdBy: isPersonnelAdvanceMovement
           ? createdBy || String(movement?.createdBy ?? '').trim() || 'Contabilidad'
           : responsible || createdBy,
+        createdByName: String(movement?.createdByName ?? movement?.userName ?? createdBy ?? movement?.createdBy ?? '').trim(),
+        userName: String(movement?.userName ?? movement?.createdByName ?? createdBy ?? movement?.createdBy ?? '').trim(),
         receipt: String(movement?.receipt ?? '').trim(),
         receiptCode: String(movement?.receiptCode ?? '').trim(),
         notes: String(movement?.notes ?? '').trim(),
@@ -3430,6 +3432,8 @@ const buildCashMovement = ({
   sourceType = null,
   sourceId = null,
   createdBy = 'Sistema',
+  createdByName = '',
+  userName = '',
   cashBoxType = CASH_BOX_TYPES.BIG_CASH,
   category = '',
   paymentMethod = '',
@@ -3461,6 +3465,8 @@ const buildCashMovement = ({
   sourceType,
   sourceId,
   createdBy,
+  createdByName: String(createdByName || userName || createdBy || '').trim(),
+  userName: String(userName || createdByName || createdBy || '').trim(),
   cashBoxType: normalizeCashBoxType(cashBoxType),
   category: String(category ?? '').trim(),
   paymentMethod: String(paymentMethod ?? '').trim(),
@@ -3902,7 +3908,7 @@ const amountToBolivianosText = (value) => {
   return `${numberToSpanish(whole)} ${String(cents).padStart(2, '0')}/100 bolivianos`;
 };
 
-const buildCashReceiptHtml = ({ state, movement }) => {
+const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const company = getDocumentCompany(state.settings ?? {});
   const rentals = Array.isArray(state.rentals) ? state.rentals : [];
   const contracts = Array.isArray(state.contracts) ? state.contracts : [];
@@ -3964,6 +3970,11 @@ const buildCashReceiptHtml = ({ state, movement }) => {
     ?? movement?.createdBy
     ?? '',
   ).trim();
+  const printedBy = String(printedByName ?? '').trim();
+  const effectiveMovementCreator =
+    isPersonnelAdvance && normalizeText(movementCreator) === normalizeText(movementResponsible)
+      ? printedBy || movementCreator
+      : movementCreator;
   const collectionUser = (isOut
     ? movementResponsible || movementCreator
     : movementCreator || movementResponsible) || 'Administracion';
@@ -4005,7 +4016,7 @@ const buildCashReceiptHtml = ({ state, movement }) => {
     : rawObservation;
   const contextReferenceLabel = isPersonnelAdvance ? 'CI trabajador' : 'Contrato';
   const contextResponsibleLabel = isPersonnelAdvance ? 'Registrado por' : 'Resp. contrato';
-  const contextResponsibleValue = isPersonnelAdvance ? movementCreator || 'Administracion' : contractResponsible;
+  const contextResponsibleValue = isPersonnelAdvance ? effectiveMovementCreator || 'Administracion' : contractResponsible;
   const receiptUserHeader = isPersonnelAdvance ? 'Trabajador' : 'Usuario que cobra';
   const paymentMethodLabel = normalizePaymentMethod(movement.paymentMethod) === 'qr' && movement.paymentAccount
     ? `QR - ${movement.paymentAccount}`
@@ -14343,6 +14354,7 @@ const createWebBridge = () => ({
     },
     printCashMovementReceipt: async (payload) => {
       const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      const printedByName = String(payload?.printedByName ?? payload?.userName ?? payload?.createdByName ?? '').trim();
       if (!movementId) {
         throw new Error('Debes indicar el movimiento de caja para imprimir recibo.');
       }
@@ -14362,7 +14374,7 @@ const createWebBridge = () => ({
       return {
         ok: true,
         title: `Recibo ${getCashReceiptCode(state, movement)}`,
-        html: buildCashReceiptHtml({ state, movement }),
+        html: buildCashReceiptHtml({ state, movement, printedByName }),
       };
     },
     printContract: async (payload) => {
