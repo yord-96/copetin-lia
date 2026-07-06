@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, replaceStateSnapshot } from '../storage/fileStateStore.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 
 const router = Router();
+const gzipAsync = promisify(gzip);
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -51,6 +54,35 @@ const requireInternalKey = (req, res, next) => {
     return;
   }
   next();
+};
+
+const sendJsonPayload = async (req, res, payload) => {
+  const body = JSON.stringify(payload);
+  const startedAt = Date.now();
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Vary', 'Accept-Encoding');
+
+  if (/\bgzip\b/i.test(String(req.get('Accept-Encoding') ?? '')) && body.length > 1024) {
+    const compressed = await gzipAsync(Buffer.from(body), { level: 6 });
+    console.info('[state-route] Estado enviado comprimido.', {
+      originalBytes: Buffer.byteLength(body),
+      gzipBytes: compressed.length,
+      durationMs: Date.now() - startedAt,
+      ip: req.ip,
+    });
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Content-Length', String(compressed.length));
+    res.send(compressed);
+    return;
+  }
+
+  console.info('[state-route] Estado enviado sin compresion.', {
+    bytes: Buffer.byteLength(body),
+    durationMs: Date.now() - startedAt,
+    ip: req.ip,
+  });
+  res.setHeader('Content-Length', String(Buffer.byteLength(body)));
+  res.send(body);
 };
 
 router.use('/__copetin_db', requireInternalKey);
@@ -194,7 +226,7 @@ router.get('/__copetin_db', async (req, res, next) => {
       return;
     }
 
-    res.json(await getStateSnapshot());
+    await sendJsonPayload(req, res, await getStateSnapshot());
   } catch (error) {
     next(error);
   }
