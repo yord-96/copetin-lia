@@ -988,6 +988,11 @@ const normalizeState = (state) => {
       ...(source.settings?.numbering ?? {}),
     },
   };
+  source.settings.maintenance = {
+    ...(source.settings?.maintenance && typeof source.settings.maintenance === 'object'
+      ? source.settings.maintenance
+      : {}),
+  };
 
   if (!Array.isArray(source.categories)) {
     source.categories = [];
@@ -1788,7 +1793,12 @@ const normalizeState = (state) => {
     }).filter((contract) => contract.contractCode && contract.customerName)
     : [];
 
-  repairDeletedContractOperationalResidues(source, now);
+  if (Number(source.settings.maintenance.deletedContractCleanupRevision ?? 0) < 1) {
+    const repairedContracts = repairDeletedContractOperationalResidues(source, now);
+    source.settings.maintenance.deletedContractCleanupRevision = 1;
+    source.settings.maintenance.deletedContractCleanupAt = now;
+    source.settings.maintenance.deletedContractCleanupCount = repairedContracts;
+  }
 
   source.contracts.forEach((contract) => {
     const activeLinkedRentals = source.rentals
@@ -7415,12 +7425,35 @@ const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
 };
 
 const repairDeletedContractOperationalResidues = (state, now) => {
-  if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals)) return;
-  state.contracts
-    .filter((contract) => contract?.deletedAt)
-    .forEach((contract) => {
-      cleanupContractDeletionEffects(state, contract, now, { skipReturned: true });
-    });
+  if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals)) return 0;
+  const deletedContracts = state.contracts.filter((contract) => contract?.deletedAt);
+  if (!deletedContracts.length) return 0;
+
+  const byId = new Map();
+  const byRentalId = new Map();
+  const byOrderCode = new Map();
+  const byContractCode = new Map();
+  deletedContracts.forEach((contract) => {
+    if (contract.id) byId.set(String(contract.id), contract);
+    if (contract.rentalId) byRentalId.set(String(contract.rentalId), contract);
+    if (contract.orderCode) byOrderCode.set(String(contract.orderCode), contract);
+    if (contract.contractCode) byContractCode.set(String(contract.contractCode).trim(), contract);
+  });
+
+  const contractsToCleanup = new Set();
+  state.rentals.forEach((rental) => {
+    if (!rental || rental.deletedAt || rental.status === 'cancelled' || rental.status === 'returned') return;
+    const contract = byId.get(String(rental.contractId ?? ''))
+      ?? byRentalId.get(String(rental.id ?? ''))
+      ?? byOrderCode.get(String(rental.orderCode ?? ''))
+      ?? byContractCode.get(String(rental.contractCode ?? '').trim());
+    if (contract) contractsToCleanup.add(contract);
+  });
+
+  contractsToCleanup.forEach((contract) => {
+    cleanupContractDeletionEffects(state, contract, now, { skipReturned: true });
+  });
+  return contractsToCleanup.size;
 };
 
 const findOrCreateCategoryByName = (state, categoryName) => {
