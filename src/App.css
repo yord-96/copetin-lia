@@ -28326,6 +28326,123 @@ button.calendar-dispatch-row:focus-visible {
   gap: 0.62rem;
 }
 
+.accounting-movement-form.is-advance {
+  width: min(720px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.petty-advance-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.petty-advance-picker {
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid #efe0d5;
+  border-radius: 0.6rem;
+  background: #fffaf7;
+  padding: 0.78rem;
+}
+
+.petty-advance-search input {
+  border-color: #df3f05;
+  box-shadow: 0 0 0 3px rgba(223, 63, 5, 0.08);
+}
+
+.petty-advance-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  max-height: 15rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.petty-advance-person {
+  display: grid;
+  gap: 0.16rem;
+  min-height: 4.2rem;
+  border: 1px solid #e7d8cf;
+  border-radius: 0.52rem;
+  background: #ffffff;
+  color: #17214d;
+  padding: 0.62rem 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.petty-advance-person:hover,
+.petty-advance-person.selected {
+  border-color: #df3f05;
+  background: #fff3eb;
+}
+
+.petty-advance-person strong {
+  font-size: 0.88rem;
+  color: #081a4a;
+}
+
+.petty-advance-person span {
+  color: #657085;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.petty-advance-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px dashed #e7d8cf;
+  border-radius: 0.52rem;
+  color: #8a5b42;
+  padding: 0.78rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.petty-advance-create {
+  border: 1px solid #c7ddcf;
+  border-radius: 0.52rem;
+  background: #eefaf2;
+  color: #176f4d;
+  padding: 0.65rem 0.78rem;
+  font-weight: 900;
+  text-align: left;
+  cursor: pointer;
+}
+
+.petty-advance-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border: 1px solid #d8e4ff;
+  border-radius: 0.52rem;
+  background: #f4f7ff;
+  padding: 0.58rem 0.7rem;
+}
+
+.petty-advance-selected small {
+  color: #657085;
+  font-weight: 900;
+}
+
+.petty-advance-selected strong {
+  color: #0f2b73;
+}
+
+@media (max-width: 720px) {
+  .petty-advance-results {
+    grid-template-columns: 1fr;
+  }
+
+  .petty-advance-selected {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .accounting-transfer-hint {
   margin: 0;
   border: 1px solid #f2d47a;

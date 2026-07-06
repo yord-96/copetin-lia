@@ -5754,6 +5754,27 @@ const getReferenceContractStyles = () => `
   .rc-mode-row img { width: 4.8mm; height: 4.8mm; object-fit: contain; }
   .rc-mode-row strong { display: block; }
   .rc-mode-row span { display: block; margin-top: .35mm; }
+  .rc-handwrite-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2mm;
+    margin-top: 1.2mm;
+  }
+  .rc-handwrite-field {
+    display: grid;
+    grid-template-columns: auto minmax(18mm, 1fr);
+    align-items: end;
+    gap: 1.2mm;
+    min-height: 4.2mm;
+    font-size: 8.2px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .rc-handwrite-field i {
+    display: block;
+    height: 3.2mm;
+    border-bottom: .25mm solid #8f806d;
+  }
   .rc-items { margin-top: 1mm; }
   .rc-items .rc-block-title { margin-bottom: 0; }
   .rc-table {
@@ -6319,7 +6340,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </div>
           <div class="rc-mode-box">
             <div class="rc-mode-row">${contractPdfIcon('enlace.png')}<p><strong>Modalidad acordada:</strong><span>${escapeHtml(logisticsLabel)}</span></p></div>
-            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span>${escapeHtml(logisticsResponsibility)}</span></p></div>
+            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span>${escapeHtml(logisticsResponsibility)}</span><span class="rc-handwrite-fields"><b class="rc-handwrite-field">Entregado por:<i></i></b><b class="rc-handwrite-field">Recogido por:<i></i></b></span></p></div>
           </div>
         </div>
       </section>

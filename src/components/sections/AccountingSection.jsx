@@ -317,6 +317,7 @@ function AccountingSection({
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
+  onCreateEmployee,
 }) {
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
@@ -385,6 +386,7 @@ function AccountingSection({
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
   const [debtActionMenuId, setDebtActionMenuId] = useState('');
+  const [advancePeopleQuery, setAdvancePeopleQuery] = useState('');
   const cashSubmitLockRef = useRef(false);
 
   const beginCashSubmit = () => {
@@ -407,6 +409,27 @@ function AccountingSection({
       .sort((a, b) => String(a?.fullName ?? '').localeCompare(String(b?.fullName ?? ''), 'es')),
     [personnelBundle?.employees],
   );
+  const filteredAdvanceEmployees = useMemo(() => {
+    const query = normalizeText(advancePeopleQuery);
+    if (!query) return personnelEmployees.slice(0, 8);
+    return personnelEmployees
+      .filter((employee) => {
+        const haystack = [
+          employee.fullName,
+          employee.documentId,
+          employee.employeeCode,
+          employee.position,
+          employee.department,
+        ].map(normalizeText).join(' ');
+        return haystack.includes(query);
+      })
+      .slice(0, 10);
+  }, [advancePeopleQuery, personnelEmployees]);
+  const advanceQueryMatchesEmployee = useMemo(() => {
+    const query = normalizeText(advancePeopleQuery);
+    if (!query) return false;
+    return personnelEmployees.some((employee) => normalizeText(employee.fullName) === query);
+  }, [advancePeopleQuery, personnelEmployees]);
   const contractByRentalId = useMemo(() => {
     const map = new Map();
     contracts.forEach((contract) => {
@@ -1365,6 +1388,9 @@ function AccountingSection({
 
   const openCashAction = (type, patch = {}) => {
     resetCashForm(patch);
+    if (type === 'advance') {
+      setAdvancePeopleQuery('');
+    }
     setCashModal(type);
   };
 
@@ -1376,6 +1402,19 @@ function AccountingSection({
       responsible: employee?.fullName ?? '',
       documentId: employee?.documentId ?? '',
       description: employee ? `Adelanto de sueldo - ${employee.fullName}` : 'Adelanto de sueldo',
+    }));
+    if (employee) {
+      setAdvancePeopleQuery(employee.fullName ?? '');
+    }
+  };
+
+  const handleUseNewAdvanceEmployee = () => {
+    const fullName = String(advancePeopleQuery ?? '').trim();
+    setCashForm((current) => ({
+      ...current,
+      employeeId: '',
+      responsible: fullName,
+      description: fullName ? `Adelanto de sueldo - ${fullName}` : 'Adelanto de sueldo',
     }));
   };
 
@@ -1397,6 +1436,7 @@ function AccountingSection({
 
   const closeCashAction = () => {
     setCashModal(null);
+    setAdvancePeopleQuery('');
     setCashActionError('');
   };
 
@@ -1636,15 +1676,35 @@ function AccountingSection({
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
       } else if (cashModal === 'advance') {
-        const employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
-        const employeeName = String(employee?.fullName ?? cashForm.responsible ?? '').trim();
+        let employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
+        const typedEmployeeName = String(cashForm.responsible || advancePeopleQuery || '').trim();
+        const matchingEmployee = typedEmployeeName
+          ? personnelEmployees.find((entry) => normalizeText(entry.fullName) === normalizeText(typedEmployeeName)) ?? null
+          : null;
+        employee = employee ?? matchingEmployee;
+        const employeeName = String(employee?.fullName ?? typedEmployeeName).trim();
         const documentId = String(cashForm.documentId ?? employee?.documentId ?? '').trim();
         const requestDate = cashForm.requestDate || selectedDate;
         if (!employeeName) {
-          throw new Error('Selecciona el trabajador que solicita el adelanto.');
+          throw new Error('Selecciona o escribe el trabajador que solicita el adelanto.');
         }
         if (!documentId) {
           throw new Error('Ingresa el numero de carnet del trabajador.');
+        }
+        if (!employee) {
+          if (!onCreateEmployee) {
+            throw new Error('No se pudo registrar personal nuevo desde Caja Chica.');
+          }
+          employee = await onCreateEmployee({
+            fullName: employeeName,
+            documentId,
+            department: 'Operaciones',
+            position: 'Personal eventual',
+            contractType: 'eventual',
+            hireDate: requestDate,
+            notes: 'Creado desde Caja Chica al registrar adelanto de personal.',
+            status: 'active',
+          });
         }
         const created = await onCreateCashMovement?.({
           type: 'egreso',
@@ -2493,7 +2553,7 @@ function AccountingSection({
       ) : null}
       {cashModal ? (
         <div className="accounting-modal-backdrop" onClick={closeCashAction}>
-          <form className="accounting-modal accounting-movement-form" onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
+          <form className={`accounting-modal accounting-movement-form ${cashModal === 'advance' ? 'is-advance' : ''}`} onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
             <header>
               <div>
                 <h3>{getCashModalTitle()}</h3>
@@ -2576,17 +2636,59 @@ function AccountingSection({
 
             {cashModal === 'advance' ? (
               <section className="petty-advance-form">
-                <label>
-                  Nombre y apellido
-                  <select value={cashForm.employeeId} onChange={(event) => handleAdvanceEmployeeChange(event.target.value)} required>
-                    <option value="">Seleccionar personal</option>
-                    {personnelEmployees.map((employee) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.fullName}{employee.documentId ? ` - CI ${employee.documentId}` : ' - CI pendiente'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="petty-advance-picker">
+                  <label className="petty-advance-search">
+                    Buscar o escribir nombre
+                    <input
+                      value={advancePeopleQuery}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setAdvancePeopleQuery(value);
+                        setCashForm((current) => ({
+                          ...current,
+                          employeeId: '',
+                          responsible: value,
+                          description: value.trim() ? `Adelanto de sueldo - ${value.trim()}` : 'Adelanto de sueldo',
+                        }));
+                      }}
+                      placeholder="Nombre, apellido, CI o cargo"
+                      autoComplete="off"
+                    />
+                  </label>
+
+                  <div className="petty-advance-results" role="listbox" aria-label="Personal para adelanto">
+                    {filteredAdvanceEmployees.map((employee) => {
+                      const isSelected = String(cashForm.employeeId) === String(employee.id);
+                      return (
+                        <button
+                          key={employee.id}
+                          type="button"
+                          className={`petty-advance-person ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleAdvanceEmployeeChange(employee.id)}
+                        >
+                          <strong>{employee.fullName}</strong>
+                          <span>{employee.documentId ? `CI ${employee.documentId}` : 'CI pendiente'} · {employee.position || employee.department || 'Personal'}</span>
+                        </button>
+                      );
+                    })}
+                    {filteredAdvanceEmployees.length === 0 ? (
+                      <p className="petty-advance-empty">No hay coincidencias en personal.</p>
+                    ) : null}
+                  </div>
+
+                  {advancePeopleQuery.trim() && !cashForm.employeeId && !advanceQueryMatchesEmployee ? (
+                    <button type="button" className="petty-advance-create" onClick={handleUseNewAdvanceEmployee}>
+                      Registrar nuevo: <strong>{advancePeopleQuery.trim()}</strong>
+                    </button>
+                  ) : null}
+
+                  {cashForm.employeeId || cashForm.responsible ? (
+                    <div className="petty-advance-selected">
+                      <small>{cashForm.employeeId ? 'Personal seleccionado' : 'Nuevo personal para registrar'}</small>
+                      <strong>{cashForm.responsible || advancePeopleQuery}</strong>
+                    </div>
+                  ) : null}
+                </div>
                 <div className="accounting-form-grid two">
                   <label>
                     Fecha de solicitud
@@ -3508,7 +3610,7 @@ function AccountingSection({
                     requestDate: selectedDate,
                     description: 'Adelanto de sueldo',
                   })}
-                  disabled={pettyCashBalanceBs <= 0 || personnelEmployees.length === 0}
+                  disabled={pettyCashBalanceBs <= 0}
                 >
                   + Adelanto
                 </button>
@@ -3618,7 +3720,7 @@ function AccountingSection({
                     requestDate: selectedDate,
                     description: 'Adelanto de sueldo',
                   })}
-                  disabled={pettyCashBalanceBs <= 0 || personnelEmployees.length === 0}
+                  disabled={pettyCashBalanceBs <= 0}
                 >
                   + Nuevo adelanto
                 </button>

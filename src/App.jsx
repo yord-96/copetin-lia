@@ -475,6 +475,7 @@ function App() {
             onVoidAndReplaceCashMovementReceipt={controller.handleVoidAndReplaceCashMovementReceipt}
             onCollectReceivable={controller.handleCollectReceivable}
             onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}
+            onCreateEmployee={controller.handleCreatePersonnelEmployee}
           />
         )}
 
