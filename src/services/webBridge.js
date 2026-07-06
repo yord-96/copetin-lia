@@ -1788,9 +1788,13 @@ const normalizeState = (state) => {
     }).filter((contract) => contract.contractCode && contract.customerName)
     : [];
 
+  repairDeletedContractOperationalResidues(source, now);
+
   source.contracts.forEach((contract) => {
     const activeLinkedRentals = source.rentals
       .filter((rental) => (
+        !contract.deletedAt
+        &&
         String(rental.contractId ?? '') === String(contract.id)
         && !rental.deletedAt
         && rental.status !== 'cancelled'
@@ -7254,8 +7258,169 @@ const releaseLatestCommercialDocumentCode = (state, code, fieldPrefix, fieldNext
   const codePrefix = parseDocumentPrefix(code);
   const currentNext = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
   if (currentPrefix === codePrefix && currentNext === numericPart + 1) {
-    numbering[fieldNext] = numericPart;
+    let next = numericPart;
+    while (next > 1) {
+      const previousCode = currentPrefix ? `${currentPrefix}${formatDocNumber(next - 1)}` : String(next - 1);
+      if (commercialDocumentCodeExists(state, 'contracts', 'contractCode', previousCode)) break;
+      next -= 1;
+    }
+    numbering[fieldNext] = next;
   }
+};
+
+const rentalMatchesContract = (rental, contract) => {
+  if (!rental || !contract) return false;
+  const rentalId = String(rental.id ?? '');
+  const rentalContractId = String(rental.contractId ?? '');
+  const rentalOrderCode = String(rental.orderCode ?? '');
+  const rentalContractCode = String(rental.contractCode ?? '').trim();
+  return (
+    (contract.rentalId && rentalId === String(contract.rentalId))
+    || (contract.id && rentalContractId === String(contract.id))
+    || (contract.orderCode && rentalOrderCode === String(contract.orderCode))
+    || (contract.contractCode && rentalContractCode === String(contract.contractCode).trim())
+  );
+};
+
+const isInventoryMovementLinkedToRental = (movement, rental, contract) => {
+  const orderCode = String(rental?.orderCode ?? '').trim();
+  const rentalId = String(rental?.id ?? '').trim();
+  const contractCode = String(contract?.contractCode ?? '').trim();
+  const contractId = String(contract?.id ?? '').trim();
+  const reference = String(movement?.reference ?? movement?.orderCode ?? movement?.linkedOrderCode ?? '').trim();
+  const sourceId = String(movement?.sourceId ?? movement?.rentalId ?? movement?.contractId ?? '').trim();
+  const sourceType = String(movement?.sourceType ?? '').trim();
+  const text = `${movement?.reason ?? ''} ${movement?.detail ?? ''} ${movement?.observations ?? ''}`.trim();
+  return (
+    (orderCode && reference === orderCode)
+    || (rentalId && sourceId === rentalId)
+    || (contractId && sourceId === contractId)
+    || (sourceType === 'rental' && rentalId && sourceId === rentalId)
+    || (sourceType === 'contract' && contractId && sourceId === contractId)
+    || (orderCode && text.includes(orderCode))
+    || (contractCode && text.includes(contractCode))
+  );
+};
+
+const restoreRentalReservedStock = (state, rental, now) => {
+  (rental.items ?? []).forEach((line) => {
+    const item = state.items.find((entry) => entry.id === line.itemId);
+    if (!item || lineControlsStock(line, item) === false) return;
+    const reservedQty = Number.isFinite(Number(line.internalReservedQty))
+      ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+      : Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+    if (reservedQty <= 0) return;
+    item.availableStock = Math.min(Number(item.totalStock ?? 0), Number(item.availableStock ?? 0) + reservedQty);
+    item.updatedAt = now;
+  });
+};
+
+const cleanupRentalOperationalResidues = (state, rental, contract, now, options = {}) => {
+  const { skipReturned = false } = options;
+  if (!rental || rental.deletedAt || rental.status === 'cancelled') return false;
+  if (rental.status === 'returned') {
+    if (skipReturned) return false;
+    throw new Error('No se puede eliminar completamente porque la orden ya fue devuelta/cerrada.');
+  }
+
+  restoreRentalReservedStock(state, rental, now);
+
+  const linkedDeliveryIds = new Set();
+  state.deliveries.forEach((delivery) => {
+    if (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode) {
+      linkedDeliveryIds.add(String(delivery.id ?? ''));
+      delivery.status = 'cancelada';
+      delivery.deletedAt = now;
+      delivery.updatedAt = now;
+    }
+  });
+
+  state.transportRoutes.forEach((route) => {
+    const hasLinkedStop = Array.isArray(route.stops)
+      && route.stops.some((stop) => linkedDeliveryIds.has(String(stop.deliveryId ?? '')));
+    if (hasLinkedStop) {
+      route.deletedAt = now;
+      route.updatedAt = now;
+    }
+  });
+
+  state.inventoryMovements = (state.inventoryMovements ?? [])
+    .filter((movement) => !isInventoryMovementLinkedToRental(movement, rental, contract));
+
+  state.cashMovements.forEach((movement) => {
+    const linkedToRental = String(movement.sourceType ?? '') === 'rental' && String(movement.sourceId ?? '') === String(rental.id);
+    const linkedByOrder = rental.orderCode && String(movement.linkedOrderCode ?? '') === String(rental.orderCode);
+    if (linkedToRental || linkedByOrder) {
+      movement.voidedAt = movement.voidedAt ?? now;
+      movement.voidedBy = movement.voidedBy || 'Sistema';
+      movement.updatedAt = now;
+      movement.notes = [movement.notes, `Anulado por eliminacion del contrato ${contract?.contractCode ?? rental.contractCode ?? ''}.`]
+        .filter(Boolean)
+        .join(' | ');
+    }
+  });
+
+  state.generatedReports.forEach((report) => {
+    if (String(report.sourceId ?? '') === String(rental.id)) {
+      report.deletedAt = now;
+      report.updatedAt = now;
+    }
+  });
+
+  state.supplierLoans.forEach((loan) => {
+    const linkedToContract = String(loan.sourceContractId ?? '') === String(contract?.id ?? '');
+    const linkedToRental = String(loan.sourceRentalId ?? '') === String(rental.id);
+    const linkedByOrder = rental.orderCode && String(loan.sourceOrderCode ?? '') === String(rental.orderCode);
+    if ((linkedToContract || linkedToRental || linkedByOrder) && loan.autoCreated) {
+      loan.deletedAt = now;
+      loan.updatedAt = now;
+      loan.status = 'anulado';
+    }
+  });
+
+  rental.deletedAt = now;
+  rental.status = 'cancelled';
+  rental.updatedAt = now;
+  return true;
+};
+
+const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
+  if (!state.settings) state.settings = {};
+  if (!state.settings.numbering) state.settings.numbering = {};
+  if (!Array.isArray(state.rentals)) state.rentals = [];
+  if (!Array.isArray(state.deliveries)) state.deliveries = [];
+  if (!Array.isArray(state.transportRoutes)) state.transportRoutes = [];
+  if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
+  if (!Array.isArray(state.cashMovements)) state.cashMovements = [];
+  if (!Array.isArray(state.generatedReports)) state.generatedReports = [];
+  if (!Array.isArray(state.supplierLoans)) state.supplierLoans = [];
+  if (!Array.isArray(state.quotes)) state.quotes = [];
+
+  const linkedRentals = state.rentals.filter((rental) => rentalMatchesContract(rental, contract));
+  linkedRentals.forEach((rental) => cleanupRentalOperationalResidues(state, rental, contract, now, options));
+
+  state.quotes.forEach((quote) => {
+    const linkedByQuote = contract.quoteId && String(quote.id ?? '') === String(contract.quoteId);
+    const linkedByRental = linkedRentals.some((rental) => quote.rentalId === rental.id || quote.orderCode === rental.orderCode);
+    if (linkedByQuote || linkedByRental) {
+      quote.status = quote.status === 'aprobada' ? 'borrador' : quote.status;
+      quote.approvedAt = null;
+      quote.rentalId = null;
+      quote.orderCode = null;
+      quote.updatedAt = now;
+    }
+  });
+
+  releaseLatestCommercialDocumentCode(state, contract.contractCode, 'contractPrefix', 'contractNext');
+};
+
+const repairDeletedContractOperationalResidues = (state, now) => {
+  if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals)) return;
+  state.contracts
+    .filter((contract) => contract?.deletedAt)
+    .forEach((contract) => {
+      cleanupContractDeletionEffects(state, contract, now, { skipReturned: true });
+    });
 };
 
 const findOrCreateCategoryByName = (state, categoryName) => {
@@ -11218,8 +11383,13 @@ const createWebBridge = () => ({
       transaction((state) => {
         const contract = state.contracts.find((entry) => entry.id === id);
         if (!contract) throw new Error('Contrato no encontrado.');
-        contract.deletedAt = new Date().toISOString();
-        contract.updatedAt = new Date().toISOString();
+        const now = new Date().toISOString();
+        cleanupContractDeletionEffects(state, contract, now);
+        contract.deletedAt = now;
+        contract.status = 'eliminado';
+        contract.rentalId = null;
+        contract.orderCode = null;
+        contract.updatedAt = now;
         updated = deepClone(contract);
         return state;
       });
