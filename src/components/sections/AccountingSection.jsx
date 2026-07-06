@@ -932,12 +932,51 @@ function AccountingSection({
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
     [visiblePettyExpenseRows],
   );
+
+  const getPettyCashRegisteredByForMovement = useCallback((movement) => {
+    const cleanName = (value) => {
+      const name = String(value ?? '').trim();
+      return name && normalizeText(name) !== 'sistema' ? name : '';
+    };
+    const movementSessionId = String(movement?.sessionId ?? '').trim();
+    const movementDateKey = getDateKey(movement?.createdAt);
+    const movementTime = new Date(movement?.createdAt ?? 0).getTime();
+
+    const sessionById = cashSessions.find((session) => String(session?.id ?? '').trim() === movementSessionId);
+    const sessionByIdName = cleanName(sessionById?.openedBy || sessionById?.createdBy || sessionById?.responsible);
+    if (sessionByIdName) return sessionByIdName;
+
+    const sessionByTime = cashSessions.find((session) => {
+      const openedAt = new Date(session?.openedAt ?? session?.createdAt ?? 0).getTime();
+      const closedAt = session?.closedAt ? new Date(session.closedAt).getTime() : Number.POSITIVE_INFINITY;
+      return Number.isFinite(movementTime)
+        && Number.isFinite(openedAt)
+        && movementTime >= openedAt
+        && movementTime <= closedAt;
+    });
+    const sessionByTimeName = cleanName(sessionByTime?.openedBy || sessionByTime?.createdBy || sessionByTime?.responsible);
+    if (sessionByTimeName) return sessionByTimeName;
+
+    const sameDayOpening = postedMovements.find((entry) => (
+      isPettyCash(entry)
+      && String(entry?.type ?? '').toLowerCase() === 'apertura'
+      && getDateKey(entry?.createdAt) === movementDateKey
+    ));
+    const sameDayOpeningName = cleanName(sameDayOpening?.responsible || sameDayOpening?.createdBy);
+    if (sameDayOpeningName) return sameDayOpeningName;
+
+    const sameDayReposition = pettyTransfersRows.find((entry) => getDateKey(entry?.createdAt) === movementDateKey);
+    return cleanName(sameDayReposition?.responsible || sameDayReposition?.createdBy);
+  }, [cashSessions, pettyTransfersRows, postedMovements]);
+
   const getPersonnelAdvanceRegisteredBy = useCallback((movement) => {
     const creator = String(movement?.createdByName ?? movement?.userName ?? movement?.createdBy ?? '').trim();
     const worker = String(movement?.responsible ?? '').trim();
+    const pettyRegisteredBy = getPettyCashRegisteredByForMovement(movement);
+    if (pettyRegisteredBy) return pettyRegisteredBy;
     if (creator && normalizeText(creator) !== normalizeText(worker)) return creator;
-    return currentUserName || creator || '-';
-  }, [currentUserName]);
+    return creator || currentUserName || '-';
+  }, [currentUserName, getPettyCashRegisteredByForMovement]);
 
   const selectedDayAdvanceRows = useMemo(
     () => personnelAdvanceRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
@@ -1527,16 +1566,26 @@ function AccountingSection({
     }
   };
 
-  const printCashReceipt = async (movementId) => {
+  const printCashReceipt = async (movementOrId) => {
+    const movement = typeof movementOrId === 'object' && movementOrId !== null
+      ? movementOrId
+      : sortedMovements.find((entry) => entry.id === movementOrId);
+    const movementId = movement?.id ?? movementOrId;
     if (!movementId) return;
+    const isPersonnelAdvanceMovement =
+      normalizeText(movement?.accountingTag) === 'personnel_advance'
+      || normalizeText(movement?.category).includes('adelanto');
+    const printedByName = isPersonnelAdvanceMovement
+      ? getPersonnelAdvanceRegisteredBy(movement)
+      : currentUserName;
     let printWindow = null;
     try {
       printWindow = openReceiptWindow();
       let result = onPrintCashMovementReceipt
-        ? await onPrintCashMovementReceipt({ movementId, printedByName: currentUserName })
+        ? await onPrintCashMovementReceipt({ movementId, printedByName })
         : null;
       if (!result?.html) {
-        result = await api.printer.printCashMovementReceipt({ movementId, printedByName: currentUserName });
+        result = await api.printer.printCashMovementReceipt({ movementId, printedByName });
       }
       writeReceiptWindow(printWindow, result);
     } catch (error) {
@@ -1727,7 +1776,7 @@ function AccountingSection({
           createdByName: currentUserName,
           userName: currentUserName,
         });
-        await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
+        await printCashReceipt(created?.movement ?? created ?? resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Adelanto registrado en Caja Chica y recibo generado.');
       } else if (cashModal === 'debt') {
         const debtKind = normalizeCashDebtKind(cashForm.debtKind);
@@ -1950,7 +1999,7 @@ function AccountingSection({
         <button
           type="button"
           className="cash-receipt-action"
-          onClick={() => printCashReceipt(movement.id)}
+          onClick={() => printCashReceipt(movement)}
           title="Previsualizar recibo"
         >
           Recibo
