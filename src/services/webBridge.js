@@ -975,6 +975,237 @@ const createSeedData = () => {
   };
 };
 
+const consumeRepairDocumentCode = (state, fieldPrefix, fieldNext, size = 5) => {
+  const numbering = state.settings.numbering;
+  const prefix = String(numbering[fieldPrefix] ?? '');
+  const current = Math.max(1, Number.parseInt(String(numbering[fieldNext] ?? '1'), 10) || 1);
+  numbering[fieldNext] = current + 1;
+  return `${prefix}${String(current).padStart(size, '0')}`;
+};
+
+const buildRepairDueAt = (dateKey, timeKey) => {
+  const [year, month, day] = String(dateKey ?? '').split('-').map((value) => Number.parseInt(value, 10));
+  const [hours, minutes] = String(timeKey || '23:59').split(':').map((value) => Number.parseInt(value, 10));
+  const parsed = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+};
+
+const repairContract1544InventoryFlow = (state, now) => {
+  if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals) || !Array.isArray(state.items)) return 0;
+  state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+
+  const contract = state.contracts.find((entry) => entry?.contractCode === '1544' && !entry.deletedAt);
+  if (!contract) return 0;
+
+  let rental = state.rentals.find((entry) => (
+    !entry.deletedAt
+    && entry.status !== 'cancelled'
+    && (
+      String(entry.contractId ?? '') === String(contract.id)
+      || String(entry.contractCode ?? '') === String(contract.contractCode)
+      || (contract.rentalId && String(entry.id ?? '') === String(contract.rentalId))
+    )
+  )) ?? null;
+
+  let repairCount = 0;
+  if (!rental) {
+    const orderCode = consumeRepairDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
+    const totalBs = Number(contract?.totals?.totalBs ?? 0);
+    const paidAtRentalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
+    const pendingPaymentBs = Number(Math.max(0, totalBs - paidAtRentalBs).toFixed(2));
+    const paymentStatus = paidAtRentalBs >= totalBs && totalBs > 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago';
+
+    rental = {
+      id: makeId('rent'),
+      clientId: contract.clientId ?? null,
+      contractId: contract.id,
+      contractCode: contract.contractCode,
+      orderCode,
+      customerName: contract.customerName,
+      customerPhone: contract.customerPhone,
+      contractDate: contract.contractDate || contract.createdAt || now,
+      rentalDate: contract.deliveryDate || contract.eventDate,
+      rentalAt: now,
+      dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
+      dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
+      dueAt: buildRepairDueAt(contract.pickupDate || contract.deliveryDate || contract.eventDate, contract.pickupWindowEnd || contract.eventTime || '23:59'),
+      deliveryWindowStart: contract.deliveryWindowStart || null,
+      deliveryWindowEnd: contract.deliveryWindowEnd || null,
+      pickupWindowStart: contract.pickupWindowStart || null,
+      pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
+      idCardHeld: false,
+      depositBs: 0,
+      guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0),
+      guarantee: {
+        amountBs: Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0),
+        validatedBs: contract?.guarantee?.status === 'validado' ? Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0) : 0,
+        status: contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? 'no_validado',
+        paymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
+      },
+      deliveryChargeMode: contract.deliveryChargeMode ?? 'included',
+      deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+      deliveryFeeReason: contract.deliveryFeeReason ?? 'covered',
+      prepaidClientId: null,
+      prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
+      items: (contract.items ?? []).map((line) => {
+        const item = state.items.find((entry) => entry.id === line.itemId);
+        const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+        const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
+        return {
+          itemId: line.itemId,
+          itemName: line.itemName || item?.name || 'Item',
+          rentalPriceBs,
+          damagedUnitChargeBs: Number(item?.damagedUnitChargeBs ?? rentalPriceBs * 1.2),
+          missingUnitChargeBs: Number(item?.missingUnitChargeBs ?? rentalPriceBs * 2),
+          quantity,
+          supplierBackedQty: 0,
+          internalReservedQty: quantity,
+          controlsStock: true,
+          verificationStatus: 'verified',
+          comboId: line.comboId ?? null,
+          comboName: line.comboName ?? '',
+          comboLineKey: line.comboLineKey ?? null,
+          comboComponentName: line.comboComponentName || item?.name || line.itemName || '',
+          comboQuantity: Math.max(1, Math.trunc(Number(line.comboQuantity ?? 1))),
+          comboComponentQuantity: Math.max(1, Math.trunc(Number(line.comboComponentQuantity ?? 1))),
+          comboRuleIndex: Math.max(0, Math.trunc(Number(line.comboRuleIndex ?? 0))),
+          comboSlotLabel: line.comboSlotLabel ?? '',
+          comboSelectionMode: line.comboSelectionMode ?? 'item',
+          comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+          comboCategory: line.comboCategory ?? '',
+          comboPricingRole: line.comboPricingRole ?? '',
+          comboPricingCondition: line.comboPricingCondition ?? null,
+          grossLineTotalBs: Number(line.grossLineTotalBs ?? quantity * rentalPriceBs),
+          discountPercent: Number(line.discountPercent ?? 0),
+          discountBs: Number(line.discountBs ?? 0),
+          lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+        };
+      }),
+      services: contract.services ?? [],
+      pricingPlan: contract.pricingPlan ?? null,
+      totals: {
+        ...(contract.totals ?? {}),
+        totalBs,
+        paidAtRentalBs,
+        pendingPaymentBs,
+        overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
+      },
+      payment: {
+        mode: paymentStatus,
+        status: paymentStatus,
+        paidAtRentalBs,
+        pendingPaymentBs,
+        overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
+        prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
+        initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
+        guaranteeStatus: contract?.payment?.guaranteeStatus ?? contract?.guarantee?.status ?? 'no_validado',
+        guaranteePaymentMethod: contract?.payment?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? 'efectivo',
+      },
+      notes: contract.observations ?? '',
+      billingMode: contract.billingMode ?? 'sin_factura',
+      logisticsMode: contract.logisticsMode ?? 'envio',
+      supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
+      inventoryAvailabilityAssumptions: [],
+      status: 'active',
+      createdById: contract.createdById ?? null,
+      createdByName: contract.createdByName || contract.createdBy || 'Sistema',
+      createdByRole: contract.createdByRole || 'Operacion',
+      operational: {
+        inventoryStatus: 'pendiente',
+        transportStatus: (contract.logisticsMode ?? 'envio') === 'recojo' ? 'no_aplica' : 'pendiente',
+        inventoryNote: '',
+        transportNote: '',
+        inventorySentAt: null,
+        inventoryDispatchedAt: null,
+        inventoryDispatchedByName: null,
+        inventoryDispatchedByRole: null,
+        transportSentAt: null,
+        inventoryConfirmedAt: null,
+        transportConfirmedAt: null,
+        inventoryConfirmedByName: null,
+        inventoryConfirmedByRole: null,
+        transportConfirmedByName: null,
+        transportConfirmedByRole: null,
+      },
+      createdAt: now,
+      deletedAt: null,
+    };
+    state.rentals.push(rental);
+    repairCount += 1;
+  }
+
+  const linkedMovementCount = state.inventoryMovements.filter((movement) => (
+    String(movement.contractCode ?? '') === String(contract.contractCode)
+    || String(movement.contractId ?? '') === String(contract.id)
+    || String(movement.rentalId ?? '') === String(rental.id)
+    || String(movement.reference ?? '') === String(rental.orderCode)
+  )).length;
+
+  if (linkedMovementCount === 0) {
+    rental.items = (rental.items ?? []).map((line) => {
+      const item = state.items.find((entry) => entry.id === line.itemId);
+      if (!item) return line;
+      const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+      const beforeAvailableStock = Number(item.availableStock ?? 0);
+      const beforeTotalStock = Number(item.totalStock ?? 0);
+      item.availableStock = Math.max(0, beforeAvailableStock - quantity);
+      item.updatedAt = now;
+      state.inventoryMovements.push({
+        id: makeId('mov'),
+        itemId: item.id,
+        itemName: item.name,
+        category: item.category,
+        type: 'reserva',
+        reason: `Reservado para contrato ${contract.contractCode} (${rental.orderCode})`,
+        detail: `Reserva interna de ${quantity} unidades para contrato ${contract.contractCode}`,
+        reference: rental.orderCode,
+        contractCode: contract.contractCode,
+        contractId: contract.id,
+        rentalId: rental.id,
+        orderCode: rental.orderCode,
+        deltaUnits: -quantity,
+        beforeTotalStock,
+        afterTotalStock: Number(item.totalStock ?? 0),
+        beforeAvailableStock,
+        afterAvailableStock: Number(item.availableStock ?? 0),
+        reservedStockAfter: Math.max(0, Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0)),
+        userName: rental.createdByName || contract.createdByName || 'Sistema',
+        userRole: rental.createdByRole || contract.createdByRole || 'Operacion',
+        createdAt: now,
+      });
+      return {
+        ...line,
+        controlsStock: true,
+        internalReservedQty: quantity,
+        verificationStatus: line.verificationStatus === 'pending_verification' ? 'verified' : line.verificationStatus,
+      };
+    });
+    repairCount += rental.items.length;
+  }
+
+  const contractNeedsUpdate =
+    contract.status !== 'aprobado'
+    || !contract.approvedAt
+    || contract.rejectedAt
+    || String(contract.rentalId ?? '') !== String(rental.id)
+    || String(contract.orderCode ?? '') !== String(rental.orderCode ?? '');
+
+  if (contractNeedsUpdate) {
+    contract.status = 'aprobado';
+    contract.approvedAt = contract.approvedAt ?? rental.createdAt ?? rental.rentalAt ?? now;
+    contract.rejectedAt = null;
+    contract.rentalId = rental.id;
+    contract.orderCode = rental.orderCode;
+    contract.updatedAt = now;
+  }
+
+  if (repairCount > 0 || contractNeedsUpdate) {
+    state.settings.maintenance.contract1544RepairAt = now;
+    state.settings.maintenance.contract1544RepairCount = Number(state.settings.maintenance.contract1544RepairCount ?? 0) + repairCount;
+  }
+  return repairCount;
+};
+
 const normalizeState = (state) => {
   const source = deepClone(state ?? {});
   const now = new Date().toISOString();
@@ -1793,6 +2024,8 @@ const normalizeState = (state) => {
     }).filter((contract) => contract.contractCode && contract.customerName)
     : [];
 
+  repairContract1544InventoryFlow(source, now);
+
   if (Number(source.settings.maintenance.deletedContractCleanupRevision ?? 0) < 1) {
     const repairedContracts = repairDeletedContractOperationalResidues(source, now);
     source.settings.maintenance.deletedContractCleanupRevision = 1;
@@ -2118,7 +2351,16 @@ const normalizeState = (state) => {
   };
   source.cashMovements = Array.isArray(source.cashMovements)
     ? source.cashMovements.map((movement) => {
+      const isPersonnelAdvanceMovement =
+        String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance'
+        || String(movement?.category ?? '').toLowerCase() === 'adelanto_personal';
       const responsible = resolveCashMovementResponsible(movement);
+      const createdBy = String(
+        movement?.createdByName
+        ?? movement?.userName
+        ?? movement?.createdBy
+        ?? '',
+      ).trim();
       return {
         ...movement,
         cashBoxType: normalizeCashBoxType(movement?.cashBoxType),
@@ -2126,7 +2368,9 @@ const normalizeState = (state) => {
         paymentMethod: String(movement?.paymentMethod ?? '').trim(),
         paymentAccount: normalizePaymentMethod(movement?.paymentMethod) === 'qr' ? normalizeQrPaymentAccount(movement?.paymentAccount) : '',
         responsible,
-        createdBy: responsible || String(movement?.createdBy ?? '').trim(),
+        createdBy: isPersonnelAdvanceMovement
+          ? createdBy || String(movement?.createdBy ?? '').trim() || 'Contabilidad'
+          : responsible || createdBy,
         receipt: String(movement?.receipt ?? '').trim(),
         receiptCode: String(movement?.receiptCode ?? '').trim(),
         notes: String(movement?.notes ?? '').trim(),
@@ -3714,7 +3958,12 @@ const buildCashReceiptHtml = ({ state, movement }) => {
   const isPersonnelAdvance = String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance'
     || String(movement?.category ?? '').toLowerCase() === 'adelanto_personal';
   const movementResponsible = String(movement?.responsible ?? '').trim();
-  const movementCreator = String(movement?.createdBy ?? '').trim();
+  const movementCreator = String(
+    movement?.createdByName
+    ?? movement?.userName
+    ?? movement?.createdBy
+    ?? '',
+  ).trim();
   const collectionUser = (isOut
     ? movementResponsible || movementCreator
     : movementCreator || movementResponsible) || 'Administracion';

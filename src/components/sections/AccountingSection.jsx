@@ -1718,6 +1718,8 @@ function AccountingSection({
           notes: `Fecha de solicitud: ${formatDate(requestDate)} | CI: ${documentId}${cashForm.notes ? ` | ${cashForm.notes}` : ''}`,
           accountingTag: 'personnel_advance',
           createdBy: currentUserName,
+          createdByName: currentUserName,
+          userName: currentUserName,
         });
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Adelanto registrado en Caja Chica y recibo generado.');
