@@ -186,14 +186,18 @@ export function getProjectedInventoryAvailability({
   });
 
   const hardRecords = [];
+  const releaseExcludedLines = (lines) => {
+    lines.forEach((line) => {
+      const summary = summaries.get(line.itemId);
+      if (summary) summary.activeRentalQty += line.quantity;
+    });
+  };
+
   rentals.filter(isActiveRental).forEach((rental) => {
     const contract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
     const lines = recordItemLines(rental);
     if (isExcluded(rental, exclude)) {
-      lines.forEach((line) => {
-        const summary = summaries.get(line.itemId);
-        if (summary) summary.activeRentalQty += line.quantity;
-      });
+      releaseExcludedLines(lines);
       return;
     }
     hardRecords.push({
@@ -212,9 +216,26 @@ export function getProjectedInventoryAvailability({
   });
 
   contracts.forEach((contract) => {
-    if (!contract || contract.deletedAt || isExcluded(contract, exclude)) return;
-    if (contract.rentalId || contract.orderCode) return;
+    if (!contract || contract.deletedAt) return;
     const status = String(contract.status ?? '').toLowerCase();
+    if (isExcluded(contract, exclude)) {
+      const hasExcludedActiveRental = rentals.filter(isActiveRental).some((rental) => {
+        const linkedContract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
+        return isExcluded(rental, exclude)
+          && (
+            sameId(rental.id, contract.rentalId)
+            || sameId(rental.orderCode, contract.orderCode)
+            || sameId(rental.contractId, contract.id)
+            || sameId(linkedContract?.id, contract.id)
+            || sameId(linkedContract?.contractCode, contract.contractCode)
+          );
+      });
+      if (status === 'aprobado' && !hasExcludedActiveRental) {
+        releaseExcludedLines(recordItemLines(contract));
+      }
+      return;
+    }
+    if (contract.rentalId || contract.orderCode) return;
     const record = {
       id: contract.id,
       code: contract.contractCode,
