@@ -1889,14 +1889,36 @@ function ServiceOrdersSection({
     return map;
   }, [selectedItems]);
 
+  const originalContractDemandByItemId = useMemo(() => {
+    const map = new Map();
+    if (draft.entityType !== 'contract' || !draft.recordId) return map;
+    const currentContract = contracts.find((contract) => String(contract.id ?? '') === String(draft.recordId));
+    (currentContract?.items ?? []).forEach((line) => {
+      if (isDetachedFromInventory(line)) return;
+      const itemId = String(line.itemId ?? '').trim();
+      if (!itemId) return;
+      map.set(itemId, (map.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(line.quantity ?? 0))));
+    });
+    return map;
+  }, [contracts, draft.entityType, draft.recordId]);
+
+  const getEditableAvailableStock = useCallback((line) => {
+    const originalContractQty = Math.max(0, Number(originalContractDemandByItemId.get(line.itemId) ?? 0));
+    return Math.max(
+      0,
+      Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
+      Number(line.item.availableStock ?? 0) + originalContractQty,
+    );
+  }, [originalContractDemandByItemId]);
+
   const stockIssues = useMemo(
     () => selectedItems.filter((line) => {
       if (isDetachedFromInventory(line)) return false;
-      const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+      const available = getEditableAvailableStock(line);
       const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
       return requestedForItem > available;
     }),
-    [selectedDemandByItemId, selectedItems],
+    [getEditableAvailableStock, selectedDemandByItemId, selectedItems],
   );
 
   const supplierOffersByItemId = useMemo(() => {
@@ -1989,7 +2011,7 @@ function ServiceOrdersSection({
           return;
         }
         const itemId = String(line.itemId);
-        const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+        const available = getEditableAvailableStock(line);
         const shortage = Math.max(0, line.quantity - available);
         if (shortage <= 0) {
           delete next[itemId];
@@ -2022,7 +2044,7 @@ function ServiceOrdersSection({
 
       return next;
     });
-  }, [modalOpen, selectedItems, supplierOffersByItemId]);
+  }, [getEditableAvailableStock, modalOpen, selectedItems, supplierOffersByItemId]);
 
   const supplierCoverageRows = useMemo(
     () => {
@@ -2032,7 +2054,7 @@ function ServiceOrdersSection({
         if (isDetachedFromInventory(line)) return null;
         if (processedItemIds.has(line.itemId)) return null;
         processedItemIds.add(line.itemId);
-        const available = Math.max(0, Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+        const available = getEditableAvailableStock(line);
         const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
         const shortageQty = Math.max(0, requestedForItem - available);
         if (shortageQty <= 0) return null;
@@ -2057,7 +2079,7 @@ function ServiceOrdersSection({
       })
         .filter(Boolean);
     },
-    [selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
+    [getEditableAvailableStock, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
 
   const uncoveredStockIssues = useMemo(
@@ -7290,7 +7312,7 @@ function ServiceOrdersSection({
                           const isLastComboLine = Boolean(line.comboLineKey && selectedItems[lineIndex + 1]?.comboLineKey !== line.comboLineKey);
                           const comboGroupTotalBs = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.lineTotalBs ?? 0), 0);
                           const comboGroupUnits = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
-                          const availableStock = Math.max(0, Number(availability?.projectedAvailable ?? line.item.availableStock ?? 0));
+                          const availableStock = getEditableAvailableStock(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = Math.max(0, requestedForItem - availableStock);
                           const supplierCoverageDraft = supplierFulfillmentDraftByItem[line.itemId] ?? {};
