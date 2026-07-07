@@ -55799,3 +55799,85 @@ body:has(.accounting-bigcash-view) .workspace {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Correccion final de distribucion en items seleccionados. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-table-head {
+  grid-template-columns: minmax(390px, 1fr) 9.2rem 9rem 8rem 7rem 3.2rem !important;
+  align-items: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+  grid-template-columns: minmax(390px, 1fr) 9.2rem 9rem 8rem 7rem 3.2rem !important;
+  grid-template-areas: "product qty price discount subtotal action" !important;
+  align-items: center !important;
+  gap: 0.78rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-combo-group-head,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-combo-group-foot {
+  display: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.is-combo-line {
+  border-left: 0.34rem solid #f05a16 !important;
+  background: linear-gradient(90deg, #fff7ed 0%, #ffffff 7rem) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-selected-product-cell {
+  grid-area: product !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+  grid-area: qty !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:nth-of-type(2):not(.orders-line-discount) {
+  grid-area: price !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-discount {
+  grid-area: discount !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > strong {
+  grid-area: subtotal !important;
+  justify-self: end !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-selected-remove {
+  grid-area: action !important;
+  align-self: center !important;
+  justify-self: end !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-cell {
+  grid-template-columns: 5.2rem minmax(0, 1fr) !important;
+  align-items: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-thumb {
+  width: 5.2rem !important;
+  height: 5.2rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-copy > strong {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-line-note {
+  max-width: 100% !important;
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-item-detail-chips {
+  max-height: 1.65rem !important;
+  overflow: hidden !important;
+}

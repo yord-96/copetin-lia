@@ -6940,11 +6940,19 @@ function ServiceOrdersSection({
                             <article key={`combo-${combo.id}`} className="orders-product-row orders-combo-catalog-row">
                               <div className="orders-product-thumb orders-combo-thumb">
                                 {getProductImageSrc(combo) ? (
-                                  <ProductImage
-                                    item={combo}
-                                    alt={`Imagen de ${combo.name}`}
-                                    fallback={<span>CB</span>}
-                                  />
+                                  <button
+                                    type="button"
+                                    className="orders-product-thumb-button"
+                                    onClick={() => handleOpenProductImage(combo)}
+                                    aria-label={`Ver imagen de ${combo.name} en grande`}
+                                    title="Ver imagen en grande"
+                                  >
+                                    <ProductImage
+                                      item={combo}
+                                      alt={`Imagen de ${combo.name}`}
+                                      fallback={<span>CB</span>}
+                                    />
+                                  </button>
                                 ) : <span>CB</span>}
                               </div>
                               <div className="orders-product-info">
