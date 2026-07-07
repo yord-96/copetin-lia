@@ -7137,10 +7137,17 @@ function ServiceOrdersSection({
                       {selectedItems.length === 0 ? (
                         <p className="status">Aun no agregaste items.</p>
                       ) : (
-                        selectedItems.map((line) => {
+                        selectedItems.map((line, lineIndex) => {
                           const availability = line.availability;
                           const isProvisionalItem = isDetachedFromInventory(line);
                           const detailParts = getOperationalItemDetails(line);
+                          const comboSiblingLines = line.comboLineKey
+                            ? selectedItems.filter((entry) => entry.comboLineKey === line.comboLineKey)
+                            : [];
+                          const isFirstComboLine = Boolean(line.comboLineKey && selectedItems[lineIndex - 1]?.comboLineKey !== line.comboLineKey);
+                          const isLastComboLine = Boolean(line.comboLineKey && selectedItems[lineIndex + 1]?.comboLineKey !== line.comboLineKey);
+                          const comboGroupTotalBs = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.lineTotalBs ?? 0), 0);
+                          const comboGroupUnits = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
                           const availableStock = Math.max(0, Number(availability?.projectedAvailable ?? line.item.availableStock ?? 0));
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = Math.max(0, requestedForItem - availableStock);
@@ -7155,8 +7162,23 @@ function ServiceOrdersSection({
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
                           return (
-                          <div key={line.lineKey} className={`orders-selected-row${hasUncoveredShortage ? ' stock-warning' : ''}`}>
+                          <div
+                            key={line.lineKey}
+                            className={`orders-selected-row${hasUncoveredShortage ? ' stock-warning' : ''}${line.comboLineKey ? ' is-combo-line' : ' is-standalone-line'}${line.comboPricingRole === 'price' ? ' is-combo-price-line' : ''}`}
+                          >
+                            {isFirstComboLine ? (
+                              <div className="orders-selected-combo-group-head">
+                                <span>
+                                  <strong>{line.comboName || 'Combo configurado'}</strong>
+                                  <small>{line.comboQuantity || 1} combo(s) · {comboSiblingLines.length} componente(s) · {comboGroupUnits} unidad(es)</small>
+                                </span>
+                                <em>{formatBs(comboGroupTotalBs)}</em>
+                              </div>
+                            ) : null}
                             <div>
+                              <span className={`orders-selected-origin-badge${line.comboLineKey ? ' is-combo' : ''}`}>
+                                {line.comboLineKey ? 'Parte del combo' : 'Item separado'}
+                              </span>
                               <strong>{line.item.name}</strong>
                               {line.comboName ? (
                                 <p className="orders-combo-line-note">
@@ -7389,6 +7411,11 @@ function ServiceOrdersSection({
                             <button type="button" className="danger-button" onClick={() => removeDraftItem(line.lineKey)}>
                               Quitar
                             </button>
+                            {isLastComboLine ? (
+                              <div className="orders-selected-combo-group-foot">
+                                Fin del combo {line.comboName || ''}
+                              </div>
+                            ) : null}
                           </div>
                           );
                         })
