@@ -7194,11 +7194,19 @@ function ServiceOrdersSection({
                             <div className="orders-selected-product-cell">
                               <div className={`orders-selected-thumb${getProductImageSrc(line.item) ? ' has-image' : ' has-no-image'}`}>
                                 {getProductImageSrc(line.item) ? (
-                                  <ProductImage
-                                    item={line.item}
-                                    alt={`Imagen de ${line.item.name}`}
-                                    fallback={<span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>}
-                                  />
+                                  <button
+                                    type="button"
+                                    className="orders-selected-thumb-button"
+                                    onClick={() => handleOpenProductImage(line.item)}
+                                    aria-label={`Ver imagen de ${line.item.name} en grande`}
+                                    title="Ver imagen en grande"
+                                  >
+                                    <ProductImage
+                                      item={line.item}
+                                      alt={`Imagen de ${line.item.name}`}
+                                      fallback={<span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>}
+                                    />
+                                  </button>
                                 ) : (
                                   <span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>
                                 )}
