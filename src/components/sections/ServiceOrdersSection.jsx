@@ -724,6 +724,8 @@ const buildEmptyDraft = (mode = 'quote') => {
     mode,
     entityType: 'quote',
     recordId: '',
+    rentalId: '',
+    orderCode: '',
     quoteId: '',
     recordStatus: 'borrador',
     documentCodeMode: 'auto',
@@ -1772,12 +1774,26 @@ function ServiceOrdersSection({
       const draftContractCode = draft.entityType === 'contract'
         ? String(draft.manualDocumentCode ?? '').trim()
         : '';
-      const linkedRental = draft.entityType === 'contract' && (draft.recordId || draftContractCode)
+      const draftRentalId = draft.entityType === 'contract'
+        ? String(draft.rentalId ?? '').trim()
+        : '';
+      const draftOrderCode = draft.entityType === 'contract'
+        ? String(draft.orderCode ?? '').trim()
+        : '';
+      const currentContract = draft.entityType === 'contract' && draft.recordId
+        ? contracts.find((contract) => String(contract.id ?? '') === String(draft.recordId)) ?? null
+        : null;
+      const linkedRental = draft.entityType === 'contract' && (draft.recordId || draftContractCode || draftRentalId || draftOrderCode)
         ? rentals.find((rental) => (
-          String(rental.contractId ?? '') === String(draft.recordId)
+          (draftRentalId && String(rental.id ?? '') === draftRentalId)
+          || (draftOrderCode && String(rental.orderCode ?? '').trim() === draftOrderCode)
+          || String(rental.contractId ?? '') === String(draft.recordId)
           || (draftContractCode && String(rental.contractCode ?? '').trim() === draftContractCode)
         ))
         : null;
+      const excludeRentalId = draftRentalId || currentContract?.rentalId || linkedRental?.id || null;
+      const excludeOrderCode = draftOrderCode || currentContract?.orderCode || linkedRental?.orderCode || null;
+      const excludeContractCode = draftContractCode || currentContract?.contractCode || null;
       return getProjectedInventoryAvailability({
         items,
         rentals,
@@ -1788,13 +1804,13 @@ function ServiceOrdersSection({
           recordId: draft.recordId,
           quoteId: draft.quoteId,
           contractId: draft.entityType === 'contract' ? draft.recordId : null,
-          contractCode: draftContractCode || null,
-          rentalId: linkedRental?.id ?? null,
-          orderCode: linkedRental?.orderCode ?? null,
+          contractCode: excludeContractCode,
+          rentalId: excludeRentalId,
+          orderCode: excludeOrderCode,
         },
       });
     },
-    [contracts, draft.entityType, draft.manualDocumentCode, draft.recordId, draft.quoteId, draftAvailabilityPeriod, items, quotes, rentals],
+    [contracts, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, quotes, rentals],
   );
 
   const selectedItems = useMemo(() => {
@@ -2282,6 +2298,8 @@ function ServiceOrdersSection({
     entityType,
     mode: entityType === 'contract' ? 'order' : 'quote',
     recordId: record?.id ?? '',
+    rentalId: record?.rentalId ?? '',
+    orderCode: record?.orderCode ?? '',
     quoteId: entityType === 'contract' ? String(record?.quoteId ?? '').trim() : '',
     recordStatus: record?.status ?? (entityType === 'contract' ? 'pendiente' : 'borrador'),
     documentCodeMode: record?.contractCode || record?.quoteCode ? 'manual' : 'auto',
