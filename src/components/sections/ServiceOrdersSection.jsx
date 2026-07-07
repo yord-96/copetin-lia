@@ -6866,13 +6866,19 @@ function ServiceOrdersSection({
                         {returnSummaryRows.length > 0 ? (
                           <>
                             <strong>{returnSummaryRows.reduce((sum, row) => sum + row.quantity, 0)} unidades vuelven para la fecha</strong>
-                            <div className="orders-return-mini-list">
-                              {returnSummaryRows.map((row) => (
+                            <div
+                              className="orders-return-mini-list"
+                              title={returnSummaryRows
+                                .map((row) => `${formatDate(row.date)} ${row.time || ''} - Contrato ${row.code} - ${row.quantity} u.${row.itemText ? ` (${row.itemText})` : ''}`)
+                                .join('\n')}
+                            >
+                              {returnSummaryRows.slice(0, 1).map((row) => (
                                 <small key={row.key}>
                                   {formatDate(row.date)} {row.time || ''} · Contrato {row.code} · {row.quantity} u.
                                   {row.itemText ? ` (${row.itemText})` : ''}
                                 </small>
                               ))}
+                              {returnSummaryRows.length > 1 ? <small>Ver detalle</small> : null}
                             </div>
                           </>
                         ) : (
@@ -6959,10 +6965,20 @@ function ServiceOrdersSection({
                                 </div>
                               </div>
                               <div className="orders-product-table-details">
-                                {ingredients.slice(0, 3).map((line) => (
+                                {ingredients.slice(0, 2).map((line) => (
                                   <span key={`${combo.id}-${line.itemId}`}>{line.quantity}x {line.slotLabel || line.itemName}</span>
                                 ))}
-                                {ingredients.length > 3 ? <span>+{ingredients.length - 3} mas</span> : null}
+                                {ingredients.length > 2 ? (
+                                  <span
+                                    className="orders-more-chip"
+                                    title={ingredients
+                                      .slice(2)
+                                      .map((line) => `${line.quantity}x ${line.slotLabel || line.itemName}`)
+                                      .join('\n')}
+                                  >
+                                    +{ingredients.length - 2} mas
+                                  </span>
+                                ) : null}
                               </div>
                               <strong className="orders-product-price">{formatBs(combo.rentalPriceBs)}<small>Precio unico</small></strong>
                               <span className={`orders-product-stock-badge${comboMaxQuantity > 0 ? ' available' : ''}`}>
