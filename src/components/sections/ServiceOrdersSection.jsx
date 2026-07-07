@@ -989,6 +989,7 @@ function ServiceOrdersSection({
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [isWizardSummaryCollapsed, setIsWizardSummaryCollapsed] = useState(false);
   const [comboConfigurator, setComboConfigurator] = useState(null);
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
@@ -6385,7 +6386,7 @@ function ServiceOrdersSection({
               ))}
             </div>
 
-            <div className="orders-modal-body orders-wizard-body">
+            <div className={`orders-modal-body orders-wizard-body${isWizardSummaryCollapsed ? ' is-summary-collapsed' : ''}`}>
               <section className={`orders-form-panel orders-wizard-main orders-wizard-panel-step-${currentStep + 1}`}>
                 {currentStep === 0 ? (
                   <>
@@ -7804,7 +7805,18 @@ function ServiceOrdersSection({
               <aside className="orders-catalog-panel orders-wizard-side">
                 <header className="orders-summary-head">
                   <h4>{draft.entityType === 'contract' ? 'Resumen de contrato' : 'Resumen de cotizacion'}</h4>
-                  <span className="orders-status-badge quote-draft">Borrador</span>
+                  <div className="orders-summary-actions">
+                    <span className="orders-status-badge quote-draft">Borrador</span>
+                    <button
+                      type="button"
+                      className="orders-summary-toggle"
+                      onClick={() => setIsWizardSummaryCollapsed((current) => !current)}
+                      aria-expanded={!isWizardSummaryCollapsed}
+                      title={isWizardSummaryCollapsed ? 'Mostrar resumen' : 'Contraer resumen'}
+                    >
+                      <ChevronRight aria-hidden="true" />
+                    </button>
+                  </div>
                 </header>
 
                 <div className="orders-side-context">

@@ -55347,3 +55347,141 @@ body:has(.accounting-bigcash-view) .workspace {
   padding: 0.18rem 0.48rem !important;
   font-size: 0.5rem !important;
 }
+
+/* Resumen contraible y footer horizontal de tarjetas de catalogo. */
+.orders-wizard-modal .orders-summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.orders-wizard-modal .orders-summary-toggle {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #17315f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.orders-wizard-modal .orders-summary-toggle svg {
+  width: 1rem;
+  height: 1rem;
+  transition: transform 0.18s ease;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed {
+  grid-template-columns: minmax(0, 1fr) 4.3rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-wizard-side {
+  padding: 0.65rem !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-summary-head {
+  min-height: 100%;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0.75rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-summary-head h4 {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 0.78rem !important;
+  line-height: 1 !important;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-summary-actions {
+  flex-direction: column;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-summary-toggle svg {
+  transform: rotate(180deg);
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-status-badge,
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-side-context,
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-summary-items-card,
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-form-note,
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-money-summary {
+  display: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+  max-height: 25.4rem !important;
+  min-height: 25.4rem !important;
+  grid-template-columns: repeat(auto-fill, minmax(286px, 1fr)) !important;
+}
+
+.orders-wizard-modal .orders-wizard-body.is-summary-collapsed .orders-wizard-panel-step-3 .orders-product-list {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+  min-height: 12.35rem !important;
+  grid-template-columns: 5.45rem minmax(0, 1fr) auto !important;
+  grid-template-rows: auto auto auto 1fr auto !important;
+  grid-template-areas:
+    "image title title"
+    "image category category"
+    "image chips chips"
+    "metrics metrics metrics"
+    "price stock action" !important;
+  align-items: start !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb {
+  width: 5.45rem !important;
+  height: 5.45rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-detail-line,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row > .orders-product-table-details {
+  max-height: 2.65rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics {
+  align-self: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-price {
+  grid-area: price !important;
+  align-self: center !important;
+  min-width: 5.7rem !important;
+  padding-top: 0 !important;
+  border-top: 0 !important;
+  font-size: 0.84rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-stock-badge {
+  grid-area: stock !important;
+  position: static !important;
+  align-self: center !important;
+  justify-self: center !important;
+  max-width: 7.5rem !important;
+  min-height: 1.85rem !important;
+  padding: 0.25rem 0.58rem !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row .primary-button,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row .primary-button {
+  grid-area: action !important;
+  width: auto !important;
+  min-width: 6.3rem !important;
+  min-height: 2.15rem !important;
+  align-self: center !important;
+  justify-self: end !important;
+  padding: 0.42rem 0.7rem !important;
+}
