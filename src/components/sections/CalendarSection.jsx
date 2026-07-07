@@ -321,6 +321,7 @@ function CalendarSection({
   readOnly = false,
   onCreateEvent,
   onPrintContractDocument,
+  onPrintInventoryOrderDocument,
 }) {
   const todayKey = toDateKey(new Date());
   const today = dateFromKey(todayKey);
@@ -1632,6 +1633,25 @@ function CalendarSection({
     }
   };
 
+  const openLinkedInventoryOrder = async (event) => {
+    try {
+      const { contract, rental } = getLinkedContext(event);
+      const preview = await onPrintInventoryOrderDocument?.({
+        rentalId: rental?.id ?? event.rentalId,
+        orderCode: rental?.orderCode ?? event.orderCode,
+        contractId: contract?.id ?? event.contractId,
+      });
+      if (preview?.html) {
+        setDocumentPreview({
+          title: preview.title ?? `Entrega ${contract?.contractCode ?? event.contractCode ?? event.orderCode ?? ''}`.trim(),
+          html: preview.html,
+        });
+      }
+    } catch (error) {
+      setFormError(error?.message || 'No se pudo abrir el documento de entrega.');
+    }
+  };
+
   const printDocumentPreview = () => {
     const frame = document.getElementById('calendar-document-preview-frame');
     frame?.contentWindow?.focus();
@@ -1742,13 +1762,21 @@ function CalendarSection({
                     <span>{transportStatus.detail}</span>
                   </div>
                 </div>
-                {linkedContract ? (
-                  <button type="button" className="primary-button" onClick={() => openLinkedContract(detailEvent)}>
-                    Ver contrato completo
-                  </button>
-                ) : (
+                <div className="calendar-detail-actions">
+                  {linkedRental ? (
+                    <button type="button" className="primary-button" onClick={() => openLinkedInventoryOrder(detailEvent)}>
+                      Ver documento de entrega
+                    </button>
+                  ) : null}
+                  {linkedContract ? (
+                    <button type="button" className="ghost-button" onClick={() => openLinkedContract(detailEvent)}>
+                      Ver contrato completo
+                    </button>
+                  ) : null}
+                </div>
+                {!linkedContract ? (
                   <span>No hay contrato vinculado a este evento.</span>
-                )}
+                ) : null}
               </article>
             ) : null}
           </div>

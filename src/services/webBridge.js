@@ -6432,9 +6432,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const logisticsMode = contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
   const isCustomerPickup = logisticsMode === 'recojo';
   const logisticsLabel = isCustomerPickup ? 'Recojo por cliente' : 'Envio por equipo';
-  const logisticsResponsibility = isCustomerPickup
-    ? 'El cliente recoge y devuelve los items en coordinacion con administracion.'
-    : 'El equipo de Copetin realiza la entrega y el recojo programado.';
   const durationLabel = hasDurationPricing
     ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
     : 'Precio unico';
@@ -6643,7 +6640,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </div>
           <div class="rc-mode-box">
             <div class="rc-mode-row">${contractPdfIcon('enlace.png')}<p><strong>Modalidad acordada:</strong><span>${escapeHtml(logisticsLabel)}</span></p></div>
-            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span>${escapeHtml(logisticsResponsibility)}</span><span class="rc-handwrite-fields"><b class="rc-handwrite-field">Entregado por:<i></i></b><b class="rc-handwrite-field">Recogido por:<i></i></b></span></p></div>
+            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span class="rc-handwrite-fields"><b class="rc-handwrite-field">Entregado por:<i></i></b><b class="rc-handwrite-field">Recogido por:<i></i></b></span></p></div>
           </div>
         </div>
       </section>

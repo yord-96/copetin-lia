@@ -358,6 +358,7 @@ function App() {
             readOnly={!canWriteCalendar}
             onCreateEvent={canWriteCalendar ? controller.handleCreateCalendarEvent : undefined}
             onPrintContractDocument={controller.handlePrintContractDocument}
+            onPrintInventoryOrderDocument={controller.handlePrintInventoryOrderDocument}
           />
         )}
 

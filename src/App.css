@@ -24490,9 +24490,16 @@ body,
   border-color: #f5d2a6;
 }
 
-.calendar-linked-contract-card .primary-button {
-  justify-self: start;
+.calendar-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 0.28rem;
+}
+
+.calendar-linked-contract-card .primary-button,
+.calendar-linked-contract-card .ghost-button {
+  justify-self: start;
   border-radius: 0.55rem;
   padding: 0.48rem 0.72rem;
   font-size: 0.76rem;

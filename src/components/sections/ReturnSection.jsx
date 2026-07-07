@@ -556,13 +556,15 @@ function ReturnSection({
         );
       }
 
-      addSynthetic(
-        'recojo',
-        contract?.pickupDate ?? rental.dueDate,
-        contract?.pickupWindowStart ?? rental.dueTime ?? '20:00',
-        contract?.pickupWindowEnd ?? '22:00',
-        `Recojo ${contractCode || orderCode}`,
-      );
+      if (logisticsMode !== 'recojo') {
+        addSynthetic(
+          'recojo',
+          contract?.pickupDate ?? rental.dueDate,
+          contract?.pickupWindowStart ?? rental.dueTime ?? '20:00',
+          contract?.pickupWindowEnd ?? '22:00',
+          `Recojo ${contractCode || orderCode}`,
+        );
+      }
     });
 
     return [...realRows, ...syntheticRows];
