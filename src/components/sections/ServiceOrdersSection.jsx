@@ -7141,11 +7141,10 @@ function ServiceOrdersSection({
                       </div>
                       {selectedItems.length > 0 ? (
                         <div className="orders-selected-table-head" aria-hidden="true">
-                          <span>Item</span>
+                          <span>Producto</span>
                           <span>Cantidad</span>
-                          <span>Disponibilidad</span>
                           <span>Precio unitario</span>
-                          <span>Desc.</span>
+                          <span>Descuento</span>
                           <span>Subtotal</span>
                           <span>Accion</span>
                         </div>
@@ -7192,7 +7191,19 @@ function ServiceOrdersSection({
                                 <em>{formatBs(comboGroupTotalBs)}</em>
                               </div>
                             ) : null}
-                            <div>
+                            <div className="orders-selected-product-cell">
+                              <div className={`orders-selected-thumb${getProductImageSrc(line.item) ? ' has-image' : ' has-no-image'}`}>
+                                {getProductImageSrc(line.item) ? (
+                                  <ProductImage
+                                    item={line.item}
+                                    alt={`Imagen de ${line.item.name}`}
+                                    fallback={<span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>}
+                                  />
+                                ) : (
+                                  <span className="orders-product-image-fallback"><Box aria-hidden="true" /></span>
+                                )}
+                              </div>
+                              <div className="orders-selected-product-copy">
                               <span className={`orders-selected-origin-badge${line.comboLineKey ? ' is-combo' : ''}`}>
                                 {line.comboLineKey ? 'Parte del combo' : 'Item separado'}
                               </span>
@@ -7231,19 +7242,36 @@ function ServiceOrdersSection({
                                 Base: {formatBs(line.item.rentalPriceBs)} c/u
                                 {isProvisionalItem ? ' | Pendiente de verificacion' : ''}
                               </p>
+                              </div>
                             </div>
                             <label className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
                               <span>Cant.</span>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={line.quantityInput}
-                                onFocus={selectNumericInput}
-                                onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
-                                onBlur={() => normalizeDraftItemQuantity(line.lineKey)}
-                                aria-label={`Cantidad de ${line.item.name}`}
-                                aria-invalid={hasUncoveredShortage ? 'true' : 'false'}
-                              />
+                              <div className="orders-qty-stepper">
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Math.max(1, Number(line.quantity ?? 1) - 1)))}
+                                  aria-label={`Reducir cantidad de ${line.item.name}`}
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={line.quantityInput}
+                                  onFocus={selectNumericInput}
+                                  onChange={(event) => setDraftItemQuantity(line.lineKey, event.target.value)}
+                                  onBlur={() => normalizeDraftItemQuantity(line.lineKey)}
+                                  aria-label={`Cantidad de ${line.item.name}`}
+                                  aria-invalid={hasUncoveredShortage ? 'true' : 'false'}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Number(line.quantity ?? 1) + 1))}
+                                  aria-label={`Aumentar cantidad de ${line.item.name}`}
+                                >
+                                  +
+                                </button>
+                              </div>
                               <div className={`orders-selected-availability${hasUncoveredShortage ? ' is-error' : ''}`}>
                                 <span><small>Fecha</small><strong>{availableStock}</strong></span>
                                 <span><small>Ahora</small><strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong></span>
@@ -7425,8 +7453,13 @@ function ServiceOrdersSection({
                               </small>
                             </label>
                             <strong>{formatBs(line.lineTotalBs)}</strong>
-                            <button type="button" className="danger-button" onClick={() => removeDraftItem(line.lineKey)}>
-                              Quitar
+                            <button
+                              type="button"
+                              className="danger-button orders-selected-remove"
+                              onClick={() => removeDraftItem(line.lineKey)}
+                              aria-label={`Quitar ${line.item.name}`}
+                            >
+                              <Trash2 aria-hidden="true" />
                             </button>
                             {isLastComboLine ? (
                               <div className="orders-selected-combo-group-foot">
