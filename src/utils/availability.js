@@ -116,13 +116,20 @@ const recordItemLines = (record) =>
 
 const isActiveRental = (rental) => rental && !rental.deletedAt && rental.status !== 'returned' && rental.status !== 'cancelled';
 
+const sameId = (left, right) => String(left ?? '').trim() && String(left ?? '').trim() === String(right ?? '').trim();
+
 const isExcluded = (record, exclude = {}) =>
   Boolean(
-    (exclude.rentalId && record?.id === exclude.rentalId)
-      || (exclude.orderCode && record?.orderCode === exclude.orderCode)
-      || (exclude.contractId && record?.id === exclude.contractId)
-      || (exclude.quoteId && record?.id === exclude.quoteId)
-      || (exclude.recordId && record?.id === exclude.recordId),
+    sameId(exclude.rentalId, record?.id)
+      || sameId(exclude.rentalId, record?.rentalId)
+      || sameId(exclude.orderCode, record?.orderCode)
+      || sameId(exclude.contractId, record?.id)
+      || sameId(exclude.contractId, record?.contractId)
+      || sameId(exclude.contractCode, record?.contractCode)
+      || sameId(exclude.contractCode, record?.code)
+      || sameId(exclude.quoteId, record?.id)
+      || sameId(exclude.quoteId, record?.quoteId)
+      || sameId(exclude.recordId, record?.id),
   );
 
 const pushLineImpact = (summary, record, line, bucket) => {
