@@ -10774,18 +10774,28 @@ const createWebBridge = () => ({
     },
     listEvents: async () => {
       const state = readQueryState();
-      const deliveryEvents = state.deliveries.map((delivery) => ({
-        id: `del-${delivery.id}`,
-        title: delivery.deliveryCode,
-        subtitle: `${delivery.customerName} - ${delivery.companyName}`,
-        type: 'delivery',
-        date: delivery.scheduledDate,
-        startTime: delivery.windowStart,
-        endTime: delivery.windowEnd,
-        status: delivery.status,
-        relatedType: 'delivery',
-        relatedId: delivery.id,
-      }));
+      const deliveryEvents = state.deliveries
+        .filter((delivery) => !delivery.deletedAt && !['cancelada', 'cancelado', 'cancelled', 'anulada', 'anulado'].includes(normalizeText(delivery.status)))
+        .map((delivery) => ({
+          id: `del-${delivery.id}`,
+          title: delivery.deliveryCode,
+          subtitle: `${delivery.customerName} - ${delivery.companyName}`,
+          type: 'delivery',
+          date: delivery.scheduledDate,
+          startTime: delivery.windowStart,
+          endTime: delivery.windowEnd,
+          status: delivery.status,
+          relatedType: 'delivery',
+          relatedId: delivery.id,
+          rentalId: delivery.rentalId,
+          orderCode: delivery.orderCode,
+          customerName: delivery.customerName,
+          companyName: delivery.companyName,
+          address: delivery.address,
+          city: delivery.city,
+          notes: delivery.notes,
+          deliveryCode: delivery.deliveryCode,
+        }));
 
       const maintenanceEvents = state.vehicles
         .filter((vehicle) => vehicle.nextMaintenanceAt)

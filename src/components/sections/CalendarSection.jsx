@@ -126,6 +126,13 @@ const normalizeText = (value) =>
 const getStatusMeta = (status) => STATUS_META[normalizeText(status).replaceAll(' ', '_')] ?? STATUS_META.programada;
 const getTypeMeta = (type) => EVENT_TYPE_META[type] ?? EVENT_TYPE_META.other;
 const getLogisticsMeta = (mode) => LOGISTICS_MODE_META[mode] ?? LOGISTICS_MODE_META.envio;
+const isCancelledOperationalStatus = (status) => [
+  'cancelada',
+  'cancelado',
+  'cancelled',
+  'anulada',
+  'anulado',
+].includes(normalizeText(status).replaceAll(' ', '_'));
 const getOperationalStatusMeta = (area, status) => {
   const key = normalizeText(status).replaceAll(' ', '_') || 'pendiente';
   return OPERATIONAL_STATUS_META[area]?.[key] ?? OPERATIONAL_STATUS_META[area]?.pendiente;
@@ -394,18 +401,18 @@ function CalendarSection({
     const deliveryByCode = new Map();
 
     contracts.forEach((contract) => {
-      if (contract.id) contractById.set(contract.id, contract);
-      if (contract.contractCode) contractByCode.set(contract.contractCode, contract);
-      if (contract.rentalId) contractByRentalId.set(contract.rentalId, contract);
-      if (contract.orderCode) contractByOrderCode.set(contract.orderCode, contract);
+      if (contract.id) contractById.set(String(contract.id), contract);
+      if (contract.contractCode) contractByCode.set(String(contract.contractCode), contract);
+      if (contract.rentalId) contractByRentalId.set(String(contract.rentalId), contract);
+      if (contract.orderCode) contractByOrderCode.set(String(contract.orderCode), contract);
     });
     rentals.forEach((rental) => {
-      if (rental.id) rentalById.set(rental.id, rental);
-      if (rental.orderCode) rentalByOrderCode.set(rental.orderCode, rental);
+      if (rental.id) rentalById.set(String(rental.id), rental);
+      if (rental.orderCode) rentalByOrderCode.set(String(rental.orderCode), rental);
     });
     deliveries.forEach((delivery) => {
-      if (delivery.id) deliveryById.set(delivery.id, delivery);
-      if (delivery.deliveryCode) deliveryByCode.set(delivery.deliveryCode, delivery);
+      if (delivery.id) deliveryById.set(String(delivery.id), delivery);
+      if (delivery.deliveryCode) deliveryByCode.set(String(delivery.deliveryCode), delivery);
     });
 
     return {
@@ -425,9 +432,10 @@ function CalendarSection({
     const todayDate = dateFromKey(todayKey);
 
     contracts.forEach((contract) => {
+      if (contract.deletedAt || isCancelledOperationalStatus(contract.status)) return;
       const linkedRental =
-        relationshipMaps.rentalById.get(contract.rentalId)
-        ?? relationshipMaps.rentalByOrderCode.get(contract.orderCode);
+        relationshipMaps.rentalById.get(String(contract.rentalId ?? ''))
+        ?? relationshipMaps.rentalByOrderCode.get(String(contract.orderCode ?? ''));
       if (linkedRental) return;
       if (contract.pickupDate || contract.validUntil) {
         const dateKey = toDateKey(contract.pickupDate || contract.validUntil);
@@ -462,7 +470,9 @@ function CalendarSection({
     });
 
     rentals.forEach((rental) => {
-      const contract = relationshipMaps.contractByRentalId.get(rental.id) ?? relationshipMaps.contractByOrderCode.get(rental.orderCode);
+      if (rental.deletedAt || isCancelledOperationalStatus(rental.status)) return;
+      const contract = relationshipMaps.contractByRentalId.get(String(rental.id ?? '')) ?? relationshipMaps.contractByOrderCode.get(String(rental.orderCode ?? ''));
+      if (contract?.deletedAt || isCancelledOperationalStatus(contract?.status)) return;
       const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
       if (logisticsMode === 'recojo') {
         const deliveryKey = toDateKey(contract?.deliveryDate || rental.rentalDate || rental.createdAt);
@@ -603,18 +613,30 @@ function CalendarSection({
   const normalizedEvents = useMemo(() => {
     return [...events, ...systemEvents]
       .map((event) => {
+        if (event.type === 'delivery' && isCancelledOperationalStatus(event.status)) {
+          return null;
+        }
         const delivery =
           event.relatedType === 'delivery'
-            ? relationshipMaps.deliveryById.get(event.relatedId) ?? relationshipMaps.deliveryByCode.get(event.title)
+            ? relationshipMaps.deliveryById.get(String(event.relatedId ?? '')) ?? relationshipMaps.deliveryByCode.get(String(event.title ?? ''))
             : null;
+        if (event.type === 'delivery' && (delivery?.deletedAt || isCancelledOperationalStatus(delivery?.status))) {
+          return null;
+        }
         const rental =
-          relationshipMaps.rentalById.get(event.rentalId ?? delivery?.rentalId)
-          ?? relationshipMaps.rentalByOrderCode.get(event.orderCode ?? delivery?.orderCode);
+          relationshipMaps.rentalById.get(String(event.rentalId ?? delivery?.rentalId ?? ''))
+          ?? relationshipMaps.rentalByOrderCode.get(String(event.orderCode ?? delivery?.orderCode ?? ''));
+        if (rental?.deletedAt || isCancelledOperationalStatus(rental?.status)) {
+          return null;
+        }
         const contract =
-          relationshipMaps.contractById.get(event.contractId)
-          ?? relationshipMaps.contractByCode.get(event.relatedType === 'contrato' ? event.relatedId : event.contractCode)
-          ?? relationshipMaps.contractByRentalId.get(rental?.id)
-          ?? relationshipMaps.contractByOrderCode.get(rental?.orderCode ?? event.orderCode ?? delivery?.orderCode);
+          relationshipMaps.contractById.get(String(event.contractId ?? ''))
+          ?? relationshipMaps.contractByCode.get(String(event.relatedType === 'contrato' ? event.relatedId : event.contractCode ?? ''))
+          ?? relationshipMaps.contractByRentalId.get(String(rental?.id ?? ''))
+          ?? relationshipMaps.contractByOrderCode.get(String(rental?.orderCode ?? event.orderCode ?? delivery?.orderCode ?? ''));
+        if (contract?.deletedAt || isCancelledOperationalStatus(contract?.status)) {
+          return null;
+        }
         const rawType = event.type || 'other';
         const isReturnLeg = rawType === 'delivery' && delivery && isDeliveryReturnLeg(delivery, contract, rental);
         const type = isReturnLeg ? 'return' : rawType;
@@ -680,7 +702,7 @@ function CalendarSection({
               : undefined),
         };
       })
-      .filter((event) => event.dateKey)
+      .filter((event) => event?.dateKey)
       .sort((a, b) => `${a.dateKey}T${a.startTime}`.localeCompare(`${b.dateKey}T${b.startTime}`, 'es'));
   }, [events, relationshipMaps, systemEvents]);
 
