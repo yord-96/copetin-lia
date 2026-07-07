@@ -731,6 +731,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     contractDate: deliveryDate,
     clientId: '',
     customerName: '',
+    customerCi: '',
     customerPhone: '',
     customerReferencePhone: '',
     companyName: '',
@@ -991,6 +992,7 @@ function ServiceOrdersSection({
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [isWizardSummaryCollapsed, setIsWizardSummaryCollapsed] = useState(false);
   const [comboConfigurator, setComboConfigurator] = useState(null);
+  const [itemObservationModal, setItemObservationModal] = useState(null);
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2280,6 +2282,7 @@ function ServiceOrdersSection({
     contractDate: (record?.contractDate ?? record?.createdAt ?? '').slice(0, 10) || getInputDate(new Date()),
     clientId: record?.clientId ?? '',
     customerName: record?.customerName ?? '',
+    customerCi: record?.customerCi ?? record?.nitCi ?? clients.find((client) => client.id === record?.clientId)?.nitCi ?? '',
     customerPhone: record?.customerPhone ?? '',
     customerReferencePhone: record?.customerReferencePhone ?? '',
     companyName: record?.companyName ?? '',
@@ -2362,6 +2365,7 @@ function ServiceOrdersSection({
       comboSelectionMode: line.comboSelectionMode ?? 'item',
       comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
       comboCategory: line.comboCategory ?? '',
+      observation: line.observation ?? line.observations ?? line.note ?? '',
     })),
     services: (record?.services ?? []).map((service, index) => ({
       id: service?.id ?? `service-${index}`,
@@ -2643,6 +2647,7 @@ function ServiceOrdersSection({
       ...current,
       clientId: selected.id,
       customerName: selected.name,
+      customerCi: selected.nitCi || selected.customerCi || current.customerCi,
       customerPhone: selected.whatsapp || selected.phone,
       customerReferencePhone: selected.referencePhone || '',
       companyName: selected.companyName || selected.name,
@@ -3154,6 +3159,26 @@ function ServiceOrdersSection({
     }));
   };
 
+  const openItemObservationModal = (line) => {
+    setItemObservationModal({
+      lineKey: line.lineKey,
+      itemName: line.item?.name || line.itemName || 'Item',
+      observation: String(line.observation ?? '').trim(),
+    });
+  };
+
+  const saveItemObservation = () => {
+    if (!itemObservationModal?.lineKey) return;
+    const nextObservation = String(itemObservationModal.observation ?? '').trim();
+    setDraft((current) => ({
+      ...current,
+      items: current.items.map((line) => (String(line.lineKey ?? line.comboLineKey ?? line.itemId) === itemObservationModal.lineKey
+        ? { ...line, observation: nextObservation }
+        : line)),
+    }));
+    setItemObservationModal(null);
+  };
+
   const setServiceDraftField = (field, value) => {
     const nextValue = field === 'unitPriceBs'
       ? cleanDecimalInput(value)
@@ -3542,6 +3567,19 @@ function ServiceOrdersSection({
       }));
     const selectedResponsibles = getSelectedResponsibles();
     const primaryResponsible = selectedResponsibles[0] ?? null;
+    const itemObservationLines = selectedItems
+      .map((line) => {
+        const observation = String(line.observation ?? '').trim();
+        if (!observation) return '';
+        return `${line.item?.name || line.itemName || 'Item'}: ${observation}`;
+      })
+      .filter(Boolean);
+    const contractObservations = [
+      draft.observations.trim(),
+      itemObservationLines.length > 0
+        ? `Observaciones por item:\n${itemObservationLines.join('\n')}`
+        : '',
+    ].filter(Boolean).join('\n\n');
 
     return {
       id: draft.recordId || undefined,
@@ -3551,6 +3589,7 @@ function ServiceOrdersSection({
       contractDate: draft.contractDate || null,
       clientId: draft.clientId || null,
       customerName: draft.customerName.trim(),
+      customerCi: draft.customerCi.trim(),
       customerPhone: draft.customerPhone.trim(),
       customerReferencePhone: draft.customerReferencePhone.trim(),
       companyName: draft.companyName.trim() || draft.customerName.trim(),
@@ -3577,7 +3616,7 @@ function ServiceOrdersSection({
       driverId: draft.driverId || null,
       vehicleId: draft.vehicleId || null,
       validUntil: draft.validUntil || null,
-      observations: draft.observations.trim(),
+      observations: contractObservations,
       discountBs: generalDiscountBs,
       discountPercent: generalDiscountPercent,
       guaranteeBs,
@@ -3614,6 +3653,7 @@ function ServiceOrdersSection({
         comboSelectionMode: line.comboSelectionMode ?? 'item',
         comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
         comboCategory: line.comboCategory ?? '',
+        observation: String(line.observation ?? '').trim(),
       })),
       services: selectedServices.map((service) => ({
         id: service.id,
@@ -6336,6 +6376,48 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
+      {itemObservationModal ? (
+        <div className="orders-modal-backdrop orders-item-observation-backdrop" onClick={() => setItemObservationModal(null)}>
+          <div className="orders-modal orders-item-observation-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Observacion del item</h3>
+                <p>{itemObservationModal.itemName}</p>
+              </div>
+              <button
+                type="button"
+                className="orders-modal-close"
+                onClick={() => setItemObservationModal(null)}
+                aria-label="Cerrar"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <label className="orders-item-observation-field">
+              Detalle para el contrato
+              <textarea
+                autoFocus
+                rows="5"
+                value={itemObservationModal.observation}
+                onChange={(event) => setItemObservationModal((current) => ({
+                  ...current,
+                  observation: event.target.value,
+                }))}
+                placeholder="Ej: entregar limpio, revisar color, pieza con marca acordada..."
+              />
+            </label>
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setItemObservationModal(null)}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={saveItemObservation}>
+                Guardar observacion
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
       {modalOpen ? (
         <div className="orders-modal-backdrop">
           <div
@@ -6426,6 +6508,17 @@ function ServiceOrdersSection({
                             value={draft.customerName}
                             onChange={(event) => setDraftField('customerName', event.target.value)}
                             placeholder="Ingresa el nombre completo"
+                          />
+                        </span>
+                      </label>
+                      <label className="orders-icon-field document" data-client-nav-field>
+                        CI / Carnet
+                        <span>
+                          <i aria-hidden="true"><CircleUserRound /></i>
+                          <input
+                            value={draft.customerCi}
+                            onChange={(event) => setDraftField('customerCi', event.target.value)}
+                            placeholder="Opcional"
                           />
                         </span>
                       </label>
@@ -7220,9 +7313,18 @@ function ServiceOrdersSection({
                                 )}
                               </div>
                               <div className="orders-selected-product-copy">
-                              <span className={`orders-selected-origin-badge${line.comboLineKey ? ' is-combo' : ''}`}>
-                                {line.comboLineKey ? 'Parte del combo' : 'Item separado'}
-                              </span>
+                              <div className="orders-selected-line-tools">
+                                <span className={`orders-selected-origin-badge${line.comboLineKey ? ' is-combo' : ''}`}>
+                                  {line.comboLineKey ? 'Parte del combo' : 'Item separado'}
+                                </span>
+                                <button
+                                  type="button"
+                                  className={`orders-line-observation-link${String(line.observation ?? '').trim() ? ' has-note' : ''}`}
+                                  onClick={() => openItemObservationModal(line)}
+                                >
+                                  Observacion
+                                </button>
+                              </div>
                               <strong>{line.item.name}</strong>
                               {line.comboName ? (
                                 <p className="orders-combo-line-note">

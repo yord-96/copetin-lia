@@ -10143,6 +10143,10 @@ textarea:focus {
   z-index: 360;
 }
 
+.orders-modal-backdrop.orders-item-observation-backdrop {
+  z-index: 420;
+}
+
 .orders-modal {
   width: min(1180px, 100%);
   max-height: calc(100vh - 2rem);
@@ -55909,6 +55913,31 @@ body:has(.accounting-bigcash-view) .workspace {
   gap: 0.24rem !important;
 }
 
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-line-tools {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.48rem !important;
+  min-width: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link {
+  border: 0 !important;
+  background: transparent !important;
+  color: #175cd3 !important;
+  font-size: 0.62rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  padding: 0.08rem 0 !important;
+  cursor: pointer !important;
+  text-decoration: underline;
+  text-underline-offset: 0.16rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link.has-note {
+  color: #0f766e !important;
+}
+
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-copy > strong {
   font-size: 0.78rem !important;
 }
@@ -55945,6 +55974,40 @@ body:has(.accounting-bigcash-view) .workspace {
   width: 2.35rem !important;
   height: 2.35rem !important;
   min-width: 2.35rem !important;
+}
+
+.orders-item-observation-modal {
+  width: min(34rem, calc(100vw - 2rem)) !important;
+}
+
+.orders-item-observation-field {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0 1.25rem 1.15rem;
+  color: #22345f;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.orders-item-observation-field textarea {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  border: 1px solid #dbe4f0;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+  color: #102247;
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.45;
+  padding: 0.85rem 0.95rem;
+  outline: none;
+}
+
+.orders-item-observation-field textarea:focus {
+  border-color: #93b4f7;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(23, 92, 211, 0.12);
 }
 
 /* Catalogo visible: dos filas completas antes de abrir "Ver todos". */

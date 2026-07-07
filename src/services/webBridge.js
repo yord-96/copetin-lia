@@ -1772,6 +1772,7 @@ const normalizeState = (state) => {
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
           }))
           .filter((line) => line.itemId && line.itemName)
         : [];
@@ -1810,6 +1811,7 @@ const normalizeState = (state) => {
         quoteCode: String(quote?.quoteCode ?? '').trim(),
         clientId: quote?.clientId ?? null,
         customerName: String(quote?.customerName ?? '').trim(),
+        customerCi: String(quote?.customerCi ?? quote?.nitCi ?? '').trim(),
         customerPhone: String(quote?.customerPhone ?? '').trim(),
         customerReferencePhone: String(quote?.customerReferencePhone ?? quote?.referencePhone ?? '').trim(),
         companyName: String(quote?.companyName ?? '').trim(),
@@ -1907,6 +1909,7 @@ const normalizeState = (state) => {
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
           }))
           .filter((line) => line.itemId)
         : [];
@@ -1947,6 +1950,7 @@ const normalizeState = (state) => {
         quoteId: String(contract?.quoteId ?? '').trim() || null,
         clientId: contract?.clientId ?? null,
         customerName: String(contract?.customerName ?? '').trim(),
+        customerCi: String(contract?.customerCi ?? contract?.nitCi ?? '').trim(),
         customerPhone: String(contract?.customerPhone ?? '').trim(),
         customerReferencePhone: String(contract?.customerReferencePhone ?? contract?.referencePhone ?? '').trim(),
         companyName: String(contract?.companyName ?? '').trim(),
@@ -6039,9 +6043,9 @@ const getReferenceContractStyles = () => `
     flex: 1;
     min-width: 0;
     margin-top: 0 !important;
-    font-size: 7.7px !important;
+    font-size: 6.6px !important;
     font-weight: 900;
-    line-height: 1.05;
+    line-height: 1;
     text-transform: uppercase;
   }
   .rc-coordinate-time i {
@@ -6238,7 +6242,7 @@ const getReferenceContractStyles = () => `
     background: #fffdf9;
   }
   .rc-observations strong { display: block; margin-bottom: 1.2mm; font-size: 8.2px; }
-  .rc-observations p { margin: 0; text-transform: uppercase; }
+  .rc-observations p { margin: 0; text-transform: uppercase; white-space: pre-line; }
   .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
   .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
   .rc-client-materials {
@@ -8229,15 +8233,20 @@ const addClientDeliveryAddressIfNeeded = (client, address, city, now = new Date(
   }
 };
 
-const syncClientOperationalData = (state, clientId, { customerPhone, customerReferencePhone, address, city } = {}) => {
+const syncClientOperationalData = (state, clientId, { customerPhone, customerReferencePhone, customerCi, address, city } = {}) => {
   const client = state.clients.find((entry) => entry.id === clientId && !entry.deletedAt);
   if (!client) return;
   const now = new Date().toISOString();
   const phone = String(customerPhone ?? '').trim();
   const referencePhone = String(customerReferencePhone ?? '').trim();
+  const nitCi = String(customerCi ?? '').trim();
   const cleanAddress = String(address ?? '').trim();
   const cleanCity = String(city ?? '').trim();
   let changed = false;
+  if (!client.nitCi && nitCi) {
+    client.nitCi = nitCi;
+    changed = true;
+  }
   if (!client.phone && phone) {
     client.phone = phone;
     changed = true;
@@ -8266,23 +8275,25 @@ const syncClientOperationalData = (state, clientId, { customerPhone, customerRef
   if (changed) client.updatedAt = now;
 };
 
-const resolveClientFromName = (state, customerName, customerPhone, address = '', city = '', customerReferencePhone = '') => {
+const resolveClientFromName = (state, customerName, customerPhone, address = '', city = '', customerReferencePhone = '', customerCi = '') => {
   const normalizedTarget = normalizeText(customerName);
   const existing = state.clients.find((client) => normalizeText(client.name) === normalizedTarget);
   if (existing) {
-    syncClientOperationalData(state, existing.id, { customerPhone, customerReferencePhone, address, city });
+    syncClientOperationalData(state, existing.id, { customerPhone, customerReferencePhone, customerCi, address, city });
     return existing.id;
   }
 
   const now = new Date().toISOString();
   const cleanAddress = String(address ?? '').trim();
   const cleanCity = String(city ?? '').trim();
+  const nitCi = String(customerCi ?? '').trim();
   const created = {
     id: makeId('cli'),
     name: String(customerName ?? '').trim(),
     companyName: String(customerName ?? '').trim(),
     contactName: String(customerName ?? '').trim(),
     contactRole: 'Contacto',
+    nitCi,
     phone: String(customerPhone ?? '').trim(),
     whatsapp: String(customerPhone ?? '').trim(),
     referencePhone: String(customerReferencePhone ?? '').trim(),
@@ -9263,7 +9274,6 @@ const createWebBridge = () => ({
       const nitCi = String(payload?.nitCi ?? '').trim();
       if (!name) throw new Error('El nombre del cliente es obligatorio.');
       if (!phone) throw new Error('El telefono del cliente es obligatorio.');
-      if (!nitCi) throw new Error('El campo NIT/CI es obligatorio.');
       if (customerType === 'empresa' && !String(payload?.companyName ?? '').trim()) {
         throw new Error('La razon social es obligatoria para cliente empresa.');
       }
@@ -10961,6 +10971,7 @@ const createWebBridge = () => ({
     },
     create: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
+      const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
       const customerPhone = String(payload?.customerPhone ?? '').trim();
       const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
       const eventDate = String(payload?.eventDate ?? '').trim();
@@ -10999,9 +11010,9 @@ const createWebBridge = () => ({
         const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
         const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone, customerCi);
         if (payload?.clientId) {
-          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
+          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, customerCi, address: payload?.address, city: payload?.city });
         }
 
         const normalizedItems = requestedItems.map((line, index) => {
@@ -11042,6 +11053,7 @@ const createWebBridge = () => ({
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
           };
         });
 
@@ -11062,6 +11074,7 @@ const createWebBridge = () => ({
           quoteCode: consumeCommercialDocumentCode(state, payload, 'quotePrefix', 'quoteNext', 'quotes', 'quoteCode', 5),
           clientId,
           customerName,
+          customerCi,
           customerPhone,
           customerReferencePhone,
           companyName: String(payload?.companyName ?? customerName).trim(),
@@ -11153,6 +11166,7 @@ const createWebBridge = () => ({
         if (!quote) throw new Error('Cotizacion no encontrada.');
 
         if (payload.customerName !== undefined) quote.customerName = String(payload.customerName ?? '').trim() || quote.customerName;
+        if (payload.customerCi !== undefined || payload.nitCi !== undefined) quote.customerCi = String(payload.customerCi ?? payload.nitCi ?? '').trim();
         if (payload.customerPhone !== undefined) quote.customerPhone = String(payload.customerPhone ?? '').trim() || quote.customerPhone;
         if (payload.customerReferencePhone !== undefined) quote.customerReferencePhone = String(payload.customerReferencePhone ?? '').trim();
         if (payload.companyName !== undefined) quote.companyName = String(payload.companyName ?? '').trim() || quote.companyName;
@@ -11175,6 +11189,15 @@ const createWebBridge = () => ({
         assertSameDayTimeWindow(quote.deliveryWindowStart, quote.deliveryWindowEnd, 'La ventana de entrega');
         assertSameDayTimeWindow(quote.pickupWindowStart, quote.pickupWindowEnd, 'La ventana de recojo');
         if (payload.clientId !== undefined) quote.clientId = payload.clientId ?? null;
+        if (quote.clientId) {
+          syncClientOperationalData(state, quote.clientId, {
+            customerPhone: quote.customerPhone,
+            customerReferencePhone: quote.customerReferencePhone,
+            customerCi: quote.customerCi,
+            address: quote.address,
+            city: quote.city,
+          });
+        }
         if (payload.status !== undefined) quote.status = String(payload.status ?? '').trim() || quote.status;
         if (payload.observations !== undefined) quote.observations = String(payload.observations ?? '').trim();
         if (payload.billingMode !== undefined) {
@@ -11231,6 +11254,7 @@ const createWebBridge = () => ({
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+              observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
             };
           });
         }
@@ -11353,6 +11377,7 @@ const createWebBridge = () => ({
     },
     create: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
+      const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
       const customerPhone = String(payload?.customerPhone ?? '').trim();
       const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
       const eventDate = String(payload?.eventDate ?? '').trim();
@@ -11391,9 +11416,9 @@ const createWebBridge = () => ({
         const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
         const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? 0));
-        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone);
+        const clientId = payload?.clientId || resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone, customerCi);
         if (payload?.clientId) {
-          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, address: payload?.address, city: payload?.city });
+          syncClientOperationalData(state, clientId, { customerPhone, customerReferencePhone, customerCi, address: payload?.address, city: payload?.city });
         }
 
         const normalizedItems = requestedItems.map((line, index) => {
@@ -11435,6 +11460,7 @@ const createWebBridge = () => ({
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
           };
         });
 
@@ -11456,6 +11482,7 @@ const createWebBridge = () => ({
           quoteId: String(payload?.quoteId ?? '').trim() || null,
           clientId,
           customerName,
+          customerCi,
           customerPhone,
           customerReferencePhone,
           companyName: String(payload?.companyName ?? customerName).trim(),
@@ -11565,6 +11592,7 @@ const createWebBridge = () => ({
         }
 
         if (payload.customerName !== undefined) contract.customerName = String(payload.customerName ?? '').trim() || contract.customerName;
+        if (payload.customerCi !== undefined || payload.nitCi !== undefined) contract.customerCi = String(payload.customerCi ?? payload.nitCi ?? '').trim();
         if (payload.customerPhone !== undefined) contract.customerPhone = String(payload.customerPhone ?? '').trim() || contract.customerPhone;
         if (payload.customerReferencePhone !== undefined) contract.customerReferencePhone = String(payload.customerReferencePhone ?? '').trim();
         if (payload.companyName !== undefined) contract.companyName = String(payload.companyName ?? '').trim() || contract.companyName;
@@ -11587,6 +11615,16 @@ const createWebBridge = () => ({
         if (payload.pickupTimeMode !== undefined) contract.pickupTimeMode = payload.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
         assertSameDayTimeWindow(contract.deliveryWindowStart, contract.deliveryWindowEnd, 'La ventana de entrega');
         assertSameDayTimeWindow(contract.pickupWindowStart, contract.pickupWindowEnd, 'La ventana de recojo');
+        if (payload.clientId !== undefined) contract.clientId = payload.clientId ?? null;
+        if (contract.clientId) {
+          syncClientOperationalData(state, contract.clientId, {
+            customerPhone: contract.customerPhone,
+            customerReferencePhone: contract.customerReferencePhone,
+            customerCi: contract.customerCi,
+            address: contract.address,
+            city: contract.city,
+          });
+        }
         if (payload.driverId !== undefined) contract.driverId = String(payload.driverId ?? '').trim() || null;
         if (payload.vehicleId !== undefined) contract.vehicleId = String(payload.vehicleId ?? '').trim() || null;
         contract.validUntil = null;
@@ -11643,6 +11681,7 @@ const createWebBridge = () => ({
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
+              observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
             };
           });
           contract.items = normalizedItems;
@@ -12257,7 +12296,9 @@ const createWebBridge = () => ({
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
-        const clientId = resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city);
+        const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
+        const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
+        const clientId = resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone, customerCi);
         const orderCode = consumeDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
         const reservationMovements = [];
         const userId = payload?.userId ?? payload?.createdById ?? null;

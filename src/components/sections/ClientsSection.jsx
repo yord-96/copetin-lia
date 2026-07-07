@@ -793,11 +793,6 @@ function ClientsSection({
     if (!payload.whatsapp) {
       return 'El WhatsApp o celular es obligatorio.';
     }
-    if (!payload.nitCi) {
-      return payload.customerType === 'empresa'
-        ? 'El NIT es obligatorio para cliente empresa.'
-        : 'El CI es obligatorio para cliente persona.';
-    }
     if (payload.customerType === 'empresa' && !payload.companyName) {
       return 'La razon social es obligatoria para cliente empresa.';
     }
@@ -1311,9 +1306,8 @@ function ClientsSection({
                         value={form.nitCi}
                         onChange={(event) => setField('nitCi', event.target.value)}
                         placeholder={idPlaceholder}
-                        required
                       />
-                      <small>Campo obligatorio para control documental.</small>
+                      <small>Opcional para control documental.</small>
                     </label>
                   </div>
                 </div>
