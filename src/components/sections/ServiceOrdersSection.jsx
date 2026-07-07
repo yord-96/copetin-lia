@@ -7590,24 +7590,29 @@ function ServiceOrdersSection({
                         )}
                       </div>
                     ) : null}
-                    <div className="orders-form-grid">
-                      <label>
-                        {draft.logisticsMode === 'recojo' ? 'Fecha de alistamiento *' : 'Fecha entrega *'}
-                        <input type="date" value={draft.deliveryDate} onChange={(event) => setDraftField('deliveryDate', event.target.value)} />
-                      </label>
-                      <label>
-                        Fecha devolucion / recojo *
-                        <input type="date" value={draft.pickupDate} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
-                      </label>
-                      <>
-                        <label>
-                          {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento inicio' : 'Ventana entrega inicio'}
-                          <input type="time" value={draft.deliveryWindowStart} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
-                        </label>
-                        <label>
-                          {draft.logisticsMode === 'recojo' ? 'Ventana alistamiento fin' : 'Ventana entrega fin'}
-                          <input type="time" value={draft.deliveryWindowEnd} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
-                        </label>
+                    <div className="orders-logistics-schedule">
+                      <section className="orders-logistics-card is-delivery">
+                        <header>
+                          <span><Truck aria-hidden="true" /></span>
+                          <div>
+                            <strong>{draft.logisticsMode === 'recojo' ? 'Alistamiento para cliente' : 'Entrega al cliente'}</strong>
+                            <small>{draft.logisticsMode === 'recojo' ? 'Inventario prepara la orden para retiro.' : 'El equipo entrega en la direccion del evento.'}</small>
+                          </div>
+                        </header>
+                        <div className="orders-logistics-fields">
+                          <label>
+                            Fecha *
+                            <input type="date" value={draft.deliveryDate} onChange={(event) => setDraftField('deliveryDate', event.target.value)} />
+                          </label>
+                          <label>
+                            Inicio
+                            <input type="time" value={draft.deliveryWindowStart} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowStart', event.target.value)} />
+                          </label>
+                          <label>
+                            Fin
+                            <input type="time" value={draft.deliveryWindowEnd} disabled={draft.deliveryTimeMode === 'coordinate'} onChange={(event) => setDraftField('deliveryWindowEnd', event.target.value)} />
+                          </label>
+                        </div>
                         <label className="orders-time-coordinate">
                           <input
                             type="checkbox"
@@ -7616,14 +7621,30 @@ function ServiceOrdersSection({
                           />
                           <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de alistamiento con el cliente' : 'Coordinar horario de entrega con el cliente'}</span>
                         </label>
-                        <label>
-                          {draft.logisticsMode === 'recojo' ? 'Ventana devolucion inicio' : 'Ventana recojo inicio'}
-                          <input type="time" value={draft.pickupWindowStart} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
-                        </label>
-                        <label>
-                          {draft.logisticsMode === 'recojo' ? 'Ventana devolucion fin' : 'Ventana recojo fin'}
-                          <input type="time" value={draft.pickupWindowEnd} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
-                        </label>
+                      </section>
+
+                      <section className="orders-logistics-card is-pickup">
+                        <header>
+                          <span><RefreshCw aria-hidden="true" /></span>
+                          <div>
+                            <strong>{draft.logisticsMode === 'recojo' ? 'Devolucion del cliente' : 'Recojo / retorno'}</strong>
+                            <small>{draft.logisticsMode === 'recojo' ? 'El cliente devuelve los items al finalizar.' : 'El equipo recoge y retorna los items.'}</small>
+                          </div>
+                        </header>
+                        <div className="orders-logistics-fields">
+                          <label>
+                            Fecha *
+                            <input type="date" value={draft.pickupDate} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
+                          </label>
+                          <label>
+                            Inicio
+                            <input type="time" value={draft.pickupWindowStart} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowStart', event.target.value)} />
+                          </label>
+                          <label>
+                            Fin
+                            <input type="time" value={draft.pickupWindowEnd} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
+                          </label>
+                        </div>
                         <label className="orders-time-coordinate">
                           <input
                             type="checkbox"
@@ -7632,34 +7653,35 @@ function ServiceOrdersSection({
                           />
                           <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de devolucion con el cliente' : 'Coordinar horario de recojo con el cliente'}</span>
                         </label>
-                      </>
-                      {draft.logisticsMode === 'envio' ? (
-                        <>
-                          <label>
-                            Chofer sugerido
-                            <select value={draft.driverId} onChange={(event) => setDraftField('driverId', event.target.value)}>
-                              <option value="">Asignar luego</option>
-                              {drivers.map((driver) => (
-                                <option key={driver.id} value={driver.id}>{driver.fullName}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            Vehiculo sugerido
-                            <select value={draft.vehicleId} onChange={(event) => setDraftField('vehicleId', event.target.value)}>
-                              <option value="">Asignar luego</option>
-                              {vehicles.map((vehicle) => (
-                                <option key={vehicle.id} value={vehicle.id}>{vehicle.code} - {vehicle.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                        </>
-                      ) : (
-                        <div className="orders-form-note orders-field-span-2">
-                          El cliente recoge la orden. Al aprobar, se generara solo la tarea de inventario para alistar y verificar los items.
-                        </div>
-                      )}
+                      </section>
                     </div>
+
+                    {draft.logisticsMode === 'envio' ? (
+                      <div className="orders-form-grid orders-transport-assignment-grid">
+                        <label>
+                          Chofer sugerido
+                          <select value={draft.driverId} onChange={(event) => setDraftField('driverId', event.target.value)}>
+                            <option value="">Asignar luego</option>
+                            {drivers.map((driver) => (
+                              <option key={driver.id} value={driver.id}>{driver.fullName}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Vehiculo sugerido
+                          <select value={draft.vehicleId} onChange={(event) => setDraftField('vehicleId', event.target.value)}>
+                            <option value="">Asignar luego</option>
+                            {vehicles.map((vehicle) => (
+                              <option key={vehicle.id} value={vehicle.id}>{vehicle.code} - {vehicle.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="orders-form-note">
+                        El cliente recoge la orden. Al aprobar, se generara solo la tarea de inventario para alistar y verificar los items.
+                      </div>
+                    )}
 
                     <label>
                       Observaciones operativas

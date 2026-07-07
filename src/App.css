@@ -55967,3 +55967,117 @@ body:has(.accounting-bigcash-view) .workspace {
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
   min-height: 1.72rem !important;
 }
+
+/* Paso logistica: separa claramente entrega/alistamiento y recojo/devolucion. */
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-schedule {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin: 0.95rem 0;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card {
+  border: 1px solid #dbe5f1;
+  border-radius: 0.95rem;
+  background: #ffffff;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card.is-delivery {
+  border-color: #fed7aa;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 46%);
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card.is-pickup {
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 46%);
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header > span {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card.is-delivery header > span {
+  background: #ffedd5;
+  color: #ea580c;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card.is-pickup header > span {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header strong {
+  color: #122245;
+  font-size: 0.95rem;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card header small {
+  color: #6f7b94;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+  gap: 0.62rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-fields label,
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-transport-assignment-grid label {
+  gap: 0.28rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-fields input,
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-transport-assignment-grid select {
+  min-height: 2.75rem;
+  border-radius: 0.72rem;
+  background: #ffffff;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-card .orders-time-coordinate {
+  min-height: 2.75rem;
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.55rem 0.65rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-transport-assignment-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 900px) {
+  .orders-wizard-modal .orders-wizard-panel-step-4 .orders-logistics-schedule,
+  .orders-wizard-modal .orders-wizard-panel-step-4 .orders-transport-assignment-grid {
+    grid-template-columns: 1fr;
+  }
+}
