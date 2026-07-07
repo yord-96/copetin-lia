@@ -1146,6 +1146,7 @@ function InventoryDashboardSection({
     const map = {};
     activeRentals.forEach((rental) => {
       (rental.items ?? []).forEach((line) => {
+        if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
         map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.quantity ?? 0);
       });
     });
@@ -1158,6 +1159,7 @@ function InventoryDashboardSection({
     activeRentals.forEach((rental) => {
       const contract = contractById.get(String(rental.contractId ?? ''));
       (rental.items ?? []).forEach((line) => {
+        if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
         const quantity = Math.max(0, Number(line.internalReservedQty ?? line.quantity ?? 0));
         if (!line.itemId || quantity <= 0) return;
         const rows = usage.get(line.itemId) ?? [];
