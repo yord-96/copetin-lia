@@ -16,7 +16,7 @@ const expandSearchAliases = (value) => {
   const base = normalizeText(value);
   if (!base) return '';
   const aliases = new Set(base.split(' ').filter(Boolean));
-  const compact = base.replace(/\s+/g, '');
+  const compact = base.replace(/[^a-z0-9]+/g, '');
   if (compact.includes('crossback') || compact.includes('crosback')) {
     aliases.add('crossback');
     aliases.add('crosback');
@@ -29,6 +29,57 @@ const expandSearchAliases = (value) => {
     aliases.add('kids');
   }
   return [base, ...aliases].join(' ');
+};
+
+const normalizeInventorySearchText = (value) =>
+  expandSearchAliases(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const compactInventorySearchText = (value) => normalizeInventorySearchText(value).replace(/\s+/g, '');
+
+const getInventorySearchTokens = (value) => normalizeInventorySearchText(value).split(' ').filter(Boolean);
+
+const getInventorySearchFields = (row) => [
+  row?.name ?? row?.itemName,
+  row?.category,
+  row?.brand,
+  row?.itemColor,
+  row?.sku,
+  row?.contractCode,
+  row?.reference,
+  row?.userName,
+  row?.registeredByName,
+  row?.reason,
+  getInventoryAreaLabel(row?.resolvedInventoryArea ?? row?.inventoryArea),
+  ...(row?.ingredients ?? []).flatMap((line) => [
+    line?.itemName,
+    line?.name,
+    line?.category,
+  ]),
+];
+
+const getInventorySearchScore = (searchValue, row) => {
+  const query = normalizeInventorySearchText(searchValue);
+  if (!query) return 1;
+
+  const tokens = getInventorySearchTokens(searchValue);
+  const fields = getInventorySearchFields(row).map(normalizeInventorySearchText).filter(Boolean);
+  const combined = fields.join(' ');
+  const compactCombined = compactInventorySearchText(fields.join(' '));
+  const compactQuery = compactInventorySearchText(searchValue);
+
+  if (!tokens.every((token) => combined.includes(token) || compactCombined.includes(token))) return -1;
+
+  const primary = fields[0] ?? '';
+  const compactPrimary = compactInventorySearchText(primary);
+  if (primary === query) return 100;
+  if (primary.startsWith(query)) return 92;
+  if (primary.includes(query)) return 86;
+  if (compactPrimary.includes(compactQuery)) return 82;
+  if (tokens.every((token) => primary.includes(token) || compactPrimary.includes(token))) return 74;
+  return 50 + tokens.filter((token) => primary.includes(token) || compactPrimary.includes(token)).length;
 };
 
 const isPickupDeliveryRecord = (delivery) => {
@@ -1547,13 +1598,12 @@ function InventoryDashboardSection({
   }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
 
   const movementSelectableRows = useMemo(() => {
-    const text = normalizeText(movementItemQuery);
-    if (!text) return inventoryRows;
-    return inventoryRows.filter((row) =>
-      normalizeText(row.name).includes(text)
-      || normalizeText(row.category).includes(text)
-      || normalizeText(row.sku).includes(text),
-    );
+    if (!normalizeInventorySearchText(movementItemQuery)) return inventoryRows;
+    return inventoryRows
+      .map((row) => ({ row, searchScore: getInventorySearchScore(movementItemQuery, row) }))
+      .filter((entry) => entry.searchScore >= 0)
+      .sort((a, b) => b.searchScore - a.searchScore || a.row.name.localeCompare(b.row.name, 'es'))
+      .map((entry) => entry.row);
   }, [inventoryRows, movementItemQuery]);
 
   const adjustRows = useMemo(
@@ -1718,7 +1768,7 @@ function InventoryDashboardSection({
   }, [inventoryRows]);
 
   const filteredRows = useMemo(() => {
-    const text = normalizeText(query);
+    const text = normalizeInventorySearchText(query);
     let base = isMovementsModule
       ? movementRows
       : isAdjustModule
@@ -1788,19 +1838,15 @@ function InventoryDashboardSection({
     }
 
     if (!text) return base;
-    return base.filter((row) =>
-      normalizeText(row.name ?? row.itemName).includes(text)
-      || normalizeText(row.category).includes(text)
-      || normalizeText(row.brand).includes(text)
-      || normalizeText(row.itemColor).includes(text)
-      || normalizeText(row.sku).includes(text)
-      || normalizeText(row.contractCode).includes(text)
-      || normalizeText(row.reference).includes(text)
-      || normalizeText(row.userName).includes(text)
-      || normalizeText(row.registeredByName).includes(text)
-      || normalizeText(row.reason).includes(text)
-      || normalizeText((row.ingredients ?? []).map((line) => line.itemName).join(' ')).includes(text),
-    );
+    const matchedRows = base
+      .map((row) => ({ row, searchScore: getInventorySearchScore(query, row) }))
+      .filter((entry) => entry.searchScore >= 0);
+
+    if (!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule && sortFilter === 'default') {
+      matchedRows.sort((a, b) => b.searchScore - a.searchScore || a.row.name.localeCompare(b.row.name, 'es'));
+    }
+
+    return matchedRows.map((entry) => entry.row);
   }, [
     adjustRows,
     categoriesList,
@@ -3032,21 +3078,10 @@ function InventoryDashboardSection({
   const comboIngredientValue = comboIngredientRows.reduce((sum, line) => sum + line.lineValue, 0);
 
   const comboSelectableRows = inventoryRows
-    .filter((row) => {
-      const text = normalizeText(comboIngredientQuery);
-      if (!text) return true;
-      const tokens = text.split(' ').filter(Boolean);
-      const searchable = expandSearchAliases([
-        row.name,
-        row.category,
-        row.brand,
-        row.itemColor,
-        row.sku,
-        getInventoryAreaLabel(row.resolvedInventoryArea),
-      ].filter(Boolean).join(' '));
-      return searchable.includes(text)
-        || tokens.every((token) => searchable.includes(token));
-    })
+    .map((row) => ({ row, searchScore: getInventorySearchScore(comboIngredientQuery, row) }))
+    .filter((entry) => entry.searchScore >= 0)
+    .sort((a, b) => b.searchScore - a.searchScore || a.row.name.localeCompare(b.row.name, 'es'))
+    .map((entry) => entry.row)
     .slice(0, 30);
 
   const renderComboRowMenu = (row, openUp = false) => (
