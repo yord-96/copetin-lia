@@ -55881,3 +55881,68 @@ body:has(.accounting-bigcash-view) .workspace {
   max-height: 1.65rem !important;
   overflow: hidden !important;
 }
+
+/* Ajuste de ancho para que subtotal y accion siempre entren en la fila. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-table-head {
+  grid-template-columns: minmax(260px, 1fr) 7.55rem 7.6rem 6.9rem 5.55rem 2.9rem !important;
+  gap: 0.52rem !important;
+  padding-inline: 0.72rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+  grid-template-columns: minmax(260px, 1fr) 7.55rem 7.6rem 6.9rem 5.55rem 2.9rem !important;
+  gap: 0.52rem !important;
+  padding-inline: 0.72rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-cell {
+  grid-template-columns: 4.45rem minmax(0, 1fr) !important;
+  gap: 0.62rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-thumb {
+  width: 4.45rem !important;
+  height: 4.45rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-copy {
+  gap: 0.24rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-copy > strong {
+  font-size: 0.78rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-line-note {
+  padding: 0.34rem 0.45rem !important;
+  font-size: 0.56rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-item-detail-chips span {
+  padding: 0.13rem 0.38rem !important;
+  font-size: 0.49rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-qty-stepper {
+  height: 2.35rem !important;
+  grid-template-columns: 1.8rem minmax(0, 1fr) 1.8rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field input,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row select {
+  min-height: 2.35rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability span {
+  min-height: 1.95rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > strong {
+  font-size: 0.78rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-remove {
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+}
