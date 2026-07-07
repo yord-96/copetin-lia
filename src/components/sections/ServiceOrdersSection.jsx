@@ -1892,7 +1892,12 @@ function ServiceOrdersSection({
   const originalContractDemandByItemId = useMemo(() => {
     const map = new Map();
     if (draft.entityType !== 'contract' || !draft.recordId) return map;
-    const currentContract = contracts.find((contract) => String(contract.id ?? '') === String(draft.recordId));
+    const currentContract = contracts.find((contract) =>
+      String(contract.id ?? '') === String(draft.recordId)
+      || (draft.manualDocumentCode && String(contract.contractCode ?? '') === String(draft.manualDocumentCode))
+      || (draft.orderCode && String(contract.orderCode ?? '') === String(draft.orderCode))
+      || (draft.rentalId && String(contract.rentalId ?? '') === String(draft.rentalId))
+    );
     (currentContract?.items ?? []).forEach((line) => {
       if (isDetachedFromInventory(line)) return;
       const itemId = String(line.itemId ?? '').trim();
@@ -1900,10 +1905,14 @@ function ServiceOrdersSection({
       map.set(itemId, (map.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(line.quantity ?? 0))));
     });
     return map;
-  }, [contracts, draft.entityType, draft.recordId]);
+  }, [contracts, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId]);
 
   const getEditableAvailableStock = useCallback((line) => {
-    const originalContractQty = Math.max(0, Number(originalContractDemandByItemId.get(line.itemId) ?? 0));
+    const originalContractQty = Math.max(
+      0,
+      Number(originalContractDemandByItemId.get(line.itemId) ?? 0),
+      Math.trunc(Number(line.originalQuantity ?? 0)),
+    );
     return Math.max(
       0,
       Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
@@ -2386,6 +2395,7 @@ function ServiceOrdersSection({
       lineKey: line.lineKey ?? (line.comboLineKey ? `${line.comboLineKey}-${line.itemId}-${index}` : undefined),
       itemId: line.itemId,
       quantity: line.quantity,
+      originalQuantity: Math.max(0, Math.trunc(Number(line.quantity ?? 0))),
       unitPriceBs: line.unitPriceBs,
       lineTotalBs: line.lineTotalBs,
       grossLineTotalBs: Number(line.grossLineTotalBs ?? 0) > 0
