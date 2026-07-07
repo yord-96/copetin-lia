@@ -102,7 +102,7 @@ const parseCommercialCodeNumericPart = (code) => {
 const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\d+\s*$/, '');
 
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
-const CATALOG_PAGE_SIZE = 5;
+const CATALOG_PAGE_SIZE = 8;
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
 const formatPaymentMethodLabel = (method, account = '') => {

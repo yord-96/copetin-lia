@@ -55946,3 +55946,24 @@ body:has(.accounting-bigcash-view) .workspace {
   height: 2.35rem !important;
   min-width: 2.35rem !important;
 }
+
+/* Catalogo visible: dos filas completas antes de abrir "Ver todos". */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+  max-height: 27.8rem !important;
+  min-height: 27.8rem !important;
+  align-content: start !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+  min-height: 12.85rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb {
+  width: 5.25rem !important;
+  height: 5.25rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
+  min-height: 1.72rem !important;
+}
