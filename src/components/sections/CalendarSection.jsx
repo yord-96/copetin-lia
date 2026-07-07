@@ -322,6 +322,7 @@ function CalendarSection({
   onCreateEvent,
   onPrintContractDocument,
   onPrintInventoryOrderDocument,
+  onPrintInventoryWeekDocument,
 }) {
   const todayKey = toDateKey(new Date());
   const today = dateFromKey(todayKey);
@@ -1636,11 +1637,19 @@ function CalendarSection({
   const openLinkedInventoryOrder = async (event) => {
     try {
       const { contract, rental } = getLinkedContext(event);
-      const preview = await onPrintInventoryOrderDocument?.({
+      const documentPayload = {
         rentalId: rental?.id ?? event.rentalId,
         orderCode: rental?.orderCode ?? event.orderCode,
         contractId: contract?.id ?? event.contractId,
-      });
+        contractCode: contract?.contractCode ?? event.contractCode,
+      };
+      const preview = onPrintInventoryWeekDocument
+        ? await onPrintInventoryWeekDocument({
+            ...documentPayload,
+            weekStart: event.dateKey,
+            format: 'individual',
+          })
+        : await onPrintInventoryOrderDocument?.(documentPayload);
       if (preview?.html) {
         setDocumentPreview({
           title: preview.title ?? `Entrega ${contract?.contractCode ?? event.contractCode ?? event.orderCode ?? ''}`.trim(),

@@ -359,6 +359,7 @@ function App() {
             onCreateEvent={canWriteCalendar ? controller.handleCreateCalendarEvent : undefined}
             onPrintContractDocument={controller.handlePrintContractDocument}
             onPrintInventoryOrderDocument={controller.handlePrintInventoryOrderDocument}
+            onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
           />
         )}
 
