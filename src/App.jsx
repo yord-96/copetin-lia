@@ -578,6 +578,7 @@ function App() {
             activeModule={controller.activeTab}
             onSwitchTransportModule={controller.setActiveTab}
             deliveries={controller.deliveries}
+            contracts={controller.contracts}
             transportRoutes={controller.transportRoutes}
             rentals={controller.rentals}
             vehicles={controller.vehicles}

@@ -103,7 +103,7 @@ const getRoutePriority = (delivery) => {
   return ROUTE_PRIORITY_META.baja;
 };
 
-const getTodayKey = () => new Date().toISOString().slice(0, 10);
+const getTodayKey = () => toDateKey(new Date());
 
 const padDatePart = (value) => String(value).padStart(2, '0');
 
@@ -142,6 +142,8 @@ const formatPlannerMonth = (value) =>
   value.toLocaleDateString('es-BO', { month: 'long', year: 'numeric' });
 
 const isPickupDelivery = (delivery) => {
+  if (delivery?.routeType === 'recojo') return true;
+  if (delivery?.routeType === 'envio') return false;
   const note = String(delivery?.notes ?? '').toLowerCase();
   return note.includes('recojo') || note.includes('recog');
 };
@@ -151,10 +153,10 @@ const getDeliveryRouteType = (delivery) => (isPickupDelivery(delivery) ? 'recojo
 const getStopAddress = (delivery) =>
   [delivery?.address, delivery?.city].map((part) => String(part ?? '').trim()).filter(Boolean).join(', ');
 
-const buildOpenStreetMapSearchUrl = (query) => {
+const buildEmbeddedMapUrl = (query) => {
   const cleanQuery = String(query ?? '').trim();
-  if (!cleanQuery) return 'https://www.openstreetmap.org/';
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(cleanQuery)}`;
+  if (!cleanQuery) return '';
+  return `https://maps.google.com/maps?q=${encodeURIComponent(cleanQuery)}&output=embed`;
 };
 
 const pseudoMapPoint = (text, index) => {
@@ -291,6 +293,7 @@ function ReturnSection({
   onGoToRental,
   onSwitchTransportModule,
   deliveries = [],
+  contracts = [],
   transportRoutes = [],
   rentals = [],
   vehicles = [],
@@ -460,13 +463,118 @@ function ReturnSection({
     [filteredDeliveries, selectedDeliveryId],
   );
 
+  const contractByRentalId = useMemo(() => {
+    const map = new Map();
+    contracts.forEach((contract) => {
+      if (contract?.rentalId) map.set(String(contract.rentalId), contract);
+    });
+    return map;
+  }, [contracts]);
+
+  const contractByOrderCode = useMemo(() => {
+    const map = new Map();
+    contracts.forEach((contract) => {
+      if (contract?.orderCode) map.set(String(contract.orderCode), contract);
+    });
+    return map;
+  }, [contracts]);
+
+  const plannerDeliveries = useMemo(() => {
+    const realRows = deliveries
+      .filter((delivery) => !delivery.deletedAt)
+      .map((delivery) => {
+        const rental = rentals.find((entry) =>
+          !entry?.deletedAt
+          && (
+            (delivery.rentalId && entry.id === delivery.rentalId)
+            || (delivery.orderCode && entry.orderCode === delivery.orderCode)
+          )
+        ) ?? null;
+        const contract = contractByRentalId.get(String(rental?.id ?? ''))
+          ?? contractByOrderCode.get(String(delivery.orderCode ?? rental?.orderCode ?? ''))
+          ?? null;
+        return {
+          ...delivery,
+          rentalId: delivery.rentalId ?? rental?.id ?? null,
+          contractCode: delivery.contractCode ?? contract?.contractCode ?? rental?.contractCode ?? '',
+          routeType: delivery.routeType ?? getDeliveryRouteType(delivery),
+          isSynthetic: false,
+        };
+      });
+    const realKeySet = new Set(realRows.map((delivery) => [
+      delivery.rentalId || '',
+      delivery.orderCode || '',
+      getDeliveryRouteType(delivery),
+      String(delivery.scheduledDate ?? '').slice(0, 10),
+    ].join('|')));
+    const syntheticRows = [];
+
+    rentals.forEach((rental) => {
+      if (!rental || rental.deletedAt || ['cancelled', 'cancelado', 'anulado'].includes(String(rental.status ?? '').toLowerCase())) return;
+      const contract = contractByRentalId.get(String(rental.id)) ?? contractByOrderCode.get(String(rental.orderCode ?? '')) ?? null;
+      const contractCode = contract?.contractCode ?? rental.contractCode ?? '';
+      const customerName = rental.customerName ?? contract?.customerName ?? 'Cliente';
+      const companyName = rental.companyName ?? contract?.companyName ?? contract?.eventType ?? customerName;
+      const address = contract?.serviceAddress ?? contract?.deliveryAddress ?? contract?.address ?? rental.deliveryAddress ?? rental.address ?? '';
+      const city = contract?.city ?? rental.city ?? '';
+      const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
+      const orderCode = rental.orderCode ?? contract?.orderCode ?? '';
+
+      const addSynthetic = (routeType, scheduledDate, windowStart, windowEnd, label) => {
+        const dateKey = String(scheduledDate ?? '').slice(0, 10);
+        if (!dateKey) return;
+        const key = [rental.id || '', orderCode || '', routeType, dateKey].join('|');
+        if (realKeySet.has(key)) return;
+        syntheticRows.push({
+          id: `synthetic-${routeType}-${rental.id}`,
+          deliveryCode: label,
+          orderCode,
+          rentalId: rental.id,
+          contractCode,
+          customerName,
+          companyName,
+          address,
+          city,
+          windowStart: windowStart || (routeType === 'recojo' ? '20:00' : '08:00'),
+          windowEnd: windowEnd || (routeType === 'recojo' ? '22:00' : '10:00'),
+          scheduledDate: dateKey,
+          status: rental.status === 'returned' && routeType === 'recojo' ? 'completada' : 'programada',
+          progress: 0,
+          notes: `${routeType === 'recojo' ? 'Recojo' : 'Envio'} generado desde contrato ${contractCode || orderCode}`.trim(),
+          routeType,
+          isSynthetic: true,
+        });
+      };
+
+      if (logisticsMode === 'envio') {
+        addSynthetic(
+          'envio',
+          contract?.deliveryDate ?? rental.rentalDate ?? rental.createdAt,
+          contract?.deliveryWindowStart ?? rental.deliveryWindowStart ?? '08:00',
+          contract?.deliveryWindowEnd ?? rental.deliveryWindowEnd ?? '10:00',
+          `Entrega ${contractCode || orderCode}`,
+        );
+      }
+
+      addSynthetic(
+        'recojo',
+        contract?.pickupDate ?? rental.dueDate,
+        contract?.pickupWindowStart ?? rental.dueTime ?? '20:00',
+        contract?.pickupWindowEnd ?? '22:00',
+        `Recojo ${contractCode || orderCode}`,
+      );
+    });
+
+    return [...realRows, ...syntheticRows];
+  }, [contractByOrderCode, contractByRentalId, deliveries, rentals]);
+
   useEffect(() => {
     setPlannerCalendarMonth(getMonthStartFromKey(plannerDate));
   }, [plannerDate]);
 
   const plannerActivityByDate = useMemo(() => {
     const activity = new Map();
-    deliveries.forEach((delivery) => {
+    plannerDeliveries.forEach((delivery) => {
       if (delivery.status === 'cancelada') return;
       const key = String(delivery.scheduledDate ?? '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
@@ -475,7 +583,7 @@ function ReturnSection({
       activity.set(key, current);
     });
     return activity;
-  }, [deliveries]);
+  }, [plannerDeliveries]);
 
   const plannerCalendarDays = useMemo(
     () => getPlannerMonthDays(plannerCalendarMonth),
@@ -529,11 +637,11 @@ function ReturnSection({
   );
 
   const plannerDayDeliveries = useMemo(() => {
-    return deliveries
+    return plannerDeliveries
       .filter((delivery) => String(delivery.scheduledDate ?? '').slice(0, 10) === plannerDate)
       .filter((delivery) => !['cancelada'].includes(delivery.status))
       .sort((a, b) => getDeliveryScheduleTime(a) - getDeliveryScheduleTime(b));
-  }, [deliveries, plannerDate]);
+  }, [plannerDeliveries, plannerDate]);
 
   const plannerDayStats = useMemo(() => {
     const envios = plannerDayDeliveries.filter((delivery) => getDeliveryRouteType(delivery) === 'envio').length;
@@ -550,7 +658,7 @@ function ReturnSection({
 
   const plannerPendingDeliveries = useMemo(() => {
     const text = String(plannerSearch ?? '').trim().toLowerCase();
-    return deliveries
+    return plannerDeliveries
       .filter((delivery) => {
         if (String(delivery.scheduledDate ?? '').slice(0, 10) !== plannerDate) return false;
         const routeType = getDeliveryRouteType(delivery);
@@ -561,6 +669,7 @@ function ReturnSection({
         if (!text) return true;
         return (
           String(delivery.orderCode ?? '').toLowerCase().includes(text)
+          || String(delivery.contractCode ?? '').toLowerCase().includes(text)
           || String(delivery.deliveryCode ?? '').toLowerCase().includes(text)
           || String(delivery.customerName ?? '').toLowerCase().includes(text)
           || String(delivery.companyName ?? '').toLowerCase().includes(text)
@@ -569,7 +678,7 @@ function ReturnSection({
         );
       })
       .sort((a, b) => getDeliveryScheduleTime(a) - getDeliveryScheduleTime(b));
-  }, [deliveries, plannerDate, plannerSearch, plannerStopFilter, selectedRoute?.id, selectedRouteStopIds]);
+  }, [plannerDate, plannerDeliveries, plannerSearch, plannerStopFilter, selectedRoute?.id, selectedRouteStopIds]);
 
   const plannerStops = useMemo(
     () => (selectedRoute?.stops ?? []).slice().sort((a, b) => a.sequence - b.sequence),
@@ -911,6 +1020,38 @@ function ReturnSection({
       setRouteSaveError('Crea una ruta para agregar esta parada.');
       return;
     }
+    let routeDelivery = delivery;
+    if (delivery?.isSynthetic) {
+      setRouteSaveError('');
+      setIsSavingRoute(true);
+      try {
+        routeDelivery = await onCreateDelivery?.({
+          customerName: delivery.customerName,
+          companyName: delivery.companyName,
+          orderCode: delivery.orderCode,
+          rentalId: delivery.rentalId,
+          address: delivery.address,
+          city: delivery.city,
+          scheduledDate: delivery.scheduledDate,
+          windowStart: delivery.windowStart,
+          windowEnd: delivery.windowEnd,
+          driverId: routeDraft.driverId || activeDriverId || null,
+          vehicleId: routeDraft.vehicleId || activeVehicleId || null,
+          notes: delivery.notes,
+          routeType: getDeliveryRouteType(delivery),
+        });
+      } catch (requestError) {
+        setRouteSaveError(requestError?.message ?? 'No se pudo crear la parada.');
+        setIsSavingRoute(false);
+        return;
+      } finally {
+        setIsSavingRoute(false);
+      }
+    }
+    if (!routeDelivery?.id) {
+      setRouteSaveError('No se pudo identificar la parada.');
+      return;
+    }
     const nextStops = [
       ...plannerStops.map((stop) => ({
         id: stop.id,
@@ -920,9 +1061,9 @@ function ReturnSection({
         notes: stop.notes,
       })),
       {
-        deliveryId: delivery.id,
+        deliveryId: routeDelivery.id,
         sequence: plannerStops.length + 1,
-        eta: delivery.windowStart ?? '',
+        eta: routeDelivery.windowStart ?? '',
         notes: '',
       },
     ];
@@ -1587,6 +1728,8 @@ function ReturnSection({
   };
 
   const renderPlannerMap = () => {
+    const embeddedMapQuery = plannerMapSearch.trim() || getStopAddress(selectedPlannerDelivery);
+    const embeddedMapUrl = buildEmbeddedMapUrl(embeddedMapQuery);
     return (
       <article className="transport-planner-map">
         <header>
@@ -1600,7 +1743,7 @@ function ReturnSection({
           className="transport-map-search-row"
           onSubmit={(event) => {
             event.preventDefault();
-            window.open(buildOpenStreetMapSearchUrl(plannerMapSearch), '_blank', 'noopener,noreferrer');
+            setPlannerMapSearch((current) => current.trim());
           }}
         >
           <input
@@ -1616,8 +1759,18 @@ function ReturnSection({
           </button>
         </form>
         <div className="transport-map-free">
-          <div className="transport-map-grid-lines" />
-          {plannerMapStops.length === 0 ? (
+          {embeddedMapUrl ? (
+            <iframe
+              className="transport-map-embed"
+              title="Mapa de busqueda de ruta"
+              src={embeddedMapUrl}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          ) : (
+            <div className="transport-map-grid-lines" />
+          )}
+          {plannerMapStops.length === 0 && !embeddedMapUrl ? (
             <div className="transport-map-empty">
               No hay paradas para visualizar en esta fecha.
             </div>
@@ -1656,7 +1809,7 @@ function ReturnSection({
                 {getDeliveryRouteType(selectedPlannerDelivery) === 'recojo' ? 'Recojo' : 'Envio'}
               </span>
               <strong>{selectedPlannerDelivery.customerName}</strong>
-              <small>{selectedPlannerDelivery.orderCode || selectedPlannerDelivery.deliveryCode}</small>
+              <small>{selectedPlannerDelivery.contractCode || selectedPlannerDelivery.orderCode || selectedPlannerDelivery.deliveryCode}</small>
             </div>
             <p>{getStopAddress(selectedPlannerDelivery) || 'Direccion pendiente'}</p>
             <p>{selectedPlannerDelivery.notes || 'Sin observaciones registradas.'}</p>
@@ -1777,6 +1930,7 @@ function ReturnSection({
           if (!text) return true;
           return (
             String(delivery.orderCode ?? '').toLowerCase().includes(text)
+            || String(delivery.contractCode ?? '').toLowerCase().includes(text)
             || String(delivery.deliveryCode ?? '').toLowerCase().includes(text)
             || String(delivery.customerName ?? '').toLowerCase().includes(text)
             || String(delivery.companyName ?? '').toLowerCase().includes(text)
@@ -1963,7 +2117,10 @@ function ReturnSection({
                             <strong>{delivery.windowStart || '--:--'}</strong>
                           )}
                         </td>
-                        <td>{delivery.orderCode || delivery.deliveryCode || '-'}</td>
+                        <td>
+                          <strong>{delivery.contractCode || delivery.orderCode || delivery.deliveryCode || '-'}</strong>
+                          {delivery.contractCode && delivery.orderCode ? <span>{delivery.orderCode}</span> : null}
+                        </td>
                         <td>
                           <strong>{delivery.customerName || '-'}</strong>
                           <span>{delivery.companyName || ''}</span>

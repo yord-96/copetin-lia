@@ -2783,7 +2783,10 @@ function InventoryDashboardSection({
     const pickupItems = row.rental.pickupChecklist?.items ?? [];
     setReceivingError('');
     setReceivingModal({
-      rental: row.rental,
+      rental: {
+        ...row.rental,
+        contractCode: row.contractCode ?? row.rental.contractCode ?? '',
+      },
       notes: '',
       items: (row.rental.items ?? []).map((line, index) => {
         const returnLineKey = String(
@@ -5364,7 +5367,8 @@ function InventoryDashboardSection({
           <form className="orders-modal orders-preview-modal" onSubmit={submitReceiving} onClick={(event) => event.stopPropagation()}>
             <header className="orders-modal-head">
               <div>
-                <h3>Recepcion de {receivingModal.rental.orderCode}</h3>
+                <h3>Recepcion de contrato {receivingModal.rental.contractCode || receivingModal.rental.orderCode}</h3>
+                {receivingModal.rental.contractCode && receivingModal.rental.orderCode ? <small>Orden {receivingModal.rental.orderCode}</small> : null}
                 <p>Inventario constata cantidades y estado final antes de cerrar cargos.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setReceivingModal(null)}>

@@ -8403,6 +8403,8 @@ const getStatusFromDelivery = (delivery) => {
 };
 
 const isPickupDeliveryRecord = (delivery) => {
+  if (delivery?.routeType === 'recojo') return true;
+  if (delivery?.routeType === 'envio') return false;
   const note = normalizeText(delivery?.notes);
   return note.includes('recojo') || note.includes('recog') || note.includes('devolucion');
 };
@@ -10323,6 +10325,7 @@ const createWebBridge = () => ({
           scheduledDate,
           driverId: payload?.driverId ?? null,
           vehicleId: payload?.vehicleId ?? null,
+          routeType: ['envio', 'recojo'].includes(payload?.routeType) ? payload.routeType : null,
           status: 'programada',
           progress: 0,
           notes: String(payload?.notes ?? '').trim(),
@@ -10427,6 +10430,7 @@ const createWebBridge = () => ({
         }
         if (payload.driverId !== undefined) delivery.driverId = payload.driverId;
         if (payload.vehicleId !== undefined) delivery.vehicleId = payload.vehicleId;
+        if (payload.routeType !== undefined && ['envio', 'recojo'].includes(payload.routeType)) delivery.routeType = payload.routeType;
         if (payload.windowStart !== undefined) delivery.windowStart = String(payload.windowStart ?? '').trim();
         if (payload.windowEnd !== undefined) delivery.windowEnd = String(payload.windowEnd ?? '').trim();
         if (payload.scheduledDate !== undefined) delivery.scheduledDate = String(payload.scheduledDate ?? '').trim();
