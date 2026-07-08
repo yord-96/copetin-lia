@@ -15,6 +15,7 @@ import {
   MessageCircle,
   PackageOpen,
   Phone,
+  Pencil,
   Search,
   RefreshCw,
   Truck,
@@ -105,6 +106,18 @@ const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 8;
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
+
+const normalizeLedgerPaymentMethod = (value) => {
+  const method = String(value ?? '').trim().toLowerCase();
+  return ['efectivo', 'qr', 'transferencia'].includes(method) ? method : 'efectivo';
+};
+
+const normalizeLedgerPaymentAccount = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const match = QR_ACCOUNT_OPTIONS.find((account) => normalizeText(account) === normalizeText(raw));
+  return match ?? raw.toUpperCase();
+};
 
 const formatPaymentMethodLabel = (method, account = '') => {
   if (method === 'qr') return account ? `QR - ${account}` : 'QR';
@@ -271,10 +284,15 @@ const ECONOMIC_LEDGER_TYPE_META = {
 
 const normalizeEconomicLedgerEntry = (entry, index = 0) => {
   const type = ECONOMIC_LEDGER_TYPE_META[entry?.type] ? entry.type : 'note';
+  const paymentMethod = type === 'note' ? '' : normalizeLedgerPaymentMethod(entry?.paymentMethod ?? entry?.method);
   return {
     id: String(entry?.id ?? `economic-ledger-${index}`).trim(),
     type,
     amountBs: Math.max(0, toMoneyNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+    paymentMethod,
+    paymentAccount: paymentMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(entry?.paymentAccount ?? entry?.account)
+      : '',
     note: String(entry?.note ?? '').trim(),
     createdAt: entry?.createdAt ?? new Date().toISOString(),
     createdByName: String(entry?.createdByName ?? entry?.createdBy ?? 'Sistema').trim() || 'Sistema',
@@ -1071,6 +1089,11 @@ function ServiceOrdersSection({
     receipt: '',
     note: '',
   });
+  const [contractEconomicsLedgerDraft, setContractEconomicsLedgerDraft] = useState({
+    paymentMethod: 'efectivo',
+    paymentAccount: '',
+  });
+  const [contractEconomicsLedgerEditingId, setContractEconomicsLedgerEditingId] = useState(null);
   const contractEconomicsLedgerTypeRef = useRef(null);
   const contractEconomicsLedgerAmountRef = useRef(null);
   const contractEconomicsLedgerNoteRef = useRef(null);
@@ -1100,6 +1123,7 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const canChooseResponsibles = isDeveloper(currentUser);
+  const canManageContractEconomicLedger = isDeveloper(currentUser);
   const contractNumberingInfo = useMemo(() => {
     const numbering = settings?.numbering ?? {};
     const prefix = String(numbering.contractPrefix ?? '');
@@ -4484,67 +4508,8 @@ function ServiceOrdersSection({
     }
   };
 
-  const handleSubmitContractEconomicLedger = async (event) => {
-    event.preventDefault();
-
-    if (!contractEconomicsData || isSavingContractEconomicsLedger) return;
-
-    const selectedType = String(
-      contractEconomicsLedgerTypeRef.current?.value ?? 'deposit',
-    ).trim();
-
-    const type = ECONOMIC_LEDGER_TYPE_META[selectedType]
-      ? selectedType
-      : 'note';
-
-    const amountBs = type === 'note'
-      ? 0
-      : Math.max(
-          0,
-          toMoneyNumber(
-            contractEconomicsLedgerAmountRef.current?.value ?? '',
-          ),
-        );
-
-    const note = String(
-      contractEconomicsLedgerNoteRef.current?.value ?? '',
-    ).trim();
-
-    if (type !== 'note' && amountBs <= 0) {
-      setContractEconomicsError(
-        'El monto debe ser mayor a 0 para guardar esta linea.',
-      );
-      return;
-    }
-
-    if (!note) {
-      setContractEconomicsError(
-        'Escribe un detalle para que el historial sea entendible despues.',
-      );
-      return;
-    }
-
-    const createdByName = String(
-      currentUser?.fullName
-        ?? currentUser?.name
-        ?? currentUser?.username
-        ?? currentUser?.email
-        ?? 'Sistema',
-    ).trim() || 'Sistema';
-
-    const entry = {
-      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      type,
-      amountBs,
-      note,
-      createdAt: new Date().toISOString(),
-      createdByName,
-    };
-
-    const nextLedger = [
-      ...(contractEconomicsData.economicLedger ?? []),
-      entry,
-    ];
+  const saveContractEconomicLedgerRows = async (nextLedger, successMessage) => {
+    if (!contractEconomicsData || isSavingContractEconomicsLedger) return null;
 
     setIsSavingContractEconomicsLedger(true);
     setContractEconomicsError('');
@@ -4573,25 +4538,14 @@ function ServiceOrdersSection({
       }
 
       setContractEconomicsTarget(updated);
-
-      if (contractEconomicsLedgerTypeRef.current) {
-        contractEconomicsLedgerTypeRef.current.value = 'deposit';
-      }
-
-      if (contractEconomicsLedgerAmountRef.current) {
-        contractEconomicsLedgerAmountRef.current.value = '';
-      }
-
-      if (contractEconomicsLedgerNoteRef.current) {
-        contractEconomicsLedgerNoteRef.current.value = '';
-      }
-
       setActionFeedback(
-        `Seguimiento economico actualizado para contrato ${
+        successMessage
+        || `Seguimiento economico actualizado para contrato ${
           contractEconomicsData.contract?.contractCode
           || contractEconomicsData.contract?.id
         }.`,
       );
+      return updated;
     } catch (error) {
       console.error(
         '[economic-ledger] Error al guardar',
@@ -4602,8 +4556,163 @@ function ServiceOrdersSection({
         error.message
         || 'No se pudo guardar el seguimiento economico del contrato.',
       );
+      return null;
     } finally {
       setIsSavingContractEconomicsLedger(false);
+    }
+  };
+
+  const resetContractEconomicLedgerForm = () => {
+    setContractEconomicsLedgerEditingId(null);
+    setContractEconomicsLedgerDraft({
+      paymentMethod: 'efectivo',
+      paymentAccount: '',
+    });
+
+    if (contractEconomicsLedgerTypeRef.current) {
+      contractEconomicsLedgerTypeRef.current.value = 'deposit';
+    }
+
+    if (contractEconomicsLedgerAmountRef.current) {
+      contractEconomicsLedgerAmountRef.current.value = '';
+    }
+
+    if (contractEconomicsLedgerNoteRef.current) {
+      contractEconomicsLedgerNoteRef.current.value = '';
+    }
+  };
+
+  const handleSubmitContractEconomicLedger = async (event) => {
+    event.preventDefault();
+
+    if (!contractEconomicsData || isSavingContractEconomicsLedger) return;
+
+    const selectedType = String(
+      contractEconomicsLedgerTypeRef.current?.value ?? 'deposit',
+    ).trim();
+
+    const type = ECONOMIC_LEDGER_TYPE_META[selectedType]
+      ? selectedType
+      : 'note';
+
+    const amountBs = type === 'note'
+      ? 0
+      : Math.max(
+          0,
+          toMoneyNumber(
+            contractEconomicsLedgerAmountRef.current?.value ?? '',
+          ),
+        );
+
+    const note = String(
+      contractEconomicsLedgerNoteRef.current?.value ?? '',
+    ).trim();
+
+    const paymentMethod = type === 'note'
+      ? ''
+      : normalizeLedgerPaymentMethod(contractEconomicsLedgerDraft.paymentMethod);
+    const paymentAccount = paymentMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(contractEconomicsLedgerDraft.paymentAccount)
+      : '';
+
+    if (type !== 'note' && amountBs <= 0) {
+      setContractEconomicsError(
+        'El monto debe ser mayor a 0 para guardar esta linea.',
+      );
+      return;
+    }
+
+    if (!note) {
+      setContractEconomicsError(
+        'Escribe un detalle para que el historial sea entendible despues.',
+      );
+      return;
+    }
+
+    if (paymentMethod === 'qr' && !paymentAccount) {
+      setContractEconomicsError(
+        'Selecciona la cuenta o banco QR para guardar esta linea.',
+      );
+      return;
+    }
+
+    const createdByName = String(
+      currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+    ).trim() || 'Sistema';
+
+    const entry = {
+      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type,
+      amountBs,
+      paymentMethod,
+      paymentAccount,
+      note,
+      createdAt: new Date().toISOString(),
+      createdByName,
+    };
+
+    const currentLedger = contractEconomicsData.economicLedger ?? [];
+    const nextLedger = contractEconomicsLedgerEditingId
+      ? currentLedger.map((row) =>
+        row.id === contractEconomicsLedgerEditingId
+          ? {
+            ...row,
+            type,
+            amountBs,
+            paymentMethod,
+            paymentAccount,
+            note,
+            editedAt: new Date().toISOString(),
+            editedByName: createdByName,
+          }
+          : row
+      )
+      : [
+        ...currentLedger,
+        entry,
+      ];
+
+    const updated = await saveContractEconomicLedgerRows(nextLedger);
+    if (updated) resetContractEconomicLedgerForm();
+  };
+
+  const handleEditContractEconomicLedgerEntry = (entry) => {
+    if (!canManageContractEconomicLedger) return;
+    setContractEconomicsLedgerEditingId(entry.id);
+    setContractEconomicsLedgerDraft({
+      paymentMethod: entry.paymentMethod || 'efectivo',
+      paymentAccount: entry.paymentAccount || '',
+    });
+
+    if (contractEconomicsLedgerTypeRef.current) {
+      contractEconomicsLedgerTypeRef.current.value = entry.type || 'deposit';
+    }
+    if (contractEconomicsLedgerAmountRef.current) {
+      contractEconomicsLedgerAmountRef.current.value = entry.type === 'note' ? '' : String(entry.amountBs ?? '');
+    }
+    if (contractEconomicsLedgerNoteRef.current) {
+      contractEconomicsLedgerNoteRef.current.value = entry.note ?? '';
+      contractEconomicsLedgerNoteRef.current.focus();
+    }
+  };
+
+  const handleDeleteContractEconomicLedgerEntry = async (entry) => {
+    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    const confirmed = window.confirm('Eliminar esta linea del cuaderno economico?');
+    if (!confirmed) return;
+
+    const nextLedger = (contractEconomicsData.economicLedger ?? [])
+      .filter((row) => row.id !== entry.id);
+    const updated = await saveContractEconomicLedgerRows(
+      nextLedger,
+      'Linea eliminada del cuaderno economico.',
+    );
+    if (updated && contractEconomicsLedgerEditingId === entry.id) {
+      resetContractEconomicLedgerForm();
     }
   };
 
@@ -5981,82 +6090,169 @@ function ServiceOrdersSection({
                     <h4>Cuaderno economico del contrato</h4>
                     <p>Registra como realmente se movio el dinero: abonos, garantia separada, cargos, devoluciones y notas.</p>
                   </div>
+                  <div className="contract-economics-notebook-summary">
+                    <article className="tone-blue">
+                      <span>Recibido total</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs)}</strong>
+                    </article>
+                    <article className="tone-violet">
+                      <span>Garantia apartada</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
+                    </article>
+                    <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
+                      <span>Debe segun hoja</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
+                    </article>
+                    <article className="tone-green">
+                      <span>A devolver sugerido</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                    </article>
+                  </div>
                   <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
                 </header>
 
-                <div className="contract-economics-notebook-summary">
-                  <article className="tone-blue">
-                    <span>Recibido total</span>
-                    <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs)}</strong>
-                  </article>
-                  <article className="tone-violet">
-                    <span>Garantia apartada</span>
-                    <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
-                  </article>
-                  <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
-                    <span>Debe segun hoja</span>
-                    <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
-                  </article>
-                  <article className="tone-green">
-                    <span>A devolver sugerido</span>
-                    <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
-                  </article>
-                </div>
+                <div className="contract-economics-ledger-sheet">
+                  <div className="contract-economics-ledger-head">
+                    <span></span>
+                    <span>Fecha</span>
+                    <span>Movimiento</span>
+                    <span>Monto Bs</span>
+                    <span>Metodo</span>
+                    <span>Cuenta QR</span>
+                    <span>Detalle historico</span>
+                    <span>Acciones</span>
+                  </div>
 
-                <form className="contract-economics-ledger-form" onSubmit={handleSubmitContractEconomicLedger}>
-                  <label>
-                    Movimiento
-                    <select
-                      ref={contractEconomicsLedgerTypeRef}
-                      defaultValue="deposit"
-                      disabled={readOnly || isSavingContractEconomicsLedger}
-                    >
-                      {Object.entries(ECONOMIC_LEDGER_TYPE_META).map(([value, meta]) => (
-                        <option key={value} value={value}>{meta.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Monto Bs
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      ref={contractEconomicsLedgerAmountRef}
-                      placeholder="0.00"
-                      disabled={readOnly || isSavingContractEconomicsLedger}
-                    />
-                  </label>
-                  <label>
-                    Detalle historico
-                    <input
-                      ref={contractEconomicsLedgerNoteRef}
-                      placeholder="Ej. Deposito 1700, se separan 200 como garantia..."
-                      disabled={readOnly || isSavingContractEconomicsLedger}
-                    />
-                  </label>
-                  <button type="submit" className="primary-button" disabled={readOnly || isSavingContractEconomicsLedger}>
-                    {isSavingContractEconomicsLedger ? 'Guardando...' : 'Agregar linea'}
-                  </button>
-                </form>
+                  <form className="contract-economics-ledger-form" onSubmit={handleSubmitContractEconomicLedger}>
+                    <span className="contract-economics-ledger-dot" aria-hidden="true"></span>
+                    <label className="contract-economics-ledger-type">
+                      <span>Movimiento</span>
+                      <select
+                        ref={contractEconomicsLedgerTypeRef}
+                        defaultValue="deposit"
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      >
+                        {Object.entries(ECONOMIC_LEDGER_TYPE_META).map(([value, meta]) => (
+                          <option key={value} value={value}>{meta.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="contract-economics-ledger-amount">
+                      <span>Monto Bs</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        ref={contractEconomicsLedgerAmountRef}
+                        placeholder="0,00"
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      />
+                    </label>
+                    <label className="contract-economics-ledger-method">
+                      <span>Metodo</span>
+                      <select
+                        value={contractEconomicsLedgerDraft.paymentMethod}
+                        onChange={(event) => setContractEconomicsLedgerDraft((current) => ({
+                          ...current,
+                          paymentMethod: event.target.value,
+                          paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '',
+                        }))}
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      >
+                        <option value="efectivo">Efectivo</option>
+                        <option value="qr">QR</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                    </label>
+                    {contractEconomicsLedgerDraft.paymentMethod === 'qr' ? (
+                      <label className="contract-economics-ledger-qr">
+                        <span>Cuenta QR</span>
+                        <select
+                          value={contractEconomicsLedgerDraft.paymentAccount}
+                          onChange={(event) => setContractEconomicsLedgerDraft((current) => ({
+                            ...current,
+                            paymentAccount: event.target.value,
+                          }))}
+                          disabled={readOnly || isSavingContractEconomicsLedger}
+                        >
+                          <option value="">Seleccionar</option>
+                          {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
+                    <label className="contract-economics-ledger-detail">
+                      <span>Detalle historico</span>
+                      <input
+                        ref={contractEconomicsLedgerNoteRef}
+                        placeholder="Ej. Deposito 1700, se separan 200 como garantia..."
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      />
+                    </label>
+                    <div className="contract-economics-ledger-form-actions">
+                      <button type="submit" className="primary-button" disabled={readOnly || isSavingContractEconomicsLedger}>
+                        {isSavingContractEconomicsLedger
+                          ? 'Guardando...'
+                          : contractEconomicsLedgerEditingId
+                            ? 'Guardar'
+                            : 'Agregar linea'}
+                      </button>
+                      {contractEconomicsLedgerEditingId ? (
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={resetContractEconomicLedgerForm}
+                          disabled={isSavingContractEconomicsLedger}
+                        >
+                          Cancelar
+                        </button>
+                      ) : null}
+                    </div>
+                  </form>
 
-                <div className="contract-economics-notebook-lines">
-                  {contractEconomicsData.economicLedger.length > 0 ? contractEconomicsData.economicLedger.map((entry) => {
-                    const meta = ECONOMIC_LEDGER_TYPE_META[entry.type] ?? ECONOMIC_LEDGER_TYPE_META.note;
-                    return (
-                      <article className={`contract-economics-notebook-line tone-${meta.tone}`} key={entry.id}>
-                        <time>{entry.createdAt ? formatDateTime(entry.createdAt) : '-'}</time>
-                        <span>{meta.label}</span>
-                        <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
-                        <p>{entry.note}</p>
-                        <small>{entry.createdByName}</small>
-                      </article>
-                    );
-                  }) : (
-                    <p className="contract-economics-empty">
-                      Todavia no hay lineas en el cuaderno. Agrega el primer movimiento para empezar el seguimiento historico.
-                    </p>
-                  )}
+                  <div className="contract-economics-notebook-lines">
+                    {contractEconomicsData.economicLedger.length > 0 ? contractEconomicsData.economicLedger.map((entry) => {
+                      const meta = ECONOMIC_LEDGER_TYPE_META[entry.type] ?? ECONOMIC_LEDGER_TYPE_META.note;
+                      return (
+                        <article className={`contract-economics-notebook-line tone-${meta.tone}`} key={entry.id}>
+                          <span className="contract-economics-ledger-dot" aria-hidden="true"></span>
+                          <time>{entry.createdAt ? formatDateTime(entry.createdAt) : '-'}</time>
+                          <span>{meta.label}</span>
+                          <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
+                          <em>{entry.type === 'note' ? 'Sin metodo' : formatPaymentMethodLabel(entry.paymentMethod, entry.paymentAccount)}</em>
+                          <p>{entry.note}</p>
+                          {canManageContractEconomicLedger ? (
+                            <div className="contract-economics-notebook-line-actions">
+                              <button
+                                type="button"
+                                className="contract-economics-row-action"
+                                onClick={() => handleEditContractEconomicLedgerEntry(entry)}
+                                disabled={readOnly || isSavingContractEconomicsLedger}
+                                aria-label={`Editar linea ${meta.label}`}
+                              >
+                                <Pencil aria-hidden="true" />
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="contract-economics-row-action danger"
+                                onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
+                                disabled={readOnly || isSavingContractEconomicsLedger}
+                                aria-label={`Eliminar linea ${meta.label}`}
+                              >
+                                <Trash2 aria-hidden="true" />
+                                Eliminar
+                              </button>
+                            </div>
+                          ) : <small>{entry.createdByName}</small>}
+                        </article>
+                      );
+                    }) : (
+                      <p className="contract-economics-empty">
+                        Todavia no hay lineas en el cuaderno. Agrega el primer movimiento para empezar el seguimiento historico.
+                      </p>
+                    )}
+                    <p className="contract-economics-ledger-next">Escribe aqui el proximo movimiento...</p>
+                  </div>
                 </div>
               </section>
 

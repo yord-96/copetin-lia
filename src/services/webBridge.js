@@ -2014,12 +2014,19 @@ const normalizeState = (state) => {
             )
               ? String(entry.type).trim()
               : 'note';
+            const paymentMethod = type === 'note'
+              ? ''
+              : normalizePaymentMethod(entry?.paymentMethod ?? entry?.method);
             return {
               id: String(entry?.id ?? `economic-ledger-${index}`).trim() || `economic-ledger-${index}`,
               type,
               amountBs: type === 'note'
                 ? 0
                 : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+              paymentMethod,
+              paymentAccount: paymentMethod === 'qr'
+                ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
+                : '',
               note: String(entry?.note ?? '').trim(),
               createdAt: entry?.createdAt ?? now,
               createdById: entry?.createdById ?? entry?.userId ?? null,
@@ -11798,10 +11805,20 @@ const createWebBridge = () => ({
           const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
           contract.economicLedger = rows.map((entry) => {
             const type = String(entry?.type ?? '').trim();
+            const normalizedType = allowedEconomicLedgerTypes.has(type) ? type : 'note';
+            const paymentMethod = normalizedType === 'note'
+              ? ''
+              : normalizePaymentMethod(entry?.paymentMethod ?? entry?.method);
             return {
               id: String(entry?.id ?? makeId('eco')).trim() || makeId('eco'),
-              type: allowedEconomicLedgerTypes.has(type) ? type : 'note',
-              amountBs: Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? 0)),
+              type: normalizedType,
+              amountBs: normalizedType === 'note'
+                ? 0
+                : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+              paymentMethod,
+              paymentAccount: paymentMethod === 'qr'
+                ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
+                : '',
               note: String(entry?.note ?? '').trim(),
               createdAt: entry?.createdAt ?? now,
               createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
@@ -11845,10 +11862,20 @@ const createWebBridge = () => ({
         const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
         contract.economicLedger = rows.map((entry) => {
           const type = String(entry?.type ?? '').trim();
+          const normalizedType = allowedEconomicLedgerTypes.has(type) ? type : 'note';
+          const paymentMethod = normalizedType === 'note'
+            ? ''
+            : normalizePaymentMethod(entry?.paymentMethod ?? entry?.method);
           return {
             id: String(entry?.id ?? makeId('eco')).trim() || makeId('eco'),
-            type: allowedEconomicLedgerTypes.has(type) ? type : 'note',
-            amountBs: Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? 0)),
+            type: normalizedType,
+            amountBs: normalizedType === 'note'
+              ? 0
+              : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+            paymentMethod,
+            paymentAccount: paymentMethod === 'qr'
+              ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
+              : '',
             note: String(entry?.note ?? '').trim(),
             createdAt: entry?.createdAt ?? now,
             createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',

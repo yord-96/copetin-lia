@@ -80,6 +80,7 @@ const sanitizeIdentifier = (value) =>
     .slice(0, 60) || 'product'
 
 const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note'])
+const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia'])
 
 const makeEconomicLedgerId = () => `eco-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
 
@@ -93,12 +94,22 @@ const normalizeEconomicLedgerRows = (rows) => {
   if (!Array.isArray(rows)) return []
   return rows.map((entry) => {
     const type = allowedEconomicLedgerTypes.has(entry?.type) ? entry.type : 'note'
+    const paymentMethodCandidate = String(entry?.paymentMethod ?? entry?.method ?? '').trim().toLowerCase()
+    const paymentMethod = type === 'note'
+      ? ''
+      : allowedEconomicLedgerPaymentMethods.has(paymentMethodCandidate)
+        ? paymentMethodCandidate
+        : 'efectivo'
     return {
       id: String(entry?.id ?? '').trim() || makeEconomicLedgerId(),
       type,
       amountBs: type === 'note'
         ? 0
         : toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount),
+      paymentMethod,
+      paymentAccount: paymentMethod === 'qr'
+        ? String(entry?.paymentAccount ?? entry?.account ?? '').trim().toUpperCase()
+        : '',
       note: String(entry?.note ?? '').trim(),
       createdAt: String(entry?.createdAt ?? '').trim() || new Date().toISOString(),
       createdById: entry?.createdById ?? entry?.userId ?? null,

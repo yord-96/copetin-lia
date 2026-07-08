@@ -5395,6 +5395,10 @@ textarea:focus {
   padding: 1rem;
 }
 
+.clients-view > .reset-modal-backdrop {
+  z-index: 10060;
+}
+
 .reset-modal {
   width: min(430px, 100%);
   border-radius: 0.9rem;
@@ -10171,54 +10175,116 @@ textarea:focus {
 
 .contract-economics-backdrop {
   z-index: 370;
+  background: rgba(8, 17, 36, 0.5);
+  backdrop-filter: blur(2px);
 }
 
 .contract-economics-modal {
-  width: min(1480px, calc(100vw - 1rem));
-  max-height: min(900px, calc(100vh - 2rem));
+  width: min(1448px, calc(100vw - 1.2rem));
+  max-height: min(980px, calc(100vh - 1.2rem));
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 0.68rem;
+  background: #ffffff;
 }
 
 .contract-economics-body {
-  padding: 1rem;
+  padding: 1rem 1.55rem 1.2rem;
   overflow: auto;
-  background: #f7f9fd;
+  background: #fbfcff;
   display: grid;
-  gap: 0.9rem;
+  gap: 0.68rem;
 }
 
 .contract-economics-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.86rem;
 }
 
 .contract-economics-kpis article,
 .contract-economics-card,
 .contract-economics-panel {
   border: 1px solid #dfe6f2;
-  border-radius: 0.78rem;
+  border-radius: 0.45rem;
   background: #ffffff;
-  box-shadow: 0 16px 34px rgba(16, 35, 73, 0.06);
+  box-shadow: 0 12px 28px rgba(16, 35, 73, 0.045);
 }
 
 .contract-economics-kpis article {
-  padding: 0.82rem;
+  position: relative;
+  padding: 0.88rem 0.95rem 0.88rem 4.65rem;
   display: grid;
-  gap: 0.2rem;
-  min-height: 105px;
+  gap: 0.18rem;
+  min-height: 84px;
+}
+
+.contract-economics-kpis article::before {
+  content: "";
+  position: absolute;
+  left: 1.05rem;
+  top: 50%;
+  width: 2.72rem;
+  height: 2.72rem;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: #eaf3ff;
+  border: 1px solid #d3e4ff;
+}
+
+.contract-economics-kpis article::after {
+  position: absolute;
+  left: 1.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #3b82f6;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.contract-economics-kpis article:nth-child(1)::after {
+  content: "□";
+}
+
+.contract-economics-kpis article:nth-child(2)::before {
+  background: #eaf9ef;
+  border-color: #c8efd3;
+}
+
+.contract-economics-kpis article:nth-child(2)::after {
+  content: "✓";
+  color: #16a34a;
+}
+
+.contract-economics-kpis article:nth-child(3)::before {
+  background: #fff4e5;
+  border-color: #fed7aa;
+}
+
+.contract-economics-kpis article:nth-child(3)::after {
+  content: "◷";
+  color: #f97316;
+}
+
+.contract-economics-kpis article:nth-child(4)::before {
+  background: #f4efff;
+  border-color: #ddd6fe;
+}
+
+.contract-economics-kpis article:nth-child(4)::after {
+  content: "◇";
+  color: #7c3aed;
 }
 
 .contract-economics-kpis article.warning {
-  border-color: #fed7aa;
-  background: #fff7ed;
+  border-color: #e7edf8;
+  background: #ffffff;
 }
 
 .contract-economics-kpis article.success {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: #e7edf8;
+  background: #ffffff;
 }
 
 .contract-economics-kpis span,
@@ -10231,7 +10297,7 @@ textarea:focus {
 
 .contract-economics-kpis strong {
   color: #061a44;
-  font-size: 1.35rem;
+  font-size: 1.16rem;
   line-height: 1.1;
 }
 
@@ -10242,22 +10308,20 @@ textarea:focus {
 }
 
 .contract-economics-notebook {
-  border: 1px solid #f3c59e;
-  border-radius: 0.9rem;
-  background:
-    linear-gradient(90deg, rgba(239, 78, 0, 0.08) 0 3px, transparent 3px 100%),
-    repeating-linear-gradient(0deg, #fffdf9 0 31px, #f7d8bf 32px, #fffdf9 33px);
-  box-shadow: 0 18px 44px rgba(180, 83, 9, 0.08);
-  padding: 1rem;
+  border: 1px solid #dfe7f4;
+  border-radius: 0.45rem;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(16, 35, 73, 0.055);
+  padding: 0.9rem;
   display: grid;
-  gap: 0.85rem;
+  gap: 0.82rem;
 }
 
 .contract-economics-notebook-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .contract-economics-notebook-head span,
@@ -10284,33 +10348,36 @@ textarea:focus {
 }
 
 .contract-economics-notebook-head > strong {
-  border: 1px solid #fed7aa;
+  border: 1px solid #dfe7f4;
   border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c;
-  padding: 0.42rem 0.75rem;
-  font-size: 0.76rem;
+  background: #ffffff;
+  color: #43516d;
+  padding: 0.36rem 0.68rem;
+  font-size: 0.7rem;
   white-space: nowrap;
 }
 
 .contract-economics-notebook-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.42rem;
+  margin-left: auto;
+  width: min(670px, 52vw);
+  flex: 1 1 620px;
 }
 
 .contract-economics-notebook-summary article {
   border: 1px solid #e1e8f5;
-  border-radius: 0.72rem;
+  border-radius: 0.28rem;
   background: rgba(255, 255, 255, 0.9);
-  padding: 0.72rem 0.78rem;
+  padding: 0.38rem 0.58rem;
   display: grid;
-  gap: 0.2rem;
+  gap: 0.12rem;
 }
 
 .contract-economics-notebook-summary strong {
   color: #071c46;
-  font-size: 1.18rem;
+  font-size: 0.9rem;
 }
 
 .contract-economics-notebook-summary .tone-blue {
@@ -10333,97 +10400,249 @@ textarea:focus {
   background: #f0fdf4;
 }
 
-.contract-economics-ledger-form {
+.contract-economics-ledger-sheet {
+  position: relative;
+  border: 1px solid #e1e7f2;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, transparent 0 4.15rem, rgba(239, 68, 68, 0.45) 4.15rem 4.2rem, transparent 4.2rem 100%),
+    repeating-linear-gradient(0deg, #fffdfa 0 27px, #dfe8f7 28px, #fffdfa 29px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.contract-economics-ledger-head,
+.contract-economics-ledger-form,
+.contract-economics-notebook-line {
   display: grid;
-  grid-template-columns: 180px 140px minmax(300px, 1fr) auto;
-  gap: 0.65rem;
-  align-items: end;
-  border: 1px solid #f2d4bd;
-  border-radius: 0.78rem;
-  background: rgba(255, 255, 255, 0.86);
-  padding: 0.78rem;
+  grid-template-columns: 48px 132px 180px 128px 140px 150px minmax(210px, 1fr) 168px;
+  gap: 0.54rem;
+  align-items: center;
+}
+
+.contract-economics-ledger-head {
+  min-height: 2rem;
+  padding: 0 1rem;
+  color: #52607c;
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.contract-economics-ledger-form {
+  min-height: 3.2rem;
+  border-top: 1px solid #e1e7f2;
+  border-bottom: 1px solid #d8e4f6;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.42rem 1rem;
 }
 
 .contract-economics-ledger-form label {
   display: grid;
-  gap: 0.25rem;
+  gap: 0;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-type {
+  grid-column: 2 / 4;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-amount {
+  grid-column: 4;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-method {
+  grid-column: 5;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-qr {
+  grid-column: 6;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-detail {
+  grid-column: 6 / 8;
+}
+
+.contract-economics-ledger-form .contract-economics-ledger-qr + .contract-economics-ledger-detail {
+  grid-column: 7;
+  grid-row: 1;
+}
+
+.contract-economics-ledger-form label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .contract-economics-ledger-form input,
 .contract-economics-ledger-form select {
-  min-height: 2.42rem;
+  min-height: 2.24rem;
   border: 1px solid #d8e2f3;
-  border-radius: 0.58rem;
+  border-radius: 0.34rem;
   background: #ffffff;
   color: #071c46;
-  padding: 0 0.72rem;
-  font-size: 0.82rem;
+  padding: 0 0.58rem;
+  font-size: 0.74rem;
   font-weight: 800;
   text-transform: none;
 }
 
+.contract-economics-ledger-form-actions {
+  grid-column: 8;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .contract-economics-ledger-form .primary-button {
-  min-height: 2.42rem;
+  min-height: 2.24rem;
   white-space: nowrap;
 }
 
 .contract-economics-notebook-lines {
   display: grid;
-  gap: 0.5rem;
-  max-height: 275px;
+  max-height: 260px;
   overflow: auto;
-  padding-right: 0.2rem;
 }
 
 .contract-economics-notebook-line {
-  display: grid;
-  grid-template-columns: 150px 160px 120px minmax(260px, 1fr) 135px;
-  gap: 0.75rem;
-  align-items: center;
-  border: 1px solid #e4ebf6;
-  border-left-width: 5px;
-  border-radius: 0.72rem;
-  background: rgba(255, 255, 255, 0.92);
-  padding: 0.62rem 0.75rem;
+  position: relative;
+  min-height: 2.15rem;
+  border-top: 1px solid #dce6f5;
+  background: transparent;
+  padding: 0.28rem 1rem;
   color: #102345;
 }
 
+.contract-economics-notebook-line > p {
+  grid-column: 6 / 8;
+}
+
+.contract-economics-notebook-line > .contract-economics-notebook-line-actions,
+.contract-economics-notebook-line > small {
+  grid-column: 8;
+}
+
 .contract-economics-notebook-line.tone-blue {
-  border-left-color: #2563eb;
+  color: #102345;
 }
 
 .contract-economics-notebook-line.tone-violet {
-  border-left-color: #7c3aed;
+  color: #102345;
 }
 
 .contract-economics-notebook-line.tone-orange {
-  border-left-color: #ea580c;
+  color: #102345;
 }
 
 .contract-economics-notebook-line.tone-green {
-  border-left-color: #16a34a;
+  color: #102345;
 }
 
 .contract-economics-notebook-line.tone-slate {
-  border-left-color: #64748b;
+  color: #102345;
 }
 
 .contract-economics-notebook-line time,
 .contract-economics-notebook-line small {
-  color: #64748b;
-  font-size: 0.74rem;
+  color: #35425e;
+  font-size: 0.8rem;
   font-weight: 800;
+}
+
+.contract-economics-notebook-line em {
+  color: #17233f;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 750;
 }
 
 .contract-economics-notebook-line strong {
   color: #071c46;
-  font-size: 0.92rem;
+  font-size: 0.82rem;
 }
 
 .contract-economics-notebook-line p {
   margin: 0;
   color: #1f3158;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contract-economics-notebook-line-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.38rem;
+}
+
+.contract-economics-row-action {
+  min-height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border: 1px solid #d8e3f4;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: #33446d;
+  padding: 0 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.contract-economics-row-action svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.contract-economics-row-action:hover:not(:disabled) {
+  border-color: #93b4e8;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.contract-economics-row-action.danger {
+  border-color: #f8c7cf;
+  color: #be123c;
+}
+
+.contract-economics-row-action.danger:hover:not(:disabled) {
+  border-color: #fb7185;
+  background: #fff1f2;
+  color: #a20f34;
+}
+
+.contract-economics-row-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.contract-economics-ledger-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  justify-self: center;
+  border: 1px solid #cbd5e1;
+  background: linear-gradient(135deg, #f8fafc, #d8dee8);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.18);
+}
+
+.contract-economics-ledger-next {
+  margin: 0;
+  min-height: 2.15rem;
+  border-top: 1px solid #dce6f5;
+  padding: 0.48rem 1rem 0.48rem 6.2rem;
+  color: #818da6;
+  font-size: 0.78rem;
+  font-style: italic;
   font-weight: 800;
 }
 
@@ -10435,7 +10654,7 @@ textarea:focus {
 
 .contract-economics-collect {
   border: 1px solid #dbe7ff;
-  border-radius: 0.78rem;
+  border-radius: 0.45rem;
   background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
   padding: 0.86rem;
   display: grid;
@@ -10585,7 +10804,7 @@ textarea:focus {
   margin: 0;
   padding: 0.9rem;
   border: 1px dashed #ccd7eb;
-  border-radius: 0.65rem;
+  border-radius: 0.4rem;
   color: #6b7894;
   font-size: 0.82rem;
   font-weight: 800;
@@ -10624,10 +10843,26 @@ textarea:focus {
   .contract-economics-kpis,
   .contract-economics-grid,
   .contract-economics-collect,
-  .contract-economics-notebook-summary,
+  .contract-economics-notebook-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-economics-body {
+    padding: 0.85rem;
+  }
+
+  .contract-economics-kpis article {
+    padding-left: 4.2rem;
+  }
+
+  .contract-economics-ledger-sheet {
+    overflow-x: auto;
+  }
+
+  .contract-economics-ledger-head,
   .contract-economics-ledger-form,
   .contract-economics-notebook-line {
-    grid-template-columns: 1fr;
+    min-width: 1080px;
   }
 
   .contract-economics-table {

@@ -1128,7 +1128,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.suppliers.create(payload);
-      await loadData();
+      await loadData({ silent: true });
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el proveedor.');
@@ -1152,7 +1152,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.suppliers.createQuote(payload);
-      await loadData();
+      await loadData({ silent: true });
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear la cotizacion del proveedor.');

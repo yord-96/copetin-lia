@@ -404,9 +404,12 @@ function ClientsSection({
     if (!rowMenuOpenId) return undefined;
 
     const closeOnOutside = (event) => {
-      if (rowMenuRef.current && !rowMenuRef.current.contains(event.target)) {
-        closeRowMenu();
+      const clickedInsideRowMenu = event.target?.closest?.('[data-clients-row-menu-root="true"]');
+      if (clickedInsideRowMenu || rowMenuRef.current?.contains(event.target)) {
+        return;
       }
+
+      closeRowMenu();
     };
 
     document.addEventListener('mousedown', closeOnOutside);
@@ -677,6 +680,9 @@ function ClientsSection({
   const openEditModal = (client) => {
     setModalMode('edit');
     setClientModalTab('basic');
+    setDetailClient(null);
+    setDocumentPreview(null);
+    setWhatsAppModal(null);
     const deliveryAddresses =
       Array.isArray(client.deliveryAddresses) && client.deliveryAddresses.length > 0
         ? client.deliveryAddresses.map((entry, index) => ({
@@ -713,6 +719,11 @@ function ClientsSection({
       attachments: Array.isArray(client.attachments) ? client.attachments : [],
     });
     setFormError('');
+  };
+
+  const openEditModalFromMenu = (client) => {
+    closeRowMenu();
+    openEditModal(client);
   };
 
   const closeModal = () => {
@@ -2184,8 +2195,7 @@ function ClientsSection({
       <button
         type="button"
         onClick={() => {
-          openEditModal(row);
-          closeRowMenu();
+          openEditModalFromMenu(row);
         }}
       >
         Editar cliente
@@ -2395,7 +2405,11 @@ function ClientsSection({
                     </div>
                   </td>
                   <td className="clients-row-menu">
-                    <div className="clients-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
+                    <div
+                      className="clients-actions-menu-wrap"
+                      data-clients-row-menu-root="true"
+                      ref={rowMenuOpenId === row.id ? rowMenuRef : null}
+                    >
                       <button
                         type="button"
                         className="clients-row-menu-button"
@@ -2438,7 +2452,11 @@ function ClientsSection({
                     <strong>{row.name}</strong>
                     <small>{row.companyName || row.contactName || 'Sin empresa registrada'}</small>
                   </div>
-                  <div className="clients-actions-menu-wrap" ref={rowMenuOpenId === row.id ? rowMenuRef : null}>
+                  <div
+                    className="clients-actions-menu-wrap"
+                    data-clients-row-menu-root="true"
+                    ref={rowMenuOpenId === row.id ? rowMenuRef : null}
+                  >
                     <button
                       type="button"
                       className="clients-row-menu-button"
