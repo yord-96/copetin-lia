@@ -79,6 +79,71 @@ const sanitizeIdentifier = (value) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'product'
 
+const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note'])
+
+const makeEconomicLedgerId = () => `eco-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`
+
+const toPositiveRoundedNumber = (value) => {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) return 0
+  return Math.round(number * 100) / 100
+}
+
+const normalizeEconomicLedgerRows = (rows) => {
+  if (!Array.isArray(rows)) return []
+  return rows.map((entry) => {
+    const type = allowedEconomicLedgerTypes.has(entry?.type) ? entry.type : 'note'
+    return {
+      id: String(entry?.id ?? '').trim() || makeEconomicLedgerId(),
+      type,
+      amountBs: type === 'note'
+        ? 0
+        : toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount),
+      note: String(entry?.note ?? '').trim(),
+      createdAt: String(entry?.createdAt ?? '').trim() || new Date().toISOString(),
+      createdById: entry?.createdById ?? entry?.userId ?? null,
+      createdByName: String(entry?.createdByName ?? entry?.userName ?? 'Sistema').trim() || 'Sistema',
+    }
+  })
+}
+
+const patchContractEconomicLedger = (state, requestedId, payload) => {
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : []
+  const contractIndex = contracts.findIndex((contract) =>
+    String(contract?.id ?? '') === requestedId
+    || String(contract?.contractCode ?? '') === requestedId
+    || String(contract?.number ?? '') === requestedId
+  )
+
+  if (contractIndex < 0) {
+    const error = new Error('Contrato no encontrado para guardar el cuaderno economico.')
+    error.statusCode = 404
+    throw error
+  }
+
+  const now = new Date().toISOString()
+  const updatedContract = {
+    ...contracts[contractIndex],
+    economicLedger: normalizeEconomicLedgerRows(payload?.economicLedger),
+    economicLedgerUpdatedAt: now,
+    economicLedgerUpdatedById: payload?.updatedById ?? payload?.userId ?? null,
+    economicLedgerUpdatedByName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+    updatedAt: now,
+  }
+
+  return {
+    state: {
+      ...state,
+      contracts: [
+        ...contracts.slice(0, contractIndex),
+        updatedContract,
+        ...contracts.slice(contractIndex + 1),
+      ],
+    },
+    contract: updatedContract,
+  }
+}
+
 const sharedDemoDbPlugin = (env) => {
   const productUploadDirectory = path.resolve(env.PRODUCT_UPLOAD_DIR || defaultProductUploadDirectory)
   const attendanceUploadDirectory = path.resolve(env.ATTENDANCE_UPLOAD_DIR || defaultAttendanceUploadDirectory)
@@ -246,6 +311,39 @@ const sharedDemoDbPlugin = (env) => {
 
           const raw = fs.readFileSync(sharedDbPath, 'utf8')
           sendJson(res, 200, { initialized: true, state: JSON.parse(raw), revision: getSharedDbRevision() })
+          return
+        }
+
+        const normalizedPath = url.pathname.replace(/^\/__copetin_db/, '') || '/'
+        const economicLedgerMatch = normalizedPath.match(/^\/contracts\/([^/]+)\/economic-ledger$/)
+        if (req.method === 'PUT' && economicLedgerMatch) {
+          const body = await readBody(req)
+          const payload = JSON.parse(body)
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            sendJson(res, 400, { error: 'La solicitud debe enviarse como objeto JSON.' })
+            return
+          }
+          if (!fs.existsSync(sharedDbPath)) {
+            sendJson(res, 404, { error: 'La base de datos aun no esta inicializada.' })
+            return
+          }
+
+          const state = JSON.parse(fs.readFileSync(sharedDbPath, 'utf8'))
+          const { state: nextState, contract } = patchContractEconomicLedger(
+            state,
+            decodeURIComponent(economicLedgerMatch[1]),
+            payload,
+          )
+          fs.writeFileSync(sharedDbPath, JSON.stringify(nextState, null, 2), 'utf8')
+          server.config.logger.info(
+            `[economic-ledger] Guardado local: contrato ${contract?.contractCode ?? contract?.id ?? 'desconocido'}, filas ${contract?.economicLedger?.length ?? 0}, primer monto ${contract?.economicLedger?.[0]?.amountBs ?? 0}`,
+          )
+          sendJson(res, 200, {
+            ok: true,
+            contract,
+            revision: getSharedDbRevision(),
+            updatedAt: fs.statSync(sharedDbPath).mtime.toISOString(),
+          })
           return
         }
 

@@ -1065,6 +1065,35 @@ export const useAppController = () => {
     }
   };
 
+  const handleUpdateContractEconomicLedger = async (payload) => {
+    setError('');
+    try {
+      const trace = getCurrentUserTrace();
+      const updated = await api.contracts.updateEconomicLedger({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
+
+      if (!updated?.id) {
+        throw new Error('El servidor no devolvio el contrato actualizado.');
+      }
+
+      setContracts((current) => current.map((contract) => (
+        String(contract?.id) === String(updated.id)
+          ? updated
+          : contract
+      )));
+
+      void loadData({ silent: true });
+      return updated;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo guardar el seguimiento economico del contrato.');
+      throw requestError;
+    }
+  };
+
   const handleRemoveContract = async (payload) => {
     setError('');
     try {
@@ -2017,6 +2046,7 @@ export const useAppController = () => {
     handleCancelOrderContract,
     handleCreateContract,
     handleUpdateContract,
+    handleUpdateContractEconomicLedger,
     handleRemoveContract,
     handleRevertContractToQuote,
     handleCreateSupplier,

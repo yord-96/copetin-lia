@@ -548,6 +548,7 @@ function App() {
             onCancelOrderContract={canWriteOrders ? controller.handleCancelOrderContract : undefined}
             onCreateContract={canWriteOrders ? controller.handleCreateContract : undefined}
             onUpdateContract={canWriteOrders ? controller.handleUpdateContract : undefined}
+            onUpdateEconomicLedger={canWriteOrders ? controller.handleUpdateContractEconomicLedger : undefined}
             onRemoveContract={canWriteOrders ? controller.handleRemoveContract : undefined}
             onRevertContractToQuote={canWriteOrders ? controller.handleRevertContractToQuote : undefined}
             onCreateContractFromQuote={canWriteOrders ? controller.handleCreateContractFromQuote : undefined}
@@ -556,6 +557,8 @@ function App() {
             onGenerateOrderDocuments={controller.handleGenerateOrderDocuments}
             onCreateSupplier={canWriteOrders ? controller.handleCreateSupplier : undefined}
             onCreateSupplierQuote={canWriteOrders ? controller.handleCreateSupplierQuote : undefined}
+            onCollectReceivable={canWriteOrders ? controller.handleCollectReceivable : undefined}
+            onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}
             onUpdateSettings={isDeveloper(controller.currentUser) ? controller.handleUpdateSettings : undefined}
             onOpenTransportModule={() => {
               markSidebarModuleAsSeen('devolucion_entregas');

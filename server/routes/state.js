@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
-import { getStateMeta, getStateSnapshot, replaceStateSnapshot } from '../storage/fileStateStore.js';
+import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 
 const router = Router();
@@ -11,6 +11,33 @@ const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
+const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+
+const makeEconomicLedgerId = () => `eco-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+const toPositiveRoundedNumber = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.round(number * 100) / 100;
+};
+
+const normalizeEconomicLedgerRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((entry) => {
+    const type = allowedEconomicLedgerTypes.has(entry?.type) ? entry.type : 'note';
+    return {
+      id: String(entry?.id ?? '').trim() || makeEconomicLedgerId(),
+      type,
+      amountBs: type === 'note'
+        ? 0
+        : toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount),
+      note: String(entry?.note ?? '').trim(),
+      createdAt: String(entry?.createdAt ?? '').trim() || new Date().toISOString(),
+      createdById: entry?.createdById ?? entry?.userId ?? null,
+      createdByName: String(entry?.createdByName ?? entry?.userName ?? 'Sistema').trim() || 'Sistema',
+    };
+  });
+};
 
 const cleanupExpiredChunkUploads = () => {
   const cutoff = Date.now() - CHUNK_UPLOAD_TTL_MS;
@@ -117,6 +144,84 @@ router.post('/__copetin_db/presence/leave', async (req, res, next) => {
 
     res.json({ ok: true, active: await leavePresence(req.body) });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    const ledger = normalizeEconomicLedgerRows(req.body.economicLedger);
+    const now = new Date().toISOString();
+    let updatedContract = null;
+    const result = await updateStateSnapshot((state) => {
+      const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      const contractIndex = contracts.findIndex((contract) =>
+        String(contract?.id ?? '') === requestedId
+        || String(contract?.contractCode ?? '') === requestedId
+        || String(contract?.number ?? '') === requestedId
+      );
+
+      if (contractIndex < 0) {
+        const error = new Error('Contrato no encontrado para guardar el cuaderno economico.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      updatedContract = {
+        ...contracts[contractIndex],
+        economicLedger: ledger,
+        economicLedgerUpdatedAt: now,
+        economicLedgerUpdatedById: req.body.updatedById ?? req.body.userId ?? null,
+        economicLedgerUpdatedByName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
+        updatedAt: now,
+      };
+
+      return {
+        ...state,
+        contracts: [
+          ...contracts.slice(0, contractIndex),
+          updatedContract,
+          ...contracts.slice(contractIndex + 1),
+        ],
+      };
+    });
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    console.info('[state-route] Cuaderno economico de contrato guardado.', {
+      contractId: updatedContract?.id,
+      contractCode: updatedContract?.contractCode,
+      rows: ledger.length,
+      firstAmountBs: ledger[0]?.amountBs ?? null,
+      revision: result?.revision,
+      ip: req.ip,
+    });
+    res.json({
+      ok: true,
+      contract: updatedContract,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
     next(error);
   }
 });

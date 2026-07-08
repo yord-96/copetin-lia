@@ -26,6 +26,7 @@ import {
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
+import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
 const ORDER_STATUS_META = {
@@ -221,6 +222,64 @@ const normalizeSearchText = (value) =>
     .trim();
 
 const getSearchTokens = (value) => normalizeSearchText(value).split(' ').filter(Boolean);
+
+const toMoneyNumber = (value) => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+};
+
+const isVoidedCashMovement = (movement) => Boolean(
+  movement?.voidedAt
+  || movement?.voidedBy
+  || normalizeText(movement?.status) === 'anulado'
+  || normalizeText(movement?.status) === 'voided'
+);
+
+const getCashMovementAmount = (movement) => toMoneyNumber(
+  movement?.amountBs
+  ?? movement?.amount
+  ?? movement?.totalBs
+  ?? 0,
+);
+
+const formatCashMovementType = (movement) => {
+  const tag = normalizeText(movement?.accountingTag);
+  const category = normalizeText(movement?.category);
+  const type = normalizeText(movement?.type);
+  if (tag === 'guarantee_refund' || category.includes('garantia_devuelta')) return 'Devolucion garantia';
+  if (tag.includes('guarantee') || category.includes('garantia')) return 'Garantia';
+  if (category.includes('adelanto')) return 'Adelanto';
+  if (type.includes('egreso')) return 'Egreso';
+  if (type.includes('ingreso')) return 'Ingreso';
+  if (type.includes('cobro')) return 'Cobro';
+  return movement?.type || movement?.category || 'Movimiento';
+};
+
+const valuesMatch = (left, right) => {
+  const a = String(left ?? '').trim();
+  const b = String(right ?? '').trim();
+  return Boolean(a && b && a === b);
+};
+
+const ECONOMIC_LEDGER_TYPE_META = {
+  deposit: { label: 'Deposito / pago', tone: 'blue' },
+  guarantee: { label: 'Apartar garantia', tone: 'violet' },
+  charge: { label: 'Dano / faltante', tone: 'orange' },
+  refund: { label: 'Devolucion al cliente', tone: 'green' },
+  note: { label: 'Nota interna', tone: 'slate' },
+};
+
+const normalizeEconomicLedgerEntry = (entry, index = 0) => {
+  const type = ECONOMIC_LEDGER_TYPE_META[entry?.type] ? entry.type : 'note';
+  return {
+    id: String(entry?.id ?? `economic-ledger-${index}`).trim(),
+    type,
+    amountBs: Math.max(0, toMoneyNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+    note: String(entry?.note ?? '').trim(),
+    createdAt: entry?.createdAt ?? new Date().toISOString(),
+    createdByName: String(entry?.createdByName ?? entry?.createdBy ?? 'Sistema').trim() || 'Sistema',
+  };
+};
 
 const getCatalogSearchScore = (searchValue, fields = []) => {
   const query = normalizeSearchText(searchValue);
@@ -953,6 +1012,7 @@ function ServiceOrdersSection({
   onCancelOrderContract,
   onCreateContract,
   onUpdateContract,
+  onUpdateEconomicLedger,
   onRemoveContract,
   onRevertContractToQuote,
   onCreateContractFromOrder,
@@ -960,6 +1020,8 @@ function ServiceOrdersSection({
   onGenerateOrderDocuments,
   onCreateSupplier,
   onCreateSupplierQuote,
+  onCollectReceivable,
+  onPrintCashMovementReceipt,
   onUpdateSettings,
   onOpenTransportModule,
   onOpenInventoryModule,
@@ -1000,6 +1062,20 @@ function ServiceOrdersSection({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
+  const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
+  const [contractEconomicsError, setContractEconomicsError] = useState('');
+  const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
+    amountBs: '',
+    paymentMethod: 'efectivo',
+    paymentAccount: '',
+    receipt: '',
+    note: '',
+  });
+  const contractEconomicsLedgerTypeRef = useRef(null);
+  const contractEconomicsLedgerAmountRef = useRef(null);
+  const contractEconomicsLedgerNoteRef = useRef(null);
+  const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
+  const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
@@ -1436,6 +1512,8 @@ function ServiceOrdersSection({
       const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
       const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
+      const hasEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+        .some((entry) => toMoneyNumber(entry?.amountBs) > 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
       const guaranteeReferenceKeys = [
         contract.id,
@@ -1464,6 +1542,7 @@ function ServiceOrdersSection({
         totalBs: Number(contract?.totals?.totalBs ?? 0),
         isSent,
         isReturned,
+        hasEconomicLedger,
         guaranteeBs,
         guaranteeStatus,
         guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
@@ -1544,6 +1623,235 @@ function ServiceOrdersSection({
     () => (menuState?.type === 'contract' ? contractRows.find((row) => row.id === menuState.id) ?? null : null),
     [contractRows, menuState],
   );
+
+  const contractEconomicsData = useMemo(() => {
+    if (!contractEconomicsTarget) return null;
+
+    const target = contractEconomicsTarget;
+    const matchedContract = contracts.find((entry) =>
+      valuesMatch(entry.id, target.id)
+      || valuesMatch(entry.contractCode, target.contractCode)
+      || valuesMatch(entry.orderCode, target.orderCode)
+      || valuesMatch(entry.rentalId, target.rentalId),
+    ) ?? null;
+    const contract = matchedContract
+      ? {
+        ...matchedContract,
+        ...(target?.economicLedger !== undefined ? { economicLedger: target.economicLedger } : {}),
+        ...(target?.economicLedgerUpdatedAt !== undefined ? { economicLedgerUpdatedAt: target.economicLedgerUpdatedAt } : {}),
+        ...(target?.economicLedgerUpdatedByName !== undefined ? { economicLedgerUpdatedByName: target.economicLedgerUpdatedByName } : {}),
+      }
+      : target;
+
+    const linkedOrder = orderRowsWithMeta.find((row) =>
+      valuesMatch(row.contractId, contract.id)
+      || valuesMatch(row.contractCode, contract.contractCode)
+      || valuesMatch(row.orderCode, contract.orderCode)
+      || valuesMatch(row.rentalId, contract.rentalId),
+    ) ?? null;
+
+    const rental = rentals.find((entry) =>
+      valuesMatch(entry.id, contract.rentalId)
+      || valuesMatch(entry.contractId, contract.id)
+      || valuesMatch(entry.contractCode, contract.contractCode)
+      || valuesMatch(entry.orderCode, contract.orderCode)
+      || valuesMatch(entry.id, linkedOrder?.rentalId)
+      || valuesMatch(entry.orderCode, linkedOrder?.orderCode),
+    ) ?? null;
+
+    const referenceValues = [
+      contract.id,
+      contract.rentalId,
+      contract.contractCode,
+      contract.orderCode,
+      linkedOrder?.id,
+      linkedOrder?.rentalId,
+      linkedOrder?.contractId,
+      linkedOrder?.contractCode,
+      linkedOrder?.orderCode,
+      rental?.id,
+      rental?.contractId,
+      rental?.contractCode,
+      rental?.orderCode,
+    ];
+    const referenceKeys = new Set(referenceValues.map(normalizeText).filter(Boolean));
+    const hasReference = (value, loose = false) => {
+      const normalized = normalizeText(value);
+      if (!normalized) return false;
+      if (referenceKeys.has(normalized)) return true;
+      return loose && [...referenceKeys].some((key) => key && normalized.includes(key));
+    };
+
+    const movements = cashMovements
+      .filter((movement) => [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractId,
+        movement?.rentalId,
+        movement?.orderCode,
+        movement?.contractCode,
+        movement?.sourceId,
+        movement?.reference,
+      ].some((value) => hasReference(value))
+        || hasReference(movement?.notes, true)
+        || hasReference(movement?.description, true))
+      .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+
+    const postedMovements = movements.filter((movement) => !isVoidedCashMovement(movement));
+    const isGuaranteeMovement = (movement) => {
+      const tag = normalizeText(movement?.accountingTag);
+      const category = normalizeText(movement?.category);
+      const type = normalizeText(movement?.type);
+      return tag.includes('guarantee') || category.includes('garantia') || type.includes('garantia');
+    };
+    const incomeBs = postedMovements.reduce((sum, movement) => {
+      const type = normalizeText(movement?.type);
+      const tag = normalizeText(movement?.accountingTag);
+      if (type.includes('egreso') || tag === 'guarantee_refund') return sum;
+      return sum + Math.max(0, getCashMovementAmount(movement));
+    }, 0);
+    const paymentIncomeBs = postedMovements.reduce((sum, movement) => {
+      const type = normalizeText(movement?.type);
+      const tag = normalizeText(movement?.accountingTag);
+      if (type.includes('egreso') || tag === 'guarantee_refund' || isGuaranteeMovement(movement)) return sum;
+      return sum + Math.max(0, getCashMovementAmount(movement));
+    }, 0);
+    const expenseBs = postedMovements.reduce((sum, movement) => {
+      const type = normalizeText(movement?.type);
+      const tag = normalizeText(movement?.accountingTag);
+      if (!type.includes('egreso') && tag !== 'guarantee_refund') return sum;
+      return sum + Math.max(0, getCashMovementAmount(movement));
+    }, 0);
+
+    const totalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
+    const guaranteeDeclaredBs = toMoneyNumber(
+      rental?.guaranteeDeclaredBs
+      ?? rental?.guarantee?.amountBs
+      ?? contract?.totals?.guaranteeBs
+      ?? contract?.guarantee?.amountBs
+      ?? rental?.depositBs,
+    );
+    const rawGuaranteeStatus = String(
+      rental?.guarantee?.status
+      ?? rental?.payment?.guaranteeStatus
+      ?? contract?.guarantee?.status
+      ?? contract?.payment?.guaranteeStatus
+      ?? '',
+    ).trim();
+    const guaranteeValidatedBs = rawGuaranteeStatus === 'validado'
+      ? Math.max(
+        toMoneyNumber(rental?.depositBs),
+        toMoneyNumber(rental?.guarantee?.validatedBs),
+        guaranteeDeclaredBs,
+      )
+      : 0;
+    const settlement = rental?.returnSettlement ?? {};
+    const pendingPaymentBs = toMoneyNumber(
+      settlement.pendingCollectionBs
+      ?? rental?.payment?.pendingPaymentBs
+      ?? contract?.payment?.pendingPaymentBs
+      ?? contract?.totals?.pendingPaymentBs,
+    );
+    const paidBs = Math.max(
+      toMoneyNumber(contract?.payment?.paidAtApprovalBs),
+      toMoneyNumber(rental?.payment?.paidAtRentalBs),
+      paymentIncomeBs,
+    );
+    const fallbackBalanceBs = Math.max(0, totalBs - paidBs);
+    const balanceBs = pendingPaymentBs > 0 ? pendingPaymentBs : fallbackBalanceBs;
+    const penaltiesBs = toMoneyNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
+    const outstandingRentalBs = toMoneyNumber(settlement.outstandingRentalBs);
+    const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
+    const discountBs = toMoneyNumber(contract?.totals?.discountBs ?? rental?.totals?.discountBs);
+    const deliveryFeeBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
+    const prepaidUsedBs = toMoneyNumber(contract?.payment?.prepaidUsedBs ?? rental?.payment?.prepaidUsedBs);
+
+    const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+      .filter((line) =>
+        toMoneyNumber(line?.damagedQty) > 0
+        || toMoneyNumber(line?.missingQty) > 0
+        || toMoneyNumber(line?.penaltyBs) > 0,
+      )
+      .map((line, index) => ({
+        id: `${rental?.id ?? contract?.id ?? 'contract'}-${line?.itemId ?? index}`,
+        itemName: line?.itemName ?? line?.name ?? 'Item',
+        damagedQty: toMoneyNumber(line?.damagedQty),
+        missingQty: toMoneyNumber(line?.missingQty),
+        damagedUnitChargeBs: toMoneyNumber(line?.damagedUnitChargeBs),
+        missingUnitChargeBs: toMoneyNumber(line?.missingUnitChargeBs),
+        penaltyBs: toMoneyNumber(line?.penaltyBs),
+        owner: line?.chargeOwner ?? 'cliente',
+        note: line?.damageNote ?? line?.note ?? '',
+      }));
+
+    const receipts = movements.filter((movement) =>
+      movement?.id
+      && (movement?.receipt || movement?.receiptCode || Math.abs(getCashMovementAmount(movement)) > 0),
+    );
+    const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      .map(normalizeEconomicLedgerEntry)
+      .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
+    const ledgerTotals = economicLedger.reduce((totals, entry) => {
+      if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
+      if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
+      if (entry.type === 'charge') totals.chargesBs += entry.amountBs;
+      if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
+      return totals;
+    }, {
+      receivedBs: 0,
+      guaranteeBs: 0,
+      chargesBs: 0,
+      refundedBs: 0,
+    });
+    const ledgerAppliedToRentalBs = Math.max(0, ledgerTotals.receivedBs - ledgerTotals.guaranteeBs - ledgerTotals.refundedBs);
+    const ledgerDebtBs = Math.max(0, totalBs + ledgerTotals.chargesBs - ledgerAppliedToRentalBs);
+    const ledgerOverpayBs = Math.max(0, ledgerAppliedToRentalBs - totalBs - ledgerTotals.chargesBs);
+    const ledgerGuaranteeAfterChargesBs = Math.max(0, ledgerTotals.guaranteeBs - ledgerTotals.chargesBs);
+    const ledgerRefundSuggestedBs = Math.max(0, ledgerOverpayBs + ledgerGuaranteeAfterChargesBs - ledgerTotals.refundedBs);
+
+    return {
+      contract,
+      linkedOrder,
+      rental,
+      movements,
+      receipts,
+      returnIssues,
+      totalBs,
+      paidBs,
+      balanceBs,
+      incomeBs,
+      expenseBs,
+      discountBs,
+      deliveryFeeBs,
+      prepaidUsedBs,
+      economicLedger,
+      ledgerTotals,
+      ledgerAppliedToRentalBs,
+      ledgerDebtBs,
+      ledgerGuaranteeAfterChargesBs,
+      ledgerRefundSuggestedBs,
+      guaranteeDeclaredBs,
+      guaranteeValidatedBs,
+      guaranteeStatus: guaranteeDeclaredBs <= 0
+        ? 'Sin garantia'
+        : rawGuaranteeStatus === 'validado'
+          ? 'Validada'
+          : 'No validada',
+      guaranteeMethod: formatPaymentMethodLabel(
+        contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.guarantee?.paymentMethod,
+        contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.guarantee?.paymentAccount,
+      ),
+      penaltiesBs,
+      outstandingRentalBs,
+      refundBs,
+      statusLabel: balanceBs > 0
+        ? 'Saldo pendiente'
+        : penaltiesBs > 0
+          ? 'Liquidacion con cargos'
+          : 'Sin saldo pendiente',
+    };
+  }, [cashMovements, contractEconomicsTarget, contracts, orderRowsWithMeta, rentals]);
 
   const contractQuoteIdSet = useMemo(
     () =>
@@ -4034,6 +4342,26 @@ function ServiceOrdersSection({
     });
   };
 
+  const handleOpenContractEconomics = (contractRow) => {
+    setContractEconomicsTarget(contractRow);
+    setContractEconomicsError('');
+    setContractEconomicsCollectionDraft({
+      amountBs: '',
+      paymentMethod: 'efectivo',
+      paymentAccount: '',
+      receipt: '',
+      note: '',
+    });
+    setMenuState(null);
+  };
+
+  const closeContractEconomics = () => {
+    setContractEconomicsTarget(null);
+    setContractEconomicsError('');
+    setIsSavingContractEconomicsCollection(false);
+    setIsSavingContractEconomicsLedger(false);
+  };
+
   const handleOpenDocumentsFromContract = (contractRow) => {
     const linkedOrder = orderRowsWithMeta.find(
       (row) =>
@@ -4056,6 +4384,227 @@ function ServiceOrdersSection({
       documents: [],
     });
     setMenuState(null);
+  };
+
+  const openCashReceiptWindow = () => {
+    const printWindow = window.open('', '_blank', 'width=1120,height=760');
+    if (!printWindow) {
+      throw new Error('Chrome bloqueo la ventana del recibo. Habilita ventanas emergentes para este sitio.');
+    }
+    printWindow.document.open();
+    printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Generando recibo</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#111827;"><strong>Generando recibo...</strong></body></html>');
+    printWindow.document.close();
+    printWindow.focus();
+    return printWindow;
+  };
+
+  const handlePrintEconomicReceipt = async (movement) => {
+    if (!movement?.id) return;
+    let printWindow = null;
+    try {
+      setContractEconomicsError('');
+      printWindow = openCashReceiptWindow();
+      const printedByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
+      let result = onPrintCashMovementReceipt
+        ? await onPrintCashMovementReceipt({ movementId: movement.id, printedByName })
+        : null;
+      if (!result?.html) {
+        result = await api.printer.printCashMovementReceipt({ movementId: movement.id, printedByName });
+      }
+      if (!result?.html) throw new Error('No se pudo generar el contenido del recibo.');
+      printWindow.document.open();
+      printWindow.document.write(result.html);
+      printWindow.document.close();
+      printWindow.focus();
+    } catch (error) {
+      if (printWindow && !printWindow.closed) printWindow.close();
+      setContractEconomicsError(error.message || 'No se pudo abrir el recibo.');
+    }
+  };
+
+  const resolveEconomicMovementId = (result) => {
+    if (!result) return '';
+    if (result.id) return result.id;
+    if (result.movement?.id) return result.movement.id;
+    const rows = Array.isArray(result.movements) ? result.movements : [];
+    return rows[0]?.id ?? '';
+  };
+
+  const handleSubmitContractEconomicCollection = async (event) => {
+    event.preventDefault();
+    if (!contractEconomicsData || isSavingContractEconomicsCollection) return;
+    const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
+    const pendingBs = Math.max(0, toMoneyNumber(contractEconomicsData.balanceBs));
+    const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || pendingBs));
+    if (!rentalId) {
+      setContractEconomicsError('Este contrato no tiene una orden/alquiler vinculado para cobrar desde Caja Grande.');
+      return;
+    }
+    if (pendingBs <= 0) {
+      setContractEconomicsError('Este contrato no tiene saldo pendiente para cobrar.');
+      return;
+    }
+    if (amountBs <= 0) {
+      setContractEconomicsError('El monto a cobrar debe ser mayor a 0.');
+      return;
+    }
+    setIsSavingContractEconomicsCollection(true);
+    setContractEconomicsError('');
+    try {
+      const createdBy = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
+      const payload = {
+        rentalId,
+        amountBs,
+        paymentMethod: contractEconomicsCollectionDraft.paymentMethod,
+        paymentAccount: contractEconomicsCollectionDraft.paymentMethod === 'qr' ? contractEconomicsCollectionDraft.paymentAccount : '',
+        receipt: contractEconomicsCollectionDraft.receipt,
+        note: contractEconomicsCollectionDraft.note || contractEconomicsCollectionDraft.receipt,
+        createdBy,
+      };
+      const result = onCollectReceivable
+        ? await onCollectReceivable(payload)
+        : await api.cash.collectReceivable(payload);
+      const movementId = resolveEconomicMovementId(result);
+      if (movementId) {
+        await handlePrintEconomicReceipt({ id: movementId });
+      }
+      setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}.`);
+      setContractEconomicsCollectionDraft({
+        amountBs: '',
+        paymentMethod: 'efectivo',
+        paymentAccount: '',
+        receipt: '',
+        note: '',
+      });
+      api.sync.pullLatest?.();
+    } catch (error) {
+      setContractEconomicsError(error.message || 'No se pudo registrar el cobro del contrato.');
+    } finally {
+      setIsSavingContractEconomicsCollection(false);
+    }
+  };
+
+  const handleSubmitContractEconomicLedger = async (event) => {
+    event.preventDefault();
+
+    if (!contractEconomicsData || isSavingContractEconomicsLedger) return;
+
+    const selectedType = String(
+      contractEconomicsLedgerTypeRef.current?.value ?? 'deposit',
+    ).trim();
+
+    const type = ECONOMIC_LEDGER_TYPE_META[selectedType]
+      ? selectedType
+      : 'note';
+
+    const amountBs = type === 'note'
+      ? 0
+      : Math.max(
+          0,
+          toMoneyNumber(
+            contractEconomicsLedgerAmountRef.current?.value ?? '',
+          ),
+        );
+
+    const note = String(
+      contractEconomicsLedgerNoteRef.current?.value ?? '',
+    ).trim();
+
+    if (type !== 'note' && amountBs <= 0) {
+      setContractEconomicsError(
+        'El monto debe ser mayor a 0 para guardar esta linea.',
+      );
+      return;
+    }
+
+    if (!note) {
+      setContractEconomicsError(
+        'Escribe un detalle para que el historial sea entendible despues.',
+      );
+      return;
+    }
+
+    const createdByName = String(
+      currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+    ).trim() || 'Sistema';
+
+    const entry = {
+      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type,
+      amountBs,
+      note,
+      createdAt: new Date().toISOString(),
+      createdByName,
+    };
+
+    const nextLedger = [
+      ...(contractEconomicsData.economicLedger ?? []),
+      entry,
+    ];
+
+    setIsSavingContractEconomicsLedger(true);
+    setContractEconomicsError('');
+
+    try {
+      const payload = {
+        id: contractEconomicsData.contract.id,
+        contractId: contractEconomicsData.contract.id,
+        contractCode: contractEconomicsData.contract.contractCode,
+        economicLedger: nextLedger,
+      };
+
+      console.info(
+        '[economic-ledger] Enviando guardado directo',
+        payload,
+      );
+
+      const updated = onUpdateEconomicLedger
+        ? await onUpdateEconomicLedger(payload)
+        : await api.contracts.updateEconomicLedger(payload);
+
+      if (!updated) {
+        throw new Error(
+          'El servidor respondio sin devolver el contrato actualizado.',
+        );
+      }
+
+      setContractEconomicsTarget(updated);
+
+      if (contractEconomicsLedgerTypeRef.current) {
+        contractEconomicsLedgerTypeRef.current.value = 'deposit';
+      }
+
+      if (contractEconomicsLedgerAmountRef.current) {
+        contractEconomicsLedgerAmountRef.current.value = '';
+      }
+
+      if (contractEconomicsLedgerNoteRef.current) {
+        contractEconomicsLedgerNoteRef.current.value = '';
+      }
+
+      setActionFeedback(
+        `Seguimiento economico actualizado para contrato ${
+          contractEconomicsData.contract?.contractCode
+          || contractEconomicsData.contract?.id
+        }.`,
+      );
+    } catch (error) {
+      console.error(
+        '[economic-ledger] Error al guardar',
+        error,
+      );
+
+      setContractEconomicsError(
+        error.message
+        || 'No se pudo guardar el seguimiento economico del contrato.',
+      );
+    } finally {
+      setIsSavingContractEconomicsLedger(false);
+    }
   };
 
   const handlePrintOrderDocument = async (kind, orderRow) => {
@@ -5045,7 +5594,14 @@ function ServiceOrdersSection({
                             <span>{transportMeta.detail}</span>
                           </div>
                         </td>
-                        <td className="orders-total">{formatBs(row.totalBs)}</td>
+                        <td className="orders-total">
+                          <span className="orders-total-with-economics">
+                            {formatBs(row.totalBs)}
+                            {row.hasEconomicLedger ? (
+                              <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
+                            ) : null}
+                          </span>
+                        </td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
                             <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
@@ -5099,7 +5655,12 @@ function ServiceOrdersSection({
                         <span>{formatLongSpanishDate(row.eventDate)}</span>
                       </div>
                       <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
-                      <b>{formatBs(row.totalBs)}</b>
+                      <b className="orders-total-with-economics">
+                        {formatBs(row.totalBs)}
+                        {row.hasEconomicLedger ? (
+                          <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
+                        ) : null}
+                      </b>
                     </header>
                     <div className={`orders-mobile-contract-main ${row.isSent ? 'orders-mobile-sent-zone' : ''}`}>
                       <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
@@ -5320,6 +5881,9 @@ function ServiceOrdersSection({
                   </button>
                 </>
               ) : null}
+              <button type="button" onClick={() => handleOpenContractEconomics(activeContractMenuRow)}>
+                Economico
+              </button>
               <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
                 Enviar por WhatsApp
               </button>
@@ -5364,6 +5928,311 @@ function ServiceOrdersSection({
               ) : null}
             </>
           ) : null}
+        </div>
+      ) : null}
+
+      {contractEconomicsData ? (
+        <div className="orders-modal-backdrop contract-economics-backdrop" onClick={closeContractEconomics}>
+          <section className="orders-modal contract-economics-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Economico contrato {contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}</h3>
+                <p>
+                  {contractEconomicsData.contract?.customerName || 'Cliente sin registrar'}
+                  {' | '}
+                  {contractEconomicsData.contract?.orderCode || contractEconomicsData.linkedOrder?.orderCode || 'Sin orden vinculada'}
+                </p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeContractEconomics}>
+                x
+              </button>
+            </header>
+
+            <div className="contract-economics-body">
+              {contractEconomicsError ? <p className="status error">{contractEconomicsError}</p> : null}
+
+              <div className="contract-economics-kpis">
+                <article>
+                  <span>Total contrato</span>
+                  <strong>{formatBs(contractEconomicsData.totalBs)}</strong>
+                  <small>Incluye alquiler y ajustes comerciales.</small>
+                </article>
+                <article>
+                  <span>Pagado / abonado</span>
+                  <strong>{formatBs(contractEconomicsData.paidBs)}</strong>
+                  <small>Movimientos asociados y pagos registrados.</small>
+                </article>
+                <article className={contractEconomicsData.balanceBs > 0 ? 'warning' : 'success'}>
+                  <span>Saldo pendiente</span>
+                  <strong>{formatBs(contractEconomicsData.balanceBs)}</strong>
+                  <small>{contractEconomicsData.statusLabel}</small>
+                </article>
+                <article>
+                  <span>Garantia</span>
+                  <strong>{formatBs(contractEconomicsData.guaranteeDeclaredBs)}</strong>
+                  <small>{contractEconomicsData.guaranteeStatus} | {contractEconomicsData.guaranteeMethod}</small>
+                </article>
+              </div>
+
+              <section className="contract-economics-notebook">
+                <header className="contract-economics-notebook-head">
+                  <div>
+                    <span>Hoja flexible</span>
+                    <h4>Cuaderno economico del contrato</h4>
+                    <p>Registra como realmente se movio el dinero: abonos, garantia separada, cargos, devoluciones y notas.</p>
+                  </div>
+                  <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
+                </header>
+
+                <div className="contract-economics-notebook-summary">
+                  <article className="tone-blue">
+                    <span>Recibido total</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs)}</strong>
+                  </article>
+                  <article className="tone-violet">
+                    <span>Garantia apartada</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
+                  </article>
+                  <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
+                    <span>Debe segun hoja</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
+                  </article>
+                  <article className="tone-green">
+                    <span>A devolver sugerido</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                  </article>
+                </div>
+
+                <form className="contract-economics-ledger-form" onSubmit={handleSubmitContractEconomicLedger}>
+                  <label>
+                    Movimiento
+                    <select
+                      ref={contractEconomicsLedgerTypeRef}
+                      defaultValue="deposit"
+                      disabled={readOnly || isSavingContractEconomicsLedger}
+                    >
+                      {Object.entries(ECONOMIC_LEDGER_TYPE_META).map(([value, meta]) => (
+                        <option key={value} value={value}>{meta.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Monto Bs
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      ref={contractEconomicsLedgerAmountRef}
+                      placeholder="0.00"
+                      disabled={readOnly || isSavingContractEconomicsLedger}
+                    />
+                  </label>
+                  <label>
+                    Detalle historico
+                    <input
+                      ref={contractEconomicsLedgerNoteRef}
+                      placeholder="Ej. Deposito 1700, se separan 200 como garantia..."
+                      disabled={readOnly || isSavingContractEconomicsLedger}
+                    />
+                  </label>
+                  <button type="submit" className="primary-button" disabled={readOnly || isSavingContractEconomicsLedger}>
+                    {isSavingContractEconomicsLedger ? 'Guardando...' : 'Agregar linea'}
+                  </button>
+                </form>
+
+                <div className="contract-economics-notebook-lines">
+                  {contractEconomicsData.economicLedger.length > 0 ? contractEconomicsData.economicLedger.map((entry) => {
+                    const meta = ECONOMIC_LEDGER_TYPE_META[entry.type] ?? ECONOMIC_LEDGER_TYPE_META.note;
+                    return (
+                      <article className={`contract-economics-notebook-line tone-${meta.tone}`} key={entry.id}>
+                        <time>{entry.createdAt ? formatDateTime(entry.createdAt) : '-'}</time>
+                        <span>{meta.label}</span>
+                        <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
+                        <p>{entry.note}</p>
+                        <small>{entry.createdByName}</small>
+                      </article>
+                    );
+                  }) : (
+                    <p className="contract-economics-empty">
+                      Todavia no hay lineas en el cuaderno. Agrega el primer movimiento para empezar el seguimiento historico.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <form className="contract-economics-collect" onSubmit={handleSubmitContractEconomicCollection}>
+                <div>
+                  <h4>Cobro desde Caja Grande</h4>
+                  <p>
+                    {contractEconomicsData.balanceBs > 0
+                      ? `Saldo disponible para cobrar: ${formatBs(contractEconomicsData.balanceBs)}`
+                      : 'Este contrato no tiene saldo pendiente por cobrar.'}
+                  </p>
+                </div>
+                <label>
+                  Monto
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={contractEconomicsCollectionDraft.amountBs}
+                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                    placeholder={contractEconomicsData.balanceBs > 0 ? String(contractEconomicsData.balanceBs.toFixed(2)) : '0.00'}
+                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                  />
+                </label>
+                <label>
+                  Metodo
+                  <select
+                    value={contractEconomicsCollectionDraft.paymentMethod}
+                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
+                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="qr">QR</option>
+                    <option value="transferencia">Transferencia</option>
+                  </select>
+                </label>
+                {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
+                  <label>
+                    Cuenta QR
+                    <select
+                      value={contractEconomicsCollectionDraft.paymentAccount}
+                      onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                      disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                    >
+                      <option value="">Seleccionar</option>
+                      {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <label>
+                  Comprobante / nota
+                  <input
+                    value={contractEconomicsCollectionDraft.receipt}
+                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
+                    placeholder="Referencia opcional"
+                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                >
+                  {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
+                </button>
+              </form>
+
+              <div className="contract-economics-grid">
+                <article className="contract-economics-card">
+                  <header>
+                    <h4>Resumen de caja</h4>
+                    <span>{contractEconomicsData.movements.length} movimiento(s)</span>
+                  </header>
+                  <div className="contract-economics-lines">
+                    <div><span>Ingresos relacionados</span><strong>{formatBs(contractEconomicsData.incomeBs)}</strong></div>
+                    <div><span>Egresos / devoluciones</span><strong>{formatBs(contractEconomicsData.expenseBs)}</strong></div>
+                    <div><span>Descuento comercial</span><strong>{formatBs(contractEconomicsData.discountBs)}</strong></div>
+                    <div><span>Transporte</span><strong>{formatBs(contractEconomicsData.deliveryFeeBs)}</strong></div>
+                    {contractEconomicsData.prepaidUsedBs > 0 ? (
+                      <div><span>Prepago aplicado</span><strong>{formatBs(contractEconomicsData.prepaidUsedBs)}</strong></div>
+                    ) : null}
+                  </div>
+                </article>
+
+                <article className="contract-economics-card">
+                  <header>
+                    <h4>Liquidacion y cargos</h4>
+                    <span>{contractEconomicsData.returnIssues.length} novedad(es)</span>
+                  </header>
+                  <div className="contract-economics-lines">
+                    <div><span>Danos / faltantes</span><strong>{formatBs(contractEconomicsData.penaltiesBs)}</strong></div>
+                    <div><span>Alquiler pendiente</span><strong>{formatBs(contractEconomicsData.outstandingRentalBs)}</strong></div>
+                    <div><span>Garantia a devolver</span><strong>{formatBs(contractEconomicsData.refundBs)}</strong></div>
+                    <div><span>Garantia validada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
+                  </div>
+                </article>
+              </div>
+
+              <article className="contract-economics-panel">
+                <header>
+                  <div>
+                    <h4>Pagos y movimientos</h4>
+                    <p>Entradas, salidas, cobros y devoluciones vinculadas al contrato.</p>
+                  </div>
+                </header>
+                <div className="contract-economics-table">
+                  <div className="contract-economics-table-head">
+                    <span>Fecha</span>
+                    <span>Tipo</span>
+                    <span>Detalle</span>
+                    <span>Monto</span>
+                    <span>Recibo</span>
+                  </div>
+                  {contractEconomicsData.movements.length > 0 ? contractEconomicsData.movements.map((movement) => (
+                    <div className={`contract-economics-table-row ${isVoidedCashMovement(movement) ? 'voided' : ''}`} key={movement.id ?? `${movement.createdAt}-${movement.description}`}>
+                      <span>{movement.createdAt ? (formatDateTime?.(movement.createdAt) ?? formatDate?.(movement.createdAt) ?? movement.createdAt) : '-'}</span>
+                      <span>{formatCashMovementType(movement)}</span>
+                      <span>{movement.description || movement.notes || movement.category || '-'}</span>
+                      <strong>{formatBs(getCashMovementAmount(movement))}</strong>
+                      <span>
+                        {movement.id && !isVoidedCashMovement(movement) && Math.abs(getCashMovementAmount(movement)) > 0 ? (
+                          <button type="button" className="section-link blue" onClick={() => handlePrintEconomicReceipt(movement)}>
+                            {movement.receiptCode || movement.receipt || 'Ver recibo'}
+                          </button>
+                        ) : (
+                          movement.receiptCode || movement.receipt || (isVoidedCashMovement(movement) ? 'Anulado' : '-')
+                        )}
+                      </span>
+                    </div>
+                  )) : (
+                    <p className="contract-economics-empty">No hay movimientos de caja vinculados a este contrato.</p>
+                  )}
+                </div>
+              </article>
+
+              <article className="contract-economics-panel">
+                <header>
+                  <div>
+                    <h4>Danos, faltantes y observaciones de retorno</h4>
+                    <p>Informacion tomada de la recepcion y liquidacion del alquiler.</p>
+                  </div>
+                </header>
+                {contractEconomicsData.returnIssues.length > 0 ? (
+                  <div className="contract-economics-issues">
+                    {contractEconomicsData.returnIssues.map((issue) => (
+                      <div key={issue.id}>
+                        <strong>{issue.itemName}</strong>
+                        <span>Danado: {issue.damagedQty} | Faltante: {issue.missingQty}</span>
+                        <span>Cargo: {formatBs(issue.penaltyBs)} | Origen: {issue.owner}</span>
+                        {issue.note ? <small>{issue.note}</small> : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="contract-economics-empty">Sin danos, faltantes ni cargos registrados.</p>
+                )}
+              </article>
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  const row = contractEconomicsData.contract;
+                  closeContractEconomics();
+                  handleOpenDocumentsFromContract(row);
+                }}
+              >
+                Ver documentos
+              </button>
+              <button type="button" className="primary-button" onClick={closeContractEconomics}>
+                Cerrar
+              </button>
+            </footer>
+          </section>
         </div>
       ) : null}
 

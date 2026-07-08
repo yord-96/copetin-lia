@@ -2007,6 +2007,36 @@ const normalizeState = (state) => {
         items,
         services,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
+        economicLedger: Array.isArray(contract?.economicLedger)
+          ? contract.economicLedger.map((entry, index) => {
+            const type = ['deposit', 'guarantee', 'charge', 'refund', 'note'].includes(
+              String(entry?.type ?? '').trim(),
+            )
+              ? String(entry.type).trim()
+              : 'note';
+            return {
+              id: String(entry?.id ?? `economic-ledger-${index}`).trim() || `economic-ledger-${index}`,
+              type,
+              amountBs: type === 'note'
+                ? 0
+                : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+              note: String(entry?.note ?? '').trim(),
+              createdAt: entry?.createdAt ?? now,
+              createdById: entry?.createdById ?? entry?.userId ?? null,
+              createdByName: String(
+                entry?.createdByName
+                ?? entry?.createdBy
+                ?? entry?.userName
+                ?? 'Sistema',
+              ).trim() || 'Sistema',
+            };
+          })
+          : [],
+        economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
+        economicLedgerUpdatedById: contract?.economicLedgerUpdatedById ?? null,
+        economicLedgerUpdatedByName: String(
+          contract?.economicLedgerUpdatedByName ?? '',
+        ).trim(),
         approvedAt: contract?.approvedAt ?? null,
         rejectedAt: contract?.rejectedAt ?? null,
         rentalId: contract?.rentalId ?? null,
@@ -11763,6 +11793,21 @@ const createWebBridge = () => ({
           contract.responsibles = responsibles;
         }
         const now = new Date().toISOString();
+        if (payload.economicLedger !== undefined) {
+          const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+          const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
+          contract.economicLedger = rows.map((entry) => {
+            const type = String(entry?.type ?? '').trim();
+            return {
+              id: String(entry?.id ?? makeId('eco')).trim() || makeId('eco'),
+              type: allowedEconomicLedgerTypes.has(type) ? type : 'note',
+              amountBs: Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? 0)),
+              note: String(entry?.note ?? '').trim(),
+              createdAt: entry?.createdAt ?? now,
+              createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+            };
+          });
+        }
         const changes = summarizeContractChanges(beforeContract, contract);
         const tracksApprovedRevision = beforeContract.status === 'aprobado' && contract.status === 'aprobado';
         if (changes.length > 0 && contract.status === 'aprobado') {
@@ -11779,6 +11824,39 @@ const createWebBridge = () => ({
           }
           syncApprovedContractOperation(state, contract, payload, now);
         }
+        contract.updatedAt = now;
+        updated = deepClone(contract);
+        return state;
+      });
+
+      return updated;
+    },
+    updateEconomicLedger: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el contrato.');
+
+      let updated = null;
+      transaction((state) => {
+        if (!Array.isArray(state.contracts)) state.contracts = [];
+        const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
+        if (!contract) throw new Error('Contrato no encontrado.');
+        const now = new Date().toISOString();
+        const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+        const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
+        contract.economicLedger = rows.map((entry) => {
+          const type = String(entry?.type ?? '').trim();
+          return {
+            id: String(entry?.id ?? makeId('eco')).trim() || makeId('eco'),
+            type: allowedEconomicLedgerTypes.has(type) ? type : 'note',
+            amountBs: Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? 0)),
+            note: String(entry?.note ?? '').trim(),
+            createdAt: entry?.createdAt ?? now,
+            createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+          };
+        });
+        contract.economicLedgerUpdatedAt = now;
+        contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
+        contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
         contract.updatedAt = now;
         updated = deepClone(contract);
         return state;

@@ -723,6 +723,40 @@ const callBridge = async (domain, method, mutates, ...args) => {
   return request;
 };
 
+const updateContractEconomicLedgerOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    return null;
+  }
+
+  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
+  if (!requestedId) {
+    throw new Error('Debes indicar el contrato para guardar el cuaderno economico.');
+  }
+
+  const response = await fetch(
+    getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-ledger`),
+    {
+      method: 'PUT',
+      cache: 'no-store',
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo guardar el cuaderno economico del contrato.');
+  }
+
+  const result = await response.json();
+  if (result && Object.prototype.hasOwnProperty.call(result, 'revision')) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  markServerStateStale('contracts.updateEconomicLedger:direct');
+  announceDataChange({ domain: 'contracts', method: 'updateEconomicLedger' });
+  return result?.contract ?? null;
+};
+
 export const runtimeInfo =
   {
     ...getWebRuntimeInfo(),
@@ -775,6 +809,7 @@ export const api = {
     list: () => callBridge('contracts', 'list', false),
     create: (payload) => callBridge('contracts', 'create', true, payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
+    updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },
