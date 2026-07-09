@@ -8025,6 +8025,50 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     );
   });
 
+  const availabilityPeriod = buildAvailabilityPeriod({
+    deliveryDate: contract.deliveryDate || rental.rentalDate,
+    deliveryWindowStart: contract.deliveryWindowStart || rental.deliveryWindowStart || '00:00',
+    pickupDate: contract.pickupDate || rental.dueDate,
+    pickupWindowEnd: contract.pickupWindowEnd || rental.pickupWindowEnd || rental.dueTime || '23:59',
+  });
+  const projectedRequestedItems = (contract.items ?? [])
+    .map((line) => {
+      const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
+      if (!item || !lineControlsStock(line, item)) return null;
+      const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+      const supplierBackedQty = Math.min(quantity, Number(supplierSupportByItem.get(String(line.itemId)) ?? 0));
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        quantity: Math.max(0, quantity - supplierBackedQty),
+      };
+    })
+    .filter((line) => line && Number(line.quantity ?? 0) > 0);
+  const projectedIssues = validateProjectedInventoryRequest({
+    items: state.items,
+    rentals: state.rentals,
+    contracts: state.contracts,
+    period: availabilityPeriod,
+    requestedItems: projectedRequestedItems,
+    exclude: {
+      rentalId: rental.id,
+      orderCode: rental.orderCode,
+      contractId: contract.id,
+      contractCode: contract.contractCode,
+      recordId: contract.id,
+    },
+  });
+  if (projectedIssues.length) {
+    const issue = projectedIssues[0];
+    const conflictText = (issue.hardConflicts ?? [])
+      .slice(0, 2)
+      .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || 'previo'} hasta ${record.endDate || 'fecha pendiente'}`)
+      .join(', ');
+    throw new Error(
+      `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Coordina proveedor o cambia fechas.`,
+    );
+  }
+
   const nextLines = (contract.items ?? []).map((line) => {
     const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
     if (!item) throw new Error(`El item "${line.itemName}" ya no existe en inventario.`);
@@ -8044,9 +8088,12 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
       : 0;
     const reservationDelta = internalReservedQty - oldInternalReservedQty;
 
-    if (reservationDelta > 0 && Number(item.availableStock ?? 0) < reservationDelta) {
+    const currentAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
+    const canReserveFromCurrentStock = currentAvailableStock >= reservationDelta;
+    const canReserveByDateProjection = reservationDelta > 0 && projectedRequestedItems.some((entry) => entry.itemId === item.id);
+    if (reservationDelta > 0 && !canReserveFromCurrentStock && !canReserveByDateProjection) {
       throw new Error(
-        `Stock insuficiente para "${item.name}". Disponibles: ${Math.max(0, Number(item.availableStock ?? 0))}. Faltan: ${reservationDelta - Math.max(0, Number(item.availableStock ?? 0))}.`,
+        `Stock insuficiente para "${item.name}". Disponibles: ${currentAvailableStock}. Faltan: ${reservationDelta - currentAvailableStock}.`,
       );
     }
     if (reservationDelta !== 0) {
