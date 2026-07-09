@@ -34711,6 +34711,12 @@ button.calendar-dispatch-row:focus-visible {
   color: #c02626 !important;
 }
 
+.orders-combo-group-summary > span.muted {
+  border: 1px solid #d8e1ee;
+  background: #f8fafc;
+  color: #64748b !important;
+}
+
 .orders-combo-group-summary small {
   color: #8d96a8;
   font-size: 0.54rem;

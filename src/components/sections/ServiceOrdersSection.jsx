@@ -3281,11 +3281,11 @@ function ServiceOrdersSection({
       const options = getComboRuleOptions(rule);
       const selectedIds = getSelectedComboOptionIds(selections[index], []);
       const selectedOptions = options.filter((option) => selectedIds.includes(option.id));
-      if (selectedOptions.length === 0) return 0;
+      if (selectedOptions.length === 0) return null;
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
       const availableUnits = selectedOptions.reduce((sum, option) => sum + getComboOptionAvailable(option), 0);
       return Math.floor(availableUnits / requiredPerCombo);
-    });
+    }).filter((value) => value !== null);
     if (groupMaximums.length === 0) return 0;
     return Math.max(0, Math.min(...groupMaximums));
   };
@@ -3304,9 +3304,6 @@ function ServiceOrdersSection({
       let remaining = requiredPerCombo * comboQuantity;
 
       if (selectedOptions.length === 0) {
-        if (!shortageMessage) {
-          shortageMessage = `Selecciona al menos una opcion para "${rule.slotLabel || rule.itemName || `Componente ${index + 1}`}".`;
-        }
         return;
       }
 
@@ -3314,7 +3311,7 @@ function ServiceOrdersSection({
         if (remaining <= 0) return;
         const available = getComboOptionAvailable(item);
         const manualQuantity = Math.max(0, Math.trunc(Number(quantityMap[`${index}:${item.id}`] ?? 0)));
-        const quantity = Math.min(remaining, manualQuantity > 0 ? manualQuantity : available, available);
+        const quantity = Math.min(remaining, manualQuantity, available);
         if (quantity <= 0) return;
         allocations.push({
           rule,
@@ -3328,7 +3325,7 @@ function ServiceOrdersSection({
         remaining -= quantity;
       });
 
-      if (remaining > 0 && !shortageMessage) {
+      if (selectedOptions.length > 0 && remaining > 0 && !shortageMessage) {
         shortageMessage = `No hay suficientes unidades para "${rule.slotLabel || rule.itemName || `Componente ${index + 1}`}". Faltan ${remaining}.`;
       }
     });
@@ -3550,8 +3547,7 @@ function ServiceOrdersSection({
   const addDraftCombo = (comboId) => {
     const combo = (combos ?? []).find((entry) => entry.id === comboId);
     if (!combo) return;
-    const configurable = (combo.ingredients ?? []).some((line) => getComboRuleOptions(line).length > 1);
-    if (configurable) {
+    if ((combo.ingredients ?? []).length > 0) {
       openComboConfigurator(combo);
       return;
     }
@@ -7656,6 +7652,14 @@ function ServiceOrdersSection({
                 const requiredPerCombo = Math.max(1, Math.trunc(Number(rule.quantity ?? 1)));
                 const comboQty = Math.max(1, Math.trunc(Number(comboConfigurator.quantity ?? 1)));
                 const neededUnits = requiredPerCombo * comboQty;
+                const componentStatusClass = selectedIds.length === 0
+                  ? 'muted'
+                  : selectedUnits >= neededUnits
+                    ? 'ok'
+                    : 'danger';
+                const componentStatusText = selectedIds.length === 0
+                  ? 'No incluido'
+                  : `${selectedUnits} marc. / ${neededUnits} sug.`;
                 return (
                   <article key={`${rule.slotLabel ?? rule.itemName}-${index}`} className="orders-combo-option-group">
                     <header>
@@ -7664,8 +7668,8 @@ function ServiceOrdersSection({
                         <span>{requiredPerCombo} por combo · {allOptions.length} opciones · {selectedIds.length} seleccionadas · {selectedUnits} unidades marcadas</span>
                       </div>
                       <div className="orders-combo-group-summary">
-                        <span className={selectedUnits >= neededUnits ? 'ok' : 'danger'}>
-                          {selectedUnits} marc. / {neededUnits} nec.
+                        <span className={componentStatusClass}>
+                          {componentStatusText}
                         </span>
                         <small>{rule.selectionMode === 'category' ? rule.category : 'Productos elegidos'}</small>
                       </div>

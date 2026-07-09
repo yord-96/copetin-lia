@@ -6988,6 +6988,7 @@ const buildWeeklyInventoryHtml = ({
       ?? line.imageUrl
       ?? line.imageDataUrl
       ?? '';
+    const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -6996,7 +6997,10 @@ const buildWeeklyInventoryHtml = ({
                 ${imageDataUrl
                   ? `<img src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(line.itemName)}" />`
                   : '<span class="wi-no-image"></span>'}
-                <strong>${escapeHtml(line.itemName)}</strong>
+                <div class="wi-product-text">
+                  <strong>${escapeHtml(line.itemName)}</strong>
+                  ${itemObservation ? `<span class="wi-item-observation">${escapeHtml(itemObservation)}</span>` : ''}
+                </div>
               </div>
             </td>
             <td class="wi-number"><span class="wi-qty-value">${Math.max(0, Number(line.quantity ?? 0))}</span></td>
@@ -7135,7 +7139,7 @@ const buildWeeklyInventoryHtml = ({
     <meta charset="utf-8" />
     <title>Inventario individual ${escapeHtml(documentCode)}</title>
     <style>
-      @page { size: letter portrait; margin: 7mm 6mm 8mm; }
+      @page { margin: 7mm 6mm 8mm; }
       * { box-sizing: border-box; }
       html { background: #f4f4f4; }
       body { margin: 0; padding: 8px 8px 12px; color: #09255a; background: #eef1f6; font: 12px Arial, sans-serif; overflow: auto; }
@@ -7205,16 +7209,18 @@ const buildWeeklyInventoryHtml = ({
       .wi-product-content { width: 100%; min-width: 0; display: grid; grid-template-columns: 8mm minmax(0, 1fr); gap: 1mm; align-items: center; }
       .wi-product-content img, .wi-no-image { width: 7.2mm; height: 7.2mm; border: .18mm solid #09255a; border-radius: .7mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
+      .wi-product-text { min-width: 0; display: flex; flex-direction: column; gap: .55mm; }
       .wi-product-content strong { min-width: 0; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; overflow-wrap: anywhere; }
+      .wi-item-observation { display: block; color: #0f766e; font-size: 8.2px; line-height: 1.08; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-category-row td { height: 6.8mm !important; padding: 1.05mm 2mm !important; border: .26mm solid #09255a !important; color: #09255a; background: #e8eef8; font-size: 11.8px !important; font-weight: 900 !important; letter-spacing: .25px; text-align: left !important; text-transform: uppercase; }
       .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #09255a; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14mm; align-items: end; min-height: 18mm; padding: 5mm 10mm 4mm; color: #09255a; font-size: 10.2px; font-weight: 800; }
       .wi-empty { padding: 10mm; border: .3mm dashed #efb795; border-radius: 2mm; color: #7b8499; text-align: center; }
       @media print {
-        html, body { width: auto !important; margin: 0 !important; padding: 0 !important; background: #fff; }
-        body.individual-half { height: 11in !important; overflow: hidden !important; }
-        body.individual-half .wi-sheet { width: auto !important; height: 5.5in !important; margin: 0 !important; padding: 0 !important; box-shadow: none; page-break-after: avoid; break-after: avoid; }
-        body.individual-full { min-height: 11in !important; height: auto !important; overflow: visible !important; }
+        html, body { width: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; background: #fff; }
+        body.individual-half { height: auto !important; overflow: visible !important; }
+        body.individual-half .wi-sheet { width: auto !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; box-shadow: none; page-break-after: auto; break-after: auto; overflow: visible !important; }
+        body.individual-full { min-height: 0 !important; height: auto !important; overflow: visible !important; }
         body.individual-full .wi-sheet { width: auto !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; box-shadow: none; overflow: visible !important; }
         .wi-sheet, .wi-sheet * { color: #000 !important; text-shadow: none !important; }
         .wi-table th,
@@ -7268,7 +7274,7 @@ const buildWeeklyInventoryHtml = ({
     <meta charset="utf-8" />
     <title>Control semanal de inventario ${escapeHtml(weekStart)}</title>
     <style>
-      @page { size: legal portrait; margin: 6mm; }
+      @page { margin: 6mm; }
       * { box-sizing: border-box; }
       body { margin: 0; color: #09255a; background: #eef1f6; font: 11.5px Arial, sans-serif; }
       .wi-sheet { width: 100%; max-width: 204mm; min-height: 344mm; margin: 0 auto; padding: 4.5mm; background: #fff; box-shadow: 0 3mm 12mm rgba(9, 37, 90, .12); }
@@ -7320,10 +7326,12 @@ const buildWeeklyInventoryHtml = ({
       .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 6mm; text-align: center !important; }
       .wi-number { width: 11mm; text-align: center !important; }
-      .wi-product { display: grid; grid-template-columns: 7.2mm minmax(0, 1fr); gap: 1.1mm; align-items: center; }
+      .wi-product-content { width: 100%; min-width: 0; display: grid; grid-template-columns: 7.2mm minmax(0, 1fr); gap: 1.1mm; align-items: center; }
       .wi-product img, .wi-no-image { width: 6.5mm; height: 6.5mm; border: .18mm solid #d8deea; border-radius: .8mm; object-fit: cover; }
       .wi-no-image { display: block; background: #f6f7fa; }
-      .wi-product strong { color: #061b48; font-size: 8.2px; line-height: 1.08; text-transform: uppercase; }
+      .wi-product-text { min-width: 0; display: flex; flex-direction: column; gap: .35mm; }
+      .wi-product strong { color: #061b48; font-size: 8.2px; line-height: 1.08; text-transform: uppercase; overflow-wrap: anywhere; }
+      .wi-item-observation { display: block; color: #0f766e; font-size: 6.9px; line-height: 1.05; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-check i { display: inline-block; width: 4.2mm; height: 4.2mm; border: .28mm solid #67748c; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 1.8mm 4mm; color: #09255a; font-size: 8.6px; }
       .wi-empty-order { padding: 5mm; color: #7b8499; text-align: center; }
