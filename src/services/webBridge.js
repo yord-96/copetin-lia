@@ -5880,7 +5880,7 @@ const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
 const getReferenceContractStyles = () => `
-  @page { size: legal portrait; margin: 0; }
+  @page { size: auto; margin: 0; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -6393,18 +6393,20 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
-  .rc-sheet.is-multipage .rc-manual-block {
-    margin-top: 0;
-    padding-top: 7mm;
-    break-before: page;
-    page-break-before: always;
-  }
   .rc-sheet.is-multipage .rc-financial-block {
     margin-top: 0;
+    break-before: page;
+    page-break-before: always;
     border-top: 0;
   }
   .rc-sheet.is-multipage .rc-financial-summary {
     border-top: .45mm solid #a66a20;
+  }
+  .rc-sheet.is-multipage .rc-bottom {
+    margin-top: 3mm;
+  }
+  .rc-sheet.is-multipage .rc-client-materials {
+    margin-top: 3mm;
   }
   @media print {
     html, body {
@@ -6417,9 +6419,10 @@ const getReferenceContractStyles = () => `
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
       position: relative;
-      width: 8.5in;
+      width: auto;
+      max-width: 8.5in;
       min-height: auto;
-      margin: 0;
+      margin: 0 auto;
       padding: .28in .38in .32in;
       display: block;
       box-shadow: none;
@@ -6569,17 +6572,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         </tr>`;
     })
     .join('');
-  const manualRows = Array.from({ length: 3 }, () => `
-        <tr class="rc-manual-row">
-          <td class="rc-row-index"></td>
-          <td><span class="rc-manual-write-line"></span></td>
-          <td class="num"><span class="rc-manual-write-line"></span></td>
-          <td class="num"><span class="rc-manual-write-line"></span></td>
-          <td class="num"><span class="rc-manual-write-line"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
-          <td></td>
-        </tr>`).join('');
+  const realItemCount = documentItems.length + contractServices.length;
+  const usesMultipageContract = realItemCount >= 15;
+  const manualRowCount = usesMultipageContract ? 0 : 3;
   const rows = `${itemRows}${serviceRows}`;
   const contractTableCols = `
           <colgroup>
@@ -6592,11 +6587,30 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <col style="width: 6.5%;" />
             <col style="width: 20.5%;" />
           </colgroup>`;
+  const manualRows = Array.from({ length: manualRowCount }, () => `
+        <tr class="rc-manual-row">
+          <td class="rc-row-index"></td>
+          <td><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="num"><span class="rc-manual-write-line"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"><span class="rc-check"></span></td>
+          <td></td>
+        </tr>`).join('');
+  const manualBlockHtml = manualRows
+    ? `<section class="rc-manual-block">
+          <table class="rc-table rc-manual-table">
+            ${contractTableCols}
+            <tbody>${manualRows}</tbody>
+          </table>
+        </section>`
+    : '';
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
-  const itemCount = documentItems.length + contractServices.length + 3;
+  const itemCount = realItemCount + manualRowCount;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
-  const multipageClass = itemCount >= 24 ? 'is-multipage' : '';
+  const multipageClass = usesMultipageContract ? 'is-multipage' : '';
   const financialSummaryHtml = `
           <div class="rc-financial-summary">
             ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
@@ -6695,12 +6709,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </thead>
           <tbody>${rows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>
-        <section class="rc-manual-block">
-          <table class="rc-table rc-manual-table">
-            ${contractTableCols}
-            <tbody>${manualRows}</tbody>
-          </table>
-        </section>
+        ${manualBlockHtml}
         <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
 
