@@ -6395,12 +6395,43 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
   .rc-sheet.is-multipage .rc-financial-block {
     margin-top: 0;
-    break-before: page;
-    page-break-before: always;
     border-top: 0;
   }
   .rc-sheet.is-multipage .rc-financial-summary {
     border-top: .45mm solid #a66a20;
+  }
+  .rc-continuation-head {
+    display: none;
+  }
+  .rc-sheet.is-multipage .rc-continuation-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6mm;
+    align-items: end;
+    margin: 0 0 5mm;
+    padding: 8mm 0 2.5mm;
+    border-bottom: .32mm solid #a66a20;
+    break-before: page;
+    page-break-before: always;
+  }
+  .rc-continuation-head h2 {
+    margin: 0;
+    color: #161616;
+    font: 500 18px Georgia, "Times New Roman", serif;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+  }
+  .rc-continuation-head p {
+    margin-top: .8mm;
+    color: #6f5232;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .rc-continuation-head strong {
+    color: #a66a20;
+    font: 500 18px Georgia, "Times New Roman", serif;
+    white-space: nowrap;
   }
   .rc-sheet.is-multipage .rc-bottom {
     margin-top: 3mm;
@@ -6574,7 +6605,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .join('');
   const realItemCount = documentItems.length + contractServices.length;
   const usesMultipageContract = realItemCount >= 15;
-  const manualRowCount = usesMultipageContract ? 0 : 3;
+  const manualRowCount = 3;
   const rows = `${itemRows}${serviceRows}`;
   const contractTableCols = `
           <colgroup>
@@ -6710,6 +6741,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <tbody>${rows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>
         ${manualBlockHtml}
+        <section class="rc-continuation-head">
+          <div>
+            <h2>Resumen y cierre del contrato</h2>
+            <p>Totales, observaciones, control de garantia y conformidad</p>
+          </div>
+          <strong>N&deg; ${escapeHtml(mainCode)}</strong>
+        </section>
         <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
 
