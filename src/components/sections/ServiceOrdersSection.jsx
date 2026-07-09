@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
+import { resolveInventoryArea } from '../../utils/inventoryArea';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
 import { api } from '../../services/api';
@@ -254,6 +255,48 @@ const getCashMovementAmount = (movement) => toMoneyNumber(
   ?? movement?.totalBs
   ?? 0,
 );
+
+const getEconomicMovementAmount = (movement, data = null) => {
+  const amount = getCashMovementAmount(movement);
+  if (amount !== 0) return amount;
+
+  const type = normalizeText(movement?.type);
+  if (type === 'saldo_pendiente_cobro') {
+    return toMoneyNumber(data?.balanceBs);
+  }
+  if (type === 'liquidacion_devolucion') {
+    return Math.max(
+      0,
+      toMoneyNumber(data?.penaltiesBs)
+        + toMoneyNumber(data?.outstandingRentalBs)
+        + toMoneyNumber(data?.refundBs),
+    );
+  }
+  if (type === 'saldo_alquiler_pendiente') {
+    return toMoneyNumber(data?.outstandingRentalBs || data?.totalBs);
+  }
+  if (type === 'perdida_interna_devolucion') {
+    return toMoneyNumber(movement?.internalPenaltiesBs);
+  }
+  return amount;
+};
+
+const getEconomicMovementKind = (movement) => {
+  const type = normalizeText(movement?.type);
+  const tag = normalizeText(movement?.accountingTag);
+  const category = normalizeText(movement?.category);
+  if (isVoidedCashMovement(movement)) return 'voided';
+  if (type.includes('egreso') || tag === 'guarantee_refund' || category.includes('devolucion')) return 'expense';
+  if (type.includes('saldo') || type.includes('liquidacion') || type.includes('pendiente')) return 'pending';
+  return 'income';
+};
+
+const getEconomicMovementKindLabel = (kind) => {
+  if (kind === 'expense') return 'Egreso';
+  if (kind === 'pending') return 'Pendiente';
+  if (kind === 'voided') return 'Anulado';
+  return 'Ingreso';
+};
 
 const formatCashMovementType = (movement) => {
   const tag = normalizeText(movement?.accountingTag);
@@ -930,6 +973,38 @@ const getOperationalItemDetails = (line) => {
     .filter((entry) => entry.value);
 };
 
+const WIZARD_ITEM_AREAS = [
+  { key: 'vajilla', label: 'Vajilla', className: 'blue', order: 1 },
+  { key: 'manteleria', label: 'Manteleria', className: 'violet', order: 2 },
+  { key: 'mobiliario', label: 'Mobiliario', className: 'green', order: 3 },
+];
+
+const resolveWizardItemArea = (line) => {
+  const resolvedArea = resolveInventoryArea(line?.item ?? line?.quickItem ?? line);
+  if (resolvedArea === 'vajilla') return WIZARD_ITEM_AREAS[0];
+  if (resolvedArea === 'manteleria') return WIZARD_ITEM_AREAS[1];
+
+  const category = normalizeText(
+    line?.item?.category
+    ?? line?.quickItem?.category
+    ?? line?.comboCategory
+    ?? line?.category
+    ?? '',
+  );
+  const name = normalizeText(line?.item?.name ?? line?.itemName ?? line?.quickItem?.name ?? '');
+  const haystack = `${category} ${name}`;
+
+  if (haystack.includes('vajilla') || haystack.includes('cristal') || haystack.includes('copa') || haystack.includes('vaso') || haystack.includes('plato')) {
+    return WIZARD_ITEM_AREAS[0];
+  }
+  if (haystack.includes('mantel') || haystack.includes('muleton') || haystack.includes('servilleta') || haystack.includes('camino') || haystack.includes('faldon') || haystack.includes('faldin') || haystack.includes('tela')) {
+    return WIZARD_ITEM_AREAS[1];
+  }
+  return WIZARD_ITEM_AREAS[2];
+};
+
+const getWizardItemMoveKey = (line) => String(line?.comboLineKey ?? line?.lineKey ?? line?.itemId ?? '');
+
 const isDetachedFromInventory = (lineOrItem) => {
   const item = lineOrItem?.item ?? lineOrItem ?? {};
   return lineOrItem?.controlsStock === false
@@ -1075,6 +1150,7 @@ function ServiceOrdersSection({
   const [isWizardSummaryCollapsed, setIsWizardSummaryCollapsed] = useState(false);
   const [comboConfigurator, setComboConfigurator] = useState(null);
   const [itemObservationModal, setItemObservationModal] = useState(null);
+  const [draggedSelectedItemKey, setDraggedSelectedItemKey] = useState('');
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1306,6 +1382,20 @@ function ServiceOrdersSection({
       window.removeEventListener('resize', closeOnScrollOrResize);
     };
   }, [menuState]);
+
+  useEffect(() => {
+    if (!contractEconomicsTarget) return undefined;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+    };
+  }, [contractEconomicsTarget]);
 
   const deliveryByRentalId = useMemo(() => {
     const map = new Map();
@@ -1828,11 +1918,29 @@ function ServiceOrdersSection({
       chargesBs: 0,
       refundedBs: 0,
     });
-    const ledgerAppliedToRentalBs = Math.max(0, ledgerTotals.receivedBs - ledgerTotals.guaranteeBs - ledgerTotals.refundedBs);
-    const ledgerDebtBs = Math.max(0, totalBs + ledgerTotals.chargesBs - ledgerAppliedToRentalBs);
-    const ledgerOverpayBs = Math.max(0, ledgerAppliedToRentalBs - totalBs - ledgerTotals.chargesBs);
+    const ledgerAppliedToRentalBs = Math.max(0, ledgerTotals.receivedBs - ledgerTotals.guaranteeBs);
+    const ledgerChargesCoveredByGuaranteeBs = Math.min(ledgerTotals.chargesBs, ledgerTotals.guaranteeBs);
+    const ledgerChargesPendingBs = Math.max(0, ledgerTotals.chargesBs - ledgerChargesCoveredByGuaranteeBs);
+    const ledgerDebtBs = Math.max(0, totalBs + ledgerChargesPendingBs - ledgerAppliedToRentalBs);
+    const ledgerOverpayBs = Math.max(0, ledgerAppliedToRentalBs - totalBs - ledgerChargesPendingBs);
     const ledgerGuaranteeAfterChargesBs = Math.max(0, ledgerTotals.guaranteeBs - ledgerTotals.chargesBs);
     const ledgerRefundSuggestedBs = Math.max(0, ledgerOverpayBs + ledgerGuaranteeAfterChargesBs - ledgerTotals.refundedBs);
+    const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
+    const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
+    const expectedManagedBs = Number((totalBs + guaranteeDeclaredBs).toFixed(2));
+    const totalManagedBs = Number((ledgerTotals.receivedBs > 0 ? ledgerTotals.receivedBs : expectedManagedBs).toFixed(2));
+    const usesLedgerBalance = economicLedger.length > 0;
+    const effectivePaidBs = usesLedgerBalance
+      ? ledgerTotals.receivedBs
+      : paidBs;
+    const effectiveBalanceBs = usesLedgerBalance ? ledgerDebtBs : balanceBs;
+    const cashRegisteredBs = incomeBs;
+    const cashToRegisterBs = Math.max(0, ledgerTotals.receivedBs - cashRegisteredBs);
+    const balanceDetailLabel = usesLedgerBalance
+      ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
+      : pendingPaymentBs > 0
+      ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(guaranteeValidatedBs)}`
+      : `Total ${formatBs(totalBs)} - pagado ${formatBs(paidBs)}`;
 
     return {
       contract,
@@ -1842,8 +1950,12 @@ function ServiceOrdersSection({
       receipts,
       returnIssues,
       totalBs,
-      paidBs,
-      balanceBs,
+      totalManagedBs,
+      paidBs: effectivePaidBs,
+      balanceBs: effectiveBalanceBs,
+      cashRegisteredBs,
+      cashToRegisterBs,
+      balanceDetailLabel,
       incomeBs,
       expenseBs,
       discountBs,
@@ -1855,6 +1967,7 @@ function ServiceOrdersSection({
       ledgerDebtBs,
       ledgerGuaranteeAfterChargesBs,
       ledgerRefundSuggestedBs,
+      realIncomeBs,
       guaranteeDeclaredBs,
       guaranteeValidatedBs,
       guaranteeStatus: guaranteeDeclaredBs <= 0
@@ -1869,13 +1982,13 @@ function ServiceOrdersSection({
       penaltiesBs,
       outstandingRentalBs,
       refundBs,
-      statusLabel: balanceBs > 0
+      statusLabel: effectiveBalanceBs > 0
         ? 'Saldo pendiente'
         : penaltiesBs > 0
           ? 'Liquidacion con cargos'
           : 'Sin saldo pendiente',
     };
-  }, [cashMovements, contractEconomicsTarget, contracts, orderRowsWithMeta, rentals]);
+  }, [cashMovements, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
 
   const contractQuoteIdSet = useMemo(
     () =>
@@ -2211,6 +2324,17 @@ function ServiceOrdersSection({
       .filter(Boolean),
     [draft.services],
   );
+
+  const selectedItemAreaGroups = useMemo(() => {
+    const groupMap = new Map();
+    selectedItems.forEach((line) => {
+      const area = resolveWizardItemArea(line);
+      const current = groupMap.get(area.key) ?? { area, lines: [] };
+      current.lines.push(line);
+      groupMap.set(area.key, current);
+    });
+    return [...groupMap.values()].sort((left, right) => left.area.order - right.area.order);
+  }, [selectedItems]);
 
   const selectedDemandByItemId = useMemo(() => {
     const map = new Map();
@@ -3548,6 +3672,60 @@ function ServiceOrdersSection({
     }));
   };
 
+  const moveSelectedItemWithinArea = (sourceMoveKey, targetMoveKey) => {
+    if (!sourceMoveKey || !targetMoveKey || sourceMoveKey === targetMoveKey) return;
+    const sourceLine = selectedItems.find((line) => getWizardItemMoveKey(line) === sourceMoveKey);
+    const targetLine = selectedItems.find((line) => getWizardItemMoveKey(line) === targetMoveKey);
+    if (!sourceLine || !targetLine) return;
+    if (resolveWizardItemArea(sourceLine).key !== resolveWizardItemArea(targetLine).key) return;
+
+    setDraft((current) => {
+      const getDraftMoveKey = (line) => String(line.comboLineKey ?? line.lineKey ?? line.itemId ?? '');
+      const sourceFirstIndex = current.items.findIndex((line) => getDraftMoveKey(line) === sourceMoveKey);
+      const targetOriginalIndex = current.items.findIndex((line) => getDraftMoveKey(line) === targetMoveKey);
+      const sourceLines = current.items.filter((line) => getDraftMoveKey(line) === sourceMoveKey);
+      if (!sourceLines.length) return current;
+      const withoutSource = current.items.filter((line) => getDraftMoveKey(line) !== sourceMoveKey);
+      const targetIndex = withoutSource.findIndex((line) => getDraftMoveKey(line) === targetMoveKey);
+      if (targetIndex < 0) return current;
+      const insertIndex = sourceFirstIndex >= 0 && targetOriginalIndex >= 0 && sourceFirstIndex < targetOriginalIndex
+        ? targetIndex + 1
+        : targetIndex;
+      const nextItems = [
+        ...withoutSource.slice(0, insertIndex),
+        ...sourceLines,
+        ...withoutSource.slice(insertIndex),
+      ];
+      return { ...current, items: nextItems };
+    });
+  };
+
+  const handleSelectedItemDragStart = (event, line) => {
+    if (event.target.closest('button, input, select, textarea, a')) {
+      event.preventDefault();
+      return;
+    }
+    const moveKey = getWizardItemMoveKey(line);
+    setDraggedSelectedItemKey(moveKey);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', moveKey);
+  };
+
+  const handleSelectedItemDragOver = (event, targetLine) => {
+    const sourceMoveKey = draggedSelectedItemKey || event.dataTransfer.getData('text/plain');
+    const sourceLine = selectedItems.find((line) => getWizardItemMoveKey(line) === sourceMoveKey);
+    if (!sourceLine || resolveWizardItemArea(sourceLine).key !== resolveWizardItemArea(targetLine).key) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleSelectedItemDrop = (event, targetLine) => {
+    event.preventDefault();
+    const sourceMoveKey = draggedSelectedItemKey || event.dataTransfer.getData('text/plain');
+    moveSelectedItemWithinArea(sourceMoveKey, getWizardItemMoveKey(targetLine));
+    setDraggedSelectedItemKey('');
+  };
+
   const openItemObservationModal = (line) => {
     setItemObservationModal({
       lineKey: line.lineKey,
@@ -3956,19 +4134,7 @@ function ServiceOrdersSection({
       }));
     const selectedResponsibles = getSelectedResponsibles();
     const primaryResponsible = selectedResponsibles[0] ?? null;
-    const itemObservationLines = selectedItems
-      .map((line) => {
-        const observation = String(line.observation ?? '').trim();
-        if (!observation) return '';
-        return `${line.item?.name || line.itemName || 'Item'}: ${observation}`;
-      })
-      .filter(Boolean);
-    const contractObservations = [
-      draft.observations.trim(),
-      itemObservationLines.length > 0
-        ? `Observaciones por item:\n${itemObservationLines.join('\n')}`
-        : '',
-    ].filter(Boolean).join('\n\n');
+    const contractObservations = draft.observations.trim();
 
     return {
       id: draft.recordId || undefined,
@@ -4386,6 +4552,11 @@ function ServiceOrdersSection({
     setIsSavingContractEconomicsLedger(false);
   };
 
+  const handleContractEconomicsBackdropClick = (event) => {
+    if (event.target !== event.currentTarget) return;
+    closeContractEconomics();
+  };
+
   const handleOpenDocumentsFromContract = (contractRow) => {
     const linkedOrder = orderRowsWithMeta.find(
       (row) =>
@@ -4714,6 +4885,39 @@ function ServiceOrdersSection({
     if (updated && contractEconomicsLedgerEditingId === entry.id) {
       resetContractEconomicLedgerForm();
     }
+  };
+
+  const addContractEconomicLedgerQuickEntry = async ({ type, amountBs, note, successMessage }) => {
+    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    const amount = Math.max(0, toMoneyNumber(amountBs));
+    if (amount <= 0) return;
+
+    const createdByName = String(
+      currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+    ).trim() || 'Sistema';
+    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])]
+      .reverse()
+      .find((entry) => entry.type !== 'note' && entry.paymentMethod);
+    const entry = {
+      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type,
+      amountBs: amount,
+      paymentMethod: type === 'note' ? '' : lastPaidEntry?.paymentMethod || 'efectivo',
+      paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
+      note,
+      createdAt: new Date().toISOString(),
+      createdByName,
+    };
+
+    const updated = await saveContractEconomicLedgerRows(
+      [...(contractEconomicsData.economicLedger ?? []), entry],
+      successMessage,
+    );
+    if (updated) resetContractEconomicLedgerForm();
   };
 
   const handlePrintOrderDocument = async (kind, orderRow) => {
@@ -6041,8 +6245,12 @@ function ServiceOrdersSection({
       ) : null}
 
       {contractEconomicsData ? (
-        <div className="orders-modal-backdrop contract-economics-backdrop" onClick={closeContractEconomics}>
-          <section className="orders-modal contract-economics-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="orders-modal-backdrop contract-economics-backdrop" onClick={handleContractEconomicsBackdropClick}>
+          <section
+            className="orders-modal contract-economics-modal"
+            onClick={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+          >
             <header className="orders-modal-head">
               <div>
                 <h3>Economico contrato {contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}</h3>
@@ -6064,23 +6272,161 @@ function ServiceOrdersSection({
                 <article>
                   <span>Total contrato</span>
                   <strong>{formatBs(contractEconomicsData.totalBs)}</strong>
-                  <small>Incluye alquiler y ajustes comerciales.</small>
+                  <small>Alquiler y ajustes</small>
+                </article>
+                <article>
+                  <span>Total manejado</span>
+                  <strong>{formatBs(contractEconomicsData.totalManagedBs)}</strong>
+                  <small>Pagos y movimientos</small>
                 </article>
                 <article>
                   <span>Pagado / abonado</span>
                   <strong>{formatBs(contractEconomicsData.paidBs)}</strong>
-                  <small>Movimientos asociados y pagos registrados.</small>
+                  <small>Total recibido</small>
                 </article>
                 <article className={contractEconomicsData.balanceBs > 0 ? 'warning' : 'success'}>
                   <span>Saldo pendiente</span>
                   <strong>{formatBs(contractEconomicsData.balanceBs)}</strong>
-                  <small>{contractEconomicsData.statusLabel}</small>
+                  <small>Pendiente de cobro</small>
                 </article>
                 <article>
                   <span>Garantia</span>
                   <strong>{formatBs(contractEconomicsData.guaranteeDeclaredBs)}</strong>
-                  <small>{contractEconomicsData.guaranteeStatus} | {contractEconomicsData.guaranteeMethod}</small>
+                  <small>{contractEconomicsData.ledgerTotals.guaranteeBs > 0 ? 'Separada del pago' : `${contractEconomicsData.guaranteeStatus} | ${contractEconomicsData.guaranteeMethod}`}</small>
                 </article>
+              </div>
+
+              <div className="contract-economics-story-layout">
+                <section className="contract-economics-flow-card">
+                  <header>
+                    <h4>Flujo economico del contrato</h4>
+                    <span>{contractEconomicsData.economicLedger.length} paso(s)</span>
+                  </header>
+                  <div className="contract-economics-flow-steps">
+                    <article className={contractEconomicsData.ledgerTotals.receivedBs > 0 ? 'is-done' : ''}>
+                      <b>1</b>
+                      <span>Pago completo</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs || contractEconomicsData.totalManagedBs)}</strong>
+                      <small>{contractEconomicsData.ledgerTotals.receivedBs > 0 ? 'Registrado' : 'Pendiente'}</small>
+                    </article>
+                    <article className={contractEconomicsData.ledgerTotals.guaranteeBs > 0 ? 'is-done' : ''}>
+                      <b>2</b>
+                      <span>Separar garantia</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs || contractEconomicsData.guaranteeDeclaredBs)}</strong>
+                      <small>{contractEconomicsData.ledgerTotals.guaranteeBs > 0 ? 'Separada' : 'Pendiente'}</small>
+                    </article>
+                    <article className={contractEconomicsData.ledgerTotals.chargesBs > 0 ? 'is-done' : ''}>
+                      <b>3</b>
+                      <span>Aplicar dano/faltante</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.chargesBs || contractEconomicsData.penaltiesBs)}</strong>
+                      <small>{contractEconomicsData.ledgerTotals.chargesBs > 0 ? 'Aplicado' : 'Si corresponde'}</small>
+                    </article>
+                    <article className={contractEconomicsData.ledgerTotals.refundedBs > 0 ? 'is-done is-refund' : 'is-suggested'}>
+                      <b>4</b>
+                      <span>Devolver garantia</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.refundedBs || contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                      <small>{contractEconomicsData.ledgerTotals.refundedBs > 0 ? 'Devuelta' : 'Sugerido'}</small>
+                    </article>
+                    <article className="is-result">
+                      <b>5</b>
+                      <span>Ingreso real</span>
+                      <strong>{formatBs(contractEconomicsData.realIncomeBs)}</strong>
+                      <small>Resultado</small>
+                    </article>
+                  </div>
+
+                  <form className="contract-economics-collect compact" onSubmit={handleSubmitContractEconomicCollection}>
+                    <div>
+                      <h4>Cobro con recibo a Caja Grande</h4>
+                      <p>
+                        {contractEconomicsData.balanceBs > 0
+                          ? `Saldo disponible para cobrar: ${formatBs(contractEconomicsData.balanceBs)}. Este registro genera recibo e ingreso real en caja.`
+                          : `Caja registrada: ${formatBs(contractEconomicsData.cashRegisteredBs)}. Usa el cuaderno solo para separar garantia, cargos y devoluciones.`}
+                      </p>
+                    </div>
+                    <label>
+                      Monto
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={contractEconomicsCollectionDraft.amountBs}
+                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                        placeholder={contractEconomicsData.balanceBs > 0 ? String(contractEconomicsData.balanceBs.toFixed(2)) : '0.00'}
+                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                      />
+                    </label>
+                    <label>
+                      Metodo
+                      <select
+                        value={contractEconomicsCollectionDraft.paymentMethod}
+                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
+                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                      >
+                        <option value="efectivo">Efectivo</option>
+                        <option value="qr">QR</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                    </label>
+                    {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
+                      <label>
+                        Cuenta QR
+                        <select
+                          value={contractEconomicsCollectionDraft.paymentAccount}
+                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                          disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                        >
+                          <option value="">Seleccionar</option>
+                          {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
+                    <label>
+                      Comprobante / nota
+                      <input
+                        value={contractEconomicsCollectionDraft.receipt}
+                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
+                        placeholder="Referencia opcional"
+                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                    >
+                      {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
+                    </button>
+                  </form>
+                </section>
+
+                <aside className="contract-economics-money-story">
+                  <h4>Que paso con el dinero</h4>
+                  <div>
+                    <span>Pago recibido</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs || contractEconomicsData.cashRegisteredBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Aplicado al alquiler</span>
+                    <strong>- {formatBs(contractEconomicsData.totalBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Garantia separada</span>
+                    <strong>- {formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Dano descontado</span>
+                    <strong>- {formatBs(contractEconomicsData.ledgerTotals.chargesBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Devolucion al cliente</span>
+                    <strong>+ {formatBs(contractEconomicsData.ledgerTotals.refundedBs || contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                  </div>
+                  <footer>
+                    <span>Ingreso real</span>
+                    <strong>{formatBs(contractEconomicsData.realIncomeBs)}</strong>
+                  </footer>
+                </aside>
               </div>
 
               <section className="contract-economics-notebook">
@@ -6107,9 +6453,54 @@ function ServiceOrdersSection({
                       <span>A devolver sugerido</span>
                       <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
                     </article>
+                    <article className="tone-blue">
+                      <span>Ingreso real</span>
+                      <strong>{formatBs(contractEconomicsData.realIncomeBs)}</strong>
+                    </article>
                   </div>
                   <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
                 </header>
+
+                {canManageContractEconomicLedger ? (
+                  <div className="contract-economics-quick-actions">
+                    <button
+                      type="button"
+                      onClick={() => addContractEconomicLedgerQuickEntry({
+                        type: 'guarantee',
+                        amountBs: Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs),
+                        note: `Garantia separada del pago total recibido para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+                        successMessage: 'Garantia separada del pago total.',
+                      })}
+                      disabled={readOnly || isSavingContractEconomicsLedger || Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs) <= 0}
+                    >
+                      Separar garantia {formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs))}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addContractEconomicLedgerQuickEntry({
+                        type: 'charge',
+                        amountBs: Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs),
+                        note: `Cobro de danos/faltantes aplicado contra garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+                        successMessage: 'Cobro por dano/faltante aplicado a la garantia.',
+                      })}
+                      disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.ledgerTotals.guaranteeBs <= 0 || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0}
+                    >
+                      Aplicar dano {formatBs(Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs))}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addContractEconomicLedgerQuickEntry({
+                        type: 'refund',
+                        amountBs: contractEconomicsData.ledgerRefundSuggestedBs,
+                        note: `Devolucion de saldo de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+                        successMessage: 'Devolucion de garantia registrada.',
+                      })}
+                      disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.ledgerRefundSuggestedBs <= 0}
+                    >
+                      Registrar devolucion {formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}
+                    </button>
+                  </div>
+                ) : null}
 
                 <div className="contract-economics-ledger-sheet">
                   <div className="contract-economics-ledger-head">
@@ -6256,70 +6647,6 @@ function ServiceOrdersSection({
                 </div>
               </section>
 
-              <form className="contract-economics-collect" onSubmit={handleSubmitContractEconomicCollection}>
-                <div>
-                  <h4>Cobro desde Caja Grande</h4>
-                  <p>
-                    {contractEconomicsData.balanceBs > 0
-                      ? `Saldo disponible para cobrar: ${formatBs(contractEconomicsData.balanceBs)}`
-                      : 'Este contrato no tiene saldo pendiente por cobrar.'}
-                  </p>
-                </div>
-                <label>
-                  Monto
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={contractEconomicsCollectionDraft.amountBs}
-                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                    placeholder={contractEconomicsData.balanceBs > 0 ? String(contractEconomicsData.balanceBs.toFixed(2)) : '0.00'}
-                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
-                  />
-                </label>
-                <label>
-                  Metodo
-                  <select
-                    value={contractEconomicsCollectionDraft.paymentMethod}
-                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
-                  >
-                    <option value="efectivo">Efectivo</option>
-                    <option value="qr">QR</option>
-                    <option value="transferencia">Transferencia</option>
-                  </select>
-                </label>
-                {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
-                  <label>
-                    Cuenta QR
-                    <select
-                      value={contractEconomicsCollectionDraft.paymentAccount}
-                      onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                      disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
-                    >
-                      <option value="">Seleccionar</option>
-                      {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
-                    </select>
-                  </label>
-                ) : null}
-                <label>
-                  Comprobante / nota
-                  <input
-                    value={contractEconomicsCollectionDraft.receipt}
-                    onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
-                    placeholder="Referencia opcional"
-                    disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
-                >
-                  {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
-                </button>
-              </form>
-
               <div className="contract-economics-grid">
                 <article className="contract-economics-card">
                   <header>
@@ -6349,44 +6676,59 @@ function ServiceOrdersSection({
                     <div><span>Garantia validada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
                   </div>
                 </article>
-              </div>
 
-              <article className="contract-economics-panel">
-                <header>
-                  <div>
-                    <h4>Pagos y movimientos</h4>
-                    <p>Entradas, salidas, cobros y devoluciones vinculadas al contrato.</p>
-                  </div>
-                </header>
-                <div className="contract-economics-table">
-                  <div className="contract-economics-table-head">
-                    <span>Fecha</span>
-                    <span>Tipo</span>
-                    <span>Detalle</span>
-                    <span>Monto</span>
-                    <span>Recibo</span>
-                  </div>
-                  {contractEconomicsData.movements.length > 0 ? contractEconomicsData.movements.map((movement) => (
-                    <div className={`contract-economics-table-row ${isVoidedCashMovement(movement) ? 'voided' : ''}`} key={movement.id ?? `${movement.createdAt}-${movement.description}`}>
-                      <span>{movement.createdAt ? (formatDateTime?.(movement.createdAt) ?? formatDate?.(movement.createdAt) ?? movement.createdAt) : '-'}</span>
-                      <span>{formatCashMovementType(movement)}</span>
-                      <span>{movement.description || movement.notes || movement.category || '-'}</span>
-                      <strong>{formatBs(getCashMovementAmount(movement))}</strong>
-                      <span>
-                        {movement.id && !isVoidedCashMovement(movement) && Math.abs(getCashMovementAmount(movement)) > 0 ? (
-                          <button type="button" className="section-link blue" onClick={() => handlePrintEconomicReceipt(movement)}>
-                            {movement.receiptCode || movement.receipt || 'Ver recibo'}
-                          </button>
-                        ) : (
-                          movement.receiptCode || movement.receipt || (isVoidedCashMovement(movement) ? 'Anulado' : '-')
-                        )}
-                      </span>
+                <article className="contract-economics-panel contract-economics-movements-card">
+                  <header>
+                    <div>
+                      <h4>Pagos y movimientos</h4>
+                      <p>Entradas, salidas, cobros y devoluciones vinculadas al contrato.</p>
                     </div>
-                  )) : (
-                    <p className="contract-economics-empty">No hay movimientos de caja vinculados a este contrato.</p>
-                  )}
-                </div>
-              </article>
+                  </header>
+                  <div className="contract-economics-table">
+                    <div className="contract-economics-table-head">
+                      <span>Fecha</span>
+                      <span>Estado</span>
+                      <span>Tipo</span>
+                      <span>Detalle</span>
+                      <span>Monto</span>
+                      <span>Recibo</span>
+                    </div>
+                    {contractEconomicsData.movements.length > 0 ? contractEconomicsData.movements.map((movement) => {
+                      const movementKind = getEconomicMovementKind(movement);
+                      const movementAmount = getEconomicMovementAmount(movement, contractEconomicsData);
+                      return (
+                        <div
+                          className={`contract-economics-table-row is-${movementKind}`}
+                          key={movement.id ?? `${movement.createdAt}-${movement.description}`}
+                        >
+                          <span className="contract-economics-table-date">
+                            {movement.createdAt ? (formatDateTime?.(movement.createdAt) ?? formatDate?.(movement.createdAt) ?? movement.createdAt) : '-'}
+                          </span>
+                          <span className={`contract-economics-movement-badge is-${movementKind}`}>
+                            {getEconomicMovementKindLabel(movementKind)}
+                          </span>
+                          <span className="contract-economics-table-type">{formatCashMovementType(movement)}</span>
+                          <span className="contract-economics-table-detail">{movement.description || movement.notes || movement.category || '-'}</span>
+                          <strong className={`contract-economics-table-amount is-${movementKind}`}>
+                            {formatBs(movementAmount)}
+                          </strong>
+                          <span className="contract-economics-table-receipt">
+                            {movement.id && !isVoidedCashMovement(movement) && Math.abs(getCashMovementAmount(movement)) > 0 ? (
+                              <button type="button" className="section-link blue" onClick={() => handlePrintEconomicReceipt(movement)}>
+                                {movement.receiptCode || movement.receipt || 'Ver recibo'}
+                              </button>
+                            ) : (
+                              movement.receiptCode || movement.receipt || (isVoidedCashMovement(movement) ? 'Anulado' : '-')
+                            )}
+                          </span>
+                        </div>
+                      );
+                    }) : (
+                      <p className="contract-economics-empty">No hay movimientos de caja vinculados a este contrato.</p>
+                    )}
+                  </div>
+                </article>
+              </div>
 
               <article className="contract-economics-panel">
                 <header>
@@ -8376,15 +8718,21 @@ function ServiceOrdersSection({
                       {selectedItems.length === 0 ? (
                         <p className="status">Aun no agregaste items.</p>
                       ) : (
-                        selectedItems.map((line, lineIndex) => {
+                        selectedItemAreaGroups.map(({ area, lines: areaLines }) => (
+                          <section className={`orders-selected-area-group area-${area.className}`} key={area.key}>
+                            <header className="orders-selected-area-head">
+                              <span>{area.label}</span>
+                              <strong>{areaLines.length} item(s)</strong>
+                            </header>
+                            {areaLines.map((line, lineIndex) => {
                           const availability = line.availability;
                           const isProvisionalItem = isDetachedFromInventory(line);
                           const detailParts = getOperationalItemDetails(line);
                           const comboSiblingLines = line.comboLineKey
                             ? selectedItems.filter((entry) => entry.comboLineKey === line.comboLineKey)
                             : [];
-                          const isFirstComboLine = Boolean(line.comboLineKey && selectedItems[lineIndex - 1]?.comboLineKey !== line.comboLineKey);
-                          const isLastComboLine = Boolean(line.comboLineKey && selectedItems[lineIndex + 1]?.comboLineKey !== line.comboLineKey);
+                          const isFirstComboLine = Boolean(line.comboLineKey && areaLines[lineIndex - 1]?.comboLineKey !== line.comboLineKey);
+                          const isLastComboLine = Boolean(line.comboLineKey && areaLines[lineIndex + 1]?.comboLineKey !== line.comboLineKey);
                           const comboGroupTotalBs = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.lineTotalBs ?? 0), 0);
                           const comboGroupUnits = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
                           const availableStock = getEditableAvailableStock(line);
@@ -8400,10 +8748,16 @@ function ServiceOrdersSection({
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
+                          const moveKey = getWizardItemMoveKey(line);
                           return (
                           <div
                             key={line.lineKey}
-                            className={`orders-selected-row${hasUncoveredShortage ? ' stock-warning' : ''}${line.comboLineKey ? ' is-combo-line' : ' is-standalone-line'}${line.comboPricingRole === 'price' ? ' is-combo-price-line' : ''}`}
+                            className={`orders-selected-row area-${area.className}${hasUncoveredShortage ? ' stock-warning' : ''}${line.comboLineKey ? ' is-combo-line' : ' is-standalone-line'}${line.comboPricingRole === 'price' ? ' is-combo-price-line' : ''}${draggedSelectedItemKey === moveKey ? ' is-dragging' : ''}`}
+                            draggable
+                            onDragStart={(event) => handleSelectedItemDragStart(event, line)}
+                            onDragOver={(event) => handleSelectedItemDragOver(event, line)}
+                            onDrop={(event) => handleSelectedItemDrop(event, line)}
+                            onDragEnd={() => setDraggedSelectedItemKey('')}
                           >
                             {isFirstComboLine ? (
                               <div className="orders-selected-combo-group-head">
@@ -8482,6 +8836,9 @@ function ServiceOrdersSection({
                                 Base: {formatBs(line.item.rentalPriceBs)} c/u
                                 {isProvisionalItem ? ' | Pendiente de verificacion' : ''}
                               </p>
+                              {String(line.observation ?? '').trim() ? (
+                                <p className="orders-selected-item-note">{String(line.observation ?? '').trim()}</p>
+                              ) : null}
                               </div>
                             </div>
                             <label className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
@@ -8708,7 +9065,9 @@ function ServiceOrdersSection({
                             ) : null}
                           </div>
                           );
-                        })
+                            })}
+                          </section>
+                        ))
                       )}
                       </div>
                     </section>

@@ -10176,22 +10176,30 @@ textarea:focus {
 .contract-economics-backdrop {
   z-index: 370;
   background: rgba(8, 17, 36, 0.5);
-  backdrop-filter: blur(2px);
+  overflow: hidden;
+  overscroll-behavior: none;
+  isolation: isolate;
 }
 
 .contract-economics-modal {
   width: min(1448px, calc(100vw - 1.2rem));
   max-height: min(980px, calc(100vh - 1.2rem));
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: contain;
   border-radius: 0.68rem;
   background: #ffffff;
+  transform: translateZ(0);
 }
 
 .contract-economics-body {
   padding: 1rem 1.55rem 1.2rem;
   overflow: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: #fbfcff;
   display: grid;
   gap: 0.68rem;
@@ -10199,7 +10207,7 @@ textarea:focus {
 
 .contract-economics-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.86rem;
 }
 
@@ -10244,36 +10252,47 @@ textarea:focus {
 }
 
 .contract-economics-kpis article:nth-child(1)::after {
-  content: "□";
+  content: "$";
 }
 
 .contract-economics-kpis article:nth-child(2)::before {
+  background: #eef6ff;
+  border-color: #c9ddff;
+}
+
+.contract-economics-kpis article:nth-child(2)::after {
+  content: "+";
+  color: #2563eb;
+}
+
+.contract-economics-kpis article:nth-child(3)::before {
   background: #eaf9ef;
   border-color: #c8efd3;
 }
 
-.contract-economics-kpis article:nth-child(2)::after {
-  content: "✓";
+.contract-economics-kpis article:nth-child(3)::after {
+  content: "OK";
   color: #16a34a;
+  font-size: 0.8rem;
 }
 
-.contract-economics-kpis article:nth-child(3)::before {
+.contract-economics-kpis article:nth-child(4)::before {
   background: #fff4e5;
   border-color: #fed7aa;
 }
 
-.contract-economics-kpis article:nth-child(3)::after {
-  content: "◷";
+.contract-economics-kpis article:nth-child(4)::after {
+  content: "!";
   color: #f97316;
 }
 
-.contract-economics-kpis article:nth-child(4)::before {
+.contract-economics-kpis article:nth-child(5)::before {
   background: #f4efff;
   border-color: #ddd6fe;
 }
 
-.contract-economics-kpis article:nth-child(4)::after {
-  content: "◇";
+.contract-economics-kpis article:nth-child(5)::after {
+  content: "G";
   color: #7c3aed;
 }
 
@@ -10305,6 +10324,168 @@ textarea:focus {
   color: #697997;
   font-size: 0.74rem;
   font-weight: 700;
+}
+
+.contract-economics-story-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 0.28fr);
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.contract-economics-flow-card,
+.contract-economics-money-story {
+  border: 1px solid #dfe6f2;
+  border-radius: 0.45rem;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(16, 35, 73, 0.045);
+  padding: 0.85rem;
+}
+
+.contract-economics-flow-card {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.contract-economics-flow-card > header,
+.contract-economics-money-story h4 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.contract-economics-flow-card h4,
+.contract-economics-money-story h4 {
+  margin: 0;
+  color: #071c46;
+  font-size: 0.98rem;
+}
+
+.contract-economics-flow-card > header span {
+  color: #65728c;
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.contract-economics-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.contract-economics-flow-steps article {
+  position: relative;
+  min-height: 4.25rem;
+  border: 1px solid #e2e9f6;
+  border-radius: 0.38rem;
+  background: #fbfdff;
+  padding: 0.58rem 0.7rem 0.58rem 2.15rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.contract-economics-flow-steps article:not(:last-child)::after {
+  content: ">";
+  position: absolute;
+  right: -0.62rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9aa8c0;
+  font-weight: 900;
+}
+
+.contract-economics-flow-steps b {
+  position: absolute;
+  left: 0.58rem;
+  top: 0.55rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.62rem;
+  font-weight: 950;
+}
+
+.contract-economics-flow-steps span {
+  color: #1d2e5a;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.contract-economics-flow-steps strong {
+  color: #071c46;
+  font-size: 0.86rem;
+}
+
+.contract-economics-flow-steps small {
+  width: max-content;
+  max-width: 100%;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #526179;
+  padding: 0.12rem 0.38rem;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.contract-economics-flow-steps article.is-done small,
+.contract-economics-flow-steps article.is-result small {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.contract-economics-flow-steps article.is-suggested {
+  border-color: #fed7aa;
+  background: #fffaf3;
+}
+
+.contract-economics-flow-steps article.is-refund small {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.contract-economics-money-story {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.contract-economics-money-story > div,
+.contract-economics-money-story footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid #edf2fb;
+  padding: 0.34rem 0;
+}
+
+.contract-economics-money-story > div span,
+.contract-economics-money-story footer span {
+  color: #50617d;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.contract-economics-money-story > div strong,
+.contract-economics-money-story footer strong {
+  color: #071c46;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.contract-economics-money-story footer {
+  margin-top: 0.2rem;
+  border: 1px solid #cfe0ff;
+  border-radius: 0.45rem;
+  background: #eff6ff;
+  padding: 0.58rem 0.65rem;
 }
 
 .contract-economics-notebook {
@@ -10359,11 +10540,11 @@ textarea:focus {
 
 .contract-economics-notebook-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.42rem;
   margin-left: auto;
-  width: min(670px, 52vw);
-  flex: 1 1 620px;
+  width: min(820px, 58vw);
+  flex: 1 1 760px;
 }
 
 .contract-economics-notebook-summary article {
@@ -10398,6 +10579,38 @@ textarea:focus {
 .contract-economics-notebook-summary .tone-green {
   border-color: #bbf7d0;
   background: #f0fdf4;
+}
+
+.contract-economics-quick-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.contract-economics-quick-actions button {
+  min-height: 2.05rem;
+  border: 1px solid #d7e3f6;
+  border-radius: 0.4rem;
+  background: #ffffff;
+  color: #16305f;
+  padding: 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(16, 35, 73, 0.06);
+  cursor: pointer;
+}
+
+.contract-economics-quick-actions button:hover:not(:disabled) {
+  border-color: #f0a36c;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.contract-economics-quick-actions button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .contract-economics-ledger-sheet {
@@ -10648,8 +10861,9 @@ textarea:focus {
 
 .contract-economics-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(210px, 0.78fr) minmax(210px, 0.78fr) minmax(500px, 1.8fr);
   gap: 0.75rem;
+  align-items: stretch;
 }
 
 .contract-economics-collect {
@@ -10661,6 +10875,11 @@ textarea:focus {
   grid-template-columns: minmax(220px, 1fr) 135px 150px 190px auto;
   gap: 0.65rem;
   align-items: end;
+}
+
+.contract-economics-collect.compact {
+  grid-template-columns: minmax(220px, 1fr) 110px 120px 130px minmax(150px, 0.7fr) auto;
+  padding: 0.72rem;
 }
 
 .contract-economics-collect h4 {
@@ -10759,6 +10978,15 @@ textarea:focus {
   padding: 0.9rem;
 }
 
+.contract-economics-movements-card {
+  min-width: 0;
+}
+
+.contract-economics-movements-card .contract-economics-table {
+  max-height: 10.4rem;
+  overflow: auto;
+}
+
 .contract-economics-table {
   border: 1px solid #e3eaf6;
   border-radius: 0.65rem;
@@ -10768,8 +10996,8 @@ textarea:focus {
 .contract-economics-table-head,
 .contract-economics-table-row {
   display: grid;
-  grid-template-columns: 150px 145px minmax(220px, 1fr) 110px 130px;
-  gap: 0.75rem;
+  grid-template-columns: 150px 108px 150px minmax(320px, 1fr) 128px 120px;
+  gap: 0.7rem;
   align-items: center;
 }
 
@@ -10783,21 +11011,105 @@ textarea:focus {
 }
 
 .contract-economics-table-row {
-  padding: 0.72rem 0.75rem;
+  padding: 0.68rem 0.75rem;
   border-top: 1px solid #e7edf7;
   color: #102345;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 750;
 }
 
-.contract-economics-table-row.voided {
+.contract-economics-table-row.is-income {
+  background: #fbfffd;
+}
+
+.contract-economics-table-row.is-expense {
+  background: #fffafb;
+}
+
+.contract-economics-table-row.is-pending {
+  background: #fffdf8;
+}
+
+.contract-economics-table-row.is-voided {
   color: #94a3b8;
   background: #f8fafc;
   text-decoration: line-through;
 }
 
-.contract-economics-table-row strong {
+.contract-economics-table-date,
+.contract-economics-table-type,
+.contract-economics-table-detail,
+.contract-economics-table-receipt {
+  min-width: 0;
+}
+
+.contract-economics-table-date {
+  line-height: 1.35;
+}
+
+.contract-economics-table-type {
+  color: #15264b;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.contract-economics-table-detail {
+  color: #12254d;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.contract-economics-movement-badge {
+  width: max-content;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid #cfe0ff;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.25rem 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.contract-economics-movement-badge.is-expense {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.contract-economics-movement-badge.is-pending {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.contract-economics-movement-badge.is-voided {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.contract-economics-table-amount {
   color: #061a44;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.contract-economics-table-amount.is-income {
+  color: #047857;
+}
+
+.contract-economics-table-amount.is-expense {
+  color: #be123c;
+}
+
+.contract-economics-table-amount.is-pending {
+  color: #c2410c;
+}
+
+.contract-economics-table-receipt {
+  text-align: center;
 }
 
 .contract-economics-empty {
@@ -10841,10 +11153,21 @@ textarea:focus {
 
 @media (max-width: 980px) {
   .contract-economics-kpis,
+  .contract-economics-story-layout,
+  .contract-economics-flow-steps,
   .contract-economics-grid,
   .contract-economics-collect,
+  .contract-economics-collect.compact,
   .contract-economics-notebook-summary {
     grid-template-columns: 1fr;
+  }
+
+  .contract-economics-flow-steps article:not(:last-child)::after {
+    content: "";
+  }
+
+  .contract-economics-money-story {
+    align-self: stretch;
   }
 
   .contract-economics-body {
@@ -56246,6 +56569,50 @@ body:has(.accounting-bigcash-view) .workspace {
   gap: 0.55rem !important;
 }
 
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-group {
+  display: grid !important;
+  gap: 0.5rem !important;
+  padding: 0.42rem !important;
+  border: 1px solid #e0e7f1 !important;
+  border-radius: 0.95rem !important;
+  background: #ffffff !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-head {
+  min-height: 2.1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.75rem !important;
+  padding: 0 0.72rem !important;
+  border-radius: 0.7rem !important;
+  font-weight: 950 !important;
+  text-transform: uppercase !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-head span {
+  font-size: 0.72rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-head strong {
+  font-size: 0.62rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-group.area-blue .orders-selected-area-head {
+  background: #e8f0fb !important;
+  color: #18477d !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-group.area-violet .orders-selected-area-head {
+  background: #eee8f8 !important;
+  color: #5b3e88 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-area-group.area-green .orders-selected-area-head {
+  background: #e6f4eb !important;
+  color: #1d6843 !important;
+}
+
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
   grid-template-columns: minmax(290px, 1fr) 9.3rem 9.2rem 8.1rem 6.3rem 3.4rem !important;
   gap: 0.85rem !important;
@@ -56256,6 +56623,28 @@ body:has(.accounting-bigcash-view) .workspace {
   border-radius: 0.92rem !important;
   background: #ffffff !important;
   box-shadow: 0 0.45rem 1.15rem rgba(15, 23, 42, 0.045) !important;
+  cursor: grab !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row:active {
+  cursor: grabbing !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.is-dragging {
+  opacity: 0.55 !important;
+  transform: scale(0.995);
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-blue {
+  border-left: 0.34rem solid #315f9f !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-violet {
+  border-left: 0.34rem solid #7553a7 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-green {
+  border-left: 0.34rem solid #2e7d54 !important;
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.is-standalone-line,
@@ -56662,6 +57051,33 @@ body:has(.accounting-bigcash-view) .workspace {
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link.has-note {
   color: #0f766e !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-item-note {
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  border: 1px solid #99f6e4 !important;
+  border-radius: 0.52rem !important;
+  background: #f0fdfa !important;
+  color: #0f766e !important;
+  padding: 0.28rem 0.46rem !important;
+  font-size: 0.62rem !important;
+  font-weight: 950 !important;
+  line-height: 1.2 !important;
+  text-transform: uppercase !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-blue {
+  border-left: 0.34rem solid #315f9f !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-violet {
+  border-left: 0.34rem solid #7553a7 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.area-green {
+  border-left: 0.34rem solid #2e7d54 !important;
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-copy > strong {

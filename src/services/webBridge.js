@@ -6253,6 +6253,7 @@ const getReferenceContractStyles = () => `
   }
   .rc-item-name { display: block; font: 700 10.2px Georgia, "Times New Roman", serif; text-transform: uppercase; }
   .rc-item-meta { display: block; margin-top: .35mm; font-size: 7.6px; text-transform: uppercase; }
+  .rc-item-observation { display: block; margin-top: .45mm; color: #0f766e; font: 900 7.5px Arial, Helvetica, sans-serif; text-transform: uppercase; }
   .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
   .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
   .rc-manual-row td { height: 8mm; }
@@ -6519,8 +6520,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     })
     .sort((left, right) =>
       left._areaIndex - right._areaIndex
-      || left._categoryKey.localeCompare(right._categoryKey, 'es')
-      || String(left.itemName ?? '').localeCompare(String(right.itemName ?? ''), 'es')
       || left._originalIndex - right._originalIndex
     );
   let contractRowNumber = 0;
@@ -6538,6 +6537,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <span class="rc-category-chip">${escapeHtml(area.label)}</span>
             <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
             ${meta ? `<span class="rc-item-meta">${escapeHtml(meta)}</span>` : ''}
+            ${String(line.observation ?? '').trim() ? `<span class="rc-item-observation">${escapeHtml(String(line.observation ?? '').trim())}</span>` : ''}
           </td>
           <td class="num">${line.quantity}</td>
           <td class="num">${formatBs(line.rentalPriceBs)}</td>
