@@ -5876,6 +5876,33 @@ const getContractItemMeta = (line, _item) => [
     : '',
 ].filter(Boolean).join(' | ');
 
+const makeSupplierShortCode = (name) => {
+  const cleaned = normalizeText(name).replace(/[^a-z0-9 ]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0][0] ?? ''}${words[1].slice(0, 4)}`.toUpperCase();
+  return (words[0] || 'PROV').slice(0, 5).toUpperCase();
+};
+
+const buildSupplierSupportByItem = (supplierFulfillmentPlan) => {
+  const map = new Map();
+  normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan).forEach((line) => {
+    const itemId = String(line?.itemId ?? '').trim();
+    if (!itemId) return;
+    const current = map.get(itemId) ?? [];
+    current.push({
+      ...line,
+      shortCode: makeSupplierShortCode(line.supplierName),
+    });
+    map.set(itemId, current);
+  });
+  return map;
+};
+
+const formatSupplierSupportLabel = (lines) => (Array.isArray(lines) ? lines : [])
+  .filter((line) => Number(line?.neededQty ?? 0) > 0)
+  .map((line) => `${Math.max(0, Math.trunc(Number(line.neededQty ?? 0)))} SUB ${line.shortCode || makeSupplierShortCode(line.supplierName)}`)
+  .join(' · ');
+
 const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
@@ -6254,6 +6281,7 @@ const getReferenceContractStyles = () => `
   .rc-item-name { display: block; font: 700 10.2px Georgia, "Times New Roman", serif; text-transform: uppercase; }
   .rc-item-meta { display: block; margin-top: .35mm; font-size: 7.6px; text-transform: uppercase; }
   .rc-item-observation { display: block; margin-top: .45mm; color: #0f766e; font: 900 7.5px Arial, Helvetica, sans-serif; text-transform: uppercase; }
+  .rc-item-supplier { display: block; margin-top: .45mm; color: #1d4ed8; font: 900 7.4px Arial, Helvetica, sans-serif; text-transform: uppercase; }
   .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
   .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
   .rc-manual-row td { height: 8mm; }
@@ -6537,6 +6565,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
     }))
     : (rental.items ?? []);
+  const supplierSupportByItem = buildSupplierSupportByItem(contract?.supplierFulfillmentPlan ?? rental?.supplierFulfillmentPlan);
   const documentItems = rawDocumentItems
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
@@ -6563,6 +6592,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
         const area = line._area || getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
+        const supplierSupportLabel = formatSupplierSupportLabel(supplierSupportByItem.get(String(line.itemId)));
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -6571,6 +6601,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <span class="rc-category-chip">${escapeHtml(area.label)}</span>
             <span class="rc-item-name">${escapeHtml(line.itemName)}</span>
             ${meta ? `<span class="rc-item-meta">${escapeHtml(meta)}</span>` : ''}
+            ${supplierSupportLabel ? `<span class="rc-item-supplier">${escapeHtml(supplierSupportLabel)}</span>` : ''}
             ${String(line.observation ?? '').trim() ? `<span class="rc-item-observation">${escapeHtml(String(line.observation ?? '').trim())}</span>` : ''}
           </td>
           <td class="num">${line.quantity}</td>
@@ -7028,7 +7059,7 @@ const buildWeeklyInventoryHtml = ({
     });
     return [...groups.values()].filter((group) => group.lines.length > 0).sort((a, b) => a.order - b.order);
   };
-  const renderItemRows = (lines, offset = 0) => lines.map((line, index) => {
+  const renderItemRows = (lines, offset = 0, supplierSupportByItem = new Map()) => lines.map((line, index) => {
     const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
     const imageDataUrl = catalogItem?.imageUrl
       ?? catalogItem?.imageDataUrl
@@ -7036,6 +7067,7 @@ const buildWeeklyInventoryHtml = ({
       ?? line.imageDataUrl
       ?? '';
     const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
+    const supplierSupportLabel = formatSupplierSupportLabel(supplierSupportByItem.get(String(line.itemId)));
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -7046,6 +7078,7 @@ const buildWeeklyInventoryHtml = ({
                   : '<span class="wi-no-image"></span>'}
                 <div class="wi-product-text">
                   <strong>${escapeHtml(line.itemName)}</strong>
+                  ${supplierSupportLabel ? `<span class="wi-item-supplier">${escapeHtml(supplierSupportLabel)}</span>` : ''}
                   ${itemObservation ? `<span class="wi-item-observation">${escapeHtml(itemObservation)}</span>` : ''}
                 </div>
               </div>
@@ -7058,10 +7091,10 @@ const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
-  const renderGroupedItemRows = (lines, manualRowsPerGroup = 0) => {
+  const renderGroupedItemRows = (lines, manualRowsPerGroup = 0, supplierSupportByItem = new Map()) => {
     let offset = 0;
     return groupInventoryLines(lines).map((group) => {
-      const rows = renderItemRows(group.lines, offset);
+      const rows = renderItemRows(group.lines, offset, supplierSupportByItem);
       offset += group.lines.length;
       return `
           <tr class="wi-category-row">
@@ -7113,12 +7146,13 @@ const buildWeeklyInventoryHtml = ({
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
     const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
     const orderItems = rental.items ?? [];
+    const supplierSupportByItem = buildSupplierSupportByItem(rental?.supplierFulfillmentPlan ?? contract?.supplierFulfillmentPlan);
     const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
     const manualRows = format === 'individual' ? '' : renderManualItemRows(3);
-    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems, 2) : renderItemRows(orderItems.slice(0, firstColumnSize), 0)}${splitItems ? '' : manualRows}`;
+    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems, 2, supplierSupportByItem) : renderItemRows(orderItems.slice(0, firstColumnSize), 0, supplierSupportByItem)}${splitItems ? '' : manualRows}`;
     const secondRows = splitItems
-      ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize)}${manualRows}`
+      ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize, supplierSupportByItem)}${manualRows}`
       : '';
     const itemTables = `
         <div class="wi-tables ${splitItems ? 'is-split' : ''}">
@@ -7258,6 +7292,7 @@ const buildWeeklyInventoryHtml = ({
       .wi-no-image { display: block; background: #f6f7fa; }
       .wi-product-text { min-width: 0; display: flex; flex-direction: column; gap: .55mm; }
       .wi-product-content strong { min-width: 0; color: #061b48; font-size: 10.8px; line-height: 1.08; text-transform: uppercase; overflow-wrap: anywhere; }
+      .wi-item-supplier { display: block; color: #1d4ed8; font-size: 8.1px; line-height: 1.08; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-item-observation { display: block; color: #0f766e; font-size: 8.2px; line-height: 1.08; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-category-row td { height: 6.8mm !important; padding: 1.05mm 2mm !important; border: .26mm solid #09255a !important; color: #09255a; background: #e8eef8; font-size: 11.8px !important; font-weight: 900 !important; letter-spacing: .25px; text-align: left !important; text-transform: uppercase; }
       .wi-check i { display: inline-block; width: 4.7mm; height: 4.7mm; border: .3mm solid #09255a; border-radius: .35mm; }
@@ -7378,6 +7413,7 @@ const buildWeeklyInventoryHtml = ({
       .wi-no-image { display: block; background: #f6f7fa; }
       .wi-product-text { min-width: 0; display: flex; flex-direction: column; gap: .35mm; }
       .wi-product strong { color: #061b48; font-size: 8.2px; line-height: 1.08; text-transform: uppercase; overflow-wrap: anywhere; }
+      .wi-item-supplier { display: block; color: #1d4ed8; font-size: 6.9px; line-height: 1.05; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-item-observation { display: block; color: #0f766e; font-size: 6.9px; line-height: 1.05; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
       .wi-check i { display: inline-block; width: 4.2mm; height: 4.2mm; border: .28mm solid #67748c; border-radius: .35mm; }
       .wi-order-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; padding: 1.8mm 4mm; color: #09255a; font-size: 8.6px; }

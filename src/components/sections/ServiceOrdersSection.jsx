@@ -941,6 +941,29 @@ const parseMoneyInput = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const makeSupplierShortCode = (name) => {
+  const cleaned = normalizeText(name).replace(/[^a-z0-9 ]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0][0] ?? ''}${words[1].slice(0, 4)}`.toUpperCase();
+  return (words[0] ?? 'PROV').slice(0, 5).toUpperCase();
+};
+
+const normalizeCoverageDraftLines = (value) => {
+  const lines = Array.isArray(value?.coverages) ? value.coverages : value ? [value] : [];
+  return lines
+    .map((line) => ({
+      ...line,
+      id: String(line?.id ?? `cov-${Date.now()}-${Math.random().toString(16).slice(2)}`).trim(),
+      supplierId: String(line?.supplierId ?? '').trim(),
+      supplierName: String(line?.supplierName ?? '').trim(),
+      supplierQuoteId: line?.supplierQuoteId ?? null,
+      supplierQuoteCode: line?.supplierQuoteCode ?? null,
+      neededQty: Math.max(0, Math.trunc(Number(line?.neededQty ?? 0))),
+      supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
+    }))
+    .filter((line) => line.neededQty > 0 || line.supplierId || line.supplierName);
+};
+
 const buildEmptySupplierCoverageDraft = () => ({
   supplierMode: 'existing',
   supplierId: '',
@@ -2448,14 +2471,17 @@ function ServiceOrdersSection({
     (draft.supplierFulfillmentPlan ?? []).forEach((line) => {
       const itemId = String(line?.itemId ?? '').trim();
       if (!itemId) return;
-      fromRecord[itemId] = {
+      const current = normalizeCoverageDraftLines(fromRecord[itemId]);
+      current.push({
+        id: line?.id ?? `cov-${itemId}-${current.length}`,
         supplierId: String(line?.supplierId ?? '').trim(),
         supplierName: String(line?.supplierName ?? '').trim(),
         supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
         supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
         neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
         supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
-      };
+      });
+      fromRecord[itemId] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
   }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
@@ -2483,28 +2509,30 @@ function ServiceOrdersSection({
           return;
         }
 
-        const existing = next[itemId] ?? {};
+        const existingCoverages = normalizeCoverageDraftLines(next[itemId]);
         const offers = supplierOffersByItemId.get(itemId) ?? [];
         const fallbackOffer = offers[0] ?? null;
-        const neededQty = Math.max(1, Math.min(shortage, Math.trunc(Number(existing.neededQty ?? shortage))));
+        const coveredQty = existingCoverages.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
 
-        if (!existing.supplierId && fallbackOffer) {
+        const normalizedCoverages = existingCoverages.map((entry) => ({
+          ...entry,
+          neededQty: Math.max(1, Math.trunc(Number(entry.neededQty ?? 1))),
+          supplierUnitCostBs: Math.max(0, Number(entry.supplierUnitCostBs ?? fallbackOffer?.supplierUnitCostBs ?? 0)),
+        }));
+        if (coveredQty > shortage) {
+          let remaining = shortage;
           next[itemId] = {
-            supplierId: fallbackOffer.supplierId,
-            supplierName: fallbackOffer.supplierName,
-            supplierQuoteId: fallbackOffer.supplierQuoteId,
-            supplierQuoteCode: fallbackOffer.supplierQuoteCode,
-            neededQty,
-            supplierUnitCostBs: fallbackOffer.supplierUnitCostBs,
+            coverages: normalizedCoverages
+              .map((entry) => {
+                const quantity = Math.min(Math.max(0, remaining), Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))));
+                remaining -= quantity;
+                return { ...entry, neededQty: quantity };
+              })
+              .filter((entry) => entry.neededQty > 0),
           };
           return;
         }
-
-        next[itemId] = {
-          ...existing,
-          neededQty,
-          supplierUnitCostBs: Math.max(0, Number(existing.supplierUnitCostBs ?? fallbackOffer?.supplierUnitCostBs ?? 0)),
-        };
+        next[itemId] = { coverages: normalizedCoverages };
       });
 
       return next;
@@ -2523,11 +2551,12 @@ function ServiceOrdersSection({
         const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
         const shortageQty = Math.max(0, requestedForItem - available);
         if (shortageQty <= 0) return null;
-        const draftLine = supplierFulfillmentDraftByItem[line.itemId] ?? null;
-        const hasSupplier = Boolean(String(draftLine?.supplierId ?? '').trim());
-        const coveredQty = hasSupplier
-          ? Math.min(shortageQty, Math.max(0, Math.trunc(Number(draftLine?.neededQty ?? 0))))
-          : 0;
+        const coverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId]);
+        const validCoverageLines = coverageLines.filter((entry) => entry.supplierId && entry.supplierName && entry.neededQty > 0);
+        const coveredQty = Math.min(
+          shortageQty,
+          validCoverageLines.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0),
+        );
         return {
           itemId: line.itemId,
           itemName: line.item.name,
@@ -2535,11 +2564,7 @@ function ServiceOrdersSection({
           shortageQty,
           coveredQty,
           uncoveredQty: Math.max(0, shortageQty - coveredQty),
-          supplierId: String(draftLine?.supplierId ?? '').trim(),
-          supplierName: String(draftLine?.supplierName ?? '').trim(),
-          supplierQuoteId: draftLine?.supplierQuoteId ?? null,
-          supplierQuoteCode: draftLine?.supplierQuoteCode ?? null,
-          supplierUnitCostBs: Math.max(0, Number(draftLine?.supplierUnitCostBs ?? 0)),
+          coverages: validCoverageLines,
         };
       })
         .filter(Boolean);
@@ -2553,10 +2578,10 @@ function ServiceOrdersSection({
   );
 
   const supplierCoverageTotals = useMemo(() => {
-    const coveredLines = supplierCoverageRows.filter((line) => line.coveredQty > 0 && line.supplierId);
-    const totalCoveredQty = coveredLines.reduce((sum, line) => sum + line.coveredQty, 0);
-    const totalCostBs = coveredLines.reduce((sum, line) => sum + (line.coveredQty * line.supplierUnitCostBs), 0);
-    const totalSaleBs = coveredLines.reduce((sum, line) => sum + (line.coveredQty * line.saleUnitPriceBs), 0);
+    const coveredLines = supplierCoverageRows.flatMap((line) => line.coverages.map((coverage) => ({ ...coverage, saleUnitPriceBs: line.saleUnitPriceBs })));
+    const totalCoveredQty = coveredLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
+    const totalCostBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.supplierUnitCostBs ?? 0))), 0);
+    const totalSaleBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.saleUnitPriceBs ?? 0))), 0);
     return {
       lines: coveredLines.length,
       totalCoveredQty,
@@ -2997,6 +3022,34 @@ function ServiceOrdersSection({
     });
   };
 
+  const addSupplierCoverageLine = (itemId, coverage) => {
+    setSupplierFulfillmentDraftByItem((current) => {
+      const currentCoverages = normalizeCoverageDraftLines(current[itemId]);
+      return {
+        ...current,
+        [itemId]: {
+          coverages: [
+            ...currentCoverages,
+            {
+              ...coverage,
+              id: coverage.id ?? `cov-${itemId}-${Date.now()}`,
+            },
+          ],
+        },
+      };
+    });
+  };
+
+  const removeSupplierCoverageLine = (itemId, coverageId) => {
+    setSupplierFulfillmentDraftByItem((current) => {
+      const nextCoverages = normalizeCoverageDraftLines(current[itemId]).filter((line) => String(line.id) !== String(coverageId));
+      const next = { ...current };
+      if (nextCoverages.length > 0) next[itemId] = { coverages: nextCoverages };
+      else delete next[itemId];
+      return next;
+    });
+  };
+
   const setSupplierCoverageDraftField = (field, value) => {
     const nextValue = ['supplierUnitCostBs', 'saleUnitPriceBs'].includes(field)
       ? cleanDecimalInput(value)
@@ -3007,8 +3060,11 @@ function ServiceOrdersSection({
   };
 
   const openSupplierCoverageModal = (line, availableStock) => {
-    const shortageQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)) - Math.max(0, Number(availableStock ?? 0)));
-    const currentCoverage = supplierFulfillmentDraftByItem[line.itemId] ?? {};
+    const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+    const shortageQty = Math.max(1, Math.trunc(Number(requestedForItem)) - Math.max(0, Number(availableStock ?? 0)));
+    const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId]);
+    const alreadyCoveredQty = currentCoverages.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
+    const remainingShortageQty = Math.max(1, shortageQty - alreadyCoveredQty);
     const details = getOperationalItemDetails(line);
     const detailValue = (label) => details.find((entry) => entry.label === label)?.value ?? '';
     const hasSuppliers = (supplierBundle?.suppliers ?? []).length > 0;
@@ -3017,18 +3073,17 @@ function ServiceOrdersSection({
       itemName: line.item.name,
       availableStock,
       shortageQty,
+      remainingShortageQty,
     });
     setSupplierCoverageDraft({
       ...buildEmptySupplierCoverageDraft(),
-      supplierMode: currentCoverage.supplierId || hasSuppliers ? 'existing' : 'new',
-      supplierId: currentCoverage.supplierId ?? '',
-      supplierName: currentCoverage.supplierName ?? '',
+      supplierMode: hasSuppliers ? 'existing' : 'new',
       itemName: line.item.name,
       category: detailValue('Categoria') || line.item.category || '',
       color: detailValue('Color'),
       material: detailValue('Material'),
-      quantity: String(Math.max(1, Math.trunc(Number(currentCoverage.neededQty ?? shortageQty)))),
-      supplierUnitCostBs: String(Math.max(0, Number(currentCoverage.supplierUnitCostBs ?? 0))),
+      quantity: String(remainingShortageQty),
+      supplierUnitCostBs: '0',
       saleUnitPriceBs: String(Math.max(0, Number(line.unitPriceBs ?? line.item.rentalPriceBs ?? 0))),
     });
     setSupplierCoverageError('');
@@ -3044,7 +3099,7 @@ function ServiceOrdersSection({
   const saveSupplierCoverageFromModal = async () => {
     if (!supplierCoverageModal) return;
     setSupplierCoverageError('');
-    const shortageQty = Math.max(1, Math.trunc(Number(supplierCoverageModal.shortageQty ?? 1)));
+    const shortageQty = Math.max(1, Math.trunc(Number(supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty ?? 1)));
     const requestedQty = Math.max(1, Math.min(shortageQty, parseIntegerInput(supplierCoverageDraft.quantity, 1)));
     const supplierCost = Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0));
     const salePrice = Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0));
@@ -3112,7 +3167,7 @@ function ServiceOrdersSection({
       });
 
       setDraftItemPrice(supplierCoverageModal.itemId, salePrice);
-      setSupplierCoverageField(supplierCoverageModal.itemId, {
+      addSupplierCoverageLine(supplierCoverageModal.itemId, {
         supplierId: supplier.id,
         supplierName: supplier.name,
         supplierQuoteId: quote?.id ?? null,
@@ -4116,18 +4171,18 @@ function ServiceOrdersSection({
     }
 
     const supplierFulfillmentPlan = supplierCoverageRows
-      .filter((line) => line.coveredQty > 0 && line.supplierId && line.supplierName)
-      .map((line) => ({
+      .flatMap((line) => line.coverages.map((coverage) => ({
         itemId: line.itemId,
         itemName: line.itemName,
-        supplierId: line.supplierId,
-        supplierName: line.supplierName,
-        supplierQuoteId: line.supplierQuoteId,
-        supplierQuoteCode: line.supplierQuoteCode,
-        neededQty: line.coveredQty,
-        supplierUnitCostBs: line.supplierUnitCostBs,
+        supplierId: coverage.supplierId,
+        supplierName: coverage.supplierName,
+        supplierQuoteId: coverage.supplierQuoteId,
+        supplierQuoteCode: coverage.supplierQuoteCode,
+        neededQty: coverage.neededQty,
+        supplierUnitCostBs: coverage.supplierUnitCostBs,
         saleUnitPriceBs: line.saleUnitPriceBs,
-      }));
+      })))
+      .filter((line) => line.neededQty > 0 && line.supplierId && line.supplierName);
     const selectedResponsibles = getSelectedResponsibles();
     const primaryResponsible = selectedResponsibles[0] ?? null;
     const contractObservations = draft.observations.trim();
@@ -6841,7 +6896,7 @@ function ServiceOrdersSection({
                 <h3>Cobertura con proveedor</h3>
                 <p>
                   {supplierCoverageModal.itemName} tiene faltante de {supplierCoverageModal.shortageQty} u.
-                  Registra proveedor y precio sin salir del contrato.
+                  Quedan {supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u. por cubrir.
                 </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => closeSupplierCoverageModal()}>
@@ -6934,7 +6989,7 @@ function ServiceOrdersSection({
                 <label className="supplier-coverage-field">
                   Cantidad a cubrir
                   <input type="text" inputMode="numeric" value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
-                  <small>Faltante maximo: {supplierCoverageModal.shortageQty} u.</small>
+                  <small>Maximo por cubrir: {supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.</small>
                 </label>
                 <label className="supplier-coverage-field">
                   Costo proveedor Bs *
@@ -8742,10 +8797,12 @@ function ServiceOrdersSection({
                           const availableStock = getEditableAvailableStock(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = Math.max(0, requestedForItem - availableStock);
-                          const supplierCoverageDraft = supplierFulfillmentDraftByItem[line.itemId] ?? {};
-                          const supplierCoveredQty = String(supplierCoverageDraft.supplierId ?? '').trim()
-                            ? Math.min(shortageForItem, Math.max(0, Math.trunc(Number(supplierCoverageDraft.neededQty ?? 0))))
-                            : 0;
+                          const supplierCoverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId])
+                            .filter((coverage) => coverage.supplierId && coverage.supplierName && coverage.neededQty > 0);
+                          const supplierCoveredQty = Math.min(
+                            shortageForItem,
+                            supplierCoverageLines.reduce((sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage.neededQty ?? 0))), 0),
+                          );
                           const uncoveredForItem = Math.max(0, shortageForItem - supplierCoveredQty);
                           const hasStockShortage = !isProvisionalItem && shortageForItem > 0;
                           const hasUncoveredShortage = !isProvisionalItem && uncoveredForItem > 0;
@@ -8929,99 +8986,37 @@ function ServiceOrdersSection({
                               ) : null}
                             </label>
                             {hasStockShortage ? (
-                              <label className="orders-line-field">
-                                <span>Proveedor para faltante</span>
-                                <select
-                                  value={`${supplierFulfillmentDraftByItem[line.itemId]?.supplierQuoteId ?? ''}|${supplierFulfillmentDraftByItem[line.itemId]?.supplierId ?? ''}`}
-                                  onChange={(event) => {
-                                    const [quoteId, supplierId] = String(event.target.value).split('|');
-                                    const offers = supplierOffersByItemId.get(line.itemId) ?? [];
-                                    const selectedOffer = offers.find((offer) => (
-                                      String(offer.supplierQuoteId ?? '') === quoteId
-                                      && String(offer.supplierId ?? '') === supplierId
-                                    ));
-                                    if (!selectedOffer) {
-                                      setSupplierCoverageField(line.itemId, {
-                                        supplierId: '',
-                                        supplierName: '',
-                                        supplierQuoteId: null,
-                                        supplierQuoteCode: null,
-                                        supplierUnitCostBs: 0,
-                                      });
-                                      return;
-                                    }
-                                      setSupplierCoverageField(line.itemId, {
-                                        supplierId: selectedOffer.supplierId,
-                                        supplierName: selectedOffer.supplierName,
-                                        supplierQuoteId: selectedOffer.supplierQuoteId,
-                                        supplierQuoteCode: selectedOffer.supplierQuoteCode,
-                                        supplierUnitCostBs: selectedOffer.supplierUnitCostBs,
-                                        neededQty: Math.max(1, Math.min(
-                                        shortageForItem,
-                                        Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? shortageForItem)),
-                                      )),
-                                    });
-                                  }}
-                                >
-                                  <option value="">Seleccionar proveedor...</option>
-                                  {(supplierOffersByItemId.get(line.itemId) ?? []).map((offer) => (
-                                    <option
-                                      key={offer.offerKey}
-                                      value={`${offer.supplierQuoteId ?? ''}|${offer.supplierId}`}
-                                    >
-                                      {offer.supplierName} - {formatBs(offer.supplierUnitCostBs)}
-                                      {offer.supplierQuoteCode ? ` - ${offer.supplierQuoteCode}` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                                {(supplierOffersByItemId.get(line.itemId) ?? []).length === 0 ? (
-                                  <small className="orders-stock-error">
-                                    No hay cotizacion de proveedor para este item. Registra precios en Proveedores.
-                                  </small>
-                                ) : null}
+                              <div className="orders-line-field orders-supplier-coverage-field">
+                                <span>Subalquiler</span>
+                                <div className="orders-supplier-coverage-list">
+                                  {supplierCoverageLines.length > 0 ? supplierCoverageLines.map((coverage) => (
+                                    <span key={coverage.id} className="orders-supplier-coverage-chip">
+                                      <strong>{coverage.neededQty} SUB {makeSupplierShortCode(coverage.supplierName)}</strong>
+                                      <small>{formatBs(coverage.supplierUnitCostBs)} c/u</small>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeSupplierCoverageLine(line.itemId, coverage.id)}
+                                        aria-label={`Quitar cobertura ${coverage.supplierName}`}
+                                      >
+                                        x
+                                      </button>
+                                    </span>
+                                  )) : (
+                                    <small className="orders-stock-error">Sin proveedor asignado.</small>
+                                  )}
+                                </div>
                                 <button
                                   type="button"
                                   className="orders-inline-link"
+                                  disabled={uncoveredForItem <= 0}
                                   onClick={() => openSupplierCoverageModal(line, availableStock)}
                                 >
-                                  + Registrar proveedor
+                                  + Agregar proveedor
                                 </button>
-                              </label>
-                            ) : null}
-                            {hasStockShortage ? (
-                              <label className="orders-line-field">
-                                <span>Cubrir con proveedor</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={Math.max(1, Math.trunc(Number(supplierFulfillmentDraftByItem[line.itemId]?.neededQty ?? shortageForItem)))}
-                                  onFocus={selectNumericInput}
-                                  onChange={(event) => {
-                                    const shortage = Math.max(1, shortageForItem);
-                                    const nextQty = Math.max(1, Math.min(shortage, Math.trunc(Number(event.target.value || 1))));
-                                    setSupplierCoverageField(line.itemId, { neededQty: nextQty });
-                                  }}
-                                />
                                 <small className="orders-available-note">
-                                  Faltante total: {shortageForItem} unidades
+                                  Faltante {shortageForItem} u. · cubierto {supplierCoveredQty} u.
                                 </small>
-                              </label>
-                            ) : null}
-                            {hasStockShortage ? (
-                              <label className="orders-line-field">
-                                <span>Costo proveedor (Bs)</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={supplierFulfillmentDraftByItem[line.itemId]?.supplierUnitCostBs ?? ''}
-                                  onFocus={selectNumericInput}
-                                  onChange={(event) => {
-                                    const nextValue = cleanDecimalInput(event.target.value);
-                                    setSupplierCoverageField(line.itemId, { supplierUnitCostBs: nextValue });
-                                  }}
-                                />
-                              </label>
+                              </div>
                             ) : null}
                             <label className="orders-line-field">
                               <span>Precio</span>
