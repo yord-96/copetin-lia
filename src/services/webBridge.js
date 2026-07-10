@@ -5901,6 +5901,14 @@ const buildSupplierSupportByItem = (supplierFulfillmentPlan) => {
   return map;
 };
 
+const pickFirstSupplierFulfillmentPlan = (...plans) => {
+  for (const plan of plans) {
+    const normalized = normalizeSupplierFulfillmentPlan(plan);
+    if (normalized.length > 0) return normalized;
+  }
+  return [];
+};
+
 const formatSupplierSupportLabel = (lines) => (Array.isArray(lines) ? lines : [])
   .filter((line) => Number(line?.neededQty ?? 0) > 0)
   .map((line) => `${Math.max(0, Math.trunc(Number(line.neededQty ?? 0)))} SUB ${line.shortCode || makeSupplierShortCode(line.supplierName)}`)
@@ -6568,7 +6576,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
     }))
     : (rental.items ?? []);
-  const supplierSupportByItem = buildSupplierSupportByItem(contract?.supplierFulfillmentPlan ?? rental?.supplierFulfillmentPlan);
+  const supplierSupportByItem = buildSupplierSupportByItem(
+    pickFirstSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan, rental?.supplierFulfillmentPlan),
+  );
   const documentItems = rawDocumentItems
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
@@ -7155,7 +7165,9 @@ const buildWeeklyInventoryHtml = ({
   const orderSections = weeklyOrders.map((entry, orderIndex) => {
     const { rental, contract, deliveryOut, deliveryBack, deliveryDate, pickupDate } = entry;
     const orderItems = rental.items ?? [];
-    const supplierSupportByItem = buildSupplierSupportByItem(rental?.supplierFulfillmentPlan ?? contract?.supplierFulfillmentPlan);
+    const supplierSupportByItem = buildSupplierSupportByItem(
+      pickFirstSupplierFulfillmentPlan(rental?.supplierFulfillmentPlan, contract?.supplierFulfillmentPlan),
+    );
     const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
     const manualRows = format === 'individual' ? '' : renderManualItemRows(3);

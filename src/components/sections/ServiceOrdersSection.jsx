@@ -723,11 +723,9 @@ const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
 };
 
 const buildSupplierInternalDocumentHtml = ({ order, contract, formatDate, formatBs }) => {
-  const plan = Array.isArray(contract?.supplierFulfillmentPlan)
-    ? contract.supplierFulfillmentPlan
-    : Array.isArray(order?.supplierFulfillmentPlan)
-      ? order.supplierFulfillmentPlan
-      : [];
+  const contractPlan = Array.isArray(contract?.supplierFulfillmentPlan) ? contract.supplierFulfillmentPlan : [];
+  const orderPlan = Array.isArray(order?.supplierFulfillmentPlan) ? order.supplierFulfillmentPlan : [];
+  const plan = contractPlan.length > 0 ? contractPlan : orderPlan;
   const rows = plan.map((line) => {
     const quantity = Math.max(0, Number(line.neededQty ?? line.quantity ?? 0));
     const cost = Math.max(0, Number(line.supplierUnitCostBs ?? 0));
@@ -1514,6 +1512,11 @@ function ServiceOrdersSection({
         inventoryConfirmedAt: operational.inventoryConfirmedAt ?? null,
         transportConfirmedAt: operational.transportConfirmedAt ?? null,
         items: rental.items ?? [],
+        supplierFulfillmentPlan: Array.isArray(linkedContract?.supplierFulfillmentPlan) && linkedContract.supplierFulfillmentPlan.length > 0
+          ? linkedContract.supplierFulfillmentPlan
+          : Array.isArray(rental.supplierFulfillmentPlan)
+            ? rental.supplierFulfillmentPlan
+            : [],
       };
     });
   }, [contracts, deliveries, deliveryByRentalId, rentals]);
@@ -2991,6 +2994,7 @@ function ServiceOrdersSection({
     supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
       ? record.supplierFulfillmentPlan.map((line) => ({
         id: line.id,
+        lineKey: line.lineKey ?? null,
         itemId: line.itemId,
         itemName: line.itemName,
         supplierId: line.supplierId,
@@ -4572,8 +4576,20 @@ function ServiceOrdersSection({
   };
 
   const handleEditContractClick = (contract) => {
+    const linkedOrder = orderRowsWithMeta.find((row) =>
+      (contract?.id && String(row.contractId ?? '') === String(contract.id))
+      || (contract?.rentalId && String(row.rentalId ?? '') === String(contract.rentalId))
+      || (contract?.orderCode && String(row.orderCode ?? '') === String(contract.orderCode))
+      || (contract?.contractCode && String(row.contractCode ?? '') === String(contract.contractCode)),
+    );
+    const contractPlan = Array.isArray(contract?.supplierFulfillmentPlan) ? contract.supplierFulfillmentPlan : [];
+    const linkedOrderPlan = Array.isArray(linkedOrder?.supplierFulfillmentPlan) ? linkedOrder.supplierFulfillmentPlan : [];
+    const sourceContract = {
+      ...contract,
+      supplierFulfillmentPlan: contractPlan.length > 0 ? contractPlan : linkedOrderPlan,
+    };
     setMenuState(null);
-    openCreateModal('order', 'contract', contract);
+    openCreateModal('order', 'contract', sourceContract);
   };
 
   const handleCancelContractClick = (contractRow) => {
@@ -9474,7 +9490,7 @@ function ServiceOrdersSection({
                         Garantia (Bs)
                         <input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(event) => setDraftField('guaranteeBs', event.target.value)} />
                         <small className="orders-field-live-summary is-info">
-                          Monto registrado: {formatBs(guaranteeBs)}
+                          Monto registrado: {formatBs(Math.max(0, Number(draft.guaranteeBs ?? 0)))}
                         </small>
                       </label>
                       <label>
