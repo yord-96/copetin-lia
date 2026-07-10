@@ -1856,13 +1856,16 @@ const normalizeState = (state) => {
           pendingBs: Number(Math.max(0, pendingBs).toFixed(2)),
           overpaidBs: Number(overpaidBs.toFixed(2)),
           initialPaymentMethod: normalizePaymentMethod(quote?.payment?.initialPaymentMethod ?? quote?.payment?.paymentMethod),
+          initialPaymentAccount: normalizeQrPaymentAccount(quote?.payment?.initialPaymentAccount ?? quote?.payment?.paymentAccount),
           guaranteeStatus,
           guaranteePaymentMethod,
+          guaranteePaymentAccount: normalizeQrPaymentAccount(quote?.guarantee?.paymentAccount ?? quote?.payment?.guaranteePaymentAccount),
         },
         guarantee: {
           amountBs: Number(guaranteeBs.toFixed(2)),
           status: guaranteeStatus,
           paymentMethod: guaranteePaymentMethod,
+          paymentAccount: normalizeQrPaymentAccount(quote?.guarantee?.paymentAccount ?? quote?.payment?.guaranteePaymentAccount),
         },
         items,
         services,
@@ -1997,13 +2000,16 @@ const normalizeState = (state) => {
           overpaidBs: Number(overpaidBs.toFixed(2)),
           prepaidAppliedBs: Number(prepaidAppliedBs.toFixed(2)),
           initialPaymentMethod: normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod),
+          initialPaymentAccount: normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount),
           guaranteeStatus,
           guaranteePaymentMethod,
+          guaranteePaymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
         },
         guarantee: {
           amountBs: Number(guaranteeBs.toFixed(2)),
           status: guaranteeStatus,
           paymentMethod: guaranteePaymentMethod,
+          paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
         },
         items,
         services,
@@ -8196,12 +8202,28 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     );
   }
 
-  const nextLines = (contract.items ?? []).map((line) => {
+  const nextLines = (contract.items ?? []).map((line, index) => {
     const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
-    if (!item) throw new Error(`El item "${line.itemName}" ya no existe en inventario.`);
     const oldLine = oldLinesByItem.get(String(line.itemId)) ?? null;
     const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
     const lineKey = getInventoryLineKey(line, index);
+    // Un contrato aprobado puede tener una linea historica cuyo producto fue retirado
+    // del catalogo. Conservamos esa linea sin mover inventario, para permitir editar
+    // el resto del contrato y agregar productos vigentes.
+    if (!item) {
+      if (!oldLine) throw new Error(`El item nuevo "${line.itemName}" no existe en inventario.`);
+      const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? oldLine.rentalPriceBs ?? 0));
+      return {
+        ...oldLine,
+        ...line,
+        lineKey,
+        itemId: oldLine.itemId,
+        itemName: line.itemName || oldLine.itemName || 'Item historico',
+        quantity,
+        rentalPriceBs,
+        lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+      };
+    }
     const supplierBackedQty = Math.min(
       quantity,
       Number(
@@ -11863,8 +11885,19 @@ const createWebBridge = () => ({
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
           const normalizedItems = requestedItems.map((line, index) => {
-            const item = resolveOperationalItemFromLine(state, line);
-            if (!item) throw new Error('Uno de los items seleccionados no existe.');
+            const lineKey = getInventoryLineKey(line, index);
+            const previousLine = (contract.items ?? []).find((existingLine, existingIndex) => (
+              getInventoryLineKey(existingLine, existingIndex) === lineKey
+              || (
+                String(existingLine?.itemId ?? '').trim()
+                && String(existingLine?.itemId ?? '').trim() === String(line?.itemId ?? '').trim()
+              )
+            ));
+            // Los contratos historicos pueden conservar referencias a productos que ya no
+            // existen en el catalogo. Se permiten al editar para no bloquear la adicion de
+            // productos vigentes, pero una linea nueva sin producto sigue siendo invalida.
+            const item = resolveOperationalItemFromLine(state, line) ?? previousLine;
+            if (!item) throw new Error('Uno de los items nuevos seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
             const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
@@ -11930,10 +11963,16 @@ const createWebBridge = () => ({
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? contract?.payment?.initialPaymentMethod);
         const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
-          ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount ?? contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+          ? (
+            normalizeQrPaymentAccount(payload?.guaranteePaymentAccount)
+            || normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+          )
           : '';
         const initialPaymentAccount = initialPaymentMethod === 'qr'
-          ? normalizeQrPaymentAccount(payload?.initialPaymentAccount ?? contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount)
+          ? (
+            normalizeQrPaymentAccount(payload?.initialPaymentAccount)
+            || normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount)
+          )
           : '';
         const deliveryCharge = normalizeDeliveryCharge({
           logisticsMode: contract.logisticsMode,

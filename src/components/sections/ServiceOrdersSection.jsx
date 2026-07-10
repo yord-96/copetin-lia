@@ -1029,6 +1029,14 @@ const resolveWizardItemArea = (line) => {
 
 const getWizardItemMoveKey = (line) => String(line?.comboLineKey ?? line?.lineKey ?? line?.itemId ?? '');
 
+const getDraftLineKey = (line, index = 0) => {
+  const existingKey = String(line?.lineKey ?? '').trim();
+  if (existingKey) return existingKey;
+  const comboLineKey = String(line?.comboLineKey ?? '').trim();
+  const itemId = String(line?.itemId ?? line?.quickItem?.id ?? 'item').trim() || 'item';
+  return comboLineKey ? `${comboLineKey}-${itemId}-${index}` : `item-${itemId}-${index}`;
+};
+
 const isDetachedFromInventory = (lineOrItem) => {
   const item = lineOrItem?.item ?? lineOrItem ?? {};
   return lineOrItem?.controlsStock === false
@@ -2928,11 +2936,11 @@ function ServiceOrdersSection({
     discountPercent: String(record?.totals?.discountPercent ?? record?.discountPercent ?? 0),
     guaranteeBs: String(record?.totals?.guaranteeBs ?? 0),
     guaranteeStatus: record?.guarantee?.status ?? record?.payment?.guaranteeStatus ?? (Number(record?.totals?.guaranteeBs ?? 0) > 0 ? 'validado' : 'no_validado'),
-    guaranteePaymentMethod: record?.guarantee?.paymentMethod ?? record?.payment?.guaranteePaymentMethod ?? 'efectivo',
-    guaranteePaymentAccount: record?.guarantee?.paymentAccount ?? record?.payment?.guaranteePaymentAccount ?? '',
+    guaranteePaymentMethod: normalizeLedgerPaymentMethod(record?.guarantee?.paymentMethod ?? record?.payment?.guaranteePaymentMethod),
+    guaranteePaymentAccount: normalizeLedgerPaymentAccount(record?.guarantee?.paymentAccount ?? record?.payment?.guaranteePaymentAccount),
     paidAtApprovalBs: String(record?.payment?.paidAtApprovalBs ?? 0),
-    initialPaymentMethod: record?.payment?.initialPaymentMethod ?? record?.payment?.paymentMethod ?? 'efectivo',
-    initialPaymentAccount: record?.payment?.initialPaymentAccount ?? record?.payment?.paymentAccount ?? '',
+    initialPaymentMethod: normalizeLedgerPaymentMethod(record?.payment?.initialPaymentMethod ?? record?.payment?.paymentMethod),
+    initialPaymentAccount: normalizeLedgerPaymentAccount(record?.payment?.initialPaymentAccount ?? record?.payment?.paymentAccount),
     pricingMode: record?.pricingPlan?.mode === 'duration' ? 'duration' : 'simple',
     pricingDays: String(record?.pricingPlan?.days ?? 1),
     pricingTiers: (Array.isArray(record?.pricingPlan?.tiers) && record.pricingPlan.tiers.length > 0
@@ -2951,7 +2959,7 @@ function ServiceOrdersSection({
       ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
       : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
     items: (record?.items ?? []).map((line, index) => ({
-      lineKey: line.lineKey ?? (line.comboLineKey ? `${line.comboLineKey}-${line.itemId}-${index}` : undefined),
+      lineKey: getDraftLineKey(line, index),
       itemId: line.itemId,
       quantity: line.quantity,
       originalQuantity: Math.max(0, Math.trunc(Number(line.quantity ?? 0))),
@@ -3709,6 +3717,7 @@ function ServiceOrdersSection({
       items: [
         ...current.items,
         {
+          lineKey: `item-${itemId}-${Date.now()}`,
           itemId,
           quantity: 1,
           unitPriceBs: Math.max(0, Number(quickItemDraft.rentalPriceBs ?? 0)),
@@ -4318,8 +4327,8 @@ function ServiceOrdersSection({
       initialPaymentAccount: draft.initialPaymentMethod === 'qr' ? draft.initialPaymentAccount : '',
       pricingPlan: quotePricingPlan,
       status: draft.mode === 'order' ? 'enviada' : 'borrador',
-      items: selectedItems.map((line) => ({
-        lineKey: line.lineKey,
+      items: selectedItems.map((line, index) => ({
+        lineKey: getDraftLineKey(line, index),
         itemId: String(line.itemId).startsWith('quick-') ? '' : line.itemId,
         quantity: line.quantity,
         unitPriceBs: line.unitPriceBs,
