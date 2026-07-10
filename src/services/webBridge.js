@@ -997,6 +997,201 @@ const buildRepairDueAt = (dateKey, timeKey) => {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 };
 
+const findActiveRentalForContract = (state, contract) => state.rentals.find((entry) => (
+  !entry.deletedAt
+  && entry.status !== 'cancelled'
+  && (
+    String(entry.contractId ?? '') === String(contract.id)
+    || String(entry.contractCode ?? '') === String(contract.contractCode)
+    || (contract.rentalId && String(entry.id ?? '') === String(contract.rentalId))
+    || (contract.orderCode && String(entry.orderCode ?? '') === String(contract.orderCode))
+  )
+)) ?? null;
+
+const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
+  const totalBs = Number(contract?.totals?.totalBs ?? 0);
+  const paidAtRentalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
+  const pendingPaymentBs = Number(Math.max(0, totalBs - paidAtRentalBs).toFixed(2));
+  const paymentStatus = paidAtRentalBs >= totalBs && totalBs > 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago';
+  const guaranteeAmountBs = Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0);
+  const guaranteeStatus = contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? 'no_validado';
+
+  return {
+    id: makeId('rent'),
+    clientId: contract.clientId ?? null,
+    contractId: contract.id,
+    contractCode: contract.contractCode,
+    orderCode,
+    customerName: contract.customerName,
+    customerPhone: contract.customerPhone,
+    contractDate: contract.contractDate || contract.createdAt || now,
+    rentalDate: contract.deliveryDate || contract.eventDate,
+    rentalAt: now,
+    dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
+    dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
+    dueAt: buildRepairDueAt(contract.pickupDate || contract.deliveryDate || contract.eventDate, contract.pickupWindowEnd || contract.eventTime || '23:59'),
+    deliveryWindowStart: contract.deliveryWindowStart || null,
+    deliveryWindowEnd: contract.deliveryWindowEnd || null,
+    pickupWindowStart: contract.pickupWindowStart || null,
+    pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
+    idCardHeld: false,
+    depositBs: guaranteeStatus === 'validado' ? guaranteeAmountBs : 0,
+    guaranteeDeclaredBs: guaranteeAmountBs,
+    guarantee: {
+      amountBs: guaranteeAmountBs,
+      validatedBs: guaranteeStatus === 'validado' ? guaranteeAmountBs : 0,
+      status: guaranteeStatus,
+      paymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
+      paymentAccount: contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? '',
+    },
+    deliveryChargeMode: contract.deliveryChargeMode ?? 'included',
+    deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+    deliveryFeeReason: contract.deliveryFeeReason ?? 'covered',
+    prepaidClientId: null,
+    prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
+    items: (contract.items ?? []).map((line, index) => {
+      const item = state.items.find((entry) => entry.id === line.itemId);
+      const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+      const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
+      return {
+        lineKey: getInventoryLineKey(line, index),
+        itemId: line.itemId,
+        itemName: line.itemName || item?.name || 'Item',
+        rentalPriceBs,
+        damagedUnitChargeBs: Number(item?.damagedUnitChargeBs ?? rentalPriceBs * 1.2),
+        missingUnitChargeBs: Number(item?.missingUnitChargeBs ?? rentalPriceBs * 2),
+        quantity,
+        supplierBackedQty: 0,
+        internalReservedQty: quantity,
+        controlsStock: true,
+        verificationStatus: 'verified',
+        comboId: line.comboId ?? null,
+        comboName: line.comboName ?? '',
+        comboLineKey: line.comboLineKey ?? null,
+        comboComponentName: line.comboComponentName || item?.name || line.itemName || '',
+        comboQuantity: Math.max(1, Math.trunc(Number(line.comboQuantity ?? 1))),
+        comboComponentQuantity: Math.max(1, Math.trunc(Number(line.comboComponentQuantity ?? 1))),
+        comboRuleIndex: Math.max(0, Math.trunc(Number(line.comboRuleIndex ?? 0))),
+        comboSlotLabel: line.comboSlotLabel ?? '',
+        comboSelectionMode: line.comboSelectionMode ?? 'item',
+        comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
+        comboCategory: line.comboCategory ?? '',
+        comboPricingRole: line.comboPricingRole ?? '',
+        comboPricingCondition: line.comboPricingCondition ?? null,
+        observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+        grossLineTotalBs: Number(line.grossLineTotalBs ?? quantity * rentalPriceBs),
+        discountPercent: Number(line.discountPercent ?? 0),
+        discountBs: Number(line.discountBs ?? 0),
+        lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+      };
+    }),
+    services: contract.services ?? [],
+    pricingPlan: contract.pricingPlan ?? null,
+    totals: {
+      ...(contract.totals ?? {}),
+      totalBs,
+      paidAtRentalBs,
+      pendingPaymentBs,
+      overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
+    },
+    payment: {
+      mode: paymentStatus,
+      status: paymentStatus,
+      paidAtRentalBs,
+      pendingPaymentBs,
+      overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
+      prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
+      initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
+      initialPaymentAccount: contract?.payment?.initialPaymentAccount ?? '',
+      guaranteeStatus: contract?.payment?.guaranteeStatus ?? guaranteeStatus,
+      guaranteePaymentMethod: contract?.payment?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? 'efectivo',
+      guaranteePaymentAccount: contract?.payment?.guaranteePaymentAccount ?? contract?.guarantee?.paymentAccount ?? '',
+    },
+    notes: contract.observations ?? '',
+    billingMode: contract.billingMode ?? 'sin_factura',
+    logisticsMode: contract.logisticsMode ?? 'envio',
+    supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
+    inventoryAvailabilityAssumptions: [],
+    status: 'active',
+    createdById: contract.createdById ?? null,
+    createdByName: contract.createdByName || contract.createdBy || 'Sistema',
+    createdByRole: contract.createdByRole || 'Operacion',
+    operational: {
+      inventoryStatus: 'pendiente',
+      transportStatus: (contract.logisticsMode ?? 'envio') === 'recojo' ? 'no_aplica' : 'pendiente',
+      inventoryNote: '',
+      transportNote: '',
+      inventorySentAt: null,
+      inventoryDispatchedAt: null,
+      inventoryDispatchedByName: null,
+      inventoryDispatchedByRole: null,
+      transportSentAt: null,
+      inventoryConfirmedAt: null,
+      transportConfirmedAt: null,
+      inventoryConfirmedByName: null,
+      inventoryConfirmedByRole: null,
+      transportConfirmedByName: null,
+      transportConfirmedByRole: null,
+    },
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+  };
+};
+
+const reserveRepairRentalInventory = (state, contract, rental, now) => {
+  const linkedMovementCount = state.inventoryMovements.filter((movement) => (
+    String(movement.contractCode ?? '') === String(contract.contractCode)
+    || String(movement.contractId ?? '') === String(contract.id)
+    || String(movement.rentalId ?? '') === String(rental.id)
+    || String(movement.reference ?? '') === String(rental.orderCode)
+    || String(movement.orderCode ?? '') === String(rental.orderCode)
+  )).length;
+
+  if (linkedMovementCount > 0) return 0;
+
+  rental.items = (rental.items ?? []).map((line) => {
+    const item = state.items.find((entry) => entry.id === line.itemId);
+    if (!item) return line;
+    const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+    const beforeAvailableStock = Number(item.availableStock ?? 0);
+    const beforeTotalStock = Number(item.totalStock ?? 0);
+    item.availableStock = Math.max(0, beforeAvailableStock - quantity);
+    item.updatedAt = now;
+    state.inventoryMovements.push({
+      id: makeId('mov'),
+      itemId: item.id,
+      itemName: item.name,
+      category: item.category,
+      type: 'reserva',
+      reason: `Reservado para contrato ${contract.contractCode} (${rental.orderCode})`,
+      detail: `Reserva interna de ${quantity} unidades para contrato ${contract.contractCode}`,
+      reference: rental.orderCode,
+      contractCode: contract.contractCode,
+      contractId: contract.id,
+      rentalId: rental.id,
+      orderCode: rental.orderCode,
+      deltaUnits: -quantity,
+      beforeTotalStock,
+      afterTotalStock: Number(item.totalStock ?? 0),
+      beforeAvailableStock,
+      afterAvailableStock: Number(item.availableStock ?? 0),
+      reservedStockAfter: Math.max(0, Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0)),
+      userName: rental.createdByName || contract.createdByName || 'Sistema',
+      userRole: rental.createdByRole || contract.createdByRole || 'Operacion',
+      createdAt: now,
+    });
+    return {
+      ...line,
+      controlsStock: true,
+      internalReservedQty: quantity,
+      verificationStatus: line.verificationStatus === 'pending_verification' ? 'verified' : line.verificationStatus,
+    };
+  });
+
+  return rental.items.length;
+};
+
 const repairContract1544InventoryFlow = (state, now) => {
   if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals) || !Array.isArray(state.items)) return 0;
   state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
@@ -1004,192 +1199,17 @@ const repairContract1544InventoryFlow = (state, now) => {
   const contract = state.contracts.find((entry) => entry?.contractCode === '1544' && !entry.deletedAt);
   if (!contract) return 0;
 
-  let rental = state.rentals.find((entry) => (
-    !entry.deletedAt
-    && entry.status !== 'cancelled'
-    && (
-      String(entry.contractId ?? '') === String(contract.id)
-      || String(entry.contractCode ?? '') === String(contract.contractCode)
-      || (contract.rentalId && String(entry.id ?? '') === String(contract.rentalId))
-    )
-  )) ?? null;
+  let rental = findActiveRentalForContract(state, contract);
 
   let repairCount = 0;
   if (!rental) {
     const orderCode = consumeRepairDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
-    const totalBs = Number(contract?.totals?.totalBs ?? 0);
-    const paidAtRentalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
-    const pendingPaymentBs = Number(Math.max(0, totalBs - paidAtRentalBs).toFixed(2));
-    const paymentStatus = paidAtRentalBs >= totalBs && totalBs > 0 ? 'cancelado' : paidAtRentalBs > 0 ? 'a_cuenta' : 'sin_pago';
-
-    rental = {
-      id: makeId('rent'),
-      clientId: contract.clientId ?? null,
-      contractId: contract.id,
-      contractCode: contract.contractCode,
-      orderCode,
-      customerName: contract.customerName,
-      customerPhone: contract.customerPhone,
-      contractDate: contract.contractDate || contract.createdAt || now,
-      rentalDate: contract.deliveryDate || contract.eventDate,
-      rentalAt: now,
-      dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
-      dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
-      dueAt: buildRepairDueAt(contract.pickupDate || contract.deliveryDate || contract.eventDate, contract.pickupWindowEnd || contract.eventTime || '23:59'),
-      deliveryWindowStart: contract.deliveryWindowStart || null,
-      deliveryWindowEnd: contract.deliveryWindowEnd || null,
-      pickupWindowStart: contract.pickupWindowStart || null,
-      pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
-      idCardHeld: false,
-      depositBs: 0,
-      guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0),
-      guarantee: {
-        amountBs: Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0),
-        validatedBs: contract?.guarantee?.status === 'validado' ? Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0) : 0,
-        status: contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? 'no_validado',
-        paymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
-      },
-      deliveryChargeMode: contract.deliveryChargeMode ?? 'included',
-      deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
-      deliveryFeeReason: contract.deliveryFeeReason ?? 'covered',
-      prepaidClientId: null,
-      prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
-      items: (contract.items ?? []).map((line, index) => {
-        const item = state.items.find((entry) => entry.id === line.itemId);
-        const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-        const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
-        return {
-          lineKey: getInventoryLineKey(line, index),
-          itemId: line.itemId,
-          itemName: line.itemName || item?.name || 'Item',
-          rentalPriceBs,
-          damagedUnitChargeBs: Number(item?.damagedUnitChargeBs ?? rentalPriceBs * 1.2),
-          missingUnitChargeBs: Number(item?.missingUnitChargeBs ?? rentalPriceBs * 2),
-          quantity,
-          supplierBackedQty: 0,
-          internalReservedQty: quantity,
-          controlsStock: true,
-          verificationStatus: 'verified',
-          comboId: line.comboId ?? null,
-          comboName: line.comboName ?? '',
-          comboLineKey: line.comboLineKey ?? null,
-          comboComponentName: line.comboComponentName || item?.name || line.itemName || '',
-          comboQuantity: Math.max(1, Math.trunc(Number(line.comboQuantity ?? 1))),
-          comboComponentQuantity: Math.max(1, Math.trunc(Number(line.comboComponentQuantity ?? 1))),
-          comboRuleIndex: Math.max(0, Math.trunc(Number(line.comboRuleIndex ?? 0))),
-          comboSlotLabel: line.comboSlotLabel ?? '',
-          comboSelectionMode: line.comboSelectionMode ?? 'item',
-          comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds.map(String) : [],
-          comboCategory: line.comboCategory ?? '',
-          comboPricingRole: line.comboPricingRole ?? '',
-          comboPricingCondition: line.comboPricingCondition ?? null,
-          grossLineTotalBs: Number(line.grossLineTotalBs ?? quantity * rentalPriceBs),
-          discountPercent: Number(line.discountPercent ?? 0),
-          discountBs: Number(line.discountBs ?? 0),
-          lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
-        };
-      }),
-      services: contract.services ?? [],
-      pricingPlan: contract.pricingPlan ?? null,
-      totals: {
-        ...(contract.totals ?? {}),
-        totalBs,
-        paidAtRentalBs,
-        pendingPaymentBs,
-        overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
-      },
-      payment: {
-        mode: paymentStatus,
-        status: paymentStatus,
-        paidAtRentalBs,
-        pendingPaymentBs,
-        overpaidBs: Number(Math.max(0, paidAtRentalBs - totalBs).toFixed(2)),
-        prepaidAppliedBs: Number(contract?.payment?.prepaidAppliedBs ?? 0),
-        initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
-        guaranteeStatus: contract?.payment?.guaranteeStatus ?? contract?.guarantee?.status ?? 'no_validado',
-        guaranteePaymentMethod: contract?.payment?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? 'efectivo',
-      },
-      notes: contract.observations ?? '',
-      billingMode: contract.billingMode ?? 'sin_factura',
-      logisticsMode: contract.logisticsMode ?? 'envio',
-      supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
-      inventoryAvailabilityAssumptions: [],
-      status: 'active',
-      createdById: contract.createdById ?? null,
-      createdByName: contract.createdByName || contract.createdBy || 'Sistema',
-      createdByRole: contract.createdByRole || 'Operacion',
-      operational: {
-        inventoryStatus: 'pendiente',
-        transportStatus: (contract.logisticsMode ?? 'envio') === 'recojo' ? 'no_aplica' : 'pendiente',
-        inventoryNote: '',
-        transportNote: '',
-        inventorySentAt: null,
-        inventoryDispatchedAt: null,
-        inventoryDispatchedByName: null,
-        inventoryDispatchedByRole: null,
-        transportSentAt: null,
-        inventoryConfirmedAt: null,
-        transportConfirmedAt: null,
-        inventoryConfirmedByName: null,
-        inventoryConfirmedByRole: null,
-        transportConfirmedByName: null,
-        transportConfirmedByRole: null,
-      },
-      createdAt: now,
-      deletedAt: null,
-    };
+    rental = buildRepairRentalFromContract(state, contract, now, orderCode);
     state.rentals.push(rental);
     repairCount += 1;
   }
 
-  const linkedMovementCount = state.inventoryMovements.filter((movement) => (
-    String(movement.contractCode ?? '') === String(contract.contractCode)
-    || String(movement.contractId ?? '') === String(contract.id)
-    || String(movement.rentalId ?? '') === String(rental.id)
-    || String(movement.reference ?? '') === String(rental.orderCode)
-  )).length;
-
-  if (linkedMovementCount === 0) {
-    rental.items = (rental.items ?? []).map((line) => {
-      const item = state.items.find((entry) => entry.id === line.itemId);
-      if (!item) return line;
-      const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-      const beforeAvailableStock = Number(item.availableStock ?? 0);
-      const beforeTotalStock = Number(item.totalStock ?? 0);
-      item.availableStock = Math.max(0, beforeAvailableStock - quantity);
-      item.updatedAt = now;
-      state.inventoryMovements.push({
-        id: makeId('mov'),
-        itemId: item.id,
-        itemName: item.name,
-        category: item.category,
-        type: 'reserva',
-        reason: `Reservado para contrato ${contract.contractCode} (${rental.orderCode})`,
-        detail: `Reserva interna de ${quantity} unidades para contrato ${contract.contractCode}`,
-        reference: rental.orderCode,
-        contractCode: contract.contractCode,
-        contractId: contract.id,
-        rentalId: rental.id,
-        orderCode: rental.orderCode,
-        deltaUnits: -quantity,
-        beforeTotalStock,
-        afterTotalStock: Number(item.totalStock ?? 0),
-        beforeAvailableStock,
-        afterAvailableStock: Number(item.availableStock ?? 0),
-        reservedStockAfter: Math.max(0, Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0)),
-        userName: rental.createdByName || contract.createdByName || 'Sistema',
-        userRole: rental.createdByRole || contract.createdByRole || 'Operacion',
-        createdAt: now,
-      });
-      return {
-        ...line,
-        controlsStock: true,
-        internalReservedQty: quantity,
-        verificationStatus: line.verificationStatus === 'pending_verification' ? 'verified' : line.verificationStatus,
-      };
-    });
-    repairCount += rental.items.length;
-  }
+  repairCount += reserveRepairRentalInventory(state, contract, rental, now);
 
   const contractNeedsUpdate =
     contract.status !== 'aprobado'
@@ -1211,6 +1231,39 @@ const repairContract1544InventoryFlow = (state, now) => {
     state.settings.maintenance.contract1544RepairAt = now;
     state.settings.maintenance.contract1544RepairCount = Number(state.settings.maintenance.contract1544RepairCount ?? 0) + repairCount;
   }
+  return repairCount;
+};
+
+const repairApprovedContractsMissingRentals = (state, now) => {
+  if (!Array.isArray(state.contracts) || !Array.isArray(state.rentals) || !Array.isArray(state.items)) return 0;
+  state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+
+  let repairCount = 0;
+  state.contracts
+    .filter((contract) => (
+      !contract.deletedAt
+      && contract.status === 'aprobado'
+      && String(contract.orderCode ?? '').trim()
+      && !findActiveRentalForContract(state, contract)
+    ))
+    .forEach((contract) => {
+      const orderCode = String(contract.orderCode).trim();
+      const rental = buildRepairRentalFromContract(state, contract, now, orderCode);
+      state.rentals.push(rental);
+      contract.rentalId = rental.id;
+      contract.orderCode = rental.orderCode;
+      contract.approvedAt = contract.approvedAt ?? rental.createdAt ?? now;
+      contract.rejectedAt = null;
+      contract.updatedAt = now;
+      repairCount += 1;
+      repairCount += reserveRepairRentalInventory(state, contract, rental, now);
+    });
+
+  if (repairCount > 0) {
+    state.settings.maintenance.approvedContractRentalRepairAt = now;
+    state.settings.maintenance.approvedContractRentalRepairCount = Number(state.settings.maintenance.approvedContractRentalRepairCount ?? 0) + repairCount;
+  }
+
   return repairCount;
 };
 
@@ -2087,6 +2140,7 @@ const normalizeState = (state) => {
     : [];
 
   repairContract1544InventoryFlow(source, now);
+  repairApprovedContractsMissingRentals(source, now);
 
   if (Number(source.settings.maintenance.deletedContractCleanupRevision ?? 0) < 1) {
     const repairedContracts = repairDeletedContractOperationalResidues(source, now);
@@ -4636,7 +4690,9 @@ const resolveContractForRental = (state, rental) =>
     (entry) =>
       !entry.deletedAt
       && (
-        (entry.rentalId && entry.rentalId === rental.id)
+        (rental.contractId && entry.id === rental.contractId)
+        || (rental.contractCode && entry.contractCode === rental.contractCode)
+        || (entry.rentalId && entry.rentalId === rental.id)
         || (entry.orderCode && entry.orderCode === rental.orderCode)
       ),
   ) ?? null;
@@ -4648,6 +4704,8 @@ const buildRentalSnapshotFromContract = (contract) => {
   return ({
   id: contract?.rentalId ?? `contract-${contract?.id ?? 'sin-id'}`,
   orderCode: contract?.orderCode ?? contract?.contractCode ?? 'SIN-ORDEN',
+  contractId: contract?.id ?? null,
+  contractCode: contract?.contractCode ?? null,
   clientId: contract?.clientId ?? null,
   customerName: contract?.customerName ?? '',
   customerPhone: contract?.customerPhone ?? '',
@@ -4655,8 +4713,14 @@ const buildRentalSnapshotFromContract = (contract) => {
   dueDate: contract?.pickupDate || contract?.deliveryDate || contract?.eventDate || contract?.createdAt,
   contractDate: contract?.contractDate ?? contract?.createdAt,
   createdAt: contract?.createdAt,
+  updatedAt: contract?.updatedAt ?? contract?.createdAt,
   eventType: contract?.eventType,
+  eventDate: contract?.eventDate,
   eventAddress: contract?.address,
+  deliveryWindowStart: contract?.deliveryWindowStart,
+  deliveryWindowEnd: contract?.deliveryWindowEnd,
+  pickupWindowStart: contract?.pickupWindowStart,
+  pickupWindowEnd: contract?.pickupWindowEnd,
   billingMode: contract?.billingMode,
   logisticsMode: contract?.logisticsMode,
   pricingPlan: contract?.pricingPlan ?? null,
@@ -4687,11 +4751,15 @@ const buildRentalSnapshotFromContract = (contract) => {
     paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
   },
   items: (contract?.items ?? []).map((line) => ({
+    lineKey: line.lineKey ?? null,
     itemId: line.itemId,
     itemName: line.itemName,
     quantity: line.quantity,
     rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
     lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
+    observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+    comboLineKey: line.comboLineKey ?? null,
+    comboCategory: line.comboCategory ?? '',
   })),
   services: normalizeContractServices(contract?.services),
   });
@@ -6944,6 +7012,16 @@ const buildWeeklyInventoryHtml = ({
 }) => {
   const company = getDocumentCompany(settings);
   const contractById = new Map((contracts ?? []).map((contract) => [String(contract.id), contract]));
+  const contractByOrderCode = new Map(
+    (contracts ?? [])
+      .filter((contract) => String(contract?.orderCode ?? '').trim())
+      .map((contract) => [String(contract.orderCode).trim(), contract]),
+  );
+  const contractByCode = new Map(
+    (contracts ?? [])
+      .filter((contract) => String(contract?.contractCode ?? '').trim())
+      .map((contract) => [String(contract.contractCode).trim(), contract]),
+  );
   const itemById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const deliveryByRental = new Map();
   (deliveries ?? []).forEach((delivery) => {
@@ -7000,7 +7078,10 @@ const buildWeeklyInventoryHtml = ({
   const weeklyOrderEntries = (rentals ?? [])
     .filter((rental) => !rental.deletedAt && rental.status !== 'cancelled')
     .map((rental) => {
-      const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
+      const contract = contractById.get(String(rental.contractId ?? ''))
+        ?? contractByOrderCode.get(String(rental.orderCode ?? '').trim())
+        ?? contractByCode.get(String(rental.contractCode ?? '').trim())
+        ?? null;
       const linkedDeliveries = (deliveryByRental.get(String(rental.id)) ?? []).slice();
       const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
       const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
@@ -14873,6 +14954,16 @@ const createWebBridge = () => ({
       const selectedRental = format === 'individual' ? resolveRentalForPrinting(state, payload) : null;
       const selectedContract = selectedRental ? resolveContractForRental(state, selectedRental) : null;
       const selectedDeliveries = selectedRental ? resolveDeliveriesForRental(state, selectedRental) : [];
+      const rentalsForInventory = selectedRental
+        && !state.rentals.some((rental) => (
+          String(rental.id ?? '') === String(selectedRental.id ?? '')
+          || (
+            String(selectedRental.orderCode ?? '').trim()
+            && String(rental.orderCode ?? '').trim() === String(selectedRental.orderCode).trim()
+          )
+        ))
+        ? [...state.rentals, selectedRental]
+        : state.rentals;
       const firstOutboundDelivery = selectedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? selectedDeliveries[0] ?? null;
       const requestedStart = toDateKey(
         selectedContract?.deliveryDate
@@ -14900,7 +14991,7 @@ const createWebBridge = () => ({
         ok: true,
         title: `${format === 'individual' ? 'Inventario individual' : 'Control semanal de inventario'} ${weekStart}`,
         html: buildWeeklyInventoryHtml({
-          rentals: state.rentals,
+          rentals: rentalsForInventory,
           contracts: state.contracts,
           deliveries: state.deliveries,
           items: state.items,
