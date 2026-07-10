@@ -2785,20 +2785,19 @@ function ServiceOrdersSection({
     () => Number((quoteSubtotalBs * (generalDiscountPercent / 100)).toFixed(2)),
     [generalDiscountPercent, quoteSubtotalBs],
   );
+  const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
 
   const quoteTotalBs = useMemo(() => (
     Math.max(0, quoteSubtotalBs - generalDiscountBs + quoteDeliveryFeeBs)
   ), [generalDiscountBs, quoteDeliveryFeeBs, quoteSubtotalBs]);
 
   const pendingAtApprovalBs = useMemo(() => {
-    const paid = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
-    return Math.max(0, quoteTotalBs - paid);
-  }, [draft.paidAtApprovalBs, quoteTotalBs]);
+    return Math.max(0, quoteTotalBs - paidAtApprovalBs);
+  }, [paidAtApprovalBs, quoteTotalBs]);
 
   const overpaidAtApprovalBs = useMemo(() => {
-    const paid = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
-    return Math.max(0, Number((paid - quoteTotalBs).toFixed(2)));
-  }, [draft.paidAtApprovalBs, quoteTotalBs]);
+    return Math.max(0, Number((paidAtApprovalBs - quoteTotalBs).toFixed(2)));
+  }, [paidAtApprovalBs, quoteTotalBs]);
 
   const selectedClientForDraft = useMemo(
     () => clients.find((client) => client.id === draft.clientId) ?? null,

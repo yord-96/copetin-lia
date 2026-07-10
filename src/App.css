@@ -57174,12 +57174,17 @@ body:has(.accounting-bigcash-view) .workspace {
   grid-area: coverage !important;
   width: 100% !important;
   min-width: 0 !important;
-  margin-top: 0.16rem !important;
-  padding: 0.72rem 0.78rem !important;
-  border: 1px solid #cfe0f8 !important;
-  border-radius: 0.82rem !important;
-  background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%) !important;
-  box-shadow: inset 0.28rem 0 0 #3b82f6 !important;
+  margin-top: 0.06rem !important;
+  padding: 0.66rem 0.78rem !important;
+  border: 1px solid #bfd7ff !important;
+  border-radius: 0.86rem !important;
+  background: linear-gradient(135deg, #f5f9ff 0%, #ffffff 100%) !important;
+  box-shadow: inset 0.3rem 0 0 #2563eb, 0 0.5rem 1.25rem rgba(37, 99, 235, 0.08) !important;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto auto !important;
+  align-items: center !important;
+  column-gap: 0.72rem !important;
+  row-gap: 0.42rem !important;
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field > span {
@@ -57191,6 +57196,7 @@ body:has(.accounting-bigcash-view) .workspace {
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link {
   width: fit-content !important;
+  white-space: nowrap !important;
   min-height: 1.8rem !important;
   border: 1px solid #fed7aa !important;
   border-radius: 999px !important;
@@ -57198,6 +57204,53 @@ body:has(.accounting-bigcash-view) .workspace {
   color: #c2410c !important;
   padding: 0.32rem 0.62rem !important;
   text-decoration: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-list {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  gap: 0.5rem !important;
+  align-items: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-chip {
+  min-height: 2.25rem !important;
+  padding: 0.38rem 0.48rem 0.38rem 0.62rem !important;
+  border-color: #93c5fd !important;
+  background: #eff6ff !important;
+  box-shadow: 0 0.35rem 0.8rem rgba(37, 99, 235, 0.08) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-chip strong {
+  color: #123b78 !important;
+  font-size: 0.72rem !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-chip small {
+  color: #475569 !important;
+  font-size: 0.62rem !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+  margin: 0 !important;
+  justify-self: end !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 1320px) {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+    grid-column: 2 / -1 !important;
+    justify-self: start !important;
+  }
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-cell {
