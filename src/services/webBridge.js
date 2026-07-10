@@ -2096,6 +2096,8 @@ const normalizeState = (state) => {
                 ?? entry?.userName
                 ?? 'Sistema',
               ).trim() || 'Sistema',
+              editedAt: entry?.editedAt ?? null,
+              editedByName: String(entry?.editedByName ?? '').trim(),
             };
           })
           : [],
@@ -12124,6 +12126,8 @@ const createWebBridge = () => ({
               note: String(entry?.note ?? '').trim(),
               createdAt: entry?.createdAt ?? now,
               createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+              editedAt: entry?.editedAt ?? null,
+              editedByName: String(entry?.editedByName ?? '').trim(),
             };
           });
         }
@@ -12181,6 +12185,8 @@ const createWebBridge = () => ({
             note: String(entry?.note ?? '').trim(),
             createdAt: entry?.createdAt ?? now,
             createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+            editedAt: entry?.editedAt ?? null,
+            editedByName: String(entry?.editedByName ?? '').trim(),
           };
         });
         contract.economicLedgerUpdatedAt = now;

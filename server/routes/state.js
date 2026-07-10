@@ -46,6 +46,8 @@ const normalizeEconomicLedgerRows = (rows) => {
       createdAt: String(entry?.createdAt ?? '').trim() || new Date().toISOString(),
       createdById: entry?.createdById ?? entry?.userId ?? null,
       createdByName: String(entry?.createdByName ?? entry?.userName ?? 'Sistema').trim() || 'Sistema',
+      editedAt: String(entry?.editedAt ?? '').trim() || null,
+      editedByName: String(entry?.editedByName ?? '').trim(),
     };
   });
 };

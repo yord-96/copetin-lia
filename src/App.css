@@ -10677,7 +10677,8 @@ textarea:focus {
 .contract-economics-ledger-form,
 .contract-economics-notebook-line {
   display: grid;
-  grid-template-columns: 48px 132px 180px 128px 140px 150px minmax(210px, 1fr) 168px;
+  grid-template-columns: 48px 126px 172px 116px 128px 118px minmax(210px, 1fr) 138px 168px;
+  min-width: 1280px;
   gap: 0.54rem;
   align-items: center;
 }
@@ -10704,8 +10705,12 @@ textarea:focus {
   gap: 0;
 }
 
+.contract-economics-ledger-form .contract-economics-ledger-date {
+  grid-column: 2;
+}
+
 .contract-economics-ledger-form .contract-economics-ledger-type {
-  grid-column: 2 / 4;
+  grid-column: 3;
 }
 
 .contract-economics-ledger-form .contract-economics-ledger-amount {
@@ -10721,7 +10726,7 @@ textarea:focus {
 }
 
 .contract-economics-ledger-form .contract-economics-ledger-detail {
-  grid-column: 6 / 8;
+  grid-column: 6 / 9;
 }
 
 .contract-economics-ledger-form .contract-economics-ledger-qr + .contract-economics-ledger-detail {
@@ -10752,7 +10757,7 @@ textarea:focus {
 }
 
 .contract-economics-ledger-form-actions {
-  grid-column: 8;
+  grid-column: 9;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -10780,12 +10785,16 @@ textarea:focus {
 }
 
 .contract-economics-notebook-line > p {
-  grid-column: 6 / 8;
+  grid-column: 7;
 }
 
 .contract-economics-notebook-line > .contract-economics-notebook-line-actions,
-.contract-economics-notebook-line > small {
+.contract-economics-notebook-line > small:last-of-type {
   grid-column: 8;
+}
+
+.contract-economics-notebook-line > .contract-economics-notebook-line-actions {
+  grid-column: 9;
 }
 
 .contract-economics-notebook-line.tone-blue {
@@ -10815,6 +10824,14 @@ textarea:focus {
   font-weight: 800;
 }
 
+.contract-economics-notebook-line small b {
+  display: block;
+  margin-top: 0.12rem;
+  color: #66728d;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
 .contract-economics-notebook-line em {
   color: #17233f;
   font-size: 0.8rem;
@@ -10832,9 +10849,9 @@ textarea:focus {
   color: #1f3158;
   font-size: 0.8rem;
   font-weight: 760;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .contract-economics-notebook-line-actions {

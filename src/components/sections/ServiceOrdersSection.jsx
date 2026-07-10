@@ -339,6 +339,8 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     note: String(entry?.note ?? '').trim(),
     createdAt: entry?.createdAt ?? new Date().toISOString(),
     createdByName: String(entry?.createdByName ?? entry?.createdBy ?? 'Sistema').trim() || 'Sistema',
+    editedAt: entry?.editedAt ?? null,
+    editedByName: String(entry?.editedByName ?? '').trim(),
   };
 };
 
@@ -454,6 +456,16 @@ const getDateKey = (value) => {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
   return getInputDate(parsed);
+};
+
+const buildDateTimeFromDateKey = (dateKey, fallbackValue = null) => {
+  const selectedDate = getDateKey(dateKey) || getInputDate(new Date());
+  const fallbackDate = fallbackValue ? new Date(fallbackValue) : new Date();
+  const timeSource = Number.isNaN(fallbackDate.getTime()) ? new Date() : fallbackDate;
+  const hours = String(timeSource.getHours()).padStart(2, '0');
+  const minutes = String(timeSource.getMinutes()).padStart(2, '0');
+  const seconds = String(timeSource.getSeconds()).padStart(2, '0');
+  return new Date(`${selectedDate}T${hours}:${minutes}:${seconds}`).toISOString();
 };
 
 const getCurrentWeekRange = (baseDate = new Date()) => {
@@ -1198,6 +1210,7 @@ function ServiceOrdersSection({
     note: '',
   });
   const [contractEconomicsLedgerDraft, setContractEconomicsLedgerDraft] = useState({
+    date: getInputDate(new Date()),
     paymentMethod: 'efectivo',
     paymentAccount: '',
   });
@@ -1231,7 +1244,7 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const canChooseResponsibles = isDeveloper(currentUser);
-  const canManageContractEconomicLedger = isDeveloper(currentUser);
+  const canManageContractEconomicLedger = !readOnly;
   const contractNumberingInfo = useMemo(() => {
     const numbering = settings?.numbering ?? {};
     const prefix = String(numbering.contractPrefix ?? '');
@@ -4859,10 +4872,11 @@ function ServiceOrdersSection({
     }
   };
 
-  const saveContractEconomicLedgerRows = async (nextLedger, successMessage) => {
-    if (!contractEconomicsData || isSavingContractEconomicsLedger) return null;
+  const saveContractEconomicLedgerRows = async (nextLedger, successMessage, options = {}) => {
+    if (!contractEconomicsData || (isSavingContractEconomicsLedger && !options.force)) return null;
 
     setContractEconomicsError('');
+    setIsSavingContractEconomicsLedger(true);
 
     try {
       const payload = {
@@ -4915,6 +4929,7 @@ function ServiceOrdersSection({
   const resetContractEconomicLedgerForm = () => {
     setContractEconomicsLedgerEditingId(null);
     setContractEconomicsLedgerDraft({
+      date: getInputDate(new Date()),
       paymentMethod: 'efectivo',
       paymentAccount: '',
     });
@@ -4957,6 +4972,11 @@ function ServiceOrdersSection({
     const note = String(
       contractEconomicsLedgerNoteRef.current?.value ?? '',
     ).trim();
+    const selectedDate = getDateKey(contractEconomicsLedgerDraft.date) || getInputDate(new Date());
+    const editingEntry = contractEconomicsLedgerEditingId
+      ? (contractEconomicsData.economicLedger ?? []).find((row) => row.id === contractEconomicsLedgerEditingId)
+      : null;
+    const createdAt = buildDateTimeFromDateKey(selectedDate, editingEntry?.createdAt);
 
     const paymentMethod = type === 'note'
       ? ''
@@ -5001,7 +5021,7 @@ function ServiceOrdersSection({
       paymentMethod,
       paymentAccount,
       note,
-      createdAt: new Date().toISOString(),
+      createdAt,
       createdByName,
     };
 
@@ -5016,6 +5036,8 @@ function ServiceOrdersSection({
             paymentMethod,
             paymentAccount,
             note,
+            createdAt,
+            createdByName: row.createdByName || createdByName,
             editedAt: new Date().toISOString(),
             editedByName: createdByName,
           }
@@ -5034,6 +5056,7 @@ function ServiceOrdersSection({
     if (!canManageContractEconomicLedger) return;
     setContractEconomicsLedgerEditingId(entry.id);
     setContractEconomicsLedgerDraft({
+      date: getDateKey(entry.createdAt) || getInputDate(new Date()),
       paymentMethod: entry.paymentMethod || 'efectivo',
       paymentAccount: entry.paymentAccount || '',
     });
@@ -5153,6 +5176,7 @@ function ServiceOrdersSection({
       const updated = await saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
         'Devolucion de garantia registrada con recibo.',
+        { force: true },
       );
       if (updated) resetContractEconomicLedgerForm();
     } catch (error) {
@@ -6759,11 +6783,24 @@ function ServiceOrdersSection({
                     <span>Metodo</span>
                     <span>Cuenta QR</span>
                     <span>Detalle historico</span>
+                    <span>Registrado por</span>
                     <span>Acciones</span>
                   </div>
 
                   <form className="contract-economics-ledger-form" onSubmit={handleSubmitContractEconomicLedger}>
                     <span className="contract-economics-ledger-dot" aria-hidden="true"></span>
+                    <label className="contract-economics-ledger-date">
+                      <span>Fecha</span>
+                      <input
+                        type="date"
+                        value={contractEconomicsLedgerDraft.date}
+                        onChange={(event) => setContractEconomicsLedgerDraft((current) => ({
+                          ...current,
+                          date: event.target.value,
+                        }))}
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      />
+                    </label>
                     <label className="contract-economics-ledger-type">
                       <span>Movimiento</span>
                       <select
@@ -6851,38 +6888,45 @@ function ServiceOrdersSection({
                   <div className="contract-economics-notebook-lines">
                     {contractEconomicsData.economicLedger.length > 0 ? contractEconomicsData.economicLedger.map((entry) => {
                       const meta = ECONOMIC_LEDGER_TYPE_META[entry.type] ?? ECONOMIC_LEDGER_TYPE_META.note;
+                      const creatorLabel = entry.createdByName || 'Sistema';
+                      const editedLabel = entry.editedByName
+                        ? `Editado por ${entry.editedByName}${entry.editedAt ? ` el ${formatDateTime(entry.editedAt)}` : ''}`
+                        : '';
                       return (
                         <article className={`contract-economics-notebook-line tone-${meta.tone}`} key={entry.id}>
                           <span className="contract-economics-ledger-dot" aria-hidden="true"></span>
                           <time>{entry.createdAt ? formatDateTime(entry.createdAt) : '-'}</time>
                           <span>{meta.label}</span>
                           <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
-                          <em>{entry.type === 'note' ? 'Sin metodo' : formatPaymentMethodLabel(entry.paymentMethod, entry.paymentAccount)}</em>
+                          <em>{entry.type === 'note' ? 'Sin metodo' : formatPaymentMethodLabel(entry.paymentMethod)}</em>
+                          <small>{entry.paymentAccount || '-'}</small>
                           <p>{entry.note}</p>
-                          {canManageContractEconomicLedger ? (
-                            <div className="contract-economics-notebook-line-actions">
-                              <button
-                                type="button"
-                                className="contract-economics-row-action"
-                                onClick={() => handleEditContractEconomicLedgerEntry(entry)}
-                                disabled={readOnly || isSavingContractEconomicsLedger}
-                                aria-label={`Editar linea ${meta.label}`}
-                              >
-                                <Pencil aria-hidden="true" />
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                className="contract-economics-row-action danger"
-                                onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
-                                disabled={readOnly || isSavingContractEconomicsLedger}
-                                aria-label={`Eliminar linea ${meta.label}`}
-                              >
-                                <Trash2 aria-hidden="true" />
-                                Eliminar
-                              </button>
-                            </div>
-                          ) : <small>{entry.createdByName}</small>}
+                          <small title={editedLabel ? `${creatorLabel}. ${editedLabel}` : creatorLabel}>
+                            {creatorLabel}
+                            {editedLabel ? <b>{editedLabel}</b> : null}
+                          </small>
+                          <div className="contract-economics-notebook-line-actions">
+                            <button
+                              type="button"
+                              className="contract-economics-row-action"
+                              onClick={() => handleEditContractEconomicLedgerEntry(entry)}
+                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              aria-label={`Editar linea ${meta.label}`}
+                            >
+                              <Pencil aria-hidden="true" />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="contract-economics-row-action danger"
+                              onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
+                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              aria-label={`Eliminar linea ${meta.label}`}
+                            >
+                              <Trash2 aria-hidden="true" />
+                              Eliminar
+                            </button>
+                          </div>
                         </article>
                       );
                     }) : (
