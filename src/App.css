@@ -10256,44 +10256,43 @@ textarea:focus {
 }
 
 .contract-economics-kpis article:nth-child(2)::before {
-  background: #eef6ff;
-  border-color: #c9ddff;
-}
-
-.contract-economics-kpis article:nth-child(2)::after {
-  content: "+";
-  color: #2563eb;
-}
-
-.contract-economics-kpis article:nth-child(3)::before {
-  background: #eaf9ef;
-  border-color: #c8efd3;
-}
-
-.contract-economics-kpis article:nth-child(3)::after {
-  content: "OK";
-  color: #16a34a;
-  font-size: 0.8rem;
-}
-
-.contract-economics-kpis article:nth-child(4)::before {
-  background: #fff4e5;
-  border-color: #fed7aa;
-}
-
-.contract-economics-kpis article:nth-child(4)::after {
-  content: "!";
-  color: #f97316;
-}
-
-.contract-economics-kpis article:nth-child(5)::before {
   background: #f4efff;
   border-color: #ddd6fe;
 }
 
-.contract-economics-kpis article:nth-child(5)::after {
+.contract-economics-kpis article:nth-child(2)::after {
   content: "G";
   color: #7c3aed;
+}
+
+.contract-economics-kpis article:nth-child(3)::before {
+  background: #fff4e5;
+  border-color: #fed7aa;
+}
+
+.contract-economics-kpis article:nth-child(3)::after {
+  content: "T";
+  color: #f97316;
+}
+
+.contract-economics-kpis article:nth-child(4)::before {
+  background: #eaf9ef;
+  border-color: #c8efd3;
+}
+
+.contract-economics-kpis article:nth-child(4)::after {
+  content: "S";
+  color: #16a34a;
+}
+
+.contract-economics-kpis article:nth-child(5)::before {
+  background: #eef6ff;
+  border-color: #c9ddff;
+}
+
+.contract-economics-kpis article:nth-child(5)::after {
+  content: "+";
+  color: #2563eb;
 }
 
 .contract-economics-kpis article.warning {
@@ -10324,6 +10323,56 @@ textarea:focus {
   color: #697997;
   font-size: 0.74rem;
   font-weight: 700;
+}
+
+.contract-economics-balance-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.86rem;
+}
+
+.contract-economics-balance-strip article {
+  border: 1px solid #dfe6f2;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(16, 35, 73, 0.045);
+  padding: 0.82rem 1rem;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.contract-economics-balance-strip span {
+  color: #65728c;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.contract-economics-balance-strip strong {
+  color: #061a44;
+  font-size: 1.16rem;
+  line-height: 1.1;
+}
+
+.contract-economics-balance-strip small {
+  color: #697997;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.contract-economics-balance-strip article.is-due {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.contract-economics-balance-strip article.is-paid {
+  border-color: #8cff72;
+  background: #d9ffcc;
+  box-shadow: 0 0 0 3px rgba(140, 255, 114, 0.28), 0 12px 28px rgba(22, 163, 74, 0.12);
+}
+
+.contract-economics-balance-strip article.is-paid :is(span, strong, small) {
+  color: #075e17;
 }
 
 .contract-economics-story-layout {
@@ -11374,28 +11423,31 @@ textarea:focus {
 
 .orders-supplier-coverage-field {
   align-self: stretch;
+  display: grid;
+  gap: 0.45rem;
 }
 
 .orders-supplier-coverage-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  min-height: 38px;
+  gap: 0.42rem;
+  min-height: 2.85rem;
   align-content: flex-start;
-  padding: 8px;
-  border: 1px solid #d8e1ee;
-  border-radius: 8px;
-  background: #f8fafc;
+  padding: 0.55rem;
+  border: 1px solid #d8e6fb;
+  border-radius: 0.7rem;
+  background: #ffffff;
 }
 
 .orders-supplier-coverage-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.38rem;
   max-width: 100%;
-  padding: 5px 7px;
+  min-height: 2rem;
+  padding: 0.32rem 0.48rem;
   border: 1px solid #bfd4ff;
-  border-radius: 999px;
+  border-radius: 0.58rem;
   background: #eff6ff;
   color: #123b78;
   font-size: 0.68rem;
@@ -34389,6 +34441,27 @@ button.calendar-dispatch-row:focus-visible {
     flex: 0 0 auto;
   }
 
+  .orders-view .orders-contracts-table .orders-total.is-paid {
+    color: #075e17;
+  }
+
+  .orders-view .orders-contracts-table .orders-total.is-paid .orders-total-with-economics,
+  .orders-total-with-economics.is-paid {
+    min-height: 1.8rem;
+    border: 1px solid #8cff72;
+    border-radius: 999px;
+    background: #d9ffcc;
+    color: #075e17;
+    padding: 0.25rem 0.62rem;
+    font-weight: 950;
+    box-shadow: 0 0 0 3px rgba(140, 255, 114, 0.22);
+  }
+
+  .orders-view .orders-contracts-table .orders-total.is-due,
+  .orders-total-with-economics.is-due {
+    color: #102b59;
+  }
+
   .orders-view .orders-contracts-table td.orders-contract-sent-cell {
     background: #ff7a00 !important;
     box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.38);
@@ -56980,7 +57053,9 @@ body:has(.accounting-bigcash-view) .workspace {
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
   grid-template-columns: minmax(390px, 1fr) 9.2rem 9rem 8rem 7rem 3.2rem !important;
-  grid-template-areas: "product qty price discount subtotal action" !important;
+  grid-template-areas:
+    "product qty price discount subtotal action"
+    "coverage coverage coverage coverage coverage coverage" !important;
   align-items: center !important;
   gap: 0.78rem !important;
 }
@@ -57021,6 +57096,36 @@ body:has(.accounting-bigcash-view) .workspace {
   grid-area: action !important;
   align-self: center !important;
   justify-self: end !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
+  grid-area: coverage !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin-top: 0.16rem !important;
+  padding: 0.72rem 0.78rem !important;
+  border: 1px solid #cfe0f8 !important;
+  border-radius: 0.82rem !important;
+  background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%) !important;
+  box-shadow: inset 0.28rem 0 0 #3b82f6 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field > span {
+  color: #123b78 !important;
+  font-size: 0.62rem !important;
+  font-weight: 950 !important;
+  text-transform: uppercase !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link {
+  width: fit-content !important;
+  min-height: 1.8rem !important;
+  border: 1px solid #fed7aa !important;
+  border-radius: 999px !important;
+  background: #fff7ed !important;
+  color: #c2410c !important;
+  padding: 0.32rem 0.62rem !important;
+  text-decoration: none !important;
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-product-cell {

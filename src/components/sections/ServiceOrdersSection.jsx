@@ -1649,9 +1649,50 @@ function ServiceOrdersSection({
       const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
       const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
-      const hasEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+        .map(normalizeEconomicLedgerEntry);
+      const hasEconomicLedger = economicLedger
         .some((entry) => toMoneyNumber(entry?.amountBs) > 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
+      const servicesBs = (Array.isArray(contract?.services) ? contract.services : [])
+        .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
+      const transportBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs);
+      const totalBs = Number(contract?.totals?.totalBs ?? 0);
+      const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - transportBs).toFixed(2)));
+      const managedTotalBs = Number((rentalTotalBs + guaranteeBs + transportBs + servicesBs).toFixed(2));
+      const contractReferenceKeys = [
+        contract.id,
+        contract.rentalId,
+        contract.contractCode,
+        contract.orderCode,
+        linkedOrder?.id,
+        linkedOrder?.orderCode,
+      ].map(normalizeText).filter(Boolean);
+      const collectionRegisteredBs = cashMovements.reduce((sum, movement) => {
+        const movementType = normalizeText(movement?.type);
+        const category = normalizeText(movement?.category);
+        const tag = normalizeText(movement?.accountingTag);
+        const movementKeys = [
+          movement?.linkedContractId,
+          movement?.linkedRentalId,
+          movement?.linkedOrderCode,
+          movement?.contractCode,
+          movement?.reference,
+          movement?.sourceId,
+        ].map(normalizeText).filter(Boolean);
+        const isLinked = movementKeys.some((key) => contractReferenceKeys.includes(key));
+        const isCollection =
+          category === 'cobro_contrato'
+          || category === 'cobro_liquidacion'
+          || tag === 'contract_collection'
+          || movementType === 'cobro_saldo_alquiler'
+          || movementType === 'cobro_saldo_devolucion'
+          || movementType === 'ingreso_transporte_cliente';
+        if (!isLinked || !isCollection) return sum;
+        return sum + Math.max(0, getCashMovementAmount(movement));
+      }, 0);
+      const paidOnAccountBs = Math.max(0, Number(collectionRegisteredBs.toFixed(2)));
+      const dueBs = Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -1676,7 +1717,10 @@ function ServiceOrdersSection({
         itemsCount,
         responsibleName: getResponsibleDisplayName(contract),
         responsibleRole: getResponsibleDisplayRole(contract),
-        totalBs: Number(contract?.totals?.totalBs ?? 0),
+        totalBs,
+        managedTotalBs,
+        paidOnAccountBs,
+        dueBs,
         isSent,
         isReturned,
         hasEconomicLedger,
@@ -1688,7 +1732,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [contracts, formatBs, orderByContractId, returnedGuaranteeReferences]);
+  }, [cashMovements, contracts, formatBs, orderByContractId, returnedGuaranteeReferences]);
 
   const contractCounts = useMemo(() => {
     const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
@@ -1860,6 +1904,20 @@ function ServiceOrdersSection({
       if (!type.includes('egreso') && tag !== 'guarantee_refund') return sum;
       return sum + Math.max(0, getCashMovementAmount(movement));
     }, 0);
+    const collectionRegisteredBs = postedMovements.reduce((sum, movement) => {
+      const movementType = normalizeText(movement?.type);
+      const category = normalizeText(movement?.category);
+      const tag = normalizeText(movement?.accountingTag);
+      const isCollection =
+        category === 'cobro_contrato'
+        || category === 'cobro_liquidacion'
+        || tag === 'contract_collection'
+        || movementType === 'cobro_saldo_alquiler'
+        || movementType === 'cobro_saldo_devolucion'
+        || movementType === 'ingreso_transporte_cliente';
+      if (!isCollection) return sum;
+      return sum + Math.max(0, getCashMovementAmount(movement));
+    }, 0);
 
     const totalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
     const guaranteeDeclaredBs = toMoneyNumber(
@@ -1902,6 +1960,9 @@ function ServiceOrdersSection({
     const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
     const discountBs = toMoneyNumber(contract?.totals?.discountBs ?? rental?.totals?.discountBs);
     const deliveryFeeBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
+    const servicesBs = (Array.isArray(contract?.services) ? contract.services : Array.isArray(rental?.services) ? rental.services : [])
+      .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
+    const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - deliveryFeeBs).toFixed(2)));
     const prepaidUsedBs = toMoneyNumber(contract?.payment?.prepaidUsedBs ?? rental?.payment?.prepaidUsedBs);
 
     const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
@@ -1950,13 +2011,14 @@ function ServiceOrdersSection({
     const ledgerRefundSuggestedBs = Math.max(0, ledgerOverpayBs + ledgerGuaranteeAfterChargesBs - ledgerTotals.refundedBs);
     const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
     const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
-    const expectedManagedBs = Number((totalBs + guaranteeDeclaredBs).toFixed(2));
-    const totalManagedBs = Number((ledgerTotals.receivedBs > 0 ? ledgerTotals.receivedBs : expectedManagedBs).toFixed(2));
+    const totalManagedBs = Number((rentalTotalBs + guaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
     const effectivePaidBs = usesLedgerBalance
       ? ledgerTotals.receivedBs
       : paidBs;
-    const effectiveBalanceBs = usesLedgerBalance ? ledgerDebtBs : balanceBs;
+    const paidOnAccountBs = Math.max(0, Number(collectionRegisteredBs.toFixed(2)));
+    const managedDebtBs = Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
+    const effectiveBalanceBs = managedDebtBs;
     const cashRegisteredBs = incomeBs;
     const cashToRegisterBs = Math.max(0, ledgerTotals.receivedBs - cashRegisteredBs);
     const balanceDetailLabel = usesLedgerBalance
@@ -1973,8 +2035,13 @@ function ServiceOrdersSection({
       receipts,
       returnIssues,
       totalBs,
+      rentalTotalBs,
+      servicesBs,
       totalManagedBs,
       paidBs: effectivePaidBs,
+      paidOnAccountBs,
+      managedDebtBs,
+      collectionRegisteredBs,
       balanceBs: effectiveBalanceBs,
       cashRegisteredBs,
       cashToRegisterBs,
@@ -4707,9 +4774,32 @@ function ServiceOrdersSection({
         note: contractEconomicsCollectionDraft.note || contractEconomicsCollectionDraft.receipt,
         createdBy,
       };
-      const result = onCollectReceivable
-        ? await onCollectReceivable(payload)
-        : await api.cash.collectReceivable(payload);
+      let result;
+      try {
+        result = onCollectReceivable
+          ? await onCollectReceivable(payload)
+          : await api.cash.collectReceivable(payload);
+      } catch (error) {
+        const canFallbackToManualIncome = /no tiene saldo pendiente|saldo pendiente por cobrar/i.test(String(error?.message ?? ''));
+        if (!canFallbackToManualIncome) throw error;
+        result = await api.cash.createManualMovement({
+          type: 'ingreso',
+          cashBoxType: 'BIG_CASH',
+          amountBs,
+          description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+          category: 'cobro_contrato',
+          paymentMethod: payload.paymentMethod,
+          paymentAccount: payload.paymentAccount,
+          responsible: createdBy,
+          receipt: payload.receipt,
+          notes: payload.note || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`,
+          linkedRentalId: rentalId,
+          linkedContractId: contractEconomicsData.contract?.id ?? '',
+          linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+          accountingTag: 'contract_collection',
+          createdBy,
+        });
+      }
       const movementId = resolveEconomicMovementId(result);
       if (movementId) {
         await handlePrintEconomicReceipt({ id: movementId });
@@ -4733,7 +4823,6 @@ function ServiceOrdersSection({
   const saveContractEconomicLedgerRows = async (nextLedger, successMessage) => {
     if (!contractEconomicsData || isSavingContractEconomicsLedger) return null;
 
-    setIsSavingContractEconomicsLedger(true);
     setContractEconomicsError('');
 
     try {
@@ -4969,6 +5058,67 @@ function ServiceOrdersSection({
       successMessage,
     );
     if (updated) resetContractEconomicLedgerForm();
+  };
+
+  const registerContractEconomicGuaranteeRefund = async () => {
+    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    const amount = Math.max(0, toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs));
+    if (amount <= 0) return;
+
+    const createdByName = String(
+      currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+    ).trim() || 'Sistema';
+    setIsSavingContractEconomicsLedger(true);
+    setContractEconomicsError('');
+
+    try {
+      const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])]
+        .reverse()
+        .find((entry) => entry.type !== 'note' && entry.paymentMethod);
+      const result = await api.cash.createManualMovement({
+        type: 'egreso',
+        cashBoxType: 'BIG_CASH',
+        amountBs: amount,
+        description: `Devolucion garantia: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: 'garantia_devuelta_manual',
+        paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
+        paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
+        responsible: createdByName,
+        receipt: '',
+        notes: `Devolucion de garantia del contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || ''}`,
+        linkedRentalId: contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '',
+        linkedContractId: contractEconomicsData.contract?.id ?? '',
+        linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+        accountingTag: 'guarantee_refund',
+        createdBy: createdByName,
+      });
+      const movementId = resolveEconomicMovementId(result);
+      if (movementId) {
+        await handlePrintEconomicReceipt({ id: movementId });
+      }
+
+      const entry = {
+        id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        type: 'refund',
+        amountBs: amount,
+        paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
+        paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
+        note: `Devolucion de saldo de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+        createdAt: new Date().toISOString(),
+        createdByName,
+      };
+      const updated = await saveContractEconomicLedgerRows(
+        [...(contractEconomicsData.economicLedger ?? []), entry],
+        'Devolucion de garantia registrada con recibo.',
+      );
+      if (updated) resetContractEconomicLedgerForm();
+    } catch (error) {
+      setContractEconomicsError(error.message || 'No se pudo registrar la devolucion de garantia.');
+    }
   };
 
   const handlePrintOrderDocument = async (kind, orderRow) => {
@@ -5433,7 +5583,7 @@ function ServiceOrdersSection({
                     <th>Servicio</th>
                     <th>Estado</th>
                     <th>Progreso</th>
-                    <th>Total</th>
+                    <th>Debe</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -5958,9 +6108,9 @@ function ServiceOrdersSection({
                             <span>{transportMeta.detail}</span>
                           </div>
                         </td>
-                        <td className="orders-total">
+                        <td className={`orders-total ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
                           <span className="orders-total-with-economics">
-                            {formatBs(row.totalBs)}
+                            {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                             {row.hasEconomicLedger ? (
                               <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                             ) : null}
@@ -6019,8 +6169,8 @@ function ServiceOrdersSection({
                         <span>{formatLongSpanishDate(row.eventDate)}</span>
                       </div>
                       <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
-                      <b className="orders-total-with-economics">
-                        {formatBs(row.totalBs)}
+                      <b className={`orders-total-with-economics ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
+                        {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                         {row.hasEconomicLedger ? (
                           <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                         ) : null}
@@ -6321,29 +6471,42 @@ function ServiceOrdersSection({
 
               <div className="contract-economics-kpis">
                 <article>
-                  <span>Total contrato</span>
-                  <strong>{formatBs(contractEconomicsData.totalBs)}</strong>
-                  <small>Alquiler y ajustes</small>
-                </article>
-                <article>
-                  <span>Total manejado</span>
-                  <strong>{formatBs(contractEconomicsData.totalManagedBs)}</strong>
-                  <small>Pagos y movimientos</small>
-                </article>
-                <article>
-                  <span>Pagado / abonado</span>
-                  <strong>{formatBs(contractEconomicsData.paidBs)}</strong>
-                  <small>Total recibido</small>
-                </article>
-                <article className={contractEconomicsData.balanceBs > 0 ? 'warning' : 'success'}>
-                  <span>Saldo pendiente</span>
-                  <strong>{formatBs(contractEconomicsData.balanceBs)}</strong>
-                  <small>Pendiente de cobro</small>
+                  <span>Alquiler total</span>
+                  <strong>{formatBs(contractEconomicsData.rentalTotalBs)}</strong>
+                  <small>Productos y ajustes</small>
                 </article>
                 <article>
                   <span>Garantia</span>
                   <strong>{formatBs(contractEconomicsData.guaranteeDeclaredBs)}</strong>
-                  <small>{contractEconomicsData.ledgerTotals.guaranteeBs > 0 ? 'Separada del pago' : `${contractEconomicsData.guaranteeStatus} | ${contractEconomicsData.guaranteeMethod}`}</small>
+                  <small>{contractEconomicsData.guaranteeStatus} | {contractEconomicsData.guaranteeMethod}</small>
+                </article>
+                <article>
+                  <span>Transporte</span>
+                  <strong>{formatBs(contractEconomicsData.deliveryFeeBs)}</strong>
+                  <small>{contractEconomicsData.deliveryFeeBs > 0 ? 'Cargo adicional' : 'Incluido o sin cargo'}</small>
+                </article>
+                <article>
+                  <span>Servicios</span>
+                  <strong>{formatBs(contractEconomicsData.servicesBs)}</strong>
+                  <small>Servicios agregados</small>
+                </article>
+                <article>
+                  <span>Total manejado</span>
+                  <strong>{formatBs(contractEconomicsData.totalManagedBs)}</strong>
+                  <small>Alquiler + garantia + extras</small>
+                </article>
+              </div>
+
+              <div className="contract-economics-balance-strip">
+                <article>
+                  <span>A cuenta</span>
+                  <strong>{formatBs(contractEconomicsData.paidOnAccountBs)}</strong>
+                  <small>Total recibido o abonado</small>
+                </article>
+                <article className={contractEconomicsData.managedDebtBs > 0 ? 'is-due' : 'is-paid'}>
+                  <span>{contractEconomicsData.managedDebtBs > 0 ? 'Debe' : 'Pagado'}</span>
+                  <strong>{contractEconomicsData.managedDebtBs > 0 ? formatBs(contractEconomicsData.managedDebtBs) : 'Pagado'}</strong>
+                  <small>{contractEconomicsData.managedDebtBs > 0 ? 'Saldo pendiente' : 'Sin saldo pendiente'}</small>
                 </article>
               </div>
 
@@ -6540,12 +6703,7 @@ function ServiceOrdersSection({
                     </button>
                     <button
                       type="button"
-                      onClick={() => addContractEconomicLedgerQuickEntry({
-                        type: 'refund',
-                        amountBs: contractEconomicsData.ledgerRefundSuggestedBs,
-                        note: `Devolucion de saldo de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
-                        successMessage: 'Devolucion de garantia registrada.',
-                      })}
+                      onClick={registerContractEconomicGuaranteeRefund}
                       disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.ledgerRefundSuggestedBs <= 0}
                     >
                       Registrar devolucion {formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}
