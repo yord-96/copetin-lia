@@ -954,6 +954,7 @@ const normalizeCoverageDraftLines = (value) => {
     .map((line) => ({
       ...line,
       id: String(line?.id ?? `cov-${Date.now()}-${Math.random().toString(16).slice(2)}`).trim(),
+      lineKey: String(line?.lineKey ?? '').trim() || null,
       supplierId: String(line?.supplierId ?? '').trim(),
       supplierName: String(line?.supplierName ?? '').trim(),
       supplierQuoteId: line?.supplierQuoteId ?? null,
@@ -963,6 +964,8 @@ const normalizeCoverageDraftLines = (value) => {
     }))
     .filter((line) => line.neededQty > 0 || line.supplierId || line.supplierName);
 };
+
+const getSupplierCoverageKey = (line) => String(line?.lineKey ?? line?.itemId ?? line ?? '').trim();
 
 const buildEmptySupplierCoverageDraft = () => ({
   supplierMode: 'existing',
@@ -2526,9 +2529,15 @@ function ServiceOrdersSection({
     (draft.supplierFulfillmentPlan ?? []).forEach((line) => {
       const itemId = String(line?.itemId ?? '').trim();
       if (!itemId) return;
-      const current = normalizeCoverageDraftLines(fromRecord[itemId]);
+      const matchingLine = selectedItems.find((entry) =>
+        (line?.lineKey && String(entry.lineKey) === String(line.lineKey))
+        || String(entry.itemId) === itemId
+      );
+      const coverageKey = String(line?.lineKey ?? matchingLine?.lineKey ?? itemId).trim();
+      const current = normalizeCoverageDraftLines(fromRecord[coverageKey]);
       current.push({
         id: line?.id ?? `cov-${itemId}-${current.length}`,
+        lineKey: coverageKey !== itemId ? coverageKey : String(line?.lineKey ?? '').trim() || null,
         supplierId: String(line?.supplierId ?? '').trim(),
         supplierName: String(line?.supplierName ?? '').trim(),
         supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
@@ -2536,47 +2545,55 @@ function ServiceOrdersSection({
         neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
         supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
       });
-      fromRecord[itemId] = { coverages: current };
+      fromRecord[coverageKey] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
-  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen, selectedItems]);
 
   useEffect(() => {
     if (!modalOpen) return;
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
-      const validItemIds = new Set(selectedItems.map((line) => String(line.itemId)));
+      const validCoverageKeys = new Set(selectedItems.flatMap((line) => [
+        getSupplierCoverageKey(line),
+        String(line.itemId),
+      ]));
 
-      Object.keys(next).forEach((itemId) => {
-        if (!validItemIds.has(itemId)) delete next[itemId];
+      Object.keys(next).forEach((coverageKey) => {
+        if (!validCoverageKeys.has(coverageKey)) delete next[coverageKey];
       });
 
       selectedItems.forEach((line) => {
+        const coverageKey = getSupplierCoverageKey(line);
+        const legacyItemKey = String(line.itemId);
         if (isDetachedFromInventory(line)) {
-          delete next[line.itemId];
+          delete next[coverageKey];
+          if (coverageKey !== legacyItemKey) delete next[legacyItemKey];
           return;
         }
-        const itemId = String(line.itemId);
         const available = getEditableAvailableStock(line);
         const shortage = Math.max(0, line.quantity - available);
-        if (shortage <= 0) {
-          delete next[itemId];
+        const existingCoverages = normalizeCoverageDraftLines(next[coverageKey] ?? next[legacyItemKey]);
+        if (coverageKey !== legacyItemKey && next[legacyItemKey]) delete next[legacyItemKey];
+        if (shortage <= 0 && existingCoverages.length === 0) {
+          delete next[coverageKey];
           return;
         }
 
-        const existingCoverages = normalizeCoverageDraftLines(next[itemId]);
-        const offers = supplierOffersByItemId.get(itemId) ?? [];
+        const offers = supplierOffersByItemId.get(legacyItemKey) ?? [];
         const fallbackOffer = offers[0] ?? null;
         const coveredQty = existingCoverages.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
 
         const normalizedCoverages = existingCoverages.map((entry) => ({
           ...entry,
+          lineKey: coverageKey !== legacyItemKey ? coverageKey : entry.lineKey ?? null,
           neededQty: Math.max(1, Math.trunc(Number(entry.neededQty ?? 1))),
           supplierUnitCostBs: Math.max(0, Number(entry.supplierUnitCostBs ?? fallbackOffer?.supplierUnitCostBs ?? 0)),
         }));
-        if (coveredQty > shortage) {
-          let remaining = shortage;
-          next[itemId] = {
+        const maxCoverageQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+        if (coveredQty > maxCoverageQty) {
+          let remaining = maxCoverageQty;
+          next[coverageKey] = {
             coverages: normalizedCoverages
               .map((entry) => {
                 const quantity = Math.min(Math.max(0, remaining), Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))));
@@ -2587,7 +2604,7 @@ function ServiceOrdersSection({
           };
           return;
         }
-        next[itemId] = { coverages: normalizedCoverages };
+        next[coverageKey] = { coverages: normalizedCoverages };
       });
 
       return next;
@@ -2596,29 +2613,33 @@ function ServiceOrdersSection({
 
   const supplierCoverageRows = useMemo(
     () => {
-      const processedItemIds = new Set();
+      const processedLineKeys = new Set();
       return selectedItems
         .map((line) => {
         if (isDetachedFromInventory(line)) return null;
-        if (processedItemIds.has(line.itemId)) return null;
-        processedItemIds.add(line.itemId);
+        const coverageKey = getSupplierCoverageKey(line);
+        if (processedLineKeys.has(coverageKey)) return null;
+        processedLineKeys.add(coverageKey);
         const available = getEditableAvailableStock(line);
         const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
         const shortageQty = Math.max(0, requestedForItem - available);
-        if (shortageQty <= 0) return null;
-        const coverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId]);
+        const coverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
         const validCoverageLines = coverageLines.filter((entry) => entry.supplierId && entry.supplierName && entry.neededQty > 0);
+        const plannedCoveredQty = validCoverageLines.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
+        const effectiveShortageQty = Math.max(shortageQty, Math.min(requestedForItem, plannedCoveredQty));
+        if (effectiveShortageQty <= 0) return null;
         const coveredQty = Math.min(
-          shortageQty,
-          validCoverageLines.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0),
+          effectiveShortageQty,
+          plannedCoveredQty,
         );
         return {
+          lineKey: line.lineKey,
           itemId: line.itemId,
           itemName: line.item.name,
           saleUnitPriceBs: line.unitPriceBs,
-          shortageQty,
+          shortageQty: effectiveShortageQty,
           coveredQty,
-          uncoveredQty: Math.max(0, shortageQty - coveredQty),
+          uncoveredQty: Math.max(0, effectiveShortageQty - coveredQty),
           coverages: validCoverageLines,
         };
       })
@@ -3117,7 +3138,8 @@ function ServiceOrdersSection({
   const openSupplierCoverageModal = (line, availableStock) => {
     const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
     const shortageQty = Math.max(1, Math.trunc(Number(requestedForItem)) - Math.max(0, Number(availableStock ?? 0)));
-    const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId]);
+    const coverageKey = getSupplierCoverageKey(line);
+    const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
     const alreadyCoveredQty = currentCoverages.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
     const remainingShortageQty = Math.max(1, shortageQty - alreadyCoveredQty);
     const details = getOperationalItemDetails(line);
@@ -3125,6 +3147,8 @@ function ServiceOrdersSection({
     const hasSuppliers = (supplierBundle?.suppliers ?? []).length > 0;
     setSupplierCoverageModal({
       itemId: line.itemId,
+      lineKey: line.lineKey,
+      coverageKey,
       itemName: line.item.name,
       availableStock,
       shortageQty,
@@ -3222,7 +3246,8 @@ function ServiceOrdersSection({
       });
 
       setDraftItemPrice(supplierCoverageModal.itemId, salePrice);
-      addSupplierCoverageLine(supplierCoverageModal.itemId, {
+      addSupplierCoverageLine(supplierCoverageModal.coverageKey ?? supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId, {
+        lineKey: supplierCoverageModal.lineKey ?? null,
         supplierId: supplier.id,
         supplierName: supplier.name,
         supplierQuoteId: quote?.id ?? null,
@@ -4227,6 +4252,7 @@ function ServiceOrdersSection({
 
     const supplierFulfillmentPlan = supplierCoverageRows
       .flatMap((line) => line.coverages.map((coverage) => ({
+        lineKey: line.lineKey ?? coverage.lineKey ?? null,
         itemId: line.itemId,
         itemName: line.itemName,
         supplierId: coverage.supplierId,
@@ -8945,14 +8971,17 @@ function ServiceOrdersSection({
                           const availableStock = getEditableAvailableStock(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = Math.max(0, requestedForItem - availableStock);
-                          const supplierCoverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[line.itemId])
+                          const supplierCoverageKey = getSupplierCoverageKey(line);
+                          const supplierCoverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[supplierCoverageKey] ?? supplierFulfillmentDraftByItem[line.itemId])
                             .filter((coverage) => coverage.supplierId && coverage.supplierName && coverage.neededQty > 0);
+                          const supplierPlannedQty = supplierCoverageLines.reduce((sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage.neededQty ?? 0))), 0);
+                          const effectiveShortageForItem = Math.max(shortageForItem, Math.min(requestedForItem, supplierPlannedQty));
                           const supplierCoveredQty = Math.min(
-                            shortageForItem,
-                            supplierCoverageLines.reduce((sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage.neededQty ?? 0))), 0),
+                            effectiveShortageForItem,
+                            supplierPlannedQty,
                           );
-                          const uncoveredForItem = Math.max(0, shortageForItem - supplierCoveredQty);
-                          const hasStockShortage = !isProvisionalItem && shortageForItem > 0;
+                          const uncoveredForItem = Math.max(0, effectiveShortageForItem - supplierCoveredQty);
+                          const hasStockShortage = !isProvisionalItem && effectiveShortageForItem > 0;
                           const hasUncoveredShortage = !isProvisionalItem && uncoveredForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
@@ -9133,7 +9162,7 @@ function ServiceOrdersSection({
                                 </small>
                               ) : null}
                             </label>
-                            {hasStockShortage ? (
+                            {hasStockShortage || supplierCoverageLines.length > 0 ? (
                               <div className="orders-line-field orders-supplier-coverage-field">
                                 <span>Subalquiler</span>
                                 <div className="orders-supplier-coverage-list">
@@ -9143,7 +9172,7 @@ function ServiceOrdersSection({
                                       <small>{formatBs(coverage.supplierUnitCostBs)} c/u</small>
                                       <button
                                         type="button"
-                                        onClick={() => removeSupplierCoverageLine(line.itemId, coverage.id)}
+                                        onClick={() => removeSupplierCoverageLine(supplierCoverageKey, coverage.id)}
                                         aria-label={`Quitar cobertura ${coverage.supplierName}`}
                                       >
                                         x
@@ -9162,7 +9191,7 @@ function ServiceOrdersSection({
                                   + Agregar proveedor
                                 </button>
                                 <small className="orders-available-note">
-                                  Faltante {shortageForItem} u. · cubierto {supplierCoveredQty} u.
+                                  Faltante {effectiveShortageForItem} u. · cubierto {supplierCoveredQty} u.
                                 </small>
                               </div>
                             ) : null}
@@ -9188,7 +9217,7 @@ function ServiceOrdersSection({
                                 value={String(line.discountPercent ?? 0)}
                                 onChange={(event) => setDraftItemDiscountPercent(line.lineKey, event.target.value)}
                               >
-                                {[0, 5, 10, 15, 20, 25, 30, 40, 50].map((percent) => (
+                                {[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75].map((percent) => (
                                   <option key={percent} value={percent}>{percent}%</option>
                                 ))}
                               </select>
@@ -9433,7 +9462,7 @@ function ServiceOrdersSection({
                       <label>
                         Descuento general
                         <select value={String(draft.discountPercent ?? 0)} onChange={(event) => setDraftField('discountPercent', event.target.value)}>
-                          {[0, 5, 10, 15, 20, 25, 30, 40, 50].map((percent) => (
+                          {[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75].map((percent) => (
                             <option key={percent} value={percent}>{percent}%</option>
                           ))}
                         </select>

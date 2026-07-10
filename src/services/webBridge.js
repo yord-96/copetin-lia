@@ -509,6 +509,7 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
       if (!itemId || !supplierId || !supplierName || !itemName) return null;
       return {
         id: String(line?.id ?? makeId('supfill')).trim() || makeId('supfill'),
+        lineKey: String(line?.lineKey ?? '').trim() || null,
         itemId,
         itemName,
         supplierId,
@@ -5887,13 +5888,15 @@ const buildSupplierSupportByItem = (supplierFulfillmentPlan) => {
   const map = new Map();
   normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan).forEach((line) => {
     const itemId = String(line?.itemId ?? '').trim();
-    if (!itemId) return;
-    const current = map.get(itemId) ?? [];
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const key = lineKey || itemId;
+    if (!key) return;
+    const current = map.get(key) ?? [];
     current.push({
       ...line,
       shortCode: makeSupplierShortCode(line.supplierName),
     });
-    map.set(itemId, current);
+    map.set(key, current);
   });
   return map;
 };
@@ -6592,7 +6595,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
         const area = line._area || getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
-        const supplierSupportLabel = formatSupplierSupportLabel(supplierSupportByItem.get(String(line.itemId)));
+        const supplierSupportLabel = formatSupplierSupportLabel(
+          supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+          ?? supplierSupportByItem.get(String(line.itemId ?? '').trim()),
+        );
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -7067,7 +7073,10 @@ const buildWeeklyInventoryHtml = ({
       ?? line.imageDataUrl
       ?? '';
     const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
-    const supplierSupportLabel = formatSupplierSupportLabel(supplierSupportByItem.get(String(line.itemId)));
+    const supplierSupportLabel = formatSupplierSupportLabel(
+      supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim()),
+    );
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -8107,12 +8116,19 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
   });
 
   const supplierSupportByItem = new Map();
+  const supplierSupportByLineKey = new Map();
   normalizeSupplierFulfillmentPlan(contract.supplierFulfillmentPlan).forEach((line) => {
     const itemId = String(line?.itemId ?? '').trim();
     if (!itemId) return;
+    const quantity = Math.max(0, Math.trunc(Number(line?.neededQty ?? 0)));
+    const lineKey = String(line?.lineKey ?? '').trim();
+    if (lineKey) {
+      supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
+      return;
+    }
     supplierSupportByItem.set(
       itemId,
-      Number(supplierSupportByItem.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(line?.neededQty ?? 0))),
+      Number(supplierSupportByItem.get(itemId) ?? 0) + quantity,
     );
   });
 
@@ -8127,7 +8143,15 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
       const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
       if (!item || !lineControlsStock(line, item)) return null;
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-      const supplierBackedQty = Math.min(quantity, Number(supplierSupportByItem.get(String(line.itemId)) ?? 0));
+      const lineKey = getInventoryLineKey(line, line._originalIndex ?? 0);
+      const supplierBackedQty = Math.min(
+        quantity,
+        Number(
+          supplierSupportByLineKey.has(lineKey)
+            ? supplierSupportByLineKey.get(lineKey)
+            : supplierSupportByItem.get(String(line.itemId)) ?? 0,
+        ),
+      );
       return {
         itemId: item.id,
         itemName: item.name,
@@ -8165,7 +8189,15 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     if (!item) throw new Error(`El item "${line.itemName}" ya no existe en inventario.`);
     const oldLine = oldLinesByItem.get(String(line.itemId)) ?? null;
     const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-    const supplierBackedQty = Math.min(quantity, Number(supplierSupportByItem.get(String(line.itemId)) ?? 0));
+    const lineKey = getInventoryLineKey(line, index);
+    const supplierBackedQty = Math.min(
+      quantity,
+      Number(
+        supplierSupportByLineKey.has(lineKey)
+          ? supplierSupportByLineKey.get(lineKey)
+          : supplierSupportByItem.get(String(line.itemId)) ?? 0,
+      ),
+    );
     const controlsStock = lineControlsStock(line, item);
     const internalReservedQty = controlsStock ? Math.max(0, quantity - supplierBackedQty) : 0;
     const oldInternalReservedQty = oldLine
@@ -12548,9 +12580,16 @@ const createWebBridge = () => ({
         const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
         const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
         const supplierSupportByItem = new Map();
+        const supplierSupportByLineKey = new Map();
         supplierFulfillmentPlan.forEach((line) => {
+          const quantity = Math.max(0, Number(line.neededQty ?? 0));
+          const lineKey = String(line.lineKey ?? '').trim();
+          if (lineKey) {
+            supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
+            return;
+          }
           const current = Number(supplierSupportByItem.get(line.itemId) ?? 0);
-          supplierSupportByItem.set(line.itemId, current + Math.max(0, Number(line.neededQty ?? 0)));
+          supplierSupportByItem.set(line.itemId, current + quantity);
         });
         const operationalRequestedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now.toISOString());
@@ -12565,7 +12604,11 @@ const createWebBridge = () => ({
         const adjustedRequestedItems = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-            const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
+            const supportedQty = Math.max(0, Number(
+              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
+                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
+                : supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0,
+            ));
             if (!lineControlsStock(line, line._resolvedItem)) {
               return {
                 ...line,
@@ -12612,7 +12655,11 @@ const createWebBridge = () => ({
         const inventoryAvailabilityAssumptions = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-            const supportedQty = Math.max(0, Number(supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0));
+            const supportedQty = Math.max(0, Number(
+              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
+                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
+                : supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0,
+            ));
             return {
               ...line,
               quantity: Math.max(0, requestedQty - supportedQty),
@@ -12650,7 +12697,11 @@ const createWebBridge = () => ({
           }
           const supplierBackedQty = Math.min(
             quantity,
-            Math.max(0, Math.trunc(Number(supplierSupportByItem.get(item.id) ?? 0))),
+            Math.max(0, Math.trunc(Number(
+              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
+                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
+                : supplierSupportByItem.get(item.id) ?? 0,
+            ))),
           );
           const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
           const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
