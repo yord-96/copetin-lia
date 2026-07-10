@@ -1681,13 +1681,7 @@ function ServiceOrdersSection({
           movement?.sourceId,
         ].map(normalizeText).filter(Boolean);
         const isLinked = movementKeys.some((key) => contractReferenceKeys.includes(key));
-        const isCollection =
-          category === 'cobro_contrato'
-          || category === 'cobro_liquidacion'
-          || tag === 'contract_collection'
-          || movementType === 'cobro_saldo_alquiler'
-          || movementType === 'cobro_saldo_devolucion'
-          || movementType === 'ingreso_transporte_cliente';
+        const isCollection = tag === 'contract_economic_collection';
         if (!isLinked || !isCollection) return sum;
         return sum + Math.max(0, getCashMovementAmount(movement));
       }, 0);
@@ -1908,13 +1902,7 @@ function ServiceOrdersSection({
       const movementType = normalizeText(movement?.type);
       const category = normalizeText(movement?.category);
       const tag = normalizeText(movement?.accountingTag);
-      const isCollection =
-        category === 'cobro_contrato'
-        || category === 'cobro_liquidacion'
-        || tag === 'contract_collection'
-        || movementType === 'cobro_saldo_alquiler'
-        || movementType === 'cobro_saldo_devolucion'
-        || movementType === 'ingreso_transporte_cliente';
+      const isCollection = tag === 'contract_economic_collection';
       if (!isCollection) return sum;
       return sum + Math.max(0, getCashMovementAmount(movement));
     }, 0);
@@ -4747,7 +4735,7 @@ function ServiceOrdersSection({
     event.preventDefault();
     if (!contractEconomicsData || isSavingContractEconomicsCollection) return;
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
-    const pendingBs = Math.max(0, toMoneyNumber(contractEconomicsData.balanceBs));
+    const pendingBs = Math.max(0, toMoneyNumber(contractEconomicsData.managedDebtBs));
     const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || pendingBs));
     if (!rentalId) {
       setContractEconomicsError('Este contrato no tiene una orden/alquiler vinculado para cobrar desde Caja Grande.');
@@ -4772,6 +4760,7 @@ function ServiceOrdersSection({
         paymentAccount: contractEconomicsCollectionDraft.paymentMethod === 'qr' ? contractEconomicsCollectionDraft.paymentAccount : '',
         receipt: contractEconomicsCollectionDraft.receipt,
         note: contractEconomicsCollectionDraft.note || contractEconomicsCollectionDraft.receipt,
+        accountingTag: 'contract_economic_collection',
         createdBy,
       };
       let result;
@@ -4796,7 +4785,7 @@ function ServiceOrdersSection({
           linkedRentalId: rentalId,
           linkedContractId: contractEconomicsData.contract?.id ?? '',
           linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-          accountingTag: 'contract_collection',
+          accountingTag: 'contract_economic_collection',
           createdBy,
         });
       }
@@ -6553,8 +6542,8 @@ function ServiceOrdersSection({
                     <div>
                       <h4>Cobro con recibo a Caja Grande</h4>
                       <p>
-                        {contractEconomicsData.balanceBs > 0
-                          ? `Saldo disponible para cobrar: ${formatBs(contractEconomicsData.balanceBs)}. Este registro genera recibo e ingreso real en caja.`
+                        {contractEconomicsData.managedDebtBs > 0
+                          ? `Falta registrar en Caja Grande: ${formatBs(contractEconomicsData.managedDebtBs)}. Este registro genera recibo e ingreso real en caja.`
                           : `Caja registrada: ${formatBs(contractEconomicsData.cashRegisteredBs)}. Usa el cuaderno solo para separar garantia, cargos y devoluciones.`}
                       </p>
                     </div>
@@ -6566,8 +6555,8 @@ function ServiceOrdersSection({
                         step="0.01"
                         value={contractEconomicsCollectionDraft.amountBs}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={contractEconomicsData.balanceBs > 0 ? String(contractEconomicsData.balanceBs.toFixed(2)) : '0.00'}
-                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                        placeholder={contractEconomicsData.managedDebtBs > 0 ? String(contractEconomicsData.managedDebtBs.toFixed(2)) : '0.00'}
+                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <label>
@@ -6575,7 +6564,7 @@ function ServiceOrdersSection({
                       <select
                         value={contractEconomicsCollectionDraft.paymentMethod}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
                       >
                         <option value="efectivo">Efectivo</option>
                         <option value="qr">QR</option>
@@ -6588,7 +6577,7 @@ function ServiceOrdersSection({
                         <select
                           value={contractEconomicsCollectionDraft.paymentAccount}
                           onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                          disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                          disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
                         >
                           <option value="">Seleccionar</option>
                           {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
@@ -6601,13 +6590,13 @@ function ServiceOrdersSection({
                         value={contractEconomicsCollectionDraft.receipt}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
                         placeholder="Referencia opcional"
-                        disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={readOnly || contractEconomicsData.balanceBs <= 0 || isSavingContractEconomicsCollection}
+                      disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
                     >
                       {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
                     </button>
@@ -6897,7 +6886,6 @@ function ServiceOrdersSection({
                     <div className="contract-economics-table-head">
                       <span>Fecha</span>
                       <span>Estado</span>
-                      <span>Tipo</span>
                       <span>Detalle</span>
                       <span>Monto</span>
                       <span>Recibo</span>
@@ -6916,8 +6904,10 @@ function ServiceOrdersSection({
                           <span className={`contract-economics-movement-badge is-${movementKind}`}>
                             {getEconomicMovementKindLabel(movementKind)}
                           </span>
-                          <span className="contract-economics-table-type">{formatCashMovementType(movement)}</span>
-                          <span className="contract-economics-table-detail">{movement.description || movement.notes || movement.category || '-'}</span>
+                          <span className="contract-economics-table-detail">
+                            <small>{formatCashMovementType(movement)}</small>
+                            <b>{movement.description || movement.notes || movement.category || '-'}</b>
+                          </span>
                           <strong className={`contract-economics-table-amount is-${movementKind}`}>
                             {formatBs(movementAmount)}
                           </strong>
@@ -9447,11 +9437,16 @@ function ServiceOrdersSection({
                             <option key={percent} value={percent}>{percent}%</option>
                           ))}
                         </select>
-                        <small>Rebaja: {formatBs(generalDiscountBs)}</small>
+                        <small className="orders-field-live-summary is-info">
+                          Seleccionado: {generalDiscountPercent}% | Rebaja: {formatBs(generalDiscountBs)}
+                        </small>
                       </label>
                       <label>
                         Garantia (Bs)
                         <input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(event) => setDraftField('guaranteeBs', event.target.value)} />
+                        <small className="orders-field-live-summary is-info">
+                          Monto registrado: {formatBs(guaranteeBs)}
+                        </small>
                       </label>
                       <label>
                         Estado garantia
@@ -9459,6 +9454,9 @@ function ServiceOrdersSection({
                           <option value="no_validado">No validado</option>
                           <option value="validado">Validado</option>
                         </select>
+                        <small className={`orders-field-live-summary ${draft.guaranteeStatus === 'validado' ? 'is-ok' : 'is-warning'}`}>
+                          {draft.guaranteeStatus === 'validado' ? 'Garantia valida para caja.' : 'Garantia pendiente de validar.'}
+                        </small>
                       </label>
                       <label>
                         Metodo garantia
@@ -9467,6 +9465,11 @@ function ServiceOrdersSection({
                           <option value="qr">QR</option>
                           <option value="transferencia">Transferencia</option>
                         </select>
+                        <small className={`orders-field-live-summary ${draft.guaranteeStatus === 'validado' ? 'is-info' : 'is-muted'}`}>
+                          {draft.guaranteeStatus === 'validado'
+                            ? `Metodo actual: ${formatPaymentMethodLabel(draft.guaranteePaymentMethod, draft.guaranteePaymentAccount)}`
+                            : 'Se activara al validar la garantia.'}
+                        </small>
                       </label>
                       {draft.guaranteeStatus === 'validado' && draft.guaranteePaymentMethod === 'qr' ? (
                         <label>
@@ -9477,11 +9480,17 @@ function ServiceOrdersSection({
                               <option key={account} value={account}>{account}</option>
                             ))}
                           </select>
+                          <small className={`orders-field-live-summary ${draft.guaranteePaymentAccount ? 'is-ok' : 'is-warning'}`}>
+                            {draft.guaranteePaymentAccount ? `Cuenta seleccionada: ${draft.guaranteePaymentAccount}` : 'Falta seleccionar cuenta QR.'}
+                          </small>
                         </label>
                       ) : null}
                       <label>
                         Pago inicial (Bs)
                         <input type="number" min="0" step="0.01" value={draft.paidAtApprovalBs} onChange={(event) => setDraftField('paidAtApprovalBs', event.target.value)} />
+                        <small className={`orders-field-live-summary ${paidAtApprovalBs > 0 ? 'is-ok' : 'is-muted'}`}>
+                          {paidAtApprovalBs > 0 ? `Recibido: ${formatBs(paidAtApprovalBs)}` : 'Sin pago inicial registrado.'}
+                        </small>
                       </label>
                       <label>
                         Metodo pago inicial
@@ -9490,6 +9499,11 @@ function ServiceOrdersSection({
                           <option value="qr">QR</option>
                           <option value="transferencia">Transferencia</option>
                         </select>
+                        <small className={`orders-field-live-summary ${paidAtApprovalBs > 0 ? 'is-info' : 'is-muted'}`}>
+                          {paidAtApprovalBs > 0
+                            ? `Metodo actual: ${formatPaymentMethodLabel(draft.initialPaymentMethod, draft.initialPaymentAccount)}`
+                            : 'Se activara al registrar pago inicial.'}
+                        </small>
                       </label>
                       {Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) > 0 && draft.initialPaymentMethod === 'qr' ? (
                         <label>
@@ -9500,6 +9514,9 @@ function ServiceOrdersSection({
                               <option key={account} value={account}>{account}</option>
                             ))}
                           </select>
+                          <small className={`orders-field-live-summary ${draft.initialPaymentAccount ? 'is-ok' : 'is-warning'}`}>
+                            {draft.initialPaymentAccount ? `Cuenta seleccionada: ${draft.initialPaymentAccount}` : 'Falta seleccionar cuenta QR.'}
+                          </small>
                         </label>
                       ) : null}
                     </div>

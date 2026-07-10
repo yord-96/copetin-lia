@@ -14111,6 +14111,7 @@ const createWebBridge = () => ({
       const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto cobrado');
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
       const note = String(payload?.note ?? '').trim();
+      const accountingTag = String(payload?.accountingTag ?? '').trim();
 
       if (!rentalId) {
         throw new Error('No se pudo identificar la orden a cobrar.');
@@ -14253,7 +14254,7 @@ const createWebBridge = () => ({
               : isReturned
               ? 'cobro_liquidacion'
               : 'cobro_contrato',
-            accountingTag: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'transport_revenue' : '',
+            accountingTag: accountingTag || (transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'transport_revenue' : ''),
             transportRevenueBs: transportCollectedNowBs,
           }),
         ];

@@ -11032,38 +11032,43 @@ textarea:focus {
 }
 
 .contract-economics-movements-card .contract-economics-table {
-  max-height: 10.4rem;
-  overflow: auto;
+  max-height: 12rem;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .contract-economics-table {
   border: 1px solid #e3eaf6;
   border-radius: 0.65rem;
   overflow: hidden;
+  background: #ffffff;
 }
 
 .contract-economics-table-head,
 .contract-economics-table-row {
   display: grid;
-  grid-template-columns: 150px 108px 150px minmax(320px, 1fr) 128px 120px;
-  gap: 0.7rem;
+  grid-template-columns: 9.7rem 6.6rem minmax(0, 1fr) 6.8rem 6.3rem;
+  gap: 0.62rem;
   align-items: center;
 }
 
 .contract-economics-table-head {
   background: #0b2d67;
   color: #ffffff;
-  padding: 0.65rem 0.75rem;
+  padding: 0.62rem 0.72rem;
   font-size: 0.7rem;
   font-weight: 900;
   text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .contract-economics-table-row {
-  padding: 0.68rem 0.75rem;
+  padding: 0.7rem 0.72rem;
   border-top: 1px solid #e7edf7;
   color: #102345;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 750;
 }
 
@@ -11104,9 +11109,30 @@ textarea:focus {
 
 .contract-economics-table-detail {
   color: #12254d;
-  line-height: 1.38;
+  display: grid;
+  gap: 0.18rem;
+  line-height: 1.3;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.contract-economics-table-detail small {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.62rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.contract-economics-table-detail b {
+  color: #102345;
+  font-weight: 900;
+  line-height: 1.32;
 }
 
 .contract-economics-movement-badge {
@@ -11158,6 +11184,12 @@ textarea:focus {
 }
 
 .contract-economics-table-receipt {
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.contract-economics-table-receipt .section-link {
+  white-space: normal;
   text-align: center;
 }
 
@@ -12254,6 +12286,46 @@ textarea:focus {
   color: #3b4774;
   font-size: 0.76rem;
   padding: 0.34rem 0.5rem;
+}
+
+.orders-field-live-summary {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #dbe4f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #53627f;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.orders-field-live-summary.is-info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.orders-field-live-summary.is-ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.orders-field-live-summary.is-warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.orders-field-live-summary.is-muted {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
 }
 
 .orders-form-panel textarea {
