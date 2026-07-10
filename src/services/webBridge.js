@@ -2000,6 +2000,84 @@ const normalizeState = (state) => {
       const prepaidAppliedBs = Number(contract?.payment?.prepaidAppliedBs ?? contract?.totals?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0);
       const responsibles = normalizeRecordResponsibles(contract);
       const primaryResponsible = responsibles[0] ?? null;
+      const normalizedEconomicLedger = Array.isArray(contract?.economicLedger)
+        ? contract.economicLedger.map((entry, index) => {
+          const type = ['deposit', 'guarantee', 'charge', 'refund', 'note'].includes(
+            String(entry?.type ?? '').trim(),
+          )
+            ? String(entry.type).trim()
+            : 'note';
+          const paymentMethod = type === 'note'
+            ? ''
+            : normalizePaymentMethod(entry?.paymentMethod ?? entry?.method);
+          return {
+            id: String(entry?.id ?? `economic-ledger-${index}`).trim() || `economic-ledger-${index}`,
+            type,
+            amountBs: type === 'note'
+              ? 0
+              : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
+            paymentMethod,
+            paymentAccount: paymentMethod === 'qr'
+              ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
+              : '',
+            note: String(entry?.note ?? '').trim(),
+            createdAt: entry?.createdAt ?? now,
+            createdById: entry?.createdById ?? entry?.userId ?? null,
+            createdByName: String(
+              entry?.createdByName
+              ?? entry?.createdBy
+              ?? entry?.userName
+              ?? 'Sistema',
+            ).trim() || 'Sistema',
+            editedAt: entry?.editedAt ?? null,
+            editedByName: String(entry?.editedByName ?? '').trim(),
+          };
+        })
+        : [];
+      const initialPaymentMethod = normalizePaymentMethod(
+        contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod,
+      );
+      const initialPaymentAccount = initialPaymentMethod === 'qr'
+        ? normalizeQrPaymentAccount(
+          contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount,
+        )
+        : '';
+      const hasInitialPaymentEntry = paidAtApprovalBs > 0 && normalizedEconomicLedger.some((entry) => {
+        if (entry.type !== 'deposit') return false;
+        const sameAmount = Math.abs(Number(entry.amountBs ?? 0) - paidAtApprovalBs) < 0.01;
+        const entryId = normalizeText(entry.id);
+        const entryNote = normalizeText(entry.note);
+        return sameAmount && (
+          entryId.includes('initial-payment')
+          || entryNote.includes('pago inicial')
+          || entryNote.includes('primer pago')
+          || entryNote.includes('pimer pago')
+        );
+      });
+      if (paidAtApprovalBs > 0 && !hasInitialPaymentEntry) {
+        normalizedEconomicLedger.unshift({
+          id: `initial-payment-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
+          type: 'deposit',
+          amountBs: Number(paidAtApprovalBs.toFixed(2)),
+          paymentMethod: initialPaymentMethod,
+          paymentAccount: initialPaymentAccount,
+          note: 'Pago inicial registrado al crear el contrato.',
+          createdAt: contract?.approvedAt
+            ?? contract?.contractDate
+            ?? contract?.createdAt
+            ?? now,
+          createdById: contract?.createdById ?? contract?.userId ?? primaryResponsible?.id ?? null,
+          createdByName: String(
+            contract?.createdByName
+            ?? contract?.userName
+            ?? primaryResponsible?.name
+            ?? contract?.createdBy
+            ?? 'Sistema',
+          ).trim() || 'Sistema',
+          editedAt: null,
+          editedByName: '',
+        });
+      }
 
       return {
         id: contract?.id ?? makeId('con'),
@@ -2067,40 +2145,7 @@ const normalizeState = (state) => {
         items,
         services,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
-        economicLedger: Array.isArray(contract?.economicLedger)
-          ? contract.economicLedger.map((entry, index) => {
-            const type = ['deposit', 'guarantee', 'charge', 'refund', 'note'].includes(
-              String(entry?.type ?? '').trim(),
-            )
-              ? String(entry.type).trim()
-              : 'note';
-            const paymentMethod = type === 'note'
-              ? ''
-              : normalizePaymentMethod(entry?.paymentMethod ?? entry?.method);
-            return {
-              id: String(entry?.id ?? `economic-ledger-${index}`).trim() || `economic-ledger-${index}`,
-              type,
-              amountBs: type === 'note'
-                ? 0
-                : Math.max(0, toPositiveRoundedNumber(entry?.amountBs ?? entry?.amount ?? 0)),
-              paymentMethod,
-              paymentAccount: paymentMethod === 'qr'
-                ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
-                : '',
-              note: String(entry?.note ?? '').trim(),
-              createdAt: entry?.createdAt ?? now,
-              createdById: entry?.createdById ?? entry?.userId ?? null,
-              createdByName: String(
-                entry?.createdByName
-                ?? entry?.createdBy
-                ?? entry?.userName
-                ?? 'Sistema',
-              ).trim() || 'Sistema',
-              editedAt: entry?.editedAt ?? null,
-              editedByName: String(entry?.editedByName ?? '').trim(),
-            };
-          })
-          : [],
+        economicLedger: normalizedEconomicLedger,
         economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
         economicLedgerUpdatedById: contract?.economicLedgerUpdatedById ?? null,
         economicLedgerUpdatedByName: String(
