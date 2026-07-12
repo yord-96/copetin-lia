@@ -2185,14 +2185,11 @@ function ServiceOrdersSection({
       chargesBs: 0,
       refundedBs: 0,
     });
-    const ledgerAppliedToRentalBs = Math.max(0, ledgerTotals.receivedBs - ledgerTotals.guaranteeBs);
-    const ledgerChargesCoveredByGuaranteeBs = Math.min(ledgerTotals.chargesBs, ledgerTotals.guaranteeBs);
-    const ledgerChargesPendingBs = Math.max(0, ledgerTotals.chargesBs - ledgerChargesCoveredByGuaranteeBs);
-    const ledgerDebtBs = Math.max(0, totalBs + ledgerChargesPendingBs - ledgerAppliedToRentalBs);
-    const ledgerOverpayBs = Math.max(0, ledgerAppliedToRentalBs - totalBs - ledgerChargesPendingBs);
-    const ledgerGuaranteeAfterChargesBs = Math.max(0, ledgerTotals.guaranteeBs - ledgerTotals.chargesBs);
-    const ledgerRefundSuggestedBs = Math.max(0, ledgerOverpayBs + ledgerGuaranteeAfterChargesBs - ledgerTotals.refundedBs);
     const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
+    const ledgerChargeTargetBs = Number((totalBs + effectiveChargesBs).toFixed(2));
+    const ledgerAppliedToRentalBs = Math.min(ledgerTotals.receivedBs, ledgerChargeTargetBs);
+    const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerTotals.receivedBs).toFixed(2)));
+    const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerTotals.receivedBs - ledgerChargeTargetBs - ledgerTotals.refundedBs).toFixed(2)));
     const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
     const totalManagedBs = Number((rentalTotalBs + guaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
@@ -2241,8 +2238,8 @@ function ServiceOrdersSection({
       economicLedger,
       ledgerTotals,
       ledgerAppliedToRentalBs,
+      ledgerChargeTargetBs,
       ledgerDebtBs,
-      ledgerGuaranteeAfterChargesBs,
       ledgerRefundSuggestedBs,
       realIncomeBs,
       guaranteeDeclaredBs,
@@ -6986,24 +6983,29 @@ function ServiceOrdersSection({
                   </div>
                   <div className="contract-economics-notebook-summary">
                     <article className="tone-blue">
-                      <span>Recibido total</span>
+                      <span>Pago recibido</span>
                       <strong>{formatBs(contractEconomicsData.ledgerTotals.receivedBs)}</strong>
-                    </article>
-                    <article className="tone-violet">
-                      <span>Garantia apartada</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
-                    </article>
-                    <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
-                      <span>Debe segun hoja</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
-                    </article>
-                    <article className="tone-green">
-                      <span>A devolver sugerido</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                      <small>Dinero que entrego el cliente</small>
                     </article>
                     <article className="tone-blue">
-                      <span>Ingreso real</span>
-                      <strong>{formatBs(contractEconomicsData.realIncomeBs)}</strong>
+                      <span>Ingreso / cobro</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerChargeTargetBs)}</strong>
+                      <small>Alquiler + cargos a cobrar</small>
+                    </article>
+                    <article className="tone-violet">
+                      <span>Garantia reservada</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerTotals.guaranteeBs)}</strong>
+                      <small>Apartado, no es ingreso</small>
+                    </article>
+                    <article className="tone-green">
+                      <span>A devolver si todo OK</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                      <small>Recibido - cobro - danos</small>
+                    </article>
+                    <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
+                      <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : 'Todo cubierto'}</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
+                      <small>{contractEconomicsData.ledgerDebtBs > 0 ? 'El pago no alcanza' : 'No falta dinero'}</small>
                     </article>
                   </div>
                   <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
@@ -7156,51 +7158,41 @@ function ServiceOrdersSection({
                       const editedLabel = entry.editedByName
                         ? `Editado por ${entry.editedByName}${entry.editedAt ? ` el ${formatDateTime(entry.editedAt)}` : ''}`
                         : '';
+                      const isIncomeFlow = entry.type === 'deposit';
+                      const isReservedGuarantee = entry.type === 'guarantee';
+                      const moneyFlowTitle = entry.type === 'deposit'
+                        ? entry.isCashRegistered
+                          ? `Ingreso confirmado en Caja Grande${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
+                          : 'Ingreso anotado en el cuaderno economico'
+                        : 'Dinero separado como garantia en el cuaderno economico';
                       return (
                         <article
-                          className={`contract-economics-notebook-line tone-${meta.tone}${entry.isCashRegistered ? ' is-cash-registered' : ''}`}
+                          className={`contract-economics-notebook-line tone-${meta.tone}${entry.isCashRegistered ? ' is-cash-registered' : ''}${isIncomeFlow ? ' is-income-flow' : ''}${isReservedGuarantee ? ' is-reserved-guarantee' : ''}`}
                           key={entry.id}
-                          style={entry.isCashRegistered ? {
-                            background: 'linear-gradient(90deg, rgba(220, 252, 231, 0.95), rgba(240, 253, 244, 0.72))',
-                            borderColor: '#86efac',
-                            boxShadow: 'inset 4px 0 0 #16a34a',
-                          } : undefined}
                         >
                           <span
                             className="contract-economics-ledger-dot"
                             aria-hidden="true"
-                            style={entry.isCashRegistered ? { background: '#16a34a', borderColor: '#15803d' } : undefined}
                           ></span>
                           <time>{entry.createdAt ? formatDateTime(entry.createdAt) : '-'}</time>
-                          <span>
-                            {meta.label}
+                          <span className="contract-economics-ledger-movement">
+                            <span className="contract-economics-ledger-movement-label">{meta.label}</span>
                             {entry.type === 'deposit' ? (
                               <b
-                                title={entry.isCashRegistered
-                                  ? `Ingreso confirmado en Caja Grande${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
-                                  : 'Movimiento anotado en la hoja, sin ingreso confirmado en Caja Grande'}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  width: 'fit-content',
-                                  marginTop: '4px',
-                                  padding: '3px 7px',
-                                  borderRadius: '999px',
-                                  border: entry.isCashRegistered ? '1px solid #86efac' : '1px solid #cbd5e1',
-                                  background: entry.isCashRegistered ? '#dcfce7' : '#f8fafc',
-                                  color: entry.isCashRegistered ? '#166534' : '#64748b',
-                                  fontSize: '9px',
-                                  fontStyle: 'normal',
-                                  fontWeight: 900,
-                                  lineHeight: 1.2,
-                                  letterSpacing: '0.03em',
-                                  textTransform: 'uppercase',
-                                  whiteSpace: 'nowrap',
-                                }}
+                                className={`contract-economics-money-flow-pill is-${entry.type}`}
+                                title={moneyFlowTitle}
                               >
                                 {entry.isCashRegistered
-                                  ? `Cobrado en caja${entry.cashReceiptCode ? ` · ${entry.cashReceiptCode}` : ''}`
-                                  : 'Solo anotado'}
+                                  ? `Cobrado en caja${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
+                                  : 'Ingreso anotado'}
+                              </b>
+                            ) : null}
+                            {entry.type === 'guarantee' ? (
+                              <b
+                                className="contract-economics-reserved-guarantee-pill"
+                                title={moneyFlowTitle}
+                              >
+                                Dinero separado
                               </b>
                             ) : null}
                           </span>
