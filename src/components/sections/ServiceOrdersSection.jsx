@@ -1697,6 +1697,18 @@ function ServiceOrdersSection({
       const totalBs = Number(contract?.totals?.totalBs ?? 0);
       const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - transportBs).toFixed(2)));
       const managedTotalBs = Number((rentalTotalBs + guaranteeBs + transportBs + servicesBs).toFixed(2));
+      const rowLedgerTotals = economicLedger.reduce((totals, entry) => {
+        if (entry.type === 'deposit') totals.receivedBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'guarantee') totals.guaranteeBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'charge') totals.chargesBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'refund') totals.refundedBs += toMoneyNumber(entry.amountBs);
+        return totals;
+      }, {
+        receivedBs: 0,
+        guaranteeBs: 0,
+        chargesBs: 0,
+        refundedBs: 0,
+      });
       const contractReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -1746,12 +1758,17 @@ function ServiceOrdersSection({
         toMoneyNumber(linkedRental?.payment?.paidAtRentalBs),
         toMoneyNumber(linkedRental?.totals?.paidAtRentalBs),
       );
+      const rowPenaltiesBs = toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs);
+      const rowChargeTargetBs = Number((totalBs + Math.max(rowLedgerTotals.chargesBs, rowPenaltiesBs)).toFixed(2));
+      const economicDueBs = Math.max(0, Number((rowChargeTargetBs - collectionRegisteredBs).toFixed(2)));
       const paidOnAccountBs = Math.max(
         0,
         Number(initialPaymentBs.toFixed(2)),
         Number(collectionRegisteredBs.toFixed(2)),
       );
-      const dueBs = Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
+      const dueBs = hasEconomicLedger
+        ? economicDueBs
+        : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -1760,7 +1777,8 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText);
-      const hasReturnedGuarantee = guaranteeReferenceKeys.some((key) => key && returnedGuaranteeReferences.has(key));
+      const hasReturnedGuarantee = guaranteeReferenceKeys.some((key) => key && returnedGuaranteeReferences.has(key))
+        || rowLedgerTotals.refundedBs > 0;
       const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
       const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeBs > 0);
       const guaranteeStatus = guaranteeBs <= 0
@@ -2215,16 +2233,18 @@ function ServiceOrdersSection({
       Number(paidBs.toFixed(2)),
       Number(collectionRegisteredBs.toFixed(2)),
     );
-    const managedDebtBs = Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
-    const effectiveBalanceBs = managedDebtBs;
     const ledgerCashRegisteredBs = economicLedger.reduce((sum, entry) => (
       entry.type === 'deposit' && entry.isCashRegistered
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
     const cashRegisteredBs = Math.max(incomeBs, ledgerCashRegisteredBs);
-    const cashToRegisterBs = Math.max(0, ledgerTotals.receivedBs - cashRegisteredBs);
-    const cashCollectionSuggestedBs = cashToRegisterBs > 0 ? cashToRegisterBs : ledgerDebtBs;
+    const cashToRegisterBs = Math.max(0, ledgerChargeTargetBs - collectionRegisteredBs);
+    const cashCollectionSuggestedBs = cashToRegisterBs;
+    const managedDebtBs = usesLedgerBalance
+      ? cashCollectionSuggestedBs
+      : Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
+    const effectiveBalanceBs = managedDebtBs;
     const guaranteeRefundAvailableBs = ledgerRefundSuggestedBs;
     const balanceDetailLabel = usesLedgerBalance
       ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
@@ -5030,47 +5050,10 @@ function ServiceOrdersSection({
       const movementId = resolveEconomicMovementId(result);
       const movement = result?.movement ?? result ?? {};
       const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? contractEconomicsCollectionDraft.receipt ?? '').trim();
-      const registeredAt = movement?.createdAt ?? new Date().toISOString();
       if (movementId) {
         await handlePrintEconomicReceipt({ id: movementId });
       }
-      let pendingToLink = amountBs;
-      const currentLedger = contractEconomicsData.economicLedger ?? [];
-      const nextLedger = currentLedger.map((entry) => {
-        if (entry.type !== 'deposit' || entry.isCashRegistered || pendingToLink <= 0) return entry;
-        const entryAmount = toMoneyNumber(entry.amountBs);
-        if (entryAmount <= 0 || entryAmount - pendingToLink > 0.01) return entry;
-        pendingToLink = Number(Math.max(0, pendingToLink - entryAmount).toFixed(2));
-        return {
-          ...entry,
-          cashMovementId: movementId || entry.cashMovementId || null,
-          cashReceiptCode: receiptCode,
-          cashRegisteredAt: registeredAt,
-        };
-      });
-      if (pendingToLink > 0.01) {
-        nextLedger.push({
-          id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          type: 'deposit',
-          amountBs: Number(pendingToLink.toFixed(2)),
-          paymentMethod,
-          paymentAccount,
-          note: contractEconomicsCollectionDraft.note
-            || contractEconomicsCollectionDraft.receipt
-            || `Cobro registrado en Caja Grande para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
-          createdAt: registeredAt,
-          createdByName: createdBy,
-          cashMovementId: movementId || null,
-          cashReceiptCode: receiptCode,
-          cashRegisteredAt: registeredAt,
-        });
-      }
-      await saveContractEconomicLedgerRows(
-        nextLedger,
-        `Cobro registrado en Caja Grande${receiptCode ? ` con recibo ${receiptCode}` : ''}.`,
-        { force: true },
-      );
-      setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}.`);
+      setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}${receiptCode ? ` con recibo ${receiptCode}` : ''}.`);
       setContractEconomicsCollectionDraft({
         amountBs: '',
         paymentMethod: 'efectivo',
