@@ -8301,8 +8301,8 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     );
   });
 
-  const getLineInternalReservedQty = (line) => {
-    if (line?.controlsStock === false) return 0;
+  const getLineInternalReservedQty = (line, { respectControlsStock = true } = {}) => {
+    if (respectControlsStock && line?.controlsStock === false) return 0;
     const storedReservedQty = Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)));
     if (storedReservedQty > 0) return storedReservedQty;
     return Math.max(
@@ -8313,15 +8313,15 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   const remainingOldInternalReservedByItem = new Map();
   const remainingOldInternalReservedByName = new Map();
   oldLinesByItem.forEach((line, itemId) => {
-    remainingOldInternalReservedByItem.set(itemId, getLineInternalReservedQty(line));
+    remainingOldInternalReservedByItem.set(itemId, getLineInternalReservedQty(line, { respectControlsStock: false }));
   });
   oldLinesByName.forEach((line, itemName) => {
-    remainingOldInternalReservedByName.set(itemName, getLineInternalReservedQty(line));
+    remainingOldInternalReservedByName.set(itemName, getLineInternalReservedQty(line, { respectControlsStock: false }));
   });
   (beforeContract?.items ?? []).forEach((line) => {
     const itemId = String(line?.itemId ?? '').trim();
     const itemName = normalizeText(line?.itemName ?? line?.name ?? '');
-    const reservedQty = getLineInternalReservedQty(line);
+    const reservedQty = getLineInternalReservedQty(line, { respectControlsStock: false });
     if (itemId) {
       remainingOldInternalReservedByItem.set(
         itemId,
@@ -8434,7 +8434,7 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     );
     const controlsStock = lineControlsStock(line, item);
     const internalReservedQty = controlsStock ? Math.max(0, quantity - supplierBackedQty) : 0;
-    const oldInternalReservedQty = oldLine ? getLineInternalReservedQty(oldLine) : 0;
+    const oldInternalReservedQty = oldLine ? getLineInternalReservedQty(oldLine, { respectControlsStock: false }) : 0;
     const reservationDelta = internalReservedQty - oldInternalReservedQty;
 
     const currentAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
