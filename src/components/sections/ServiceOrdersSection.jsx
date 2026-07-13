@@ -2786,7 +2786,7 @@ function ServiceOrdersSection({
       fromRecord[coverageKey] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
-  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen, selectedItems]);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
 
   useEffect(() => {
     if (!modalOpen) return;
