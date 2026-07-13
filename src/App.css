@@ -58061,3 +58061,86 @@ body:has(.accounting-bigcash-view) .workspace {
     text-align: left !important;
   }
 }
+
+/* Supplier coverage is a real second row, not an input field column. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band {
+  grid-area: coverage !important;
+  grid-column: 1 / -1 !important;
+  grid-row: 2 / 3 !important;
+  align-self: stretch !important;
+  justify-self: stretch !important;
+  position: relative !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) auto minmax(10rem, auto) !important;
+  align-items: center !important;
+  gap: 0.55rem 0.72rem !important;
+  margin: 0.2rem 0 0 !important;
+  padding: 0.62rem 0.78rem !important;
+  overflow: hidden !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 0.78rem !important;
+  background: #f8fbff !important;
+  box-shadow: inset 0.28rem 0 0 #2563eb !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band > span {
+  margin: 0 !important;
+  color: #123b78 !important;
+  font-size: 0.62rem !important;
+  font-weight: 950 !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band .orders-supplier-coverage-list {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.42rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band .orders-supplier-coverage-chip {
+  min-width: 0 !important;
+  min-height: 2rem !important;
+  max-width: 100% !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band .orders-supplier-coverage-chip strong,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band .orders-supplier-coverage-chip small {
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band .orders-inline-link {
+  justify-self: end !important;
+  min-height: 2rem !important;
+  height: auto !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band > .orders-available-note {
+  margin: 0 !important;
+  justify-self: end !important;
+  text-align: right !important;
+  white-space: normal !important;
+}
+
+@media (max-width: 1380px) {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band {
+    grid-template-columns: minmax(6.5rem, auto) minmax(0, 1fr) auto !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-band > .orders-available-note {
+    grid-column: 2 / -1 !important;
+    justify-self: start !important;
+    text-align: left !important;
+  }
+}

@@ -9628,7 +9628,7 @@ function ServiceOrdersSection({
                               <Trash2 aria-hidden="true" />
                             </button>
                             {supplierCoverageLines.length > 0 ? (
-                              <div className={`orders-line-field orders-supplier-coverage-field${hasUncoveredShortage ? ' needs-provider' : ''}`}>
+                              <div className={`orders-supplier-coverage-field orders-supplier-coverage-band${hasUncoveredShortage ? ' needs-provider' : ''}`}>
                                 <span>Subalquiler</span>
                                 <div className="orders-supplier-coverage-list">
                                   {supplierCoverageLines.map((coverage) => (
