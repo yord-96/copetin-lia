@@ -57891,6 +57891,57 @@ body:has(.accounting-bigcash-view) .workspace {
   border-radius: 0.48rem !important;
 }
 
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 0.58rem !important;
+  margin-top: 0.34rem !important;
+  padding: 0.5rem 0.58rem !important;
+  border: 1px solid #fb923c !important;
+  border-radius: 0.66rem !important;
+  background: #fff7ed !important;
+  box-shadow: inset 0.28rem 0 0 #f97316 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card span {
+  display: grid !important;
+  gap: 0.1rem !important;
+  min-width: 0 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card strong {
+  color: #c2410c !important;
+  font-size: 0.76rem !important;
+  line-height: 1.1 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card small {
+  color: #9a3412 !important;
+  font-size: 0.64rem !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card button {
+  min-height: 2rem !important;
+  border: 1px solid #ea580c !important;
+  border-radius: 999px !important;
+  background: #ea580c !important;
+  color: #ffffff !important;
+  padding: 0 0.74rem !important;
+  font-size: 0.7rem !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  box-shadow: 0 0.4rem 0.85rem rgba(234, 88, 12, 0.22) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-provider-action-card button:hover {
+  background: #c2410c !important;
+  border-color: #c2410c !important;
+}
+
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
   grid-area: coverage !important;
   display: grid !important;

@@ -9442,6 +9442,20 @@ function ServiceOrdersSection({
                               {String(line.observation ?? '').trim() ? (
                                 <p className="orders-selected-item-note">{String(line.observation ?? '').trim()}</p>
                               ) : null}
+                              {hasUncoveredShortage ? (
+                                <div className="orders-provider-action-card">
+                                  <span>
+                                    <strong>Faltan {uncoveredForItem} u.</strong>
+                                    <small>Necesita proveedor para completar este item.</small>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openSupplierCoverageModal(line, availableStock)}
+                                  >
+                                    Agregar proveedor
+                                  </button>
+                                </div>
+                              ) : null}
                               </div>
                             </div>
                             <label className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
@@ -9518,12 +9532,6 @@ function ServiceOrdersSection({
                                   Riesgo blando: {softRecords.slice(0, 2).map((record) => `${record.quantity} ${record.code || ''}`).join(' · ')}
                                 </small>
                               ) : null}
-                              {hasUncoveredShortage ? (
-                                <div className="orders-shortage-callout">
-                                  <strong>Faltan {uncoveredForItem} u.</strong>
-                                  <span>Asigna proveedor para completar este item.</span>
-                                </div>
-                              ) : null}
                               {hasStockShortage && !hasUncoveredShortage ? (
                                 <small className="orders-available-note is-positive">
                                   Faltante cubierto por proveedor: {supplierCoveredQty} u.
@@ -9569,11 +9577,11 @@ function ServiceOrdersSection({
                             >
                               <Trash2 aria-hidden="true" />
                             </button>
-                            {hasStockShortage || supplierCoverageLines.length > 0 ? (
+                            {supplierCoverageLines.length > 0 ? (
                               <div className={`orders-line-field orders-supplier-coverage-field${hasUncoveredShortage ? ' needs-provider' : ''}`}>
-                                <span>{hasUncoveredShortage ? 'Proveedor requerido' : 'Subalquiler'}</span>
+                                <span>Subalquiler</span>
                                 <div className="orders-supplier-coverage-list">
-                                  {supplierCoverageLines.length > 0 ? supplierCoverageLines.map((coverage) => (
+                                  {supplierCoverageLines.map((coverage) => (
                                     <span key={coverage.id} className="orders-supplier-coverage-chip">
                                       <strong>{coverage.neededQty} SUB {makeSupplierShortCode(coverage.supplierName)}</strong>
                                       <small>{formatBs(coverage.supplierUnitCostBs)} c/u</small>
@@ -9585,17 +9593,15 @@ function ServiceOrdersSection({
                                         x
                                       </button>
                                     </span>
-                                  )) : (
-                                    <small className="orders-stock-error">Este faltante aun no tiene proveedor.</small>
-                                  )}
+                                  ))}
                                 </div>
                                 <button
                                   type="button"
-                                  className={`orders-inline-link${hasUncoveredShortage ? ' primary-provider-action' : ''}`}
+                                  className="orders-inline-link"
                                   disabled={uncoveredForItem <= 0}
                                   onClick={() => openSupplierCoverageModal(line, availableStock)}
                                 >
-                                  {hasUncoveredShortage ? `Agregar proveedor (${uncoveredForItem} u.)` : '+ Agregar proveedor'}
+                                  + Agregar proveedor
                                 </button>
                                 <small className="orders-available-note">
                                   Faltante {effectiveShortageForItem} u. · cubierto {supplierCoveredQty} u.
