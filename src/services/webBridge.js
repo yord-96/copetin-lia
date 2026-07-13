@@ -8301,13 +8301,15 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     );
   });
 
-  const getLineInternalReservedQty = (line) => Math.max(
-    0,
-    Math.trunc(Number(
-      line?.internalReservedQty
-      ?? (line?.controlsStock === false ? 0 : Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)),
-    )),
-  );
+  const getLineInternalReservedQty = (line) => {
+    if (line?.controlsStock === false) return 0;
+    const storedReservedQty = Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)));
+    if (storedReservedQty > 0) return storedReservedQty;
+    return Math.max(
+      0,
+      Math.trunc(Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)),
+    );
+  };
   const remainingOldInternalReservedByItem = new Map();
   const remainingOldInternalReservedByName = new Map();
   oldLinesByItem.forEach((line, itemId) => {
