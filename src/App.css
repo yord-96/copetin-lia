@@ -57818,3 +57818,123 @@ body:has(.accounting-bigcash-view) .workspace {
     grid-template-columns: 1fr;
   }
 }
+
+/* Final override: stable selected-item economics layout with provider coverage band. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-table-head {
+  grid-template-columns: minmax(300px, 1fr) 7.9rem 7.6rem 6.9rem 6.6rem 2.9rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+  grid-template-columns: minmax(300px, 1fr) 7.9rem 7.6rem 6.9rem 6.6rem 2.9rem !important;
+  grid-template-areas:
+    "product qty price discount subtotal action"
+    "coverage coverage coverage coverage coverage coverage" !important;
+  column-gap: 0.62rem !important;
+  row-gap: 0.58rem !important;
+  align-items: start !important;
+  overflow: visible !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-selected-product-cell {
+  grid-area: product !important;
+  grid-template-columns: 4.6rem minmax(0, 1fr) !important;
+  gap: 0.68rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-thumb {
+  width: 4.6rem !important;
+  height: 4.6rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+  grid-area: qty !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:nth-of-type(2):not(.orders-line-discount) {
+  grid-area: price !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-discount {
+  grid-area: discount !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > strong {
+  grid-area: subtotal !important;
+  align-self: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-selected-remove {
+  grid-area: action !important;
+  align-self: center !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-qty-stepper,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field input,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row select,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-remove {
+  min-height: 2.36rem !important;
+  height: 2.36rem !important;
+  border-radius: 0.62rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-qty-stepper {
+  grid-template-columns: 1.9rem minmax(0, 1fr) 1.9rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability span {
+  min-height: 1.94rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-shortage-callout {
+  margin-top: 0.24rem !important;
+  padding: 0.34rem 0.46rem !important;
+  border-radius: 0.48rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
+  grid-area: coverage !important;
+  display: grid !important;
+  grid-template-columns: 9.5rem minmax(180px, 1fr) auto 11.5rem !important;
+  align-items: center !important;
+  gap: 0.5rem 0.7rem !important;
+  min-height: 3.1rem !important;
+  margin-top: 0 !important;
+  padding: 0.58rem 0.7rem !important;
+  overflow: visible !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link {
+  min-height: 2.18rem !important;
+  height: 2.18rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  justify-self: end !important;
+  padding: 0 0.78rem !important;
+  font-size: 0.72rem !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+  justify-self: end !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-size: 0.64rem !important;
+}
+
+@media (max-width: 1380px) {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-table-head,
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row {
+    grid-template-columns: minmax(260px, 1fr) 7.4rem 7.1rem 6.4rem 6.1rem 2.7rem !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
+    grid-template-columns: 8.4rem minmax(160px, 1fr) auto !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+    grid-column: 2 / -1 !important;
+    justify-self: start !important;
+    text-align: left !important;
+  }
+}
