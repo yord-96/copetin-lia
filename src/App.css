@@ -57568,7 +57568,8 @@ body:has(.accounting-bigcash-view) .workspace {
   flex-wrap: wrap !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-provider-link {
   border: 0 !important;
   background: transparent !important;
   color: #175cd3 !important;
@@ -57582,6 +57583,10 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-observation-link.has-note {
+  color: #0f766e !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-provider-link.has-provider {
   color: #0f766e !important;
 }
 

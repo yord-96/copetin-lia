@@ -3371,13 +3371,18 @@ function ServiceOrdersSection({
     setSupplierCoverageDraft((current) => ({ ...current, [field]: nextValue }));
   };
 
-  const openSupplierCoverageModal = (line, availableStock) => {
+  const openSupplierCoverageModal = (line, availableStock, options = {}) => {
+    const manualMode = Boolean(options.manual);
     const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
-    const shortageQty = Math.max(1, Math.trunc(Number(requestedForItem)) - Math.max(0, Number(availableStock ?? 0)));
+    const shortageQty = Math.max(0, Math.trunc(Number(requestedForItem)) - Math.max(0, Number(availableStock ?? 0)));
     const coverageKey = getSupplierCoverageKey(line);
     const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
     const alreadyCoveredQty = currentCoverages.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
-    const remainingShortageQty = Math.max(1, shortageQty - alreadyCoveredQty);
+    const coverLimitQty = Math.max(1, Math.trunc(Number(requestedForItem)) - alreadyCoveredQty);
+    const remainingShortageQty = Math.max(0, shortageQty - alreadyCoveredQty);
+    const defaultCoverageQty = manualMode
+      ? Math.max(1, remainingShortageQty || Math.min(coverLimitQty, Math.max(1, Math.trunc(Number(line.quantity ?? 1)) - Math.max(0, Math.trunc(Number(availableStock ?? 0))))))
+      : Math.max(1, remainingShortageQty);
     const details = getOperationalItemDetails(line);
     const detailValue = (label) => details.find((entry) => entry.label === label)?.value ?? '';
     const hasSuppliers = (supplierBundle?.suppliers ?? []).length > 0;
@@ -3389,6 +3394,9 @@ function ServiceOrdersSection({
       availableStock,
       shortageQty,
       remainingShortageQty,
+      coverLimitQty,
+      manualMode,
+      requestedForItem,
     });
     setSupplierCoverageDraft({
       ...buildEmptySupplierCoverageDraft(),
@@ -3397,7 +3405,7 @@ function ServiceOrdersSection({
       category: detailValue('Categoria') || line.item.category || '',
       color: detailValue('Color'),
       material: detailValue('Material'),
-      quantity: String(remainingShortageQty),
+      quantity: String(defaultCoverageQty),
       supplierUnitCostBs: '0',
       saleUnitPriceBs: String(Math.max(0, Number(line.unitPriceBs ?? line.item.rentalPriceBs ?? 0))),
     });
@@ -3414,8 +3422,13 @@ function ServiceOrdersSection({
   const saveSupplierCoverageFromModal = async () => {
     if (!supplierCoverageModal) return;
     setSupplierCoverageError('');
-    const shortageQty = Math.max(1, Math.trunc(Number(supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty ?? 1)));
-    const requestedQty = Math.max(1, Math.min(shortageQty, parseIntegerInput(supplierCoverageDraft.quantity, 1)));
+    const coverLimitQty = Math.max(1, Math.trunc(Number(
+      supplierCoverageModal.coverLimitQty
+      ?? supplierCoverageModal.remainingShortageQty
+      ?? supplierCoverageModal.shortageQty
+      ?? 1,
+    )));
+    const requestedQty = Math.max(1, Math.min(coverLimitQty, parseIntegerInput(supplierCoverageDraft.quantity, 1)));
     const supplierCost = Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0));
     const salePrice = Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0));
     const itemName = String(supplierCoverageDraft.itemName ?? '').trim();
@@ -7434,8 +7447,11 @@ function ServiceOrdersSection({
               <div>
                 <h3>Cobertura con proveedor</h3>
                 <p>
-                  {supplierCoverageModal.itemName} tiene faltante de {supplierCoverageModal.shortageQty} u.
-                  Quedan {supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u. por cubrir.
+                  {supplierCoverageModal.manualMode
+                    ? `${supplierCoverageModal.itemName}: puedes decidir cuantas unidades cubrir con proveedor.`
+                    : `${supplierCoverageModal.itemName} tiene faltante de ${supplierCoverageModal.shortageQty} u.`}
+                  {' '}
+                  Maximo proveedor: {supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.
                 </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => closeSupplierCoverageModal()}>
@@ -7528,7 +7544,10 @@ function ServiceOrdersSection({
                 <label className="supplier-coverage-field">
                   Cantidad a cubrir
                   <input type="text" inputMode="numeric" value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
-                  <small>Maximo por cubrir: {supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.</small>
+                  <small>
+                    Maximo proveedor: {supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.
+                    {supplierCoverageModal.shortageQty > 0 ? ` Faltante automatico: ${supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.` : ' Puedes subalquilar aunque tengas stock propio.'}
+                  </small>
                 </label>
                 <label className="supplier-coverage-field">
                   Costo proveedor Bs *
@@ -9403,6 +9422,15 @@ function ServiceOrdersSection({
                                 >
                                   Observacion
                                 </button>
+                                {!isProvisionalItem ? (
+                                  <button
+                                    type="button"
+                                    className={`orders-line-provider-link${supplierCoverageLines.length > 0 ? ' has-provider' : ''}`}
+                                    onClick={() => openSupplierCoverageModal(line, availableStock, { manual: true })}
+                                  >
+                                    Agregar proveedor
+                                  </button>
+                                ) : null}
                               </div>
                               <strong>{line.item.name}</strong>
                               {line.comboName ? (
