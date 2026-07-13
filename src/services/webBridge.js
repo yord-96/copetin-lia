@@ -2596,6 +2596,91 @@ const normalizeState = (state) => {
       };
     })
     : [];
+  source.contracts.forEach((contract) => {
+    if (contract?.deletedAt || String(contract?.status ?? '').trim() !== 'aprobado') return;
+    const ledgerGuaranteeBs = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      .filter((entry) => String(entry?.type ?? '').trim() === 'guarantee')
+      .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? 0)), 0);
+    const guaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+    const validatedGuaranteeBs = Math.max(
+      0,
+      toPositiveRoundedNumber(contract?.totals?.guaranteeBs ?? 0),
+      toPositiveRoundedNumber(contract?.guarantee?.amountBs ?? 0),
+      toPositiveRoundedNumber(ledgerGuaranteeBs),
+    );
+    if (validatedGuaranteeBs <= 0 || (guaranteeStatus !== 'validado' && ledgerGuaranteeBs <= 0)) return;
+
+    const references = [
+      contract?.id,
+      contract?.rentalId,
+      contract?.contractCode,
+      contract?.orderCode,
+    ].map((value) => normalizeText(value)).filter(Boolean);
+    const hasReference = (value) => {
+      const normalized = normalizeText(value);
+      return Boolean(normalized) && references.some((reference) => normalized.includes(reference));
+    };
+    const hasLinkedGuaranteeMovement = source.cashMovements.some((movement) => {
+      if (isVoidedCashMovement(movement)) return false;
+      const type = normalizeText(movement?.type);
+      const category = normalizeText(movement?.category);
+      const tag = normalizeText(movement?.accountingTag);
+      const isGuarantee = type.includes('garantia') || category.includes('garantia') || tag.includes('guarantee');
+      if (!isGuarantee) return false;
+      if (Math.abs(Math.max(0, Number(movement?.amountBs ?? 0)) - validatedGuaranteeBs) >= 0.01) return false;
+      return [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.sourceId,
+        movement?.reference,
+        movement?.notes,
+        movement?.description,
+      ].some(hasReference);
+    });
+    if (hasLinkedGuaranteeMovement) return;
+
+    const activeSession = source.cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? null;
+    const primaryResponsible = contract?.responsibles?.[0] ?? null;
+    const responsible = String(
+      primaryResponsible?.name
+      ?? contract?.createdByName
+      ?? contract?.createdBy
+      ?? 'Sistema',
+    ).trim() || 'Sistema';
+    const paymentMethod = normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
+    const paymentAccount = paymentMethod === 'qr'
+      ? normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+      : '';
+    const firstGuaranteeLedgerDate = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      .filter((entry) => String(entry?.type ?? '').trim() === 'guarantee')
+      .map((entry) => entry?.createdAt)
+      .find(Boolean);
+    const movement = buildCashMovement({
+      sessionId: activeSession?.id ?? null,
+      type: 'ingreso_garantia',
+      amountBs: validatedGuaranteeBs,
+      description: `Ingreso garantia: ${contract?.customerName || 'Cliente'}`,
+      sourceType: 'contract',
+      sourceId: contract.id,
+      createdBy: responsible,
+      createdByName: responsible,
+      userName: responsible,
+      responsible,
+      cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      category: 'garantia',
+      paymentMethod,
+      paymentAccount,
+      receiptCode: nextCashReceiptCode(source),
+      notes: `Garantia validada reparada para contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
+      linkedRentalId: contract?.rentalId ?? '',
+      linkedContractId: contract?.id ?? '',
+      linkedOrderCode: contract?.orderCode ?? '',
+      accountingTag: 'validated_guarantee',
+    });
+    movement.createdAt = contract?.approvedAt ?? firstGuaranteeLedgerDate ?? contract?.createdAt ?? now;
+    source.cashMovements.push(movement);
+  });
   const legacyPettyRepositionRows = source.cashMovements.filter((movement) =>
     normalizeCashBoxType(movement?.cashBoxType) === CASH_BOX_TYPES.BIG_CASH
     && !movement?.isInternalTransfer
@@ -8263,12 +8348,110 @@ const summarizeContractChanges = (beforeContract, contract) => {
     changes.push('Actualizo los servicios asignados');
   }
 
+  const beforeGuaranteeBs = Number(beforeContract?.totals?.guaranteeBs ?? beforeContract?.guarantee?.amountBs ?? 0);
+  const nextGuaranteeBs = Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0);
+  if (Math.abs(beforeGuaranteeBs - nextGuaranteeBs) >= 0.01) {
+    changes.push(`Garantia: ${formatBs(beforeGuaranteeBs)} -> ${formatBs(nextGuaranteeBs)}`);
+  }
+  const beforeGuaranteeStatus = String(beforeContract?.guarantee?.status ?? beforeContract?.payment?.guaranteeStatus ?? '').trim();
+  const nextGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+  if (beforeGuaranteeStatus !== nextGuaranteeStatus) {
+    changes.push(`Estado garantia: ${beforeGuaranteeStatus || 'Sin definir'} -> ${nextGuaranteeStatus || 'Sin definir'}`);
+  }
+
   const beforeTotal = Number(beforeContract?.totals?.totalBs ?? 0);
   const nextTotal = Number(contract?.totals?.totalBs ?? 0);
   if (Math.abs(beforeTotal - nextTotal) >= 0.01) {
     changes.push(`Total: ${formatBs(beforeTotal)} -> ${formatBs(nextTotal)}`);
   }
   return changes;
+};
+
+const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, beforeContract = null) => {
+  if (String(contract?.status ?? '').trim() !== 'aprobado') return null;
+  const guaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+  if (guaranteeStatus !== 'validado') return null;
+
+  const nextValidatedGuaranteeBs = Math.max(0, toPositiveRoundedNumber(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0));
+  if (nextValidatedGuaranteeBs <= 0) return null;
+
+  const beforeStatus = String(beforeContract?.guarantee?.status ?? beforeContract?.payment?.guaranteeStatus ?? '').trim();
+  const beforeValidatedGuaranteeBs = beforeStatus === 'validado'
+    ? Math.max(0, toPositiveRoundedNumber(beforeContract?.totals?.guaranteeBs ?? beforeContract?.guarantee?.amountBs ?? 0))
+    : 0;
+  const guaranteeDeltaBs = Math.max(0, Number((nextValidatedGuaranteeBs - beforeValidatedGuaranteeBs).toFixed(2)));
+  const amountToRegisterBs = guaranteeDeltaBs > 0 ? guaranteeDeltaBs : nextValidatedGuaranteeBs;
+  if (amountToRegisterBs <= 0) return null;
+
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const contractReferences = [
+    contract?.id,
+    contract?.rentalId,
+    contract?.contractCode,
+    contract?.orderCode,
+  ].map((value) => normalizeText(value)).filter(Boolean);
+  const hasReference = (value) => {
+    const text = normalizeText(value);
+    return Boolean(text) && contractReferences.some((reference) => text.includes(reference));
+  };
+  const alreadyRegistered = state.cashMovements.some((movement) => {
+    if (isVoidedCashMovement(movement)) return false;
+    const type = normalizeText(movement?.type);
+    const category = normalizeText(movement?.category);
+    if (!type.includes('garantia') && !category.includes('garantia')) return false;
+    const amountMatches = Math.abs(Math.max(0, Number(movement?.amountBs ?? 0)) - amountToRegisterBs) < 0.01
+      || Math.abs(Math.max(0, Number(movement?.amountBs ?? 0)) - nextValidatedGuaranteeBs) < 0.01;
+    if (!amountMatches) return false;
+    return [
+      movement?.linkedContractId,
+      movement?.linkedRentalId,
+      movement?.linkedOrderCode,
+      movement?.sourceId,
+      movement?.reference,
+      movement?.description,
+      movement?.notes,
+    ].some(hasReference);
+  });
+  if (alreadyRegistered) return null;
+
+  const activeSession = getActiveSession(state);
+  const responsibleName = String(
+    payload?.updatedByName
+    ?? payload?.userName
+    ?? contract?.responsibles?.[0]?.name
+    ?? contract?.createdByName
+    ?? contract?.createdBy
+    ?? 'Sistema',
+  ).trim() || 'Sistema';
+  const paymentMethod = normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
+  const paymentAccount = paymentMethod === 'qr'
+    ? normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+    : '';
+  const movement = buildCashMovement({
+    sessionId: activeSession?.id ?? null,
+    type: 'ingreso_garantia',
+    amountBs: amountToRegisterBs,
+    description: `Ingreso garantia: ${contract?.customerName || 'Cliente'}`,
+    sourceType: 'contract',
+    sourceId: contract.id,
+    createdBy: responsibleName,
+    createdByName: responsibleName,
+    userName: responsibleName,
+    responsible: responsibleName,
+    cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+    category: 'garantia',
+    paymentMethod,
+    paymentAccount,
+    receiptCode: nextCashReceiptCode(state),
+    notes: `Garantia validada desde contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
+    linkedRentalId: contract?.rentalId ?? '',
+    linkedContractId: contract?.id ?? '',
+    linkedOrderCode: contract?.orderCode ?? '',
+    accountingTag: 'validated_guarantee',
+  });
+  movement.createdAt = now;
+  state.cashMovements.push(movement);
+  return movement;
 };
 
 const syncApprovedContractOperation = (state, contract, payload, now, beforeContract = null) => {
@@ -12247,6 +12430,7 @@ const createWebBridge = () => ({
           contract.responsibles = responsibles;
         }
         const now = new Date().toISOString();
+        syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
           const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];

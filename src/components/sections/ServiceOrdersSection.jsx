@@ -1934,11 +1934,27 @@ function ServiceOrdersSection({
       rental?.orderCode,
     ];
     const referenceKeys = new Set(referenceValues.map(normalizeText).filter(Boolean));
+    const looseReferenceValues = [
+      contract.id,
+      contract.rentalId,
+      contract.contractCode,
+      contract.orderCode,
+      linkedOrder?.id,
+      linkedOrder?.rentalId,
+      linkedOrder?.contractId,
+      linkedOrder?.contractCode,
+      linkedOrder?.orderCode,
+      rental?.id,
+      rental?.contractId,
+      rental?.contractCode,
+      rental?.orderCode,
+    ];
+    const looseReferenceKeys = new Set(looseReferenceValues.map(normalizeText).filter(Boolean));
     const hasReference = (value, loose = false) => {
       const normalized = normalizeText(value);
       if (!normalized) return false;
       if (referenceKeys.has(normalized)) return true;
-      return loose && [...referenceKeys].some((key) => key && normalized.includes(key));
+      return loose && [...looseReferenceKeys].some((key) => key && normalized.includes(key));
     };
 
     const movements = cashMovements
@@ -1994,6 +2010,7 @@ function ServiceOrdersSection({
         || category === 'cobro_contrato';
       const isCollection = tag === 'contract_economic_collection'
         || (Boolean(receiptCode) && isBigCash && isIncome);
+      if (isGuaranteeMovement(movement)) return sum;
       if (!isCollection) return sum;
       return sum + Math.max(0, getCashMovementAmount(movement));
     }, 0);
@@ -2274,13 +2291,15 @@ function ServiceOrdersSection({
       chargesBs: 0,
       refundedBs: 0,
     });
+    const effectiveGuaranteeDeclaredBs = Math.max(guaranteeDeclaredBs, ledgerTotals.guaranteeBs);
+    const effectiveGuaranteeValidatedBs = Math.max(guaranteeValidatedBs, ledgerTotals.guaranteeBs);
     const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
     const ledgerChargeTargetBs = Number((totalBs + effectiveChargesBs).toFixed(2));
     const ledgerAppliedToRentalBs = Math.min(ledgerTotals.receivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerTotals.receivedBs).toFixed(2)));
     const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerTotals.receivedBs - ledgerChargeTargetBs - ledgerTotals.refundedBs).toFixed(2)));
     const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
-    const totalManagedBs = Number((rentalTotalBs + guaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
+    const totalManagedBs = Number((rentalTotalBs + effectiveGuaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
     const effectivePaidBs = usesLedgerBalance
       ? ledgerTotals.receivedBs
@@ -2306,7 +2325,7 @@ function ServiceOrdersSection({
     const balanceDetailLabel = usesLedgerBalance
       ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
       : pendingPaymentBs > 0
-      ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(guaranteeValidatedBs)}`
+      ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(effectiveGuaranteeValidatedBs)}`
       : `Total ${formatBs(totalBs)} - pagado ${formatBs(paidBs)}`;
 
     return {
@@ -2342,11 +2361,11 @@ function ServiceOrdersSection({
       ledgerDebtBs,
       ledgerRefundSuggestedBs,
       realIncomeBs,
-      guaranteeDeclaredBs,
-      guaranteeValidatedBs,
-      guaranteeStatus: guaranteeDeclaredBs <= 0
+      guaranteeDeclaredBs: effectiveGuaranteeDeclaredBs,
+      guaranteeValidatedBs: effectiveGuaranteeValidatedBs,
+      guaranteeStatus: effectiveGuaranteeDeclaredBs <= 0
         ? 'Sin garantia'
-        : rawGuaranteeStatus === 'validado'
+        : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
           ? 'Validada'
           : 'No validada',
       guaranteeMethod: formatPaymentMethodLabel(
