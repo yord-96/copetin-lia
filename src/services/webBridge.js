@@ -2042,6 +2042,9 @@ const normalizeState = (state) => {
           contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount,
         )
         : '';
+      const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
+        ? normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
+        : '';
       const hasInitialPaymentEntry = paidAtApprovalBs > 0 && normalizedEconomicLedger.some((entry) => {
         if (entry.type !== 'deposit') return false;
         const sameAmount = Math.abs(Number(entry.amountBs ?? 0) - paidAtApprovalBs) < 0.01;
@@ -2054,6 +2057,19 @@ const normalizeState = (state) => {
           || entryNote.includes('pimer pago')
         );
       });
+      const hasValidatedGuaranteeEntry = guaranteeStatus === 'validado' && guaranteeBs > 0 && normalizedEconomicLedger.some((entry) => {
+        if (entry.type !== 'guarantee') return false;
+        const sameAmount = Math.abs(Number(entry.amountBs ?? 0) - guaranteeBs) < 0.01;
+        const entryId = normalizeText(entry.id);
+        const entryNote = normalizeText(entry.note);
+        return sameAmount && (
+          entryId.includes('validated-guarantee')
+          || entryId.includes('garantia-validada')
+          || entryNote.includes('garantia validada')
+          || entryNote.includes('garantia ingresada')
+          || entryNote.includes('ingreso garantia')
+        );
+      });
       if (paidAtApprovalBs > 0 && !hasInitialPaymentEntry) {
         normalizedEconomicLedger.unshift({
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
@@ -2062,6 +2078,30 @@ const normalizeState = (state) => {
           paymentMethod: initialPaymentMethod,
           paymentAccount: initialPaymentAccount,
           note: 'Pago inicial registrado al crear el contrato.',
+          createdAt: contract?.approvedAt
+            ?? contract?.contractDate
+            ?? contract?.createdAt
+            ?? now,
+          createdById: contract?.createdById ?? contract?.userId ?? primaryResponsible?.id ?? null,
+          createdByName: String(
+            contract?.createdByName
+            ?? contract?.userName
+            ?? primaryResponsible?.name
+            ?? contract?.createdBy
+            ?? 'Sistema',
+          ).trim() || 'Sistema',
+          editedAt: null,
+          editedByName: '',
+        });
+      }
+      if (guaranteeStatus === 'validado' && guaranteeBs > 0 && !hasValidatedGuaranteeEntry) {
+        normalizedEconomicLedger.unshift({
+          id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
+          type: 'guarantee',
+          amountBs: Number(guaranteeBs.toFixed(2)),
+          paymentMethod: guaranteePaymentMethod,
+          paymentAccount: guaranteePaymentAccount,
+          note: 'Garantia validada registrada al crear el contrato.',
           createdAt: contract?.approvedAt
             ?? contract?.contractDate
             ?? contract?.createdAt
@@ -2134,13 +2174,13 @@ const normalizeState = (state) => {
           initialPaymentAccount: normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount),
           guaranteeStatus,
           guaranteePaymentMethod,
-          guaranteePaymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
+          guaranteePaymentAccount,
         },
         guarantee: {
           amountBs: Number(guaranteeBs.toFixed(2)),
           status: guaranteeStatus,
           paymentMethod: guaranteePaymentMethod,
-          paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
+          paymentAccount: guaranteePaymentAccount,
         },
         items,
         services,

@@ -2086,6 +2086,22 @@ function ServiceOrdersSection({
         ?? '',
       )
       : '';
+    const guaranteePaymentMethod = normalizeLedgerPaymentMethod(
+      contract?.guarantee?.paymentMethod
+      ?? contract?.payment?.guaranteePaymentMethod
+      ?? rental?.guarantee?.paymentMethod
+      ?? rental?.payment?.guaranteePaymentMethod
+      ?? 'efectivo',
+    );
+    const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(
+        contract?.guarantee?.paymentAccount
+        ?? contract?.payment?.guaranteePaymentAccount
+        ?? rental?.guarantee?.paymentAccount
+        ?? rental?.payment?.guaranteePaymentAccount
+        ?? '',
+      )
+      : '';
     const hasInitialPaymentEntry = initialPaymentBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'deposit') return false;
       const sameAmount = Math.abs(toMoneyNumber(entry.amountBs) - initialPaymentBs) < 0.01;
@@ -2096,6 +2112,19 @@ function ServiceOrdersSection({
         || entryNote.includes('pago inicial')
         || entryNote.includes('primer pago')
         || entryNote.includes('pimer pago')
+        );
+      });
+    const hasValidatedGuaranteeEntry = guaranteeValidatedBs > 0 && storedEconomicLedger.some((entry) => {
+      if (entry.type !== 'guarantee') return false;
+      const sameAmount = Math.abs(toMoneyNumber(entry.amountBs) - guaranteeValidatedBs) < 0.01;
+      const entryId = normalizeText(entry.id);
+      const entryNote = normalizeText(entry.note);
+      return sameAmount && (
+        entryId.includes('validated-guarantee')
+        || entryId.includes('garantia-validada')
+        || entryNote.includes('garantia validada')
+        || entryNote.includes('garantia ingresada')
+        || entryNote.includes('ingreso garantia')
       );
     });
     const economicLedgerBase = [
@@ -2122,6 +2151,29 @@ function ServiceOrdersSection({
           editedByName: '',
         }]
         : []),
+      ...(guaranteeValidatedBs > 0 && !hasValidatedGuaranteeEntry
+        ? [{
+          id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
+          type: 'guarantee',
+          amountBs: guaranteeValidatedBs,
+          paymentMethod: guaranteePaymentMethod,
+          paymentAccount: guaranteePaymentAccount,
+          note: 'Garantia validada registrada al crear el contrato.',
+          createdAt: contract?.approvedAt
+            ?? contract?.contractDate
+            ?? contract?.createdAt
+            ?? rental?.rentalAt
+            ?? rental?.createdAt
+            ?? new Date().toISOString(),
+          createdByName: String(
+            contract?.createdByName
+            ?? rental?.createdByName
+            ?? 'Sistema',
+          ).trim() || 'Sistema',
+          editedAt: null,
+          editedByName: '',
+        }]
+        : []),
       ...storedEconomicLedger,
     ].sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
 
@@ -2130,7 +2182,7 @@ function ServiceOrdersSection({
     const cashRegistrationCandidates = postedMovements
       .filter((movement) => {
         const amountBs = Math.max(0, getCashMovementAmount(movement));
-        if (amountBs <= 0 || isGuaranteeMovement(movement)) return false;
+        if (amountBs <= 0) return false;
         const type = normalizeText(movement?.type);
         const tag = normalizeText(movement?.accountingTag);
         const category = normalizeText(movement?.category);
@@ -2142,12 +2194,14 @@ function ServiceOrdersSection({
           || category === 'cobro_contrato'
           || type.includes('cobro')
           || type.includes('ingreso');
-        return !isExpense && isContractCollection && (Boolean(receiptCode) || isBigCash || tag === 'contract_economic_collection');
+        const isLedgerCashMovement = isGuaranteeMovement(movement)
+          || (isContractCollection && (Boolean(receiptCode) || isBigCash || tag === 'contract_economic_collection'));
+        return !isExpense && isLedgerCashMovement;
       })
       .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
     const usedCashMovementIds = new Set();
     const economicLedger = economicLedgerBase.map((entry, entryIndex) => {
-      if (entry.type !== 'deposit' || entry.amountBs <= 0) {
+      if (!['deposit', 'guarantee'].includes(entry.type) || entry.amountBs <= 0) {
         return { ...entry, isCashRegistered: false };
       }
       const linkedMovementId = String(entry.cashMovementId ?? '').trim();
@@ -2171,6 +2225,8 @@ function ServiceOrdersSection({
           const movementKey = String(movement?.id ?? `cash-${movementIndex}`);
           if (usedCashMovementIds.has(movementKey)) return false;
           if (Math.abs(getCashMovementAmount(movement) - entry.amountBs) >= 0.01) return false;
+          if (entry.type === 'guarantee' && !isGuaranteeMovement(movement)) return false;
+          if (entry.type === 'deposit' && isGuaranteeMovement(movement)) return false;
           const movementMethod = normalizeLedgerPaymentMethod(
             movement?.paymentMethod ?? movement?.method ?? movement?.payment?.method,
           );
