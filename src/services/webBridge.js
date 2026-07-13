@@ -8273,6 +8273,16 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       }
     }
   });
+  (beforeContract?.items ?? []).forEach((line) => {
+    const key = String(line?.itemId ?? '').trim();
+    const nameKey = normalizeText(line?.itemName ?? line?.name ?? '');
+    if (key && !oldLinesByItem.has(key)) {
+      oldLinesByItem.set(key, { ...line });
+    }
+    if (nameKey && !oldLinesByName.has(nameKey)) {
+      oldLinesByName.set(nameKey, { ...line });
+    }
+  });
 
   const supplierSupportByItem = new Map();
   const supplierSupportByLineKey = new Map();
