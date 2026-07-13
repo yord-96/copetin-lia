@@ -341,6 +341,9 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     createdByName: String(entry?.createdByName ?? entry?.createdBy ?? 'Sistema').trim() || 'Sistema',
     editedAt: entry?.editedAt ?? null,
     editedByName: String(entry?.editedByName ?? '').trim(),
+    cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
+    cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+    cashRegisteredAt: entry?.cashRegisteredAt ?? null,
   };
 };
 
@@ -1157,7 +1160,6 @@ function ServiceOrdersSection({
   onGenerateOrderDocuments,
   onCreateSupplier,
   onCreateSupplierQuote,
-  onCollectReceivable,
   onPrintCashMovementReceipt,
   onUpdateSettings,
   onOpenTransportModule,
@@ -2127,7 +2129,19 @@ function ServiceOrdersSection({
     const usedCashMovementIds = new Set();
     const economicLedger = economicLedgerBase.map((entry, entryIndex) => {
       if (entry.type !== 'deposit' || entry.amountBs <= 0) {
-        return { ...entry, isCashRegistered: false, cashReceiptCode: '', cashMovementId: null };
+        return { ...entry, isCashRegistered: false };
+      }
+      const linkedMovementId = String(entry.cashMovementId ?? '').trim();
+      if (linkedMovementId) {
+        const linkedMovement = postedMovements.find((movement) => String(movement?.id ?? '') === linkedMovementId);
+        if (!linkedMovement || !isVoidedCashMovement(linkedMovement)) {
+          return {
+            ...entry,
+            isCashRegistered: true,
+            cashReceiptCode: String(entry.cashReceiptCode ?? linkedMovement?.receiptCode ?? linkedMovement?.receipt ?? '').trim(),
+            cashMovementId: linkedMovementId,
+          };
+        }
       }
       const entryMethod = normalizeLedgerPaymentMethod(entry.paymentMethod);
       const entryAccount = normalizeLedgerPaymentAccount(entry.paymentAccount);
@@ -2203,8 +2217,15 @@ function ServiceOrdersSection({
     );
     const managedDebtBs = Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
     const effectiveBalanceBs = managedDebtBs;
-    const cashRegisteredBs = incomeBs;
+    const ledgerCashRegisteredBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'deposit' && entry.isCashRegistered
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
+    const cashRegisteredBs = Math.max(incomeBs, ledgerCashRegisteredBs);
     const cashToRegisterBs = Math.max(0, ledgerTotals.receivedBs - cashRegisteredBs);
+    const cashCollectionSuggestedBs = cashToRegisterBs > 0 ? cashToRegisterBs : ledgerDebtBs;
+    const guaranteeRefundAvailableBs = ledgerRefundSuggestedBs;
     const balanceDetailLabel = usesLedgerBalance
       ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
       : pendingPaymentBs > 0
@@ -2229,6 +2250,8 @@ function ServiceOrdersSection({
       balanceBs: effectiveBalanceBs,
       cashRegisteredBs,
       cashToRegisterBs,
+      cashCollectionSuggestedBs,
+      guaranteeRefundAvailableBs,
       balanceDetailLabel,
       incomeBs,
       expenseBs,
@@ -4967,64 +4990,86 @@ function ServiceOrdersSection({
     event.preventDefault();
     if (!contractEconomicsData || isSavingContractEconomicsCollection) return;
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
-    const pendingBs = Math.max(0, toMoneyNumber(contractEconomicsData.managedDebtBs));
-    const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || pendingBs));
-    if (!rentalId) {
-      setContractEconomicsError('Este contrato no tiene una orden/alquiler vinculado para cobrar desde Caja Grande.');
-      return;
-    }
-    if (pendingBs <= 0) {
-      setContractEconomicsError('Este contrato no tiene saldo pendiente para cobrar.');
-      return;
-    }
+    const suggestedBs = Math.max(0, toMoneyNumber(contractEconomicsData.cashCollectionSuggestedBs));
+    const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || suggestedBs));
     if (amountBs <= 0) {
       setContractEconomicsError('El monto a cobrar debe ser mayor a 0.');
+      return;
+    }
+    const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsCollectionDraft.paymentMethod);
+    const paymentAccount = paymentMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(contractEconomicsCollectionDraft.paymentAccount)
+      : '';
+    if (paymentMethod === 'qr' && !paymentAccount) {
+      setContractEconomicsError('Selecciona la cuenta o banco QR para registrar el cobro.');
       return;
     }
     setIsSavingContractEconomicsCollection(true);
     setContractEconomicsError('');
     try {
       const createdBy = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
-      const payload = {
-        rentalId,
+      const result = await api.cash.createManualMovement({
+        type: 'ingreso',
+        cashBoxType: 'BIG_CASH',
         amountBs,
-        paymentMethod: contractEconomicsCollectionDraft.paymentMethod,
-        paymentAccount: contractEconomicsCollectionDraft.paymentMethod === 'qr' ? contractEconomicsCollectionDraft.paymentAccount : '',
+        description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: 'cobro_contrato',
+        paymentMethod,
+        paymentAccount,
+        responsible: createdBy,
         receipt: contractEconomicsCollectionDraft.receipt,
-        note: contractEconomicsCollectionDraft.note || contractEconomicsCollectionDraft.receipt,
+        notes: contractEconomicsCollectionDraft.note
+          || contractEconomicsCollectionDraft.receipt
+          || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`,
+        linkedRentalId: rentalId,
+        linkedContractId: contractEconomicsData.contract?.id ?? '',
+        linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
         accountingTag: 'contract_economic_collection',
         createdBy,
-      };
-      let result;
-      try {
-        result = onCollectReceivable
-          ? await onCollectReceivable(payload)
-          : await api.cash.collectReceivable(payload);
-      } catch (error) {
-        const canFallbackToManualIncome = /no tiene saldo pendiente|saldo pendiente por cobrar/i.test(String(error?.message ?? ''));
-        if (!canFallbackToManualIncome) throw error;
-        result = await api.cash.createManualMovement({
-          type: 'ingreso',
-          cashBoxType: 'BIG_CASH',
-          amountBs,
-          description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
-          category: 'cobro_contrato',
-          paymentMethod: payload.paymentMethod,
-          paymentAccount: payload.paymentAccount,
-          responsible: createdBy,
-          receipt: payload.receipt,
-          notes: payload.note || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`,
-          linkedRentalId: rentalId,
-          linkedContractId: contractEconomicsData.contract?.id ?? '',
-          linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-          accountingTag: 'contract_economic_collection',
-          createdBy,
-        });
-      }
+      });
       const movementId = resolveEconomicMovementId(result);
+      const movement = result?.movement ?? result ?? {};
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? contractEconomicsCollectionDraft.receipt ?? '').trim();
+      const registeredAt = movement?.createdAt ?? new Date().toISOString();
       if (movementId) {
         await handlePrintEconomicReceipt({ id: movementId });
       }
+      let pendingToLink = amountBs;
+      const currentLedger = contractEconomicsData.economicLedger ?? [];
+      const nextLedger = currentLedger.map((entry) => {
+        if (entry.type !== 'deposit' || entry.isCashRegistered || pendingToLink <= 0) return entry;
+        const entryAmount = toMoneyNumber(entry.amountBs);
+        if (entryAmount <= 0 || entryAmount - pendingToLink > 0.01) return entry;
+        pendingToLink = Number(Math.max(0, pendingToLink - entryAmount).toFixed(2));
+        return {
+          ...entry,
+          cashMovementId: movementId || entry.cashMovementId || null,
+          cashReceiptCode: receiptCode,
+          cashRegisteredAt: registeredAt,
+        };
+      });
+      if (pendingToLink > 0.01) {
+        nextLedger.push({
+          id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'deposit',
+          amountBs: Number(pendingToLink.toFixed(2)),
+          paymentMethod,
+          paymentAccount,
+          note: contractEconomicsCollectionDraft.note
+            || contractEconomicsCollectionDraft.receipt
+            || `Cobro registrado en Caja Grande para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+          createdAt: registeredAt,
+          createdByName: createdBy,
+          cashMovementId: movementId || null,
+          cashReceiptCode: receiptCode,
+          cashRegisteredAt: registeredAt,
+        });
+      }
+      await saveContractEconomicLedgerRows(
+        nextLedger,
+        `Cobro registrado en Caja Grande${receiptCode ? ` con recibo ${receiptCode}` : ''}.`,
+        { force: true },
+      );
       setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}.`);
       setContractEconomicsCollectionDraft({
         amountBs: '',
@@ -5297,10 +5342,7 @@ function ServiceOrdersSection({
 
     const refundableBs = Math.max(
       0,
-      toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-      toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-        - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-        - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
+      toMoneyNumber(contractEconomicsData.guaranteeRefundAvailableBs),
     );
     const amount = Math.max(0, toMoneyNumber(contractEconomicsGuaranteeRefundDraft.amountBs || refundableBs));
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsGuaranteeRefundDraft.paymentMethod);
@@ -5371,6 +5413,9 @@ function ServiceOrdersSection({
           || `Devolucion de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
         createdAt: new Date().toISOString(),
         createdByName,
+        cashMovementId: movementId || null,
+        cashReceiptCode: String(result?.receiptCode ?? result?.movement?.receiptCode ?? result?.receipt ?? result?.movement?.receipt ?? '').trim(),
+        cashRegisteredAt: result?.createdAt ?? result?.movement?.createdAt ?? new Date().toISOString(),
       };
       const updated = await saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
@@ -6790,8 +6835,8 @@ function ServiceOrdersSection({
                     <div>
                       <h4>Cobro con recibo a Caja Grande</h4>
                       <p>
-                        {contractEconomicsData.managedDebtBs > 0
-                          ? `Falta registrar en Caja Grande: ${formatBs(contractEconomicsData.managedDebtBs)}. Este registro genera recibo e ingreso real en caja.`
+                        {contractEconomicsData.cashCollectionSuggestedBs > 0
+                          ? `Falta registrar/cobrar segun cuaderno: ${formatBs(contractEconomicsData.cashCollectionSuggestedBs)}. Este registro genera recibo e ingreso real en Caja Grande.`
                           : `Caja registrada: ${formatBs(contractEconomicsData.cashRegisteredBs)}. Usa el cuaderno solo para separar garantia, cargos y devoluciones.`}
                       </p>
                     </div>
@@ -6803,8 +6848,8 @@ function ServiceOrdersSection({
                         step="0.01"
                         value={contractEconomicsCollectionDraft.amountBs}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={contractEconomicsData.managedDebtBs > 0 ? String(contractEconomicsData.managedDebtBs.toFixed(2)) : '0.00'}
-                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
+                        placeholder={contractEconomicsData.cashCollectionSuggestedBs > 0 ? String(contractEconomicsData.cashCollectionSuggestedBs.toFixed(2)) : '0.00'}
+                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <label>
@@ -6812,7 +6857,7 @@ function ServiceOrdersSection({
                       <select
                         value={contractEconomicsCollectionDraft.paymentMethod}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
                       >
                         <option value="efectivo">Efectivo</option>
                         <option value="qr">QR</option>
@@ -6825,7 +6870,7 @@ function ServiceOrdersSection({
                         <select
                           value={contractEconomicsCollectionDraft.paymentAccount}
                           onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                          disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
+                          disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
                         >
                           <option value="">Seleccionar</option>
                           {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
@@ -6838,13 +6883,13 @@ function ServiceOrdersSection({
                         value={contractEconomicsCollectionDraft.receipt}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
                         placeholder="Referencia opcional"
-                        disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={readOnly || contractEconomicsData.managedDebtBs <= 0 || isSavingContractEconomicsCollection}
+                      disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
                     >
                       {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
                     </button>
@@ -6854,20 +6899,8 @@ function ServiceOrdersSection({
                     <div>
                       <h4>Devolver garantia desde Caja Grande con recibo</h4>
                       <p>
-                        {Math.max(
-                          0,
-                          toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-                          toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-                            - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-                            - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
-                        ) > 0
-                          ? `Disponible para devolver: ${formatBs(Math.max(
-                            0,
-                            toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-                            toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-                              - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-                              - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
-                          ))}. Este registro genera un egreso de Caja Grande y su recibo.`
+                        {contractEconomicsData.guaranteeRefundAvailableBs > 0
+                          ? `Disponible para devolver: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}. Este registro genera un egreso de Caja Grande y su recibo.`
                           : 'No existe una garantia disponible para devolver.'}
                       </p>
                     </div>
@@ -6879,20 +6912,8 @@ function ServiceOrdersSection({
                         step="0.01"
                         value={contractEconomicsGuaranteeRefundDraft.amountBs}
                         onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={String(Math.max(
-                          0,
-                          toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-                          toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-                            - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-                            - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
-                        ).toFixed(2))}
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || Math.max(
-                          0,
-                          toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-                          toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-                            - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-                            - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
-                        ) <= 0}
+                        placeholder={String(contractEconomicsData.guaranteeRefundAvailableBs.toFixed(2))}
+                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
                       />
                     </label>
                     <label>
@@ -6900,7 +6921,7 @@ function ServiceOrdersSection({
                       <select
                         value={contractEconomicsGuaranteeRefundDraft.paymentMethod}
                         onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund}
+                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
                       >
                         <option value="efectivo">Efectivo</option>
                         <option value="qr">QR</option>
@@ -6913,7 +6934,7 @@ function ServiceOrdersSection({
                         <select
                           value={contractEconomicsGuaranteeRefundDraft.paymentAccount}
                           onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                          disabled={readOnly || isSavingContractEconomicsGuaranteeRefund}
+                          disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
                         >
                           <option value="">Seleccionar</option>
                           {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
@@ -6926,19 +6947,13 @@ function ServiceOrdersSection({
                         value={contractEconomicsGuaranteeRefundDraft.receipt}
                         onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, receipt: event.target.value }))}
                         placeholder="Referencia opcional"
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund}
+                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
                       />
                     </label>
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || Math.max(
-                        0,
-                        toMoneyNumber(contractEconomicsData.ledgerRefundSuggestedBs),
-                        toMoneyNumber(contractEconomicsData.guaranteeValidatedBs)
-                          - Math.max(toMoneyNumber(contractEconomicsData.penaltiesBs), toMoneyNumber(contractEconomicsData.ledgerTotals.chargesBs))
-                          - toMoneyNumber(contractEconomicsData.ledgerTotals.refundedBs),
-                      ) <= 0}
+                      disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
                     >
                       {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
                     </button>
