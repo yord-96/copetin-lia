@@ -974,6 +974,7 @@ const normalizeCoverageDraftLines = (value) => {
       supplierQuoteCode: line?.supplierQuoteCode ?? null,
       neededQty: Math.max(0, Math.trunc(Number(line?.neededQty ?? 0))),
       supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
+      manualCoverage: Boolean(line?.manualCoverage),
     }))
     .filter((line) => line.neededQty > 0 || line.supplierId || line.supplierName);
 };
@@ -2780,6 +2781,7 @@ function ServiceOrdersSection({
         supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
         neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
         supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
+        manualCoverage: Boolean(line?.manualCoverage),
       });
       fromRecord[coverageKey] = { coverages: current };
     });
@@ -2818,20 +2820,22 @@ function ServiceOrdersSection({
 
         const offers = supplierOffersByItemId.get(legacyItemKey) ?? [];
         const fallbackOffer = offers[0] ?? null;
-        const coveredQty = existingCoverages.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
-
         const normalizedCoverages = existingCoverages.map((entry) => ({
           ...entry,
           lineKey: coverageKey !== legacyItemKey ? coverageKey : entry.lineKey ?? null,
           neededQty: Math.max(1, Math.trunc(Number(entry.neededQty ?? 1))),
           supplierUnitCostBs: Math.max(0, Number(entry.supplierUnitCostBs ?? fallbackOffer?.supplierUnitCostBs ?? 0)),
         }));
+        const coveredQty = normalizedCoverages
+          .filter((entry) => !entry.manualCoverage)
+          .reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
         const maxCoverageQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
         if (coveredQty > maxCoverageQty) {
           let remaining = maxCoverageQty;
           next[coverageKey] = {
             coverages: normalizedCoverages
               .map((entry) => {
+                if (entry.manualCoverage) return entry;
                 const quantity = Math.min(Math.max(0, remaining), Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))));
                 remaining -= quantity;
                 return { ...entry, neededQty: quantity };
@@ -2862,7 +2866,10 @@ function ServiceOrdersSection({
         const coverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
         const validCoverageLines = coverageLines.filter((entry) => entry.supplierId && entry.supplierName && entry.neededQty > 0);
         const plannedCoveredQty = validCoverageLines.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
-        const effectiveShortageQty = Math.max(shortageQty, Math.min(requestedForItem, plannedCoveredQty));
+        const manualCoveredQty = validCoverageLines
+          .filter((entry) => entry.manualCoverage)
+          .reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
+        const effectiveShortageQty = Math.max(shortageQty, Math.min(requestedForItem + manualCoveredQty, plannedCoveredQty));
         if (effectiveShortageQty <= 0) return null;
         const coveredQty = Math.min(
           effectiveShortageQty,
@@ -2873,6 +2880,7 @@ function ServiceOrdersSection({
           itemId: line.itemId,
           itemName: line.item.name,
           saleUnitPriceBs: line.unitPriceBs,
+          manualSaleQty: manualCoveredQty,
           shortageQty: effectiveShortageQty,
           coveredQty,
           uncoveredQty: Math.max(0, effectiveShortageQty - coveredQty),
@@ -2894,11 +2902,15 @@ function ServiceOrdersSection({
     const totalCoveredQty = coveredLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
     const totalCostBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.supplierUnitCostBs ?? 0))), 0);
     const totalSaleBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.saleUnitPriceBs ?? 0))), 0);
+    const manualSaleBs = coveredLines
+      .filter((line) => line.manualCoverage)
+      .reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.saleUnitPriceBs ?? 0))), 0);
     return {
       lines: coveredLines.length,
       totalCoveredQty,
       totalCostBs: Number(totalCostBs.toFixed(2)),
       totalSaleBs: Number(totalSaleBs.toFixed(2)),
+      manualSaleBs: Number(manualSaleBs.toFixed(2)),
       totalMarginBs: Number((totalSaleBs - totalCostBs).toFixed(2)),
     };
   }, [supplierCoverageRows]);
@@ -2932,8 +2944,8 @@ function ServiceOrdersSection({
   }, [availabilityByItemId]);
 
   const baseItemsSubtotalBs = useMemo(
-    () => selectedItems.reduce((sum, line) => sum + line.lineTotalBs, 0),
-    [selectedItems],
+    () => selectedItems.reduce((sum, line) => sum + line.lineTotalBs, 0) + supplierCoverageTotals.manualSaleBs,
+    [selectedItems, supplierCoverageTotals.manualSaleBs],
   );
 
   const servicesSubtotalBs = useMemo(
@@ -3236,6 +3248,7 @@ function ServiceOrdersSection({
         neededQty: Number(line.neededQty ?? 0),
         supplierUnitCostBs: Number(line.supplierUnitCostBs ?? 0),
         saleUnitPriceBs: Number(line.saleUnitPriceBs ?? 0),
+        manualCoverage: Boolean(line.manualCoverage),
       }))
       : [],
   });
@@ -3378,10 +3391,10 @@ function ServiceOrdersSection({
     const coverageKey = getSupplierCoverageKey(line);
     const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
     const alreadyCoveredQty = currentCoverages.reduce((sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.neededQty ?? 0))), 0);
-    const coverLimitQty = Math.max(1, Math.trunc(Number(requestedForItem)) - alreadyCoveredQty);
+    const coverLimitQty = manualMode ? null : Math.max(1, Math.trunc(Number(requestedForItem)) - alreadyCoveredQty);
     const remainingShortageQty = Math.max(0, shortageQty - alreadyCoveredQty);
     const defaultCoverageQty = manualMode
-      ? Math.max(1, remainingShortageQty || Math.min(coverLimitQty, Math.max(1, Math.trunc(Number(line.quantity ?? 1)) - Math.max(0, Math.trunc(Number(availableStock ?? 0))))))
+      ? Math.max(1, remainingShortageQty || Math.max(1, Math.trunc(Number(line.quantity ?? 1)) - Math.max(0, Math.trunc(Number(availableStock ?? 0)))))
       : Math.max(1, remainingShortageQty);
     const details = getOperationalItemDetails(line);
     const detailValue = (label) => details.find((entry) => entry.label === label)?.value ?? '';
@@ -3422,13 +3435,16 @@ function ServiceOrdersSection({
   const saveSupplierCoverageFromModal = async () => {
     if (!supplierCoverageModal) return;
     setSupplierCoverageError('');
-    const coverLimitQty = Math.max(1, Math.trunc(Number(
-      supplierCoverageModal.coverLimitQty
-      ?? supplierCoverageModal.remainingShortageQty
-      ?? supplierCoverageModal.shortageQty
-      ?? 1,
-    )));
-    const requestedQty = Math.max(1, Math.min(coverLimitQty, parseIntegerInput(supplierCoverageDraft.quantity, 1)));
+    const parsedRequestedQty = parseIntegerInput(supplierCoverageDraft.quantity, 1);
+    const coverLimitQty = supplierCoverageModal.manualMode
+      ? null
+      : Math.max(1, Math.trunc(Number(
+        supplierCoverageModal.coverLimitQty
+        ?? supplierCoverageModal.remainingShortageQty
+        ?? supplierCoverageModal.shortageQty
+        ?? 1,
+      )));
+    const requestedQty = Math.max(1, coverLimitQty ? Math.min(coverLimitQty, parsedRequestedQty) : parsedRequestedQty);
     const supplierCost = Math.max(0, parseMoneyInput(supplierCoverageDraft.supplierUnitCostBs, 0));
     const salePrice = Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0));
     const itemName = String(supplierCoverageDraft.itemName ?? '').trim();
@@ -3503,6 +3519,7 @@ function ServiceOrdersSection({
         supplierQuoteCode: quote?.quoteCode ?? null,
         neededQty: requestedQty,
         supplierUnitCostBs: supplierCost,
+        manualCoverage: Boolean(supplierCoverageModal.manualMode),
       });
       setActionFeedback(`Proveedor ${supplier.name} vinculado al faltante de ${supplierCoverageModal.itemName}.`);
       closeSupplierCoverageModal(true);
@@ -4512,6 +4529,7 @@ function ServiceOrdersSection({
         neededQty: coverage.neededQty,
         supplierUnitCostBs: coverage.supplierUnitCostBs,
         saleUnitPriceBs: line.saleUnitPriceBs,
+        manualCoverage: Boolean(coverage.manualCoverage),
       })))
       .filter((line) => line.neededQty > 0 && line.supplierId && line.supplierName);
     const selectedResponsibles = getSelectedResponsibles();
@@ -7451,7 +7469,9 @@ function ServiceOrdersSection({
                     ? `${supplierCoverageModal.itemName}: puedes decidir cuantas unidades cubrir con proveedor.`
                     : `${supplierCoverageModal.itemName} tiene faltante de ${supplierCoverageModal.shortageQty} u.`}
                   {' '}
-                  Maximo proveedor: {supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.
+                  {supplierCoverageModal.manualMode
+                    ? 'La cantidad del proveedor se suma a la cantidad propia.'
+                    : `Maximo proveedor: ${supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.`}
                 </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => closeSupplierCoverageModal()}>
@@ -7545,8 +7565,10 @@ function ServiceOrdersSection({
                   Cantidad a cubrir
                   <input type="text" inputMode="numeric" value={supplierCoverageDraft.quantity} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('quantity', event.target.value)} />
                   <small>
-                    Maximo proveedor: {supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.
-                    {supplierCoverageModal.shortageQty > 0 ? ` Faltante automatico: ${supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.` : ' Puedes subalquilar aunque tengas stock propio.'}
+                    {supplierCoverageModal.manualMode
+                      ? 'Proveedor se suma aparte. Ej.: propio 70 + proveedor 130 = contrato 200.'
+                      : `Maximo proveedor: ${supplierCoverageModal.coverLimitQty ?? supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.`}
+                    {!supplierCoverageModal.manualMode && supplierCoverageModal.shortageQty > 0 ? ` Faltante automatico: ${supplierCoverageModal.remainingShortageQty ?? supplierCoverageModal.shortageQty} u.` : ''}
                   </small>
                 </label>
                 <label className="supplier-coverage-field">
