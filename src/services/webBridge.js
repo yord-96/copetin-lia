@@ -8231,7 +8231,7 @@ const summarizeContractChanges = (beforeContract, contract) => {
   return changes;
 };
 
-const syncApprovedContractOperation = (state, contract, payload, now) => {
+const syncApprovedContractOperation = (state, contract, payload, now, beforeContract = null) => {
   if (String(contract?.status ?? '').trim() !== 'aprobado') return;
 
   const rental = state.rentals.find((entry) => (
@@ -8248,17 +8248,30 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
   const userName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
   const userRole = String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion';
   const oldLinesByItem = new Map();
+  const oldLinesByName = new Map();
   (rental.items ?? []).forEach((line) => {
     const key = String(line?.itemId ?? '').trim();
-    if (!key) return;
-    const current = oldLinesByItem.get(key);
-    if (!current) {
-      oldLinesByItem.set(key, { ...line });
-      return;
+    const nameKey = normalizeText(line?.itemName ?? line?.name ?? '');
+    if (key) {
+      const current = oldLinesByItem.get(key);
+      if (!current) {
+        oldLinesByItem.set(key, { ...line });
+      } else {
+        current.quantity = Number(current.quantity ?? 0) + Number(line.quantity ?? 0);
+        current.internalReservedQty = Number(current.internalReservedQty ?? 0) + Number(line.internalReservedQty ?? 0);
+        current.supplierBackedQty = Number(current.supplierBackedQty ?? 0) + Number(line.supplierBackedQty ?? 0);
+      }
     }
-    current.quantity = Number(current.quantity ?? 0) + Number(line.quantity ?? 0);
-    current.internalReservedQty = Number(current.internalReservedQty ?? 0) + Number(line.internalReservedQty ?? 0);
-    current.supplierBackedQty = Number(current.supplierBackedQty ?? 0) + Number(line.supplierBackedQty ?? 0);
+    if (nameKey) {
+      const currentByName = oldLinesByName.get(nameKey);
+      if (!currentByName) {
+        oldLinesByName.set(nameKey, { ...line });
+      } else {
+        currentByName.quantity = Number(currentByName.quantity ?? 0) + Number(line.quantity ?? 0);
+        currentByName.internalReservedQty = Number(currentByName.internalReservedQty ?? 0) + Number(line.internalReservedQty ?? 0);
+        currentByName.supplierBackedQty = Number(currentByName.supplierBackedQty ?? 0) + Number(line.supplierBackedQty ?? 0);
+      }
+    }
   });
 
   const supplierSupportByItem = new Map();
@@ -8286,8 +8299,29 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     )),
   );
   const remainingOldInternalReservedByItem = new Map();
+  const remainingOldInternalReservedByName = new Map();
   oldLinesByItem.forEach((line, itemId) => {
     remainingOldInternalReservedByItem.set(itemId, getLineInternalReservedQty(line));
+  });
+  oldLinesByName.forEach((line, itemName) => {
+    remainingOldInternalReservedByName.set(itemName, getLineInternalReservedQty(line));
+  });
+  (beforeContract?.items ?? []).forEach((line) => {
+    const itemId = String(line?.itemId ?? '').trim();
+    const itemName = normalizeText(line?.itemName ?? line?.name ?? '');
+    const reservedQty = getLineInternalReservedQty(line);
+    if (itemId) {
+      remainingOldInternalReservedByItem.set(
+        itemId,
+        Math.max(Number(remainingOldInternalReservedByItem.get(itemId) ?? 0), reservedQty),
+      );
+    }
+    if (itemName) {
+      remainingOldInternalReservedByName.set(
+        itemName,
+        Math.max(Number(remainingOldInternalReservedByName.get(itemName) ?? 0), reservedQty),
+      );
+    }
   });
 
   const availabilityPeriod = buildAvailabilityPeriod({
@@ -8312,10 +8346,15 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
       );
       const internalRequestedQty = Math.max(0, quantity - supplierBackedQty);
       const itemId = String(line.itemId);
+      const itemName = normalizeText(line.itemName ?? item.name ?? '');
       const oldReservedQty = Number(remainingOldInternalReservedByItem.get(itemId) ?? 0);
-      const alreadyReservedQty = Math.min(internalRequestedQty, oldReservedQty);
+      const oldReservedByNameQty = itemName ? Number(remainingOldInternalReservedByName.get(itemName) ?? 0) : 0;
+      const alreadyReservedQty = Math.min(internalRequestedQty, Math.max(oldReservedQty, oldReservedByNameQty));
       if (alreadyReservedQty > 0) {
         remainingOldInternalReservedByItem.set(itemId, Math.max(0, oldReservedQty - alreadyReservedQty));
+        if (itemName) {
+          remainingOldInternalReservedByName.set(itemName, Math.max(0, oldReservedByNameQty - alreadyReservedQty));
+        }
       }
       return {
         itemId: item.id,
@@ -8351,7 +8390,9 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
 
   const nextLines = (contract.items ?? []).map((line, index) => {
     const item = state.items.find((entry) => String(entry.id) === String(line.itemId));
-    const oldLine = oldLinesByItem.get(String(line.itemId)) ?? null;
+    const oldLine = oldLinesByItem.get(String(line.itemId))
+      ?? oldLinesByName.get(normalizeText(line.itemName ?? line.name ?? item?.name ?? ''))
+      ?? null;
     const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
     const lineKey = getInventoryLineKey(line, index);
     // Un contrato aprobado puede tener una linea historica cuyo producto fue retirado
@@ -12195,7 +12236,7 @@ const createWebBridge = () => ({
               changes,
             });
           }
-          syncApprovedContractOperation(state, contract, payload, now);
+          syncApprovedContractOperation(state, contract, payload, now, beforeContract);
         }
         contract.updatedAt = now;
         updated = deepClone(contract);
