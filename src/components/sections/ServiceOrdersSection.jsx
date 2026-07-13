@@ -9519,7 +9519,10 @@ function ServiceOrdersSection({
                                 </small>
                               ) : null}
                               {hasUncoveredShortage ? (
-                                <small className="orders-stock-error">Faltan {uncoveredForItem}. Coordinar proveedor.</small>
+                                <div className="orders-shortage-callout">
+                                  <strong>Faltan {uncoveredForItem} u.</strong>
+                                  <span>Asigna proveedor para completar este item.</span>
+                                </div>
                               ) : null}
                               {hasStockShortage && !hasUncoveredShortage ? (
                                 <small className="orders-available-note is-positive">
@@ -9528,8 +9531,8 @@ function ServiceOrdersSection({
                               ) : null}
                             </label>
                             {hasStockShortage || supplierCoverageLines.length > 0 ? (
-                              <div className="orders-line-field orders-supplier-coverage-field">
-                                <span>Subalquiler</span>
+                              <div className={`orders-line-field orders-supplier-coverage-field${hasUncoveredShortage ? ' needs-provider' : ''}`}>
+                                <span>{hasUncoveredShortage ? 'Proveedor requerido' : 'Subalquiler'}</span>
                                 <div className="orders-supplier-coverage-list">
                                   {supplierCoverageLines.length > 0 ? supplierCoverageLines.map((coverage) => (
                                     <span key={coverage.id} className="orders-supplier-coverage-chip">
@@ -9544,16 +9547,16 @@ function ServiceOrdersSection({
                                       </button>
                                     </span>
                                   )) : (
-                                    <small className="orders-stock-error">Sin proveedor asignado.</small>
+                                    <small className="orders-stock-error">Este faltante aun no tiene proveedor.</small>
                                   )}
                                 </div>
                                 <button
                                   type="button"
-                                  className="orders-inline-link"
+                                  className={`orders-inline-link${hasUncoveredShortage ? ' primary-provider-action' : ''}`}
                                   disabled={uncoveredForItem <= 0}
                                   onClick={() => openSupplierCoverageModal(line, availableStock)}
                                 >
-                                  + Agregar proveedor
+                                  {hasUncoveredShortage ? `Agregar proveedor (${uncoveredForItem} u.)` : '+ Agregar proveedor'}
                                 </button>
                                 <small className="orders-available-note">
                                   Faltante {effectiveShortageForItem} u. · cubierto {supplierCoveredQty} u.
@@ -10074,13 +10077,19 @@ function ServiceOrdersSection({
                       <>
                         {selectedItems.slice(0, 6).map((line) => {
                           const detailParts = getOperationalItemDetails(line);
+                          const shortageLine = uncoveredStockIssues.find((issue) => issue.itemId === line.itemId);
                           return (
-                            <div key={line.lineKey} className="orders-side-line">
+                            <div key={line.lineKey} className={`orders-side-line${shortageLine ? ' has-shortage' : ''}`}>
                               <span>
                                 {line.quantity}x {line.item.name} - {formatBs(line.unitPriceBs)} c/u
                                 {detailParts.length > 0 ? (
                                   <small className="orders-side-line-details">
                                     {detailParts.map((part) => `${part.label}: ${part.value}`).join(' | ')}
+                                  </small>
+                                ) : null}
+                                {shortageLine ? (
+                                  <small className="orders-side-line-shortage">
+                                    Falta proveedor para {shortageLine.uncoveredQty} u.
                                   </small>
                                 ) : null}
                               </span>
@@ -10103,10 +10112,19 @@ function ServiceOrdersSection({
                 </section>
 
                 {stockIssues.length > 0 ? (
-                  <div className={`orders-form-note ${uncoveredStockIssues.length > 0 ? 'orders-form-note-warn' : ''}`}>
-                    {uncoveredStockIssues.length > 0
-                      ? `Hay ${uncoveredStockIssues.length} item(s) con faltante sin proveedor definido.`
-                      : `Faltantes cubiertos por proveedor (${supplierCoverageTotals.totalCoveredQty} u.).`}
+                  <div className={`orders-form-note ${uncoveredStockIssues.length > 0 ? 'orders-form-note-warn orders-shortage-side-note' : ''}`}>
+                    {uncoveredStockIssues.length > 0 ? (
+                      <>
+                        <strong>Falta proveedor</strong>
+                        {uncoveredStockIssues.slice(0, 3).map((issue) => (
+                          <span key={issue.lineKey ?? issue.itemId}>
+                            {issue.itemName}: {issue.uncoveredQty} u. sin cubrir
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      `Faltantes cubiertos por proveedor (${supplierCoverageTotals.totalCoveredQty} u.).`
+                    )}
                   </div>
                 ) : null}
 

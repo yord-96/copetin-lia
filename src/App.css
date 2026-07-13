@@ -45563,6 +45563,50 @@ button.calendar-dispatch-row:focus-visible {
   white-space: nowrap;
 }
 
+.orders-wizard-modal .orders-summary-items .orders-side-line.has-shortage {
+  margin-inline: -0.3rem;
+  padding: 0.48rem 0.3rem;
+  border: 1px solid #fdba74;
+  border-radius: 0.54rem;
+  background: #fff7ed;
+}
+
+.orders-wizard-modal .orders-summary-items .orders-side-line.has-shortage > strong {
+  color: #c2410c;
+}
+
+.orders-wizard-modal .orders-summary-items .orders-side-line-shortage {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.24rem;
+  border: 1px solid #fb923c;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #9a3412;
+  font-size: 0.64rem;
+  font-weight: 900;
+  padding: 0.14rem 0.46rem;
+}
+
+.orders-wizard-modal .orders-shortage-side-note {
+  display: grid;
+  gap: 0.22rem;
+  border-color: #fb923c;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.orders-wizard-modal .orders-shortage-side-note strong {
+  color: #9a3412;
+  font-size: 0.78rem;
+}
+
+.orders-wizard-modal .orders-shortage-side-note span {
+  color: #c2410c;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
 .orders-wizard-modal .orders-summary-empty strong {
   font-size: 0.8rem;
 }
@@ -57392,6 +57436,59 @@ body:has(.accounting-bigcash-view) .workspace {
   margin: 0 !important;
   justify-self: end !important;
   white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.stock-warning {
+  border-color: #fb923c !important;
+  background: linear-gradient(90deg, #fff7ed 0%, #ffffff 16rem) !important;
+  box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.18), 0 0.55rem 1.4rem rgba(194, 65, 12, 0.12) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-shortage-callout {
+  display: grid !important;
+  gap: 0.12rem !important;
+  margin-top: 0.38rem !important;
+  padding: 0.46rem 0.54rem !important;
+  border: 1px solid #fdba74 !important;
+  border-radius: 0.58rem !important;
+  background: #fff7ed !important;
+  box-shadow: inset 0.24rem 0 0 #f97316 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-shortage-callout strong {
+  color: #c2410c !important;
+  font-size: 0.76rem !important;
+  line-height: 1.1 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-shortage-callout span {
+  color: #9a3412 !important;
+  font-size: 0.66rem !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.needs-provider.orders-line-field {
+  border-color: #fb923c !important;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%) !important;
+  box-shadow: inset 0.34rem 0 0 #f97316, 0 0.5rem 1.25rem rgba(249, 115, 22, 0.14) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.needs-provider.orders-line-field > span {
+  color: #9a3412 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link.primary-provider-action {
+  border-color: #ea580c !important;
+  background: #ea580c !important;
+  color: #ffffff !important;
+  font-weight: 950 !important;
+  box-shadow: 0 0.45rem 0.9rem rgba(234, 88, 12, 0.22) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link.primary-provider-action:hover:not(:disabled) {
+  background: #c2410c !important;
+  border-color: #c2410c !important;
 }
 
 @media (max-width: 1320px) {
