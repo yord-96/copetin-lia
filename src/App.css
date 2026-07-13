@@ -57994,3 +57994,70 @@ body:has(.accounting-bigcash-view) .workspace {
     text-align: left !important;
   }
 }
+
+/* Final safety: supplier coverage must live below the item controls, never over price/discount/subtotal. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field {
+  grid-area: coverage !important;
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  position: static !important;
+  z-index: 0 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.52rem 0.72rem !important;
+  margin: 0.18rem 0 0 !important;
+  padding: 0.62rem 0.72rem !important;
+  overflow: hidden !important;
+  border: 1px solid #bfd7ff !important;
+  border-radius: 0.78rem !important;
+  background: linear-gradient(135deg, #f5f9ff 0%, #ffffff 100%) !important;
+  box-shadow: inset 0.28rem 0 0 #2563eb, 0 0.45rem 1rem rgba(37, 99, 235, 0.08) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field > span {
+  flex: 0 0 auto !important;
+  min-width: 6.8rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-list {
+  flex: 1 1 16rem !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.42rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-supplier-coverage-chip {
+  max-width: 100% !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link {
+  flex: 0 0 auto !important;
+  justify-self: auto !important;
+  min-height: 2.05rem !important;
+  height: auto !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+  flex: 1 1 12rem !important;
+  min-width: 0 !important;
+  justify-self: auto !important;
+  text-align: right !important;
+  white-space: normal !important;
+}
+
+@media (max-width: 1380px) {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field.orders-line-field > span,
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field .orders-inline-link,
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+    flex-basis: auto !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-supplier-coverage-field > .orders-available-note {
+    text-align: left !important;
+  }
+}
