@@ -8278,6 +8278,18 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     );
   });
 
+  const getLineInternalReservedQty = (line) => Math.max(
+    0,
+    Math.trunc(Number(
+      line?.internalReservedQty
+      ?? (line?.controlsStock === false ? 0 : Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)),
+    )),
+  );
+  const remainingOldInternalReservedByItem = new Map();
+  oldLinesByItem.forEach((line, itemId) => {
+    remainingOldInternalReservedByItem.set(itemId, getLineInternalReservedQty(line));
+  });
+
   const availabilityPeriod = buildAvailabilityPeriod({
     deliveryDate: contract.deliveryDate || rental.rentalDate,
     deliveryWindowStart: contract.deliveryWindowStart || rental.deliveryWindowStart || '00:00',
@@ -8298,10 +8310,17 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
             : supplierSupportByItem.get(String(line.itemId)) ?? 0,
         ),
       );
+      const internalRequestedQty = Math.max(0, quantity - supplierBackedQty);
+      const itemId = String(line.itemId);
+      const oldReservedQty = Number(remainingOldInternalReservedByItem.get(itemId) ?? 0);
+      const alreadyReservedQty = Math.min(internalRequestedQty, oldReservedQty);
+      if (alreadyReservedQty > 0) {
+        remainingOldInternalReservedByItem.set(itemId, Math.max(0, oldReservedQty - alreadyReservedQty));
+      }
       return {
         itemId: item.id,
         itemName: item.name,
-        quantity: Math.max(0, quantity - supplierBackedQty),
+        quantity: internalRequestedQty - alreadyReservedQty,
       };
     })
     .filter((line) => line && Number(line.quantity ?? 0) > 0);
@@ -8362,15 +8381,7 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     );
     const controlsStock = lineControlsStock(line, item);
     const internalReservedQty = controlsStock ? Math.max(0, quantity - supplierBackedQty) : 0;
-    const oldInternalReservedQty = oldLine
-      ? Math.max(
-        0,
-        Math.trunc(Number(
-          oldLine.internalReservedQty
-          ?? (oldLine.controlsStock === false ? 0 : Number(oldLine.quantity ?? 0) - Number(oldLine.supplierBackedQty ?? 0)),
-        )),
-      )
-      : 0;
+    const oldInternalReservedQty = oldLine ? getLineInternalReservedQty(oldLine) : 0;
     const reservationDelta = internalReservedQty - oldInternalReservedQty;
 
     const currentAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
@@ -8435,13 +8446,7 @@ const syncApprovedContractOperation = (state, contract, payload, now) => {
     if (nextLines.some((line) => String(line.itemId) === itemId)) return;
     const item = state.items.find((entry) => String(entry.id) === itemId);
     if (!item) return;
-    const releasedQty = Math.max(
-      0,
-      Math.trunc(Number(
-        oldLine.internalReservedQty
-        ?? (oldLine.controlsStock === false ? 0 : Number(oldLine.quantity ?? 0) - Number(oldLine.supplierBackedQty ?? 0)),
-      )),
-    );
+    const releasedQty = getLineInternalReservedQty(oldLine);
     if (releasedQty <= 0) return;
     const beforeAvailableStock = Number(item.availableStock ?? 0);
     const beforeTotalStock = Number(item.totalStock ?? 0);
