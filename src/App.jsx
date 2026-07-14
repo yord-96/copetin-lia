@@ -367,6 +367,7 @@ function App() {
           <RecibosSection
             receipts={controller.receipts}
             generatedReports={controller.generatedReports}
+            auditLog={controller.auditLog}
             formatBs={formatBs}
             formatDateTime={formatDateTime}
             onPrintRentalReceipt={controller.handlePrintRentalReceipt}
@@ -522,6 +523,7 @@ function App() {
           <ServiceOrdersSection
             quotes={controller.quotes}
             contracts={controller.contracts}
+            hiddenContracts={controller.hiddenContracts}
             rentals={controller.rentals}
             deliveries={controller.deliveries}
             cashMovements={controller.cashMovements}

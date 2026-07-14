@@ -807,6 +807,7 @@ export const api = {
   },
   contracts: {
     list: () => callBridge('contracts', 'list', false),
+    listHidden: () => callBridge('contracts', 'listHidden', false),
     create: (payload) => callBridge('contracts', 'create', true, payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
     updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),
@@ -927,6 +928,9 @@ export const api = {
   reports: {
     listGenerated: () => callBridge('reports', 'listGenerated', false),
     generate: (payload) => callBridge('reports', 'generate', true, payload),
+  },
+  audit: {
+    list: () => callBridge('audit', 'list', false),
   },
   rentals: {
     list: () => callBridge('rentals', 'list', false),

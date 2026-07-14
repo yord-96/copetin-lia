@@ -90,6 +90,7 @@ export const useAppController = () => {
   const [categories, setCategories] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [contracts, setContracts] = useState([]);
+  const [hiddenContracts, setHiddenContracts] = useState([]);
   const [supplierBundle, setSupplierBundle] = useState({ suppliers: [], quotes: [], loans: [] });
   const [personnelBundle, setPersonnelBundle] = useState({ employees: [], attendance: [], incidents: [] });
   const [inventoryMovements, setInventoryMovements] = useState([]);
@@ -120,6 +121,7 @@ export const useAppController = () => {
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [settingsBundle, setSettingsBundle] = useState({ settings: null, categories: [] });
   const [generatedReports, setGeneratedReports] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
 
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -138,6 +140,7 @@ export const useAppController = () => {
         categoriesData,
         quotesData,
         contractsData,
+        hiddenContractsData,
         suppliersData,
         personnelData,
         movementsData,
@@ -156,6 +159,7 @@ export const useAppController = () => {
         calendarEventsData,
         settingsData,
         reportsData,
+        auditLogData,
         presenceData,
         attendanceRecordsData,
       ] = await Promise.all([
@@ -165,6 +169,7 @@ export const useAppController = () => {
         api.categories.list(),
         api.quotes.list(),
         api.contracts.list(),
+        api.contracts.listHidden(),
         api.suppliers.listBundle(),
         api.personnel.listBundle(),
         api.inventory.listMovements(),
@@ -183,6 +188,7 @@ export const useAppController = () => {
         api.calendar.listEvents(),
         api.settings.get(),
         api.reports.listGenerated(),
+        api.audit.list(),
         api.presence.listActive(),
         api.attendance.listRecords(),
       ]);
@@ -193,6 +199,7 @@ export const useAppController = () => {
       setCategories(categoriesData);
       setQuotes(quotesData);
       setContracts(contractsData);
+      setHiddenContracts(hiddenContractsData);
       setSupplierBundle(suppliersData);
       setPersonnelBundle(personnelData);
       setInventoryMovements(movementsData);
@@ -211,6 +218,7 @@ export const useAppController = () => {
       setCalendarEvents(calendarEventsData);
       setSettingsBundle(settingsData);
       setGeneratedReports(reportsData);
+      setAuditLog(auditLogData);
       setUserPresence(normalizePresenceList(presenceData));
       setAttendanceRecords(attendanceRecordsData);
     } catch (loadError) {
@@ -727,7 +735,7 @@ export const useAppController = () => {
   const handleGenerateReport = async (payload) => {
     setError('');
     try {
-      await api.reports.generate(payload);
+      await api.reports.generate({ ...getCurrentUserTrace(), ...payload });
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo generar el reporte.');
@@ -738,7 +746,7 @@ export const useAppController = () => {
   const handleCreateInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.create(payload);
+      await api.inventory.create({ ...getCurrentUserTrace(), ...payload });
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el producto de inventario.');
@@ -759,7 +767,7 @@ export const useAppController = () => {
   const handleUpdateInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.update(payload);
+      await api.inventory.update({ ...getCurrentUserTrace(), ...payload });
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el producto de inventario.');
@@ -770,7 +778,7 @@ export const useAppController = () => {
   const handleRemoveInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.remove(payload);
+      await api.inventory.remove({ ...getCurrentUserTrace(), ...payload });
       await loadData();
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el producto de inventario.');
@@ -1968,6 +1976,7 @@ export const useAppController = () => {
     categories,
     quotes,
     contracts,
+    hiddenContracts,
     supplierBundle,
     personnelBundle,
     inventoryMovements,
@@ -1993,6 +2002,7 @@ export const useAppController = () => {
     calendarEvents,
     settingsBundle,
     generatedReports,
+    auditLog,
     categoryItemCount,
     imagePreview,
     setImagePreview,

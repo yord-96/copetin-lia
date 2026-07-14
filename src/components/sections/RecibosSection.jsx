@@ -108,6 +108,7 @@ function ReportIcon({ kind }) {
 function RecibosSection({
   receipts = [],
   generatedReports = [],
+  auditLog = [],
   formatBs,
   formatDateTime,
   onPrintRentalReceipt,
@@ -175,6 +176,29 @@ function RecibosSection({
     }),
     [categoryFilter, formatFilter, recentReports],
   );
+
+  const recentAuditLog = useMemo(
+    () => auditLog.slice(0, 80).map((entry) => ({
+      id: entry.id,
+      action: String(entry.action ?? 'update').trim(),
+      module: entry.module || 'Sistema',
+      userName: entry.userName || 'Sistema',
+      userRole: entry.userRole || '',
+      title: entry.title || 'Actividad registrada',
+      detail: entry.detail || (Array.isArray(entry.changes) ? entry.changes[0] : '') || '-',
+      createdAt: formatDateTime(entry.createdAt),
+    })),
+    [auditLog, formatDateTime],
+  );
+
+  const getAuditActionLabel = (action) => {
+    if (action === 'create') return 'Creo';
+    if (action === 'update') return 'Edito';
+    if (action === 'delete') return 'Elimino';
+    if (action === 'hide') return 'Oculto';
+    if (action === 'restore') return 'Restauro';
+    return 'Registro';
+  };
 
   const kpiCards = [
     { tone: 'lilac', icon: 'money', value: formatBs(salesTotal), label: 'Ventas del mes', trend: `+ ${pendingReceipts} saldos pendientes`, trendTone: 'up' },
@@ -287,6 +311,62 @@ function RecibosSection({
               </button>
             </article>
           ))}
+        </div>
+      </article>
+
+      <article className="reports-recent-card reports-audit-card">
+        <header className="reports-recent-head">
+          <div>
+            <h3>Bitacora del sistema</h3>
+            <p>Registro de creaciones, ediciones, eliminaciones y validaciones importantes.</p>
+          </div>
+        </header>
+
+        <div className="reports-recent-table-wrap">
+          <table className="reports-recent-table reports-audit-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Usuario</th>
+                <th>Accion</th>
+                <th>Modulo</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentAuditLog.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <p className="status">Todavia no hay movimientos registrados en la bitacora.</p>
+                  </td>
+                </tr>
+              ) : (
+                recentAuditLog.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.createdAt}</td>
+                    <td>
+                      <div className="reports-audit-user">
+                        <strong>{entry.userName}</strong>
+                        <span>{entry.userRole}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`reports-audit-chip ${entry.action}`}>
+                        {getAuditActionLabel(entry.action)}
+                      </span>
+                    </td>
+                    <td>{entry.module}</td>
+                    <td>
+                      <div className="reports-audit-detail">
+                        <strong>{entry.title}</strong>
+                        <span>{entry.detail}</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </article>
 

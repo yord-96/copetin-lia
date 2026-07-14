@@ -978,6 +978,7 @@ const createSeedData = () => {
     cashDebts: [],
     attendanceRecords: [],
     resetLogs: [],
+    systemAuditLog: [],
     userPresence: [],
   };
 };
@@ -1799,6 +1800,24 @@ const normalizeState = (state) => {
     })).filter((report) => report.name)
     : [];
 
+  source.systemAuditLog = Array.isArray(source.systemAuditLog)
+    ? source.systemAuditLog.map((entry) => ({
+      id: entry?.id ?? makeId('aud'),
+      action: String(entry?.action ?? 'update').trim() || 'update',
+      module: String(entry?.module ?? 'Sistema').trim() || 'Sistema',
+      entityType: String(entry?.entityType ?? '').trim() || null,
+      entityId: String(entry?.entityId ?? '').trim() || null,
+      entityCode: String(entry?.entityCode ?? '').trim() || null,
+      title: String(entry?.title ?? '').trim() || 'Actividad registrada',
+      detail: String(entry?.detail ?? '').trim(),
+      changes: Array.isArray(entry?.changes) ? entry.changes.map((change) => String(change ?? '').trim()).filter(Boolean) : [],
+      userId: entry?.userId ?? null,
+      userName: String(entry?.userName ?? 'Sistema').trim() || 'Sistema',
+      userRole: String(entry?.userRole ?? 'Sistema').trim() || 'Sistema',
+      createdAt: entry?.createdAt ?? now,
+    })).filter((entry) => entry.title)
+    : [];
+
   source.quotes = Array.isArray(source.quotes)
     ? source.quotes.map((quote) => {
       const items = Array.isArray(quote?.items)
@@ -2199,6 +2218,9 @@ const normalizeState = (state) => {
         createdById: contract?.createdById ?? contract?.userId ?? primaryResponsible?.id ?? null,
         createdByName: String(contract?.createdByName ?? contract?.userName ?? primaryResponsible?.name ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
         createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
+        deletedById: contract?.deletedById ?? null,
+        deletedByName: String(contract?.deletedByName ?? '').trim(),
+        deletedByRole: String(contract?.deletedByRole ?? '').trim(),
         responsibles,
         revisionHistory: (() => {
           const revisions = Array.isArray(contract?.revisionHistory)
@@ -8619,6 +8641,45 @@ const appendContractRevision = (contract, payload, now, changes) => {
   });
 };
 
+const getAuditUserName = (payload) => String(
+  payload?.updatedByName
+  ?? payload?.createdByName
+  ?? payload?.userName
+  ?? payload?.createdBy
+  ?? 'Sistema',
+).trim() || 'Sistema';
+
+const getAuditUserRole = (payload) => String(
+  payload?.updatedByRole
+  ?? payload?.createdByRole
+  ?? payload?.userRole
+  ?? 'Sistema',
+).trim() || 'Sistema';
+
+const appendAuditLog = (state, payload = {}) => {
+  if (!state) return null;
+  state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+  const now = payload.createdAt ?? new Date().toISOString();
+  const entry = {
+    id: makeId('aud'),
+    action: String(payload.action ?? 'update').trim() || 'update',
+    module: String(payload.module ?? 'Sistema').trim() || 'Sistema',
+    entityType: String(payload.entityType ?? '').trim() || null,
+    entityId: String(payload.entityId ?? '').trim() || null,
+    entityCode: String(payload.entityCode ?? '').trim() || null,
+    title: String(payload.title ?? 'Actividad registrada').trim() || 'Actividad registrada',
+    detail: String(payload.detail ?? '').trim(),
+    changes: Array.isArray(payload.changes) ? payload.changes.map((change) => String(change ?? '').trim()).filter(Boolean) : [],
+    userId: payload.userId ?? payload.updatedById ?? payload.createdById ?? null,
+    userName: String(payload.userName ?? 'Sistema').trim() || 'Sistema',
+    userRole: String(payload.userRole ?? 'Sistema').trim() || 'Sistema',
+    createdAt: now,
+  };
+  state.systemAuditLog.unshift(entry);
+  state.systemAuditLog = state.systemAuditLog.slice(0, 800);
+  return entry;
+};
+
 const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, beforeContract = null) => {
   if (String(contract?.status ?? '').trim() !== 'aprobado') return null;
   const guaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
@@ -9491,6 +9552,18 @@ const createWebBridge = () => ({
           createdAt: new Date().toISOString(),
         };
         state.items.push(createdItem);
+        appendAuditLog(state, {
+          action: 'create',
+          module: 'Inventario',
+          entityType: 'item',
+          entityId: createdItem.id,
+          entityCode: createdItem.sku,
+          title: `Creo producto ${createdItem.name}`,
+          detail: `${createdItem.category} | Stock ${createdItem.totalStock}`,
+          userName: getAuditUserName(payload),
+          userRole: getAuditUserRole(payload),
+          createdAt: createdItem.createdAt,
+        });
         return state;
       });
 
@@ -9508,6 +9581,7 @@ const createWebBridge = () => ({
         if (!item) {
           throw new Error('No se encontro el item seleccionado.');
         }
+        const beforeItem = deepClone(item);
 
         const reservedStock = item.totalStock - item.availableStock;
 
@@ -9634,6 +9708,28 @@ const createWebBridge = () => ({
         }
 
         item.updatedAt = new Date().toISOString();
+        const changes = [];
+        if (beforeItem.name !== item.name) changes.push(`Nombre: ${beforeItem.name || '-'} -> ${item.name || '-'}`);
+        if (beforeItem.category !== item.category) changes.push(`Categoria: ${beforeItem.category || '-'} -> ${item.category || '-'}`);
+        if (Number(beforeItem.totalStock ?? 0) !== Number(item.totalStock ?? 0)) changes.push(`Stock total: ${beforeItem.totalStock ?? 0} -> ${item.totalStock ?? 0}`);
+        if (Number(beforeItem.rentalPriceBs ?? 0) !== Number(item.rentalPriceBs ?? 0)) changes.push(`Precio alquiler: ${formatBs(beforeItem.rentalPriceBs ?? 0)} -> ${formatBs(item.rentalPriceBs ?? 0)}`);
+        if (Boolean(beforeItem.controlsStock) !== Boolean(item.controlsStock)) changes.push(`Control de stock: ${beforeItem.controlsStock ? 'Activo' : 'Pendiente'} -> ${item.controlsStock ? 'Activo' : 'Pendiente'}`);
+        if (String(beforeItem.verificationStatus ?? '') !== String(item.verificationStatus ?? '')) changes.push(`Validacion: ${beforeItem.verificationStatus || '-'} -> ${item.verificationStatus || '-'}`);
+        if (changes.length > 0) {
+          appendAuditLog(state, {
+            action: 'update',
+            module: 'Inventario',
+            entityType: 'item',
+            entityId: item.id,
+            entityCode: item.sku,
+            title: `Edito producto ${item.name}`,
+            detail: `${item.category} | Stock disponible ${item.availableStock}/${item.totalStock}`,
+            changes,
+            userName: getAuditUserName(payload),
+            userRole: getAuditUserRole(payload),
+            createdAt: item.updatedAt,
+          });
+        }
         updatedItem = deepClone(item);
         return state;
       });
@@ -9682,6 +9778,18 @@ const createWebBridge = () => ({
         deletedItem = deepClone(item);
         item.deletedAt = new Date().toISOString();
         item.updatedAt = item.deletedAt;
+        appendAuditLog(state, {
+          action: 'delete',
+          module: 'Inventario',
+          entityType: 'item',
+          entityId: item.id,
+          entityCode: item.sku,
+          title: `Elimino producto ${item.name}`,
+          detail: `${item.category} | Stock ${item.totalStock}`,
+          userName: getAuditUserName(payload),
+          userRole: getAuditUserRole(payload),
+          createdAt: item.deletedAt,
+        });
         return state;
       });
 
@@ -11856,10 +11964,69 @@ const createWebBridge = () => ({
           sourceId: String(payload?.sourceId ?? '').trim() || null,
         };
         state.generatedReports.unshift(created);
+        appendAuditLog(state, {
+          action: 'create',
+          module: 'Reportes',
+          entityType: 'report',
+          entityId: created.id,
+          entityCode: created.category,
+          title: `Genero reporte ${created.name}`,
+          detail: `${created.category} | ${created.format}`,
+          userName: getAuditUserName(payload),
+          userRole: getAuditUserRole(payload),
+          createdAt: created.generatedAt,
+        });
         return state;
       });
 
       return created;
+    },
+  },
+
+  audit: {
+    list: async () => {
+      const state = readQueryState();
+      const storedLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      const revisionLog = (Array.isArray(state.contracts) ? state.contracts : []).flatMap((contract) => {
+        const revisions = Array.isArray(contract?.revisionHistory) ? contract.revisionHistory : [];
+        return revisions
+          .filter((revision) => {
+            const revisionTime = new Date(revision?.updatedAt ?? '').getTime();
+            return !storedLog.some((entry) => (
+              String(entry.entityType ?? '') === 'contract'
+              && String(entry.entityId ?? '') === String(contract.id ?? '')
+              && Math.abs(new Date(entry.createdAt ?? '').getTime() - revisionTime) < 1500
+            ));
+          })
+          .map((revision) => {
+            const changes = Array.isArray(revision?.changes) ? revision.changes.map((change) => String(change ?? '').trim()).filter(Boolean) : [];
+            const text = changes.join(' | ').toLowerCase();
+            const action = text.includes('creado') ? 'create' : text.includes('eliminado') ? 'hide' : 'update';
+            return {
+              id: `audit-revision-${contract.id}-${revision.id ?? revision.updatedAt}`,
+              action,
+              module: 'Contratos',
+              entityType: 'contract',
+              entityId: contract.id,
+              entityCode: contract.contractCode,
+              title: action === 'create'
+                ? `Creo contrato ${contract.contractCode}`
+                : action === 'hide'
+                ? `Oculto contrato ${contract.contractCode}`
+                : `Edito contrato ${contract.contractCode}`,
+              detail: contract.customerName || changes[0] || '',
+              changes,
+              userId: revision?.updatedById ?? null,
+              userName: revision?.updatedByName ?? 'Sistema',
+              userRole: revision?.updatedByRole ?? 'Sistema',
+              createdAt: revision?.updatedAt ?? contract.updatedAt ?? contract.createdAt,
+            };
+          });
+      });
+      return [...storedLog, ...revisionLog]
+        .slice()
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 500);
     },
   },
 
@@ -12277,6 +12444,13 @@ const createWebBridge = () => ({
         .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
+    listHidden: async () => {
+      const { contracts } = readQueryState();
+      return contracts
+        .filter((row) => row.deletedAt)
+        .slice()
+        .sort((a, b) => new Date(b.deletedAt ?? b.updatedAt ?? b.createdAt) - new Date(a.deletedAt ?? a.updatedAt ?? a.createdAt));
+    },
     create: async (payload) => {
       const customerName = String(payload?.customerName ?? '').trim();
       const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
@@ -12463,6 +12637,19 @@ const createWebBridge = () => ({
           `Cliente: ${created.customerName}`,
           `Total inicial: ${formatBs(created?.totals?.totalBs ?? 0)}`,
         ]);
+        appendAuditLog(state, {
+          action: 'create',
+          module: 'Contratos',
+          entityType: 'contract',
+          entityId: created.id,
+          entityCode: created.contractCode,
+          title: `Creo contrato ${created.contractCode}`,
+          detail: `${created.customerName} | Total ${formatBs(created?.totals?.totalBs ?? 0)}`,
+          userId: created.createdById,
+          userName: created.createdByName || created.createdBy || 'Sistema',
+          userRole: created.createdByRole || 'Sistema',
+          createdAt: now,
+        });
 
         if (!Array.isArray(state.contracts)) state.contracts = [];
         state.contracts.push(created);
@@ -12719,6 +12906,22 @@ const createWebBridge = () => ({
         }
         const changes = summarizeContractChanges(beforeContract, contract);
         appendContractRevision(contract, payload, now, changes);
+        if (changes.length > 0) {
+          appendAuditLog(state, {
+            action: 'update',
+            module: 'Contratos',
+            entityType: 'contract',
+            entityId: contract.id,
+            entityCode: contract.contractCode,
+            title: `Edito contrato ${contract.contractCode}`,
+            detail: contract.customerName,
+            changes,
+            userId: payload?.updatedById ?? payload?.userId ?? null,
+            userName: getAuditUserName(payload),
+            userRole: getAuditUserRole(payload),
+            createdAt: now,
+          });
+        }
         if (changes.length > 0 && contract.status === 'aprobado') {
           syncApprovedContractOperation(state, contract, payload, now, beforeContract);
         }
@@ -12768,7 +12971,24 @@ const createWebBridge = () => ({
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
-        appendContractRevision(contract, payload, now, summarizeContractChanges(beforeContract, contract));
+        const changes = summarizeContractChanges(beforeContract, contract);
+        appendContractRevision(contract, payload, now, changes);
+        if (changes.length > 0) {
+          appendAuditLog(state, {
+            action: 'update',
+            module: 'Contratos',
+            entityType: 'contract',
+            entityId: contract.id,
+            entityCode: contract.contractCode,
+            title: `Actualizo economico ${contract.contractCode}`,
+            detail: contract.customerName,
+            changes,
+            userId: payload?.updatedById ?? payload?.userId ?? null,
+            userName: getAuditUserName(payload),
+            userRole: getAuditUserRole(payload),
+            createdAt: now,
+          });
+        }
         contract.updatedAt = now;
         updated = deepClone(contract);
         return state;
@@ -12787,10 +13007,27 @@ const createWebBridge = () => ({
         const now = new Date().toISOString();
         cleanupContractDeletionEffects(state, contract, now);
         contract.deletedAt = now;
+        contract.deletedById = payload?.updatedById ?? payload?.userId ?? null;
+        contract.deletedByName = getAuditUserName(payload);
+        contract.deletedByRole = getAuditUserRole(payload);
         contract.status = 'eliminado';
         contract.rentalId = null;
         contract.orderCode = null;
         appendContractRevision(contract, payload, now, ['Contrato eliminado']);
+        appendAuditLog(state, {
+          action: 'hide',
+          module: 'Contratos',
+          entityType: 'contract',
+          entityId: contract.id,
+          entityCode: contract.contractCode,
+          title: `Oculto contrato ${contract.contractCode}`,
+          detail: contract.customerName,
+          changes: ['Contrato movido a Oculto por eliminacion operativa'],
+          userId: payload?.updatedById ?? payload?.userId ?? null,
+          userName: getAuditUserName(payload),
+          userRole: getAuditUserRole(payload),
+          createdAt: now,
+        });
         contract.updatedAt = now;
         updated = deepClone(contract);
         return state;

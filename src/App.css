@@ -9854,6 +9854,20 @@ textarea:focus {
   font-weight: 700;
 }
 
+.orders-hidden-status-cell {
+  display: grid;
+  gap: 0.22rem;
+  align-items: start;
+}
+
+.orders-hidden-status-cell small {
+  color: #9b5a2a;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: normal;
+}
+
 .orders-status-badge.pending {
   color: #9a7c2a;
   background: #fff5de;
@@ -18690,6 +18704,12 @@ textarea:focus {
   margin-bottom: 0.42rem;
 }
 
+.reports-recent-head p {
+  margin: 0.16rem 0 0;
+  color: #667197;
+  font-size: 0.78rem;
+}
+
 .reports-recent-head .link-button {
   font-size: 0.8rem;
 }
@@ -18724,6 +18744,61 @@ textarea:focus {
 .reports-recent-table td {
   color: #313b66;
   font-size: 0.78rem;
+}
+
+.reports-audit-table {
+  min-width: 860px;
+}
+
+.reports-audit-user,
+.reports-audit-detail {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.reports-audit-user strong,
+.reports-audit-detail strong {
+  color: #16265a;
+  font-size: 0.8rem;
+}
+
+.reports-audit-user span,
+.reports-audit-detail span {
+  color: #69749b;
+  font-size: 0.72rem;
+}
+
+.reports-audit-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.3rem;
+  border: 1px solid #dfe5f3;
+  border-radius: 999px;
+  padding: 0.22rem 0.52rem;
+  background: #f7f9fe;
+  color: #354168;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.reports-audit-chip.create {
+  border-color: #cdebd8;
+  background: #edf9f1;
+  color: #1d7d4f;
+}
+
+.reports-audit-chip.update {
+  border-color: #d9e5ff;
+  background: #eff5ff;
+  color: #2d5eb7;
+}
+
+.reports-audit-chip.delete,
+.reports-audit-chip.hide {
+  border-color: #ffd7c7;
+  background: #fff3ed;
+  color: #c24b19;
 }
 
 .reports-recent-name-cell {

@@ -55,6 +55,7 @@ const CONTRACT_STATUS_META = {
   aprobado: { label: 'Aprobado', className: 'approved' },
   rechazado: { label: 'Rechazado', className: 'rejected' },
   anulado: { label: 'Anulado', className: 'rejected' },
+  oculto: { label: 'Oculto', className: 'draft' },
 };
 
 const BILLING_MODE_META = {
@@ -1127,6 +1128,7 @@ const saveSeenCounts = (counts) => {
 function ServiceOrdersSection({
   quotes = [],
   contracts = [],
+  hiddenContracts = [],
   rentals = [],
   deliveries = [],
   supplierBundle = { suppliers: [], quotes: [], loans: [] },
@@ -1255,6 +1257,7 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const canChooseResponsibles = isDeveloper(currentUser);
+  const canViewHiddenContracts = isDeveloper(currentUser);
   const canManageContractEconomicLedger = !readOnly;
   const contractNumberingInfo = useMemo(() => {
     const numbering = settings?.numbering ?? {};
@@ -1679,10 +1682,16 @@ function ServiceOrdersSection({
     return references;
   }, [cashMovements]);
 
-  const contractRows = useMemo(() => {
-    return contracts.map((contract) => {
+  const buildContractRows = useCallback((sourceContracts) => {
+    return sourceContracts.map((contract) => {
       const itemsCount = (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
       const status = CONTRACT_STATUS_META[contract.status] ? contract.status : 'borrador';
+      const deletionRevision = Array.isArray(contract?.revisionHistory)
+        ? contract.revisionHistory.slice().reverse().find((revision) => (
+          Array.isArray(revision?.changes)
+          && revision.changes.some((change) => normalizeText(change).includes('contrato eliminado'))
+        ))
+        : null;
       const linkedOrder = orderByContractId.get(String(contract.id)) ?? null;
       const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
         || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
@@ -1804,25 +1813,35 @@ function ServiceOrdersSection({
         hasEconomicLedger,
         guaranteeBs,
         guaranteeStatus,
+        deletedByName: String(contract?.deletedByName ?? deletionRevision?.updatedByName ?? '').trim(),
+        deletedByRole: String(contract?.deletedByRole ?? deletionRevision?.updatedByRole ?? '').trim(),
+        deletedAt: contract?.deletedAt ?? deletionRevision?.updatedAt ?? null,
         guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
           ? guaranteeStatus === 'pending' ? 'No validada' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
           : '',
       };
     });
-  }, [cashMovements, contracts, formatBs, orderByContractId, rentals, returnedGuaranteeReferences]);
+  }, [cashMovements, formatBs, orderByContractId, rentals, returnedGuaranteeReferences]);
+
+  const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
+  const hiddenContractRows = useMemo(
+    () => buildContractRows(hiddenContracts).map((row) => ({ ...row, status: 'oculto' })),
+    [buildContractRows, hiddenContracts],
+  );
 
   const contractCounts = useMemo(() => {
-    const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
+    const base = { all: contractRows.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0, oculto: hiddenContractRows.length };
     contractRows.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
     });
     return base;
-  }, [contractRows]);
+  }, [contractRows, hiddenContractRows.length]);
 
   const searchedContracts = useMemo(() => {
     const text = normalizeText(contractQuery);
-    return contractRows.filter((row) => {
+    const sourceRows = contractFilter === 'oculto' && canViewHiddenContracts ? hiddenContractRows : contractRows;
+    return sourceRows.filter((row) => {
       const eventKey = getDateKey(row.eventDate);
       if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
       if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
@@ -1836,15 +1855,31 @@ function ServiceOrdersSection({
         || normalizeText(row.orderCode).includes(text)
       );
     });
-  }, [contractDateFrom, contractDateTo, contractQuery, contractRows]);
+  }, [canViewHiddenContracts, contractDateFrom, contractDateTo, contractFilter, contractQuery, contractRows, hiddenContractRows]);
 
   const visibleContractCounts = useMemo(() => {
-    const base = { all: searchedContracts.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0 };
+    const normalSearch = searchedContracts;
+    const hiddenSearch = canViewHiddenContracts ? hiddenContractRows.filter((row) => {
+      const eventKey = getDateKey(row.eventDate);
+      if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
+      if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
+      const text = normalizeText(contractQuery);
+      if (!text) return true;
+      return (
+        normalizeText(row.contractCode).includes(text)
+        || normalizeText(row.customerName).includes(text)
+        || normalizeText(row.customerPhone).includes(text)
+        || normalizeText(row.customerReferencePhone).includes(text)
+        || normalizeText(row.eventType).includes(text)
+        || normalizeText(row.orderCode).includes(text)
+      );
+    }) : [];
+    const base = { all: normalSearch.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0, oculto: hiddenSearch.length };
     searchedContracts.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
     });
     return base;
-  }, [searchedContracts]);
+  }, [canViewHiddenContracts, contractDateFrom, contractDateTo, contractQuery, hiddenContractRows, searchedContracts]);
 
   const filteredContracts = useMemo(() => {
     return searchedContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
@@ -1868,6 +1903,12 @@ function ServiceOrdersSection({
   const quoteNotificationCount = Math.max(0, quoteRows.length - seenCounts.quotes);
   const contractNotificationCount = Math.max(0, contractRows.length - seenCounts.contracts);
 
+  useEffect(() => {
+    if (contractFilter === 'oculto' && !canViewHiddenContracts) {
+      setContractFilter('all');
+    }
+  }, [canViewHiddenContracts, contractFilter]);
+
   const activeOrderMenuRow = useMemo(
     () => (menuState?.type === 'order' ? orderRowsWithMeta.find((row) => row.id === menuState.id) ?? null : null),
     [menuState, orderRowsWithMeta],
@@ -1879,8 +1920,10 @@ function ServiceOrdersSection({
   );
 
   const activeContractMenuRow = useMemo(
-    () => (menuState?.type === 'contract' ? contractRows.find((row) => row.id === menuState.id) ?? null : null),
-    [contractRows, menuState],
+    () => (menuState?.type === 'contract'
+      ? [...contractRows, ...hiddenContractRows].find((row) => row.id === menuState.id) ?? null
+      : null),
+    [contractRows, hiddenContractRows, menuState],
   );
 
   const contractEconomicsData = useMemo(() => {
@@ -6445,6 +6488,11 @@ function ServiceOrdersSection({
                 <button type="button" className={contractFilter === 'anulado' ? 'active' : ''} onClick={() => setContractFilter('anulado')}>
                   Anulado <span>{visibleContractCounts.anulado}</span>
                 </button>
+                {canViewHiddenContracts ? (
+                  <button type="button" className={contractFilter === 'oculto' ? 'active' : ''} onClick={() => setContractFilter('oculto')}>
+                    Oculto <span>{visibleContractCounts.oculto}</span>
+                  </button>
+                ) : null}
                 <div className="orders-contract-legend" aria-label="Leyenda operativa de contratos">
                   <span><i className="sent" /> Enviado</span>
                   <span><i className="returned" /> Volvió / devuelto</span>
@@ -6502,7 +6550,14 @@ function ServiceOrdersSection({
                           </div>
                         </td>
                         <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
-                          <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
+                          <div className="orders-hidden-status-cell">
+                            <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
+                            {row.status === 'oculto' ? (
+                              <small>
+                                Eliminado por {row.deletedByName || 'Sistema'}
+                              </small>
+                            ) : null}
+                          </div>
                         </td>
                         <td>
                           <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
