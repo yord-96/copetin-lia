@@ -1838,52 +1838,48 @@ function ServiceOrdersSection({
     return base;
   }, [contractRows, hiddenContractRows.length]);
 
-  const searchedContracts = useMemo(() => {
+  const matchesContractSearch = useCallback((row) => {
     const text = normalizeText(contractQuery);
-    const sourceRows = contractFilter === 'oculto' && canViewHiddenContracts ? hiddenContractRows : contractRows;
-    return sourceRows.filter((row) => {
-      const eventKey = getDateKey(row.eventDate);
-      if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
-      if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
-      if (!text) return true;
-      return (
-        normalizeText(row.contractCode).includes(text)
-        || normalizeText(row.customerName).includes(text)
-        || normalizeText(row.customerPhone).includes(text)
-        || normalizeText(row.customerReferencePhone).includes(text)
-        || normalizeText(row.eventType).includes(text)
-        || normalizeText(row.orderCode).includes(text)
-      );
-    });
-  }, [canViewHiddenContracts, contractDateFrom, contractDateTo, contractFilter, contractQuery, contractRows, hiddenContractRows]);
+    const eventKey = getDateKey(row.eventDate);
+    if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
+    if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
+    if (!text) return true;
+    return (
+      normalizeText(row.contractCode).includes(text)
+      || normalizeText(row.customerName).includes(text)
+      || normalizeText(row.customerPhone).includes(text)
+      || normalizeText(row.customerReferencePhone).includes(text)
+      || normalizeText(row.eventType).includes(text)
+      || normalizeText(row.orderCode).includes(text)
+    );
+  }, [contractDateFrom, contractDateTo, contractQuery]);
+
+  const searchedVisibleContracts = useMemo(
+    () => contractRows.filter(matchesContractSearch),
+    [contractRows, matchesContractSearch],
+  );
+
+  const searchedHiddenContracts = useMemo(
+    () => (canViewHiddenContracts ? hiddenContractRows.filter(matchesContractSearch) : []),
+    [canViewHiddenContracts, hiddenContractRows, matchesContractSearch],
+  );
+
+  const searchedContracts = contractFilter === 'oculto' && canViewHiddenContracts
+    ? searchedHiddenContracts
+    : searchedVisibleContracts;
 
   const visibleContractCounts = useMemo(() => {
-    const normalSearch = searchedContracts;
-    const hiddenSearch = canViewHiddenContracts ? hiddenContractRows.filter((row) => {
-      const eventKey = getDateKey(row.eventDate);
-      if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
-      if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
-      const text = normalizeText(contractQuery);
-      if (!text) return true;
-      return (
-        normalizeText(row.contractCode).includes(text)
-        || normalizeText(row.customerName).includes(text)
-        || normalizeText(row.customerPhone).includes(text)
-        || normalizeText(row.customerReferencePhone).includes(text)
-        || normalizeText(row.eventType).includes(text)
-        || normalizeText(row.orderCode).includes(text)
-      );
-    }) : [];
-    const base = { all: normalSearch.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0, oculto: hiddenSearch.length };
-    searchedContracts.forEach((row) => {
+    const base = { all: searchedVisibleContracts.length, borrador: 0, pendiente: 0, aprobado: 0, rechazado: 0, anulado: 0, oculto: searchedHiddenContracts.length };
+    searchedVisibleContracts.forEach((row) => {
       base[row.status] = (base[row.status] ?? 0) + 1;
     });
     return base;
-  }, [canViewHiddenContracts, contractDateFrom, contractDateTo, contractQuery, hiddenContractRows, searchedContracts]);
+  }, [searchedHiddenContracts.length, searchedVisibleContracts]);
 
   const filteredContracts = useMemo(() => {
-    return searchedContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
-  }, [contractFilter, searchedContracts]);
+    if (contractFilter === 'oculto') return searchedHiddenContracts;
+    return searchedVisibleContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
+  }, [contractFilter, searchedHiddenContracts, searchedVisibleContracts]);
 
   useEffect(() => {
     if (activeView !== 'quotes' && activeView !== 'contracts') return;
@@ -2790,11 +2786,47 @@ function ServiceOrdersSection({
       || (draft.orderCode && String(contract.orderCode ?? '') === String(draft.orderCode))
       || (draft.rentalId && String(contract.rentalId ?? '') === String(draft.rentalId))
     );
-    (currentContract?.items ?? []).forEach((line) => {
+    const hasInventoryReservation =
+      String(currentContract?.status ?? '').trim() === 'aprobado'
+      || Boolean(currentContract?.rentalId)
+      || Boolean(currentContract?.orderCode);
+    if (!hasInventoryReservation) return map;
+    const supplierSupportByLineKey = new Map();
+    const supplierSupportByItemId = new Map();
+    (currentContract?.supplierFulfillmentPlan ?? []).forEach((coverage) => {
+      const itemId = String(coverage?.itemId ?? '').trim();
+      if (!itemId) return;
+      const quantity = Math.max(0, Math.trunc(Number(coverage?.neededQty ?? 0)));
+      const lineKey = String(coverage?.lineKey ?? '').trim();
+      if (lineKey) {
+        supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
+      }
+      supplierSupportByItemId.set(itemId, Number(supplierSupportByItemId.get(itemId) ?? 0) + quantity);
+    });
+    (currentContract?.items ?? []).forEach((line, index) => {
       if (isDetachedFromInventory(line)) return;
       const itemId = String(line.itemId ?? '').trim();
       if (!itemId) return;
-      map.set(itemId, (map.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(line.quantity ?? 0))));
+      const quantity = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+      const storedInternalQty = Number(line.internalReservedQty);
+      const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId ?? `line-${index}`).trim();
+      const supplierBackedQty = Math.min(
+        quantity,
+        Math.max(
+          0,
+          Number.isFinite(Number(line.supplierBackedQty))
+            ? Number(line.supplierBackedQty)
+            : Number(
+              supplierSupportByLineKey.has(lineKey)
+                ? supplierSupportByLineKey.get(lineKey)
+                : supplierSupportByItemId.get(itemId) ?? 0,
+            ),
+        ),
+      );
+      const internalQty = Number.isFinite(storedInternalQty)
+        ? Math.max(0, Math.trunc(storedInternalQty))
+        : Math.max(0, quantity - supplierBackedQty);
+      map.set(itemId, (map.get(itemId) ?? 0) + internalQty);
     });
     return map;
   }, [contracts, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId]);
@@ -3485,10 +3517,13 @@ function ServiceOrdersSection({
 
   const removeSupplierCoverageLine = (itemId, coverageId) => {
     setSupplierFulfillmentDraftByItem((current) => {
-      const nextCoverages = normalizeCoverageDraftLines(current[itemId]).filter((line) => String(line.id) !== String(coverageId));
       const next = { ...current };
-      if (nextCoverages.length > 0) next[itemId] = { coverages: nextCoverages };
-      else delete next[itemId];
+      Object.keys(next).forEach((coverageKey) => {
+        const nextCoverages = normalizeCoverageDraftLines(next[coverageKey])
+          .filter((line) => String(line.id) !== String(coverageId));
+        if (nextCoverages.length > 0) next[coverageKey] = { coverages: nextCoverages };
+        else delete next[coverageKey];
+      });
       return next;
     });
   };
@@ -6545,8 +6580,17 @@ function ServiceOrdersSection({
                         </td>
                         <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-cell-main">
-                            <strong>{[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</strong>
-                            <span>Entrega / recojo</span>
+                            {normalizeText(row.logisticsMode) === 'recojo' ? (
+                              <>
+                                <strong>Recojo por cliente</strong>
+                                <span>Cliente retira y devuelve</span>
+                              </>
+                            ) : (
+                              <>
+                                <strong>{row.address || 'Sin direccion registrada'}</strong>
+                                <span>Envio por mi equipo</span>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>

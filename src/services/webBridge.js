@@ -8829,7 +8829,6 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     const lineKey = String(line?.lineKey ?? '').trim();
     if (lineKey) {
       supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
-      return;
     }
     supplierSupportByItem.set(
       itemId,
@@ -13539,14 +13538,15 @@ const createWebBridge = () => ({
         const supplierSupportByItem = new Map();
         const supplierSupportByLineKey = new Map();
         supplierFulfillmentPlan.forEach((line) => {
+          const itemId = String(line.itemId ?? '').trim();
+          if (!itemId) return;
           const quantity = Math.max(0, Number(line.neededQty ?? 0));
           const lineKey = String(line.lineKey ?? '').trim();
           if (lineKey) {
             supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
-            return;
           }
-          const current = Number(supplierSupportByItem.get(line.itemId) ?? 0);
-          supplierSupportByItem.set(line.itemId, current + quantity);
+          const current = Number(supplierSupportByItem.get(itemId) ?? 0);
+          supplierSupportByItem.set(itemId, current + quantity);
         });
         const operationalRequestedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now.toISOString());
@@ -13592,6 +13592,11 @@ const createWebBridge = () => ({
           contracts: state.contracts,
           period: availabilityPeriod,
           requestedItems: adjustedRequestedItems,
+          exclude: {
+            contractId,
+            contractCode: requestedContractCode,
+            recordId: contractId,
+          },
         });
         if (projectedIssues.length) {
           const issue = projectedIssues[0];
@@ -13608,6 +13613,11 @@ const createWebBridge = () => ({
           rentals: state.rentals,
           contracts: state.contracts,
           period: availabilityPeriod,
+          exclude: {
+            contractId,
+            contractCode: requestedContractCode,
+            recordId: contractId,
+          },
         });
         const inventoryAvailabilityAssumptions = operationalRequestedItems
           .map((line) => {
