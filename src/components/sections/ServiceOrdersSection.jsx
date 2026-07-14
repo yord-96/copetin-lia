@@ -6615,7 +6615,7 @@ function ServiceOrdersSection({
                     <th>Estado</th>
                     <th>Garantía</th>
                     <th>Transporte</th>
-                    <th>Total</th>
+                    <th>Debe</th>
                     <th>Finalizado</th>
                     <th>Acciones</th>
                   </tr>

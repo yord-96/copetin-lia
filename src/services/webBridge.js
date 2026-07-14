@@ -2217,6 +2217,11 @@ const normalizeState = (state) => {
         ).trim(),
         approvedAt: contract?.approvedAt ?? null,
         rejectedAt: contract?.rejectedAt ?? null,
+        isFinalized: Boolean(contract?.isFinalized),
+        finalizedAt: contract?.isFinalized ? (contract?.finalizedAt ?? contract?.updatedAt ?? contract?.createdAt ?? now) : null,
+        finalizedById: contract?.isFinalized ? (contract?.finalizedById ?? null) : null,
+        finalizedByName: contract?.isFinalized ? String(contract?.finalizedByName ?? '').trim() : '',
+        finalizedByRole: contract?.isFinalized ? String(contract?.finalizedByRole ?? '').trim() : '',
         rentalId: contract?.rentalId ?? null,
         orderCode: contract?.orderCode ?? null,
         createdBy: String(contract?.createdBy ?? 'system').trim() || 'system',
@@ -5013,6 +5018,25 @@ const formatDocumentLongDate = (value) => {
   return cleanFormatted.charAt(0).toUpperCase() + cleanFormatted.slice(1);
 };
 
+const formatDocumentScheduleDate = (value) => {
+  const dateKey = toDateKey(value);
+  if (!dateKey) return '-';
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return formatDocumentDate(value);
+  const formatted = new Intl.DateTimeFormat('es-BO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+  const cleanFormatted = formatted
+    .replace(',', '')
+    .replace(/\s+de\s+(\d{4})$/i, ' del $1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleanFormatted.charAt(0).toUpperCase() + cleanFormatted.slice(1);
+};
+
 const getDocumentCompany = (settings = {}) => ({
   name: String(settings.companyName ?? 'Copetin SRL').trim() || 'Copetin SRL',
   taxId: String(settings.taxId ?? '').trim() || '-',
@@ -7240,10 +7264,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
             <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
           </div>`;
-  const deliveryDate = formatDocumentDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
+  const deliveryDate = formatDocumentScheduleDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
   const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
-  const pickupDate = formatDocumentDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate);
+  const pickupDate = formatDocumentScheduleDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate);
   const pickupStart = deliveryBack?.windowStart ?? contract?.pickupWindowStart ?? '-';
   const pickupEnd = deliveryBack?.windowEnd ?? contract?.pickupWindowEnd ?? '-';
   const deliveryTimeMode = contract?.deliveryTimeMode ?? rental?.deliveryTimeMode;
