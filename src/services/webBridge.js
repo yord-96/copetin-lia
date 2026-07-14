@@ -1053,7 +1053,9 @@ const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
     items: (contract.items ?? []).map((line, index) => {
       const item = state.items.find((entry) => entry.id === line.itemId);
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-      const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
+      const lineType = String(line?.lineType ?? '').trim();
+      const isCourtesyLine = lineType === 'courtesy';
+      const rentalPriceBs = isCourtesyLine ? 0 : Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
       return {
         lineKey: getInventoryLineKey(line, index),
         itemId: line.itemId,
@@ -1079,11 +1081,12 @@ const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
         comboCategory: line.comboCategory ?? '',
         comboPricingRole: line.comboPricingRole ?? '',
         comboPricingCondition: line.comboPricingCondition ?? null,
-        observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
-        grossLineTotalBs: Number(line.grossLineTotalBs ?? quantity * rentalPriceBs),
-        discountPercent: Number(line.discountPercent ?? 0),
-        discountBs: Number(line.discountBs ?? 0),
-        lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+        lineType,
+        observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+        grossLineTotalBs: isCourtesyLine ? 0 : Number(line.grossLineTotalBs ?? quantity * rentalPriceBs),
+        discountPercent: isCourtesyLine ? 0 : Number(line.discountPercent ?? 0),
+        discountBs: isCourtesyLine ? 0 : Number(line.discountBs ?? 0),
+        lineTotalBs: isCourtesyLine ? 0 : Number(line.lineTotalBs ?? quantity * rentalPriceBs),
       };
     }),
     services: contract.services ?? [],
@@ -1832,6 +1835,7 @@ const normalizeState = (state) => {
             discountPercent: Math.max(0, Number(line?.discountPercent ?? 0)),
             discountBs: Math.max(0, Number(line?.discountBs ?? 0)),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
+            lineType: String(line?.lineType ?? '').trim(),
             comboId: String(line?.comboId ?? '').trim() || null,
             comboName: String(line?.comboName ?? '').trim(),
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
@@ -1972,6 +1976,7 @@ const normalizeState = (state) => {
             discountPercent: Math.max(0, Number(line?.discountPercent ?? 0)),
             discountBs: Math.max(0, Number(line?.discountBs ?? 0)),
             lineTotalBs: Number(line?.lineTotalBs ?? 0),
+            lineType: String(line?.lineType ?? '').trim(),
             comboId: String(line?.comboId ?? '').trim() || null,
             comboName: String(line?.comboName ?? '').trim(),
             comboLineKey: String(line?.comboLineKey ?? '').trim() || null,
@@ -4971,6 +4976,7 @@ const buildRentalSnapshotFromContract = (contract) => {
     quantity: line.quantity,
     rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
     lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
+    lineType: String(line?.lineType ?? '').trim(),
     observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
     comboLineKey: line.comboLineKey ?? null,
     comboCategory: line.comboCategory ?? '',
@@ -6159,6 +6165,7 @@ const getContractAreaSource = (line, item) => ({
 });
 
 const getContractItemMeta = (line, _item) => [
+  line?.lineType === 'courtesy' ? 'Cortesia' : '',
   line?.comboName ? `Combo: ${line.comboName}` : '',
   line?.comboComponentName && normalizeText(line.comboComponentName) !== normalizeText(line.itemName)
     ? `Pieza: ${line.comboComponentName}`
@@ -12134,13 +12141,15 @@ const createWebBridge = () => ({
           const item = resolveOperationalItemFromLine(state, line, now);
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
           const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-          const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
-          const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
-          const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
-          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+          const lineType = String(line?.lineType ?? '').trim();
+          const isCourtesyLine = lineType === 'courtesy';
+          const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const discountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
             : Number((quantity * unitPriceBs).toFixed(2));
-          const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+          const lineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
           return {
@@ -12153,6 +12162,7 @@ const createWebBridge = () => ({
             discountPercent,
             discountBs,
             lineTotalBs,
+            lineType,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
             comboId: String(line?.comboId ?? '').trim() || null,
@@ -12168,7 +12178,7 @@ const createWebBridge = () => ({
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
-            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
           };
         });
 
@@ -12335,13 +12345,15 @@ const createWebBridge = () => ({
             const item = resolveOperationalItemFromLine(state, line);
             if (!item) throw new Error('Uno de los items seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
-            const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
-            const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
-            const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+            const lineType = String(line?.lineType ?? '').trim();
+            const isCourtesyLine = lineType === 'courtesy';
+            const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+            const discountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+            const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
               : Number((quantity * unitPriceBs).toFixed(2));
-            const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+            const lineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.lineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
               : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
@@ -12354,6 +12366,7 @@ const createWebBridge = () => ({
               discountPercent,
               discountBs,
               lineTotalBs,
+              lineType,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
               comboId: String(line?.comboId ?? '').trim() || null,
@@ -12369,7 +12382,7 @@ const createWebBridge = () => ({
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
-              observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+              observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
             };
           });
         }
@@ -12548,13 +12561,15 @@ const createWebBridge = () => ({
           if (!item) throw new Error('Uno de los items seleccionados no existe.');
 
           const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-          const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
-          const lineDiscountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
-          const lineDiscountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
-          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+          const lineType = String(line?.lineType ?? '').trim();
+          const isCourtesyLine = lineType === 'courtesy';
+          const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const lineDiscountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const lineDiscountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
             : Number((quantity * unitPriceBs).toFixed(2));
-          const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+          const lineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : Number(Math.max(0, grossLineTotalBs - lineDiscountBs).toFixed(2));
           return {
@@ -12567,6 +12582,7 @@ const createWebBridge = () => ({
             discountPercent: lineDiscountPercent,
             discountBs: lineDiscountBs,
             lineTotalBs,
+            lineType,
             controlsStock: lineControlsStock(line, item),
             verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
             comboId: String(line?.comboId ?? '').trim() || null,
@@ -12582,7 +12598,7 @@ const createWebBridge = () => ({
             comboCategory: String(line?.comboCategory ?? '').trim(),
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
-            observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
           };
         });
 
@@ -12800,13 +12816,15 @@ const createWebBridge = () => ({
             const item = resolveOperationalItemFromLine(state, line) ?? previousLine;
             if (!item) throw new Error('Uno de los items nuevos seleccionados no existe.');
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-            const unitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
-            const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
-            const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
-            const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+            const lineType = String(line?.lineType ?? '').trim();
+            const isCourtesyLine = lineType === 'courtesy';
+            const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+            const discountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+            const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
               : Number((quantity * unitPriceBs).toFixed(2));
-            const lineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+            const lineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.lineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
               : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2));
             return {
@@ -12819,6 +12837,7 @@ const createWebBridge = () => ({
               discountPercent,
               discountBs,
               lineTotalBs,
+              lineType,
               controlsStock: lineControlsStock(line, item),
               verificationStatus: lineControlsStock(line, item) ? (item.verificationStatus ?? 'verified') : 'pending_verification',
               comboId: String(line?.comboId ?? '').trim() || null,
@@ -12834,7 +12853,7 @@ const createWebBridge = () => ({
               comboCategory: String(line?.comboCategory ?? '').trim(),
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
-              observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+              observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
             };
           });
           contract.items = normalizedItems;
@@ -13718,13 +13737,15 @@ const createWebBridge = () => ({
             ))),
           );
           const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
-          const rentalPriceBs = Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
-          const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
-          const discountBs = Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
-          const grossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs))
+          const lineType = String(line?.lineType ?? '').trim();
+          const isCourtesyLine = lineType === 'courtesy';
+          const rentalPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+          const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
+          const discountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
+          const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.grossLineTotalBs))
             : Number((quantity * rentalPriceBs).toFixed(2));
-          const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs))
+          const explicitLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.lineTotalBs))
             ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
             : null;
 
@@ -13787,6 +13808,8 @@ const createWebBridge = () => ({
             grossLineTotalBs,
             discountPercent,
             discountBs,
+            lineType,
+            observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
             lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2)),
           };
         });

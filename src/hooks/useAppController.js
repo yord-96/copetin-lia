@@ -1595,6 +1595,8 @@ export const useAppController = () => {
           verificationStatus: line.verificationStatus,
           supplierBackedQty: line.supplierBackedQty ?? 0,
           internalReservedQty: line.internalReservedQty ?? null,
+          lineType: line.lineType ?? '',
+          observation: line.observation ?? '',
           quickItem: line.quickItem ?? null,
           comboId: line.comboId ?? null,
           comboName: line.comboName ?? '',

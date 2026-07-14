@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Clock3,
+  Gift,
   Info,
   MapPin,
   MessageCircle,
@@ -1190,6 +1191,7 @@ function ServiceOrdersSection({
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
   const [quickItemDraft, setQuickItemDraft] = useState(buildEmptyQuickItemDraft);
   const [isQuickItemOpen, setIsQuickItemOpen] = useState(false);
+  const [isCourtesyMode, setIsCourtesyMode] = useState(false);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [serviceDraft, setServiceDraft] = useState(buildEmptyServiceDraft);
   const [itemSearch, setItemSearch] = useState('');
@@ -2709,13 +2711,14 @@ function ServiceOrdersSection({
           : null);
         if (!item) return null;
         const availability = availabilityByItemId.get(line.itemId) ?? null;
+        const isCourtesyLine = line.lineType === 'courtesy';
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-        const unitPriceBs = Math.max(0, Number(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
+        const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, Number(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
         const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
-        const grossLineTotalBs = explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
-        const lineGrossTotalBs = explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
-        const discountPercent = Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
+        const grossLineTotalBs = isCourtesyLine ? 0 : explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
+        const lineGrossTotalBs = isCourtesyLine ? 0 : explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
+        const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
         const lineDiscountBs = Number((lineGrossTotalBs * (discountPercent / 100)).toFixed(2));
         const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
         return {
@@ -2730,7 +2733,7 @@ function ServiceOrdersSection({
           discountPercent,
           grossLineTotalBs: lineGrossTotalBs,
           lineDiscountBs,
-          lineTotalBs: Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
+          lineTotalBs: isCourtesyLine ? 0 : Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
         };
       })
       .filter(Boolean);
@@ -3355,6 +3358,7 @@ function ServiceOrdersSection({
         ? Number(line.grossLineTotalBs)
         : Number(line.lineTotalBs ?? 0) + Number(line.discountBs ?? 0),
       discountPercent: String(line.discountPercent ?? 0),
+      lineType: line.lineType ?? '',
       controlsStock: line.controlsStock,
       verificationStatus: line.verificationStatus,
       quickItem: line.quickItem ?? null,
@@ -3410,6 +3414,7 @@ function ServiceOrdersSection({
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
     setIsQuickItemOpen(false);
+    setIsCourtesyMode(false);
     setCatalogModalOpen(false);
     setServiceModalOpen(false);
     setServiceDraft(buildEmptyServiceDraft());
@@ -3438,6 +3443,7 @@ function ServiceOrdersSection({
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
     setIsQuickItemOpen(false);
+    setIsCourtesyMode(false);
     setServiceModalOpen(false);
     setServiceDraft(buildEmptyServiceDraft());
     setCurrentStep(0);
@@ -3744,11 +3750,14 @@ function ServiceOrdersSection({
     }));
   };
 
-  const addDraftItem = (itemId) => {
+  const addDraftItem = (itemId, options = {}) => {
     const item = items.find((entry) => entry.id === itemId);
     if (!item) return;
+    const isCourtesy = Boolean(options?.courtesy);
     setDraft((current) => {
-      const already = current.items.find((line) => line.itemId === itemId && !line.comboId);
+      const already = isCourtesy
+        ? null
+        : current.items.find((line) => line.itemId === itemId && !line.comboId && line.lineType !== 'courtesy');
       if (already) {
         const nextQty = Math.max(1, Number(already.quantity ?? 1) + 1);
         return {
@@ -3756,11 +3765,32 @@ function ServiceOrdersSection({
           items: current.items.map((line) => ((line.lineKey ?? line.itemId) === (already.lineKey ?? already.itemId) ? { ...line, quantity: nextQty } : line)),
         };
       }
+      if (isCourtesy) {
+        return {
+          ...current,
+          items: [
+            ...current.items,
+            {
+              lineKey: `courtesy-${itemId}-${Date.now()}`,
+              itemId,
+              quantity: 1,
+              unitPriceBs: 0,
+              grossLineTotalBs: 0,
+              lineTotalBs: 0,
+              discountPercent: 0,
+              discountBs: 0,
+              lineType: 'courtesy',
+              observation: 'Cortesia',
+            },
+          ],
+        };
+      }
       return {
         ...current,
         items: [...current.items, { lineKey: `item-${itemId}-${Date.now()}`, itemId, quantity: 1, unitPriceBs: Number(item.rentalPriceBs ?? 0) }],
       };
     });
+    if (isCourtesy) setIsCourtesyMode(false);
   };
 
   const getComboRuleOptions = (rule) => {
@@ -4744,6 +4774,7 @@ function ServiceOrdersSection({
         lineTotalBs: line.lineTotalBs,
         discountPercent: line.discountPercent,
         discountBs: line.lineDiscountBs,
+        lineType: line.lineType ?? '',
         controlsStock: line.controlsStock,
         verificationStatus: line.verificationStatus,
         quickItem: line.quickItem ?? null,
@@ -8388,8 +8419,14 @@ function ServiceOrdersSection({
                     <span className={`orders-product-stock-badge${!isProvisionalCatalogItem && projectedAvailable > 0 ? ' available' : ''}`}>
                       {isProvisionalCatalogItem ? 'No descuenta' : `${projectedAvailable} disponibles`}
                     </span>
-                    <button type="button" className="primary-button" onClick={() => addDraftItem(item.id)}>
-                      {Number(draftQuantityByItem.get(item.id) ?? 0) > 0
+                    <button
+                      type="button"
+                      className={isCourtesyMode ? 'ghost-button' : 'primary-button'}
+                      onClick={() => addDraftItem(item.id, { courtesy: isCourtesyMode })}
+                    >
+                      {isCourtesyMode
+                        ? 'Cortesía'
+                        : Number(draftQuantityByItem.get(item.id) ?? 0) > 0
                         ? `Agregar otro (${draftQuantityByItem.get(item.id)})`
                         : 'Agregar'}
                     </button>
@@ -9067,6 +9104,17 @@ function ServiceOrdersSection({
                           <span>Usalo solo cuando el producto aun no fue registrado o verificado.</span>
                         </div>
                         <div className="orders-step3-link-actions">
+                          <button
+                            type="button"
+                            className={`orders-inline-link${isCourtesyMode ? ' is-active' : ''}`}
+                            onClick={() => {
+                              setIsCourtesyMode((current) => !current);
+                              setFormError('');
+                            }}
+                          >
+                            <Gift aria-hidden="true" />
+                            {isCourtesyMode ? 'Selecciona cortesía' : 'Asignar cortesía'}
+                          </button>
                           <button type="button" className="orders-inline-link" onClick={openServiceModal}>
                             <BriefcaseBusiness aria-hidden="true" />
                             Asignar servicios
@@ -9486,10 +9534,10 @@ function ServiceOrdersSection({
                           )}
                           <button
                             type="button"
-                            className="primary-button"
-                            onClick={() => addDraftItem(item.id)}
+                            className={isCourtesyMode ? 'ghost-button' : 'primary-button'}
+                            onClick={() => addDraftItem(item.id, { courtesy: isCourtesyMode })}
                           >
-                            Agregar
+                            {isCourtesyMode ? 'Cortesía' : 'Agregar'}
                           </button>
                         </article>
                         );
@@ -9539,6 +9587,7 @@ function ServiceOrdersSection({
                             {areaLines.map((line, lineIndex) => {
                           const availability = line.availability;
                           const isProvisionalItem = isDetachedFromInventory(line);
+                          const isCourtesyLine = line.lineType === 'courtesy';
                           const detailParts = getOperationalItemDetails(line);
                           const comboSiblingLines = line.comboLineKey
                             ? selectedItems.filter((entry) => entry.comboLineKey === line.comboLineKey)
@@ -9608,7 +9657,7 @@ function ServiceOrdersSection({
                               <div className="orders-selected-product-copy">
                               <div className="orders-selected-line-tools">
                                 <span className={`orders-selected-origin-badge${line.comboLineKey ? ' is-combo' : ''}`}>
-                                  {line.comboLineKey ? 'Parte del combo' : 'Item separado'}
+                                  {isCourtesyLine ? 'Cortesía' : line.comboLineKey ? 'Parte del combo' : 'Item separado'}
                                 </span>
                                 <button
                                   type="button"
@@ -9659,7 +9708,7 @@ function ServiceOrdersSection({
                                 </div>
                               ) : null}
                               <p>
-                                Base: {formatBs(line.item.rentalPriceBs)} c/u
+                                {isCourtesyLine ? 'Cortesia sin cargo' : `Base: ${formatBs(line.item.rentalPriceBs)} c/u`}
                                 {isProvisionalItem ? ' | Pendiente de verificacion' : ''}
                               </p>
                               {String(line.observation ?? '').trim() ? (
@@ -9771,8 +9820,11 @@ function ServiceOrdersSection({
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
                                 onBlur={() => normalizeDraftItemPrice(line.lineKey)}
                                 aria-label={`Precio unitario de ${line.item.name}`}
-                                readOnly={Boolean(line.comboId && line.comboPricingRole !== 'price')}
+                                readOnly={isCourtesyLine || Boolean(line.comboId && line.comboPricingRole !== 'price')}
                               />
+                              {isCourtesyLine ? (
+                                <small className="orders-available-note">Cortesía sin cobro</small>
+                              ) : null}
                               {line.comboId && line.comboPricingRole !== 'price' ? (
                                 <small className="orders-available-note">Incluido en el precio del combo</small>
                               ) : null}
@@ -9782,6 +9834,7 @@ function ServiceOrdersSection({
                               <select
                                 value={String(line.discountPercent ?? 0)}
                                 onChange={(event) => setDraftItemDiscountPercent(line.lineKey, event.target.value)}
+                                disabled={isCourtesyLine}
                               >
                                 {[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75].map((percent) => (
                                   <option key={percent} value={percent}>{percent}%</option>
@@ -10307,10 +10360,11 @@ function ServiceOrdersSection({
                         {selectedItems.slice(0, 6).map((line) => {
                           const detailParts = getOperationalItemDetails(line);
                           const shortageLine = uncoveredStockIssues.find((issue) => issue.itemId === line.itemId);
+                          const isCourtesyLine = line.lineType === 'courtesy';
                           return (
                             <div key={line.lineKey} className={`orders-side-line${shortageLine ? ' has-shortage' : ''}`}>
                               <span>
-                                {line.quantity}x {line.item.name} - {formatBs(line.unitPriceBs)} c/u
+                                {line.quantity}x {line.item.name} - {isCourtesyLine ? 'Cortesía' : `${formatBs(line.unitPriceBs)} c/u`}
                                 {detailParts.length > 0 ? (
                                   <small className="orders-side-line-details">
                                     {detailParts.map((part) => `${part.label}: ${part.value}`).join(' | ')}
