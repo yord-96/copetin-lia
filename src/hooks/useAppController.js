@@ -1505,9 +1505,10 @@ export const useAppController = () => {
   const handleApproveContract = async ({ contractId }) => {
     setError('');
     try {
-      const allContracts = await api.contracts.list();
+      const localContract = contracts.find((entry) => entry.id === contractId);
+      const allContracts = localContract ? [] : await api.contracts.list();
       const contract =
-        contracts.find((entry) => entry.id === contractId)
+        localContract
         ?? allContracts.find((entry) => entry.id === contractId);
 
       if (!contract) {
@@ -1522,9 +1523,11 @@ export const useAppController = () => {
       const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
       const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && Number(contract?.totals?.guaranteeBs ?? 0) > 0);
       const guaranteeForCashBs = isGuaranteeValidated ? Number(contract?.totals?.guaranteeBs ?? 0) : 0;
-      const allClients = await api.clients.list();
+      const localClient = clients.find((entry) => entry.id === contract.clientId)
+        ?? clients.find((entry) => String(entry.name ?? '').trim().toLowerCase() === String(contract.customerName ?? '').trim().toLowerCase());
+      const allClients = localClient ? [] : await api.clients.list();
       const contractClient =
-        clients.find((entry) => entry.id === contract.clientId)
+        localClient
         ?? allClients.find((entry) => entry.id === contract.clientId)
         ?? allClients.find((entry) => String(entry.name ?? '').trim().toLowerCase() === String(contract.customerName ?? '').trim().toLowerCase());
       const availablePrepaidBs = contractClient?.prepaidEnabled
@@ -1610,152 +1613,174 @@ export const useAppController = () => {
         services: contract.services ?? [],
       });
 
-      if (createdRental.reusedExisting) {
-        await api.contracts.update({
-          id: contract.id,
-          status: 'aprobado',
-          approvedAt: contract.approvedAt ?? createdRental.createdAt ?? new Date().toISOString(),
-          rejectedAt: null,
-          rentalId: createdRental.id,
-          orderCode: createdRental.orderCode,
-          paidAtApprovalBs: coveredAtApprovalBs,
-          prepaidAppliedBs,
-        });
-        await loadData();
-        return createdRental;
-      }
-
-      await api.contracts.update({
+      const approveContractPayload = {
         id: contract.id,
         status: 'aprobado',
-        approvedAt: new Date().toISOString(),
+        approvedAt: contract.approvedAt ?? createdRental.createdAt ?? new Date().toISOString(),
         rejectedAt: null,
         rentalId: createdRental.id,
         orderCode: createdRental.orderCode,
         paidAtApprovalBs: coveredAtApprovalBs,
         prepaidAppliedBs,
-      });
+      };
+
+      const refreshAfterApproval = () => {
+        window.setTimeout(() => {
+          loadData({ silent: true });
+        }, 750);
+      };
+
+      if (createdRental.reusedExisting) {
+        const updatedContract = await api.contracts.update(approveContractPayload);
+        setContracts((current) => current.map((entry) => (entry.id === updatedContract.id ? updatedContract : entry)));
+        setRentals((current) => (
+          current.some((entry) => entry.id === createdRental.id) ? current : [createdRental, ...current]
+        ));
+        refreshAfterApproval();
+        return createdRental;
+      }
+
+      const updatedContract = await api.contracts.update(approveContractPayload);
+      setContracts((current) => current.map((entry) => (entry.id === updatedContract.id ? updatedContract : entry)));
+      setRentals((current) => (
+        current.some((entry) => entry.id === createdRental.id) ? current : [createdRental, ...current]
+      ));
 
       if (contract.quoteId) {
-        await api.quotes.update({
+        api.quotes.update({
           id: contract.quoteId,
           status: 'aprobada',
           approvedAt: new Date().toISOString(),
           rejectedAt: null,
           rentalId: createdRental.id,
           orderCode: createdRental.orderCode,
-        });
-      }
-
-      let logisticsWarning = '';
-      if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
-        try {
-          const refreshedDeliveries = await api.transport.listDeliveries();
-          const linkedDeliveries = refreshedDeliveries.filter((entry) => entry.rentalId === createdRental.id);
-          const autoDelivery = linkedDeliveries[0] ?? null;
-          if (autoDelivery) {
-            await api.transport.updateDelivery({
-              id: autoDelivery.id,
-              scheduledDate: contract.deliveryDate || contract.eventDate,
-              windowStart: contract.deliveryWindowStart || autoDelivery.windowStart,
-              windowEnd: contract.deliveryWindowEnd || autoDelivery.windowEnd,
-              address: contract.address || autoDelivery.address,
-              city: contract.city || autoDelivery.city,
-              driverId: contract.driverId || autoDelivery.driverId,
-              vehicleId: contract.vehicleId || autoDelivery.vehicleId,
-              notes: `Entrega de ${createdRental.orderCode}. ${contract.observations ?? ''}`.trim(),
-            });
-          }
-
-          if (linkedDeliveries.length < 2) {
-            await api.transport.createDelivery({
-              rentalId: createdRental.id,
-              orderCode: createdRental.orderCode,
-              customerName: contract.customerName,
-              companyName: contract.companyName || contract.customerName,
-              address: contract.address || 'Direccion pendiente',
-              city: contract.city || 'Ciudad',
-              scheduledDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
-              windowStart: contract.pickupWindowStart || '20:00',
-              windowEnd: contract.pickupWindowEnd || '22:00',
-              driverId: contract.driverId || null,
-              vehicleId: contract.vehicleId || null,
-              notes: `Recojo programado de ${createdRental.orderCode}`,
-            });
-          }
-        } catch (logisticsError) {
-          logisticsWarning = logisticsError?.message || 'No se pudo completar la programacion de transporte.';
-        }
-      }
-
-      const supplierPlan = Array.isArray(contract.supplierFulfillmentPlan)
-        ? contract.supplierFulfillmentPlan
-        : [];
-      if (supplierPlan.length > 0) {
-        const groupedBySupplier = new Map();
-        supplierPlan.forEach((line) => {
-          const supplierId = String(line?.supplierId ?? '').trim();
-          const supplierName = String(line?.supplierName ?? '').trim();
-          const itemName = String(line?.itemName ?? '').trim();
-          const itemId = String(line?.itemId ?? '').trim();
-          const neededQty = Math.max(0, Number(line?.neededQty ?? 0));
-          const supplierUnitCostBs = Math.max(0, Number(line?.supplierUnitCostBs ?? 0));
-          if (!supplierId || !supplierName || !itemName || neededQty <= 0) return;
-
-          const key = supplierId;
-          if (!groupedBySupplier.has(key)) {
-            groupedBySupplier.set(key, {
-              supplierId,
-              supplierName,
-              items: [],
-            });
-          }
-          groupedBySupplier.get(key).items.push({
-            itemId: itemId || null,
-            itemName,
-            category: '',
-            quantity: Math.max(1, Math.trunc(neededQty)),
-            unitPriceBs: supplierUnitCostBs,
+        })
+          .then((updatedQuote) => {
+            setQuotes((current) => current.map((entry) => (entry.id === updatedQuote.id ? updatedQuote : entry)));
+          })
+          .catch((quoteError) => {
+            setError(quoteError?.message || 'La orden fue aprobada, pero no se pudo actualizar la cotizacion vinculada.');
           });
+      }
+
+      const runApprovalFollowUps = async () => {
+        let logisticsWarning = '';
+        if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
+          try {
+            const refreshedDeliveries = await api.transport.listDeliveries();
+            const linkedDeliveries = refreshedDeliveries.filter((entry) => entry.rentalId === createdRental.id);
+            const autoDelivery = linkedDeliveries[0] ?? null;
+            if (autoDelivery) {
+              await api.transport.updateDelivery({
+                id: autoDelivery.id,
+                scheduledDate: contract.deliveryDate || contract.eventDate,
+                windowStart: contract.deliveryWindowStart || autoDelivery.windowStart,
+                windowEnd: contract.deliveryWindowEnd || autoDelivery.windowEnd,
+                address: contract.address || autoDelivery.address,
+                city: contract.city || autoDelivery.city,
+                driverId: contract.driverId || autoDelivery.driverId,
+                vehicleId: contract.vehicleId || autoDelivery.vehicleId,
+                notes: `Entrega de ${createdRental.orderCode}. ${contract.observations ?? ''}`.trim(),
+              });
+            }
+
+            if (linkedDeliveries.length < 2) {
+              await api.transport.createDelivery({
+                rentalId: createdRental.id,
+                orderCode: createdRental.orderCode,
+                customerName: contract.customerName,
+                companyName: contract.companyName || contract.customerName,
+                address: contract.address || 'Direccion pendiente',
+                city: contract.city || 'Ciudad',
+                scheduledDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
+                windowStart: contract.pickupWindowStart || '20:00',
+                windowEnd: contract.pickupWindowEnd || '22:00',
+                driverId: contract.driverId || null,
+                vehicleId: contract.vehicleId || null,
+                notes: `Recojo programado de ${createdRental.orderCode}`,
+              });
+            }
+          } catch (logisticsError) {
+            logisticsWarning = logisticsError?.message || 'No se pudo completar la programacion de transporte.';
+          }
+        }
+
+        const supplierPlan = Array.isArray(contract.supplierFulfillmentPlan)
+          ? contract.supplierFulfillmentPlan
+          : [];
+        if (supplierPlan.length > 0) {
+          const groupedBySupplier = new Map();
+          supplierPlan.forEach((line) => {
+            const supplierId = String(line?.supplierId ?? '').trim();
+            const supplierName = String(line?.supplierName ?? '').trim();
+            const itemName = String(line?.itemName ?? '').trim();
+            const itemId = String(line?.itemId ?? '').trim();
+            const neededQty = Math.max(0, Number(line?.neededQty ?? 0));
+            const supplierUnitCostBs = Math.max(0, Number(line?.supplierUnitCostBs ?? 0));
+            if (!supplierId || !supplierName || !itemName || neededQty <= 0) return;
+
+            const key = supplierId;
+            if (!groupedBySupplier.has(key)) {
+              groupedBySupplier.set(key, {
+                supplierId,
+                supplierName,
+                items: [],
+              });
+            }
+            groupedBySupplier.get(key).items.push({
+              itemId: itemId || null,
+              itemName,
+              category: '',
+              quantity: Math.max(1, Math.trunc(neededQty)),
+              unitPriceBs: supplierUnitCostBs,
+            });
+          });
+
+          await Promise.all(
+            Array.from(groupedBySupplier.values())
+              .filter((entry) => entry.items.length > 0)
+              .map((entry) =>
+                api.suppliers.createLoan({
+                  supplierId: entry.supplierId,
+                  direction: 'from_supplier',
+                  flowType: 'paid',
+                  requestDate: contract.deliveryDate || contract.eventDate || new Date().toISOString().slice(0, 10),
+                  returnDate: contract.pickupDate || null,
+                  eventName: `Abastecimiento ${createdRental.orderCode}`,
+                  notes: `Generado automaticamente desde contrato ${contract.contractCode}.`,
+                  sourceContractId: contract.id,
+                  sourceRentalId: createdRental.id,
+                  sourceOrderCode: createdRental.orderCode,
+                  autoCreated: true,
+                  items: entry.items,
+                })),
+          );
+        }
+
+        let documentsWarning = '';
+        try {
+          await handleGenerateOrderDocuments({ rentalId: createdRental.id, orderCode: createdRental.orderCode });
+        } catch (docsError) {
+          documentsWarning = docsError?.message || 'No se pudieron generar los documentos automaticamente.';
+        }
+
+        await loadData({ silent: true });
+
+        if (documentsWarning || logisticsWarning) {
+          const pendingTasks = [
+            logisticsWarning ? 'programacion de transporte' : '',
+            documentsWarning ? 'generacion de documentos' : '',
+          ].filter(Boolean).join(' y ');
+          setError(`${createdRental.orderCode} fue aprobada, pero queda pendiente revisar: ${pendingTasks}.`);
+        }
+      };
+
+      window.setTimeout(() => {
+        runApprovalFollowUps().catch((followUpError) => {
+          setError(followUpError?.message || `${createdRental.orderCode} fue aprobada, pero no se completaron tareas secundarias.`);
+          refreshAfterApproval();
         });
-
-        await Promise.all(
-          Array.from(groupedBySupplier.values())
-            .filter((entry) => entry.items.length > 0)
-            .map((entry) =>
-              api.suppliers.createLoan({
-                supplierId: entry.supplierId,
-                direction: 'from_supplier',
-                flowType: 'paid',
-                requestDate: contract.deliveryDate || contract.eventDate || new Date().toISOString().slice(0, 10),
-                returnDate: contract.pickupDate || null,
-                eventName: `Abastecimiento ${createdRental.orderCode}`,
-                notes: `Generado automaticamente desde contrato ${contract.contractCode}.`,
-                sourceContractId: contract.id,
-                sourceRentalId: createdRental.id,
-                sourceOrderCode: createdRental.orderCode,
-                autoCreated: true,
-                items: entry.items,
-              })),
-        );
-      }
-
-      let documentsWarning = '';
-      try {
-        await handleGenerateOrderDocuments({ rentalId: createdRental.id, orderCode: createdRental.orderCode });
-      } catch (docsError) {
-        documentsWarning = docsError?.message || 'No se pudieron generar los documentos automaticamente.';
-      }
-
-      await loadData();
-
-      if (documentsWarning || logisticsWarning) {
-        const pendingTasks = [
-          logisticsWarning ? 'programacion de transporte' : '',
-          documentsWarning ? 'generacion de documentos' : '',
-        ].filter(Boolean).join(' y ');
-        setError(`${createdRental.orderCode} fue aprobada, pero queda pendiente revisar: ${pendingTasks}.`);
-      }
+      }, 250);
 
       return createdRental;
     } catch (requestError) {
