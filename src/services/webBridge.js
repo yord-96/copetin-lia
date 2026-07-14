@@ -2200,9 +2200,9 @@ const normalizeState = (state) => {
         createdByName: String(contract?.createdByName ?? contract?.userName ?? primaryResponsible?.name ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema',
         createdByRole: String(contract?.createdByRole ?? contract?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
         responsibles,
-        revisionHistory: Array.isArray(contract?.revisionHistory)
-          ? contract.revisionHistory
-            .map((revision) => ({
+        revisionHistory: (() => {
+          const revisions = Array.isArray(contract?.revisionHistory)
+            ? contract.revisionHistory.map((revision) => ({
               id: String(revision?.id ?? makeId('rev')).trim() || makeId('rev'),
               updatedAt: revision?.updatedAt ?? revision?.createdAt ?? now,
               updatedById: revision?.updatedById ?? null,
@@ -2213,7 +2213,27 @@ const normalizeState = (state) => {
                 : [],
             }))
             .filter((revision) => revision.changes.length > 0)
-          : [],
+            : [];
+          if (revisions.length > 0) return revisions;
+          const createdByName = String(contract?.createdByName ?? contract?.userName ?? primaryResponsible?.name ?? contract?.createdBy ?? 'Sistema').trim() || 'Sistema';
+          const createdByRole = String(contract?.createdByRole ?? contract?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema';
+          const contractCode = String(contract?.contractCode ?? contract?.code ?? '').trim();
+          const customer = String(contract?.customerName ?? '').trim();
+          const totalBs = Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0);
+          return [{
+            id: String(contract?.creationRevisionId ?? '').trim() || makeId('rev'),
+            updatedAt: contract?.createdAt ?? now,
+            updatedById: contract?.createdById ?? contract?.userId ?? primaryResponsible?.id ?? null,
+            updatedByName: createdByName,
+            updatedByRole: createdByRole,
+            changes: [
+              `Contrato creado por ${createdByName}`,
+              contractCode ? `Numero de contrato: ${contractCode}` : '',
+              customer ? `Cliente: ${customer}` : '',
+              `Total inicial: ${formatBs(totalBs)}`,
+            ].filter(Boolean),
+          }];
+        })(),
         cancelledAt: contract?.cancelledAt ?? null,
         cancellationPenaltyPercent: Number(contract?.cancellationPenaltyPercent ?? 0),
         cancellationPenaltyBs: Number(contract?.cancellationPenaltyBs ?? 0),
@@ -6182,7 +6202,7 @@ const getReferenceContractStyles = () => `
     width: 8.5in;
     min-height: 14in;
     margin: 0 auto;
-    padding: .34in .42in .36in;
+    padding: .18in .42in .34in;
     display: flex;
     flex-direction: column;
     background: radial-gradient(circle at 50% 0, rgba(166, 106, 32, .08), transparent 58mm), #fffdfa;
@@ -6190,85 +6210,81 @@ const getReferenceContractStyles = () => `
   }
   .rc-top {
     display: grid;
-    grid-template-columns: minmax(0, 66mm) minmax(0, 1fr) 42mm;
+    grid-template-columns: minmax(0, 70mm) minmax(0, 1fr);
     gap: 5mm;
     align-items: center;
-    min-height: 25mm;
+    min-height: 22mm;
   }
   .rc-logo { min-width: 0; overflow: hidden; }
-  .rc-logo img { display: block; width: 62mm; max-width: 100%; height: auto; }
-  .rc-business {
-    min-height: 14mm;
-    padding-left: 4mm;
-    border-left: .35mm solid #d2b178;
-    color: #161616;
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: .35px;
-    line-height: 1.3;
-    text-transform: uppercase;
-  }
+  .rc-logo img { display: block; width: 67mm; max-width: 100%; height: auto; }
   .rc-code {
     display: grid;
-    align-content: center;
-    justify-items: center;
-    gap: 1.4mm;
-    min-height: 30mm;
-    padding: 1.4mm 2mm;
-    border: .28mm solid #d8d0c4;
-    border-radius: 1.7mm;
-    background: rgba(255, 255, 255, .72);
+    grid-template-columns: 24mm repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 0;
+    min-height: 20mm;
+    padding: 0 0 1.6mm;
+    border-bottom: .25mm solid #d8d0c4;
+    background: transparent;
   }
   .rc-number {
     display: flex;
-    align-items: baseline;
-    justify-content: center;
-    gap: 3mm;
-    width: 100%;
-    padding-bottom: 1mm;
-    border-bottom: .25mm solid #d8d0c4;
-    font-family: Georgia, "Times New Roman", serif;
-  }
-  .rc-number span { font-size: 13px; }
-  .rc-number strong { color: #a66a20; font-size: 22px; font-weight: 500; }
-  .rc-date {
-    display: grid;
-    grid-template-columns: 4mm minmax(0, 1fr);
+    flex-direction: column;
     align-items: center;
-    gap: 1.4mm;
+    justify-content: center;
+    gap: .45mm;
     width: 100%;
-    color: #6f5232;
-    font: 900 10px Arial, Helvetica, sans-serif;
-    line-height: 1.16;
-    text-align: left;
+    min-width: 0;
+    padding: .7mm 1.8mm .7mm 0;
+    border-right: .25mm solid #d8d0c4;
+    font-family: Arial, Helvetica, sans-serif;
   }
-  .rc-date img { width: 4mm; height: 4mm; object-fit: contain; filter: sepia(1) saturate(1.5) brightness(.7); }
-  .rc-event-date,
-  .rc-responsible-date {
+  .rc-number strong { color: #8f5b1c; font-size: 25px; font-weight: 700; line-height: .95; letter-spacing: 0; }
+  .rc-code-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: .45mm;
     width: 100%;
-    padding-top: 1mm;
-    border-top: .25mm solid #d8d0c4;
-    color: #a66a20;
-    font-size: 9.6px;
-    font-weight: 900;
-    line-height: 1.16;
+    min-width: 0;
+    padding: .9mm 1.8mm;
+    border-left: .25mm solid #d8d0c4;
+    color: #2d2a26;
+    font: 800 10.8px Arial, Helvetica, sans-serif;
+    line-height: 1.18;
     text-align: center;
   }
-  .rc-responsible-date {
-    margin-top: 1mm;
-    color: #2d241a;
-    font-size: 8.2px;
-  }
-  .rc-event-date span,
-  .rc-responsible-date span {
+  .rc-code-item img { display: none; }
+  .rc-code-item span {
     display: block;
-    color: #69503a;
+    min-width: 0;
+  }
+  .rc-code-item small {
+    display: block;
+    margin-bottom: .7mm;
+    color: #62584d;
     font-size: 7.2px;
+    font-weight: 800;
     letter-spacing: .25px;
+    line-height: 1;
     text-transform: uppercase;
   }
-  .rc-title { padding: 2mm 0 2mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
-  .rc-title h1 { margin: 0; font-size: 25px; font-weight: 500; letter-spacing: 1.2px; }
+  .rc-code-item b {
+    display: block;
+    color: #1f1f1f;
+    font-size: 11.4px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .rc-responsible-date {
+    color: #2d241a;
+  }
+  .rc-responsible-date b {
+    color: #1f1f1f;
+    font-size: 11.4px;
+  }
+  .rc-title { padding: 1mm 0 1.5mm; text-align: center; font-family: Georgia, "Times New Roman", serif; }
+  .rc-title h1 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: 1.1px; }
   .rc-title p {
     margin: .7mm 0 0;
     color: #a66a20;
@@ -6277,7 +6293,7 @@ const getReferenceContractStyles = () => `
     letter-spacing: 5px;
     text-transform: uppercase;
   }
-  .rc-title i { position: relative; display: block; width: 27mm; height: .3mm; margin: 1mm auto 0; background: #a66a20; }
+  .rc-title i { position: relative; display: block; width: 27mm; height: .3mm; margin: .8mm auto 0; background: #a66a20; }
   .rc-title i::after {
     content: "";
     position: absolute;
@@ -6290,7 +6306,131 @@ const getReferenceContractStyles = () => `
     transform: translate(-50%, -50%) rotate(45deg);
   }
   .rc-schedule-meta img, .rc-mode-row img { filter: sepia(1) saturate(1.5) brightness(.72); }
-  .rc-upper { display: grid; grid-template-columns: .95fr 1.05fr; gap: 5mm; margin-top: 3mm; }
+  .rc-upper { margin-top: 2.4mm; }
+  .rc-operational {
+    padding: 0 0 2.2mm;
+  }
+  .rc-operational-title {
+    display: flex;
+    align-items: baseline;
+    gap: 2mm;
+    margin: 0 0 1.6mm;
+    color: #9a611d;
+    font: 800 13.5px Arial, Helvetica, sans-serif;
+    letter-spacing: .12px;
+    text-transform: uppercase;
+  }
+  .rc-operational-title b {
+    color: #9a611d;
+    font-size: 17px;
+    font-weight: 800;
+  }
+  .rc-operational-title::after {
+    content: "";
+    flex: 1 1 auto;
+    height: .25mm;
+    background: #d8d0c4;
+    transform: translateY(-.6mm);
+  }
+  .rc-operational-grid {
+    display: grid;
+    grid-template-columns: .96fr 1.04fr;
+    gap: 5mm;
+    align-items: start;
+  }
+  .rc-info-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 4mm;
+    row-gap: 1.8mm;
+  }
+  .rc-info-line,
+  .rc-timeline-row,
+  .rc-place-line,
+  .rc-sign-line {
+    min-width: 0;
+    padding-bottom: 1mm;
+    border-bottom: .2mm solid #ded6ca;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  .rc-info-line.is-wide,
+  .rc-place-line,
+  .rc-sign-line {
+    grid-column: 1 / -1;
+  }
+  .rc-info-line small,
+  .rc-timeline-row small,
+  .rc-place-line small,
+  .rc-sign-line small {
+    display: block;
+    margin-bottom: .35mm;
+    color: #6b5a46;
+    font-size: 8.2px;
+    font-weight: 600;
+    letter-spacing: .15px;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .rc-info-line strong,
+  .rc-timeline-row strong,
+  .rc-place-line strong {
+    display: block;
+    color: #111;
+    font-size: 11.4px;
+    font-weight: 500;
+    line-height: 1.18;
+    text-transform: uppercase;
+  }
+  .rc-timeline {
+    display: grid;
+    gap: 1.6mm;
+  }
+  .rc-timeline-row {
+    display: grid;
+    grid-template-columns: minmax(24mm, .95fr) minmax(0, .9fr) minmax(0, .9fr);
+    gap: 3mm;
+    align-items: end;
+  }
+  .rc-timeline-kind strong {
+    color: #111;
+  }
+  .rc-timeline-kind em {
+    display: block;
+    margin-top: .35mm;
+    color: #6b5a46;
+    font-size: 8.4px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 1;
+    text-transform: none;
+  }
+  .rc-sign-line {
+    display: grid;
+    grid-template-columns: 34mm 1fr;
+    gap: 2.5mm;
+    align-items: end;
+    margin-top: 2mm;
+    padding-top: .3mm;
+  }
+  .rc-sign-line small { margin-bottom: 0; }
+  .rc-sign-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2.5mm;
+  }
+  .rc-sign-field {
+    display: grid;
+    grid-template-columns: auto minmax(18mm, 1fr);
+    gap: 1.2mm;
+    align-items: end;
+    color: #111;
+    font-size: 8.6px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .rc-sign-field i {
+    display: none;
+  }
   .rc-block-title {
     display: flex;
     align-items: baseline;
@@ -6439,6 +6579,16 @@ const getReferenceContractStyles = () => `
   .rc-table tbody tr.rc-cat-violet td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #7553a7; }
   .rc-table tbody tr.rc-cat-rose td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #ad4f64; }
   .rc-table tbody tr.rc-cat-slate td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #56616f; }
+  .rc-duration-day-row td {
+    padding: .8mm 1.5mm;
+    border-right: 0;
+    background: #fff7ea;
+    color: #8a4f12;
+    font-size: 8.6px;
+    font-weight: 900;
+    letter-spacing: .15px;
+    text-transform: uppercase;
+  }
   .rc-category-chip {
     display: inline-block;
     max-width: 36mm;
@@ -6739,7 +6889,7 @@ const getReferenceContractStyles = () => `
       max-width: 8.5in;
       min-height: auto;
       margin: 0 auto;
-      padding: .28in .38in .32in;
+      padding: .14in .38in .30in;
       display: block;
       box-shadow: none;
       background: #fffdfa;
@@ -6803,11 +6953,17 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
   const documentCustomerName = contract?.customerName ?? rental?.customerName ?? '';
   const documentCustomerPhone = contract?.customerPhone ?? rental?.customerPhone ?? '';
+  const documentCustomerReferencePhone = String(contract?.customerReferencePhone ?? rental?.customerReferencePhone ?? rental?.referencePhone ?? '').trim();
+  const documentCustomerPhones = [documentCustomerPhone, documentCustomerReferencePhone]
+    .map((phone) => String(phone ?? '').trim())
+    .filter(Boolean);
+  const documentCustomerCi = String(contract?.customerCi ?? contract?.nitCi ?? rental?.customerCi ?? rental?.nitCi ?? '').trim();
   const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, 'contrato');
   const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
+  const operationalPlaceLabel = isCustomerPickup ? 'Recojo por cliente' : eventAddress;
   const responsibleName = String(
     contract?.responsibles?.[0]?.name
     ?? contract?.createdByName
@@ -6845,9 +7001,32 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       || left._originalIndex - right._originalIndex
     );
   let contractRowNumber = 0;
-  const itemRows = documentItems
-    .map(
-      (line) => {
+  const durationBaseBs = Number(pricingPlan?.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0);
+  const pricingDays = Math.max(1, Math.trunc(Number(pricingPlan?.days ?? 1)));
+  const getDurationPercentForDay = (day) => {
+    if (!hasDurationPricing) return 100;
+    const tiers = Array.isArray(pricingPlan?.tiers) ? pricingPlan.tiers : [];
+    const tier = tiers.find((entry) => {
+      const fromDay = Math.max(1, Math.trunc(Number(entry?.fromDay ?? 1)));
+      const rawToDay = Math.trunc(Number(entry?.toDay ?? 0));
+      const toDay = rawToDay > 0 ? rawToDay : pricingDays;
+      return day >= fromDay && day <= toDay;
+    });
+    return Math.max(0, Math.min(100, Number(tier?.percent ?? 100)));
+  };
+  const durationDayBreakdown = hasDurationPricing
+    ? Array.from({ length: pricingDays }, (_, index) => {
+      const day = index + 1;
+      const percent = getDurationPercentForDay(day);
+      return {
+        day,
+        percent,
+        multiplier: percent / 100,
+        totalBs: Number((durationBaseBs * (percent / 100)).toFixed(2)),
+      };
+    })
+    : [];
+  const renderContractItemRow = (line, multiplier = 1) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
         const area = line._area || getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
@@ -6855,6 +7034,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           supplierSupportByItem.get(String(line.lineKey ?? '').trim())
           ?? supplierSupportByItem.get(String(line.itemId ?? '').trim()),
         );
+        const unitPriceBs = Number(line.rentalPriceBs ?? 0) * multiplier;
+        const lineTotalBs = Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)) * multiplier;
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -6867,15 +7048,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             ${String(line.observation ?? '').trim() ? `<span class="rc-item-observation">${escapeHtml(String(line.observation ?? '').trim())}</span>` : ''}
           </td>
           <td class="num">${line.quantity}</td>
-          <td class="num">${formatBs(line.rentalPriceBs)}</td>
-          <td class="num">${formatBs(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0))}</td>
-          <td class="check"><span class="rc-check"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
+          <td class="num">${formatBs(unitPriceBs)}</td>
+          <td class="num">${formatBs(lineTotalBs)}</td>
+          <td class="check"></td>
+          <td class="check"></td>
           <td><span class="rc-observation-line"></span></td>
         </tr>`;
-      },
-    )
-    .join('');
+  };
+  const itemRows = hasDurationPricing
+    ? durationDayBreakdown.map((dayInfo) => `
+        <tr class="rc-duration-day-row">
+          <td colspan="8">Dia ${dayInfo.day} - ${dayInfo.percent}%</td>
+        </tr>
+        ${documentItems.map((line) => renderContractItemRow(line, dayInfo.multiplier)).join('')}`).join('')
+    : documentItems.map((line) => renderContractItemRow(line)).join('');
   const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
   const serviceRows = contractServices
     .map((service) => {
@@ -6890,8 +7076,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="num">${service.quantity}</td>
           <td class="num">${formatBs(service.unitPriceBs)}</td>
           <td class="num">${formatBs(service.lineTotalBs)}</td>
-          <td class="check"><span class="rc-check"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"></td>
+          <td class="check"></td>
           <td><span class="rc-observation-line"></span></td>
         </tr>`;
     })
@@ -6918,8 +7104,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td class="num"><span class="rc-manual-write-line"></span></td>
           <td class="num"><span class="rc-manual-write-line"></span></td>
           <td class="num"><span class="rc-manual-write-line"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
-          <td class="check"><span class="rc-check"></span></td>
+          <td class="check"></td>
+          <td class="check"></td>
           <td></td>
         </tr>`).join('');
   const manualBlockHtml = manualRows
@@ -6935,9 +7121,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const itemCount = realItemCount + manualRowCount;
   const densityClass = itemCount >= 7 ? 'is-dense' : '';
   const multipageClass = usesMultipageContract ? 'is-multipage' : '';
+  const durationFinancialItemsHtml = hasDurationPricing
+    ? durationDayBreakdown.map((dayInfo) => `
+            <div class="rc-financial-item transport"><span>Dia ${dayInfo.day} (${dayInfo.percent}%)</span><strong>${formatBs(dayInfo.totalBs)}</strong></div>`).join('')
+    : '';
   const financialSummaryHtml = `
           <div class="rc-financial-summary">
-            ${hasDurationPricing ? `<div class="rc-financial-item"><span>Base por dia</span><strong>${formatBs(pricingPlan.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0)}</strong></div>` : ''}
+            ${durationFinancialItemsHtml}
             <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
             ${hasDeliveryFee ? `<div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>` : ''}
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
@@ -6957,12 +7147,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const pickupEnd = deliveryBack?.windowEnd ?? contract?.pickupWindowEnd ?? '-';
   const deliveryTimeMode = contract?.deliveryTimeMode ?? rental?.deliveryTimeMode;
   const pickupTimeMode = contract?.pickupTimeMode ?? rental?.pickupTimeMode;
-  const deliveryTimeHtml = deliveryTimeMode === 'coordinate'
-    ? '<span class="rc-schedule-meta is-coordinate"><img src="/imagenes/pdf%20contrato/reloj.png" alt="" /><b class="rc-coordinate-time">Coordinar con el cliente<i></i></b></span>'
-    : `<span class="rc-schedule-meta">${contractPdfIcon('reloj.png')}${escapeHtml(`${deliveryStart} - ${deliveryEnd}`)}</span>`;
-  const pickupTimeHtml = pickupTimeMode === 'coordinate'
-    ? '<span class="rc-schedule-meta is-coordinate"><img src="/imagenes/pdf%20contrato/reloj.png" alt="" /><b class="rc-coordinate-time">Coordinar con el cliente<i></i></b></span>'
-    : `<span class="rc-schedule-meta">${contractPdfIcon('reloj.png')}${escapeHtml(`${pickupStart} - ${pickupEnd}`)}</span>`;
+  const deliveryTimeLabel = deliveryTimeMode === 'coordinate' ? '' : `${deliveryStart} - ${deliveryEnd}`;
+  const pickupTimeLabel = pickupTimeMode === 'coordinate' ? '' : `${pickupStart} - ${pickupEnd}`;
   return `<!doctype html>
 <html>
   <head>
@@ -6974,12 +7160,11 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     <main class="rc-sheet ${densityClass} ${multipageClass}">
       <header class="rc-top">
         <div class="rc-logo"><img src="/imagenes/logo_el_copetin_redisenado.png" alt="El Copetin" /></div>
-        <div class="rc-business">Alquiler de mobiliario, cristaleria<br />y equipos para eventos</div>
         <div class="rc-code">
-          <div class="rc-number"><span>N&deg;</span><strong>${escapeHtml(mainCode)}</strong></div>
-          <div class="rc-date">${contractPdfIcon('calendario.png')}<span>${escapeHtml(issuedAt)}</span></div>
-          <div class="rc-event-date"><span>Fecha del evento</span>${escapeHtml(eventLongDate)}</div>
-          <div class="rc-responsible-date"><span>Responsable</span>${escapeHtml(responsibleName)}</div>
+          <div class="rc-number"><strong>${escapeHtml(mainCode)}</strong></div>
+          <div class="rc-code-item rc-date"><span><small>Fecha de creacion</small><b>${escapeHtml(issuedAt)}</b></span></div>
+          <div class="rc-code-item rc-event-date"><span><small>Fecha del evento</small><b>${escapeHtml(eventLongDate)}</b></span></div>
+          <div class="rc-code-item rc-responsible-date"><span><small>Responsable</small><b>${escapeHtml(responsibleName)}</b></span></div>
         </div>
       </header>
 
@@ -6988,39 +7173,32 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         <i></i>
       </section>
 
-      <section class="rc-upper">
-        <div class="rc-client">
-          <h2 class="rc-block-title"><b>1.</b> Datos del cliente y evento</h2>
-          <div class="rc-fields">
-            <strong>Cliente:</strong><span>${escapeHtml(documentCustomerName)}</span>
-            <strong>Telefono / CI:</strong><span>${escapeHtml(documentCustomerPhone || '-')}</span>
-            <strong>Evento:</strong><span>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</span>
-            <strong>Direccion del servicio:</strong><span>${escapeHtml(eventAddress)}</span>
-            <strong>Tarifa:</strong><span>${escapeHtml(durationLabel)}</span>
-            <strong>Logistica:</strong><span>${escapeHtml(logisticsLabel)}</span>
-            <strong>Orden vinculada:</strong><span>${escapeHtml(linkedOrderCode)}</span>
+      <section class="rc-upper rc-operational">
+        <h2 class="rc-operational-title"><b>1.</b> Datos del cliente y cronograma</h2>
+        <div class="rc-operational-grid">
+          <div class="rc-info-list">
+            <div class="rc-info-line is-wide"><small>Cliente</small><strong>${escapeHtml(documentCustomerName)}</strong></div>
+            <div class="rc-info-line is-wide"><small>Telefono</small><strong>${escapeHtml(documentCustomerPhones.length ? documentCustomerPhones.join(' / ') : '-')}</strong></div>
+            <div class="rc-info-line"><small>CI</small><strong>${escapeHtml(documentCustomerCi || '-')}</strong></div>
+            <div class="rc-info-line"><small>Evento</small><strong>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</strong></div>
+          </div>
+          <div class="rc-timeline">
+            <div class="rc-timeline-row">
+              <span class="rc-timeline-kind"><small>${isCustomerPickup ? 'Alistamiento' : 'Entrega'}</small><strong>${isCustomerPickup ? 'Para recojo' : 'Programada'}</strong></span>
+              <span><small>Fecha</small><strong>${escapeHtml(deliveryDate)}</strong></span>
+              <span><small>Horario</small><strong>${escapeHtml(deliveryTimeLabel)}</strong></span>
+            </div>
+            <div class="rc-timeline-row">
+              <span class="rc-timeline-kind"><small>${isCustomerPickup ? 'Devolucion' : 'Recojo'}</small><strong>${isCustomerPickup ? 'Por cliente' : 'Programado'}</strong></span>
+              <span><small>Fecha</small><strong>${escapeHtml(pickupDate)}</strong></span>
+              <span><small>Horario</small><strong>${escapeHtml(pickupTimeLabel)}</strong></span>
+            </div>
+            <div class="rc-place-line"><small>Direccion</small><strong>${escapeHtml(operationalPlaceLabel)}</strong></div>
           </div>
         </div>
-        <div>
-          <h2 class="rc-block-title"><b>2.</b> Cronograma operativo</h2>
-          <div class="rc-schedule-box">
-            <div class="rc-schedule-row">
-              <i class="rc-round-icon">${contractPdfIcon('camion.png')}</i>
-              <p><strong>${isCustomerPickup ? 'Alistamiento' : 'Entrega'}</strong><span>${isCustomerPickup ? 'para recojo' : 'programada'}</span></p>
-              <span class="rc-schedule-meta">${contractPdfIcon('calendario.png')}${escapeHtml(deliveryDate)}</span>
-              ${deliveryTimeHtml}
-            </div>
-            <div class="rc-schedule-row">
-              <i class="rc-round-icon">${contractPdfIcon('flechas-circulares.png')}</i>
-              <p><strong>${isCustomerPickup ? 'Devolucion' : 'Recojo'}</strong><span>${isCustomerPickup ? 'por cliente' : 'programado'}</span></p>
-              <span class="rc-schedule-meta">${contractPdfIcon('calendario.png')}${escapeHtml(pickupDate)}</span>
-              ${pickupTimeHtml}
-            </div>
-          </div>
-          <div class="rc-mode-box">
-            <div class="rc-mode-row">${contractPdfIcon('enlace.png')}<p><strong>Modalidad acordada:</strong><span>${escapeHtml(logisticsLabel)}</span></p></div>
-            <div class="rc-mode-row">${contractPdfIcon('documento.png')}<p><strong>Responsable operativo:</strong><span class="rc-handwrite-fields"><b class="rc-handwrite-field">Entregado por:<i></i></b><b class="rc-handwrite-field">Recogido por:<i></i></b></span></p></div>
-          </div>
+        <div class="rc-sign-line">
+          <small>Responsable operativo</small>
+          <span class="rc-sign-fields"><b class="rc-sign-field">Entregado por:<i></i></b><b class="rc-sign-field">Recogido por:<i></i></b></span>
         </div>
       </section>
 
@@ -8287,10 +8465,26 @@ const summarizeContractChanges = (beforeContract, contract) => {
       changes.push(`${label}: ${beforeText || 'Sin definir'} -> ${afterText || 'Sin definir'}`);
     }
   };
+  const addMoneyChange = (label, beforeValue, afterValue) => {
+    const beforeNumber = Number(beforeValue ?? 0);
+    const afterNumber = Number(afterValue ?? 0);
+    if (Math.abs(beforeNumber - afterNumber) >= 0.01) {
+      changes.push(`${label}: ${formatBs(beforeNumber)} -> ${formatBs(afterNumber)}`);
+    }
+  };
+  const addGenericChange = (label, beforeValue, afterValue) => {
+    if (JSON.stringify(beforeValue ?? null) !== JSON.stringify(afterValue ?? null)) {
+      changes.push(`Actualizo ${label}`);
+    }
+  };
 
+  addTextChange('Numero de contrato', beforeContract?.contractCode, contract?.contractCode);
+  addTextChange('Fecha del contrato', beforeContract?.contractDate, contract?.contractDate);
   addTextChange('Cliente', beforeContract?.customerName, contract?.customerName);
+  addTextChange('CI/NIT cliente', beforeContract?.customerCi, contract?.customerCi);
   addTextChange('Telefono cliente', beforeContract?.customerPhone, contract?.customerPhone);
   addTextChange('Telefono de referencia', beforeContract?.customerReferencePhone, contract?.customerReferencePhone);
+  addTextChange('Nombre comercial', beforeContract?.companyName, contract?.companyName);
   addTextChange('Tipo de evento', beforeContract?.eventType, contract?.eventType);
   addTextChange('Fecha del evento', beforeContract?.eventDate, contract?.eventDate);
   addTextChange('Hora del evento', beforeContract?.eventTime, contract?.eventTime);
@@ -8309,11 +8503,17 @@ const summarizeContractChanges = (beforeContract, contract) => {
     `${contract?.pickupWindowStart ?? ''}-${contract?.pickupWindowEnd ?? ''}`,
   );
   addTextChange('Logistica', beforeContract?.logisticsMode, contract?.logisticsMode);
+  addTextChange('Modo de facturacion', beforeContract?.billingMode, contract?.billingMode);
+  addTextChange('Estado', beforeContract?.status, contract?.status);
+  addTextChange('Aprobado en', beforeContract?.approvedAt, contract?.approvedAt);
+  addTextChange('Rechazado en', beforeContract?.rejectedAt, contract?.rejectedAt);
+  addTextChange('Orden vinculada', beforeContract?.orderCode, contract?.orderCode);
   addTextChange('Observaciones', beforeContract?.observations, contract?.observations);
 
   const beforeResponsible = beforeContract?.responsibles?.[0]?.name ?? '';
   const nextResponsible = contract?.responsibles?.[0]?.name ?? '';
   addTextChange('Responsable del contrato', beforeResponsible, nextResponsible);
+  addGenericChange('equipo responsable', beforeContract?.responsibles ?? [], contract?.responsibles ?? []);
 
   const aggregateItems = (lines) => {
     const result = new Map();
@@ -8339,6 +8539,24 @@ const summarizeContractChanges = (beforeContract, contract) => {
     else if (nextQty === 0) changes.push(`Retiro ${beforeQty} x ${itemName}`);
     else changes.push(`${itemName}: ${beforeQty} -> ${nextQty}`);
   });
+  const itemSignature = (lines) => (Array.isArray(lines) ? lines : [])
+    .map((line) => [
+      line?.itemId ?? '',
+      line?.itemName ?? '',
+      line?.quantity ?? 0,
+      line?.unitPriceBs ?? 0,
+      line?.discountBs ?? 0,
+      line?.discountPercent ?? 0,
+      line?.lineTotalBs ?? 0,
+      line?.observation ?? '',
+      line?.comboId ?? '',
+      line?.comboLineKey ?? '',
+    ].map((value) => String(value ?? '').trim()).join('|'))
+    .sort()
+    .join('||');
+  if (itemSignature(beforeContract?.items) !== itemSignature(contract?.items)) {
+    changes.push('Actualizo detalle, precios o descuentos de items');
+  }
 
   const serviceSignature = (services) => normalizeContractServices(services)
     .map((service) => `${service.name}|${service.detail}|${service.quantity}|${service.unitPriceBs}`)
@@ -8348,23 +8566,57 @@ const summarizeContractChanges = (beforeContract, contract) => {
     changes.push('Actualizo los servicios asignados');
   }
 
-  const beforeGuaranteeBs = Number(beforeContract?.totals?.guaranteeBs ?? beforeContract?.guarantee?.amountBs ?? 0);
-  const nextGuaranteeBs = Number(contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0);
-  if (Math.abs(beforeGuaranteeBs - nextGuaranteeBs) >= 0.01) {
-    changes.push(`Garantia: ${formatBs(beforeGuaranteeBs)} -> ${formatBs(nextGuaranteeBs)}`);
-  }
+  addGenericChange('plan de proveedor', beforeContract?.supplierFulfillmentPlan ?? [], contract?.supplierFulfillmentPlan ?? []);
+  addGenericChange('plan de precios por duracion', beforeContract?.pricingPlan ?? null, contract?.pricingPlan ?? null);
+
+  addMoneyChange('Subtotal base', beforeContract?.totals?.baseSubtotalBs, contract?.totals?.baseSubtotalBs);
+  addMoneyChange('Descuento', beforeContract?.totals?.discountBs, contract?.totals?.discountBs);
+  addMoneyChange('Transporte', beforeContract?.totals?.deliveryFeeBs, contract?.totals?.deliveryFeeBs);
+  addMoneyChange('Garantia', beforeContract?.totals?.guaranteeBs ?? beforeContract?.guarantee?.amountBs, contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs);
+  addMoneyChange('Pago inicial', beforeContract?.payment?.paidAtApprovalBs, contract?.payment?.paidAtApprovalBs);
+  addMoneyChange('Saldo pendiente', beforeContract?.payment?.pendingBs, contract?.payment?.pendingBs);
+  addMoneyChange('Total', beforeContract?.totals?.totalBs, contract?.totals?.totalBs);
+
   const beforeGuaranteeStatus = String(beforeContract?.guarantee?.status ?? beforeContract?.payment?.guaranteeStatus ?? '').trim();
   const nextGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
   if (beforeGuaranteeStatus !== nextGuaranteeStatus) {
     changes.push(`Estado garantia: ${beforeGuaranteeStatus || 'Sin definir'} -> ${nextGuaranteeStatus || 'Sin definir'}`);
   }
+  addTextChange('Metodo garantia', beforeContract?.guarantee?.paymentMethod ?? beforeContract?.payment?.guaranteePaymentMethod, contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
+  addTextChange('Metodo pago inicial', beforeContract?.payment?.initialPaymentMethod, contract?.payment?.initialPaymentMethod);
+  addGenericChange('seguimiento economico', beforeContract?.economicLedger ?? [], contract?.economicLedger ?? []);
 
-  const beforeTotal = Number(beforeContract?.totals?.totalBs ?? 0);
-  const nextTotal = Number(contract?.totals?.totalBs ?? 0);
-  if (Math.abs(beforeTotal - nextTotal) >= 0.01) {
-    changes.push(`Total: ${formatBs(beforeTotal)} -> ${formatBs(nextTotal)}`);
-  }
   return changes;
+};
+
+const appendContractRevision = (contract, payload, now, changes) => {
+  const normalizedChanges = (Array.isArray(changes) ? changes : [])
+    .map((change) => String(change ?? '').trim())
+    .filter(Boolean);
+  if (!normalizedChanges.length) return;
+  contract.revisionHistory = Array.isArray(contract.revisionHistory) ? contract.revisionHistory : [];
+  contract.revisionHistory.push({
+    id: makeId('rev'),
+    updatedAt: now,
+    updatedById: payload?.updatedById ?? payload?.createdById ?? payload?.userId ?? null,
+    updatedByName: String(
+      payload?.updatedByName
+      ?? payload?.createdByName
+      ?? payload?.userName
+      ?? payload?.createdBy
+      ?? contract?.createdByName
+      ?? contract?.createdBy
+      ?? 'Sistema',
+    ).trim() || 'Sistema',
+    updatedByRole: String(
+      payload?.updatedByRole
+      ?? payload?.createdByRole
+      ?? payload?.userRole
+      ?? contract?.createdByRole
+      ?? 'Operacion',
+    ).trim() || 'Operacion',
+    changes: normalizedChanges,
+  });
 };
 
 const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, beforeContract = null) => {
@@ -12200,10 +12452,17 @@ const createWebBridge = () => ({
           createdByName: String(payload?.createdByName ?? payload?.userName ?? primaryResponsible?.name ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
           createdByRole: String(payload?.createdByRole ?? payload?.userRole ?? primaryResponsible?.role ?? 'Sistema').trim() || 'Sistema',
           responsibles,
+          revisionHistory: [],
           createdAt: now,
           updatedAt: now,
           deletedAt: null,
         };
+        appendContractRevision(created, payload, now, [
+          `Contrato creado por ${created.createdByName || created.createdBy || 'Sistema'}`,
+          `Numero de contrato: ${created.contractCode}`,
+          `Cliente: ${created.customerName}`,
+          `Total inicial: ${formatBs(created?.totals?.totalBs ?? 0)}`,
+        ]);
 
         if (!Array.isArray(state.contracts)) state.contracts = [];
         state.contracts.push(created);
@@ -12459,19 +12718,8 @@ const createWebBridge = () => ({
           });
         }
         const changes = summarizeContractChanges(beforeContract, contract);
-        const tracksApprovedRevision = beforeContract.status === 'aprobado' && contract.status === 'aprobado';
+        appendContractRevision(contract, payload, now, changes);
         if (changes.length > 0 && contract.status === 'aprobado') {
-          if (tracksApprovedRevision) {
-            contract.revisionHistory = Array.isArray(contract.revisionHistory) ? contract.revisionHistory : [];
-            contract.revisionHistory.push({
-              id: makeId('rev'),
-              updatedAt: now,
-              updatedById: payload?.updatedById ?? payload?.userId ?? null,
-              updatedByName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
-              updatedByRole: String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion',
-              changes,
-            });
-          }
           syncApprovedContractOperation(state, contract, payload, now, beforeContract);
         }
         contract.updatedAt = now;
@@ -12490,6 +12738,7 @@ const createWebBridge = () => ({
         if (!Array.isArray(state.contracts)) state.contracts = [];
         const contract = state.contracts.find((entry) => entry.id === id && !entry.deletedAt);
         if (!contract) throw new Error('Contrato no encontrado.');
+        const beforeContract = deepClone(contract);
         const now = new Date().toISOString();
         const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
         const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
@@ -12519,6 +12768,7 @@ const createWebBridge = () => ({
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
+        appendContractRevision(contract, payload, now, summarizeContractChanges(beforeContract, contract));
         contract.updatedAt = now;
         updated = deepClone(contract);
         return state;
@@ -12540,6 +12790,7 @@ const createWebBridge = () => ({
         contract.status = 'eliminado';
         contract.rentalId = null;
         contract.orderCode = null;
+        appendContractRevision(contract, payload, now, ['Contrato eliminado']);
         contract.updatedAt = now;
         updated = deepClone(contract);
         return state;
@@ -12702,6 +12953,10 @@ const createWebBridge = () => ({
         contract.revertedQuoteId = quote.id;
         contract.rentalId = null;
         contract.orderCode = null;
+        appendContractRevision(contract, payload, now, [
+          `Contrato revertido a cotizacion ${quote.code || quote.quoteCode || quote.id}`,
+          'Se liberaron ordenes, inventario y movimientos vinculados',
+        ]);
         contract.updatedAt = now;
 
         reverted = {
