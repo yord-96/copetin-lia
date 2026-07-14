@@ -6771,18 +6771,43 @@ const getReferenceContractStyles = () => `
     width: 100%;
     height: 4.2mm;
   }
-  .rc-bottom {
+  .rc-closeout {
     display: grid;
-    grid-template-columns: minmax(0, .62fr) minmax(0, 1fr);
-    gap: 4mm;
+    grid-template-columns: minmax(0, 1fr) 34mm;
+    gap: 3mm;
     margin-top: 3mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  .rc-closeout-writing {
+    display: grid;
+    gap: 2mm;
+    min-width: 0;
+  }
+  .rc-closeout .rc-financial-block {
+    margin-top: 0;
+    border-top: 0;
+  }
+  .rc-closeout .rc-financial-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border-top: .45mm solid #a66a20;
+  }
+  .rc-closeout .rc-financial-item {
+    min-height: 8.6mm;
+    border-right: .25mm solid #d8c29c;
+    border-bottom: .25mm solid #d8c29c;
+  }
+  .rc-closeout .rc-financial-item:last-child {
+    border-right: .25mm solid #d8c29c;
+  }
+  .rc-bottom {
+    display: contents;
+  }
   .rc-bottom-title { margin: 0 0 1.2mm; color: #a66a20; font: 500 12.5px Georgia, "Times New Roman", serif; font-variant: small-caps; }
   .rc-bottom-title::after { content: ""; display: block; width: 18mm; height: .25mm; margin-top: .6mm; background: #a66a20; }
   .rc-observations, .rc-guarantee-control {
-    min-height: 24mm;
+    min-height: 23mm;
     padding: 1.6mm;
     border: .25mm solid #d8c29c;
     border-radius: 1.5mm;
@@ -6793,7 +6818,7 @@ const getReferenceContractStyles = () => `
   .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
   .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
   .rc-client-materials {
-    margin-top: 3mm;
+    margin-top: 0;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -6803,7 +6828,7 @@ const getReferenceContractStyles = () => `
     gap: 2.5mm;
   }
   .rc-material-box {
-    min-height: 20mm;
+    min-height: 19mm;
     display: grid;
     grid-template-rows: auto 1fr;
     border: .25mm solid #e4d3bb;
@@ -6977,6 +7002,7 @@ const getReferenceContractStyles = () => `
     .rc-table thead { display: table-header-group; }
     .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
     .rc-bottom,
+    .rc-closeout,
     .rc-client-materials,
     .rc-terms-section,
     .rc-page-bottom {
@@ -7294,37 +7320,43 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </div>
           <strong>N&deg; ${escapeHtml(mainCode)}</strong>
         </section>
-        <section class="rc-financial-block">${financialSummaryHtml}</section>
       </section>
 
-      <section class="rc-bottom">
-        <div class="rc-observations">
-          <h3 class="rc-bottom-title">Observaciones</h3>
-          <strong>Observaciones:</strong>
-          <p>${escapeHtml(observations)}</p>
-        </div>
-        <div class="rc-guarantee-control">
-          <h3 class="rc-bottom-title">Control de garantia</h3>
-          <div class="rc-change-lines">
-            <span class="rc-change-line"></span>
-            <span class="rc-change-line"></span>
-            <span class="rc-change-line"></span>
-            <span class="rc-change-line"></span>
-          </div>
-        </div>
-      </section>
+      <section class="rc-closeout">
+        <div class="rc-closeout-writing">
+          <section class="rc-bottom">
+            <div class="rc-observations">
+              <h3 class="rc-bottom-title">Observaciones</h3>
+              <strong>Observaciones:</strong>
+              <p>${escapeHtml(observations)}</p>
+            </div>
+            <div class="rc-guarantee-control">
+              <h3 class="rc-bottom-title">Control de garantia</h3>
+              <div class="rc-change-lines">
+                <span class="rc-change-line"></span>
+                <span class="rc-change-line"></span>
+                <span class="rc-change-line"></span>
+              </div>
+            </div>
+          </section>
 
-      <section class="rc-client-materials">
-        <div class="rc-material-grid">
-          <div class="rc-material-box">
-            <h4>Material dejado al cliente</h4>
-            <div class="rc-material-lines"><span></span><span></span><span></span><span></span></div>
-          </div>
-          <div class="rc-material-box">
-            <h4>Material que falta entregar al cliente</h4>
-            <div class="rc-material-lines"><span></span><span></span><span></span><span></span></div>
-          </div>
+          <section class="rc-client-materials">
+            <div class="rc-material-grid">
+              <div class="rc-material-box">
+                <h4>Material dejado al cliente</h4>
+                <div class="rc-material-lines"><span></span><span></span><span></span></div>
+              </div>
+              <div class="rc-material-box">
+                <h4>Material que falta entregar al cliente</h4>
+                <div class="rc-material-lines"><span></span><span></span><span></span></div>
+              </div>
+            </div>
+          </section>
         </div>
+
+        <section class="rc-financial-block">
+          ${financialSummaryHtml}
+        </section>
       </section>
 
       <div class="rc-page-bottom">
@@ -8583,6 +8615,9 @@ const summarizeContractChanges = (beforeContract, contract) => {
   addTextChange('Estado', beforeContract?.status, contract?.status);
   addTextChange('Aprobado en', beforeContract?.approvedAt, contract?.approvedAt);
   addTextChange('Rechazado en', beforeContract?.rejectedAt, contract?.rejectedAt);
+  addTextChange('Finalizado', beforeContract?.isFinalized ? 'Si' : 'No', contract?.isFinalized ? 'Si' : 'No');
+  addTextChange('Finalizado en', beforeContract?.finalizedAt, contract?.finalizedAt);
+  addTextChange('Finalizado por', beforeContract?.finalizedByName, contract?.finalizedByName);
   addTextChange('Orden vinculada', beforeContract?.orderCode, contract?.orderCode);
   addTextChange('Observaciones', beforeContract?.observations, contract?.observations);
 
@@ -12260,6 +12295,11 @@ const createWebBridge = () => ({
           supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
+          isFinalized: false,
+          finalizedAt: null,
+          finalizedById: null,
+          finalizedByName: '',
+          finalizedByRole: '',
           rentalId: null,
           orderCode: null,
           createdBy: String(payload?.createdBy ?? primaryResponsible?.name ?? 'system').trim() || 'system',
@@ -12793,6 +12833,16 @@ const createWebBridge = () => ({
         if (payload.status !== undefined) contract.status = String(payload.status ?? '').trim() || contract.status;
         if (payload.approvedAt !== undefined) contract.approvedAt = payload.approvedAt ?? null;
         if (payload.rejectedAt !== undefined) contract.rejectedAt = payload.rejectedAt ?? null;
+        if (payload.isFinalized !== undefined) {
+          const nextFinalized = Boolean(payload.isFinalized);
+          contract.isFinalized = nextFinalized;
+          contract.finalizedAt = nextFinalized
+            ? (payload.finalizedAt ?? contract.finalizedAt ?? new Date().toISOString())
+            : null;
+          contract.finalizedById = nextFinalized ? (payload.updatedById ?? payload.userId ?? null) : null;
+          contract.finalizedByName = nextFinalized ? getAuditUserName(payload) : '';
+          contract.finalizedByRole = nextFinalized ? getAuditUserRole(payload) : '';
+        }
         if (payload.rentalId !== undefined) contract.rentalId = payload.rentalId ?? null;
         if (payload.orderCode !== undefined) contract.orderCode = payload.orderCode ?? null;
         if (payload.supplierFulfillmentPlan !== undefined) {

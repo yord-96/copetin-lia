@@ -1205,6 +1205,7 @@ function ServiceOrdersSection({
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [finalizedContractOverrides, setFinalizedContractOverrides] = useState(() => new Map());
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
@@ -1795,10 +1796,10 @@ function ServiceOrdersSection({
       const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeBs > 0);
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : !isGuaranteeValidated
-          ? 'pending'
-          : hasReturnedGuarantee
+        : hasReturnedGuarantee
           ? 'returned'
+          : !isGuaranteeValidated
+          ? 'pending'
           : 'held';
       return {
         ...contract,
@@ -1818,6 +1819,9 @@ function ServiceOrdersSection({
         deletedByName: String(contract?.deletedByName ?? deletionRevision?.updatedByName ?? '').trim(),
         deletedByRole: String(contract?.deletedByRole ?? deletionRevision?.updatedByRole ?? '').trim(),
         deletedAt: contract?.deletedAt ?? deletionRevision?.updatedAt ?? null,
+        isFinalized: Boolean(contract?.isFinalized),
+        finalizedAt: contract?.finalizedAt ?? null,
+        finalizedByName: String(contract?.finalizedByName ?? '').trim(),
         guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
           ? guaranteeStatus === 'pending' ? 'No validada' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
@@ -4995,6 +4999,41 @@ function ServiceOrdersSection({
     }
   };
 
+  const handleToggleContractFinalized = async (contract, checked) => {
+    if (!contract?.id || !beginSubmit()) return;
+    const previousValue = finalizedContractOverrides.has(contract.id)
+      ? finalizedContractOverrides.get(contract.id)
+      : Boolean(contract.isFinalized);
+    setFinalizedContractOverrides((current) => {
+      const next = new Map(current);
+      next.set(contract.id, checked);
+      return next;
+    });
+    setFormError('');
+    try {
+      await onUpdateContract?.({
+        id: contract.id,
+        isFinalized: checked,
+        finalizedAt: checked ? new Date().toISOString() : null,
+      });
+      setActionFeedback(
+        checked
+          ? `Contrato ${contract.contractCode} marcado como finalizado.`
+          : `Contrato ${contract.contractCode} desmarcado como finalizado.`,
+      );
+    } catch (requestError) {
+      setFinalizedContractOverrides((current) => {
+        const next = new Map(current);
+        next.set(contract.id, previousValue);
+        return next;
+      });
+      setFormError(requestError.message || 'No se pudo actualizar el finalizado del contrato.');
+    } finally {
+      endSubmit();
+      setMenuState(null);
+    }
+  };
+
   const handleRevertContractClick = (contract) => {
     setMenuState(null);
     setFormError('');
@@ -6577,6 +6616,7 @@ function ServiceOrdersSection({
                     <th>Garantía</th>
                     <th>Transporte</th>
                     <th>Total</th>
+                    <th>Finalizado</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -6584,8 +6624,11 @@ function ServiceOrdersSection({
                   {filteredContracts.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                     const transportMeta = getContractTransportLabel(row);
+                    const isRowFinalized = finalizedContractOverrides.has(row.id)
+                      ? finalizedContractOverrides.get(row.id)
+                      : Boolean(row.isFinalized);
                     return (
-                      <tr key={row.id} className={`orders-row contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}`}>
+                      <tr key={row.id} className={`orders-row contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}${isRowFinalized ? ' is-finalized' : ''}`}>
                         <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
@@ -6653,6 +6696,19 @@ function ServiceOrdersSection({
                             ) : null}
                           </span>
                         </td>
+                        <td className="orders-finalized-cell">
+                          <button
+                            type="button"
+                            className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
+                            onClick={() => handleToggleContractFinalized(row, !isRowFinalized)}
+                            disabled={isSubmitting || row.status === 'oculto'}
+                            title={isRowFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
+                            aria-pressed={isRowFinalized}
+                            aria-label={`${isRowFinalized ? 'Desmarcar' : 'Marcar'} finalizado contrato ${row.contractCode}`}
+                          >
+                            {isRowFinalized ? <Check aria-hidden="true" /> : 'F'}
+                          </button>
+                        </td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
                             <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
@@ -6681,7 +6737,7 @@ function ServiceOrdersSection({
                   })}
                   {filteredContracts.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <div className="orders-empty-state">
                           <span className="orders-empty-icon"><OrdersKpiIcon kind="contract" /></span>
                           <strong>No hay contratos con esos filtros</strong>
