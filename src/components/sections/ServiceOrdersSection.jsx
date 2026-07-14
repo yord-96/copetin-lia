@@ -2835,7 +2835,6 @@ function ServiceOrdersSection({
     const originalContractQty = Math.max(
       0,
       Number(originalContractDemandByItemId.get(line.itemId) ?? 0),
-      Math.trunc(Number(line.originalQuantity ?? 0)),
     );
     return Math.max(
       0,
