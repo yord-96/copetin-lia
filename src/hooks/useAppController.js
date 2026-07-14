@@ -1097,7 +1097,13 @@ export const useAppController = () => {
   const handleRemoveContract = async (payload) => {
     setError('');
     try {
-      const removed = await api.contracts.remove(payload);
+      const trace = getCurrentUserTrace();
+      const removed = await api.contracts.remove({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
       await loadData();
       return removed;
     } catch (requestError) {
