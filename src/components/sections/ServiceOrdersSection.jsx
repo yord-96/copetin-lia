@@ -2343,6 +2343,11 @@ function ServiceOrdersSection({
     const ledgerAppliedToRentalBs = Math.min(ledgerTotals.receivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerTotals.receivedBs).toFixed(2)));
     const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerTotals.receivedBs - ledgerChargeTargetBs - ledgerTotals.refundedBs).toFixed(2)));
+    const guaranteeReserveBs = Math.max(ledgerTotals.guaranteeBs, effectiveGuaranteeValidatedBs);
+    const guaranteeRefundAvailableBs = Math.max(
+      0,
+      Number((guaranteeReserveBs - ledgerDebtBs - ledgerTotals.chargesBs - ledgerTotals.refundedBs).toFixed(2)),
+    );
     const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
     const totalManagedBs = Number((rentalTotalBs + effectiveGuaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
@@ -2366,7 +2371,6 @@ function ServiceOrdersSection({
       ? cashCollectionSuggestedBs
       : Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
     const effectiveBalanceBs = managedDebtBs;
-    const guaranteeRefundAvailableBs = ledgerRefundSuggestedBs;
     const balanceDetailLabel = usesLedgerBalance
       ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
       : pendingPaymentBs > 0
@@ -2405,6 +2409,7 @@ function ServiceOrdersSection({
       ledgerChargeTargetBs,
       ledgerDebtBs,
       ledgerRefundSuggestedBs,
+      guaranteeReserveBs,
       realIncomeBs,
       guaranteeDeclaredBs: effectiveGuaranteeDeclaredBs,
       guaranteeValidatedBs: effectiveGuaranteeValidatedBs,
@@ -7254,7 +7259,7 @@ function ServiceOrdersSection({
                   </div>
                   <div>
                     <span>Devolucion al cliente</span>
-                    <strong>+ {formatBs(contractEconomicsData.ledgerTotals.refundedBs || contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                    <strong>+ {formatBs(contractEconomicsData.ledgerTotals.refundedBs)}</strong>
                   </div>
                   <footer>
                     <span>Ingreso real</span>
@@ -7288,8 +7293,8 @@ function ServiceOrdersSection({
                     </article>
                     <article className="tone-green">
                       <span>A devolver si todo OK</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
-                      <small>Recibido - cobro - danos</small>
+                      <strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
+                      <small>Garantia - danos - devoluciones</small>
                     </article>
                     <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
                       <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : 'Todo cubierto'}</span>
