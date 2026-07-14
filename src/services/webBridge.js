@@ -6202,6 +6202,51 @@ const formatSupplierSupportLabel = (lines) => (Array.isArray(lines) ? lines : []
   .map((line) => `${Math.max(0, Math.trunc(Number(line.neededQty ?? 0)))} SUB ${line.shortCode || makeSupplierShortCode(line.supplierName)}`)
   .join(' · ');
 
+const hasStoredQuantity = (value) =>
+  value !== null && typeof value !== 'undefined' && String(value).trim() !== '' && Number.isFinite(Number(value));
+
+const buildFulfillmentBreakdown = (line, supplierLines = []) => {
+  const normalizedSupplierLines = (Array.isArray(supplierLines) ? supplierLines : [])
+    .filter((entry) => Number(entry?.neededQty ?? 0) > 0)
+    .map((entry) => ({
+      ...entry,
+      neededQty: Math.max(0, Math.trunc(Number(entry?.neededQty ?? 0))),
+      shortCode: entry?.shortCode || makeSupplierShortCode(entry?.supplierName),
+    }));
+  const supplierQty = normalizedSupplierLines.reduce((sum, entry) => sum + entry.neededQty, 0);
+  const requestedQty = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+  const storedInternalQty = hasStoredQuantity(line?.internalReservedQty)
+    ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+    : null;
+  const storedSupplierQty = hasStoredQuantity(line?.supplierBackedQty)
+    ? Math.max(0, Math.trunc(Number(line.supplierBackedQty)))
+    : null;
+  const effectiveSupplierQty = Math.max(supplierQty, storedSupplierQty ?? 0);
+  const ownQty = storedInternalQty !== null
+    ? storedInternalQty
+    : effectiveSupplierQty > requestedQty
+      ? requestedQty
+      : Math.max(0, requestedQty - effectiveSupplierQty);
+  const totalQty = effectiveSupplierQty > requestedQty
+    ? requestedQty + effectiveSupplierQty
+    : requestedQty;
+
+  if (effectiveSupplierQty <= 0) {
+    return { ownQty: requestedQty, supplierQty: 0, totalQty: requestedQty, label: '' };
+  }
+
+  const parts = [];
+  if (ownQty > 0) parts.push(`${ownQty} COPETIN`);
+  normalizedSupplierLines.forEach((entry) => {
+    parts.push(`${entry.neededQty} SUB ${entry.shortCode}`);
+  });
+  const label = parts.length > 1
+    ? `${parts.join(' + ')} = TOTAL ${totalQty}`
+    : parts.join('');
+
+  return { ownQty, supplierQty: effectiveSupplierQty, totalQty, label };
+};
+
 const contractPdfIcon = (fileName) =>
   `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
 
@@ -7052,12 +7097,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
         const area = line._area || getContractAreaMeta(resolveInventoryArea(getContractAreaSource(line, item)));
-        const supplierSupportLabel = formatSupplierSupportLabel(
-          supplierSupportByItem.get(String(line.lineKey ?? '').trim())
-          ?? supplierSupportByItem.get(String(line.itemId ?? '').trim()),
-        );
+        const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+          ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
+        const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
+        const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
         const unitPriceBs = Number(line.rentalPriceBs ?? 0) * multiplier;
-        const lineTotalBs = Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)) * multiplier;
+        const displayQuantity = fulfillmentBreakdown.totalQty;
+        const lineTotalBs = Number(line.lineTotalBs ?? displayQuantity * Number(line.rentalPriceBs ?? 0)) * multiplier;
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -7069,7 +7115,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             ${supplierSupportLabel ? `<span class="rc-item-supplier">${escapeHtml(supplierSupportLabel)}</span>` : ''}
             ${String(line.observation ?? '').trim() ? `<span class="rc-item-observation">${escapeHtml(String(line.observation ?? '').trim())}</span>` : ''}
           </td>
-          <td class="num">${line.quantity}</td>
+          <td class="num">${displayQuantity}</td>
           <td class="num">${formatBs(unitPriceBs)}</td>
           <td class="num">${formatBs(lineTotalBs)}</td>
           <td class="check"></td>
@@ -7542,10 +7588,11 @@ const buildWeeklyInventoryHtml = ({
       ?? line.imageDataUrl
       ?? '';
     const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
-    const supplierSupportLabel = formatSupplierSupportLabel(
-      supplierSupportByItem.get(String(line.lineKey ?? '').trim())
-      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim()),
-    );
+    const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
+    const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
+    const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
+    const displayQuantity = fulfillmentBreakdown.totalQty;
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -7561,7 +7608,7 @@ const buildWeeklyInventoryHtml = ({
                 </div>
               </div>
             </td>
-            <td class="wi-number"><span class="wi-qty-value">${Math.max(0, Number(line.quantity ?? 0))}</span></td>
+            <td class="wi-number"><span class="wi-qty-value">${displayQuantity}</span></td>
             <td class="wi-check"><i></i></td>
             <td class="wi-check"><i></i></td>
             <td class="wi-check"><i></i></td>
