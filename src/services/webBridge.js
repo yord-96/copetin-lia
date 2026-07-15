@@ -6646,13 +6646,13 @@ const getReferenceContractStyles = () => `
   }
   .rc-sign-line {
     display: grid;
-    grid-template-columns: 42mm 1fr;
+    grid-template-columns: 1fr;
     gap: 2.5mm;
     align-items: end;
     margin-top: 2mm;
     padding-top: .3mm;
   }
-  .rc-sign-line small { margin-bottom: 0; font-size: 9.8px; font-weight: 800; }
+  .rc-sign-line small { display: none; }
   .rc-sign-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -6665,7 +6665,7 @@ const getReferenceContractStyles = () => `
     align-items: end;
     color: #111;
     font-size: 10px;
-    font-weight: 800;
+    font-weight: 500;
     white-space: nowrap;
   }
   .rc-sign-field i {
@@ -7492,7 +7492,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </div>
         </div>
         <div class="rc-sign-line">
-          <small>Responsable operativo</small>
           <span class="rc-sign-fields"><b class="rc-sign-field">Entregado por:<i></i></b><b class="rc-sign-field">Recogido por:<i></i></b></span>
         </div>
       </section>
