@@ -6624,12 +6624,12 @@ function ServiceOrdersSection({
                 <thead>
                   <tr>
                     <th>Contrato</th>
+                    <th>Fecha evento</th>
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Servicio</th>
                     <th>Estado</th>
                     <th>Garantía</th>
-                    <th>Transporte</th>
                     <th>Debe</th>
                     <th>Finalizado</th>
                     <th>Acciones</th>
@@ -6638,7 +6638,6 @@ function ServiceOrdersSection({
                 <tbody>
                   {filteredContracts.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
-                    const transportMeta = getContractTransportLabel(row);
                     const isRowFinalized = finalizedContractOverrides.has(row.id)
                       ? finalizedContractOverrides.get(row.id)
                       : Boolean(row.isFinalized);
@@ -6647,6 +6646,11 @@ function ServiceOrdersSection({
                         <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
+                          </div>
+                        </td>
+                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
+                          <div className="orders-cell-main">
+                            <strong>{formatDate(row.eventDate)}</strong>
                             <span>{formatLongSpanishDate(row.eventDate)}</span>
                           </div>
                         </td>
@@ -6695,12 +6699,6 @@ function ServiceOrdersSection({
                           <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
                             <strong>{row.guaranteePrimary}</strong>
                             <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="orders-transport-cell">
-                            <strong>{transportMeta.title}</strong>
-                            <span>{transportMeta.detail}</span>
                           </div>
                         </td>
                         <td className={`orders-total ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>

@@ -9716,19 +9716,19 @@ textarea:focus {
 .orders-commercial-table td:nth-child(8) { width: 8%; }
 
 .orders-contracts-table th:nth-child(1),
-.orders-contracts-table td:nth-child(1) { width: 10%; }
+.orders-contracts-table td:nth-child(1) { width: 8%; }
 .orders-contracts-table th:nth-child(2),
-.orders-contracts-table td:nth-child(2) { width: 13%; }
+.orders-contracts-table td:nth-child(2) { width: 10%; }
 .orders-contracts-table th:nth-child(3),
 .orders-contracts-table td:nth-child(3) { width: 13%; }
 .orders-contracts-table th:nth-child(4),
-.orders-contracts-table td:nth-child(4) { width: 14%; }
+.orders-contracts-table td:nth-child(4) { width: 13%; }
 .orders-contracts-table th:nth-child(5),
-.orders-contracts-table td:nth-child(5) { width: 7%; }
+.orders-contracts-table td:nth-child(5) { width: 17%; }
 .orders-contracts-table th:nth-child(6),
-.orders-contracts-table td:nth-child(6) { width: 10%; }
+.orders-contracts-table td:nth-child(6) { width: 8%; }
 .orders-contracts-table th:nth-child(7),
-.orders-contracts-table td:nth-child(7) { width: 10%; }
+.orders-contracts-table td:nth-child(7) { width: 9%; }
 .orders-contracts-table th:nth-child(8),
 .orders-contracts-table td:nth-child(8) { width: 8%; }
 .orders-contracts-table th:nth-child(9),
@@ -34634,19 +34634,19 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-view .orders-contracts-table th:nth-child(1),
-  .orders-view .orders-contracts-table td:nth-child(1) { width: 10%; }
+  .orders-view .orders-contracts-table td:nth-child(1) { width: 8%; }
   .orders-view .orders-contracts-table th:nth-child(2),
-  .orders-view .orders-contracts-table td:nth-child(2) { width: 13%; }
+  .orders-view .orders-contracts-table td:nth-child(2) { width: 10%; }
   .orders-view .orders-contracts-table th:nth-child(3),
   .orders-view .orders-contracts-table td:nth-child(3) { width: 13%; }
   .orders-view .orders-contracts-table th:nth-child(4),
-  .orders-view .orders-contracts-table td:nth-child(4) { width: 14%; }
+  .orders-view .orders-contracts-table td:nth-child(4) { width: 13%; }
   .orders-view .orders-contracts-table th:nth-child(5),
-  .orders-view .orders-contracts-table td:nth-child(5) { width: 7%; }
+  .orders-view .orders-contracts-table td:nth-child(5) { width: 17%; }
   .orders-view .orders-contracts-table th:nth-child(6),
-  .orders-view .orders-contracts-table td:nth-child(6) { width: 10%; }
+  .orders-view .orders-contracts-table td:nth-child(6) { width: 8%; }
   .orders-view .orders-contracts-table th:nth-child(7),
-  .orders-view .orders-contracts-table td:nth-child(7) { width: 10%; }
+  .orders-view .orders-contracts-table td:nth-child(7) { width: 9%; }
   .orders-view .orders-contracts-table th:nth-child(8),
   .orders-view .orders-contracts-table td:nth-child(8) { width: 8%; }
   .orders-view .orders-contracts-table th:nth-child(9),

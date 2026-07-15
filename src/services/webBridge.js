@@ -6646,13 +6646,13 @@ const getReferenceContractStyles = () => `
   }
   .rc-sign-line {
     display: grid;
-    grid-template-columns: 34mm 1fr;
+    grid-template-columns: 42mm 1fr;
     gap: 2.5mm;
     align-items: end;
     margin-top: 2mm;
     padding-top: .3mm;
   }
-  .rc-sign-line small { margin-bottom: 0; }
+  .rc-sign-line small { margin-bottom: 0; font-size: 9.8px; font-weight: 800; }
   .rc-sign-fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -6664,8 +6664,8 @@ const getReferenceContractStyles = () => `
     gap: 1.2mm;
     align-items: end;
     color: #111;
-    font-size: 8.6px;
-    font-weight: 500;
+    font-size: 10px;
+    font-weight: 800;
     white-space: nowrap;
   }
   .rc-sign-field i {
