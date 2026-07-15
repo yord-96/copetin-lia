@@ -959,8 +959,8 @@ const parseMoneyInput = (value, fallback = 0) => {
 const makeSupplierShortCode = (name) => {
   const cleaned = normalizeText(name).replace(/[^a-z0-9 ]/g, ' ').trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return `${words[0][0] ?? ''}${words[1].slice(0, 4)}`.toUpperCase();
-  return (words[0] ?? 'PROV').slice(0, 5).toUpperCase();
+  if (words.length >= 2) return `${words[0].slice(0, 3)} ${words[1].slice(0, 4)}`.toUpperCase();
+  return (words[0] ?? 'PROV').slice(0, 7).toUpperCase();
 };
 
 const normalizeCoverageDraftLines = (value) => {

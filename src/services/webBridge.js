@@ -519,6 +519,7 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
         neededQty,
         supplierUnitCostBs,
         saleUnitPriceBs,
+        manualCoverage: Boolean(line?.manualCoverage),
         totalCostBs: Number((neededQty * supplierUnitCostBs).toFixed(2)),
         totalSaleBs: Number((neededQty * saleUnitPriceBs).toFixed(2)),
         marginBs: Number((neededQty * (saleUnitPriceBs - supplierUnitCostBs)).toFixed(2)),
@@ -526,6 +527,59 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
       };
     })
     .filter(Boolean);
+};
+
+const getManualSupplierSaleTotalBs = (supplierFulfillmentPlan) =>
+  normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan)
+    .filter((line) => line.manualCoverage)
+    .reduce((sum, line) => sum + Number(line.totalSaleBs ?? 0), 0);
+
+const addSupplierSupportToMaps = (maps, line) => {
+  const itemId = String(line?.itemId ?? '').trim();
+  if (!itemId) return;
+  const quantity = Math.max(0, Math.trunc(Number(line?.neededQty ?? 0)));
+  const lineKey = String(line?.lineKey ?? '').trim();
+  const add = (map, key) => {
+    if (!key) return;
+    map.set(key, Number(map.get(key) ?? 0) + quantity);
+  };
+  add(maps.byItem, itemId);
+  add(maps.byLineKey, lineKey);
+  if (line?.manualCoverage) {
+    add(maps.manualByItem, itemId);
+    add(maps.manualByLineKey, lineKey);
+  }
+};
+
+const buildSupplierSupportMaps = (supplierFulfillmentPlan) => {
+  const maps = {
+    byItem: new Map(),
+    byLineKey: new Map(),
+    manualByItem: new Map(),
+    manualByLineKey: new Map(),
+  };
+  normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan).forEach((line) => addSupplierSupportToMaps(maps, line));
+  return maps;
+};
+
+const getSupplierSupportStatsForLine = (line, maps) => {
+  const itemId = String(line?.itemId ?? '').trim();
+  const lineKey = String(line?.lineKey ?? '').trim();
+  const totalQty = Number(
+    (lineKey && maps.byLineKey.has(lineKey))
+      ? maps.byLineKey.get(lineKey)
+      : maps.byItem.get(itemId) ?? 0,
+  );
+  const manualQty = Number(
+    (lineKey && maps.manualByLineKey.has(lineKey))
+      ? maps.manualByLineKey.get(lineKey)
+      : maps.manualByItem.get(itemId) ?? 0,
+  );
+  return {
+    totalQty: Math.max(0, Math.trunc(totalQty)),
+    manualQty: Math.max(0, Math.trunc(manualQty)),
+    subtractiveQty: Math.max(0, Math.trunc(totalQty - manualQty)),
+  };
 };
 
 const normalizeContractServices = (services) => {
@@ -6199,8 +6253,8 @@ const getContractItemMeta = (line, _item) => [
 const makeSupplierShortCode = (name) => {
   const cleaned = normalizeText(name).replace(/[^a-z0-9 ]/g, ' ').trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return `${words[0][0] ?? ''}${words[1].slice(0, 4)}`.toUpperCase();
-  return (words[0] || 'PROV').slice(0, 5).toUpperCase();
+  if (words.length >= 2) return `${words[0].slice(0, 3)} ${words[1].slice(0, 4)}`.toUpperCase();
+  return (words[0] || 'PROV').slice(0, 7).toUpperCase();
 };
 
 const buildSupplierSupportByItem = (supplierFulfillmentPlan) => {
@@ -6243,8 +6297,9 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
       ...entry,
       neededQty: Math.max(0, Math.trunc(Number(entry?.neededQty ?? 0))),
       shortCode: entry?.shortCode || makeSupplierShortCode(entry?.supplierName),
-    }));
+  }));
   const supplierQty = normalizedSupplierLines.reduce((sum, entry) => sum + entry.neededQty, 0);
+  const hasManualSupplierCoverage = normalizedSupplierLines.some((entry) => entry.manualCoverage);
   const requestedQty = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
   const storedInternalQty = hasStoredQuantity(line?.internalReservedQty)
     ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
@@ -6255,12 +6310,16 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
   const effectiveSupplierQty = Math.max(supplierQty, storedSupplierQty ?? 0);
   const ownQty = storedInternalQty !== null
     ? storedInternalQty
-    : effectiveSupplierQty > requestedQty
+    : hasManualSupplierCoverage
       ? requestedQty
-      : Math.max(0, requestedQty - effectiveSupplierQty);
-  const totalQty = effectiveSupplierQty > requestedQty
-    ? requestedQty + effectiveSupplierQty
-    : requestedQty;
+      : effectiveSupplierQty > requestedQty
+        ? requestedQty
+        : Math.max(0, requestedQty - effectiveSupplierQty);
+  const totalQty = hasManualSupplierCoverage
+    ? ownQty + effectiveSupplierQty
+    : effectiveSupplierQty > requestedQty
+      ? requestedQty + effectiveSupplierQty
+      : requestedQty;
 
   if (effectiveSupplierQty <= 0) {
     return { ownQty: requestedQty, supplierQty: 0, totalQty: requestedQty, label: '' };
@@ -7160,7 +7219,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
         const unitPriceBs = Number(line.rentalPriceBs ?? 0) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
-        const lineTotalBs = Number(line.lineTotalBs ?? displayQuantity * Number(line.rentalPriceBs ?? 0)) * multiplier;
+        const manualSupplierSaleBs = (Array.isArray(supplierSupportLines) ? supplierSupportLines : [])
+          .filter((entry) => entry?.manualCoverage)
+          .reduce((sum, entry) => sum + Number(entry.totalSaleBs ?? 0), 0);
+        const lineTotalBs = (Number(line.lineTotalBs ?? displayQuantity * Number(line.rentalPriceBs ?? 0)) + manualSupplierSaleBs) * multiplier;
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -8933,30 +8995,19 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     }
   });
 
-  const supplierSupportByItem = new Map();
-  const supplierSupportByLineKey = new Map();
-  normalizeSupplierFulfillmentPlan(contract.supplierFulfillmentPlan).forEach((line) => {
-    const itemId = String(line?.itemId ?? '').trim();
-    if (!itemId) return;
-    const quantity = Math.max(0, Math.trunc(Number(line?.neededQty ?? 0)));
-    const lineKey = String(line?.lineKey ?? '').trim();
-    if (lineKey) {
-      supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
-    }
-    supplierSupportByItem.set(
-      itemId,
-      Number(supplierSupportByItem.get(itemId) ?? 0) + quantity,
-    );
-  });
+  const supplierSupportMaps = buildSupplierSupportMaps(contract.supplierFulfillmentPlan);
+  const beforeSupplierSupportMaps = buildSupplierSupportMaps(beforeContract?.supplierFulfillmentPlan);
 
   const getLineInternalReservedQty = (line, { respectControlsStock = true } = {}) => {
     if (respectControlsStock && line?.controlsStock === false) return 0;
+    const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
     const storedReservedQty = Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)));
+    const previousSupplierStats = getSupplierSupportStatsForLine(line, beforeSupplierSupportMaps);
+    if (previousSupplierStats.manualQty > 0) {
+      return Math.max(storedReservedQty, quantity);
+    }
     if (storedReservedQty > 0) return storedReservedQty;
-    return Math.max(
-      0,
-      Math.trunc(Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)),
-    );
+    return Math.max(0, Math.trunc(quantity - Number(line?.supplierBackedQty ?? 0)));
   };
   const remainingOldInternalReservedByItem = new Map();
   const remainingOldInternalReservedByName = new Map();
@@ -8996,15 +9047,8 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       if (!item || !lineControlsStock(line, item)) return null;
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
       const lineKey = getInventoryLineKey(line, line._originalIndex ?? 0);
-      const supplierBackedQty = Math.min(
-        quantity,
-        Number(
-          supplierSupportByLineKey.has(lineKey)
-            ? supplierSupportByLineKey.get(lineKey)
-            : supplierSupportByItem.get(String(line.itemId)) ?? 0,
-        ),
-      );
-      const internalRequestedQty = Math.max(0, quantity - supplierBackedQty);
+      const supplierStats = getSupplierSupportStatsForLine({ ...line, lineKey }, supplierSupportMaps);
+      const internalRequestedQty = Math.max(0, quantity - Math.min(quantity, supplierStats.subtractiveQty));
       const itemId = String(line.itemId);
       const itemName = normalizeText(line.itemName ?? item.name ?? '');
       const oldReservedQty = Number(remainingOldInternalReservedByItem.get(itemId) ?? 0);
@@ -9072,17 +9116,22 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
         lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
       };
     }
-    const supplierBackedQty = Math.min(
-      quantity,
-      Number(
-        supplierSupportByLineKey.has(lineKey)
-          ? supplierSupportByLineKey.get(lineKey)
-          : supplierSupportByItem.get(String(line.itemId)) ?? 0,
-      ),
-    );
+    const supplierStats = getSupplierSupportStatsForLine({ ...line, lineKey }, supplierSupportMaps);
+    const supplierBackedQty = supplierStats.manualQty > 0
+      ? supplierStats.totalQty
+      : Math.min(quantity, supplierStats.totalQty);
     const controlsStock = lineControlsStock(line, item);
-    const internalReservedQty = controlsStock ? Math.max(0, quantity - supplierBackedQty) : 0;
-    const oldInternalReservedQty = oldLine ? getLineInternalReservedQty(oldLine, { respectControlsStock: false }) : 0;
+    const internalReservedQty = controlsStock
+      ? Math.max(0, quantity - Math.min(quantity, supplierStats.subtractiveQty))
+      : 0;
+    const oldInternalReservedQty = oldLine
+      ? supplierStats.manualQty > 0
+        ? Math.max(
+          getLineInternalReservedQty(oldLine, { respectControlsStock: false }),
+          Math.min(quantity, Math.max(0, Math.trunc(Number(oldLine.quantity ?? 0)))),
+        )
+        : getLineInternalReservedQty(oldLine, { respectControlsStock: false })
+      : 0;
     const reservationDelta = internalReservedQty - oldInternalReservedQty;
 
     const currentAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
@@ -9225,7 +9274,7 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   const overpaidBs = Math.max(0, Number((paidAtRentalBs - totalBs).toFixed(2)));
   rental.totals = {
     ...(rental.totals ?? {}),
-    itemsSubtotalBs: Number((contract.items ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0).toFixed(2)),
+    itemsSubtotalBs: Number(((contract.items ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0) + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan)).toFixed(2)),
     servicesSubtotalBs: Number((contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0).toFixed(2)),
     ...deepClone(contract.totals),
     paidAtRentalBs,
@@ -12241,7 +12290,8 @@ const createWebBridge = () => ({
           };
         });
 
-        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
+          + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -12461,7 +12511,8 @@ const createWebBridge = () => ({
           quote.pricingPlan = payload.pricingPlan;
         }
 
-        const itemsBaseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const itemsBaseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(quote.supplierFulfillmentPlan);
         const servicesSubtotalBs = (quote.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -12666,7 +12717,8 @@ const createWebBridge = () => ({
           };
         });
 
-        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
+          + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -12943,7 +12995,8 @@ const createWebBridge = () => ({
           contract.pricingPlan = payload.pricingPlan;
         }
 
-        const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
+        const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);
         const servicesSubtotalBs = (contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -13675,19 +13728,7 @@ const createWebBridge = () => ({
         const userId = payload?.userId ?? payload?.createdById ?? null;
         const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
         const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
-        const supplierSupportByItem = new Map();
-        const supplierSupportByLineKey = new Map();
-        supplierFulfillmentPlan.forEach((line) => {
-          const itemId = String(line.itemId ?? '').trim();
-          if (!itemId) return;
-          const quantity = Math.max(0, Number(line.neededQty ?? 0));
-          const lineKey = String(line.lineKey ?? '').trim();
-          if (lineKey) {
-            supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
-          }
-          const current = Number(supplierSupportByItem.get(itemId) ?? 0);
-          supplierSupportByItem.set(itemId, current + quantity);
-        });
+        const supplierSupportMaps = buildSupplierSupportMaps(supplierFulfillmentPlan);
         const operationalRequestedItems = requestedItems.map((line, index) => {
           const item = resolveOperationalItemFromLine(state, line, now.toISOString());
           if (!item) throw new Error('Uno de los items seleccionados ya no existe.');
@@ -13701,18 +13742,14 @@ const createWebBridge = () => ({
         const adjustedRequestedItems = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-            const supportedQty = Math.max(0, Number(
-              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
-                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
-                : supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0,
-            ));
+            const supplierStats = getSupplierSupportStatsForLine(line, supplierSupportMaps);
             if (!lineControlsStock(line, line._resolvedItem)) {
               return {
                 ...line,
                 quantity: 0,
               };
             }
-            const internalQty = Math.max(0, requestedQty - supportedQty);
+            const internalQty = Math.max(0, requestedQty - Math.min(requestedQty, supplierStats.subtractiveQty));
             return {
               ...line,
               quantity: internalQty,
@@ -13762,14 +13799,10 @@ const createWebBridge = () => ({
         const inventoryAvailabilityAssumptions = operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-            const supportedQty = Math.max(0, Number(
-              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
-                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
-                : supplierSupportByItem.get(String(line.itemId ?? '').trim()) ?? 0,
-            ));
+            const supplierStats = getSupplierSupportStatsForLine(line, supplierSupportMaps);
             return {
               ...line,
-              quantity: Math.max(0, requestedQty - supportedQty),
+              quantity: Math.max(0, requestedQty - Math.min(requestedQty, supplierStats.subtractiveQty)),
             };
           })
           .filter((line) => Number(line.quantity ?? 0) > 0)
@@ -13802,15 +13835,13 @@ const createWebBridge = () => ({
           if (quantity <= 0) {
             throw new Error(`La cantidad de "${item.name}" debe ser mayor a 0.`);
           }
-          const supplierBackedQty = Math.min(
-            quantity,
-            Math.max(0, Math.trunc(Number(
-              supplierSupportByLineKey.has(String(line.lineKey ?? '').trim())
-                ? supplierSupportByLineKey.get(String(line.lineKey ?? '').trim())
-                : supplierSupportByItem.get(item.id) ?? 0,
-            ))),
-          );
-          const internalReservationQty = lineControlsStock(line, item) ? Math.max(0, quantity - supplierBackedQty) : 0;
+          const supplierStats = getSupplierSupportStatsForLine(line, supplierSupportMaps);
+          const supplierBackedQty = supplierStats.manualQty > 0
+            ? supplierStats.totalQty
+            : Math.min(quantity, supplierStats.totalQty);
+          const internalReservationQty = lineControlsStock(line, item)
+            ? Math.max(0, quantity - Math.min(quantity, supplierStats.subtractiveQty))
+            : 0;
           const lineType = String(line?.lineType ?? '').trim();
           const isCourtesyLine = lineType === 'courtesy';
           const rentalPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
@@ -13896,7 +13927,8 @@ const createWebBridge = () => ({
           throw new Error('La fecha y hora maxima de devolucion deben ser posteriores al momento actual.');
         }
 
-        const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0);
+        const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
+          + getManualSupplierSaleTotalBs(supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs });
         const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
