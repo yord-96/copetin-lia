@@ -6759,24 +6759,38 @@ function ServiceOrdersSection({
               {filteredContracts.map((row) => {
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                 const transportMeta = getContractTransportLabel(row);
+                const isRowFinalized = finalizedContractOverrides.has(row.id)
+                  ? finalizedContractOverrides.get(row.id)
+                  : Boolean(row.isFinalized);
+                const serviceDateLabel = [row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate);
+                const serviceAddressLabel = normalizeText(row.logisticsMode) === 'recojo'
+                  ? 'Recojo por cliente'
+                  : row.address || 'Sin direccion registrada';
+                const serviceAddressDetail = normalizeText(row.logisticsMode) === 'recojo'
+                  ? 'Cliente retira y devuelve'
+                  : 'Envio por mi equipo';
                 return (
-                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}`}>
+                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}${isRowFinalized ? ' is-finalized' : ''}`}>
                     <header>
                       <div className={row.isSent ? 'orders-mobile-sent-zone' : ''}>
                         <strong>{row.contractCode}</strong>
                         <span>{formatLongSpanishDate(row.eventDate)}</span>
                       </div>
                       <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
-                      <b className={`orders-total-with-economics ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
-                        {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
-                        {row.hasEconomicLedger ? (
-                          <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
-                        ) : null}
-                      </b>
+                      <div className="orders-mobile-contract-money">
+                        <small>Debe</small>
+                        <b className={`orders-total-with-economics ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
+                          {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
+                          {row.hasEconomicLedger ? (
+                            <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
+                          ) : null}
+                        </b>
+                      </div>
                     </header>
                     <div className={`orders-mobile-contract-main ${row.isSent ? 'orders-mobile-sent-zone' : ''}`}>
                       <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
                       <p><span>Celular:</span> <strong>{row.customerPhone || 'Sin WhatsApp/celular'}</strong></p>
+                      {row.customerReferencePhone ? <p><span>Ref:</span> <strong>{row.customerReferencePhone}</strong></p> : null}
                     </div>
                     <div className={`orders-mobile-contract-bottom ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
                       <div className="orders-responsible-cell">
@@ -6792,7 +6806,7 @@ function ServiceOrdersSection({
                       </div>
                     </div>
                     <div className={`orders-mobile-contract-meta ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
-                      <span className="orders-mobile-date-line">Servicio: {[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</span>
+                      <span className="orders-mobile-date-line">Servicio: {serviceDateLabel}</span>
                       <span>Entrega / recojo</span>
                     </div>
                     <div className="orders-mobile-contract-details">
@@ -6800,8 +6814,16 @@ function ServiceOrdersSection({
                         <CalendarDays aria-hidden="true" />
                         <span>
                           <small>Servicio</small>
-                          <strong>{[row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate)}</strong>
+                          <strong>{serviceDateLabel}</strong>
                           <em>Entrega / recojo</em>
+                        </span>
+                      </div>
+                      <div className={`orders-mobile-contract-address ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
+                        <MapPin aria-hidden="true" />
+                        <span>
+                          <small>Direccion</small>
+                          <strong>{serviceAddressLabel}</strong>
+                          <em>{serviceAddressDetail}</em>
                         </span>
                       </div>
                       <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
@@ -6820,6 +6842,17 @@ function ServiceOrdersSection({
                     <div className="orders-mobile-contract-actions">
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
+                      </button>
+                      <button
+                        type="button"
+                        className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
+                        onClick={() => handleToggleContractFinalized(row, !isRowFinalized)}
+                        disabled={isSubmitting || row.status === 'oculto'}
+                        title={isRowFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
+                        aria-pressed={isRowFinalized}
+                        aria-label={`${isRowFinalized ? 'Desmarcar' : 'Marcar'} finalizado contrato ${row.contractCode}`}
+                      >
+                        {isRowFinalized ? <Check aria-hidden="true" /> : 'F'}
                       </button>
                       <button
                         type="button"
@@ -6993,7 +7026,7 @@ function ServiceOrdersSection({
                   </button>
                 </>
               ) : null}
-              <button type="button" onClick={() => handleOpenContractEconomics(activeContractMenuRow)}>
+              <button type="button" className="economic-action" onClick={() => handleOpenContractEconomics(activeContractMenuRow)}>
                 Economico
               </button>
               <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
