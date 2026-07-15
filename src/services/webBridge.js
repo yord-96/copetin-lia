@@ -7261,11 +7261,16 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   );
   const documentItemsSubtotalBs = Math.max(
     0,
-    Number(
-      contract?.totals?.itemsSubtotalBs
-        ?? rental?.totals?.itemsSubtotalBs
-        ?? Number(subtotalBs ?? 0) - servicesSubtotalBs,
-    ),
+    hasDurationPricing
+      ? Number(
+        pricingPlan?.chargeableSubtotalBs
+          ?? durationDayBreakdown.reduce((sum, dayInfo) => sum + Number(dayInfo.totalBs ?? 0), 0),
+      )
+      : Number(
+        contract?.totals?.itemsSubtotalBs
+          ?? rental?.totals?.itemsSubtotalBs
+          ?? Number(subtotalBs ?? 0) - servicesSubtotalBs,
+      ),
   );
   const serviceRows = contractServices
     .map((service) => {
