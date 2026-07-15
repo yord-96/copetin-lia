@@ -1736,23 +1736,33 @@ function ServiceOrdersSection({
         const movementType = normalizeText(movement?.type);
         const category = normalizeText(movement?.category);
         const tag = normalizeText(movement?.accountingTag);
+        const isGuaranteeMovement = tag.includes('guarantee') || category.includes('garantia') || movementType.includes('garantia');
         const cashBoxType = normalizeText(movement?.cashBoxType);
         const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
         const movementKeys = [
           movement?.linkedContractId,
           movement?.linkedRentalId,
           movement?.linkedOrderCode,
+          movement?.contractId,
+          movement?.rentalId,
+          movement?.orderCode,
           movement?.contractCode,
           movement?.reference,
           movement?.sourceId,
         ].map(normalizeText).filter(Boolean);
-        const isLinked = movementKeys.some((key) => contractReferenceKeys.includes(key));
+        const isLinked = movementKeys.some((key) => contractReferenceKeys.includes(key))
+          || [movement?.notes, movement?.description]
+            .map(normalizeText)
+            .some((textValue) => textValue && contractReferenceKeys.some((key) => textValue.includes(key)));
         const isBigCash = ['big_cash', 'caja_grande', 'cajagrande'].includes(cashBoxType);
         const isIncome = movementType.includes('ingreso')
           || movementType.includes('cobro')
           || category === 'cobro_contrato';
         const isCollection = tag === 'contract_economic_collection'
+          || category === 'cobro_contrato'
+          || movementType === 'ingreso_alquiler'
           || (Boolean(receiptCode) && isBigCash && isIncome);
+        if (isGuaranteeMovement) return sum;
         if (!isLinked || !isCollection) return sum;
         return sum + Math.max(0, getCashMovementAmount(movement));
       }, 0);

@@ -2099,6 +2099,9 @@ const normalizeState = (state) => {
               ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
               : '',
             note: String(entry?.note ?? '').trim(),
+            cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
+            cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+            isCashRegistered: Boolean(entry?.isCashRegistered),
             createdAt: entry?.createdAt ?? now,
             createdById: entry?.createdById ?? entry?.userId ?? null,
             createdByName: String(
@@ -3918,6 +3921,86 @@ const buildCashMovement = ({
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
+
+const isGuaranteeCashMovement = (movement) => {
+  const type = normalizeText(movement?.type);
+  const category = normalizeText(movement?.category);
+  const tag = normalizeText(movement?.accountingTag);
+  return type.includes('garantia') || category.includes('garantia') || tag.includes('guarantee');
+};
+
+const getContractCashReferenceKeys = (state, contract) => {
+  const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const linkedRental = rentals.find((rental) => (
+    !rental?.deletedAt
+    && (
+      String(rental?.id ?? '') === String(contract?.rentalId ?? '')
+      || String(rental?.contractId ?? '') === String(contract?.id ?? '')
+      || normalizeText(rental?.contractCode) === normalizeText(contract?.contractCode)
+      || normalizeText(rental?.orderCode) === normalizeText(contract?.orderCode)
+    )
+  ));
+  return [
+    contract?.id,
+    contract?.rentalId,
+    contract?.contractCode,
+    contract?.orderCode,
+    linkedRental?.id,
+    linkedRental?.contractId,
+    linkedRental?.contractCode,
+    linkedRental?.orderCode,
+  ].map(normalizeText).filter(Boolean);
+};
+
+const cashMovementMatchesContract = (movement, referenceKeys) => {
+  if (!referenceKeys.length) return false;
+  const exactValues = [
+    movement?.linkedContractId,
+    movement?.linkedRentalId,
+    movement?.linkedOrderCode,
+    movement?.contractId,
+    movement?.rentalId,
+    movement?.orderCode,
+    movement?.contractCode,
+    movement?.sourceId,
+    movement?.reference,
+  ].map(normalizeText).filter(Boolean);
+  if (exactValues.some((value) => referenceKeys.includes(value))) return true;
+  return [movement?.notes, movement?.description]
+    .map(normalizeText)
+    .some((text) => text && referenceKeys.some((key) => text.includes(key)));
+};
+
+const isContractCollectionCashMovement = (movement) => {
+  if (isVoidedCashMovement(movement) || isGuaranteeCashMovement(movement)) return false;
+  const type = normalizeText(movement?.type);
+  const category = normalizeText(movement?.category);
+  const tag = normalizeText(movement?.accountingTag);
+  const cashBoxType = normalizeText(movement?.cashBoxType);
+  const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
+  const isBigCash = ['big_cash', 'caja_grande', 'cajagrande'].includes(cashBoxType);
+  const isIncome = type.includes('ingreso') || type.includes('cobro') || category === 'cobro_contrato';
+  return tag === 'contract_economic_collection'
+    || category === 'cobro_contrato'
+    || type === 'ingreso_alquiler'
+    || (Boolean(receiptCode) && isBigCash && isIncome);
+};
+
+const getRegisteredContractCollectionBs = (state, contract) => {
+  const referenceKeys = getContractCashReferenceKeys(state, contract);
+  return (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter(isContractCollectionCashMovement)
+    .reduce((sum, movement) => sum + Math.max(0, Number(movement?.amountBs ?? 0)), 0);
+};
+
+const getRegisteredContractGuaranteeBs = (state, contract) => {
+  const referenceKeys = getContractCashReferenceKeys(state, contract);
+  return (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => !isVoidedCashMovement(movement) && isGuaranteeCashMovement(movement))
+    .reduce((sum, movement) => sum + Math.max(0, Number(movement?.amountBs ?? 0)), 0);
+};
 
 const getCashReceiptCode = (state, movement) => {
   const persisted = String(movement?.receiptCode ?? '').trim();
@@ -8892,8 +8975,9 @@ const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, befor
   const beforeValidatedGuaranteeBs = beforeStatus === 'validado'
     ? Math.max(0, toPositiveRoundedNumber(beforeContract?.totals?.guaranteeBs ?? beforeContract?.guarantee?.amountBs ?? 0))
     : 0;
-  const guaranteeDeltaBs = Math.max(0, Number((nextValidatedGuaranteeBs - beforeValidatedGuaranteeBs).toFixed(2)));
-  const amountToRegisterBs = guaranteeDeltaBs > 0 ? guaranteeDeltaBs : nextValidatedGuaranteeBs;
+  const registeredGuaranteeBs = getRegisteredContractGuaranteeBs(state, contract);
+  const alreadyCoveredGuaranteeBs = Math.max(beforeValidatedGuaranteeBs, registeredGuaranteeBs);
+  const amountToRegisterBs = Math.max(0, Number((nextValidatedGuaranteeBs - alreadyCoveredGuaranteeBs).toFixed(2)));
   if (amountToRegisterBs <= 0) return null;
 
   state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
@@ -13029,7 +13113,9 @@ const createWebBridge = () => ({
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
         const discountPercent = Math.min(100, Math.max(0, Number(payload?.discountPercent ?? contract?.totals?.discountPercent ?? 0)));
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
-        const guaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim() === 'validado'
+        const registeredGuaranteeBs = getRegisteredContractGuaranteeBs(state, contract);
+        const requestedGuaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+        const guaranteeStatus = requestedGuaranteeStatus === 'validado' || (guaranteeBs > 0 && registeredGuaranteeBs >= guaranteeBs)
           ? 'validado'
           : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
@@ -13053,7 +13139,14 @@ const createWebBridge = () => ({
           deliveryFeeReason: payload?.deliveryFeeReason ?? contract?.deliveryFeeReason,
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
-        const paidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? contract?.payment?.paidAtApprovalBs ?? 0));
+        const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
+        const storedPaidAtApprovalBs = Math.max(
+          0,
+          Number(contract?.payment?.paidAtApprovalBs ?? 0),
+          Number(contract?.payment?.paidAtRentalBs ?? 0),
+        );
+        const requestedPaidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? storedPaidAtApprovalBs));
+        const paidAtApprovalBs = Math.max(requestedPaidAtApprovalBs, storedPaidAtApprovalBs, registeredCollectionBs);
         const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
 
         contract.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
@@ -13114,6 +13207,9 @@ const createWebBridge = () => ({
                 ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
                 : '',
               note: String(entry?.note ?? '').trim(),
+              cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
+              cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+              isCashRegistered: Boolean(entry?.isCashRegistered),
               createdAt: entry?.createdAt ?? now,
               createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
               editedAt: entry?.editedAt ?? null,
@@ -13179,6 +13275,9 @@ const createWebBridge = () => ({
               ? normalizeQrPaymentAccount(entry?.paymentAccount ?? entry?.account)
               : '',
             note: String(entry?.note ?? '').trim(),
+            cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
+            cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+            isCashRegistered: Boolean(entry?.isCashRegistered),
             createdAt: entry?.createdAt ?? now,
             createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
             editedAt: entry?.editedAt ?? null,
