@@ -1202,7 +1202,7 @@ function AccountingSection({
         isReadyToReturn: isReturned && guaranteeInfo.isValidated && refundBs > 0,
         statusLabel: guaranteeInfo.isValidated
           ? isReturned ? refundBs > 0 ? 'Lista para devolver' : 'Sin devolucion' : 'Material pendiente'
-          : 'No validada',
+          : 'Debe',
       };
     })
     .filter(Boolean)
@@ -1935,7 +1935,7 @@ function AccountingSection({
 
   const handleReturnGuarantee = async (row) => {
     if (row && !row.isMoneyHeld) {
-      setCashActionError('Esta garantia no esta validada: no hay dinero recibido para devolver.');
+      setCashActionError('Esta garantia figura como debe: no hay dinero recibido para devolver.');
       return;
     }
     if (row && !row.isReadyToReturn) {
@@ -2128,7 +2128,7 @@ function AccountingSection({
       },
       guarantees: {
         title: 'Garantias por devolver',
-        subtitle: 'Garantias validadas y no validadas separadas por contrato.',
+        subtitle: 'Garantias pagadas y pendientes de cobro separadas por contrato.',
         rows: guaranteesToReturnRows,
         colSpan: 8,
         searchText: (row) => [
@@ -2148,8 +2148,8 @@ function AccountingSection({
             <th>Responsable</th>
             <th>Fecha evento</th>
             <th>Estado</th>
-            <th>Validada</th>
-            <th>No validada</th>
+            <th>Pagada</th>
+            <th>Debe</th>
             <th />
           </tr>
         ),
@@ -2168,7 +2168,7 @@ function AccountingSection({
                 className="accounting-inline-action"
                 onClick={() => handleReturnGuarantee(row)}
                 disabled={!row.isReadyToReturn || !row.isMoneyHeld || isSubmittingCash}
-                title={row.isMoneyHeld ? 'Devolver garantia y generar recibo' : 'Garantia no validada, no hay dinero para devolver'}
+                title={row.isMoneyHeld ? 'Devolver garantia y generar recibo' : 'Garantia pendiente de cobro, no hay dinero para devolver'}
               >
                 {row.isReadyToReturn && row.isMoneyHeld ? 'Devolver' : row.isMoneyHeld ? 'No listo' : 'Sin dinero'}
               </button>
@@ -3123,7 +3123,7 @@ function AccountingSection({
               <div>
                 <strong>TOTAL EN CAJA GRANDE</strong>
                 <h3 className="value-blue">{formatBs(bigCashBalanceBs)}</h3>
-                <p>Fisico real: operativo + garantias validadas.</p>
+                <p>Fisico real: operativo + garantias pagadas.</p>
               </div>
             </div>
           </button>
@@ -3134,7 +3134,7 @@ function AccountingSection({
               <div>
                 <strong>GARANTIAS RETENIDAS</strong>
                 <h3 className="value-violet">{formatBs(guaranteeCommitmentsBs)}</h3>
-                <p>Validadas {formatBs(guaranteesHeldBs)} | No validadas {formatBs(unvalidatedGuaranteesBs)}</p>
+                <p>Pagadas {formatBs(guaranteesHeldBs)} | Deben {formatBs(unvalidatedGuaranteesBs)}</p>
               </div>
             </div>
           </button>
@@ -3328,8 +3328,8 @@ function AccountingSection({
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Estado</th>
-                    <th>Validada</th>
-                    <th>No validada</th>
+                    <th>Pagada</th>
+                    <th>Debe</th>
                     <th />
                   </tr>
                 </thead>
@@ -3536,7 +3536,7 @@ function AccountingSection({
                 </span>
                 <i>+</i>
                 <span>
-                  <small>Garantias validadas</small>
+                  <small>Garantias pagadas</small>
                   <b className="value-violet">{formatBs(guaranteesHeldBs)}</b>
                 </span>
                 <i>=</i>

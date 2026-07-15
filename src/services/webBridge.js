@@ -2179,7 +2179,7 @@ const normalizeState = (state) => {
           amountBs: Number(guaranteeBs.toFixed(2)),
           paymentMethod: guaranteePaymentMethod,
           paymentAccount: guaranteePaymentAccount,
-          note: 'Garantia validada registrada al crear el contrato.',
+          note: 'Garantia pagada registrada al crear el contrato.',
           createdAt: contract?.approvedAt
             ?? contract?.contractDate
             ?? contract?.createdAt
@@ -2778,7 +2778,7 @@ const normalizeState = (state) => {
       paymentMethod,
       paymentAccount,
       receiptCode: nextCashReceiptCode(source),
-      notes: `Garantia validada reparada para contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
+      notes: `Garantia pagada reparada para contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
       linkedRentalId: contract?.rentalId ?? '',
       linkedContractId: contract?.id ?? '',
       linkedOrderCode: contract?.orderCode ?? '',
@@ -6911,7 +6911,7 @@ const getReferenceContractStyles = () => `
     gap: 2.5mm;
   }
   .rc-material-box {
-    min-height: 19mm;
+    min-height: 42mm;
     display: grid;
     grid-template-rows: auto 1fr;
     border: .25mm solid #e4d3bb;
@@ -6927,10 +6927,11 @@ const getReferenceContractStyles = () => `
   }
   .rc-material-lines {
     display: grid;
-    gap: 1.6mm;
+    align-content: stretch;
+    gap: 1.35mm;
     padding: 1mm 1.2mm 1.4mm;
   }
-  .rc-material-lines span { display: block; height: 3.5mm; border-bottom: .25mm solid #777; }
+  .rc-material-lines span { display: block; min-height: 3.8mm; border-bottom: .25mm solid #777; }
   .rc-terms-section {
     margin-top: 4mm;
     padding-top: 0;
@@ -7114,12 +7115,15 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       ?? rental?.deliveryFeeBs
       ?? 0,
   );
-  const hasDeliveryFee = Number.isFinite(deliveryFeeBs) && deliveryFeeBs > 0;
   const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
   const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
   const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
   const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
+  const documentPendingBs = Math.max(
+    0,
+    Number(pendingBs ?? 0) + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0))),
+  );
   const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
   const hasDurationPricing = pricingPlan?.mode === 'duration';
   const hasManualDiscount = Number(discountBs ?? 0) > 0;
@@ -7250,6 +7254,19 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         ${documentItems.map((line) => renderContractItemRow(line, dayInfo.multiplier)).join('')}`).join('')
     : documentItems.map((line) => renderContractItemRow(line)).join('');
   const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
+  const servicesSubtotalBs = Number(
+    contract?.totals?.servicesSubtotalBs
+      ?? rental?.totals?.servicesSubtotalBs
+      ?? contractServices.reduce((sum, service) => sum + Number(service.lineTotalBs ?? 0), 0),
+  );
+  const documentItemsSubtotalBs = Math.max(
+    0,
+    Number(
+      contract?.totals?.itemsSubtotalBs
+        ?? rental?.totals?.itemsSubtotalBs
+        ?? Number(subtotalBs ?? 0) - servicesSubtotalBs,
+    ),
+  );
   const serviceRows = contractServices
     .map((service) => {
       contractRowNumber += 1;
@@ -7315,16 +7332,19 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const financialSummaryHtml = `
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
-            <div class="rc-financial-item"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
-            ${hasDeliveryFee ? `<div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>` : ''}
+            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>
+            <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
+            <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'validada' : 'no validada'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'pagada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
             <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
-            <div class="rc-financial-item"><span>Saldo</span><strong>${formatBs(pendingBs)}</strong></div>
+            <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(documentPendingBs)}</strong></div>
+            <div class="rc-financial-item manual"><span>A cuenta</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
-            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(totalBs)}</strong></div>
-            <div class="rc-financial-item managed"><span>Total manejado</span><strong>${formatBs(documentManagedBs)}</strong></div>
+            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(documentManagedBs)}</strong></div>
+            <div class="rc-financial-item manual"><span>Reposicion</span><strong>&nbsp;</strong></div>
+            <div class="rc-financial-item manual"><span>Devolucion final</span><strong>&nbsp;</strong></div>
           </div>`;
   const deliveryDate = formatDocumentScheduleDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
@@ -7430,11 +7450,11 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <div class="rc-material-grid">
               <div class="rc-material-box">
                 <h4>Material dejado al cliente</h4>
-                <div class="rc-material-lines"><span></span><span></span><span></span></div>
+                <div class="rc-material-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
               </div>
               <div class="rc-material-box">
                 <h4>Material que falta entregar al cliente</h4>
-                <div class="rc-material-lines"><span></span><span></span><span></span></div>
+                <div class="rc-material-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
               </div>
             </div>
           </section>
@@ -8931,7 +8951,7 @@ const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, befor
     paymentMethod,
     paymentAccount,
     receiptCode: nextCashReceiptCode(state),
-    notes: `Garantia validada desde contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
+    notes: `Garantia pagada desde contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
     linkedRentalId: contract?.rentalId ?? '',
     linkedContractId: contract?.id ?? '',
     linkedOrderCode: contract?.orderCode ?? '',

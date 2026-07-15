@@ -1824,7 +1824,7 @@ function ServiceOrdersSection({
         finalizedByName: String(contract?.finalizedByName ?? '').trim(),
         guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
-          ? guaranteeStatus === 'pending' ? 'No validada' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Recibida'
+          ? guaranteeStatus === 'pending' ? 'Debe' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Pagada'
           : '',
       };
     });
@@ -2220,7 +2220,7 @@ function ServiceOrdersSection({
           amountBs: guaranteeValidatedBs,
           paymentMethod: guaranteePaymentMethod,
           paymentAccount: guaranteePaymentAccount,
-          note: 'Garantia validada registrada al crear el contrato.',
+          note: 'Garantia pagada registrada al crear el contrato.',
           createdAt: contract?.approvedAt
             ?? contract?.contractDate
             ?? contract?.createdAt
@@ -2416,8 +2416,8 @@ function ServiceOrdersSection({
       guaranteeStatus: effectiveGuaranteeDeclaredBs <= 0
         ? 'Sin garantia'
         : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
-          ? 'Validada'
-          : 'No validada',
+          ? 'Pagada'
+          : 'Debe',
       guaranteeMethod: formatPaymentMethodLabel(
         contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.guarantee?.paymentMethod,
         contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.guarantee?.paymentAccount,
@@ -7591,7 +7591,7 @@ function ServiceOrdersSection({
                     <div><span>Danos / faltantes</span><strong>{formatBs(contractEconomicsData.penaltiesBs)}</strong></div>
                     <div><span>Alquiler pendiente</span><strong>{formatBs(contractEconomicsData.outstandingRentalBs)}</strong></div>
                     <div><span>Garantia a devolver</span><strong>{formatBs(contractEconomicsData.refundBs)}</strong></div>
-                    <div><span>Garantia validada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
+                    <div><span>Garantia pagada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
                   </div>
                 </article>
 
@@ -10222,13 +10222,13 @@ function ServiceOrdersSection({
                         </small>
                       </label>
                       <label>
-                        Estado garantia
+                        Estado de pago garantia
                         <select value={draft.guaranteeStatus} onChange={(event) => setDraftField('guaranteeStatus', event.target.value)}>
-                          <option value="no_validado">No validado</option>
-                          <option value="validado">Validado</option>
+                          <option value="no_validado">Debe</option>
+                          <option value="validado">Pagado</option>
                         </select>
                         <small className={`orders-field-live-summary ${draft.guaranteeStatus === 'validado' ? 'is-ok' : 'is-warning'}`}>
-                          {draft.guaranteeStatus === 'validado' ? 'Garantia valida para caja.' : 'Garantia pendiente de validar.'}
+                          {draft.guaranteeStatus === 'validado' ? 'Garantia cobrada y registrada en caja.' : 'Garantia pendiente de cobro.'}
                         </small>
                       </label>
                       <label>
@@ -10241,7 +10241,7 @@ function ServiceOrdersSection({
                         <small className={`orders-field-live-summary ${draft.guaranteeStatus === 'validado' ? 'is-info' : 'is-muted'}`}>
                           {draft.guaranteeStatus === 'validado'
                             ? `Metodo actual: ${formatPaymentMethodLabel(draft.guaranteePaymentMethod, draft.guaranteePaymentAccount)}`
-                            : 'Se activara al validar la garantia.'}
+                            : 'Se activara al registrar el pago de garantia.'}
                         </small>
                       </label>
                       {draft.guaranteeStatus === 'validado' && draft.guaranteePaymentMethod === 'qr' ? (
@@ -10560,7 +10560,7 @@ function ServiceOrdersSection({
                     <span>Garantia</span>
                     <strong>
                       {formatBs(Math.max(0, Number(draft.guaranteeBs ?? 0)))}
-                      {Math.max(0, Number(draft.guaranteeBs ?? 0)) > 0 ? ` | ${draft.guaranteeStatus === 'validado' ? 'Validada' : 'No validada'}` : ''}
+                      {Math.max(0, Number(draft.guaranteeBs ?? 0)) > 0 ? ` | ${draft.guaranteeStatus === 'validado' ? 'Pagada' : 'Debe'}` : ''}
                     </strong>
                   </div>
                   {draft.guaranteeStatus === 'validado' && Math.max(0, Number(draft.guaranteeBs ?? 0)) > 0 ? (
