@@ -7225,12 +7225,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   );
   const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
   const hasDurationPricing = pricingPlan?.mode === 'duration';
+  const hasDailySchedulePricing = pricingPlan?.mode === 'daily_schedule';
   const hasManualDiscount = Number(discountBs ?? 0) > 0;
   const logisticsMode = contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
   const isCustomerPickup = logisticsMode === 'recojo';
   const logisticsLabel = isCustomerPickup ? 'Recojo por cliente' : 'Envio por equipo';
   const durationLabel = hasDurationPricing
     ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
+    : hasDailySchedulePricing ? `${Math.max(1, Number(pricingPlan?.days ?? pricingPlan?.scheduleDays?.length ?? 1))} dias | items por dia`
     : 'Precio unico';
   const cancellationPenaltyPercent = Number(settings?.contractCancellationPenaltyPercent ?? 20);
   const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
@@ -7345,7 +7347,48 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td><span class="rc-observation-line"></span></td>
         </tr>`;
   };
-  const itemRows = hasDurationPricing
+  const scheduleDaysForDocument = hasDailySchedulePricing && Array.isArray(pricingPlan?.scheduleDays)
+    ? pricingPlan.scheduleDays.filter((day) => day?.id || day?.label || day?.date)
+    : [];
+  const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
+    const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
+    const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
+    const subtotal = Number.isFinite(Number(day?.subtotalBs))
+      ? Number(day.subtotalBs)
+      : lines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
+    return `
+        <tr class="rc-duration-day-row">
+          <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
+        </tr>`;
+  };
+  const itemRows = hasDailySchedulePricing
+    ? (() => {
+      const fallbackDay = scheduleDaysForDocument[0] ?? { id: 'daily-default', label: 'Dia 1', date: contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate };
+      const grouped = new Map();
+      const ensureGroup = (day, index) => {
+        const key = String(day?.id ?? `day-${index}`);
+        if (!grouped.has(key)) {
+          grouped.set(key, { day: { ...day, id: key }, index, lines: [] });
+        }
+        return grouped.get(key);
+      };
+      (scheduleDaysForDocument.length > 0 ? scheduleDaysForDocument : [fallbackDay])
+        .forEach((day, index) => ensureGroup(day, index));
+      documentItems.forEach((line) => {
+        const lineDayId = String(line.serviceDayId ?? line.scheduleDayId ?? '').trim();
+        const foundIndex = scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId);
+        const group = foundIndex >= 0
+          ? ensureGroup(scheduleDaysForDocument[foundIndex], foundIndex)
+          : ensureGroup(fallbackDay, 0);
+        group.lines.push(line);
+      });
+      return Array.from(grouped.values())
+        .filter((group) => group.lines.length > 0)
+        .sort((a, b) => a.index - b.index)
+        .map((group) => `${renderScheduleDayHeader(group.day, group.index, group.lines)}${group.lines.map((line) => renderContractItemRow(line)).join('')}`)
+        .join('');
+    })()
+    : hasDurationPricing
     ? durationDayBreakdown.map((dayInfo) => `
         <tr class="rc-duration-day-row">
           <td colspan="8">Dia ${dayInfo.day} - ${dayInfo.percent}%</td>

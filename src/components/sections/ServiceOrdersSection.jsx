@@ -2896,16 +2896,50 @@ function ServiceOrdersSection({
 
   const selectedDemandByItemId = useMemo(() => {
     const map = new Map();
+    if (isDailyScheduleMode) {
+      const demandByItemAndDay = new Map();
+      selectedItems.forEach((line) => {
+        if (isDetachedFromInventory(line)) return;
+        const itemId = String(line.itemId ?? '').trim();
+        if (!itemId) return;
+        const dayId = String(line.serviceDayId ?? normalizedScheduleDays[0]?.id ?? 'default');
+        const byDay = demandByItemAndDay.get(itemId) ?? new Map();
+        byDay.set(dayId, (byDay.get(dayId) ?? 0) + Math.max(0, Number(line.quantity ?? 0)));
+        demandByItemAndDay.set(itemId, byDay);
+      });
+      demandByItemAndDay.forEach((byDay, itemId) => {
+        map.set(itemId, Math.max(0, ...Array.from(byDay.values())));
+      });
+      return map;
+    }
     selectedItems.forEach((line) => {
       if (isDetachedFromInventory(line)) return;
       map.set(line.itemId, (map.get(line.itemId) ?? 0) + Math.max(0, Number(line.quantity ?? 0)));
     });
     return map;
-  }, [selectedItems]);
+  }, [isDailyScheduleMode, normalizedScheduleDays, selectedItems]);
 
   const originalContractDemandByItemId = useMemo(() => {
     const map = new Map();
     if (draft.entityType !== 'contract' || !draft.recordId) return map;
+    if (isDailyScheduleMode) {
+      const demandByItemAndDay = new Map();
+      selectedItems.forEach((line) => {
+        if (isDetachedFromInventory(line)) return;
+        const itemId = String(line.itemId ?? '').trim();
+        if (!itemId) return;
+        const quantity = Math.max(0, Math.trunc(Number(line.originalQuantity ?? 0)));
+        if (quantity <= 0) return;
+        const dayId = String(line.serviceDayId ?? normalizedScheduleDays[0]?.id ?? 'default');
+        const byDay = demandByItemAndDay.get(itemId) ?? new Map();
+        byDay.set(dayId, (byDay.get(dayId) ?? 0) + quantity);
+        demandByItemAndDay.set(itemId, byDay);
+      });
+      demandByItemAndDay.forEach((byDay, itemId) => {
+        map.set(itemId, Math.max(0, ...Array.from(byDay.values())));
+      });
+      return map;
+    }
     selectedItems.forEach((line) => {
       if (isDetachedFromInventory(line)) return;
       const itemId = String(line.itemId ?? '').trim();
@@ -2915,7 +2949,7 @@ function ServiceOrdersSection({
       map.set(itemId, (map.get(itemId) ?? 0) + quantity);
     });
     return map;
-  }, [draft.entityType, draft.recordId, selectedItems]);
+  }, [draft.entityType, draft.recordId, isDailyScheduleMode, normalizedScheduleDays, selectedItems]);
 
   const getEditableAvailableStock = useCallback((line) => {
     const originalContractQty = Math.max(
