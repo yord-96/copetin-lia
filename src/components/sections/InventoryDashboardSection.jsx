@@ -114,6 +114,75 @@ const addDaysToDateKey = (dateKey, days) => {
   ].join('-');
 };
 
+const getDateKey = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return [
+    parsed.getFullYear(),
+    String(parsed.getMonth() + 1).padStart(2, '0'),
+    String(parsed.getDate()).padStart(2, '0'),
+  ].join('-');
+};
+
+const getDateKeyDiffDays = (fromDateKey, toDateKey) => {
+  if (!fromDateKey || !toDateKey) return null;
+  const from = new Date(`${fromDateKey}T12:00:00`);
+  const to = new Date(`${toDateKey}T12:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+  return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const getInventoryUsageStatusMeta = (entry, todayKey = getDateKey(new Date())) => {
+  const startKey = getDateKey(entry?.deliveryDate);
+  const endKey = getDateKey(entry?.pickupDate);
+  const inventoryStatus = normalizeText(entry?.inventoryStatus);
+  const transportStatus = normalizeText(entry?.transportStatus);
+  const daysToReturn = endKey ? getDateKeyDiffDays(todayKey, endKey) : null;
+
+  if (endKey && endKey < todayKey) {
+    return {
+      key: 'overdue',
+      label: 'Debe volver',
+      tone: 'danger',
+      returnText: daysToReturn === 0 ? 'Vuelve hoy' : `Atrasado ${Math.abs(daysToReturn)} dia(s)`,
+    };
+  }
+  if (startKey && startKey > todayKey) {
+    return {
+      key: 'scheduled',
+      label: 'Reservado',
+      tone: 'planned',
+      returnText: endKey ? `Vuelve ${endKey}` : 'Retorno pendiente',
+    };
+  }
+  if (inventoryStatus === 'salio' || transportStatus === 'en_ruta') {
+    return {
+      key: 'out',
+      label: 'Fuera de almacen',
+      tone: 'warning',
+      returnText: daysToReturn === 0 ? 'Debe volver hoy' : daysToReturn > 0 ? `Vuelve en ${daysToReturn} dia(s)` : 'Retorno pendiente',
+    };
+  }
+  if (inventoryStatus === 'confirmado') {
+    return {
+      key: 'ready',
+      label: 'Listo para salir',
+      tone: 'info',
+      returnText: endKey ? `Vuelve ${endKey}` : 'Retorno pendiente',
+    };
+  }
+  return {
+    key: 'reserved',
+    label: 'Reservado',
+    tone: 'neutral',
+    returnText: endKey ? `Vuelve ${endKey}` : 'Retorno pendiente',
+  };
+};
+
 const getCurrentWeekRange = () => {
   const from = getMondayDateKey(new Date());
   return { from, to: addDaysToDateKey(from, 6) };
@@ -1156,29 +1225,65 @@ function InventoryDashboardSection({
   const itemUsageById = useMemo(() => {
     const usage = new Map();
     const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
+    const deliveriesByRental = new Map();
+    deliveries
+      .filter((delivery) => delivery?.rentalId)
+      .forEach((delivery) => {
+        const key = String(delivery.rentalId);
+        const rows = deliveriesByRental.get(key) ?? [];
+        rows.push(delivery);
+        deliveriesByRental.set(key, rows);
+      });
     activeRentals.forEach((rental) => {
       const contract = contractById.get(String(rental.contractId ?? ''));
+      const linkedDeliveries = (deliveriesByRental.get(String(rental.id)) ?? []).slice()
+        .sort((a, b) => String(a.scheduledDate ?? '').localeCompare(String(b.scheduledDate ?? '')));
+      const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
+      const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
       (rental.items ?? []).forEach((line) => {
         if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
         const quantity = Math.max(0, Number(line.internalReservedQty ?? line.quantity ?? 0));
         if (!line.itemId || quantity <= 0) return;
         const rows = usage.get(line.itemId) ?? [];
+        const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate ?? null;
+        const pickupDate = contract?.pickupDate ?? deliveryBack?.scheduledDate ?? rental.dueDate ?? null;
+        const deliveryWindowStart = contract?.deliveryWindowStart ?? deliveryOut?.windowStart ?? rental.deliveryWindowStart ?? '';
+        const deliveryWindowEnd = contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd ?? rental.deliveryWindowEnd ?? '';
+        const pickupWindowStart = contract?.pickupWindowStart ?? deliveryBack?.windowStart ?? rental.pickupWindowStart ?? '';
+        const pickupWindowEnd = contract?.pickupWindowEnd ?? deliveryBack?.windowEnd ?? rental.pickupWindowEnd ?? rental.dueTime ?? '';
         rows.push({
           rentalId: rental.id,
           orderCode: rental.orderCode ?? 'Orden sin codigo',
           contractCode: contract?.contractCode ?? rental.contractCode ?? 'Sin contrato',
           customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
           quantity,
-          deliveryDate: contract?.deliveryDate ?? rental.rentalDate ?? null,
-          pickupDate: contract?.pickupDate ?? rental.dueDate ?? null,
+          deliveryDate,
+          pickupDate,
+          deliveryWindowStart,
+          deliveryWindowEnd,
+          pickupWindowStart,
+          pickupWindowEnd,
+          address: contract?.address ?? deliveryOut?.address ?? deliveryBack?.address ?? rental.eventAddress ?? '',
+          city: contract?.city ?? deliveryOut?.city ?? deliveryBack?.city ?? '',
+          eventType: contract?.eventType ?? rental.eventType ?? '',
           inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
           transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+          inventoryNote: rental.operational?.inventoryNote ?? '',
+          logisticsMode: contract?.logisticsMode ?? rental.logisticsMode ?? 'envio',
         });
         usage.set(line.itemId, rows);
       });
     });
+    usage.forEach((rows, itemId) => {
+      usage.set(itemId, rows.sort((a, b) => {
+        const aEnd = getDateKey(a.pickupDate) || getDateKey(a.deliveryDate) || '9999-12-31';
+        const bEnd = getDateKey(b.pickupDate) || getDateKey(b.deliveryDate) || '9999-12-31';
+        if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
+        return String(a.orderCode ?? '').localeCompare(String(b.orderCode ?? ''));
+      }));
+    });
     return usage;
-  }, [activeRentals, contracts]);
+  }, [activeRentals, contracts, deliveries]);
 
   const maintenanceByItem = useMemo(() => {
     const map = {};
@@ -1413,6 +1518,67 @@ function InventoryDashboardSection({
     });
   }, [itemUsageById, items, maintenanceByItem, reservedByItem]);
 
+  const detailUsageRows = useMemo(() => {
+    const rows = Array.isArray(detailRow?.usage) ? detailRow.usage : [];
+    const todayKey = getDateKey(new Date());
+    const formatDateLabel = (value) => {
+      if (!value) return 'Sin fecha';
+      const formatted = formatDateTime?.(value);
+      return formatted ? (formatted.split(',')[0] || formatted) : String(value);
+    };
+    const formatWindowLabel = (start, end) => {
+      const label = [start, end].filter(Boolean).join(' - ');
+      return label || 'Sin horario';
+    };
+
+    return rows
+      .map((entry) => {
+        const startKey = getDateKey(entry.deliveryDate);
+        const endKey = getDateKey(entry.pickupDate);
+        const statusMeta = getInventoryUsageStatusMeta(entry, todayKey);
+        const periodDays = startKey && endKey ? Math.max(1, (getDateKeyDiffDays(startKey, endKey) ?? 0) + 1) : null;
+        return {
+          ...entry,
+          startKey,
+          endKey,
+          sortKey: endKey || startKey || '9999-12-31',
+          statusMeta,
+          deliveryLabel: formatDateLabel(entry.deliveryDate),
+          pickupLabel: formatDateLabel(entry.pickupDate),
+          deliveryWindowLabel: formatWindowLabel(entry.deliveryWindowStart, entry.deliveryWindowEnd),
+          pickupWindowLabel: formatWindowLabel(entry.pickupWindowStart, entry.pickupWindowEnd),
+          periodDays,
+        };
+      })
+      .sort((a, b) => {
+        if (a.sortKey !== b.sortKey) return a.sortKey.localeCompare(b.sortKey);
+        return String(a.orderCode ?? '').localeCompare(String(b.orderCode ?? ''));
+      });
+  }, [detailRow, formatDateTime]);
+
+  const detailUsageSummary = useMemo(() => {
+    const todayKey = getDateKey(new Date());
+    const totalCommitted = detailUsageRows.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
+    const orderCount = new Set(detailUsageRows.map((entry) => `${entry.rentalId ?? ''}-${entry.orderCode ?? ''}`)).size;
+    const clientCount = new Set(detailUsageRows.map((entry) => normalizeText(entry.customerName)).filter(Boolean)).size;
+    const overdueQty = detailUsageRows
+      .filter((entry) => entry.statusMeta.key === 'overdue')
+      .reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
+    const nextReturn = detailUsageRows
+      .filter((entry) => entry.endKey && entry.endKey >= todayKey)
+      .sort((a, b) => a.endKey.localeCompare(b.endKey))[0] ?? null;
+    const maxQuantity = Math.max(1, ...detailUsageRows.map((entry) => Number(entry.quantity ?? 0)));
+
+    return {
+      totalCommitted,
+      orderCount,
+      clientCount,
+      overdueQty,
+      nextReturn,
+      maxQuantity,
+    };
+  }, [detailUsageRows]);
+
   const comboRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
     return (combos ?? []).map((combo) => {
@@ -1598,6 +1764,36 @@ function InventoryDashboardSection({
     return [...persistedRows, ...serviceOrderRows]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
+
+  const detailMovementTrace = useMemo(() => {
+    if (!detailRow?.id) return [];
+    return movementRows
+      .filter((row) => String(row.itemId ?? '') === String(detailRow.id))
+      .map((row) => ({
+        ...row,
+        dateLabel: row.createdAt ? formatDateTime(row.createdAt) : 'Sin fecha',
+        affectsPhysicalStock: row.typeLabel !== 'Reserva',
+        beforeAfterLabel: row.typeLabel === 'Reserva' ? 'Disponible antes / despues' : 'Stock fisico antes / despues',
+      }));
+  }, [detailRow, formatDateTime, movementRows]);
+
+  const detailStockExplanation = useMemo(() => {
+    if (!detailRow || detailRow.total === undefined) return null;
+    const total = Number(detailRow.total ?? 0);
+    const reserved = Number(detailRow.reserved ?? 0);
+    const maintenance = Number(detailRow.maintenance ?? 0);
+    const available = Number(detailRow.available ?? 0);
+    const rawAvailable = total - reserved - maintenance;
+    return {
+      total,
+      reserved,
+      maintenance,
+      available,
+      rawAvailable,
+      overReserved: rawAvailable < 0,
+      missingToCover: rawAvailable < 0 ? Math.abs(rawAvailable) : 0,
+    };
+  }, [detailRow]);
 
   const movementSelectableRows = useMemo(() => {
     if (!normalizeInventorySearchText(movementItemQuery)) return inventoryRows;
@@ -5348,37 +5544,175 @@ function InventoryDashboardSection({
                 ) : null}
               </div>
             ) : null}
-            {Array.isArray(detailRow.usage) ? (
-              <section className="inventory-usage-section">
-                <div className="inventory-usage-head">
+            {detailStockExplanation ? (
+              <section className="inventory-stock-explain">
+                <div className="inventory-stock-explain-head">
                   <div>
-                    <span className="inventory-detail-kicker">Ubicacion del inventario</span>
-                    <h4>Contratos y ordenes activas</h4>
+                    <span className="inventory-detail-kicker">Trazabilidad de stock</span>
+                    <h4>Por que este producto queda con {detailStockExplanation.available} disponible</h4>
                   </div>
-                  <strong>{detailRow.usage.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0)} unidades comprometidas</strong>
+                  {detailStockExplanation.overReserved ? (
+                    <strong className="is-alert">Faltan {detailStockExplanation.missingToCover} u. para cubrir reservas</strong>
+                  ) : (
+                    <strong>Stock cubierto</strong>
+                  )}
                 </div>
-                {detailRow.usage.length > 0 ? (
-                  <div className="inventory-usage-list">
-                    {detailRow.usage.map((entry) => (
-                      <article key={`${entry.rentalId}-${entry.orderCode}`}>
+                <div className="inventory-stock-equation">
+                  <div>
+                    <span>Stock fisico</span>
+                    <strong>{detailStockExplanation.total}</strong>
+                  </div>
+                  <b>-</b>
+                  <div>
+                    <span>Comprometido</span>
+                    <strong>{detailStockExplanation.reserved}</strong>
+                  </div>
+                  <b>-</b>
+                  <div>
+                    <span>Mantenimiento</span>
+                    <strong>{detailStockExplanation.maintenance}</strong>
+                  </div>
+                  <b>=</b>
+                  <div className={detailStockExplanation.available <= 0 ? 'is-zero' : ''}>
+                    <span>Disponible</span>
+                    <strong>{detailStockExplanation.available}</strong>
+                  </div>
+                </div>
+                {detailMovementTrace.length > 0 ? (
+                  <div className="inventory-stock-trace-list">
+                    {detailMovementTrace.slice(0, 18).map((entry) => (
+                      <article key={entry.id}>
                         <div>
-                          <strong>{entry.orderCode}</strong>
-                          <span>Contrato {entry.contractCode} · {entry.customerName}</span>
+                          <strong>{entry.dateLabel}</strong>
+                          <span>{entry.typeLabel} - {entry.reference}</span>
                         </div>
                         <div>
-                          <span>Periodo</span>
-                          <strong>{entry.deliveryDate || '-'} al {entry.pickupDate || '-'}</strong>
+                          <span>Responsable</span>
+                          <strong>{entry.userName}</strong>
+                          <small>Registrado por {entry.registeredByName}</small>
                         </div>
                         <div>
-                          <span>Estado</span>
-                          <strong>{entry.inventoryStatus === 'confirmado' ? 'Alistado' : 'Reservado'}</strong>
+                          <span>Cantidad</span>
+                          <strong className={entry.deltaUnits < 0 ? 'is-negative' : 'is-positive'}>
+                            {entry.deltaUnits > 0 ? `+${entry.deltaUnits}` : entry.deltaUnits}
+                          </strong>
                         </div>
-                        <b>{entry.quantity} u.</b>
+                        <div>
+                          <span>{entry.beforeAfterLabel}</span>
+                          <strong>{entry.beforeStock} {'->'} {entry.afterStock}</strong>
+                        </div>
+                        <p>{entry.observation}</p>
                       </article>
                     ))}
                   </div>
                 ) : (
-                  <p className="inventory-usage-empty">Este producto no está comprometido en contratos u órdenes activas.</p>
+                  <p className="inventory-stock-trace-empty">
+                    No hay movimientos historicos registrados para este item. Si el stock fisico ya aparece en {detailStockExplanation.total}, el cambio pudo haberse hecho antes de que la bitacora/movimientos empezaran a registrar ese dato.
+                  </p>
+                )}
+              </section>
+            ) : null}
+            {Array.isArray(detailRow.usage) ? (
+              <section className="inventory-usage-section inventory-usage-pro">
+                <div className="inventory-usage-head">
+                  <div>
+                    <span className="inventory-detail-kicker">Ubicacion del inventario</span>
+                    <h4>Agenda de contratos y retornos</h4>
+                  </div>
+                  <strong>{detailUsageSummary.totalCommitted} unidades comprometidas</strong>
+                </div>
+                {detailUsageRows.length > 0 ? (
+                  <>
+                    <div className="inventory-usage-kpis">
+                      <div>
+                        <span>Contratos / ordenes</span>
+                        <strong>{detailUsageSummary.orderCount}</strong>
+                      </div>
+                      <div>
+                        <span>Clientes involucrados</span>
+                        <strong>{detailUsageSummary.clientCount}</strong>
+                      </div>
+                      <div>
+                        <span>Proximo retorno</span>
+                        <strong>{detailUsageSummary.nextReturn ? detailUsageSummary.nextReturn.pickupLabel : 'Sin retorno'}</strong>
+                        {detailUsageSummary.nextReturn ? <small>{detailUsageSummary.nextReturn.customerName}</small> : null}
+                      </div>
+                      <div className={detailUsageSummary.overdueQty > 0 ? 'is-alert' : ''}>
+                        <span>Atrasado</span>
+                        <strong>{detailUsageSummary.overdueQty} u.</strong>
+                      </div>
+                    </div>
+
+                    <div className="inventory-usage-panorama">
+                      <div className="inventory-usage-panorama-head">
+                        <div>
+                          <span>Panorama operativo</span>
+                          <strong>Ordenado por fecha de retorno</strong>
+                        </div>
+                        <small>La barra muestra el peso de unidades comprometidas por contrato.</small>
+                      </div>
+                      <div className="inventory-usage-timeline">
+                        {detailUsageRows.map((entry) => (
+                          <article className={`inventory-usage-timeline-row tone-${entry.statusMeta.tone}`} key={`${entry.rentalId}-${entry.orderCode}-timeline`}>
+                            <div className="inventory-usage-timeline-date">
+                              <strong>{entry.pickupLabel}</strong>
+                              <span>{entry.statusMeta.returnText}</span>
+                            </div>
+                            <div className="inventory-usage-timeline-track">
+                              <i style={{ width: `${Math.max(12, Math.min(100, (Number(entry.quantity ?? 0) / detailUsageSummary.maxQuantity) * 100))}%` }} />
+                            </div>
+                            <div className="inventory-usage-timeline-meta">
+                              <strong>{entry.orderCode}</strong>
+                              <span>{entry.quantity} u.</span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="inventory-usage-card-grid">
+                    {detailUsageRows.map((entry) => (
+                        <article className={`inventory-usage-card tone-${entry.statusMeta.tone}`} key={`${entry.rentalId}-${entry.orderCode}`}>
+                          <header>
+                            <div>
+                              <strong>{entry.orderCode}</strong>
+                              <span>Contrato {entry.contractCode}</span>
+                            </div>
+                            <b>{entry.quantity} u.</b>
+                          </header>
+                          <div className="inventory-usage-client">
+                            <span>Cliente</span>
+                            <strong>{entry.customerName}</strong>
+                            {entry.eventType ? <small>{entry.eventType}</small> : null}
+                          </div>
+                          <div className="inventory-usage-dates">
+                            <div>
+                              <span>Sale / entrega</span>
+                              <strong>{entry.deliveryLabel}</strong>
+                              <small>{entry.deliveryWindowLabel}</small>
+                            </div>
+                            <div>
+                              <span>Debe volver</span>
+                              <strong>{entry.pickupLabel}</strong>
+                              <small>{entry.pickupWindowLabel}</small>
+                            </div>
+                          </div>
+                          <div className="inventory-usage-card-foot">
+                            <span className={`inventory-usage-status tone-${entry.statusMeta.tone}`}>{entry.statusMeta.label}</span>
+                            <strong>{entry.statusMeta.returnText}</strong>
+                          </div>
+                          {entry.address || entry.city ? (
+                            <p className="inventory-usage-location">{[entry.address, entry.city].filter(Boolean).join(' - ')}</p>
+                          ) : null}
+                          {entry.inventoryNote ? <p className="inventory-usage-note">{entry.inventoryNote}</p> : null}
+                        </article>
+                    ))}
+                  </div>
+                  </>
+                ) : (
+                  <div className="inventory-usage-empty">
+                    <strong>Disponible sin compromisos activos</strong>
+                    <span>Este producto no aparece reservado, alistado ni pendiente de retorno en contratos u ordenes activas.</span>
+                  </div>
                 )}
               </section>
             ) : null}

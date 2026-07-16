@@ -15017,7 +15017,12 @@ textarea:focus {
   width: min(720px, 100%);
 }
 
-.inventory-detail-modal,
+.inventory-detail-modal {
+  width: min(1080px, 100%);
+  max-height: 86vh;
+  overflow: auto;
+}
+
 .inventory-valuation-modal {
   width: min(860px, 100%);
   max-height: 86vh;
@@ -15177,6 +15182,138 @@ textarea:focus {
 .inventory-detail-money strong {
   color: #a43b00;
   font-size: 0.95rem;
+}
+
+.inventory-stock-explain {
+  display: grid;
+  gap: 0.72rem;
+  margin-top: 0.72rem;
+  padding: 0.85rem;
+  border: 1px solid #e0e7f2;
+  border-radius: 0.8rem;
+  background: #fbfcff;
+}
+
+.inventory-stock-explain-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inventory-stock-explain-head h4 {
+  margin: 0.1rem 0 0;
+  color: #17213d;
+  font-size: 1rem;
+}
+
+.inventory-stock-explain-head > strong {
+  color: #17845b;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.inventory-stock-explain-head > strong.is-alert {
+  color: #c93621;
+}
+
+.inventory-stock-equation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.48rem;
+  align-items: center;
+}
+
+.inventory-stock-equation > div {
+  min-height: 4rem;
+  display: grid;
+  align-content: center;
+  gap: 0.12rem;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid #e4eaf5;
+  border-radius: 0.68rem;
+  background: #fff;
+}
+
+.inventory-stock-equation > div.is-zero {
+  border-color: #ffd6c5;
+  background: #fff7f2;
+}
+
+.inventory-stock-equation span,
+.inventory-stock-trace-list span,
+.inventory-stock-trace-list small {
+  display: block;
+  color: #74809a;
+  font-size: 0.68rem;
+  font-weight: 760;
+}
+
+.inventory-stock-equation strong {
+  color: #142152;
+  font-size: 1.18rem;
+  line-height: 1;
+}
+
+.inventory-stock-equation b {
+  color: #9aa4b8;
+  font-size: 1.05rem;
+}
+
+.inventory-stock-trace-list {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.inventory-stock-trace-list article {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(160px, 1fr) 86px 112px;
+  gap: 0.62rem;
+  align-items: center;
+  padding: 0.64rem 0.72rem;
+  border: 1px solid #e5eaf5;
+  border-left: 4px solid #e84a00;
+  border-radius: 0.68rem;
+  background: #fff;
+}
+
+.inventory-stock-trace-list article > div {
+  min-width: 0;
+}
+
+.inventory-stock-trace-list strong {
+  display: block;
+  color: #172452;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.inventory-stock-trace-list strong.is-negative {
+  color: #c93621;
+}
+
+.inventory-stock-trace-list strong.is-positive {
+  color: #17845b;
+}
+
+.inventory-stock-trace-list p {
+  grid-column: 1 / -1;
+  margin: -0.12rem 0 0;
+  color: #596681;
+  font-size: 0.72rem;
+  font-weight: 740;
+}
+
+.inventory-stock-trace-empty {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px dashed #d9e0ec;
+  border-radius: 0.64rem;
+  color: #6b7790;
+  background: #fff;
+  font-size: 0.76rem;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .inventory-modal-grid {
@@ -18752,6 +18889,67 @@ textarea:focus {
   min-width: 860px;
 }
 
+.reports-audit-search {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  gap: 0.62rem;
+  align-items: end;
+  margin: 0.45rem 0 0.68rem;
+}
+
+.reports-audit-search label {
+  display: grid;
+  gap: 0.28rem;
+  color: #607094;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.reports-audit-search input {
+  min-height: 2.55rem;
+  border: 1px solid #dfe5f3;
+  border-radius: 0.7rem;
+  padding: 0 0.82rem;
+  color: #172653;
+  background: #fbfcff;
+  font-size: 0.86rem;
+  font-weight: 750;
+  outline: none;
+}
+
+.reports-audit-search input:focus {
+  border-color: #f06418;
+  box-shadow: 0 0 0 3px rgba(240, 100, 24, 0.12);
+}
+
+.reports-audit-search > div {
+  min-width: 8.2rem;
+  min-height: 2.55rem;
+  display: grid;
+  align-content: center;
+  padding: 0.42rem 0.72rem;
+  border: 1px solid #e5eaf5;
+  border-radius: 0.7rem;
+  background: #fff;
+}
+
+.reports-audit-search > div strong {
+  color: #15265a;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.reports-audit-search > div span {
+  color: #717da1;
+  font-size: 0.66rem;
+  font-weight: 760;
+}
+
+.reports-audit-search .link-button {
+  min-height: 2.55rem;
+  align-self: end;
+}
+
 .reports-audit-user,
 .reports-audit-detail {
   display: grid;
@@ -18768,6 +18966,27 @@ textarea:focus {
 .reports-audit-detail span {
   color: #69749b;
   font-size: 0.72rem;
+}
+
+.reports-audit-detail ul {
+  display: grid;
+  gap: 0.18rem;
+  margin: 0.32rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reports-audit-detail li {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.18rem 0.42rem;
+  border: 1px solid #e5eaf5;
+  border-radius: 0.44rem;
+  color: #344365;
+  background: #f8faff;
+  font-size: 0.69rem;
+  font-weight: 760;
+  line-height: 1.25;
 }
 
 .reports-audit-chip {
@@ -18833,6 +19052,16 @@ textarea:focus {
 .reports-row-icon.violet { color: #6f61e6; background: #ece8ff; border-color: #dbd4ff; }
 .reports-row-icon.amber { color: #c0802a; background: #fbf2de; border-color: #f0dbb0; }
 .reports-row-icon.green { color: #2f9568; background: #e8f7ef; border-color: #d4eddc; }
+
+@media (max-width: 760px) {
+  .reports-audit-search {
+    grid-template-columns: 1fr;
+  }
+
+  .reports-audit-search .link-button {
+    justify-self: start;
+  }
+}
 
 .reports-recent-name-wrap {
   min-width: 0;
@@ -45600,11 +45829,15 @@ button.calendar-dispatch-row:focus-visible {
 
 .inventory-usage-section {
   display: grid;
-  gap: 0.7rem;
-  padding: 0.85rem;
+  gap: 0.82rem;
+  padding: 0.9rem;
   border: 1px solid #dfe5ee;
   border-radius: 0.8rem;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #fbfcff 0%, #f7f9fd 100%);
+}
+
+.inventory-usage-pro {
+  margin-top: 0.75rem;
 }
 
 .inventory-usage-head {
@@ -45625,61 +45858,326 @@ button.calendar-dispatch-row:focus-visible {
   font-size: 0.82rem;
 }
 
+.inventory-usage-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.inventory-usage-kpis > div {
+  display: grid;
+  gap: 0.14rem;
+  min-height: 4.4rem;
+  align-content: center;
+  padding: 0.68rem 0.72rem;
+  border: 1px solid #e0e7f4;
+  border-radius: 0.7rem;
+  background: #fff;
+}
+
+.inventory-usage-kpis > div.is-alert {
+  border-color: #ffd2c2;
+  background: #fff7f2;
+}
+
+.inventory-usage-kpis span,
+.inventory-usage-kpis small,
+.inventory-usage-panorama-head span,
+.inventory-usage-card span,
+.inventory-usage-card small {
+  display: block;
+  color: #758096;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.inventory-usage-kpis strong {
+  display: block;
+  color: #17213d;
+  font-size: 1.02rem;
+  line-height: 1.2;
+}
+
+.inventory-usage-kpis small {
+  margin-top: 0.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-usage-panorama {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid #e0e6f0;
+  border-radius: 0.72rem;
+  background: #fff;
+}
+
+.inventory-usage-panorama-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inventory-usage-panorama-head strong {
+  display: block;
+  margin-top: 0.08rem;
+  color: #25304a;
+  font-size: 0.86rem;
+}
+
+.inventory-usage-panorama-head small {
+  color: #79849b;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.inventory-usage-timeline {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.inventory-usage-timeline-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(180px, 1fr) minmax(110px, 0.48fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.58rem 0.66rem;
+  border: 1px solid #edf1f7;
+  border-radius: 0.62rem;
+  background: #f9fbff;
+}
+
+.inventory-usage-timeline-date strong,
+.inventory-usage-timeline-meta strong {
+  display: block;
+  color: #15234f;
+  font-size: 0.78rem;
+}
+
+.inventory-usage-timeline-date span,
+.inventory-usage-timeline-meta span {
+  display: block;
+  margin-top: 0.1rem;
+  color: #6f7b92;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.inventory-usage-timeline-track {
+  height: 0.56rem;
+  border-radius: 999px;
+  background: #e8eef7;
+  overflow: hidden;
+}
+
+.inventory-usage-timeline-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1d4f91;
+}
+
+.inventory-usage-timeline-row.tone-warning .inventory-usage-timeline-track i,
+.inventory-usage-timeline-row.tone-planned .inventory-usage-timeline-track i {
+  background: #e84a00;
+}
+
+.inventory-usage-timeline-row.tone-danger .inventory-usage-timeline-track i {
+  background: #c93621;
+}
+
+.inventory-usage-timeline-row.tone-info .inventory-usage-timeline-track i {
+  background: #2577c7;
+}
+
+.inventory-usage-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.58rem;
+}
+
+.inventory-usage-card {
+  display: grid;
+  gap: 0.58rem;
+  padding: 0.78rem;
+  border: 1px solid #e1e8f4;
+  border-left: 4px solid #7d8aa3;
+  border-radius: 0.72rem;
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(25, 36, 82, 0.05);
+}
+
+.inventory-usage-card.tone-danger {
+  border-left-color: #c93621;
+}
+
+.inventory-usage-card.tone-warning,
+.inventory-usage-card.tone-planned {
+  border-left-color: #e84a00;
+}
+
+.inventory-usage-card.tone-info {
+  border-left-color: #2577c7;
+}
+
+.inventory-usage-card header,
+.inventory-usage-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.inventory-usage-card header strong,
+.inventory-usage-client strong,
+.inventory-usage-dates strong {
+  display: block;
+  color: #142152;
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.inventory-usage-card header b {
+  color: #e84a00;
+  font-size: 0.98rem;
+  white-space: nowrap;
+}
+
+.inventory-usage-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.inventory-usage-dates > div {
+  padding: 0.58rem;
+  border: 1px solid #edf1f8;
+  border-radius: 0.58rem;
+  background: #fbfcff;
+}
+
+.inventory-usage-status {
+  width: fit-content;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid #dfe6f1;
+  border-radius: 999px;
+  background: #f7f9fc;
+  color: #34405d;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.inventory-usage-status.tone-danger {
+  border-color: #ffcfc8;
+  background: #fff1ef;
+  color: #a92313;
+}
+
+.inventory-usage-status.tone-warning,
+.inventory-usage-status.tone-planned {
+  border-color: #ffd9b8;
+  background: #fff7ed;
+  color: #b54800;
+}
+
+.inventory-usage-status.tone-info {
+  border-color: #cfe5ff;
+  background: #f0f7ff;
+  color: #1f5c9e;
+}
+
+.inventory-usage-card-foot > strong {
+  color: #e84a00;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.inventory-usage-location,
+.inventory-usage-note {
+  margin: 0;
+  padding: 0.52rem 0.6rem;
+  border-radius: 0.54rem;
+  color: #51607b;
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.inventory-usage-location {
+  background: #f3f7fb;
+}
+
+.inventory-usage-note {
+  background: #fff7ed;
+  color: #8a3a00;
+}
+
 .inventory-usage-list {
   display: grid;
   gap: 0.45rem;
 }
 
-.inventory-usage-list article {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.3fr) minmax(150px, 1fr) minmax(90px, 0.6fr) auto;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid #e2e7ef;
-  border-radius: 0.65rem;
-  background: #fff;
-}
-
-.inventory-usage-list article div,
-.inventory-usage-list article span,
-.inventory-usage-list article strong {
-  display: block;
-}
-
-.inventory-usage-list article span {
-  color: #758096;
-  font-size: 0.7rem;
-}
-
-.inventory-usage-list article strong {
-  color: #25304a;
-  font-size: 0.78rem;
-}
-
-.inventory-usage-list article > b {
-  color: #e84a00;
-  font-size: 0.9rem;
-  white-space: nowrap;
-}
-
 .inventory-usage-empty {
+  display: grid;
+  gap: 0.22rem;
   margin: 0;
-  padding: 0.8rem;
+  padding: 1rem;
   border: 1px dashed #d8dee8;
   border-radius: 0.6rem;
   color: #6d7890;
   text-align: center;
+  background: #fff;
+}
+
+.inventory-usage-empty strong {
+  color: #17213d;
+  font-size: 0.9rem;
+}
+
+.inventory-usage-empty span {
+  color: #6d7890;
+  font-size: 0.74rem;
+  font-weight: 750;
 }
 
 @media (max-width: 760px) {
+  .inventory-stock-explain-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .inventory-stock-equation,
+  .inventory-stock-trace-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-stock-equation b {
+    display: none;
+  }
+
   .inventory-usage-head {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .inventory-usage-list article {
-    grid-template-columns: 1fr auto;
+  .inventory-usage-kpis,
+  .inventory-usage-card-grid,
+  .inventory-usage-dates {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-usage-panorama-head,
+  .inventory-usage-timeline-row {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-usage-card-foot {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

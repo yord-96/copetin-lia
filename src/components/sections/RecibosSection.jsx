@@ -20,6 +20,23 @@ const CATEGORY_OPTIONS = [
 
 const FORMAT_OPTIONS = ['PDF', 'Excel'];
 
+const normalizeAuditSearchText = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .toLowerCase()
+    .trim();
+
+const getAuditActionLabel = (action) => {
+  if (action === 'create') return 'Creo';
+  if (action === 'update') return 'Edito';
+  if (action === 'delete') return 'Elimino';
+  if (action === 'hide') return 'Oculto';
+  if (action === 'restore') return 'Restauro';
+  return 'Registro';
+};
+
 const REPORT_TEMPLATES = [
   { id: 'ventas', title: 'Ventas y Facturacion', description: 'Analisis de ventas, facturacion y cobranzas por periodo.', icon: 'money', category: 'Ventas', tone: 'lilac' },
   { id: 'inventario', title: 'Inventario', description: 'Movimientos, valuacion y stock por producto.', icon: 'box', category: 'Inventario', tone: 'mint' },
@@ -118,6 +135,7 @@ function RecibosSection({
   const [periodFilter, setPeriodFilter] = useState(PERIOD_OPTIONS[0]);
   const [categoryFilter, setCategoryFilter] = useState(CATEGORY_OPTIONS[0]);
   const [formatFilter, setFormatFilter] = useState(FORMAT_OPTIONS[0]);
+  const [auditQuery, setAuditQuery] = useState('');
 
   const salesTotal = useMemo(
     () => receipts
@@ -177,8 +195,8 @@ function RecibosSection({
     [categoryFilter, formatFilter, recentReports],
   );
 
-  const recentAuditLog = useMemo(
-    () => auditLog.slice(0, 80).map((entry) => ({
+  const auditRows = useMemo(
+    () => auditLog.map((entry) => ({
       id: entry.id,
       action: String(entry.action ?? 'update').trim(),
       module: entry.module || 'Sistema',
@@ -186,19 +204,38 @@ function RecibosSection({
       userRole: entry.userRole || '',
       title: entry.title || 'Actividad registrada',
       detail: entry.detail || (Array.isArray(entry.changes) ? entry.changes[0] : '') || '-',
+      changes: Array.isArray(entry.changes) ? entry.changes.map((change) => String(change ?? '').trim()).filter(Boolean) : [],
+      entityCode: entry.entityCode || '',
+      entityId: entry.entityId || '',
       createdAt: formatDateTime(entry.createdAt),
+      rawCreatedAt: entry.createdAt,
     })),
     [auditLog, formatDateTime],
   );
 
-  const getAuditActionLabel = (action) => {
-    if (action === 'create') return 'Creo';
-    if (action === 'update') return 'Edito';
-    if (action === 'delete') return 'Elimino';
-    if (action === 'hide') return 'Oculto';
-    if (action === 'restore') return 'Restauro';
-    return 'Registro';
-  };
+  const filteredAuditLog = useMemo(() => {
+    const tokens = normalizeAuditSearchText(auditQuery).split(' ').filter(Boolean);
+    const source = auditRows.slice().sort((a, b) => new Date(b.rawCreatedAt) - new Date(a.rawCreatedAt));
+    if (tokens.length === 0) return source.slice(0, 80);
+
+    return source
+      .filter((entry) => {
+        const haystack = normalizeAuditSearchText([
+          entry.createdAt,
+          entry.userName,
+          entry.userRole,
+          getAuditActionLabel(entry.action),
+          entry.module,
+          entry.title,
+          entry.detail,
+          entry.entityCode,
+          entry.entityId,
+          ...entry.changes,
+        ].join(' '));
+        return tokens.every((token) => haystack.includes(token));
+      })
+      .slice(0, 120);
+  }, [auditQuery, auditRows]);
 
   const kpiCards = [
     { tone: 'lilac', icon: 'money', value: formatBs(salesTotal), label: 'Ventas del mes', trend: `+ ${pendingReceipts} saldos pendientes`, trendTone: 'up' },
@@ -322,6 +359,27 @@ function RecibosSection({
           </div>
         </header>
 
+        <div className="reports-audit-search">
+          <label>
+            Buscar en bitacora
+            <input
+              type="search"
+              value={auditQuery}
+              onChange={(event) => setAuditQuery(event.target.value)}
+              placeholder="Producto, contrato, usuario, modulo o detalle..."
+            />
+          </label>
+          <div>
+            <strong>{filteredAuditLog.length}</strong>
+            <span>{auditQuery.trim() ? 'resultado(s)' : 'ultimos registros'}</span>
+          </div>
+          {auditQuery.trim() ? (
+            <button type="button" className="link-button" onClick={() => setAuditQuery('')}>
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+
         <div className="reports-recent-table-wrap">
           <table className="reports-recent-table reports-audit-table">
             <thead>
@@ -334,14 +392,18 @@ function RecibosSection({
               </tr>
             </thead>
             <tbody>
-              {recentAuditLog.length === 0 ? (
+              {filteredAuditLog.length === 0 ? (
                 <tr>
                   <td colSpan={5}>
-                    <p className="status">Todavia no hay movimientos registrados en la bitacora.</p>
+                    <p className="status">
+                      {auditQuery.trim()
+                        ? 'No hay registros que coincidan con la busqueda.'
+                        : 'Todavia no hay movimientos registrados en la bitacora.'}
+                    </p>
                   </td>
                 </tr>
               ) : (
-                recentAuditLog.map((entry) => (
+                filteredAuditLog.map((entry) => (
                   <tr key={entry.id}>
                     <td>{entry.createdAt}</td>
                     <td>
@@ -360,6 +422,14 @@ function RecibosSection({
                       <div className="reports-audit-detail">
                         <strong>{entry.title}</strong>
                         <span>{entry.detail}</span>
+                        {entry.changes.length > 0 ? (
+                          <ul>
+                            {entry.changes.slice(0, 8).map((change, index) => (
+                              <li key={`${entry.id}-change-${index}`}>{change}</li>
+                            ))}
+                            {entry.changes.length > 8 ? <li>+ {entry.changes.length - 8} cambio(s) mas</li> : null}
+                          </ul>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

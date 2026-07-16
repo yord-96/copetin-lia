@@ -9996,10 +9996,21 @@ const createWebBridge = () => ({
         const changes = [];
         if (beforeItem.name !== item.name) changes.push(`Nombre: ${beforeItem.name || '-'} -> ${item.name || '-'}`);
         if (beforeItem.category !== item.category) changes.push(`Categoria: ${beforeItem.category || '-'} -> ${item.category || '-'}`);
-        if (Number(beforeItem.totalStock ?? 0) !== Number(item.totalStock ?? 0)) changes.push(`Stock total: ${beforeItem.totalStock ?? 0} -> ${item.totalStock ?? 0}`);
+        if (String(beforeItem.brand ?? '') !== String(item.brand ?? '')) changes.push(`Marca: ${beforeItem.brand || '-'} -> ${item.brand || '-'}`);
+        if (String(beforeItem.itemColor ?? '') !== String(item.itemColor ?? '')) changes.push(`Color / descripcion: ${beforeItem.itemColor || '-'} -> ${item.itemColor || '-'}`);
+        if (String(beforeItem.sku ?? '') !== String(item.sku ?? '')) changes.push(`Codigo: ${beforeItem.sku || '-'} -> ${item.sku || '-'}`);
+        if (String(beforeItem.inventoryArea ?? '') !== String(item.inventoryArea ?? '')) changes.push(`Area: ${beforeItem.inventoryArea || '-'} -> ${item.inventoryArea || '-'}`);
+        if (Number(beforeItem.totalStock ?? 0) !== Number(item.totalStock ?? 0)) changes.push(`Stock fisico: ${beforeItem.totalStock ?? 0} -> ${item.totalStock ?? 0}`);
+        if (Number(beforeItem.availableStock ?? 0) !== Number(item.availableStock ?? 0)) changes.push(`Stock disponible: ${beforeItem.availableStock ?? 0} -> ${item.availableStock ?? 0}`);
         if (Number(beforeItem.rentalPriceBs ?? 0) !== Number(item.rentalPriceBs ?? 0)) changes.push(`Precio alquiler: ${formatBs(beforeItem.rentalPriceBs ?? 0)} -> ${formatBs(item.rentalPriceBs ?? 0)}`);
+        if (Number(beforeItem.damagedUnitChargeBs ?? 0) !== Number(item.damagedUnitChargeBs ?? 0)) changes.push(`Cargo dano: ${formatBs(beforeItem.damagedUnitChargeBs ?? 0)} -> ${formatBs(item.damagedUnitChargeBs ?? 0)}`);
+        if (Number(beforeItem.missingUnitChargeBs ?? 0) !== Number(item.missingUnitChargeBs ?? 0)) changes.push(`Cargo perdida: ${formatBs(beforeItem.missingUnitChargeBs ?? 0)} -> ${formatBs(item.missingUnitChargeBs ?? 0)}`);
+        if (Boolean(beforeItem.needsCleaningOnReturn) !== Boolean(item.needsCleaningOnReturn)) changes.push(`Limpieza al retorno: ${beforeItem.needsCleaningOnReturn ? 'Si' : 'No'} -> ${item.needsCleaningOnReturn ? 'Si' : 'No'}`);
         if (Boolean(beforeItem.controlsStock) !== Boolean(item.controlsStock)) changes.push(`Control de stock: ${beforeItem.controlsStock ? 'Activo' : 'Pendiente'} -> ${item.controlsStock ? 'Activo' : 'Pendiente'}`);
         if (String(beforeItem.verificationStatus ?? '') !== String(item.verificationStatus ?? '')) changes.push(`Validacion: ${beforeItem.verificationStatus || '-'} -> ${item.verificationStatus || '-'}`);
+        if (String(beforeItem.adoptionSource ?? '') !== String(item.adoptionSource ?? '')) changes.push(`Origen/adopcion: ${beforeItem.adoptionSource || '-'} -> ${item.adoptionSource || '-'}`);
+        if (String(beforeItem.imageUrl ?? '') !== String(item.imageUrl ?? '')) changes.push('Cambio imagen del producto');
+        if (String(beforeItem.imageDataUrl ?? '') !== String(item.imageDataUrl ?? '')) changes.push('Cambio imagen cargada del producto');
         if (changes.length > 0) {
           appendAuditLog(state, {
             action: 'update',
@@ -10071,6 +10082,16 @@ const createWebBridge = () => ({
           entityCode: item.sku,
           title: `Elimino producto ${item.name}`,
           detail: `${item.category} | Stock ${item.totalStock}`,
+          changes: [
+            `Producto eliminado: ${item.name}`,
+            `Categoria: ${item.category || '-'}`,
+            `Marca: ${item.brand || '-'}`,
+            `Color / descripcion: ${item.itemColor || '-'}`,
+            `Codigo: ${item.sku || '-'}`,
+            `Stock fisico antes de eliminar: ${item.totalStock ?? 0}`,
+            `Stock disponible antes de eliminar: ${item.availableStock ?? 0}`,
+            `Precio alquiler: ${formatBs(item.rentalPriceBs ?? 0)}`,
+          ],
           userName: getAuditUserName(payload),
           userRole: getAuditUserRole(payload),
           createdAt: item.deletedAt,
@@ -12308,7 +12329,37 @@ const createWebBridge = () => ({
             };
           });
       });
-      return [...storedLog, ...revisionLog]
+      const movementLog = (Array.isArray(state.inventoryMovements) ? state.inventoryMovements : []).map((movement) => {
+        const type = String(movement?.type ?? '').trim();
+        const action = type === 'entrada' ? 'create' : type === 'ajuste' ? 'update' : 'hide';
+        const beforeTotal = movement?.beforeTotalStock;
+        const afterTotal = movement?.afterTotalStock;
+        const beforeAvailable = movement?.beforeAvailableStock;
+        const afterAvailable = movement?.afterAvailableStock;
+        const changes = [
+          `Cantidad: ${Number(movement?.deltaUnits ?? 0)}`,
+          beforeTotal !== undefined || afterTotal !== undefined ? `Stock fisico: ${beforeTotal ?? '-'} -> ${afterTotal ?? '-'}` : '',
+          beforeAvailable !== undefined || afterAvailable !== undefined ? `Disponible: ${beforeAvailable ?? '-'} -> ${afterAvailable ?? '-'}` : '',
+          movement?.reference ? `Referencia: ${movement.reference}` : '',
+          movement?.reason || movement?.detail || '',
+        ].filter(Boolean);
+        return {
+          id: `audit-movement-${movement.id ?? movement.createdAt}`,
+          action,
+          module: 'Inventario',
+          entityType: 'inventoryMovement',
+          entityId: movement.itemId ?? null,
+          entityCode: movement.reference ?? movement.itemId ?? '',
+          title: `${type === 'reserva' ? 'Reservo' : type === 'entrada' ? 'Ingreso' : type === 'ajuste' ? 'Ajusto' : 'Movio'} producto ${movement.itemName ?? 'item'}`,
+          detail: [movement.category, movement.reason || movement.detail].filter(Boolean).join(' | '),
+          changes,
+          userId: movement.userId ?? null,
+          userName: movement.userName ?? movement.createdByName ?? 'Sistema',
+          userRole: movement.userRole ?? movement.createdByRole ?? 'Inventario',
+          createdAt: movement.createdAt ?? new Date().toISOString(),
+        };
+      });
+      return [...storedLog, ...revisionLog, ...movementLog]
         .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 500);
