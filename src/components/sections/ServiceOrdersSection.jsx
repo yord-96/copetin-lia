@@ -591,8 +591,8 @@ const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null) => {
   const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
   const lineDate = getDateKey(line?.serviceDate ?? line?.date);
   const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
-  return scheduleDays.find((day) => String(day?.id ?? '') === lineDayId)
-    ?? (lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) : null)
+  return (lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) : null)
+    ?? scheduleDays.find((day) => String(day?.id ?? '') === lineDayId)
     ?? (lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) : null)
     ?? fallbackDay
     ?? scheduleDays[0]
@@ -2791,7 +2791,7 @@ function ServiceOrdersSection({
         const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
         const lineDiscountBs = Number((lineGrossTotalBs * (discountPercent / 100)).toFixed(2));
         const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
-        const serviceDay = draftScheduleDays.find((day) => day.id === line.serviceDayId) ?? draftScheduleDays[0] ?? null;
+        const serviceDay = findScheduleDayForLine(line, draftScheduleDays, draftScheduleDays[0] ?? null);
         return {
           ...line,
           lineKey,
@@ -2802,7 +2802,7 @@ function ServiceOrdersSection({
           item,
           availability,
           discountPercent,
-          serviceDayId: line.serviceDayId ?? serviceDay?.id ?? '',
+          serviceDayId: serviceDay?.id ?? line.serviceDayId ?? '',
           serviceDate: serviceDay?.date ?? line.serviceDate ?? '',
           serviceDayLabel: serviceDay?.label ?? line.serviceDayLabel ?? '',
           grossLineTotalBs: lineGrossTotalBs,
@@ -2824,7 +2824,7 @@ function ServiceOrdersSection({
           ? draft.scheduleDays
           : buildScheduleDaysFromRange(draft.deliveryDate || draft.eventDate, draft.pickupDate || draft.eventDate)
         ).map((day, dayIndex) => normalizeScheduleDay(day, dayIndex, draft.deliveryDate || draft.eventDate));
-        const serviceDay = draftScheduleDays.find((day) => day.id === service.serviceDayId) ?? draftScheduleDays[0] ?? null;
+        const serviceDay = findScheduleDayForLine(service, draftScheduleDays, draftScheduleDays[0] ?? null);
         return {
           ...service,
           id: service?.id ?? `service-${index}`,
@@ -2832,7 +2832,7 @@ function ServiceOrdersSection({
           detail: String(service?.detail ?? '').trim(),
           quantity,
           unitPriceBs,
-          serviceDayId: service.serviceDayId ?? serviceDay?.id ?? '',
+          serviceDayId: serviceDay?.id ?? service.serviceDayId ?? '',
           serviceDate: serviceDay?.date ?? service.serviceDate ?? '',
           serviceDayLabel: serviceDay?.label ?? service.serviceDayLabel ?? '',
           lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
@@ -2918,7 +2918,8 @@ function ServiceOrdersSection({
         if (isDetachedFromInventory(line)) return;
         const itemId = String(line.itemId ?? '').trim();
         if (!itemId) return;
-        const dayId = String(line.serviceDayId ?? normalizedScheduleDays[0]?.id ?? 'default');
+        const day = findScheduleDayForLine(line, normalizedScheduleDays, normalizedScheduleDays[0] ?? null);
+        const dayId = String(day?.id ?? normalizedScheduleDays[0]?.id ?? 'default');
         const byDay = demandByItemAndDay.get(itemId) ?? new Map();
         byDay.set(dayId, (byDay.get(dayId) ?? 0) + Math.max(0, Number(line.quantity ?? 0)));
         demandByItemAndDay.set(itemId, byDay);
@@ -2946,7 +2947,8 @@ function ServiceOrdersSection({
         if (!itemId) return;
         const quantity = Math.max(0, Math.trunc(Number(line.originalQuantity ?? 0)));
         if (quantity <= 0) return;
-        const dayId = String(line.serviceDayId ?? normalizedScheduleDays[0]?.id ?? 'default');
+        const day = findScheduleDayForLine(line, normalizedScheduleDays, normalizedScheduleDays[0] ?? null);
+        const dayId = String(day?.id ?? normalizedScheduleDays[0]?.id ?? 'default');
         const byDay = demandByItemAndDay.get(itemId) ?? new Map();
         byDay.set(dayId, (byDay.get(dayId) ?? 0) + quantity);
         demandByItemAndDay.set(itemId, byDay);
@@ -4737,14 +4739,30 @@ function ServiceOrdersSection({
       }));
       const validDayIds = new Set(mergedDays.map((day) => day.id));
       const fallbackDayId = mergedDays[0]?.id ?? '';
+      const resolveMergedDay = (line) => findScheduleDayForLine(line, mergedDays, mergedDays[0] ?? null);
       return {
         ...current,
         scheduleDays: mergedDays,
-        items: current.items.map((line) => (
-          validDayIds.has(line.serviceDayId)
-            ? line
-            : { ...line, serviceDayId: fallbackDayId }
-        )),
+        items: current.items.map((line) => {
+          const day = resolveMergedDay(line);
+          if (validDayIds.has(line.serviceDayId) && String(day?.id ?? '') === String(line.serviceDayId ?? '')) return line;
+          return {
+            ...line,
+            serviceDayId: day?.id ?? fallbackDayId,
+            serviceDate: day?.date ?? line.serviceDate ?? '',
+            serviceDayLabel: day?.label ?? line.serviceDayLabel ?? '',
+          };
+        }),
+        services: current.services.map((service) => {
+          const day = resolveMergedDay(service);
+          if (validDayIds.has(service.serviceDayId) && String(day?.id ?? '') === String(service.serviceDayId ?? '')) return service;
+          return {
+            ...service,
+            serviceDayId: day?.id ?? fallbackDayId,
+            serviceDate: day?.date ?? service.serviceDate ?? '',
+            serviceDayLabel: day?.label ?? service.serviceDayLabel ?? '',
+          };
+        }),
       };
     });
   };

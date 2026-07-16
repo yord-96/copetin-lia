@@ -7421,8 +7421,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         const lineDate = toDateKey(line.serviceDate ?? line.date);
         const lineLabel = normalizeText(line.serviceDayLabel ?? line.dayLabel);
         const foundIndex = scheduleDaysForDocument.findIndex((day) => (
-          String(day?.id ?? '') === lineDayId
-          || (lineDate && toDateKey(day?.date) === lineDate)
+          (lineDate && toDateKey(day?.date) === lineDate)
+          || String(day?.id ?? '') === lineDayId
           || (lineLabel && normalizeText(day?.label) === lineLabel)
         ));
         const group = foundIndex >= 0
