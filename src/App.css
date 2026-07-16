@@ -58922,3 +58922,117 @@ body:has(.accounting-bigcash-view) .workspace {
     text-align: left !important;
   }
 }
+.orders-daily-schedule-card {
+  border: 1px solid #d9e3ef;
+  background: #f8fbff;
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.orders-daily-schedule-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.orders-daily-schedule-card > header strong {
+  display: block;
+  color: #17324d;
+  font-size: 0.98rem;
+}
+
+.orders-daily-schedule-card > header span {
+  display: block;
+  color: #64748b;
+  font-size: 0.84rem;
+  margin-top: 3px;
+}
+
+.orders-daily-schedule-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.orders-daily-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.orders-daily-tabs button {
+  border: 1px solid #d7e2ef;
+  background: #fff;
+  color: #334155;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.orders-daily-tabs button.active {
+  border-color: #2f80ed;
+  background: #eef6ff;
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.12);
+}
+
+.orders-daily-tabs strong {
+  color: #17324d;
+  font-size: 0.92rem;
+}
+
+.orders-daily-tabs span,
+.orders-daily-tabs small {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.orders-daily-editor {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(140px, 0.7fr) minmax(180px, 1.4fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.orders-daily-editor label {
+  display: grid;
+  gap: 5px;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.orders-daily-editor input,
+.orders-line-day-select {
+  border: 1px solid #d7e2ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2937;
+  min-height: 34px;
+  padding: 7px 9px;
+}
+
+.orders-line-day-select {
+  width: auto;
+  min-width: 96px;
+  max-width: 140px;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 860px) {
+  .orders-daily-schedule-card > header,
+  .orders-daily-schedule-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .orders-daily-editor {
+    grid-template-columns: 1fr;
+  }
+}

@@ -546,13 +546,13 @@ const normalizeDurationTiers = (tiers = []) => {
 
 const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
   const safeBase = Math.max(0, Number(baseSubtotalBs ?? 0));
-  const safeMode = mode === 'duration' ? 'duration' : 'simple';
+  const safeMode = mode === 'daily_schedule' ? 'daily_schedule' : mode === 'duration' ? 'duration' : 'simple';
   const normalizedTiers = normalizeDurationTiers(tiers);
   const safeDays = safeMode === 'duration' ? parsePositiveInteger(days, 1) : 1;
 
   if (safeMode !== 'duration') {
     return {
-      mode: 'simple',
+      mode: safeMode,
       days: 1,
       tiers: normalizedTiers,
       baseSubtotalBs: Number(safeBase.toFixed(2)),
@@ -854,6 +854,12 @@ const buildEmptyDraft = (mode = 'quote') => {
   const now = new Date();
   const deliveryDate = getInputDate(now);
   const pickupDate = getInputDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+  const defaultScheduleDay = {
+    id: `day-${deliveryDate}`,
+    label: 'Dia 1',
+    date: deliveryDate,
+    note: '',
+  };
 
   return {
     mode,
@@ -905,6 +911,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     pricingMode: 'simple',
     pricingDays: '1',
     pricingTiers: DURATION_PRICING_DEFAULT_TIERS,
+    scheduleDays: [defaultScheduleDay],
     validUntil: pickupDate,
     observations: '',
     responsibleIds: [],
@@ -912,6 +919,33 @@ const buildEmptyDraft = (mode = 'quote') => {
     services: [],
     supplierFulfillmentPlan: [],
   };
+};
+
+const normalizeScheduleDay = (day, index = 0, fallbackDate = '') => {
+  const date = getDateKey(day?.date) || fallbackDate || getInputDate(new Date());
+  return {
+    id: String(day?.id ?? `day-${date || index + 1}`).trim() || `day-${index + 1}`,
+    label: String(day?.label ?? `Dia ${index + 1}`).trim() || `Dia ${index + 1}`,
+    date,
+    note: String(day?.note ?? '').trim(),
+  };
+};
+
+const buildScheduleDaysFromRange = (startDate, endDate) => {
+  const startKey = getDateKey(startDate) || getInputDate(new Date());
+  const endKey = getDateKey(endDate) || startKey;
+  const start = new Date(`${startKey}T12:00:00`);
+  const end = new Date(`${endKey}T12:00:00`);
+  const days = [];
+  const maxDays = 14;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return [normalizeScheduleDay({ id: `day-${startKey}`, label: 'Dia 1', date: startKey }, 0, startKey)];
+  }
+  for (let cursor = new Date(start); cursor <= end && days.length < maxDays; cursor.setDate(cursor.getDate() + 1)) {
+    const date = getInputDate(cursor);
+    days.push(normalizeScheduleDay({ id: `day-${date}`, label: `Dia ${days.length + 1}`, date }, days.length, date));
+  }
+  return days.length ? days : [normalizeScheduleDay({ id: `day-${startKey}`, label: 'Dia 1', date: startKey }, 0, startKey)];
 };
 
 const buildEmptyQuickItemDraft = () => ({
@@ -1198,6 +1232,7 @@ function ServiceOrdersSection({
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [activeScheduleDayId, setActiveScheduleDayId] = useState('');
   const [isWizardSummaryCollapsed, setIsWizardSummaryCollapsed] = useState(false);
   const [comboConfigurator, setComboConfigurator] = useState(null);
   const [itemObservationModal, setItemObservationModal] = useState(null);
@@ -2712,6 +2747,10 @@ function ServiceOrdersSection({
   );
 
   const selectedItems = useMemo(() => {
+    const draftScheduleDays = (Array.isArray(draft.scheduleDays) && draft.scheduleDays.length > 0
+      ? draft.scheduleDays
+      : buildScheduleDaysFromRange(draft.deliveryDate || draft.eventDate, draft.pickupDate || draft.eventDate)
+    ).map((day, index) => normalizeScheduleDay(day, index, draft.deliveryDate || draft.eventDate));
     return draft.items
       .map((line) => {
         const item = items.find((entry) => entry.id === line.itemId) ?? (line.quickItem
@@ -2740,6 +2779,7 @@ function ServiceOrdersSection({
         const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
         const lineDiscountBs = Number((lineGrossTotalBs * (discountPercent / 100)).toFixed(2));
         const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
+        const serviceDay = draftScheduleDays.find((day) => day.id === line.serviceDayId) ?? draftScheduleDays[0] ?? null;
         return {
           ...line,
           lineKey,
@@ -2750,13 +2790,16 @@ function ServiceOrdersSection({
           item,
           availability,
           discountPercent,
+          serviceDayId: line.serviceDayId ?? serviceDay?.id ?? '',
+          serviceDate: serviceDay?.date ?? line.serviceDate ?? '',
+          serviceDayLabel: serviceDay?.label ?? line.serviceDayLabel ?? '',
           grossLineTotalBs: lineGrossTotalBs,
           lineDiscountBs,
           lineTotalBs: isCourtesyLine ? 0 : Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
         };
       })
       .filter(Boolean);
-  }, [availabilityByItemId, draft.items, items]);
+  }, [availabilityByItemId, draft.deliveryDate, draft.eventDate, draft.items, draft.pickupDate, draft.scheduleDays, items]);
 
   const selectedServices = useMemo(
     () => (draft.services ?? [])
@@ -2765,6 +2808,11 @@ function ServiceOrdersSection({
         if (!name) return null;
         const quantity = Math.max(1, Math.trunc(Number(service?.quantity ?? 1)));
         const unitPriceBs = Math.max(0, Number(service?.unitPriceBs ?? 0));
+        const draftScheduleDays = (Array.isArray(draft.scheduleDays) && draft.scheduleDays.length > 0
+          ? draft.scheduleDays
+          : buildScheduleDaysFromRange(draft.deliveryDate || draft.eventDate, draft.pickupDate || draft.eventDate)
+        ).map((day, dayIndex) => normalizeScheduleDay(day, dayIndex, draft.deliveryDate || draft.eventDate));
+        const serviceDay = draftScheduleDays.find((day) => day.id === service.serviceDayId) ?? draftScheduleDays[0] ?? null;
         return {
           ...service,
           id: service?.id ?? `service-${index}`,
@@ -2772,23 +2820,79 @@ function ServiceOrdersSection({
           detail: String(service?.detail ?? '').trim(),
           quantity,
           unitPriceBs,
+          serviceDayId: service.serviceDayId ?? serviceDay?.id ?? '',
+          serviceDate: serviceDay?.date ?? service.serviceDate ?? '',
+          serviceDayLabel: serviceDay?.label ?? service.serviceDayLabel ?? '',
           lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
         };
       })
       .filter(Boolean),
-    [draft.services],
+    [draft.deliveryDate, draft.eventDate, draft.pickupDate, draft.scheduleDays, draft.services],
   );
+
+  const normalizedScheduleDays = useMemo(() => {
+    const source = Array.isArray(draft.scheduleDays) && draft.scheduleDays.length > 0
+      ? draft.scheduleDays
+      : buildScheduleDaysFromRange(draft.deliveryDate || draft.eventDate, draft.pickupDate || draft.eventDate);
+    return source.map((day, index) => normalizeScheduleDay(day, index, draft.deliveryDate || draft.eventDate));
+  }, [draft.deliveryDate, draft.eventDate, draft.pickupDate, draft.scheduleDays]);
+
+  const activeScheduleDay = useMemo(
+    () => normalizedScheduleDays.find((day) => day.id === activeScheduleDayId) ?? normalizedScheduleDays[0] ?? null,
+    [activeScheduleDayId, normalizedScheduleDays],
+  );
+
+  const isDailyScheduleMode = draft.pricingMode === 'daily_schedule';
+
+  const selectedItemsForActiveDay = useMemo(() => {
+    if (!isDailyScheduleMode || !activeScheduleDay) return selectedItems;
+    return selectedItems.filter((line) => String(line.serviceDayId ?? '') === String(activeScheduleDay.id));
+  }, [activeScheduleDay, isDailyScheduleMode, selectedItems]);
+
+  const selectedServicesForActiveDay = useMemo(() => {
+    if (!isDailyScheduleMode || !activeScheduleDay) return selectedServices;
+    return selectedServices.filter((service) => String(service.serviceDayId ?? '') === String(activeScheduleDay.id));
+  }, [activeScheduleDay, isDailyScheduleMode, selectedServices]);
+
+  const scheduleDayTotals = useMemo(() => {
+    const map = new Map(normalizedScheduleDays.map((day) => [day.id, {
+      ...day,
+      itemCount: 0,
+      totalBs: 0,
+    }]));
+    selectedItems.forEach((line) => {
+      const dayId = String(line.serviceDayId ?? normalizedScheduleDays[0]?.id ?? '');
+      const current = map.get(dayId);
+      if (!current) return;
+      current.itemCount += 1;
+      current.totalBs = Number((current.totalBs + Number(line.lineTotalBs ?? 0)).toFixed(2));
+    });
+    selectedServices.forEach((service) => {
+      const dayId = String(service.serviceDayId ?? normalizedScheduleDays[0]?.id ?? '');
+      const current = map.get(dayId);
+      if (!current) return;
+      current.itemCount += 1;
+      current.totalBs = Number((current.totalBs + Number(service.lineTotalBs ?? 0)).toFixed(2));
+    });
+    return Array.from(map.values());
+  }, [normalizedScheduleDays, selectedItems, selectedServices]);
+
+  useEffect(() => {
+    if (!modalOpen || !normalizedScheduleDays.length) return;
+    if (normalizedScheduleDays.some((day) => day.id === activeScheduleDayId)) return;
+    setActiveScheduleDayId(normalizedScheduleDays[0].id);
+  }, [activeScheduleDayId, modalOpen, normalizedScheduleDays]);
 
   const selectedItemAreaGroups = useMemo(() => {
     const groupMap = new Map();
-    selectedItems.forEach((line) => {
+    selectedItemsForActiveDay.forEach((line) => {
       const area = resolveWizardItemArea(line);
       const current = groupMap.get(area.key) ?? { area, lines: [] };
       current.lines.push(line);
       groupMap.set(area.key, current);
     });
     return [...groupMap.values()].sort((left, right) => left.area.order - right.area.order);
-  }, [selectedItems]);
+  }, [selectedItemsForActiveDay]);
 
   const selectedDemandByItemId = useMemo(() => {
     const map = new Map();
@@ -3139,19 +3243,29 @@ function ServiceOrdersSection({
   const quotePricingPlan = useMemo(
     () => ({
       mode: durationPricing.mode,
-      days: durationPricing.days,
+      days: durationPricing.mode === 'daily_schedule' ? normalizedScheduleDays.length : durationPricing.days,
       tiers: durationPricing.tiers.map((tier) => ({
         fromDay: tier.fromDay,
         toDay: tier.toDay,
         percent: tier.percent,
       })),
+      scheduleDays: durationPricing.mode === 'daily_schedule'
+        ? scheduleDayTotals.map((day) => ({
+          id: day.id,
+          label: day.label,
+          date: day.date,
+          note: day.note,
+          itemCount: day.itemCount,
+          subtotalBs: day.totalBs,
+        }))
+        : [],
       baseSubtotalBs: durationPricing.baseSubtotalBs,
       theoreticalSubtotalBs: durationPricing.theoreticalSubtotalBs,
       chargeableSubtotalBs: durationPricing.chargeableSubtotalBs,
       durationDiscountBs: durationPricing.durationDiscountBs,
       effectiveMultiplier: durationPricing.effectiveMultiplier,
     }),
-    [durationPricing],
+    [durationPricing, normalizedScheduleDays.length, scheduleDayTotals],
   );
 
   const durationTierSummaryRows = useMemo(() => {
@@ -3299,7 +3413,14 @@ function ServiceOrdersSection({
     return map;
   }, [draft.items]);
 
-  const mapRecordToDraft = (record, entityType = 'quote') => ({
+  const mapRecordToDraft = (record, entityType = 'quote') => {
+    const deliveryDate = record?.deliveryDate ?? getInputDate(new Date());
+    const pickupDate = record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const scheduleDays = Array.isArray(record?.pricingPlan?.scheduleDays) && record.pricingPlan.scheduleDays.length > 0
+      ? record.pricingPlan.scheduleDays.map((day, index) => normalizeScheduleDay(day, index, deliveryDate))
+      : buildScheduleDaysFromRange(deliveryDate, pickupDate);
+    const defaultScheduleDayId = scheduleDays[0]?.id ?? '';
+    return {
     ...buildEmptyDraft(entityType === 'contract' ? 'order' : 'quote'),
     entityType,
     mode: entityType === 'contract' ? 'order' : 'quote',
@@ -3323,7 +3444,7 @@ function ServiceOrdersSection({
     address: record?.address ?? '',
     addressSource: 'manual',
     city: record?.city ?? '',
-    deliveryDate: record?.deliveryDate ?? getInputDate(new Date()),
+    deliveryDate,
     logisticsMode: record?.logisticsMode ?? 'envio',
     deliveryChargeMode: (record?.logisticsMode ?? 'envio') === 'envio'
       && (record?.deliveryChargeMode === 'extra' || Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0) > 0)
@@ -3334,7 +3455,7 @@ function ServiceOrdersSection({
     deliveryWindowStart: record?.deliveryWindowStart ?? '08:00',
     deliveryWindowEnd: record?.deliveryWindowEnd ?? '10:00',
     deliveryTimeMode: record?.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
-    pickupDate: record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+    pickupDate,
     pickupWindowStart: record?.pickupWindowStart ?? '20:00',
     pickupWindowEnd: record?.pickupWindowEnd ?? '22:00',
     pickupTimeMode: record?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
@@ -3349,7 +3470,9 @@ function ServiceOrdersSection({
     paidAtApprovalBs: String(record?.payment?.paidAtApprovalBs ?? 0),
     initialPaymentMethod: normalizeLedgerPaymentMethod(record?.payment?.initialPaymentMethod ?? record?.payment?.paymentMethod),
     initialPaymentAccount: normalizeLedgerPaymentAccount(record?.payment?.initialPaymentAccount ?? record?.payment?.paymentAccount),
-    pricingMode: record?.pricingPlan?.mode === 'duration' ? 'duration' : 'simple',
+    pricingMode: record?.pricingPlan?.mode === 'daily_schedule'
+      ? 'daily_schedule'
+      : record?.pricingPlan?.mode === 'duration' ? 'duration' : 'simple',
     pricingDays: String(record?.pricingPlan?.days ?? 1),
     pricingTiers: (Array.isArray(record?.pricingPlan?.tiers) && record.pricingPlan.tiers.length > 0
       ? record.pricingPlan.tiers
@@ -3360,6 +3483,7 @@ function ServiceOrdersSection({
       toDay: Number(tier.toDay ?? 0) > 0 ? String(tier.toDay) : '',
       percent: String(tier.percent ?? 100),
     })),
+    scheduleDays,
     billingMode: record?.billingMode ?? 'sin_factura',
     validUntil: entityType === 'contract' ? '' : record?.validUntil ?? '',
     observations: record?.observations ?? '',
@@ -3399,6 +3523,9 @@ function ServiceOrdersSection({
       comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
       comboCategory: line.comboCategory ?? '',
       observation: line.observation ?? line.observations ?? line.note ?? '',
+      serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? defaultScheduleDayId,
+      serviceDate: line.serviceDate ?? scheduleDays.find((day) => day.id === (line.serviceDayId ?? line.scheduleDayId))?.date ?? '',
+      serviceDayLabel: line.serviceDayLabel ?? scheduleDays.find((day) => day.id === (line.serviceDayId ?? line.scheduleDayId))?.label ?? '',
     })),
     services: (record?.services ?? []).map((service, index) => ({
       id: service?.id ?? `service-${index}`,
@@ -3406,6 +3533,9 @@ function ServiceOrdersSection({
       detail: String(service?.detail ?? ''),
       quantity: Math.max(1, Math.trunc(Number(service?.quantity ?? 1))),
       unitPriceBs: Math.max(0, Number(service?.unitPriceBs ?? 0)),
+      serviceDayId: service?.serviceDayId ?? service?.scheduleDayId ?? defaultScheduleDayId,
+      serviceDate: service?.serviceDate ?? scheduleDays.find((day) => day.id === (service?.serviceDayId ?? service?.scheduleDayId))?.date ?? '',
+      serviceDayLabel: service?.serviceDayLabel ?? scheduleDays.find((day) => day.id === (service?.serviceDayId ?? service?.scheduleDayId))?.label ?? '',
     })),
     supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
       ? record.supplierFulfillmentPlan.map((line) => ({
@@ -3423,7 +3553,8 @@ function ServiceOrdersSection({
         manualCoverage: Boolean(line.manualCoverage),
       }))
       : [],
-  });
+  };
+  };
 
   const openCreateModal = (mode, entityType = 'quote', sourceRecord = null) => {
     if (readOnly) return;
@@ -3438,16 +3569,20 @@ function ServiceOrdersSection({
     setServiceModalOpen(false);
     setServiceDraft(buildEmptyServiceDraft());
     if (sourceRecord) {
-      setDraft(mapRecordToDraft(sourceRecord, entityType));
+      const mappedDraft = mapRecordToDraft(sourceRecord, entityType);
+      setDraft(mappedDraft);
+      setActiveScheduleDayId(mappedDraft.scheduleDays?.[0]?.id ?? '');
     } else {
       const emptyDraft = buildEmptyDraft(mode);
-      setDraft({
+      const nextDraft = {
         ...emptyDraft,
         validUntil: entityType === 'contract' ? '' : emptyDraft.validUntil,
         entityType,
         mode,
         recordStatus: entityType === 'contract' && mode === 'order' ? 'pendiente' : 'borrador',
-      });
+      };
+      setDraft(nextDraft);
+      setActiveScheduleDayId(nextDraft.scheduleDays?.[0]?.id ?? '');
     }
     setSupplierFulfillmentDraftByItem({});
     setCurrentStep(0);
@@ -3471,6 +3606,7 @@ function ServiceOrdersSection({
     setSupplierCoverageDraft(buildEmptySupplierCoverageDraft());
     setSupplierCoverageError('');
     setIsSavingSupplierCoverage(false);
+    setActiveScheduleDayId('');
     setDraft(buildEmptyDraft('quote'));
   };
 
@@ -3724,10 +3860,25 @@ function ServiceOrdersSection({
     });
   };
 
+  const clearClientFields = () => {
+    setDraft((current) => ({
+      ...current,
+      clientId: '',
+      customerName: '',
+      customerCi: '',
+      customerPhone: '',
+      customerReferencePhone: '',
+      companyName: '',
+      address: '',
+      addressSource: 'manual',
+      city: '',
+    }));
+  };
+
   const setClientFromSelection = (clientId) => {
     const selected = clients.find((row) => row.id === clientId);
     if (!selected) {
-      setDraft((current) => ({ ...current, clientId: '' }));
+      clearClientFields();
       return;
     }
 
@@ -3769,14 +3920,32 @@ function ServiceOrdersSection({
     }));
   };
 
+  const getActiveScheduleLineFields = (currentDraft = draft) => {
+    const days = Array.isArray(currentDraft.scheduleDays) && currentDraft.scheduleDays.length > 0
+      ? currentDraft.scheduleDays
+      : buildScheduleDaysFromRange(currentDraft.deliveryDate || currentDraft.eventDate, currentDraft.pickupDate || currentDraft.eventDate);
+    const day = days.find((entry) => entry.id === activeScheduleDayId) ?? days[0] ?? null;
+    return {
+      serviceDayId: day?.id ?? '',
+      serviceDate: day?.date ?? '',
+      serviceDayLabel: day?.label ?? '',
+    };
+  };
+
   const addDraftItem = (itemId, options = {}) => {
     const item = items.find((entry) => entry.id === itemId);
     if (!item) return;
     const isCourtesy = Boolean(options?.courtesy);
     setDraft((current) => {
+      const scheduleFields = current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {};
       const already = isCourtesy
         ? null
-        : current.items.find((line) => line.itemId === itemId && !line.comboId && line.lineType !== 'courtesy');
+        : current.items.find((line) => (
+          line.itemId === itemId
+          && !line.comboId
+          && line.lineType !== 'courtesy'
+          && (current.pricingMode !== 'daily_schedule' || line.serviceDayId === scheduleFields.serviceDayId)
+        ));
       if (already) {
         const nextQty = Math.max(1, Number(already.quantity ?? 1) + 1);
         return {
@@ -3800,13 +3969,14 @@ function ServiceOrdersSection({
               discountBs: 0,
               lineType: 'courtesy',
               observation: 'Cortesia',
+              ...scheduleFields,
             },
           ],
         };
       }
       return {
         ...current,
-        items: [...current.items, { lineKey: `item-${itemId}-${Date.now()}`, itemId, quantity: 1, unitPriceBs: Number(item.rentalPriceBs ?? 0) }],
+        items: [...current.items, { lineKey: `item-${itemId}-${Date.now()}`, itemId, quantity: 1, unitPriceBs: Number(item.rentalPriceBs ?? 0), ...scheduleFields }],
       };
     });
     if (isCourtesy) setIsCourtesyMode(false);
@@ -3975,6 +4145,7 @@ function ServiceOrdersSection({
       return false;
     }
     setDraft((current) => {
+      const scheduleFields = current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {};
       const previousComboQuantity = existingComboLineKey
         ? Math.max(1, Number(current.items.find((line) => line.comboLineKey === existingComboLineKey)?.comboQuantity ?? 1))
         : 1;
@@ -4017,6 +4188,7 @@ function ServiceOrdersSection({
             comboCategory: line.category ?? '',
             controlsStock: item?.controlsStock ?? line.controlsStock,
             verificationStatus: item?.verificationStatus ?? line.verificationStatus,
+            ...scheduleFields,
           };
         }),
         ],
@@ -4177,6 +4349,7 @@ function ServiceOrdersSection({
           itemId,
           quantity: 1,
           unitPriceBs: Math.max(0, Number(quickItemDraft.rentalPriceBs ?? 0)),
+          ...(current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {}),
           quickItem: {
             category,
             name,
@@ -4388,6 +4561,7 @@ function ServiceOrdersSection({
           detail: serviceDraft.detail.trim(),
           quantity,
           unitPriceBs,
+          ...(current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {}),
         },
       ],
     }));
@@ -4502,12 +4676,81 @@ function ServiceOrdersSection({
   const setDraftPricingMode = (value) => {
     setDraft((current) => ({
       ...current,
-      pricingMode: value === 'duration' ? 'duration' : 'simple',
+      pricingMode: value === 'daily_schedule' ? 'daily_schedule' : value === 'duration' ? 'duration' : 'simple',
       pricingDays: String(parsePositiveInteger(current.pricingDays, 1)),
       pricingTiers: Array.isArray(current.pricingTiers) && current.pricingTiers.length > 0
         ? current.pricingTiers
         : DURATION_PRICING_DEFAULT_TIERS,
+      scheduleDays: Array.isArray(current.scheduleDays) && current.scheduleDays.length > 0
+        ? current.scheduleDays
+        : buildScheduleDaysFromRange(current.deliveryDate || current.eventDate, current.pickupDate || current.eventDate),
     }));
+  };
+
+  const syncScheduleDaysFromLogistics = () => {
+    setDraft((current) => {
+      const nextDays = buildScheduleDaysFromRange(current.deliveryDate || current.eventDate, current.pickupDate || current.eventDate);
+      const existingByDate = new Map((current.scheduleDays ?? []).map((day) => [getDateKey(day.date), day]));
+      const mergedDays = nextDays.map((day, index) => ({
+        ...day,
+        ...(existingByDate.get(day.date) ?? {}),
+        id: existingByDate.get(day.date)?.id ?? day.id,
+        label: existingByDate.get(day.date)?.label ?? `Dia ${index + 1}`,
+        date: day.date,
+      }));
+      const validDayIds = new Set(mergedDays.map((day) => day.id));
+      const fallbackDayId = mergedDays[0]?.id ?? '';
+      return {
+        ...current,
+        scheduleDays: mergedDays,
+        items: current.items.map((line) => (
+          validDayIds.has(line.serviceDayId)
+            ? line
+            : { ...line, serviceDayId: fallbackDayId }
+        )),
+      };
+    });
+  };
+
+  const addScheduleDay = () => {
+    setDraft((current) => {
+      const source = Array.isArray(current.scheduleDays) && current.scheduleDays.length > 0
+        ? current.scheduleDays
+        : buildScheduleDaysFromRange(current.deliveryDate || current.eventDate, current.pickupDate || current.eventDate);
+      const lastDate = getDateKey(source[source.length - 1]?.date) || current.pickupDate || current.deliveryDate || getInputDate(new Date());
+      const nextDate = new Date(`${lastDate}T12:00:00`);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const date = getInputDate(nextDate);
+      const nextDay = normalizeScheduleDay({ id: `day-${date}-${Date.now()}`, label: `Dia ${source.length + 1}`, date }, source.length, date);
+      setActiveScheduleDayId(nextDay.id);
+      return { ...current, scheduleDays: [...source, nextDay] };
+    });
+  };
+
+  const updateScheduleDay = (dayId, patch) => {
+    setDraft((current) => ({
+      ...current,
+      scheduleDays: (current.scheduleDays ?? []).map((day, index) => (
+        day.id === dayId ? normalizeScheduleDay({ ...day, ...patch }, index, current.deliveryDate || current.eventDate) : day
+      )),
+    }));
+  };
+
+  const removeScheduleDay = (dayId) => {
+    setDraft((current) => {
+      const source = Array.isArray(current.scheduleDays) && current.scheduleDays.length > 0 ? current.scheduleDays : [];
+      if (source.length <= 1) return current;
+      const nextDays = source.filter((day) => day.id !== dayId);
+      const fallbackDayId = nextDays[0]?.id ?? '';
+      if (activeScheduleDayId === dayId) setActiveScheduleDayId(fallbackDayId);
+      return {
+        ...current,
+        scheduleDays: nextDays,
+        items: current.items.map((line) => (
+          line.serviceDayId === dayId ? { ...line, serviceDayId: fallbackDayId } : line
+        )),
+      };
+    });
   };
 
   const setDraftPricingDays = (value) => {
@@ -4811,6 +5054,9 @@ function ServiceOrdersSection({
         comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
         comboCategory: line.comboCategory ?? '',
         observation: String(line.observation ?? '').trim(),
+        serviceDayId: line.serviceDayId ?? null,
+        serviceDate: line.serviceDate ?? null,
+        serviceDayLabel: line.serviceDayLabel ?? '',
       })),
       services: selectedServices.map((service) => ({
         id: service.id,
@@ -4819,6 +5065,9 @@ function ServiceOrdersSection({
         quantity: service.quantity,
         unitPriceBs: service.unitPriceBs,
         lineTotalBs: service.lineTotalBs,
+        serviceDayId: service.serviceDayId ?? null,
+        serviceDate: service.serviceDate ?? null,
+        serviceDayLabel: service.serviceDayLabel ?? '',
       })),
       supplierFulfillmentPlan,
       responsibles: selectedResponsibles,
@@ -8895,7 +9144,7 @@ function ServiceOrdersSection({
                         <span>
                           <i aria-hidden="true"><Search /></i>
                           <select value={draft.clientId} onChange={(event) => setClientFromSelection(event.target.value)}>
-                            <option value="">Seleccionar cliente...</option>
+                            <option value="">Cliente nuevo / limpiar datos...</option>
                             {clients.map((client) => (
                               <option key={client.id} value={client.id}>
                                 {client.name}{client.isBlacklisted ? ' - No atender' : ''}
@@ -9169,6 +9418,7 @@ function ServiceOrdersSection({
                         <select value={draft.pricingMode} onChange={(event) => setDraftPricingMode(event.target.value)}>
                           <option value="simple">Precio unico</option>
                           <option value="duration">Por dias y porcentajes</option>
+                          <option value="daily_schedule">Items por dia</option>
                         </select>
                       </label>
                       <button
@@ -9287,6 +9537,75 @@ function ServiceOrdersSection({
                         </>
                       ) : null}
                     </section>
+
+                    {isDailyScheduleMode ? (
+                      <section className="orders-daily-schedule-card">
+                        <header>
+                          <div>
+                            <strong>Items por dia</strong>
+                            <span>Agrega productos al dia activo. Cada dia suma su propio subtotal dentro del mismo contrato.</span>
+                          </div>
+                          <div className="orders-daily-schedule-actions">
+                            <button type="button" className="ghost-button" onClick={syncScheduleDaysFromLogistics}>
+                              Usar fechas de logistica
+                            </button>
+                            <button type="button" className="ghost-button" onClick={addScheduleDay}>
+                              + Dia
+                            </button>
+                          </div>
+                        </header>
+                        <div className="orders-daily-tabs" role="tablist" aria-label="Dias del contrato">
+                          {scheduleDayTotals.map((day) => (
+                            <button
+                              key={day.id}
+                              type="button"
+                              className={day.id === activeScheduleDay?.id ? 'active' : ''}
+                              onClick={() => setActiveScheduleDayId(day.id)}
+                            >
+                              <strong>{day.label}</strong>
+                              <span>{formatDate(day.date)}</span>
+                              <small>{day.itemCount} linea(s) · {formatBs(day.totalBs)}</small>
+                            </button>
+                          ))}
+                        </div>
+                        {activeScheduleDay ? (
+                          <div className="orders-daily-editor">
+                            <label>
+                              Nombre del dia
+                              <input
+                                value={activeScheduleDay.label}
+                                onChange={(event) => updateScheduleDay(activeScheduleDay.id, { label: event.target.value })}
+                                placeholder="Dia 1, Sabado noche..."
+                              />
+                            </label>
+                            <label>
+                              Fecha
+                              <input
+                                type="date"
+                                value={activeScheduleDay.date}
+                                onChange={(event) => updateScheduleDay(activeScheduleDay.id, { date: event.target.value })}
+                              />
+                            </label>
+                            <label className="wide">
+                              Nota interna del dia
+                              <input
+                                value={activeScheduleDay.note}
+                                onChange={(event) => updateScheduleDay(activeScheduleDay.id, { note: event.target.value })}
+                                placeholder="Ej: montaje salon principal, solo vajilla..."
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="danger-button"
+                              onClick={() => removeScheduleDay(activeScheduleDay.id)}
+                              disabled={normalizedScheduleDays.length <= 1}
+                            >
+                              Quitar dia
+                            </button>
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
 
                     <section className={`orders-duration-card ${draft.pricingMode === 'duration' ? 'active' : ''}`}>
                       <header className="orders-duration-head">
@@ -9663,10 +9982,18 @@ function ServiceOrdersSection({
 
                     <section className="orders-selected-section">
                       <div className="orders-selected-head">
-                        <strong>Seleccionados ({selectedItems.length})</strong>
-                        <span>Edita cantidades y precio unitario negociado.</span>
+                        <strong>
+                          {isDailyScheduleMode && activeScheduleDay
+                            ? `${activeScheduleDay.label} (${selectedItemsForActiveDay.length})`
+                            : `Seleccionados (${selectedItems.length})`}
+                        </strong>
+                        <span>
+                          {isDailyScheduleMode
+                            ? `Edita solo las lineas de ${activeScheduleDay?.label ?? 'este dia'}. El contrato suma todos los dias.`
+                            : 'Edita cantidades y precio unitario negociado.'}
+                        </span>
                       </div>
-                      {selectedItems.length > 0 ? (
+                      {selectedItemsForActiveDay.length > 0 ? (
                         <div className="orders-selected-table-head" aria-hidden="true">
                           <span>Producto</span>
                           <span>Cantidad</span>
@@ -9677,8 +10004,10 @@ function ServiceOrdersSection({
                         </div>
                       ) : null}
                       <div className="orders-selected-list orders-selected-editor">
-                      {selectedItems.length === 0 ? (
-                        <p className="status">Aun no agregaste items.</p>
+                      {selectedItemsForActiveDay.length === 0 ? (
+                        <p className="status">
+                          {isDailyScheduleMode ? 'Aun no agregaste items para este dia.' : 'Aun no agregaste items.'}
+                        </p>
                       ) : (
                         selectedItemAreaGroups.map(({ area, lines: areaLines }) => (
                           <section className={`orders-selected-area-group area-${area.className}`} key={area.key}>
@@ -9768,6 +10097,37 @@ function ServiceOrdersSection({
                                 >
                                   Observacion
                                 </button>
+                                {isDailyScheduleMode ? (
+                                  <select
+                                    className="orders-line-day-select"
+                                    value={line.serviceDayId ?? activeScheduleDay?.id ?? ''}
+                                    onChange={(event) => {
+                                      const nextDay = normalizedScheduleDays.find((day) => day.id === event.target.value);
+                                      setDraft((current) => ({
+                                        ...current,
+                                        items: current.items.map((entry) => (
+                                          (
+                                            line.comboLineKey
+                                              ? String(entry.comboLineKey ?? '') === String(line.comboLineKey)
+                                              : String(entry.lineKey ?? entry.comboLineKey ?? entry.itemId) === String(line.lineKey)
+                                          )
+                                            ? {
+                                              ...entry,
+                                              serviceDayId: nextDay?.id ?? '',
+                                              serviceDate: nextDay?.date ?? '',
+                                              serviceDayLabel: nextDay?.label ?? '',
+                                            }
+                                            : entry
+                                        )),
+                                      }));
+                                    }}
+                                    aria-label={`Dia de servicio de ${line.item.name}`}
+                                  >
+                                    {normalizedScheduleDays.map((day) => (
+                                      <option key={day.id} value={day.id}>{day.label}</option>
+                                    ))}
+                                  </select>
+                                ) : null}
                                 {!isProvisionalItem ? (
                                   <button
                                     type="button"
@@ -10000,20 +10360,46 @@ function ServiceOrdersSection({
                       </div>
                     </section>
 
-                    {selectedServices.length > 0 ? (
+                    {selectedServicesForActiveDay.length > 0 ? (
                       <section className="orders-services-section">
                         <div className="orders-selected-head">
-                          <strong>Servicios asignados ({selectedServices.length})</strong>
-                          <span>No descuentan inventario y se cobran una sola vez.</span>
+                          <strong>Servicios asignados ({selectedServicesForActiveDay.length})</strong>
+                          <span>{isDailyScheduleMode ? 'Servicios del dia activo.' : 'No descuentan inventario y se cobran una sola vez.'}</span>
                         </div>
                         <div className="orders-services-list">
-                          {selectedServices.map((service) => (
+                          {selectedServicesForActiveDay.map((service) => (
                             <article key={service.id}>
                               <BriefcaseBusiness aria-hidden="true" />
                               <span>
                                 <strong>{service.name}</strong>
                                 <small>{service.detail || 'Sin detalle adicional'}</small>
                               </span>
+                              {isDailyScheduleMode ? (
+                                <select
+                                  className="orders-line-day-select"
+                                  value={service.serviceDayId ?? activeScheduleDay?.id ?? ''}
+                                  onChange={(event) => {
+                                    const nextDay = normalizedScheduleDays.find((day) => day.id === event.target.value);
+                                    setDraft((current) => ({
+                                      ...current,
+                                      services: (current.services ?? []).map((entry) => (
+                                        entry.id === service.id
+                                          ? {
+                                            ...entry,
+                                            serviceDayId: nextDay?.id ?? '',
+                                            serviceDate: nextDay?.date ?? '',
+                                            serviceDayLabel: nextDay?.label ?? '',
+                                          }
+                                          : entry
+                                      )),
+                                    }));
+                                  }}
+                                >
+                                  {normalizedScheduleDays.map((day) => (
+                                    <option key={day.id} value={day.id}>{day.label}</option>
+                                  ))}
+                                </select>
+                              ) : null}
                               <span>{service.quantity} x {formatBs(service.unitPriceBs)}</span>
                               <strong>{formatBs(service.lineTotalBs)}</strong>
                               <button

@@ -1261,6 +1261,11 @@ export const useAppController = () => {
           itemId: line.itemId,
           quantity: line.quantity,
           unitPriceBs: line.unitPriceBs,
+          lineTotalBs: line.lineTotalBs,
+          discountPercent: line.discountPercent,
+          serviceDayId: line.serviceDayId ?? null,
+          serviceDate: line.serviceDate ?? null,
+          serviceDayLabel: line.serviceDayLabel ?? '',
         })),
         services: quote.services ?? [],
       });
@@ -1611,6 +1616,9 @@ export const useAppController = () => {
           comboSelectionMode: line.comboSelectionMode ?? 'item',
           comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
           comboCategory: line.comboCategory ?? '',
+          serviceDayId: line.serviceDayId ?? null,
+          serviceDate: line.serviceDate ?? null,
+          serviceDayLabel: line.serviceDayLabel ?? '',
         })),
         services: contract.services ?? [],
       });
