@@ -587,13 +587,16 @@ const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
   };
 };
 
-const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null) => {
+const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null, options = {}) => {
   const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
   const lineDate = getDateKey(line?.serviceDate ?? line?.date);
   const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
-  return (lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) : null)
-    ?? scheduleDays.find((day) => String(day?.id ?? '') === lineDayId)
-    ?? (lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) : null)
+  const dayById = scheduleDays.find((day) => String(day?.id ?? '') === lineDayId) ?? null;
+  const dayByDate = lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) ?? null : null;
+  const dayByLabel = lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) ?? null : null;
+  const primaryDay = options?.preferDate ? (dayByDate ?? dayById) : (dayById ?? dayByDate);
+  return primaryDay
+    ?? dayByLabel
     ?? fallbackDay
     ?? scheduleDays[0]
     ?? null;
@@ -3452,7 +3455,7 @@ function ServiceOrdersSection({
         }, index, deliveryDate));
     }
     const defaultScheduleDayId = scheduleDays[0]?.id ?? '';
-    const resolveScheduleDay = (line) => findScheduleDayForLine(line, scheduleDays, scheduleDays[0] ?? null);
+    const resolveScheduleDay = (line) => findScheduleDayForLine(line, scheduleDays, scheduleDays[0] ?? null, { preferDate: true });
     return {
     ...buildEmptyDraft(entityType === 'contract' ? 'order' : 'quote'),
     entityType,
@@ -5153,7 +5156,7 @@ function ServiceOrdersSection({
         }
 
         if (approveNow) {
-          await onApproveContract?.({ contractId: savedContract.id });
+          await onApproveContract?.({ contractId: savedContract.id, contract: savedContract });
           setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`);
         } else {
           setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} guardado correctamente.`);
@@ -10789,6 +10792,21 @@ function ServiceOrdersSection({
                           ))}
                         </div>
                       ) : null}
+                      {durationPricing.mode === 'daily_schedule' && scheduleDayTotals.length > 1 ? (
+                        <div className="orders-duration-breakdown orders-daily-subtotal-breakdown">
+                          <header>
+                            <strong>Subtotal por dia</strong>
+                            <span>{scheduleDayTotals.length} dias</span>
+                          </header>
+                          {scheduleDayTotals.map((day) => (
+                            <div key={day.id} className="orders-duration-breakdown-row">
+                              <span>{day.label}</span>
+                              <small>{formatDate(day.date)} | {day.itemCount} linea{day.itemCount === 1 ? '' : 's'}</small>
+                              <strong>{formatBs(day.totalBs)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       <div className="orders-money-divider" />
                       {servicesSubtotalBs > 0 ? (
                         <div className="orders-money-row muted">
@@ -10996,6 +11014,21 @@ function ServiceOrdersSection({
                           <span>{row.label}</span>
                           <small>{row.days} dia{row.days > 1 ? 's' : ''} x {row.percent}% = {formatBs(row.amountPerDayBs)} c/dia</small>
                           <strong>{formatBs(row.totalBs)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {durationPricing.mode === 'daily_schedule' && scheduleDayTotals.length > 1 ? (
+                    <div className="orders-duration-breakdown orders-daily-subtotal-breakdown">
+                      <header>
+                        <strong>Subtotal por dia</strong>
+                        <span>{scheduleDayTotals.length} dias</span>
+                      </header>
+                      {scheduleDayTotals.map((day) => (
+                        <div key={day.id} className="orders-duration-breakdown-row">
+                          <span>{day.label}</span>
+                          <small>{formatDate(day.date)} | {day.itemCount} linea{day.itemCount === 1 ? '' : 's'}</small>
+                          <strong>{formatBs(day.totalBs)}</strong>
                         </div>
                       ))}
                     </div>

@@ -1507,13 +1507,14 @@ export const useAppController = () => {
     }
   };
 
-  const handleApproveContract = async ({ contractId }) => {
+  const handleApproveContract = async ({ contractId, contract: providedContract = null }) => {
     setError('');
     try {
       const localContract = contracts.find((entry) => entry.id === contractId);
-      const allContracts = localContract ? [] : await api.contracts.list();
+      const allContracts = providedContract || localContract ? [] : await api.contracts.list();
       const contract =
-        localContract
+        providedContract
+        ?? localContract
         ?? allContracts.find((entry) => entry.id === contractId);
 
       if (!contract) {
@@ -1522,6 +1523,46 @@ export const useAppController = () => {
       if (contract.status === 'aprobado' && contract.rentalId) {
         throw new Error('Este contrato ya fue aprobado.');
       }
+
+      const approvalItems = (contract.items ?? []).map((line) => ({
+        itemId: line.itemId,
+        lineKey: line.lineKey ?? null,
+        quantity: line.quantity,
+        unitPriceBs: line.unitPriceBs,
+        grossLineTotalBs: line.grossLineTotalBs,
+        discountPercent: line.discountPercent ?? 0,
+        discountBs: line.discountBs ?? 0,
+        lineTotalBs: line.lineTotalBs,
+        controlsStock: line.controlsStock,
+        verificationStatus: line.verificationStatus,
+        supplierBackedQty: line.supplierBackedQty ?? 0,
+        internalReservedQty: line.internalReservedQty ?? null,
+        lineType: line.lineType ?? '',
+        observation: line.observation ?? '',
+        quickItem: line.quickItem ?? null,
+        comboId: line.comboId ?? null,
+        comboName: line.comboName ?? '',
+        comboLineKey: line.comboLineKey ?? null,
+        comboComponentName: line.comboComponentName ?? '',
+        comboQuantity: line.comboQuantity ?? 1,
+        comboComponentQuantity: line.comboComponentQuantity ?? 1,
+        comboPricingRole: line.comboPricingRole ?? '',
+        comboPricingCondition: line.comboPricingCondition ?? null,
+        comboRuleIndex: line.comboRuleIndex ?? 0,
+        comboSlotLabel: line.comboSlotLabel ?? '',
+        comboSelectionMode: line.comboSelectionMode ?? 'item',
+        comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
+        comboCategory: line.comboCategory ?? '',
+        serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? null,
+        serviceDate: line.serviceDate ?? line.date ?? null,
+        serviceDayLabel: line.serviceDayLabel ?? line.dayLabel ?? '',
+      }));
+      const approvalServices = (contract.services ?? []).map((service) => ({
+        ...service,
+        serviceDayId: service.serviceDayId ?? service.scheduleDayId ?? null,
+        serviceDate: service.serviceDate ?? service.date ?? null,
+        serviceDayLabel: service.serviceDayLabel ?? service.dayLabel ?? '',
+      }));
 
       const paidAtApprovalBs = Number(contract?.payment?.paidAtApprovalBs ?? 0);
       const totalBs = Number(contract?.totals?.totalBs ?? 0);
@@ -1590,37 +1631,8 @@ export const useAppController = () => {
         contractId: contract.id,
         contractCode: contract.contractCode,
         allowPastDueDate: true,
-        items: (contract.items ?? []).map((line) => ({
-          itemId: line.itemId,
-          lineKey: line.lineKey ?? null,
-          quantity: line.quantity,
-          unitPriceBs: line.unitPriceBs,
-          lineTotalBs: line.lineTotalBs,
-          controlsStock: line.controlsStock,
-          verificationStatus: line.verificationStatus,
-          supplierBackedQty: line.supplierBackedQty ?? 0,
-          internalReservedQty: line.internalReservedQty ?? null,
-          lineType: line.lineType ?? '',
-          observation: line.observation ?? '',
-          quickItem: line.quickItem ?? null,
-          comboId: line.comboId ?? null,
-          comboName: line.comboName ?? '',
-          comboLineKey: line.comboLineKey ?? null,
-          comboComponentName: line.comboComponentName ?? '',
-          comboQuantity: line.comboQuantity ?? 1,
-          comboComponentQuantity: line.comboComponentQuantity ?? 1,
-          comboPricingRole: line.comboPricingRole ?? '',
-          comboPricingCondition: line.comboPricingCondition ?? null,
-          comboRuleIndex: line.comboRuleIndex ?? 0,
-          comboSlotLabel: line.comboSlotLabel ?? '',
-          comboSelectionMode: line.comboSelectionMode ?? 'item',
-          comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
-          comboCategory: line.comboCategory ?? '',
-          serviceDayId: line.serviceDayId ?? null,
-          serviceDate: line.serviceDate ?? null,
-          serviceDayLabel: line.serviceDayLabel ?? '',
-        })),
-        services: contract.services ?? [],
+        items: approvalItems,
+        services: approvalServices,
       });
 
       const approveContractPayload = {
@@ -1632,6 +1644,10 @@ export const useAppController = () => {
         orderCode: createdRental.orderCode,
         paidAtApprovalBs: coveredAtApprovalBs,
         prepaidAppliedBs,
+        pricingPlan: contract.pricingPlan ?? null,
+        items: approvalItems,
+        services: approvalServices,
+        supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
       };
 
       const refreshAfterApproval = () => {

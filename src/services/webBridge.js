@@ -818,6 +818,67 @@ const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
   };
 };
 
+const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLines = []) => {
+  if (pricingPlan?.mode !== 'daily_schedule') return pricingPlan;
+  const sourceDays = Array.isArray(pricingPlan?.scheduleDays) ? pricingPlan.scheduleDays : [];
+  const days = sourceDays.map((day, index) => ({
+    id: String(day?.id ?? `day-${index + 1}`).trim() || `day-${index + 1}`,
+    label: String(day?.label ?? `Dia ${index + 1}`).trim() || `Dia ${index + 1}`,
+    date: String(day?.date ?? '').trim(),
+    note: String(day?.note ?? '').trim(),
+    itemCount: 0,
+    itemSubtotalBs: 0,
+    serviceSubtotalBs: 0,
+    subtotalBs: 0,
+  }));
+  const findOrCreateDay = (line) => {
+    const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+    const lineDate = String(line?.serviceDate ?? line?.date ?? '').trim();
+    const lineLabel = String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim();
+    let index = lineDayId ? days.findIndex((day) => day.id === lineDayId) : -1;
+    if (index < 0 && lineDate) index = days.findIndex((day) => day.date === lineDate);
+    if (index < 0 && lineLabel) index = days.findIndex((day) => normalizeText(day.label) === normalizeText(lineLabel));
+    if (index >= 0) return days[index];
+    const nextDay = {
+      id: lineDayId || (lineDate ? `day-${lineDate}` : `day-${days.length + 1}`),
+      label: lineLabel || `Dia ${days.length + 1}`,
+      date: lineDate,
+      note: '',
+      itemCount: 0,
+      itemSubtotalBs: 0,
+      serviceSubtotalBs: 0,
+      subtotalBs: 0,
+    };
+    days.push(nextDay);
+    return nextDay;
+  };
+  itemLines.forEach((line) => {
+    const day = findOrCreateDay(line);
+    const amountBs = toPositiveRoundedNumber(line?.lineTotalBs ?? Number(line?.quantity ?? 0) * Number(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0));
+    day.itemCount += 1;
+    day.itemSubtotalBs = toPositiveRoundedNumber(day.itemSubtotalBs + amountBs);
+    day.subtotalBs = toPositiveRoundedNumber(day.subtotalBs + amountBs);
+  });
+  serviceLines.forEach((line) => {
+    const day = findOrCreateDay(line);
+    const amountBs = toPositiveRoundedNumber(line?.lineTotalBs ?? Number(line?.quantity ?? 0) * Number(line?.unitPriceBs ?? 0));
+    day.itemCount += 1;
+    day.serviceSubtotalBs = toPositiveRoundedNumber(day.serviceSubtotalBs + amountBs);
+    day.subtotalBs = toPositiveRoundedNumber(day.subtotalBs + amountBs);
+  });
+  const sortedDays = days.sort((left, right) =>
+    String(left.date || left.id).localeCompare(String(right.date || right.id)),
+  );
+  const itemSubtotalBs = sortedDays.reduce((sum, day) => sum + Number(day.itemSubtotalBs ?? 0), 0);
+  return {
+    ...pricingPlan,
+    days: Math.max(1, sortedDays.length),
+    scheduleDays: sortedDays,
+    chargeableSubtotalBs: toPositiveRoundedNumber(itemSubtotalBs || pricingPlan.chargeableSubtotalBs || 0),
+    theoreticalSubtotalBs: toPositiveRoundedNumber(itemSubtotalBs || pricingPlan.theoreticalSubtotalBs || 0),
+  };
+};
+
 const makeId = (prefix = 'id') => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -5165,6 +5226,9 @@ const buildRentalSnapshotFromContract = (contract) => {
     observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
     comboLineKey: line.comboLineKey ?? null,
     comboCategory: line.comboCategory ?? '',
+    serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? null,
+    serviceDate: line.serviceDate ?? line.date ?? null,
+    serviceDayLabel: line.serviceDayLabel ?? line.dayLabel ?? '',
   })),
   services: normalizeContractServices(contract?.services),
   });
@@ -7286,13 +7350,45 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     ?? contract?.createdBy
     ?? 'Sin responsable',
   ).trim() || 'Sin responsable';
-  const rawDocumentItems = Array.isArray(contract?.items) && contract.items.length > 0
-    ? contract.items.map((line) => ({
-      ...line,
-      rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
-      lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0)),
-    }))
-    : (rental.items ?? []);
+  const contractDocumentItems = Array.isArray(contract?.items) ? contract.items : [];
+  const rentalDocumentItems = Array.isArray(rental?.items) ? rental.items : [];
+  const rentalItemsByKey = new Map(rentalDocumentItems.map((line, index) => [
+    String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`),
+    line,
+  ]));
+  const contractItemsByKey = new Map(contractDocumentItems.map((line, index) => [
+    String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `contract-${index}`),
+    line,
+  ]));
+  const mergeDocumentItemLine = (primaryLine, fallbackLine = null) => {
+    const primary = primaryLine ?? {};
+    const fallback = fallbackLine ?? {};
+    const unitPriceBs = Number(primary.unitPriceBs ?? primary.rentalPriceBs ?? fallback.unitPriceBs ?? fallback.rentalPriceBs ?? 0);
+    const quantity = Number(primary.quantity ?? fallback.quantity ?? 0);
+    return {
+      ...fallback,
+      ...primary,
+      quantity,
+      rentalPriceBs: unitPriceBs,
+      lineTotalBs: Number(
+        primary.lineTotalBs
+          ?? fallback.lineTotalBs
+          ?? quantity * unitPriceBs,
+      ),
+      serviceDayId: primary.serviceDayId ?? primary.scheduleDayId ?? fallback.serviceDayId ?? fallback.scheduleDayId ?? null,
+      serviceDate: primary.serviceDate ?? primary.date ?? fallback.serviceDate ?? fallback.date ?? null,
+      serviceDayLabel: primary.serviceDayLabel ?? primary.dayLabel ?? fallback.serviceDayLabel ?? fallback.dayLabel ?? '',
+    };
+  };
+  const rawDocumentItems = contractDocumentItems.length > 0
+    ? contractDocumentItems.map((line, index) => {
+      const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `contract-${index}`);
+      return mergeDocumentItemLine(line, rentalItemsByKey.get(key));
+    })
+    : rentalDocumentItems.map((line, index) => {
+      const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`);
+      return mergeDocumentItemLine(line, contractItemsByKey.get(key));
+    });
   const supplierSupportByItem = buildSupplierSupportByItem(
     pickFirstSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan, rental?.supplierFulfillmentPlan),
   );
@@ -7392,12 +7488,26 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     scheduleDaysForDocument = Array.from(daysByDate.values())
       .sort((left, right) => String(left?.date ?? '').localeCompare(String(right?.date ?? '')));
   }
+  const resolveScheduleDayIndexForDocumentLine = (line) => {
+    const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+    const lineDate = toDateKey(line?.serviceDate ?? line?.date);
+    const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
+    const byId = lineDayId
+      ? scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId)
+      : -1;
+    if (byId >= 0) return byId;
+    const byDate = lineDate
+      ? scheduleDaysForDocument.findIndex((day) => toDateKey(day?.date) === lineDate)
+      : -1;
+    if (byDate >= 0) return byDate;
+    return lineLabel
+      ? scheduleDaysForDocument.findIndex((day) => normalizeText(day?.label) === lineLabel)
+      : -1;
+  };
   const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
-    const subtotal = Number.isFinite(Number(day?.subtotalBs))
-      ? Number(day.subtotalBs)
-      : lines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
+    const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
     return `
         <tr class="rc-duration-day-row">
           <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
@@ -7417,14 +7527,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       (scheduleDaysForDocument.length > 0 ? scheduleDaysForDocument : [fallbackDay])
         .forEach((day, index) => ensureGroup(day, index));
       documentItems.forEach((line) => {
-        const lineDayId = String(line.serviceDayId ?? line.scheduleDayId ?? '').trim();
-        const lineDate = toDateKey(line.serviceDate ?? line.date);
-        const lineLabel = normalizeText(line.serviceDayLabel ?? line.dayLabel);
-        const foundIndex = scheduleDaysForDocument.findIndex((day) => (
-          (lineDate && toDateKey(day?.date) === lineDate)
-          || String(day?.id ?? '') === lineDayId
-          || (lineLabel && normalizeText(day?.label) === lineLabel)
-        ));
+        const foundIndex = resolveScheduleDayIndexForDocumentLine(line);
         const group = foundIndex >= 0
           ? ensureGroup(scheduleDaysForDocument[foundIndex], foundIndex)
           : ensureGroup(fallbackDay, 0);
@@ -7524,9 +7627,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     ? durationDayBreakdown.map((dayInfo) => `
             <div class="rc-financial-item transport"><span>Dia ${dayInfo.day} (${dayInfo.percent}%)</span><strong>${formatBs(dayInfo.totalBs)}</strong></div>`).join('')
     : '';
+  const dailyScheduleFinancialItemsHtml = hasDailySchedulePricing
+    ? scheduleDaysForDocument.map((day, index) => {
+      const dayLines = documentItems.filter((line) => resolveScheduleDayIndexForDocumentLine(line) === index);
+      if (!dayLines.length) return '';
+      const dayLabel = String(day?.label ?? '').trim() || `Dia ${index + 1}`;
+      const daySubtotalBs = dayLines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
+      return `
+            <div class="rc-financial-item transport"><span>${escapeHtml(dayLabel)}</span><strong>${formatBs(daySubtotalBs)}</strong></div>`;
+    }).join('')
+    : '';
   const financialSummaryHtml = `
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
+            ${dailyScheduleFinancialItemsHtml}
             <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
@@ -12723,7 +12837,11 @@ const createWebBridge = () => ({
         const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const pricingPlan = enrichDailySchedulePricingPlan(
+          calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
+          normalizedItems,
+          requestedServices,
+        );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
@@ -12947,7 +13065,11 @@ const createWebBridge = () => ({
         const itemsBaseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(quote.supplierFulfillmentPlan);
         const servicesSubtotalBs = (quote.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const pricingPlan = enrichDailySchedulePricingPlan(
+          calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
+          quote.items ?? [],
+          quote.services ?? [],
+        );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
@@ -13156,7 +13278,11 @@ const createWebBridge = () => ({
         const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const pricingPlan = enrichDailySchedulePricingPlan(
+          calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
+          normalizedItems,
+          requestedServices,
+        );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
@@ -13437,7 +13563,11 @@ const createWebBridge = () => ({
         const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);
         const servicesSubtotalBs = (contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
+        const pricingPlan = enrichDailySchedulePricingPlan(
+          calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
+          contract.items ?? [],
+          contract.services ?? [],
+        );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
@@ -14391,7 +14521,11 @@ const createWebBridge = () => ({
         const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
-        const pricingPlan = calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs });
+        const pricingPlan = enrichDailySchedulePricingPlan(
+          calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs }),
+          rentalItems,
+          requestedServices,
+        );
         const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
         const subtotalBs = Math.max(0, toPositiveRoundedNumber(
           quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs,
