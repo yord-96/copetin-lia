@@ -597,6 +597,9 @@ const normalizeContractServices = (services) => {
         quantity,
         unitPriceBs,
         lineTotalBs: Number((quantity * unitPriceBs).toFixed(2)),
+        serviceDayId: String(service?.serviceDayId ?? service?.scheduleDayId ?? '').trim() || null,
+        serviceDate: String(service?.serviceDate ?? '').trim() || null,
+        serviceDayLabel: String(service?.serviceDayLabel ?? '').trim(),
       };
     })
     .filter(Boolean);
@@ -760,15 +763,28 @@ const normalizeDurationPricingTiers = (tiers) => {
 
 const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
   const safeBase = Math.max(0, Number(baseSubtotalBs ?? 0));
-  const mode = pricingPlan?.mode === 'duration' ? 'duration' : 'simple';
+  const mode = pricingPlan?.mode === 'daily_schedule'
+    ? 'daily_schedule'
+    : pricingPlan?.mode === 'duration' ? 'duration' : 'simple';
   const days = mode === 'duration' ? parsePositiveInteger(pricingPlan?.days, 1) : 1;
   const tiers = normalizeDurationPricingTiers(pricingPlan?.tiers);
 
   if (mode !== 'duration') {
+    const scheduleDays = mode === 'daily_schedule' && Array.isArray(pricingPlan?.scheduleDays)
+      ? pricingPlan.scheduleDays.map((day, index) => ({
+        id: String(day?.id ?? `day-${index + 1}`).trim() || `day-${index + 1}`,
+        label: String(day?.label ?? `Dia ${index + 1}`).trim() || `Dia ${index + 1}`,
+        date: String(day?.date ?? '').trim(),
+        note: String(day?.note ?? '').trim(),
+        itemCount: Math.max(0, Math.trunc(Number(day?.itemCount ?? 0))),
+        subtotalBs: toPositiveRoundedNumber(day?.subtotalBs ?? 0),
+      }))
+      : [];
     return {
-      mode: 'simple',
-      days: 1,
+      mode,
+      days: mode === 'daily_schedule' ? Math.max(1, scheduleDays.length) : 1,
       tiers,
+      scheduleDays,
       baseSubtotalBs: toPositiveRoundedNumber(safeBase),
       theoreticalSubtotalBs: toPositiveRoundedNumber(safeBase),
       chargeableSubtotalBs: toPositiveRoundedNumber(safeBase),
@@ -12395,6 +12411,9 @@ const createWebBridge = () => ({
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+            serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+            serviceDate: String(line?.serviceDate ?? '').trim() || null,
+            serviceDayLabel: String(line?.serviceDayLabel ?? '').trim(),
           };
         });
 
@@ -12605,6 +12624,9 @@ const createWebBridge = () => ({
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
               observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+              serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+              serviceDate: String(line?.serviceDate ?? '').trim() || null,
+              serviceDayLabel: String(line?.serviceDayLabel ?? '').trim(),
             };
           });
         }
@@ -12822,6 +12844,9 @@ const createWebBridge = () => ({
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+            serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+            serviceDate: String(line?.serviceDate ?? '').trim() || null,
+            serviceDayLabel: String(line?.serviceDayLabel ?? '').trim(),
           };
         });
 
@@ -13088,6 +13113,9 @@ const createWebBridge = () => ({
               comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
               comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
               observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+              serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+              serviceDate: String(line?.serviceDate ?? '').trim() || null,
+              serviceDayLabel: String(line?.serviceDayLabel ?? '').trim(),
             };
           });
           contract.items = normalizedItems;
@@ -14038,6 +14066,9 @@ const createWebBridge = () => ({
             discountBs,
             lineType,
             observation: String(line?.observation ?? line?.observations ?? line?.note ?? (isCourtesyLine ? 'Cortesia' : '')).trim(),
+            serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+            serviceDate: String(line?.serviceDate ?? '').trim() || null,
+            serviceDayLabel: String(line?.serviceDayLabel ?? '').trim(),
             lineTotalBs: explicitLineTotalBs !== null ? explicitLineTotalBs : Number(Math.max(0, grossLineTotalBs - discountBs).toFixed(2)),
           };
         });
