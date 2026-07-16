@@ -2906,56 +2906,16 @@ function ServiceOrdersSection({
   const originalContractDemandByItemId = useMemo(() => {
     const map = new Map();
     if (draft.entityType !== 'contract' || !draft.recordId) return map;
-    const currentContract = contracts.find((contract) =>
-      String(contract.id ?? '') === String(draft.recordId)
-      || (draft.manualDocumentCode && String(contract.contractCode ?? '') === String(draft.manualDocumentCode))
-      || (draft.orderCode && String(contract.orderCode ?? '') === String(draft.orderCode))
-      || (draft.rentalId && String(contract.rentalId ?? '') === String(draft.rentalId))
-    );
-    const hasInventoryReservation =
-      String(currentContract?.status ?? '').trim() === 'aprobado'
-      || Boolean(currentContract?.rentalId)
-      || Boolean(currentContract?.orderCode);
-    if (!hasInventoryReservation) return map;
-    const supplierSupportByLineKey = new Map();
-    const supplierSupportByItemId = new Map();
-    (currentContract?.supplierFulfillmentPlan ?? []).forEach((coverage) => {
-      const itemId = String(coverage?.itemId ?? '').trim();
-      if (!itemId) return;
-      const quantity = Math.max(0, Math.trunc(Number(coverage?.neededQty ?? 0)));
-      const lineKey = String(coverage?.lineKey ?? '').trim();
-      if (lineKey) {
-        supplierSupportByLineKey.set(lineKey, Number(supplierSupportByLineKey.get(lineKey) ?? 0) + quantity);
-      }
-      supplierSupportByItemId.set(itemId, Number(supplierSupportByItemId.get(itemId) ?? 0) + quantity);
-    });
-    (currentContract?.items ?? []).forEach((line, index) => {
+    selectedItems.forEach((line) => {
       if (isDetachedFromInventory(line)) return;
       const itemId = String(line.itemId ?? '').trim();
       if (!itemId) return;
-      const quantity = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
-      const storedInternalQty = Number(line.internalReservedQty);
-      const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId ?? `line-${index}`).trim();
-      const supplierBackedQty = Math.min(
-        quantity,
-        Math.max(
-          0,
-          Number.isFinite(Number(line.supplierBackedQty))
-            ? Number(line.supplierBackedQty)
-            : Number(
-              supplierSupportByLineKey.has(lineKey)
-                ? supplierSupportByLineKey.get(lineKey)
-                : supplierSupportByItemId.get(itemId) ?? 0,
-            ),
-        ),
-      );
-      const internalQty = Number.isFinite(storedInternalQty)
-        ? Math.max(0, Math.trunc(storedInternalQty))
-        : Math.max(0, quantity - supplierBackedQty);
-      map.set(itemId, (map.get(itemId) ?? 0) + internalQty);
+      const quantity = Math.max(0, Math.trunc(Number(line.originalQuantity ?? 0)));
+      if (quantity <= 0) return;
+      map.set(itemId, (map.get(itemId) ?? 0) + quantity);
     });
     return map;
-  }, [contracts, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId]);
+  }, [draft.entityType, draft.recordId, selectedItems]);
 
   const getEditableAvailableStock = useCallback((line) => {
     const originalContractQty = Math.max(
