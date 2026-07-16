@@ -1285,6 +1285,98 @@ function InventoryDashboardSection({
     return usage;
   }, [activeRentals, contracts, deliveries]);
 
+  const comboUsageById = useMemo(() => {
+    const usage = new Map();
+    const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
+    const deliveriesByRental = new Map();
+    deliveries
+      .filter((delivery) => delivery?.rentalId)
+      .forEach((delivery) => {
+        const key = String(delivery.rentalId);
+        const rows = deliveriesByRental.get(key) ?? [];
+        rows.push(delivery);
+        deliveriesByRental.set(key, rows);
+      });
+
+    activeRentals.forEach((rental) => {
+      const contract = contractById.get(String(rental.contractId ?? ''));
+      const linkedDeliveries = (deliveriesByRental.get(String(rental.id)) ?? []).slice()
+        .sort((a, b) => String(a.scheduledDate ?? '').localeCompare(String(b.scheduledDate ?? '')));
+      const deliveryOut = linkedDeliveries.find((entry) => !isPickupDeliveryRecord(entry)) ?? linkedDeliveries[0] ?? null;
+      const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
+      const comboGroups = new Map();
+
+      (rental.items ?? []).forEach((line, index) => {
+        if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
+        const comboId = String(line?.comboId ?? '').trim();
+        if (!comboId) return;
+        const groupKey = String(line?.comboLineKey ?? '').trim() || `${comboId}-${line?.comboName ?? ''}-${index}`;
+        const current = comboGroups.get(groupKey) ?? {
+          comboId,
+          comboName: line?.comboName ?? 'Combo',
+          quantity: 0,
+          componentLines: 0,
+          componentUnits: 0,
+          price: 0,
+        };
+        const comboQuantity = Math.max(1, Math.trunc(Number(line?.comboQuantity ?? 1)));
+        current.quantity = Math.max(current.quantity, comboQuantity);
+        current.componentLines += 1;
+        current.componentUnits += Math.max(0, Number(line?.internalReservedQty ?? line?.quantity ?? 0));
+        if (line?.comboPricingRole === 'price') {
+          current.price = Number(line?.lineTotalBs ?? line?.unitPriceBs ?? 0);
+        }
+        comboGroups.set(groupKey, current);
+      });
+
+      comboGroups.forEach((group, groupKey) => {
+        const rows = usage.get(group.comboId) ?? [];
+        const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate ?? null;
+        const pickupDate = contract?.pickupDate ?? deliveryBack?.scheduledDate ?? rental.dueDate ?? null;
+        const deliveryWindowStart = contract?.deliveryWindowStart ?? deliveryOut?.windowStart ?? rental.deliveryWindowStart ?? '';
+        const deliveryWindowEnd = contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd ?? rental.deliveryWindowEnd ?? '';
+        const pickupWindowStart = contract?.pickupWindowStart ?? deliveryBack?.windowStart ?? rental.pickupWindowStart ?? '';
+        const pickupWindowEnd = contract?.pickupWindowEnd ?? deliveryBack?.windowEnd ?? rental.pickupWindowEnd ?? rental.dueTime ?? '';
+        rows.push({
+          usageKey: `${rental.id}-${groupKey}`,
+          rentalId: rental.id,
+          orderCode: rental.orderCode ?? 'Orden sin codigo',
+          contractCode: contract?.contractCode ?? rental.contractCode ?? 'Sin contrato',
+          customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
+          quantity: group.quantity,
+          componentLines: group.componentLines,
+          componentUnits: group.componentUnits,
+          price: group.price,
+          comboName: group.comboName,
+          deliveryDate,
+          pickupDate,
+          deliveryWindowStart,
+          deliveryWindowEnd,
+          pickupWindowStart,
+          pickupWindowEnd,
+          address: contract?.address ?? deliveryOut?.address ?? deliveryBack?.address ?? rental.eventAddress ?? '',
+          city: contract?.city ?? deliveryOut?.city ?? deliveryBack?.city ?? '',
+          eventType: contract?.eventType ?? rental.eventType ?? '',
+          inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+          transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+          inventoryNote: rental.operational?.inventoryNote ?? '',
+          logisticsMode: contract?.logisticsMode ?? rental.logisticsMode ?? 'envio',
+        });
+        usage.set(group.comboId, rows);
+      });
+    });
+
+    usage.forEach((rows, comboId) => {
+      usage.set(comboId, rows.sort((a, b) => {
+        const aEnd = getDateKey(a.pickupDate) || getDateKey(a.deliveryDate) || '9999-12-31';
+        const bEnd = getDateKey(b.pickupDate) || getDateKey(b.deliveryDate) || '9999-12-31';
+        if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
+        return String(a.orderCode ?? '').localeCompare(String(b.orderCode ?? ''));
+      }));
+    });
+    return usage;
+  }, [activeRentals, contracts, deliveries]);
+
   const maintenanceByItem = useMemo(() => {
     const map = {};
     stockRecoveries.forEach((entry) => {
@@ -1622,6 +1714,7 @@ function InventoryDashboardSection({
       }, Number.POSITIVE_INFINITY);
       return {
         id: combo.id,
+        detailKind: 'combo',
         name: combo.name,
         category: combo.category || 'COMBOS',
         sku: String(combo.id ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COMBO',
@@ -1638,9 +1731,10 @@ function InventoryDashboardSection({
         imageDataUrl: combo.imageDataUrl ?? null,
         createdAt: combo.createdAt ?? combo.updatedAt ?? null,
         updatedAt: combo.updatedAt ?? null,
+        usage: comboUsageById.get(String(combo.id)) ?? [],
       };
     });
-  }, [combos, inventoryRows]);
+  }, [comboUsageById, combos, inventoryRows]);
 
   const movementRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
@@ -3289,6 +3383,9 @@ function InventoryDashboardSection({
       role="menu"
       aria-label={`Acciones para ${row.name}`}
     >
+      <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); setRowMenuPosition(null); }}>
+        Ver detalle y ubicacion
+      </button>
       <button type="button" onClick={() => { openEditComboModal(row); setRowMenuOpenId(null); }}>
         Editar
       </button>
@@ -5428,7 +5525,7 @@ function InventoryDashboardSection({
                 )}
               </div>
               <div className="inventory-detail-title">
-                <span className="inventory-detail-kicker">{detailRow.reference ? 'Movimiento de inventario' : 'Producto de inventario'}</span>
+                <span className="inventory-detail-kicker">{detailRow.reference ? 'Movimiento de inventario' : detailRow.detailKind === 'combo' ? 'Combo de inventario' : 'Producto de inventario'}</span>
                 <h3>{detailRow.name || detailRow.itemName || 'Detalle'}</h3>
                 <div className="inventory-detail-tags">
                   {detailRow.category ? <span className={`inventory-pill ${toCategoryClass(detailRow.category)}`}>{detailRow.category}</span> : null}
@@ -5544,6 +5641,21 @@ function InventoryDashboardSection({
                 ) : null}
               </div>
             ) : null}
+            {detailRow.detailKind === 'combo' && Array.isArray(detailRow.ingredients) ? (
+              <section className="inventory-detail-combo-components">
+                <div>
+                  <span className="inventory-detail-kicker">Componentes del combo</span>
+                  <strong>{detailRow.ingredients.length} producto(s) dentro del combo</strong>
+                </div>
+                <div className="inventory-detail-combo-list">
+                  {detailRow.ingredients.map((line) => (
+                    <span key={`${detailRow.id}-${line.itemId}-${line.slotLabel || line.itemName}`}>
+                      {line.quantity}x {line.itemName}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             {detailStockExplanation ? (
               <section className="inventory-stock-explain">
                 <div className="inventory-stock-explain-head">
@@ -5619,7 +5731,7 @@ function InventoryDashboardSection({
                     <span className="inventory-detail-kicker">Ubicacion del inventario</span>
                     <h4>Agenda de contratos y retornos</h4>
                   </div>
-                  <strong>{detailUsageSummary.totalCommitted} unidades comprometidas</strong>
+                  <strong>{detailUsageSummary.totalCommitted} {detailRow.detailKind === 'combo' ? 'combo(s)' : 'unidades'} comprometidas</strong>
                 </div>
                 {detailUsageRows.length > 0 ? (
                   <>
@@ -5639,7 +5751,7 @@ function InventoryDashboardSection({
                       </div>
                       <div className={detailUsageSummary.overdueQty > 0 ? 'is-alert' : ''}>
                         <span>Atrasado</span>
-                        <strong>{detailUsageSummary.overdueQty} u.</strong>
+                        <strong>{detailUsageSummary.overdueQty} {detailRow.detailKind === 'combo' ? 'combo(s)' : 'u.'}</strong>
                       </div>
                     </div>
 
@@ -5653,7 +5765,7 @@ function InventoryDashboardSection({
                       </div>
                       <div className="inventory-usage-timeline">
                         {detailUsageRows.map((entry) => (
-                          <article className={`inventory-usage-timeline-row tone-${entry.statusMeta.tone}`} key={`${entry.rentalId}-${entry.orderCode}-timeline`}>
+                          <article className={`inventory-usage-timeline-row tone-${entry.statusMeta.tone}`} key={`${entry.usageKey ?? `${entry.rentalId}-${entry.orderCode}`}-timeline`}>
                             <div className="inventory-usage-timeline-date">
                               <strong>{entry.pickupLabel}</strong>
                               <span>{entry.statusMeta.returnText}</span>
@@ -5663,7 +5775,7 @@ function InventoryDashboardSection({
                             </div>
                             <div className="inventory-usage-timeline-meta">
                               <strong>{entry.orderCode}</strong>
-                              <span>{entry.quantity} u.</span>
+                              <span>{entry.quantity} {detailRow.detailKind === 'combo' ? 'combo(s)' : 'u.'}</span>
                             </div>
                           </article>
                         ))}
@@ -5671,14 +5783,19 @@ function InventoryDashboardSection({
                     </div>
                     <div className="inventory-usage-card-grid">
                     {detailUsageRows.map((entry) => (
-                        <article className={`inventory-usage-card tone-${entry.statusMeta.tone}`} key={`${entry.rentalId}-${entry.orderCode}`}>
+                        <article className={`inventory-usage-card tone-${entry.statusMeta.tone}`} key={entry.usageKey ?? `${entry.rentalId}-${entry.orderCode}`}>
                           <header>
                             <div>
                               <strong>{entry.orderCode}</strong>
                               <span>Contrato {entry.contractCode}</span>
                             </div>
-                            <b>{entry.quantity} u.</b>
+                            <b>{entry.quantity} {detailRow.detailKind === 'combo' ? 'combo(s)' : 'u.'}</b>
                           </header>
+                          {detailRow.detailKind === 'combo' ? (
+                            <p className="inventory-usage-note">
+                              {entry.componentLines} componente(s) - {entry.componentUnits} unidad(es) internas
+                            </p>
+                          ) : null}
                           <div className="inventory-usage-client">
                             <span>Cliente</span>
                             <strong>{entry.customerName}</strong>
@@ -5711,12 +5828,17 @@ function InventoryDashboardSection({
                 ) : (
                   <div className="inventory-usage-empty">
                     <strong>Disponible sin compromisos activos</strong>
-                    <span>Este producto no aparece reservado, alistado ni pendiente de retorno en contratos u ordenes activas.</span>
+                    <span>Este {detailRow.detailKind === 'combo' ? 'combo' : 'producto'} no aparece reservado, alistado ni pendiente de retorno en contratos u ordenes activas.</span>
                   </div>
                 )}
               </section>
             ) : null}
             <div className="reset-modal-actions">
+              {detailRow.detailKind === 'combo' ? (
+                <button type="button" className="ghost-button" onClick={() => { openEditComboModal(detailRow); setDetailRow(null); }}>
+                  Editar combo
+                </button>
+              ) : null}
               {detailRow.name && detailRow.total !== undefined ? (
                 <>
                   <button type="button" className="ghost-button" onClick={() => { openEditProductModal(detailRow); setDetailRow(null); }}>
