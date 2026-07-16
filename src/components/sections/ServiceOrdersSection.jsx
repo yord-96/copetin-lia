@@ -2099,6 +2099,8 @@ function ServiceOrdersSection({
         || movementType.includes('cobro')
         || category === 'cobro_contrato';
       const isCollection = tag === 'contract_economic_collection'
+        || category === 'cobro_contrato'
+        || movementType === 'ingreso_alquiler'
         || (Boolean(receiptCode) && isBigCash && isIncome);
       if (isGuaranteeMovement(movement)) return sum;
       if (!isCollection) return sum;
@@ -5523,8 +5525,16 @@ function ServiceOrdersSection({
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
     const suggestedBs = Math.max(0, toMoneyNumber(contractEconomicsData.cashCollectionSuggestedBs));
     const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || suggestedBs));
+    if (suggestedBs <= 0) {
+      setContractEconomicsError('Este contrato ya no tiene saldo pendiente por cobrar.');
+      return;
+    }
     if (amountBs <= 0) {
       setContractEconomicsError('El monto a cobrar debe ser mayor a 0.');
+      return;
+    }
+    if (amountBs - suggestedBs > 0.01) {
+      setContractEconomicsError(`El saldo pendiente por cobrar es Bs ${formatCurrency(suggestedBs)}. No se puede registrar un cobro mayor.`);
       return;
     }
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsCollectionDraft.paymentMethod);
@@ -5539,24 +5549,32 @@ function ServiceOrdersSection({
     setContractEconomicsError('');
     try {
       const createdBy = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
-      const result = await api.cash.createManualMovement({
-        type: 'ingreso',
-        cashBoxType: 'BIG_CASH',
+      const defaultNote = contractEconomicsCollectionDraft.note
+        || contractEconomicsCollectionDraft.receipt
+        || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`;
+      const commonPayload = {
         amountBs,
-        description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
-        category: 'cobro_contrato',
         paymentMethod,
         paymentAccount,
-        responsible: createdBy,
         receipt: contractEconomicsCollectionDraft.receipt,
-        notes: contractEconomicsCollectionDraft.note
-          || contractEconomicsCollectionDraft.receipt
-          || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`,
-        linkedRentalId: rentalId,
+        note: defaultNote,
         linkedContractId: contractEconomicsData.contract?.id ?? '',
         linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
         accountingTag: 'contract_economic_collection',
         createdBy,
+      };
+      const result = rentalId ? await api.cash.collectReceivable({
+        ...commonPayload,
+        rentalId,
+      }) : await api.cash.createManualMovement({
+        ...commonPayload,
+        type: 'ingreso',
+        cashBoxType: 'BIG_CASH',
+        description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: 'cobro_contrato',
+        responsible: createdBy,
+        notes: defaultNote,
+        linkedRentalId: rentalId,
       });
       const movementId = resolveEconomicMovementId(result);
       const movement = result?.movement ?? result ?? {};

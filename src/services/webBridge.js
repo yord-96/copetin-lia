@@ -2721,8 +2721,20 @@ const normalizeState = (state) => {
       };
     })
     : [];
+  source.cashMovements.forEach((movement) => {
+    if (movement?.receiptCode || isVoidedCashMovement(movement)) return;
+    if (Number(movement?.amountBs ?? 0) <= 0) return;
+    if (normalizeCashBoxType(movement?.cashBoxType) !== CASH_BOX_TYPES.BIG_CASH) return;
+    const tag = normalizeText(movement?.accountingTag);
+    const shouldHaveReceipt = isContractCollectionCashMovement(movement)
+      || isGuaranteeCashMovement(movement)
+      || tag === 'transport_revenue';
+    if (!shouldHaveReceipt) return;
+    movement.receiptCode = nextCashReceiptCode(source);
+  });
   source.contracts.forEach((contract) => {
     if (contract?.deletedAt || String(contract?.status ?? '').trim() !== 'aprobado') return;
+    syncInitialPaymentCashMovement(source, contract, { updatedByName: 'Sistema' }, contract?.approvedAt ?? contract?.createdAt ?? now);
     const ledgerGuaranteeBs = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
       .filter((entry) => String(entry?.type ?? '').trim() === 'guarantee')
       .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? 0)), 0);
@@ -4132,9 +4144,12 @@ const addRentalCashMovements = (state, rental) => {
         category: 'cobro_contrato',
         paymentMethod: initialPaymentMethod,
         paymentAccount: initialPaymentAccount,
+        receiptCode: nextCashReceiptCode(state),
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
+        accountingTag: 'initial_rental_payment',
+        notes: `Pago inicial registrado al crear ${rental.orderCode ?? 'la orden'}`.trim(),
       }),
     );
   }
@@ -4154,6 +4169,7 @@ const addRentalCashMovements = (state, rental) => {
         category: 'transporte_cobrado',
         paymentMethod: initialPaymentMethod,
         paymentAccount: initialPaymentAccount,
+        receiptCode: nextCashReceiptCode(state),
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
@@ -4179,9 +4195,12 @@ const addRentalCashMovements = (state, rental) => {
         category: 'garantia',
         paymentMethod: guaranteePaymentMethod,
         paymentAccount: guaranteePaymentAccount,
+        receiptCode: nextCashReceiptCode(state),
         linkedRentalId: rental.id,
         linkedContractId: rental.contractId,
         linkedOrderCode: rental.orderCode,
+        accountingTag: 'validated_guarantee',
+        notes: `Garantia pagada registrada al crear ${rental.orderCode ?? 'la orden'}`.trim(),
       }),
     );
   }
@@ -9109,6 +9128,59 @@ const syncValidatedGuaranteeCashMovement = (state, contract, payload, now, befor
   return movement;
 };
 
+const syncInitialPaymentCashMovement = (state, contract, payload, now) => {
+  if (String(contract?.status ?? '').trim() !== 'aprobado') return null;
+
+  const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(contract?.payment?.paidAtApprovalBs ?? 0));
+  const prepaidAppliedBs = Math.max(0, toPositiveRoundedNumber(contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0));
+  const cashPaymentBs = Math.max(0, Number((paidAtApprovalBs - prepaidAppliedBs).toFixed(2)));
+  if (cashPaymentBs <= 0) return null;
+
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
+  const amountToRegisterBs = Math.max(0, Number((cashPaymentBs - registeredCollectionBs).toFixed(2)));
+  if (amountToRegisterBs <= 0) return null;
+
+  const activeSession = getActiveSession(state);
+  const responsibleName = String(
+    payload?.updatedByName
+    ?? payload?.userName
+    ?? contract?.responsibles?.[0]?.name
+    ?? contract?.createdByName
+    ?? contract?.createdBy
+    ?? 'Sistema',
+  ).trim() || 'Sistema';
+  const paymentMethod = normalizePaymentMethod(contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod);
+  const paymentAccount = paymentMethod === 'qr'
+    ? normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount)
+    : '';
+  const movement = buildCashMovement({
+    sessionId: activeSession?.id ?? null,
+    type: 'ingreso_alquiler',
+    amountBs: amountToRegisterBs,
+    description: `Cobro inicial alquiler: ${contract?.customerName || 'Cliente'}`,
+    sourceType: contract?.rentalId ? 'rental' : 'contract',
+    sourceId: contract?.rentalId || contract?.id,
+    createdBy: responsibleName,
+    createdByName: responsibleName,
+    userName: responsibleName,
+    responsible: responsibleName,
+    cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+    category: 'cobro_contrato',
+    paymentMethod,
+    paymentAccount,
+    receiptCode: nextCashReceiptCode(state),
+    notes: `Pago inicial registrado desde contrato ${contract?.contractCode || contract?.id || ''}`.trim(),
+    linkedRentalId: contract?.rentalId ?? '',
+    linkedContractId: contract?.id ?? '',
+    linkedOrderCode: contract?.orderCode ?? '',
+    accountingTag: 'initial_rental_payment',
+  });
+  movement.createdAt = now;
+  state.cashMovements.push(movement);
+  return movement;
+};
+
 const syncApprovedContractOperation = (state, contract, payload, now, beforeContract = null) => {
   if (String(contract?.status ?? '').trim() !== 'aprobado') return;
 
@@ -13307,6 +13379,7 @@ const createWebBridge = () => ({
           contract.responsibles = responsibles;
         }
         const now = new Date().toISOString();
+        syncInitialPaymentCashMovement(state, contract, payload, now);
         syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
