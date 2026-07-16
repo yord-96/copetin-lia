@@ -777,9 +777,15 @@ const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
         date: String(day?.date ?? '').trim(),
         note: String(day?.note ?? '').trim(),
         itemCount: Math.max(0, Math.trunc(Number(day?.itemCount ?? 0))),
+        itemSubtotalBs: toPositiveRoundedNumber(day?.itemSubtotalBs ?? 0),
+        serviceSubtotalBs: toPositiveRoundedNumber(day?.serviceSubtotalBs ?? 0),
         subtotalBs: toPositiveRoundedNumber(day?.subtotalBs ?? 0),
       }))
       : [];
+    const dailyItemsSubtotalBs = scheduleDays.reduce((sum, day) => sum + Number(day.itemSubtotalBs ?? 0), 0);
+    const dailyChargeableSubtotalBs = mode === 'daily_schedule' && dailyItemsSubtotalBs > 0
+      ? dailyItemsSubtotalBs
+      : safeBase;
     return {
       mode,
       days: mode === 'daily_schedule' ? Math.max(1, scheduleDays.length) : 1,
@@ -787,7 +793,7 @@ const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
       scheduleDays,
       baseSubtotalBs: toPositiveRoundedNumber(safeBase),
       theoreticalSubtotalBs: toPositiveRoundedNumber(safeBase),
-      chargeableSubtotalBs: toPositiveRoundedNumber(safeBase),
+      chargeableSubtotalBs: toPositiveRoundedNumber(dailyChargeableSubtotalBs),
       durationDiscountBs: 0,
       effectiveMultiplier: 1,
     };
@@ -7368,9 +7374,24 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <td><span class="rc-observation-line"></span></td>
         </tr>`;
   };
-  const scheduleDaysForDocument = hasDailySchedulePricing && Array.isArray(pricingPlan?.scheduleDays)
+  let scheduleDaysForDocument = hasDailySchedulePricing && Array.isArray(pricingPlan?.scheduleDays)
     ? pricingPlan.scheduleDays.filter((day) => day?.id || day?.label || day?.date)
     : [];
+  if (hasDailySchedulePricing) {
+    const daysByDate = new Map(scheduleDaysForDocument.map((day) => [toDateKey(day?.date), day]).filter(([date]) => Boolean(date)));
+    documentItems.forEach((line) => {
+      const lineDate = toDateKey(line?.serviceDate ?? line?.date);
+      if (!lineDate || daysByDate.has(lineDate)) return;
+      daysByDate.set(lineDate, {
+        id: String(line?.serviceDayId ?? line?.scheduleDayId ?? `day-${lineDate}`).trim() || `day-${lineDate}`,
+        label: String(line?.serviceDayLabel ?? '').trim() || `Dia ${daysByDate.size + 1}`,
+        date: lineDate,
+        subtotalBs: 0,
+      });
+    });
+    scheduleDaysForDocument = Array.from(daysByDate.values())
+      .sort((left, right) => String(left?.date ?? '').localeCompare(String(right?.date ?? '')));
+  }
   const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
@@ -7397,7 +7418,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         .forEach((day, index) => ensureGroup(day, index));
       documentItems.forEach((line) => {
         const lineDayId = String(line.serviceDayId ?? line.scheduleDayId ?? '').trim();
-        const foundIndex = scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId);
+        const lineDate = toDateKey(line.serviceDate ?? line.date);
+        const lineLabel = normalizeText(line.serviceDayLabel ?? line.dayLabel);
+        const foundIndex = scheduleDaysForDocument.findIndex((day) => (
+          String(day?.id ?? '') === lineDayId
+          || (lineDate && toDateKey(day?.date) === lineDate)
+          || (lineLabel && normalizeText(day?.label) === lineLabel)
+        ));
         const group = foundIndex >= 0
           ? ensureGroup(scheduleDaysForDocument[foundIndex], foundIndex)
           : ensureGroup(fallbackDay, 0);

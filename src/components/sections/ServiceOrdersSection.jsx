@@ -587,6 +587,18 @@ const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
   };
 };
 
+const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null) => {
+  const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+  const lineDate = getDateKey(line?.serviceDate ?? line?.date);
+  const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
+  return scheduleDays.find((day) => String(day?.id ?? '') === lineDayId)
+    ?? (lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) : null)
+    ?? (lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) : null)
+    ?? fallbackDay
+    ?? scheduleDays[0]
+    ?? null;
+};
+
 const escapeDocText = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -2858,6 +2870,8 @@ function ServiceOrdersSection({
     const map = new Map(normalizedScheduleDays.map((day) => [day.id, {
       ...day,
       itemCount: 0,
+      itemSubtotalBs: 0,
+      serviceSubtotalBs: 0,
       totalBs: 0,
     }]));
     selectedItems.forEach((line) => {
@@ -2865,6 +2879,7 @@ function ServiceOrdersSection({
       const current = map.get(dayId);
       if (!current) return;
       current.itemCount += 1;
+      current.itemSubtotalBs = Number((current.itemSubtotalBs + Number(line.lineTotalBs ?? 0)).toFixed(2));
       current.totalBs = Number((current.totalBs + Number(line.lineTotalBs ?? 0)).toFixed(2));
     });
     selectedServices.forEach((service) => {
@@ -2872,6 +2887,7 @@ function ServiceOrdersSection({
       const current = map.get(dayId);
       if (!current) return;
       current.itemCount += 1;
+      current.serviceSubtotalBs = Number((current.serviceSubtotalBs + Number(service.lineTotalBs ?? 0)).toFixed(2));
       current.totalBs = Number((current.totalBs + Number(service.lineTotalBs ?? 0)).toFixed(2));
     });
     return Array.from(map.values());
@@ -3250,6 +3266,8 @@ function ServiceOrdersSection({
           date: day.date,
           note: day.note,
           itemCount: day.itemCount,
+          itemSubtotalBs: day.itemSubtotalBs,
+          serviceSubtotalBs: day.serviceSubtotalBs,
           subtotalBs: day.totalBs,
         }))
         : [],
@@ -3410,10 +3428,29 @@ function ServiceOrdersSection({
   const mapRecordToDraft = (record, entityType = 'quote') => {
     const deliveryDate = record?.deliveryDate ?? getInputDate(new Date());
     const pickupDate = record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
-    const scheduleDays = Array.isArray(record?.pricingPlan?.scheduleDays) && record.pricingPlan.scheduleDays.length > 0
+    let scheduleDays = Array.isArray(record?.pricingPlan?.scheduleDays) && record.pricingPlan.scheduleDays.length > 0
       ? record.pricingPlan.scheduleDays.map((day, index) => normalizeScheduleDay(day, index, deliveryDate))
       : buildScheduleDaysFromRange(deliveryDate, pickupDate);
+    if (record?.pricingPlan?.mode === 'daily_schedule') {
+      const daysByDate = new Map(scheduleDays.map((day) => [getDateKey(day.date), day]).filter(([date]) => Boolean(date)));
+      [...(record?.items ?? []), ...(record?.services ?? [])].forEach((line) => {
+        const lineDate = getDateKey(line?.serviceDate ?? line?.date);
+        if (!lineDate || daysByDate.has(lineDate)) return;
+        daysByDate.set(lineDate, normalizeScheduleDay({
+          id: String(line?.serviceDayId ?? line?.scheduleDayId ?? `day-${lineDate}`).trim() || `day-${lineDate}`,
+          label: String(line?.serviceDayLabel ?? '').trim() || `Dia ${daysByDate.size + 1}`,
+          date: lineDate,
+        }, daysByDate.size, lineDate));
+      });
+      scheduleDays = Array.from(daysByDate.values())
+        .sort((left, right) => String(left.date ?? '').localeCompare(String(right.date ?? '')))
+        .map((day, index) => normalizeScheduleDay({
+          ...day,
+          label: String(day.label ?? '').trim() || `Dia ${index + 1}`,
+        }, index, deliveryDate));
+    }
     const defaultScheduleDayId = scheduleDays[0]?.id ?? '';
+    const resolveScheduleDay = (line) => findScheduleDayForLine(line, scheduleDays, scheduleDays[0] ?? null);
     return {
     ...buildEmptyDraft(entityType === 'contract' ? 'order' : 'quote'),
     entityType,
@@ -3484,7 +3521,9 @@ function ServiceOrdersSection({
     responsibleIds: Array.isArray(record?.responsibles) && record.responsibles.length > 0
       ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
       : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
-    items: (record?.items ?? []).map((line, index) => ({
+    items: (record?.items ?? []).map((line, index) => {
+      const lineDay = resolveScheduleDay(line);
+      return {
       lineKey: getDraftLineKey(line, index),
       itemId: line.itemId,
       quantity: line.quantity,
@@ -3517,20 +3556,24 @@ function ServiceOrdersSection({
       comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
       comboCategory: line.comboCategory ?? '',
       observation: line.observation ?? line.observations ?? line.note ?? '',
-      serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? defaultScheduleDayId,
-      serviceDate: line.serviceDate ?? scheduleDays.find((day) => day.id === (line.serviceDayId ?? line.scheduleDayId))?.date ?? '',
-      serviceDayLabel: line.serviceDayLabel ?? scheduleDays.find((day) => day.id === (line.serviceDayId ?? line.scheduleDayId))?.label ?? '',
-    })),
-    services: (record?.services ?? []).map((service, index) => ({
+      serviceDayId: lineDay?.id ?? line.serviceDayId ?? line.scheduleDayId ?? defaultScheduleDayId,
+      serviceDate: lineDay?.date ?? line.serviceDate ?? '',
+      serviceDayLabel: lineDay?.label ?? line.serviceDayLabel ?? '',
+    };
+    }),
+    services: (record?.services ?? []).map((service, index) => {
+      const serviceDay = resolveScheduleDay(service);
+      return {
       id: service?.id ?? `service-${index}`,
       name: String(service?.name ?? ''),
       detail: String(service?.detail ?? ''),
       quantity: Math.max(1, Math.trunc(Number(service?.quantity ?? 1))),
       unitPriceBs: Math.max(0, Number(service?.unitPriceBs ?? 0)),
-      serviceDayId: service?.serviceDayId ?? service?.scheduleDayId ?? defaultScheduleDayId,
-      serviceDate: service?.serviceDate ?? scheduleDays.find((day) => day.id === (service?.serviceDayId ?? service?.scheduleDayId))?.date ?? '',
-      serviceDayLabel: service?.serviceDayLabel ?? scheduleDays.find((day) => day.id === (service?.serviceDayId ?? service?.scheduleDayId))?.label ?? '',
-    })),
+      serviceDayId: serviceDay?.id ?? service?.serviceDayId ?? service?.scheduleDayId ?? defaultScheduleDayId,
+      serviceDate: serviceDay?.date ?? service?.serviceDate ?? '',
+      serviceDayLabel: serviceDay?.label ?? service?.serviceDayLabel ?? '',
+    };
+    }),
     supplierFulfillmentPlan: Array.isArray(record?.supplierFulfillmentPlan)
       ? record.supplierFulfillmentPlan.map((line) => ({
         id: line.id,
