@@ -2734,7 +2734,9 @@ const normalizeState = (state) => {
   });
   source.contracts.forEach((contract) => {
     if (contract?.deletedAt || String(contract?.status ?? '').trim() !== 'aprobado') return;
+    cleanupApprovedContractEconomicDuplicates(source, contract, { updatedByName: 'Sistema' }, now);
     syncInitialPaymentCashMovement(source, contract, { updatedByName: 'Sistema' }, contract?.approvedAt ?? contract?.createdAt ?? now);
+    cleanupApprovedContractEconomicDuplicates(source, contract, { updatedByName: 'Sistema' }, now);
     const ledgerGuaranteeBs = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
       .filter((entry) => String(entry?.type ?? '').trim() === 'guarantee')
       .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? 0)), 0);
@@ -9181,6 +9183,114 @@ const syncInitialPaymentCashMovement = (state, contract, payload, now) => {
   return movement;
 };
 
+const isInitialPaymentLedgerEntry = (entry) => {
+  if (String(entry?.type ?? '').trim() !== 'deposit') return false;
+  const entryId = normalizeText(entry?.id);
+  const entryNote = normalizeText(entry?.note);
+  return entryId.includes('initial-payment')
+    || entryNote.includes('pago inicial')
+    || entryNote.includes('primer pago')
+    || entryNote.includes('pimer pago');
+};
+
+const cleanupApprovedContractEconomicDuplicates = (state, contract, payload = {}, now = new Date().toISOString()) => {
+  if (String(contract?.status ?? '').trim() !== 'aprobado') return;
+  const targetCollectionBs = Math.max(0, toPositiveRoundedNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? 0));
+  if (targetCollectionBs <= 0) return;
+
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const referenceKeys = getContractCashReferenceKeys(state, contract);
+  const linkedCollections = state.cashMovements
+    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter(isContractCollectionCashMovement)
+    .filter((movement) => Math.max(0, Number(movement?.amountBs ?? 0)) > 0);
+  let registeredBs = Number(linkedCollections.reduce((sum, movement) => (
+    sum + Math.max(0, Number(movement?.amountBs ?? 0))
+  ), 0).toFixed(2));
+
+  if (registeredBs - targetCollectionBs > 0.01) {
+    const responsibleName = String(
+      payload?.updatedByName
+      ?? payload?.userName
+      ?? contract?.responsibles?.[0]?.name
+      ?? contract?.createdByName
+      ?? contract?.createdBy
+      ?? 'Sistema',
+    ).trim() || 'Sistema';
+    const candidates = linkedCollections.slice().sort((left, right) => {
+      const leftTag = normalizeText(left?.accountingTag);
+      const rightTag = normalizeText(right?.accountingTag);
+      const leftManual = leftTag === 'contract_economic_collection' ? 1 : 0;
+      const rightManual = rightTag === 'contract_economic_collection' ? 1 : 0;
+      if (leftManual !== rightManual) return rightManual - leftManual;
+      const leftInitial = leftTag === 'initial_rental_payment' || normalizeText(left?.type) === 'ingreso_alquiler' ? 1 : 0;
+      const rightInitial = rightTag === 'initial_rental_payment' || normalizeText(right?.type) === 'ingreso_alquiler' ? 1 : 0;
+      if (leftInitial !== rightInitial) return leftInitial - rightInitial;
+      return new Date(right?.createdAt ?? 0) - new Date(left?.createdAt ?? 0);
+    });
+    candidates.forEach((movement) => {
+      if (registeredBs - targetCollectionBs <= 0.01) return;
+      const amountBs = Math.max(0, Number(movement?.amountBs ?? 0));
+      if (registeredBs - amountBs < targetCollectionBs - 0.01) return;
+      movement.receiptStatus = 'anulado';
+      movement.voidedAt = movement.voidedAt ?? now;
+      movement.voidedBy = movement.voidedBy || responsibleName;
+      movement.voidReason = movement.voidReason || `Anulado por cobro duplicado del contrato ${contract?.contractCode || contract?.id || ''}`.trim();
+      registeredBs = Number((registeredBs - amountBs).toFixed(2));
+    });
+  }
+
+  const validCollectionBs = Math.min(targetCollectionBs, getRegisteredContractCollectionBs(state, contract));
+  if (contract.payment) {
+    const currentPaidBs = Math.max(0, toPositiveRoundedNumber(contract.payment.paidAtApprovalBs ?? 0));
+    const normalizedPaidBs = validCollectionBs > 0
+      ? validCollectionBs
+      : Math.min(currentPaidBs, targetCollectionBs);
+    if (currentPaidBs - targetCollectionBs > 0.01 || (validCollectionBs > 0 && Math.abs(currentPaidBs - validCollectionBs) > 0.01)) {
+      contract.payment.paidAtApprovalBs = normalizedPaidBs;
+      contract.payment.pendingBs = Number(Math.max(0, targetCollectionBs - normalizedPaidBs).toFixed(2));
+      contract.payment.overpaidBs = 0;
+    }
+  }
+  const rental = (Array.isArray(state.rentals) ? state.rentals : []).find((entry) => (
+    !entry?.deletedAt
+    && (
+      String(entry?.id ?? '') === String(contract?.rentalId ?? '')
+      || String(entry?.contractId ?? '') === String(contract?.id ?? '')
+      || normalizeText(entry?.orderCode) === normalizeText(contract?.orderCode)
+    )
+  ));
+  if (rental?.payment) {
+    const currentRentalPaidBs = Math.max(0, toPositiveRoundedNumber(rental.payment.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0));
+    const normalizedRentalPaidBs = validCollectionBs > 0
+      ? validCollectionBs
+      : Math.min(currentRentalPaidBs, targetCollectionBs);
+    if (currentRentalPaidBs - targetCollectionBs > 0.01 || (validCollectionBs > 0 && Math.abs(currentRentalPaidBs - validCollectionBs) > 0.01)) {
+      rental.payment.paidAtRentalBs = normalizedRentalPaidBs;
+      rental.payment.pendingPaymentBs = Number(Math.max(0, targetCollectionBs - normalizedRentalPaidBs).toFixed(2));
+      rental.payment.overpaidBs = 0;
+      rental.totals = {
+        ...(rental.totals ?? {}),
+        paidAtRentalBs: normalizedRentalPaidBs,
+        pendingPaymentBs: rental.payment.pendingPaymentBs,
+        overpaidBs: 0,
+      };
+    }
+  }
+
+  if (Array.isArray(contract.economicLedger)) {
+    const initialRows = contract.economicLedger.filter(isInitialPaymentLedgerEntry);
+    if (initialRows.length > 0) {
+      const keepRow = initialRows.find((entry) => Math.abs(toPositiveRoundedNumber(entry?.amountBs ?? 0) - validCollectionBs) < 0.01)
+        ?? initialRows[0];
+      keepRow.amountBs = validCollectionBs;
+      contract.economicLedger = contract.economicLedger.filter((entry) => (
+        !isInitialPaymentLedgerEntry(entry) || entry.id === keepRow.id
+      ));
+    }
+  }
+};
+
 const syncApprovedContractOperation = (state, contract, payload, now, beforeContract = null) => {
   if (String(contract?.status ?? '').trim() !== 'aprobado') return;
 
@@ -13379,7 +13489,9 @@ const createWebBridge = () => ({
           contract.responsibles = responsibles;
         }
         const now = new Date().toISOString();
+        cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncInitialPaymentCashMovement(state, contract, payload, now);
+        cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
@@ -13481,6 +13593,7 @@ const createWebBridge = () => ({
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
+        cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         const changes = summarizeContractChanges(beforeContract, contract);
         appendContractRevision(contract, payload, now, changes);
         if (changes.length > 0) {

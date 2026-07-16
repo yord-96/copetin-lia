@@ -2213,22 +2213,20 @@ function ServiceOrdersSection({
       : '';
     const hasInitialPaymentEntry = initialPaymentBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'deposit') return false;
-      const sameAmount = Math.abs(toMoneyNumber(entry.amountBs) - initialPaymentBs) < 0.01;
       const entryId = normalizeText(entry.id);
       const entryNote = normalizeText(entry.note);
-      return sameAmount && (
+      return (
         entryId.includes('initial-payment')
         || entryNote.includes('pago inicial')
         || entryNote.includes('primer pago')
         || entryNote.includes('pimer pago')
-        );
-      });
+      );
+    });
     const hasValidatedGuaranteeEntry = guaranteeValidatedBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'guarantee') return false;
-      const sameAmount = Math.abs(toMoneyNumber(entry.amountBs) - guaranteeValidatedBs) < 0.01;
       const entryId = normalizeText(entry.id);
       const entryNote = normalizeText(entry.note);
-      return sameAmount && (
+      return (
         entryId.includes('validated-guarantee')
         || entryId.includes('garantia-validada')
         || entryNote.includes('garantia validada')
