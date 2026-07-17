@@ -61216,3 +61216,33 @@ body:has(.accounting-bigcash-view) .workspace {
   text-indent: 0 !important;
 }
 
+
+
+/* Descuento general: porcentaje o monto fijo */
+.orders-discount-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.5rem;
+  align-content: start;
+}
+
+.orders-discount-control > label {
+  min-width: 0;
+}
+
+.orders-discount-control > .orders-field-live-summary {
+  grid-column: 1 / -1;
+  width: fit-content;
+  margin-top: 0;
+}
+
+@media (max-width: 760px) {
+  .orders-discount-control {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-discount-control > .orders-field-live-summary {
+    grid-column: auto;
+  }
+}

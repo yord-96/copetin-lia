@@ -2057,6 +2057,11 @@ const normalizeState = (state) => {
           subtotalBs: Number(subtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          discountMode: quote?.totals?.discountMode === 'fixed'
+            ? 'fixed'
+            : Math.max(0, Number(quote?.totals?.discountPercent ?? quote?.discountPercent ?? 0)) > 0
+              ? 'percent'
+              : Number(discountBs) > 0 ? 'fixed' : 'percent',
           discountBs: Number(discountBs.toFixed(2)),
           discountPercent: Math.max(0, Number(quote?.totals?.discountPercent ?? quote?.discountPercent ?? 0)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -2322,6 +2327,11 @@ const normalizeState = (state) => {
           subtotalBs: Number(subtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
+          discountMode: contract?.totals?.discountMode === 'fixed'
+            ? 'fixed'
+            : Math.max(0, Number(contract?.totals?.discountPercent ?? contract?.discountPercent ?? 0)) > 0
+              ? 'percent'
+              : Number(discountBs) > 0 ? 'fixed' : 'percent',
           discountBs: Number(discountBs.toFixed(2)),
           discountPercent: Math.max(0, Number(contract?.totals?.discountPercent ?? contract?.discountPercent ?? 0)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -12763,8 +12773,11 @@ const createWebBridge = () => ({
       let created = null;
       transaction((state) => {
         const now = new Date().toISOString();
+        const discountMode = payload?.discountMode === 'fixed' ? 'fixed' : 'percent';
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
-        const generalDiscountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)));
+        const generalDiscountPercent = discountMode === 'percent'
+          ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)))
+          : 0;
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
@@ -12880,6 +12893,7 @@ const createWebBridge = () => ({
             subtotalBs: Number(subtotalBs.toFixed(2)),
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+            discountMode,
             discountBs: Number(discountBs.toFixed(2)),
             discountPercent: Number(generalDiscountPercent.toFixed(2)),
             deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -13063,8 +13077,15 @@ const createWebBridge = () => ({
         );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
+        const discountMode = payload?.discountMode === 'fixed'
+          ? 'fixed'
+          : payload?.discountMode === 'percent'
+            ? 'percent'
+            : quote?.totals?.discountMode === 'fixed' ? 'fixed' : 'percent';
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
-        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? quote?.totals?.discountPercent ?? 0)));
+        const discountPercent = discountMode === 'percent'
+          ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? quote?.totals?.discountPercent ?? 0)))
+          : 0;
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? quote?.totals?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? '').trim() === 'validado'
           ? 'validado'
@@ -13095,6 +13116,7 @@ const createWebBridge = () => ({
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          discountMode,
           discountBs: Number(discountBs.toFixed(2)),
           discountPercent: Number(discountPercent.toFixed(2)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -13203,8 +13225,11 @@ const createWebBridge = () => ({
       let created = null;
       transaction((state) => {
         const now = new Date().toISOString();
+        const discountMode = payload?.discountMode === 'fixed' ? 'fixed' : 'percent';
         const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
-        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)));
+        const discountPercent = discountMode === 'percent'
+          ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)))
+          : 0;
         const guaranteeBs = Math.max(0, toPositiveRoundedNumber(payload?.guaranteeBs ?? 0));
         const guaranteeStatus = String(payload?.guaranteeStatus ?? '').trim() === 'validado' ? 'validado' : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod);
@@ -13323,6 +13348,7 @@ const createWebBridge = () => ({
             subtotalBs: Number(subtotalBs.toFixed(2)),
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
             durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+            discountMode,
             discountBs: Number(discountBs.toFixed(2)),
             discountPercent: Number(discountPercent.toFixed(2)),
             deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),
@@ -13561,8 +13587,15 @@ const createWebBridge = () => ({
         );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
+        const discountMode = payload?.discountMode === 'fixed'
+          ? 'fixed'
+          : payload?.discountMode === 'percent'
+            ? 'percent'
+            : contract?.totals?.discountMode === 'fixed' ? 'fixed' : 'percent';
         const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
-        const discountPercent = Math.min(100, Math.max(0, Number(payload?.discountPercent ?? contract?.totals?.discountPercent ?? 0)));
+        const discountPercent = discountMode === 'percent'
+          ? Math.min(100, Math.max(0, Number(payload?.discountPercent ?? contract?.totals?.discountPercent ?? 0)))
+          : 0;
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
         const registeredGuaranteeBs = getRegisteredContractGuaranteeBs(state, contract);
         const requestedGuaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
@@ -13608,6 +13641,7 @@ const createWebBridge = () => ({
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
+          discountMode,
           discountBs: Number(discountBs.toFixed(2)),
           discountPercent: Number(discountPercent.toFixed(2)),
           deliveryFeeBs: Number(deliveryCharge.deliveryFeeBs.toFixed(2)),

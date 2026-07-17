@@ -914,6 +914,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     pickupTimeMode: 'fixed',
     driverId: '',
     vehicleId: '',
+    discountMode: 'percent',
     discountBs: '0',
     discountPercent: '0',
     guaranteeBs: '0',
@@ -3325,11 +3326,17 @@ function ServiceOrdersSection({
     return Math.max(0, Number.isFinite(parsed) ? parsed : 0);
   }, [draft.deliveryChargeMode, draft.deliveryFeeBs, draft.logisticsMode]);
 
-  const generalDiscountPercent = Math.min(100, Math.max(0, Number(draft.discountPercent ?? 0)));
-  const generalDiscountBs = useMemo(
-    () => Number((quoteSubtotalBs * (generalDiscountPercent / 100)).toFixed(2)),
-    [generalDiscountPercent, quoteSubtotalBs],
-  );
+  const generalDiscountMode = draft.discountMode === 'fixed' ? 'fixed' : 'percent';
+  const generalDiscountPercent = generalDiscountMode === 'percent'
+    ? Math.min(100, Math.max(0, Number(draft.discountPercent ?? 0)))
+    : 0;
+  const generalDiscountBs = useMemo(() => {
+    if (generalDiscountMode === 'fixed') {
+      const fixedDiscountBs = Math.max(0, Number(draft.discountBs ?? 0));
+      return Number(Math.min(quoteSubtotalBs, fixedDiscountBs).toFixed(2));
+    }
+    return Number((quoteSubtotalBs * (generalDiscountPercent / 100)).toFixed(2));
+  }, [draft.discountBs, generalDiscountMode, generalDiscountPercent, quoteSubtotalBs]);
   const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
 
   const quoteTotalBs = useMemo(() => (
@@ -3495,6 +3502,13 @@ function ServiceOrdersSection({
     pickupTimeMode: record?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
     driverId: record?.driverId ?? '',
     vehicleId: record?.vehicleId ?? '',
+    discountMode: record?.totals?.discountMode === 'fixed'
+      ? 'fixed'
+      : Number(record?.totals?.discountPercent ?? record?.discountPercent ?? 0) > 0
+        ? 'percent'
+        : Number(record?.totals?.discountBs ?? 0) > 0
+          ? 'fixed'
+          : 'percent',
     discountBs: String(record?.totals?.discountBs ?? 0),
     discountPercent: String(record?.totals?.discountPercent ?? record?.discountPercent ?? 0),
     guaranteeBs: String(record?.totals?.guaranteeBs ?? 0),
@@ -5059,6 +5073,7 @@ function ServiceOrdersSection({
       vehicleId: draft.vehicleId || null,
       validUntil: draft.validUntil || null,
       observations: contractObservations,
+      discountMode: generalDiscountMode,
       discountBs: generalDiscountBs,
       discountPercent: generalDiscountPercent,
       guaranteeBs,
@@ -10656,17 +10671,54 @@ function ServiceOrdersSection({
                     <h4><span className="orders-section-icon"><ClipboardCheck aria-hidden="true" /></span>Revision economica y cierre</h4>
                     <p className="orders-step-help">Revisa importes antes de guardar o aprobar la cotizacion.</p>
                     <div className="orders-money-grid">
-                      <label>
-                        Descuento general
-                        <select value={String(draft.discountPercent ?? 0)} onChange={(event) => setDraftField('discountPercent', event.target.value)}>
-                          {[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75].map((percent) => (
-                            <option key={percent} value={percent}>{percent}%</option>
-                          ))}
-                        </select>
+                      <div className="orders-discount-control">
+                        <label>
+                          Tipo de descuento
+                          <select
+                            value={generalDiscountMode}
+                            onChange={(event) => {
+                              const discountMode = event.target.value === 'fixed' ? 'fixed' : 'percent';
+                              setDraft((current) => ({
+                                ...current,
+                                discountMode,
+                                discountPercent: discountMode === 'fixed' ? '0' : current.discountPercent,
+                                discountBs: discountMode === 'percent' ? '0' : current.discountBs,
+                              }));
+                            }}
+                          >
+                            <option value="percent">Porcentaje (%)</option>
+                            <option value="fixed">Monto fijo (Bs)</option>
+                          </select>
+                        </label>
+                        <label>
+                          {generalDiscountMode === 'fixed' ? 'Descuento (Bs)' : 'Porcentaje'}
+                          {generalDiscountMode === 'fixed' ? (
+                            <input
+                              type="number"
+                              min="0"
+                              max={quoteSubtotalBs}
+                              step="0.01"
+                              value={draft.discountBs}
+                              onFocus={selectNumericInput}
+                              onChange={(event) => setDraftField('discountBs', cleanDecimalInput(event.target.value))}
+                            />
+                          ) : (
+                            <select
+                              value={String(draft.discountPercent ?? 0)}
+                              onChange={(event) => setDraftField('discountPercent', event.target.value)}
+                            >
+                              {[0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75].map((percent) => (
+                                <option key={percent} value={percent}>{percent}%</option>
+                              ))}
+                            </select>
+                          )}
+                        </label>
                         <small className="orders-field-live-summary is-info">
-                          Seleccionado: {generalDiscountPercent}% | Rebaja: {formatBs(generalDiscountBs)}
+                          {generalDiscountMode === 'fixed'
+                            ? `Rebaja fija: ${formatBs(generalDiscountBs)}`
+                            : `Seleccionado: ${generalDiscountPercent}% | Rebaja: ${formatBs(generalDiscountBs)}`}
                         </small>
-                      </label>
+                      </div>
                       <label>
                         Garantia (Bs)
                         <input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(event) => setDraftField('guaranteeBs', event.target.value)} />
