@@ -5390,12 +5390,43 @@ function ServiceOrdersSection({
       || (contract?.orderCode && String(row.orderCode ?? '') === String(contract.orderCode))
       || (contract?.contractCode && String(row.contractCode ?? '') === String(contract.contractCode)),
     );
+
     const contractPlan = Array.isArray(contract?.supplierFulfillmentPlan) ? contract.supplierFulfillmentPlan : [];
     const linkedOrderPlan = Array.isArray(linkedOrder?.supplierFulfillmentPlan) ? linkedOrder.supplierFulfillmentPlan : [];
+
+    const getLineDayKeys = (lines = []) => new Set(
+      (Array.isArray(lines) ? lines : [])
+        .map((line) => getDateKey(line?.serviceDate ?? line?.date)
+          || String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim()
+          || normalizeText(line?.serviceDayLabel ?? line?.dayLabel))
+        .filter(Boolean),
+    );
+
+    const contractItems = Array.isArray(contract?.items) ? contract.items : [];
+    const linkedOrderItems = Array.isArray(linkedOrder?.items) ? linkedOrder.items : [];
+    const contractServices = Array.isArray(contract?.services) ? contract.services : [];
+    const linkedOrderServices = Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
+
+    const contractDayCount = getLineDayKeys([...contractItems, ...contractServices]).size;
+    const linkedOrderDayCount = getLineDayKeys([...linkedOrderItems, ...linkedOrderServices]).size;
+    const shouldRecoverDailyLines = linkedOrderDayCount > contractDayCount
+      || (
+        linkedOrder?.pricingPlan?.mode === 'daily_schedule'
+        && contract?.pricingPlan?.mode === 'daily_schedule'
+        && linkedOrderDayCount > 1
+        && contractDayCount <= 1
+      );
+
     const sourceContract = {
       ...contract,
+      items: shouldRecoverDailyLines && linkedOrderItems.length > 0 ? linkedOrderItems : contractItems,
+      services: shouldRecoverDailyLines && linkedOrderServices.length > 0 ? linkedOrderServices : contractServices,
+      pricingPlan: shouldRecoverDailyLines && linkedOrder?.pricingPlan
+        ? linkedOrder.pricingPlan
+        : contract?.pricingPlan,
       supplierFulfillmentPlan: contractPlan.length > 0 ? contractPlan : linkedOrderPlan,
     };
+
     setMenuState(null);
     openCreateModal('order', 'contract', sourceContract);
   };
