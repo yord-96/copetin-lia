@@ -18,6 +18,7 @@ const operationTabs = [
   { id: 'caja', label: 'Calendario', icon: 'calendar', hint: '' },
   { id: 'items', label: 'Clientes', icon: 'customerService', hint: '' },
   { id: 'alquiler', label: 'Ordenes de Servicio', icon: 'serviceChecklist', hint: '' },
+  { id: 'disponibilidad', label: 'Disponibilidad', icon: 'availability', hint: '' },
   { id: 'asistencia', label: 'Asistencia', icon: 'attendance', hint: '' },
   { id: 'proveedores', label: 'Proveedores', icon: 'provider', hint: '' },
   { id: 'personal', label: 'Personal', icon: 'personnel', hint: '' },
@@ -82,6 +83,17 @@ function renderIcon(icon) {
 
   if (icon === 'serviceChecklist') {
     return <img className="asset-icon service-checklist-asset-icon" src="/imagenes/lista-de-verificacion.png" alt="" aria-hidden="true" />;
+  }
+
+  if (icon === 'availability') {
+    return (
+      <img
+        className="asset-icon availability-asset-icon"
+        src="/imagenes/venta-de-productos.png"
+        alt=""
+        aria-hidden="true"
+      />
+    );
   }
 
   if (icon === 'attendance') {

@@ -386,7 +386,8 @@ export const useAppController = () => {
     || activeTab === 'contabilidad'
     || String(activeTab).startsWith('inventario')
     || String(activeTab).startsWith('devolucion')
-    || activeTab === 'alquiler';
+    || activeTab === 'alquiler'
+    || activeTab === 'disponibilidad';
 
   const subtitleText =
     activeTab === 'resumen'
@@ -407,6 +408,8 @@ export const useAppController = () => {
       ? 'Registra entradas, salidas, ubicaciones y respaldos de asistencia fuera de oficina.'
       : activeTab === 'personal'
       ? 'Gestiona personal, asistencia, permisos y horas trabajadas.'
+      : activeTab === 'disponibilidad'
+      ? 'Consulta el stock libre, comprometido y tentativo para cualquier fecha.'
       : activeTab === 'contabilidad'
       ? 'Controla caja, garantias, saldos por cobrar y liquidaciones de devolucion.'
       : String(activeTab).startsWith('inventario')

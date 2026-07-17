@@ -14,32 +14,32 @@ const ROLE_DEFINITIONS = {
   developer: {
     label: 'Developer',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias', 'contabilidad'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'disponibilidad', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'usuarios', 'categorias', 'contabilidad'],
   },
   super_admin: {
     label: 'Super admin',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'disponibilidad', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias'],
   },
   admin: {
     label: 'Admin',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias', 'contabilidad'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'disponibilidad', 'asistencia', 'proveedores', 'personal', 'inventario', 'devolucion', 'caja', 'recibos', 'categorias', 'contabilidad'],
   },
   user: {
     label: 'User',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'disponibilidad', 'asistencia', 'caja'],
   },
   ventas: {
     label: 'Ventas',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'items', 'alquiler', 'asistencia', 'proveedores', 'caja'],
+    allowedTabs: ['resumen', 'items', 'alquiler', 'disponibilidad', 'asistencia', 'proveedores', 'caja'],
   },
   inventario: {
     label: 'Inventario',
     defaultTab: 'caja',
-    allowedTabs: ['resumen', 'asistencia', 'caja', 'inventario'],
+    allowedTabs: ['resumen', 'disponibilidad', 'asistencia', 'caja', 'inventario'],
   },
   transporte: {
     label: 'Transporte',
@@ -6527,9 +6527,6 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
   return { ownQty, supplierQty: effectiveSupplierQty, totalQty, label };
 };
 
-const contractPdfIcon = (fileName) =>
-  `<img class="contract-pdf-icon" src="/imagenes/pdf%20contrato/${escapeHtml(fileName)}" alt="" />`;
-
 const getReferenceContractStyles = () => `
   @page { size: auto; margin: 0; }
   * { box-sizing: border-box; }
@@ -7320,11 +7317,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const hasManualDiscount = Number(discountBs ?? 0) > 0;
   const logisticsMode = contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
   const isCustomerPickup = logisticsMode === 'recojo';
-  const logisticsLabel = isCustomerPickup ? 'Recojo por cliente' : 'Envio por equipo';
-  const durationLabel = hasDurationPricing
-    ? `${pricingPlan.days} dias | multiplicador ${Number(pricingPlan.effectiveMultiplier ?? 1).toFixed(2)}x`
-    : hasDailySchedulePricing ? `${Math.max(1, Number(pricingPlan?.days ?? pricingPlan?.scheduleDays?.length ?? 1))} dias | items por dia`
-    : 'Precio unico';
   const cancellationPenaltyPercent = Number(settings?.contractCancellationPenaltyPercent ?? 20);
   const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
 
@@ -7338,7 +7330,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .filter(Boolean);
   const documentCustomerCi = String(contract?.customerCi ?? contract?.nitCi ?? rental?.customerCi ?? rental?.nitCi ?? '').trim();
   const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, 'contrato');
-  const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? rental?.id ?? '-';
   const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';

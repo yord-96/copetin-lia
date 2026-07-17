@@ -91,7 +91,15 @@ const periodFromCommercialRecord = (record) =>
     pickupWindowEnd: record?.pickupWindowEnd || record?.eventTime || '23:59',
   });
 
-const normalizeLineQuantity = (line) => Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+const normalizeLineQuantity = (line) => {
+  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+  const explicitInternal = Number(line?.internalReservedQty);
+  if (Number.isFinite(explicitInternal)) {
+    return Math.max(0, Math.trunc(explicitInternal));
+  }
+  const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
+  return Math.max(0, quantity - supplierBackedQty);
+};
 
 const controlsStock = (item) =>
   item?.controlsStock !== false

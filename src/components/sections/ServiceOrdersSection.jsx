@@ -2156,8 +2156,6 @@ function ServiceOrdersSection({
       toMoneyNumber(rental?.payment?.paidAtRentalBs),
       paymentIncomeBs,
     );
-    const fallbackBalanceBs = Math.max(0, totalBs - paidBs);
-    const balanceBs = pendingPaymentBs > 0 ? pendingPaymentBs : fallbackBalanceBs;
     const penaltiesBs = toMoneyNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
     const outstandingRentalBs = toMoneyNumber(settlement.outstandingRentalBs);
     const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
@@ -3076,7 +3074,7 @@ function ServiceOrdersSection({
       fromRecord[coverageKey] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
-  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen, selectedItems]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -3684,19 +3682,6 @@ function ServiceOrdersSection({
       ...current,
       billingMode: value === 'con_factura' ? 'con_factura' : 'sin_factura',
     }));
-  };
-
-  const setSupplierCoverageField = (itemId, patch) => {
-    setSupplierFulfillmentDraftByItem((current) => {
-      const currentLine = current[itemId] ?? {};
-      return {
-        ...current,
-        [itemId]: {
-          ...currentLine,
-          ...patch,
-        },
-      };
-    });
   };
 
   const addSupplierCoverageLine = (itemId, coverage) => {
@@ -5596,7 +5581,7 @@ function ServiceOrdersSection({
       return;
     }
     if (amountBs - suggestedBs > 0.01) {
-      setContractEconomicsError(`El saldo pendiente por cobrar es Bs ${formatCurrency(suggestedBs)}. No se puede registrar un cobro mayor.`);
+      setContractEconomicsError(`El saldo pendiente por cobrar es Bs ${suggestedBs.toFixed(2)}. No se puede registrar un cobro mayor.`);
       return;
     }
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsCollectionDraft.paymentMethod);

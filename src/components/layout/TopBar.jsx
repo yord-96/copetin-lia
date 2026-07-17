@@ -25,6 +25,7 @@ const PAGE_LABELS = {
   caja: 'Calendario',
   items: 'Clientes',
   alquiler: 'Ordenes',
+  disponibilidad: 'Disponibilidad',
   asistencia: 'Asistencia',
   proveedores: 'Proveedores',
   personal: 'Personal',

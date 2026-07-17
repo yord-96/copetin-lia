@@ -59574,3 +59574,1422 @@ body:has(.accounting-bigcash-view) .workspace {
     grid-template-columns: 1fr;
   }
 }
+
+/* Disponibilidad de inventario */
+.availability-view {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  padding: 0.4rem 0.9rem 2rem;
+  display: grid;
+  gap: 1rem;
+  color: #0b244f;
+}
+
+.availability-hero {
+  min-height: 10.5rem;
+  border-radius: 1.35rem;
+  padding: clamp(1.25rem, 2.4vw, 2rem);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.2rem;
+  background:
+    radial-gradient(circle at 86% 16%, rgba(255, 255, 255, 0.18), transparent 23%),
+    linear-gradient(135deg, #092a61 0%, #123e7d 62%, #f05a05 160%);
+  color: #fff;
+  box-shadow: 0 1.2rem 2.8rem rgba(8, 35, 79, 0.17);
+}
+
+.availability-kicker,
+.availability-filter-heading span,
+.availability-quick-check header span,
+.availability-products-section > header span,
+.availability-calendar-card > header span,
+.availability-day-detail > header span {
+  display: block;
+  font-size: 0.69rem;
+  font-weight: 950;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+}
+
+.availability-hero h2 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(2rem, 3.2vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.055em;
+}
+
+.availability-hero p {
+  max-width: 44rem;
+  margin: 0.58rem 0 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.availability-mode-switch {
+  flex: 0 0 auto;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.11);
+  backdrop-filter: blur(10px);
+}
+
+.availability-mode-switch button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.76rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.availability-mode-switch button.active {
+  background: #fff;
+  color: #0b2d63;
+  box-shadow: 0 0.55rem 1.2rem rgba(4, 21, 49, 0.18);
+}
+
+.availability-filter-card,
+.availability-quick-check,
+.availability-products-section,
+.availability-calendar-card,
+.availability-day-detail {
+  border: 1px solid #e1e8f1;
+  border-radius: 1.15rem;
+  background: #fff;
+  box-shadow: 0 0.8rem 2rem rgba(15, 23, 42, 0.055);
+}
+
+.availability-filter-card { padding: 1rem; }
+
+.availability-filter-heading,
+.availability-products-section > header,
+.availability-calendar-card > header,
+.availability-day-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.availability-filter-heading span,
+.availability-quick-check header span,
+.availability-products-section > header span,
+.availability-calendar-card > header span,
+.availability-day-detail > header span { color: #ef5a08; }
+
+.availability-filter-heading strong {
+  display: block;
+  margin-top: 0.14rem;
+  color: #0b2d63;
+  font-size: 0.94rem;
+}
+
+.availability-reset {
+  border: 0;
+  background: transparent;
+  color: #e65007;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.availability-date-grid,
+.availability-search-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.availability-date-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 0.9rem;
+}
+
+.availability-search-grid {
+  grid-template-columns: minmax(18rem, 1.5fr) repeat(3, minmax(10rem, 0.7fr));
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid #edf1f6;
+}
+
+.availability-filter-card label,
+.availability-quick-form label {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.availability-filter-card label > span,
+.availability-quick-form label > span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.availability-filter-card input,
+.availability-filter-card select,
+.availability-quick-form input,
+.availability-quick-form select {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #dbe3ed;
+  border-radius: 0.72rem;
+  background: #f9fbfd;
+  padding: 0.65rem 0.75rem;
+  color: #102a56;
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 750;
+  outline: none;
+}
+
+.availability-filter-card input:focus,
+.availability-filter-card select:focus,
+.availability-quick-form input:focus,
+.availability-quick-form select:focus {
+  border-color: #f05a05;
+  box-shadow: 0 0 0 3px rgba(240, 90, 5, 0.1);
+}
+
+.availability-search-field {
+  position: relative;
+  display: flex !important;
+  align-items: center;
+}
+
+.availability-search-field svg {
+  position: absolute;
+  left: 0.75rem;
+  color: #76859a;
+}
+
+.availability-search-field input { padding-left: 2.35rem; }
+
+.availability-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.72rem;
+}
+
+.availability-kpi-grid article {
+  min-height: 7.1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 0.9rem;
+  display: grid;
+  grid-template-columns: 2.45rem minmax(0, 1fr);
+  grid-template-areas: "icon label" "icon value";
+  align-items: center;
+  gap: 0.15rem 0.65rem;
+  background: #fff;
+  box-shadow: 0 0.65rem 1.6rem rgba(15, 23, 42, 0.045);
+}
+
+.availability-kpi-icon {
+  grid-area: icon;
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 0.78rem;
+  display: grid;
+  place-items: center;
+}
+
+.availability-kpi-icon svg { width: 1.25rem; height: 1.25rem; }
+.availability-kpi-icon.blue { background: #eaf2ff; color: #2563eb; }
+.availability-kpi-icon.orange { background: #fff0e7; color: #e75007; }
+.availability-kpi-icon.green { background: #e9f8ef; color: #168447; }
+.availability-kpi-icon.amber { background: #fff7d9; color: #b77903; }
+.availability-kpi-icon.red { background: #ffebeb; color: #cf2f36; }
+.availability-kpi-icon.violet { background: #f3edff; color: #7638bf; }
+
+.availability-kpi-grid small {
+  grid-area: label;
+  color: #69778b;
+  font-size: 0.66rem;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.availability-kpi-grid strong {
+  grid-area: value;
+  color: #092a5e;
+  font-size: 1.42rem;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.availability-quick-check {
+  overflow: hidden;
+}
+
+.availability-quick-check > header {
+  min-height: 5rem;
+  padding: 0.95rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #e9eef5;
+  background: linear-gradient(90deg, #fff8f3, #fff);
+}
+
+.availability-quick-check h3,
+.availability-products-section h3,
+.availability-calendar-card h3,
+.availability-day-detail h3 {
+  margin: 0.12rem 0 0;
+  color: #0b2d63;
+  font-size: 1.08rem;
+  font-weight: 950;
+}
+
+.availability-quick-check p,
+.availability-day-detail p {
+  margin: 0.2rem 0 0;
+  color: #6b788b;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.availability-quick-check > header > svg { color: #ef5a08; }
+
+.availability-quick-form {
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: minmax(18rem, 1.2fr) minmax(10rem, 0.45fr) minmax(24rem, 1.5fr);
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.availability-quick-result {
+  min-height: 4.45rem;
+  border: 1px solid #dde5ef;
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  background: #f8fbff;
+}
+
+.availability-quick-result.warning { border-color: #f4ca79; background: #fffaf0; }
+.availability-quick-result.success { border-color: #a7ddba; background: #f1fbf5; }
+.availability-quick-result.empty { display: grid; place-items: center; color: #7b8798; }
+
+.availability-quick-result div { display: grid; gap: 0.12rem; }
+.availability-quick-result small { color: #718095; font-size: 0.62rem; font-weight: 850; }
+.availability-quick-result strong { color: #092a5e; font-size: 1.05rem; font-weight: 950; }
+.availability-quick-message {
+  grid-column: 1 / -1;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 0.42rem !important;
+  padding-top: 0.38rem;
+  border-top: 1px solid rgba(15, 43, 83, 0.08);
+  color: #173761;
+  font-size: 0.73rem;
+  font-weight: 850;
+}
+
+.availability-products-section { padding: 1rem; }
+.availability-products-section > header { margin-bottom: 0.85rem; }
+.availability-products-section > header > small {
+  border-radius: 999px;
+  background: #edf3fb;
+  padding: 0.42rem 0.7rem;
+  color: #2c4771;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.availability-product-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.78rem;
+}
+
+.availability-product-card {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.availability-product-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.85rem 1.8rem rgba(15, 23, 42, 0.07);
+}
+
+.availability-product-card.tone-danger { border-color: #f2b7b9; }
+.availability-product-card.tone-warning { border-color: #efd493; }
+.availability-product-card.expanded { grid-column: 1 / -1; }
+
+.availability-product-main {
+  min-width: 0;
+  padding: 0.82rem;
+  display: grid;
+  grid-template-columns: 5.1rem minmax(0, 1fr);
+  gap: 0.8rem;
+}
+
+.availability-product-image {
+  width: 5.1rem;
+  height: 5.1rem;
+  border: 0;
+  border-radius: 0.85rem;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #edf2f7;
+  color: #718096;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.availability-product-image img { width: 100%; height: 100%; object-fit: cover; }
+.availability-product-copy { min-width: 0; }
+
+.availability-product-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.availability-product-title-row > div { min-width: 0; }
+.availability-product-title-row small { color: #77869a; font-size: 0.59rem; font-weight: 900; }
+.availability-product-title-row h4 {
+  margin: 0.14rem 0 0;
+  color: #0a2858;
+  font-size: 0.88rem;
+  font-weight: 950;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.availability-product-title-row p { margin: 0.12rem 0 0; color: #7b8797; font-size: 0.62rem; font-weight: 750; }
+
+.availability-status-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.28rem 0.5rem;
+  font-size: 0.59rem;
+  font-weight: 950;
+}
+.availability-status-pill.success { background: #e7f8ed; color: #178246; }
+.availability-status-pill.warning { background: #fff3d6; color: #a96a00; }
+.availability-status-pill.danger { background: #ffebec; color: #c92f37; }
+.availability-status-pill.neutral { background: #edf1f5; color: #697789; }
+
+.availability-stock-numbers {
+  margin-top: 0.58rem;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.34rem;
+}
+.availability-stock-numbers div {
+  min-width: 0;
+  border-radius: 0.6rem;
+  padding: 0.38rem 0.42rem;
+  background: #f5f8fc;
+}
+.availability-stock-numbers small { display: block; color: #7a8797; font-size: 0.52rem; font-weight: 850; }
+.availability-stock-numbers strong { display: block; margin-top: 0.08rem; color: #0b2d63; font-size: 0.8rem; font-weight: 950; }
+
+.availability-progress-line { margin-top: 0.52rem; display: grid; gap: 0.24rem; }
+.availability-progress-line > span { height: 0.32rem; border-radius: 999px; background: #e9eef5; overflow: hidden; }
+.availability-progress-line i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ef5a08, #ff8b48); }
+.availability-progress-line small { color: #788598; font-size: 0.55rem; font-weight: 800; }
+
+.availability-detail-toggle {
+  width: 100%;
+  min-height: 2.1rem;
+  border: 0;
+  border-top: 1px solid #edf1f5;
+  padding: 0.42rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fafcff;
+  color: #3a5276;
+  font-size: 0.65rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.availability-product-card.expanded .availability-detail-toggle svg { transform: rotate(180deg); }
+
+.availability-commitment-list { border-top: 1px solid #e5ebf2; background: #f8fafc; }
+.availability-commitment-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.65fr) minmax(10rem, 1.1fr) minmax(12rem, 1.3fr) minmax(11rem, 1.15fr) 5rem;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.72rem 0.82rem;
+  border-bottom: 1px solid #e7edf4;
+}
+.availability-commitment-row:last-child { border-bottom: 0; }
+.availability-commitment-row.tentative { background: #fffaf0; }
+.availability-commitment-row > div { min-width: 0; display: grid; gap: 0.1rem; }
+.availability-commitment-row small { color: #7a8797; font-size: 0.55rem; font-weight: 900; text-transform: uppercase; }
+.availability-commitment-row strong { color: #102d5b; font-size: 0.7rem; font-weight: 950; overflow-wrap: anywhere; }
+.availability-commitment-row span { display: flex; align-items: center; gap: 0.25rem; color: #758297; font-size: 0.58rem; font-weight: 750; }
+.availability-contract-badge {
+  border-left: 0.22rem solid #ef5a08;
+  border-radius: 0.55rem;
+  padding: 0.42rem 0.5rem;
+  background: #fff;
+}
+.availability-commitment-row.tentative .availability-contract-badge { border-left-color: #b67b09; }
+.availability-commitment-qty { text-align: right; }
+.availability-commitment-qty strong { font-size: 1.02rem; }
+.availability-empty-detail { margin: 0; padding: 1rem; text-align: center; color: #738094; font-size: 0.72rem; font-weight: 750; }
+
+.availability-pagination {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+}
+.availability-pagination button {
+  min-height: 2.25rem;
+  border: 1px solid #d9e1ec;
+  border-radius: 0.7rem;
+  padding: 0.45rem 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #fff;
+  color: #234168;
+  font-size: 0.68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.availability-pagination button:disabled { opacity: 0.42; cursor: not-allowed; }
+.availability-pagination span { color: #68768a; font-size: 0.7rem; font-weight: 850; }
+
+.availability-no-results,
+.availability-day-empty {
+  min-height: 12rem;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.3rem;
+  color: #718096;
+  text-align: center;
+}
+.availability-no-results strong,
+.availability-day-empty strong { color: #18365f; }
+.availability-no-results p,
+.availability-day-empty p { margin: 0; font-size: 0.72rem; }
+
+.availability-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(21rem, 0.72fr);
+  gap: 1rem;
+  align-items: start;
+}
+.availability-calendar-card { padding: 1rem; }
+.availability-calendar-card > header { padding-bottom: 0.8rem; border-bottom: 1px solid #edf1f5; }
+.availability-calendar-card > header > button {
+  width: 2.45rem;
+  height: 2.45rem;
+  border: 1px solid #dfe6ef;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #24446e;
+  cursor: pointer;
+}
+.availability-calendar-card > header > div { text-align: center; }
+.availability-week-labels,
+.availability-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.availability-week-labels { margin-top: 0.7rem; }
+.availability-week-labels span { padding: 0.4rem; text-align: center; color: #718096; font-size: 0.62rem; font-weight: 950; }
+.availability-calendar-grid { gap: 0.35rem; }
+.availability-calendar-grid button {
+  min-height: 6.3rem;
+  border: 1px solid #e3e8ef;
+  border-radius: 0.75rem;
+  padding: 0.52rem;
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  text-align: left;
+  background: #fff;
+  color: #19375f;
+  cursor: pointer;
+}
+.availability-calendar-grid button.outside { opacity: 0.42; }
+.availability-calendar-grid button.selected { outline: 2px solid #ef5a08; outline-offset: 1px; }
+.availability-calendar-grid button.tone-busy { background: #f0f6ff; border-color: #c8daf4; }
+.availability-calendar-grid button.tone-warning { background: #fff9e9; border-color: #edcf83; }
+.availability-calendar-grid button.tone-danger { background: #fff0f1; border-color: #efb7ba; }
+.availability-calendar-grid button.tone-tentative { background: #f6f0ff; border-color: #d8c7ee; }
+.availability-calendar-grid button strong { font-size: 0.85rem; font-weight: 950; }
+.availability-calendar-grid button span { color: #4e6380; font-size: 0.61rem; font-weight: 850; }
+.availability-calendar-grid button small { color: #7a8797; font-size: 0.55rem; font-weight: 800; }
+
+.availability-day-detail { position: sticky; top: 1rem; overflow: hidden; }
+.availability-day-detail > header { align-items: flex-start; padding: 1rem; border-bottom: 1px solid #e9eef5; background: #f8fbff; }
+.availability-day-detail > header { display: block; }
+.availability-day-list { max-height: 67vh; overflow: auto; }
+.availability-day-list article {
+  display: grid;
+  grid-template-columns: 2.7rem minmax(0, 1fr) 4.3rem 4.3rem;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid #edf1f5;
+}
+.availability-day-list article img,
+.availability-day-list article > span:first-child {
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 0.65rem;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: #edf2f7;
+  color: #6e7c8f;
+  font-size: 0.65rem;
+  font-weight: 950;
+}
+.availability-day-list article > div { min-width: 0; }
+.availability-day-list article strong { display: block; color: #15345f; font-size: 0.67rem; font-weight: 950; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.availability-day-list article small { display: block; margin-top: 0.08rem; color: #7a8797; font-size: 0.54rem; font-weight: 800; }
+.availability-day-list article b { display: block; color: #0b2d63; font-size: 0.82rem; font-weight: 950; }
+
+@media (max-width: 1220px) {
+  .availability-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .availability-search-grid { grid-template-columns: minmax(16rem, 1.4fr) repeat(2, minmax(9rem, 0.7fr)); }
+  .availability-search-grid select:last-child { grid-column: auto; }
+  .availability-quick-form { grid-template-columns: minmax(16rem, 1fr) minmax(9rem, 0.4fr); }
+  .availability-quick-result { grid-column: 1 / -1; }
+  .availability-calendar-layout { grid-template-columns: 1fr; }
+  .availability-day-detail { position: static; }
+}
+
+@media (max-width: 900px) {
+  .availability-hero { align-items: stretch; flex-direction: column; }
+  .availability-mode-switch { width: 100%; }
+  .availability-date-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .availability-search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .availability-search-field { grid-column: 1 / -1; }
+  .availability-product-grid { grid-template-columns: 1fr; }
+  .availability-product-card.expanded { grid-column: auto; }
+  .availability-commitment-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .availability-commitment-qty { text-align: left; }
+}
+
+@media (max-width: 640px) {
+  .app-content .workspace:has(.availability-view) { padding: 0 !important; background: #f3f5f8 !important; }
+  .availability-view { width: 100%; padding: 0.75rem 0.75rem 6rem; gap: 0.75rem; }
+  .availability-hero { min-height: auto; border-radius: 1.1rem; padding: 1rem; }
+  .availability-hero h2 { font-size: 1.9rem; }
+  .availability-hero p { font-size: 0.72rem; }
+  .availability-mode-switch { grid-template-columns: 1fr; }
+  .availability-date-grid,
+  .availability-search-grid,
+  .availability-kpi-grid,
+  .availability-quick-form { grid-template-columns: 1fr; }
+  .availability-search-field { grid-column: auto; }
+  .availability-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .availability-kpi-grid article { min-height: 5.8rem; padding: 0.7rem; }
+  .availability-product-main { grid-template-columns: 4.25rem minmax(0, 1fr); gap: 0.6rem; padding: 0.65rem; }
+  .availability-product-image { width: 4.25rem; height: 4.25rem; }
+  .availability-stock-numbers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .availability-product-title-row h4 { font-size: 0.76rem; }
+  .availability-commitment-row { grid-template-columns: 1fr; gap: 0.45rem; }
+  .availability-calendar-card { padding: 0.65rem; overflow-x: auto; }
+  .availability-week-labels,
+  .availability-calendar-grid { min-width: 44rem; }
+  .availability-day-list article { grid-template-columns: 2.5rem minmax(0, 1fr) 3.8rem; }
+  .availability-day-list article > div:last-child { display: none; }
+}
+
+/* FINAL · Disponibilidad integrada al lenguaje visual de Órdenes de Servicio */
+.app-content .workspace:has(.availability-view) {
+  width: 100%;
+  max-width: none;
+  padding: 0.72rem 1.2rem 1.4rem;
+  background: #f7f3ef;
+}
+
+.availability-view {
+  width: 100%;
+  max-width: 1450px;
+  margin: 0 auto;
+  display: grid;
+  gap: 0.72rem;
+  color: #10254f;
+}
+
+.availability-hero,
+.availability-filter-card,
+.availability-quick-check,
+.availability-products-section,
+.availability-calendar-card,
+.availability-day-detail {
+  border: 1px solid #ecd8ca;
+  border-radius: 0.78rem;
+  background: #fffdfb;
+  box-shadow: 0 0.35rem 1rem rgba(56, 37, 27, 0.035);
+}
+
+.availability-hero {
+  min-height: auto;
+  padding: 0.95rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #fffdfb;
+  color: #10254f;
+}
+
+.availability-kicker,
+.availability-filter-heading span,
+.availability-quick-check > header span,
+.availability-products-section > header span,
+.availability-calendar-card > header span,
+.availability-day-detail > header span {
+  color: #e54b00;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.availability-hero h2 {
+  margin: 0.16rem 0 0;
+  color: #102b5c;
+  font-size: 1.52rem;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+.availability-hero p {
+  margin: 0.24rem 0 0;
+  color: #68758c;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.availability-mode-switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.22rem;
+  border: 1px solid #ecd8ca;
+  border-radius: 0.66rem;
+  background: #fff8f3;
+}
+
+.availability-mode-switch button {
+  min-height: 2.15rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: transparent;
+  color: #667085;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.availability-mode-switch button.active {
+  background: #fff;
+  color: #e54b00;
+  box-shadow: 0 0 0 1px #f2b993;
+}
+
+.availability-filter-card {
+  padding: 0.78rem;
+}
+
+.availability-filter-heading {
+  margin-bottom: 0.62rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid #f0e3da;
+}
+
+.availability-filter-heading strong {
+  color: #102b5c;
+  font-size: 0.82rem;
+}
+
+.availability-reset {
+  min-height: 1.9rem;
+  border: 0;
+  background: transparent;
+  color: #e54b00;
+  font-size: 0.68rem;
+  font-weight: 850;
+}
+
+.availability-date-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.52rem;
+}
+
+.availability-search-grid {
+  grid-template-columns: minmax(18rem, 1.45fr) repeat(3, minmax(10rem, 0.68fr));
+  gap: 0.52rem;
+  margin-top: 0.52rem;
+}
+
+.availability-filter-card label > span,
+.availability-quick-form label > span {
+  color: #667085;
+  font-size: 0.6rem;
+  font-weight: 850;
+}
+
+.availability-filter-card input,
+.availability-filter-card select,
+.availability-quick-form input {
+  min-height: 2.35rem;
+  border: 1px solid #e5d8cf;
+  border-radius: 0.58rem;
+  background: #fff;
+  color: #10254f;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.availability-search-field {
+  min-height: 2.35rem;
+  border: 1px solid #e5d8cf;
+  border-radius: 0.58rem;
+  background: #fff;
+}
+
+.availability-search-field input {
+  border: 0;
+  min-height: 2.2rem;
+}
+
+.availability-kpi-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.availability-kpi-grid article {
+  min-height: 2.8rem;
+  flex: 1 1 10rem;
+  display: grid;
+  grid-template-columns: 1.8rem minmax(0, 1fr) auto;
+  grid-template-areas: "icon label value";
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.45rem 0.62rem;
+  border: 1px solid #ecd8ca;
+  border-radius: 0.65rem;
+  background: #fffdfb;
+  box-shadow: none;
+}
+
+.availability-kpi-icon {
+  grid-area: icon;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.5rem;
+}
+
+.availability-kpi-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.availability-kpi-grid article small {
+  grid-area: label;
+  color: #667085;
+  font-size: 0.61rem;
+  font-weight: 800;
+}
+
+.availability-kpi-grid article strong {
+  grid-area: value;
+  color: #102b5c;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.availability-quick-check {
+  overflow: visible;
+}
+
+.availability-quick-check > header {
+  min-height: auto;
+  padding: 0.68rem 0.78rem;
+  border-bottom: 1px solid #f0e3da;
+}
+
+.availability-quick-check > header h3 {
+  margin: 0.08rem 0;
+  color: #102b5c;
+  font-size: 0.9rem;
+}
+
+.availability-quick-check > header p {
+  margin: 0;
+  color: #68758c;
+  font-size: 0.66rem;
+}
+
+.availability-quick-form {
+  grid-template-columns: minmax(20rem, 1.35fr) minmax(8rem, 0.38fr) minmax(24rem, 1.25fr);
+  gap: 0.62rem;
+  padding: 0.68rem 0.78rem;
+  align-items: end;
+}
+
+.availability-product-search {
+  position: relative;
+  min-height: 2.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #e5d8cf;
+  border-radius: 0.58rem;
+  background: #fff;
+  padding: 0 0.62rem;
+}
+
+.availability-product-search > svg {
+  flex: 0 0 auto;
+  color: #8893a4;
+}
+
+.availability-product-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.2rem;
+  border: 0;
+  padding: 0;
+  outline: 0;
+}
+
+.availability-product-search-results {
+  position: absolute;
+  z-index: 40;
+  inset: calc(100% + 0.3rem) 0 auto;
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid #e7d5c8;
+  border-radius: 0.7rem;
+  background: #fff;
+  box-shadow: 0 1rem 2.2rem rgba(31, 24, 20, 0.14);
+  padding: 0.3rem;
+}
+
+.availability-product-search-results button {
+  width: 100%;
+  min-height: 3.35rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: 0.58rem;
+  align-items: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  padding: 0.4rem;
+  text-align: left;
+}
+
+.availability-product-search-results button:hover {
+  background: #fff5ee;
+}
+
+.availability-product-search-results img,
+.availability-product-search-results button > span:first-child {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.45rem;
+  object-fit: cover;
+  background: #f2f4f7;
+}
+
+.availability-product-search-results button > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.availability-product-search-results strong {
+  overflow: hidden;
+  color: #102b5c;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availability-product-search-results small {
+  overflow: hidden;
+  color: #788397;
+  font-size: 0.61rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availability-product-search-results b {
+  border-radius: 999px;
+  background: #edf9f1;
+  color: #14833b;
+  padding: 0.26rem 0.48rem;
+  font-size: 0.66rem;
+}
+
+.availability-product-search-results > p {
+  margin: 0;
+  padding: 0.8rem;
+  color: #788397;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.availability-quick-result {
+  min-height: 2.35rem;
+  border-radius: 0.58rem;
+  padding: 0.46rem 0.58rem;
+}
+
+.availability-products-section {
+  overflow: hidden;
+}
+
+.availability-products-section > header {
+  padding: 0.7rem 0.78rem;
+  border-bottom: 1px solid #f0e3da;
+}
+
+.availability-products-section > header h3 {
+  color: #102b5c;
+  font-size: 0.9rem;
+}
+
+.availability-product-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.availability-product-card {
+  border: 0;
+  border-bottom: 1px solid #e9edf3;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+.availability-product-card:last-child {
+  border-bottom: 0;
+}
+
+.availability-product-main {
+  grid-template-columns: 3.7rem minmax(0, 1fr);
+  gap: 0.65rem;
+  padding: 0.55rem 0.72rem;
+}
+
+.availability-product-image {
+  width: 3.7rem;
+  height: 3.7rem;
+  border-radius: 0.55rem;
+}
+
+.availability-product-title-row h4 {
+  margin: 0.08rem 0;
+  color: #102b5c;
+  font-size: 0.78rem;
+}
+
+.availability-product-title-row small,
+.availability-product-title-row p {
+  font-size: 0.58rem;
+}
+
+.availability-stock-numbers {
+  grid-template-columns: repeat(5, minmax(5.5rem, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.availability-stock-numbers div {
+  min-height: 2.35rem;
+  border: 1px solid #edf0f5;
+  border-radius: 0.45rem;
+  background: #fafbfc;
+  padding: 0.34rem 0.42rem;
+}
+
+.availability-stock-numbers small {
+  font-size: 0.55rem;
+}
+
+.availability-stock-numbers strong {
+  font-size: 0.78rem;
+}
+
+.availability-progress-line {
+  margin-top: 0.35rem;
+}
+
+.availability-detail-toggle {
+  min-height: 2rem;
+  border-top: 1px solid #f1f3f6;
+  background: #fffaf6;
+  color: #d84a04;
+  font-size: 0.63rem;
+}
+
+.availability-calendar-layout {
+  gap: 0.7rem;
+}
+
+.availability-calendar-card,
+.availability-day-detail {
+  padding: 0.72rem;
+}
+
+@media (max-width: 980px) {
+  .availability-search-grid,
+  .availability-quick-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .availability-search-field,
+  .availability-quick-product-field,
+  .availability-quick-result {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-content .workspace:has(.availability-view) {
+    padding: 0 !important;
+    background: #f4f5f8 !important;
+  }
+
+  .availability-view {
+    padding: 0.72rem 0.72rem 5.8rem;
+  }
+
+  .availability-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .availability-mode-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .availability-date-grid,
+  .availability-search-grid,
+  .availability-quick-form {
+    grid-template-columns: 1fr;
+  }
+
+  .availability-search-field,
+  .availability-quick-product-field,
+  .availability-quick-result {
+    grid-column: auto;
+  }
+
+  .availability-kpi-grid article {
+    flex-basis: calc(50% - 0.3rem);
+    grid-template-columns: 1.55rem minmax(0, 1fr);
+    grid-template-areas:
+      "icon label"
+      "icon value";
+  }
+
+  .availability-stock-numbers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* FINAL v2 · Disponibilidad nativa de El Copetín */
+.app-content .workspace:has(.availability-view) {
+  padding: 1.35rem 1.9rem 1.6rem !important;
+  background: #f8f5f1 !important;
+}
+
+.availability-view {
+  max-width: none;
+  gap: 0.68rem;
+}
+
+.availability-hero {
+  padding: 0 0.15rem 0.2rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.availability-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.45rem;
+  border: 1px solid #f2c9ae;
+  border-radius: 999px;
+  background: #fff7f1;
+  padding: 0.18rem 0.48rem;
+  color: #df4d08;
+  font-size: 0.58rem;
+}
+
+.availability-hero h2 {
+  margin-top: 0.34rem;
+  color: #10254f;
+  font-size: 1.75rem;
+  font-weight: 950;
+  letter-spacing: -0.035em;
+}
+
+.availability-hero p {
+  max-width: 47rem;
+  font-size: 0.74rem;
+}
+
+.availability-mode-switch {
+  border-color: #efd9ca;
+  background: #fff;
+}
+
+.availability-mode-switch button {
+  min-height: 2.25rem;
+  color: #5f6e86;
+}
+
+.availability-mode-switch button.active {
+  border: 1px solid #ef8b50;
+  background: #fff8f3;
+  color: #df4d08;
+  box-shadow: none;
+}
+
+.availability-filter-card,
+.availability-quick-check,
+.availability-products-section,
+.availability-calendar-card,
+.availability-day-detail {
+  border-color: #ead8cc;
+  border-radius: 0.72rem;
+  background: #fff;
+  box-shadow: none;
+}
+
+.availability-filter-card {
+  padding: 0.72rem 0.78rem 0.78rem;
+}
+
+.availability-filter-heading {
+  margin-bottom: 0.55rem;
+}
+
+.availability-date-grid {
+  grid-template-columns: minmax(12rem, 0.72fr) minmax(12rem, 0.72fr) minmax(18rem, 1.4fr);
+  align-items: end;
+}
+
+.availability-full-day-note {
+  min-height: 2.35rem;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  border: 1px dashed #efc8ae;
+  border-radius: 0.58rem;
+  background: #fff8f3;
+  padding: 0.5rem 0.68rem;
+  color: #a24a16;
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.availability-search-grid {
+  margin-top: 0.48rem;
+}
+
+.availability-kpi-grid {
+  gap: 0.35rem;
+}
+
+.availability-kpi-grid article {
+  min-height: 2.55rem;
+  border-color: #ead8cc;
+  background: #fff;
+}
+
+.availability-kpi-grid article strong {
+  font-size: 0.86rem;
+}
+
+.availability-quick-check > header,
+.availability-products-section > header {
+  background: #fffaf6;
+}
+
+.availability-quick-check > header svg {
+  color: #df4d08;
+}
+
+.availability-products-section > header {
+  border-bottom-color: #ead8cc;
+}
+
+.availability-product-card:nth-child(even) {
+  background: #fffaf6;
+}
+
+.availability-product-card:hover {
+  background: #fff5ed;
+}
+
+.availability-product-main {
+  min-height: 5.2rem;
+}
+
+.availability-stock-numbers div {
+  border-color: #e6ebf2;
+  background: #fff;
+}
+
+.availability-status-pill {
+  border-width: 1px;
+}
+
+.availability-detail-toggle {
+  justify-content: flex-end;
+  padding-inline: 0.75rem;
+}
+
+.availability-calendar-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 0.36fr);
+}
+
+.availability-calendar-card > header {
+  min-height: 3rem;
+  border-bottom: 1px solid #ead8cc;
+  background: #fffaf6;
+}
+
+.availability-calendar-card > header h3,
+.availability-day-detail > header h3 {
+  color: #10254f;
+}
+
+.availability-week-labels span {
+  color: #63708a;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.availability-calendar-grid {
+  gap: 0.32rem;
+}
+
+.availability-calendar-grid > button {
+  min-height: 5.4rem;
+  border: 1px solid #ead8cc;
+  border-radius: 0.56rem;
+  background: #fff;
+  padding: 0.45rem;
+}
+
+.availability-calendar-grid > button.tone-free {
+  background: #fff;
+}
+
+.availability-calendar-grid > button.tone-busy {
+  border-color: #c9d8ef;
+  background: #f5f8fd;
+}
+
+.availability-calendar-grid > button.tone-warning {
+  border-color: #efd69b;
+  background: #fffaf0;
+}
+
+.availability-calendar-grid > button.tone-danger {
+  border-color: #efb7b7;
+  background: #fff5f5;
+}
+
+.availability-calendar-grid > button.selected {
+  border: 2px solid #e6540d;
+  box-shadow: inset 0 0 0 1px #fff;
+}
+
+.availability-calendar-grid > button strong {
+  color: #10254f;
+}
+
+.availability-day-detail {
+  overflow: hidden;
+}
+
+.availability-day-detail > header {
+  border-bottom: 1px solid #ead8cc;
+  background: #fffaf6;
+}
+
+.availability-day-list article {
+  border-bottom-color: #edf0f4;
+}
+
+.availability-day-list article:nth-child(even) {
+  background: #fffaf6;
+}
+
+@media (max-width: 980px) {
+  .availability-date-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .availability-full-day-note {
+    grid-column: 1 / -1;
+  }
+
+  .availability-calendar-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-content .workspace:has(.availability-view) {
+    padding: 0 !important;
+  }
+
+  .availability-hero {
+    padding: 0;
+  }
+
+  .availability-date-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .availability-full-day-note {
+    grid-column: auto;
+  }
+}
+

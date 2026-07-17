@@ -22,6 +22,7 @@ const CalendarSection = lazy(() => import('./components/sections/CalendarSection
 const ClientsSection = lazy(() => import('./components/sections/ClientsSection'));
 const UsersSection = lazy(() => import('./components/sections/UsersSection'));
 const ServiceOrdersSection = lazy(() => import('./components/sections/ServiceOrdersSection'));
+const AvailabilitySection = lazy(() => import('./components/sections/AvailabilitySection'));
 const AttendanceSection = lazy(() => import('./components/sections/AttendanceSection'));
 const InventoryDashboardSection = lazy(() => import('./components/sections/InventoryDashboardSection'));
 const SuppliersSection = lazy(() => import('./components/sections/SuppliersSection'));
@@ -34,6 +35,7 @@ const prefetchersByTab = {
   caja: () => import('./components/sections/CalendarSection'),
   items: () => import('./components/sections/ClientsSection'),
   alquiler: () => import('./components/sections/ServiceOrdersSection'),
+  disponibilidad: () => import('./components/sections/AvailabilitySection'),
   asistencia: () => import('./components/sections/AttendanceSection'),
   proveedores: () => import('./components/sections/SuppliersSection'),
   personal: () => import('./components/sections/PersonnelSection'),
@@ -312,6 +314,7 @@ function App() {
       && controller.activeTab !== 'recibos'
       && controller.activeTab !== 'categorias'
       && controller.activeTab !== 'alquiler'
+      && controller.activeTab !== 'disponibilidad'
       && controller.activeTab !== 'proveedores'
       && controller.activeTab !== 'asistencia'
       && controller.activeTab !== 'personal'
@@ -516,6 +519,20 @@ function App() {
             onReceiveReturnedOrder={controller.handleReceiveReturnedOrder}
             onPrintContractDocument={controller.handlePrintContractDocument}
             onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
+          />
+        )}
+
+
+        {controller.activeTab === 'disponibilidad' && (
+          <AvailabilitySection
+            items={controller.items}
+            contracts={controller.contracts}
+            rentals={controller.rentals}
+            quotes={controller.quotes}
+            clients={controller.clients}
+            categories={controller.categories}
+            formatDate={formatDate}
+            onOpenImage={controller.setImagePreview}
           />
         )}
 
