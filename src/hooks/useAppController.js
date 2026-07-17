@@ -1123,6 +1123,25 @@ export const useAppController = () => {
     }
   };
 
+  const handleRestoreContract = async (payload) => {
+    setError('');
+    try {
+      const trace = getCurrentUserTrace();
+      const restored = await api.contracts.restore({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
+
+      await loadData();
+      return restored;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo restaurar el contrato.');
+      throw requestError;
+    }
+  };
+
   const handleRevertContractToQuote = async (payload) => {
     setError('');
     try {
@@ -2121,6 +2140,7 @@ export const useAppController = () => {
     handleUpdateContract,
     handleUpdateContractEconomicLedger,
     handleRemoveContract,
+    handleRestoreContract,
     handleRevertContractToQuote,
     handleCreateSupplier,
     handleUpdateSupplier,

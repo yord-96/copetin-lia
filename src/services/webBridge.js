@@ -835,8 +835,8 @@ const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLine
     const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
     const lineDate = String(line?.serviceDate ?? line?.date ?? '').trim();
     const lineLabel = String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim();
-    let index = lineDayId ? days.findIndex((day) => day.id === lineDayId) : -1;
-    if (index < 0 && lineDate) index = days.findIndex((day) => day.date === lineDate);
+    let index = lineDate ? days.findIndex((day) => day.date === lineDate) : -1;
+    if (index < 0 && lineDayId) index = days.findIndex((day) => day.id === lineDayId);
     if (index < 0 && lineLabel) index = days.findIndex((day) => normalizeText(day.label) === normalizeText(lineLabel));
     if (index >= 0) return days[index];
     const nextDay = {
@@ -877,6 +877,36 @@ const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLine
     chargeableSubtotalBs: toPositiveRoundedNumber(itemSubtotalBs || pricingPlan.chargeableSubtotalBs || 0),
     theoreticalSubtotalBs: toPositiveRoundedNumber(itemSubtotalBs || pricingPlan.theoreticalSubtotalBs || 0),
   };
+};
+
+const alignLinesToDailySchedule = (pricingPlan, lines = []) => {
+  if (pricingPlan?.mode !== 'daily_schedule') return Array.isArray(lines) ? lines : [];
+  const scheduleDays = Array.isArray(pricingPlan?.scheduleDays) ? pricingPlan.scheduleDays : [];
+  if (scheduleDays.length === 0) return Array.isArray(lines) ? lines : [];
+
+  return (Array.isArray(lines) ? lines : []).map((line) => {
+    const lineDate = String(line?.serviceDate ?? line?.date ?? '').trim();
+    const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+    const lineLabel = String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim();
+
+    const dayByDate = lineDate
+      ? scheduleDays.find((day) => String(day?.date ?? '').trim() === lineDate)
+      : null;
+    const dayById = lineDayId
+      ? scheduleDays.find((day) => String(day?.id ?? '').trim() === lineDayId)
+      : null;
+    const dayByLabel = lineLabel
+      ? scheduleDays.find((day) => normalizeText(day?.label) === normalizeText(lineLabel))
+      : null;
+
+    const assignedDay = dayByDate ?? dayById ?? dayByLabel ?? scheduleDays[0];
+    return {
+      ...line,
+      serviceDayId: String(assignedDay?.id ?? lineDayId).trim() || null,
+      serviceDate: String(assignedDay?.date ?? lineDate).trim() || null,
+      serviceDayLabel: String(assignedDay?.label ?? lineLabel).trim(),
+    };
+  });
 };
 
 const makeId = (prefix = 'id') => {
@@ -1987,6 +2017,9 @@ const normalizeState = (state) => {
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+            serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+            serviceDate: String(line?.serviceDate ?? line?.date ?? '').trim() || null,
+            serviceDayLabel: String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim(),
           }))
           .filter((line) => line.itemId && line.itemName)
         : [];
@@ -2133,6 +2166,9 @@ const normalizeState = (state) => {
             comboPricingRole: String(line?.comboPricingRole ?? '').trim(),
             comboPricingCondition: line?.comboPricingCondition ? normalizeComboPricingCondition(line.comboPricingCondition) : null,
             observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+            serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim() || null,
+            serviceDate: String(line?.serviceDate ?? line?.date ?? '').trim() || null,
+            serviceDayLabel: String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim(),
           }))
           .filter((line) => line.itemId)
         : [];
@@ -7376,16 +7412,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           ?? fallback.lineTotalBs
           ?? quantity * unitPriceBs,
       ),
-      serviceDayId: primary.serviceDayId ?? primary.scheduleDayId ?? fallback.serviceDayId ?? fallback.scheduleDayId ?? null,
-      serviceDate: primary.serviceDate ?? primary.date ?? fallback.serviceDate ?? fallback.date ?? null,
-      serviceDayLabel: primary.serviceDayLabel ?? primary.dayLabel ?? fallback.serviceDayLabel ?? fallback.dayLabel ?? '',
+      serviceDayId: primary.serviceDayId ?? primary.scheduleDayId ?? null,
+      serviceDate: primary.serviceDate ?? primary.date ?? null,
+      serviceDayLabel: primary.serviceDayLabel ?? primary.dayLabel ?? '',
     };
   };
   const rawDocumentItems = contractDocumentItems.length > 0
-    ? contractDocumentItems.map((line, index) => {
-      const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `contract-${index}`);
-      return mergeDocumentItemLine(line, rentalItemsByKey.get(key));
-    })
+    ? contractDocumentItems.map((line) => mergeDocumentItemLine(line, null))
     : rentalDocumentItems.map((line, index) => {
       const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`);
       return mergeDocumentItemLine(line, contractItemsByKey.get(key));
@@ -7493,14 +7526,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
     const lineDate = toDateKey(line?.serviceDate ?? line?.date);
     const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
-    const byId = lineDayId
-      ? scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId)
-      : -1;
-    if (byId >= 0) return byId;
     const byDate = lineDate
       ? scheduleDaysForDocument.findIndex((day) => toDateKey(day?.date) === lineDate)
       : -1;
     if (byDate >= 0) return byDate;
+    const byId = lineDayId
+      ? scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId)
+      : -1;
+    if (byId >= 0) return byId;
     return lineLabel
       ? scheduleDaysForDocument.findIndex((day) => normalizeText(day?.label) === lineLabel)
       : -1;
@@ -8828,6 +8861,147 @@ const cleanupRentalOperationalResidues = (state, rental, contract, now, options 
   return true;
 };
 
+
+const upsertSnapshotRecords = (target, records = []) => {
+  const source = Array.isArray(records) ? records : [];
+  source.forEach((record) => {
+    const id = String(record?.id ?? '').trim();
+    if (!id) return;
+    const index = target.findIndex((entry) => String(entry?.id ?? '').trim() === id);
+    if (index >= 0) target[index] = deepClone(record);
+    else target.push(deepClone(record));
+  });
+};
+
+const buildContractDeletionSnapshot = (state, contract, now) => {
+  const contractSnapshot = deepClone({
+    ...contract,
+    deletionSnapshot: undefined,
+  });
+  const linkedRentals = (state.rentals ?? []).filter((rental) => rentalMatchesContract(rental, contract));
+  const rentalIds = new Set(linkedRentals.map((rental) => String(rental.id ?? '')).filter(Boolean));
+  const orderCodes = new Set(linkedRentals.map((rental) => String(rental.orderCode ?? '')).filter(Boolean));
+  const linkedDeliveryIds = new Set(
+    (state.deliveries ?? [])
+      .filter((delivery) => rentalIds.has(String(delivery?.rentalId ?? '')) || orderCodes.has(String(delivery?.orderCode ?? '')))
+      .map((delivery) => String(delivery.id ?? ''))
+      .filter(Boolean),
+  );
+
+  return {
+    version: 2,
+    capturedAt: now,
+    contract: contractSnapshot,
+    rentals: deepClone(linkedRentals),
+    deliveries: deepClone((state.deliveries ?? []).filter((delivery) => linkedDeliveryIds.has(String(delivery?.id ?? '')))),
+    transportRoutes: deepClone((state.transportRoutes ?? []).filter((route) => (
+      Array.isArray(route?.stops)
+      && route.stops.some((stop) => linkedDeliveryIds.has(String(stop?.deliveryId ?? '')))
+    ))),
+    inventoryMovements: deepClone((state.inventoryMovements ?? []).filter((movement) => (
+      linkedRentals.some((rental) => isInventoryMovementLinkedToRental(movement, rental, contract))
+    ))),
+    cashMovements: deepClone((state.cashMovements ?? []).filter((movement) => {
+      const sourceId = String(movement?.sourceId ?? '');
+      const orderCode = String(movement?.linkedOrderCode ?? '');
+      return rentalIds.has(sourceId) || orderCodes.has(orderCode);
+    })),
+    generatedReports: deepClone((state.generatedReports ?? []).filter((report) => (
+      rentalIds.has(String(report?.sourceId ?? ''))
+      || String(report?.sourceId ?? '') === String(contract.id ?? '')
+    ))),
+    supplierLoans: deepClone((state.supplierLoans ?? []).filter((loan) => (
+      String(loan?.sourceContractId ?? '') === String(contract.id ?? '')
+      || rentalIds.has(String(loan?.sourceRentalId ?? ''))
+      || orderCodes.has(String(loan?.sourceOrderCode ?? ''))
+    ))),
+    quote: deepClone((state.quotes ?? []).find((quote) => String(quote?.id ?? '') === String(contract.quoteId ?? '')) ?? null),
+  };
+};
+
+
+const getContractServiceDayKeys = (contract) => {
+  const keys = new Set();
+  const addLine = (line) => {
+    const date = String(line?.serviceDate ?? line?.date ?? '').trim();
+    const dayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+    const label = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
+    const key = date || dayId || label;
+    if (key) keys.add(key);
+  };
+  (contract?.items ?? []).forEach(addLine);
+  (contract?.services ?? []).forEach(addLine);
+  (contract?.pricingPlan?.scheduleDays ?? []).forEach((day) => {
+    const key = String(day?.date ?? day?.id ?? '').trim() || normalizeText(day?.label);
+    if (key) keys.add(key);
+  });
+  return keys;
+};
+
+const getLegacyRestoreSourceScore = (contract) => {
+  const dayCount = getContractServiceDayKeys(contract).size;
+  const scheduleCount = Array.isArray(contract?.pricingPlan?.scheduleDays)
+    ? contract.pricingPlan.scheduleDays.length
+    : 0;
+  const itemCount = Array.isArray(contract?.items) ? contract.items.length : 0;
+  const serviceCount = Array.isArray(contract?.services) ? contract.services.length : 0;
+  const approvedScore = contract?.status === 'aprobado' || contract?.approvedAt ? 100000 : 0;
+  return approvedScore + (dayCount * 10000) + (scheduleCount * 1000) + itemCount + serviceCount;
+};
+
+const findLegacyRestoreDonor = (state, contract) => {
+  const contractCode = String(contract?.contractCode ?? '').trim();
+  const customerName = normalizeText(contract?.customerName);
+  const eventDate = String(contract?.eventDate ?? '').trim();
+
+  return (state.contracts ?? [])
+    .filter((candidate) => String(candidate?.id ?? '') !== String(contract?.id ?? ''))
+    .filter((candidate) => {
+      if (contractCode && String(candidate?.contractCode ?? '').trim() !== contractCode) return false;
+      if (customerName && normalizeText(candidate?.customerName) !== customerName) return false;
+      if (eventDate && String(candidate?.eventDate ?? '').trim() !== eventDate) return false;
+      return true;
+    })
+    .sort((left, right) => getLegacyRestoreSourceScore(right) - getLegacyRestoreSourceScore(left))[0] ?? null;
+};
+
+const getRestoreReservationRequirements = (state, rentals = []) => {
+  const requiredByItem = new Map();
+  (Array.isArray(rentals) ? rentals : []).forEach((rental) => {
+    if (rental?.status === 'returned' || rental?.status === 'cancelled') return;
+    (rental?.items ?? []).forEach((line) => {
+      const item = state.items.find((entry) => String(entry.id) === String(line?.itemId));
+      if (!item || lineControlsStock(line, item) === false) return;
+      const quantity = Number.isFinite(Number(line?.internalReservedQty))
+        ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+        : Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+      if (quantity <= 0) return;
+      requiredByItem.set(String(item.id), Number(requiredByItem.get(String(item.id)) ?? 0) + quantity);
+    });
+  });
+  return requiredByItem;
+};
+
+const reserveRestoredRentalStock = (state, rentals, now) => {
+  const requirements = getRestoreReservationRequirements(state, rentals);
+  const shortages = [];
+  requirements.forEach((requiredQty, itemId) => {
+    const item = state.items.find((entry) => String(entry.id) === itemId);
+    const available = Math.max(0, Math.trunc(Number(item?.availableStock ?? 0)));
+    if (!item || available < requiredQty) {
+      shortages.push(`${item?.name ?? itemId}: requiere ${requiredQty}, disponible ${available}`);
+    }
+  });
+  if (shortages.length > 0) {
+    throw new Error(`No se puede restaurar como estaba porque falta stock: ${shortages.join(' | ')}`);
+  }
+  requirements.forEach((requiredQty, itemId) => {
+    const item = state.items.find((entry) => String(entry.id) === itemId);
+    item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - requiredQty);
+    item.updatedAt = now;
+  });
+};
+
 const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
   if (!state.settings) state.settings = {};
   if (!state.settings.numbering) state.settings.numbering = {};
@@ -8978,6 +9152,42 @@ const lineControlsStock = (line, item) =>
   line?.controlsStock !== false
   && String(line?.verificationStatus ?? '').trim() !== 'pending_verification'
   && itemControlsStock(item);
+
+
+const buildDailyAssignmentSignature = (record) => {
+  const normalizeLines = (lines = []) => (Array.isArray(lines) ? lines : [])
+    .map((line, index) => ({
+      lineKey: String(line?.lineKey ?? line?.comboLineKey ?? `${line?.itemId ?? 'line'}-${index}`),
+      itemId: String(line?.itemId ?? line?.serviceId ?? ''),
+      quantity: Number(line?.quantity ?? 0),
+      unitPriceBs: Number(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0),
+      lineTotalBs: Number(line?.lineTotalBs ?? 0),
+      serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? ''),
+      serviceDate: String(line?.serviceDate ?? line?.date ?? ''),
+      serviceDayLabel: String(line?.serviceDayLabel ?? line?.dayLabel ?? ''),
+    }))
+    .sort((left, right) => left.lineKey.localeCompare(right.lineKey));
+
+  const scheduleDays = (Array.isArray(record?.pricingPlan?.scheduleDays)
+    ? record.pricingPlan.scheduleDays
+    : [])
+    .map((day, index) => ({
+      id: String(day?.id ?? `day-${index}`),
+      date: String(day?.date ?? ''),
+      label: String(day?.label ?? ''),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
+  return JSON.stringify({
+    mode: String(record?.pricingPlan?.mode ?? ''),
+    scheduleDays,
+    items: normalizeLines(record?.items),
+    services: normalizeLines(record?.services),
+  });
+};
+
+const hasDailyAssignmentChanges = (before, after) =>
+  buildDailyAssignmentSignature(before) !== buildDailyAssignmentSignature(after);
 
 const summarizeContractChanges = (beforeContract, contract) => {
   const changes = [];
@@ -12846,6 +13056,8 @@ const createWebBridge = () => ({
           normalizedItems,
           requestedServices,
         );
+        const alignedItems = alignLinesToDailySchedule(pricingPlan, normalizedItems);
+        const alignedServices = alignLinesToDailySchedule(pricingPlan, requestedServices);
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
@@ -12917,8 +13129,8 @@ const createWebBridge = () => ({
             paymentMethod: guaranteePaymentMethod,
             paymentAccount: guaranteePaymentAccount,
           },
-          items: normalizedItems,
-          services: requestedServices,
+          items: alignedItems,
+          services: alignedServices,
           supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
           approvedAt: null,
           rejectedAt: null,
@@ -13585,6 +13797,8 @@ const createWebBridge = () => ({
           contract.items ?? [],
           contract.services ?? [],
         );
+        contract.items = alignLinesToDailySchedule(pricingPlan, contract.items ?? []);
+        contract.services = alignLinesToDailySchedule(pricingPlan, contract.services ?? []);
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
         const discountMode = payload?.discountMode === 'fixed'
@@ -13705,7 +13919,11 @@ const createWebBridge = () => ({
             };
           });
         }
+        const dailyAssignmentChanged = hasDailyAssignmentChanges(beforeContract, contract);
         const changes = summarizeContractChanges(beforeContract, contract);
+        if (dailyAssignmentChanged && !changes.includes('Distribucion por dias actualizada')) {
+          changes.push('Distribucion por dias actualizada');
+        }
         appendContractRevision(contract, payload, now, changes);
         if (changes.length > 0) {
           appendAuditLog(state, {
@@ -13723,7 +13941,7 @@ const createWebBridge = () => ({
             createdAt: now,
           });
         }
-        if (changes.length > 0 && contract.status === 'aprobado') {
+        if ((changes.length > 0 || dailyAssignmentChanged) && contract.status === 'aprobado') {
           syncApprovedContractOperation(state, contract, payload, now, beforeContract);
         }
         contract.updatedAt = now;
@@ -13810,6 +14028,7 @@ const createWebBridge = () => ({
         const contract = state.contracts.find((entry) => entry.id === id);
         if (!contract) throw new Error('Contrato no encontrado.');
         const now = new Date().toISOString();
+        contract.deletionSnapshot = buildContractDeletionSnapshot(state, contract, now);
         cleanupContractDeletionEffects(state, contract, now);
         contract.deletedAt = now;
         contract.deletedById = payload?.updatedById ?? payload?.userId ?? null;
@@ -13839,6 +14058,124 @@ const createWebBridge = () => ({
       });
 
       return updated;
+    },
+    restore: async (payload) => {
+      const id = String(payload?.id ?? '').trim();
+      if (!id) throw new Error('Debes indicar el contrato.');
+
+      let restored = null;
+      transaction((state) => {
+        const contract = state.contracts.find((entry) => entry.id === id && entry.deletedAt);
+        if (!contract) throw new Error('Contrato oculto no encontrado.');
+
+        const now = new Date().toISOString();
+        const snapshot = contract.deletionSnapshot ?? {};
+        const hasFullSnapshot = snapshot?.version >= 2 && snapshot?.contract;
+
+        if (hasFullSnapshot) {
+          reserveRestoredRentalStock(state, snapshot.rentals ?? [], now);
+
+          const preservedRevisionHistory = Array.isArray(contract.revisionHistory)
+            ? deepClone(contract.revisionHistory)
+            : [];
+          const original = deepClone(snapshot.contract);
+          Object.keys(contract).forEach((key) => delete contract[key]);
+          Object.assign(contract, original);
+          contract.revisionHistory = preservedRevisionHistory;
+
+          upsertSnapshotRecords(state.rentals, snapshot.rentals);
+          upsertSnapshotRecords(state.deliveries, snapshot.deliveries);
+          upsertSnapshotRecords(state.transportRoutes, snapshot.transportRoutes);
+          upsertSnapshotRecords(state.inventoryMovements, snapshot.inventoryMovements);
+          upsertSnapshotRecords(state.cashMovements, snapshot.cashMovements);
+          upsertSnapshotRecords(state.generatedReports, snapshot.generatedReports);
+          upsertSnapshotRecords(state.supplierLoans, snapshot.supplierLoans);
+          if (snapshot.quote?.id) upsertSnapshotRecords(state.quotes, [snapshot.quote]);
+
+          contract.deletedAt = null;
+          contract.deletedById = null;
+          contract.deletedByName = '';
+          contract.deletedByRole = '';
+          contract.restoredAt = now;
+          contract.restoredById = payload?.updatedById ?? payload?.userId ?? null;
+          contract.restoredByName = getAuditUserName(payload);
+          contract.restoredByRole = getAuditUserRole(payload);
+          contract.updatedAt = now;
+          contract.deletionSnapshot = snapshot;
+        } else {
+          const donor = findLegacyRestoreDonor(state, contract);
+          const currentScore = getLegacyRestoreSourceScore(contract);
+          const donorScore = donor ? getLegacyRestoreSourceScore(donor) : -1;
+          const useDonor = Boolean(donor && donorScore > currentScore);
+          const source = useDonor ? donor : contract;
+
+          const preservedId = contract.id;
+          const preservedRevisionHistory = Array.isArray(contract.revisionHistory)
+            ? deepClone(contract.revisionHistory)
+            : [];
+          const restoredSource = deepClone(source);
+          Object.keys(contract).forEach((key) => delete contract[key]);
+          Object.assign(contract, restoredSource);
+          contract.id = preservedId;
+          contract.revisionHistory = preservedRevisionHistory;
+
+          const inferredStatus = source?.status === 'aprobado' || source?.approvedAt
+            ? 'aprobado'
+            : source?.status === 'rechazado' || source?.rejectedAt
+              ? 'rechazado'
+              : 'borrador';
+
+          contract.deletedAt = null;
+          contract.deletedById = null;
+          contract.deletedByName = '';
+          contract.deletedByRole = '';
+          contract.status = inferredStatus;
+          contract.rentalId = null;
+          contract.orderCode = null;
+          contract.restoredAt = now;
+          contract.restoredById = payload?.updatedById ?? payload?.userId ?? null;
+          contract.restoredByName = getAuditUserName(payload);
+          contract.restoredByRole = getAuditUserRole(payload);
+          contract.updatedAt = now;
+          contract.restoredFromSiblingId = useDonor ? source.id : null;
+          contract.legacyRestoreWarning = useDonor
+            ? 'Jornadas y montos recuperados desde otra copia oculta del mismo contrato. La orden operativa debe revisarse.'
+            : 'No existe snapshot operativo completo ni otra copia más rica; la orden operativa debe revisarse.';
+        }
+
+        appendContractRevision(contract, payload, now, [
+          hasFullSnapshot
+            ? 'Contrato restaurado exactamente desde snapshot operativo'
+            : contract.restoredFromSiblingId
+              ? 'Contrato antiguo restaurado usando la copia oculta más completa del mismo número'
+              : 'Contrato antiguo restaurado sin snapshot operativo completo',
+        ]);
+        appendAuditLog(state, {
+          action: 'restore',
+          module: 'Contratos',
+          entityType: 'contract',
+          entityId: contract.id,
+          entityCode: contract.contractCode,
+          title: `Restauro contrato ${contract.contractCode}`,
+          detail: contract.customerName,
+          changes: [
+            hasFullSnapshot
+              ? 'Contrato, jornadas, orden, movimientos y montos recuperados desde snapshot'
+              : contract.restoredFromSiblingId
+                ? 'Jornadas, ítems, precios, totales y estado recuperados desde copia oculta hermana'
+                : 'Contrato antiguo recuperado sin snapshot operativo completo',
+          ],
+          userId: payload?.updatedById ?? payload?.userId ?? null,
+          userName: getAuditUserName(payload),
+          userRole: getAuditUserRole(payload),
+          createdAt: now,
+        });
+
+        restored = deepClone(contract);
+        return state;
+      });
+
+      return restored;
     },
     revertToQuote: async (payload) => {
       const id = String(payload?.id ?? payload?.contractId ?? '').trim();

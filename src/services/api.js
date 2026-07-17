@@ -812,6 +812,7 @@ export const api = {
     update: (payload) => callBridge('contracts', 'update', true, payload),
     updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
+    restore: (payload) => callBridge('contracts', 'restore', true, payload),
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },
   suppliers: {

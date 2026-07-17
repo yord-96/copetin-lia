@@ -594,7 +594,9 @@ const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null, options 
   const dayById = scheduleDays.find((day) => String(day?.id ?? '') === lineDayId) ?? null;
   const dayByDate = lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) ?? null : null;
   const dayByLabel = lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) ?? null : null;
-  const primaryDay = options?.preferDate ? (dayByDate ?? dayById) : (dayById ?? dayByDate);
+  const primaryDay = lineDate || options?.preferDate
+    ? (dayByDate ?? dayById)
+    : (dayById ?? dayByDate);
   return primaryDay
     ?? dayByLabel
     ?? fallbackDay
@@ -1208,6 +1210,7 @@ function ServiceOrdersSection({
   onUpdateContract,
   onUpdateEconomicLedger,
   onRemoveContract,
+  onRestoreContract,
   onRevertContractToQuote,
   onCreateContractFromOrder,
   onApproveContract,
@@ -4731,17 +4734,30 @@ function ServiceOrdersSection({
   const syncScheduleDaysFromLogistics = () => {
     setDraft((current) => {
       const nextDays = buildScheduleDaysFromRange(current.deliveryDate || current.eventDate, current.pickupDate || current.eventDate);
-      const existingByDate = new Map((current.scheduleDays ?? []).map((day) => [getDateKey(day.date), day]));
-      const mergedDays = nextDays.map((day, index) => ({
-        ...day,
-        ...(existingByDate.get(day.date) ?? {}),
-        id: existingByDate.get(day.date)?.id ?? day.id,
-        label: existingByDate.get(day.date)?.label ?? `Dia ${index + 1}`,
-        date: day.date,
-      }));
+      const existingByDate = new Map(
+        (current.scheduleDays ?? [])
+          .map((day) => [getDateKey(day.date), day])
+          .filter(([date]) => Boolean(date)),
+      );
+      const mergedDays = nextDays.map((day, index) => {
+        const dateKey = getDateKey(day.date);
+        const existingDay = existingByDate.get(dateKey);
+        return {
+          ...day,
+          ...(existingDay ?? {}),
+          id: existingDay?.id ?? day.id,
+          label: existingDay?.label ?? `Dia ${index + 1}`,
+          date: dateKey || day.date,
+        };
+      });
       const validDayIds = new Set(mergedDays.map((day) => day.id));
       const fallbackDayId = mergedDays[0]?.id ?? '';
-      const resolveMergedDay = (line) => findScheduleDayForLine(line, mergedDays, mergedDays[0] ?? null);
+      const resolveMergedDay = (line) => findScheduleDayForLine(
+        line,
+        mergedDays,
+        mergedDays[0] ?? null,
+        { preferDate: true },
+      );
       return {
         ...current,
         scheduleDays: mergedDays,
@@ -5085,7 +5101,14 @@ function ServiceOrdersSection({
       initialPaymentAccount: draft.initialPaymentMethod === 'qr' ? draft.initialPaymentAccount : '',
       pricingPlan: quotePricingPlan,
       status: draft.mode === 'order' ? 'enviada' : 'borrador',
-      items: selectedItems.map((line, index) => ({
+      items: selectedItems.map((line, index) => {
+        const assignedDay = findScheduleDayForLine(
+          line,
+          normalizedScheduleDays,
+          normalizedScheduleDays[0] ?? null,
+          { preferDate: true },
+        );
+        return {
         lineKey: getDraftLineKey(line, index),
         itemId: String(line.itemId).startsWith('quick-') ? '' : line.itemId,
         quantity: line.quantity,
@@ -5112,21 +5135,30 @@ function ServiceOrdersSection({
         comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
         comboCategory: line.comboCategory ?? '',
         observation: String(line.observation ?? '').trim(),
-        serviceDayId: line.serviceDayId ?? null,
-        serviceDate: line.serviceDate ?? null,
-        serviceDayLabel: line.serviceDayLabel ?? '',
-      })),
-      services: selectedServices.map((service) => ({
+        serviceDayId: line.serviceDayId ?? assignedDay?.id ?? null,
+        serviceDate: line.serviceDate ?? assignedDay?.date ?? null,
+        serviceDayLabel: line.serviceDayLabel ?? assignedDay?.label ?? '',
+        };
+      }),
+      services: selectedServices.map((service) => {
+        const assignedDay = findScheduleDayForLine(
+          service,
+          normalizedScheduleDays,
+          normalizedScheduleDays[0] ?? null,
+          { preferDate: true },
+        );
+        return {
         id: service.id,
         name: service.name,
         detail: service.detail,
         quantity: service.quantity,
         unitPriceBs: service.unitPriceBs,
         lineTotalBs: service.lineTotalBs,
-        serviceDayId: service.serviceDayId ?? null,
-        serviceDate: service.serviceDate ?? null,
-        serviceDayLabel: service.serviceDayLabel ?? '',
-      })),
+        serviceDayId: service.serviceDayId ?? assignedDay?.id ?? null,
+        serviceDate: service.serviceDate ?? assignedDay?.date ?? null,
+        serviceDayLabel: service.serviceDayLabel ?? assignedDay?.label ?? '',
+        };
+      }),
       supplierFulfillmentPlan,
       responsibles: selectedResponsibles,
       createdBy: primaryResponsible?.name ?? undefined,
@@ -5315,6 +5347,33 @@ function ServiceOrdersSection({
       setActionFeedback(`Contrato ${contract.contractCode} eliminado.`);
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo eliminar el contrato.');
+    } finally {
+      endSubmit();
+      setMenuState(null);
+    }
+  };
+
+  const handleRestoreContractClick = async (contract) => {
+    const confirmed = window.confirm(
+      `¿Restaurar el contrato ${contract?.contractCode || contract?.id}? Volverá a aparecer en la lista de contratos.`,
+    );
+    if (!confirmed || !beginSubmit()) return;
+
+    setFormError('');
+    try {
+      await onRestoreContract?.({ id: contract.id });
+      setContractFilter('all');
+      setActionFeedback(
+        `Contrato ${contract.contractCode} restaurado. ${
+          contract?.deletionSnapshot?.version >= 2
+            ? 'Se recuperaron sus jornadas, orden y montos originales.'
+            : contract?.restoredFromSiblingId
+              ? 'Se recuperaron sus jornadas, montos y estado desde otra copia oculta del mismo contrato.'
+              : 'Por ser una eliminación antigua sin otra copia completa, revisa el contrato antes de usarlo.'
+        }`,
+      );
+    } catch (requestError) {
+      setFormError(requestError.message || 'No se pudo restaurar el contrato.');
     } finally {
       endSubmit();
       setMenuState(null);
@@ -7369,71 +7428,91 @@ function ServiceOrdersSection({
           ) : null}
 
           {menuState.type === 'contract' && activeContractMenuRow ? (
-            <>
-              {!readOnly ? (
-                <>
+            activeContractMenuRow.status === 'oculto' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
+                >
+                  Abrir contrato
+                </button>
+                {!readOnly ? (
                   <button
                     type="button"
-                    onClick={() => handleApproveContractClick(activeContractMenuRow)}
-                    disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
+                    className="success"
+                    onClick={() => handleRestoreContractClick(activeContractMenuRow)}
                   >
-                    Aprobar contrato
+                    Restaurar
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEditContractClick(activeContractMenuRow)}
-                    disabled={activeContractMenuRow.status === 'anulado'}
-                  >
-                    Editar contrato
-                  </button>
-                </>
-              ) : null}
-              <button type="button" className="economic-action" onClick={() => handleOpenContractEconomics(activeContractMenuRow)}>
-                Economico
-              </button>
-              <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
-                Enviar por WhatsApp
-              </button>
-              {!readOnly ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleRejectContractClick(activeContractMenuRow)}
-                    disabled={activeContractMenuRow.status === 'rechazado' || activeContractMenuRow.status === 'anulado'}
-                  >
-                    Marcar rechazado
-                  </button>
-                  {activeContractMenuRow.quoteId ? (
+                ) : null}
+              </>
+            ) : (
+              <>
+                {!readOnly ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleApproveContractClick(activeContractMenuRow)}
+                      disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
+                    >
+                      Aprobar contrato
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditContractClick(activeContractMenuRow)}
+                      disabled={activeContractMenuRow.status === 'anulado'}
+                    >
+                      Editar contrato
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" className="economic-action" onClick={() => handleOpenContractEconomics(activeContractMenuRow)}>
+                  Economico
+                </button>
+                <button type="button" onClick={() => openWhatsAppModal('contract', activeContractMenuRow)}>
+                  Enviar por WhatsApp
+                </button>
+                {!readOnly ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectContractClick(activeContractMenuRow)}
+                      disabled={activeContractMenuRow.status === 'rechazado' || activeContractMenuRow.status === 'anulado'}
+                    >
+                      Marcar rechazado
+                    </button>
+                    {activeContractMenuRow.quoteId ? (
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => handleRevertContractClick(activeContractMenuRow)}
+                      >
+                        Volver a cotizacion
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="danger"
-                      onClick={() => handleRevertContractClick(activeContractMenuRow)}
+                      onClick={() => handleCancelContractClick(activeContractMenuRow)}
+                      disabled={activeContractMenuRow.status === 'anulado'}
                     >
-                      Volver a cotizacion
+                      {activeContractMenuRow.status === 'anulado' ? 'Ya anulado' : 'Anular contrato'}
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => handleCancelContractClick(activeContractMenuRow)}
-                    disabled={activeContractMenuRow.status === 'anulado'}
-                  >
-                    {activeContractMenuRow.status === 'anulado' ? 'Ya anulado' : 'Anular contrato'}
-                  </button>
-                </>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
-              >
-                Abrir contrato
-              </button>
-              {!readOnly && !activeContractMenuRow.quoteId ? (
-                <button type="button" className="danger" onClick={() => handleDeleteContractClick(activeContractMenuRow)}>
-                  Eliminar
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
+                >
+                  Abrir contrato
                 </button>
-              ) : null}
-            </>
+                {!readOnly && !activeContractMenuRow.quoteId ? (
+                  <button type="button" className="danger" onClick={() => handleDeleteContractClick(activeContractMenuRow)}>
+                    Eliminar
+                  </button>
+                ) : null}
+              </>
+            )
           ) : null}
         </div>
       ) : null}
