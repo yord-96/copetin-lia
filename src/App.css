@@ -60993,3 +60993,226 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 }
 
+/* FINAL v3 · Un solo buscador y resultados individuales por compromiso */
+.availability-quick-check {
+  display: none !important;
+}
+
+.availability-products-section > header {
+  background: #fffaf6;
+}
+
+.availability-results-table {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.availability-results-head,
+.availability-result-row {
+  display: grid;
+  grid-template-columns:
+    minmax(18rem, 1.45fr)
+    minmax(8.8rem, 0.72fr)
+    minmax(8.5rem, 0.68fr)
+    minmax(12rem, 0.95fr)
+    minmax(14rem, 1.12fr)
+    minmax(5.5rem, 0.42fr)
+    minmax(7rem, 0.52fr);
+  align-items: center;
+  gap: 0.62rem;
+  min-width: 1040px;
+}
+
+.availability-results-head {
+  min-height: 2.45rem;
+  padding: 0.48rem 0.72rem;
+  background: #123566;
+  color: #fff;
+}
+
+.availability-results-head span {
+  font-size: 0.61rem;
+  font-weight: 900;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.availability-result-row {
+  position: relative;
+  min-height: 5.35rem;
+  padding: 0.58rem 0.72rem;
+  border-bottom: 1px solid #e7ebf1;
+  background: #fff;
+}
+
+.availability-result-row:nth-child(odd) {
+  background: #fffaf6;
+}
+
+.availability-result-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.2rem;
+  background: #20a150;
+}
+
+.availability-result-row.tentative::before {
+  background: #e7a51b;
+}
+
+.availability-result-row.free::before {
+  background: #94a3b8;
+}
+
+.availability-result-row:last-child {
+  border-bottom: 0;
+}
+
+.availability-result-product {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 3.35rem minmax(0, 1fr);
+  gap: 0.58rem;
+  align-items: center;
+}
+
+.availability-result-image {
+  width: 3.35rem;
+  height: 3.35rem;
+  border: 1px solid #e4e9f1;
+  border-radius: 0.52rem;
+  background: #f4f6f9;
+  padding: 0;
+  overflow: hidden;
+}
+
+.availability-result-image img,
+.availability-result-image > span {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.availability-result-product > div,
+.availability-result-period,
+.availability-result-document,
+.availability-result-client,
+.availability-result-location,
+.availability-result-quantity,
+.availability-result-status {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.availability-result-product small,
+.availability-result-period small,
+.availability-result-document small,
+.availability-result-status small {
+  color: #7b879a;
+  font-size: 0.55rem;
+  font-weight: 800;
+}
+
+.availability-result-product strong,
+.availability-result-period strong,
+.availability-result-document strong,
+.availability-result-client strong,
+.availability-result-location strong,
+.availability-result-quantity strong {
+  color: #102b5c;
+  font-size: 0.7rem;
+  font-weight: 950;
+  line-height: 1.18;
+}
+
+.availability-result-product span,
+.availability-result-period span,
+.availability-result-document span,
+.availability-result-client span,
+.availability-result-location span,
+.availability-result-quantity span {
+  color: #6e7a8e;
+  font-size: 0.59rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.availability-result-location strong,
+.availability-result-client strong,
+.availability-result-product strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.availability-result-quantity {
+  justify-items: center;
+  text-align: center;
+}
+
+.availability-result-quantity strong {
+  font-size: 1rem;
+}
+
+.availability-result-status {
+  justify-items: start;
+}
+
+@media (max-width: 768px) {
+  .availability-results-head {
+    display: none;
+  }
+
+  .availability-results-table {
+    display: grid;
+    gap: 0.58rem;
+    overflow: visible;
+    padding: 0.62rem;
+  }
+
+  .availability-result-row {
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.58rem;
+    border: 1px solid #e6eaf0;
+    border-radius: 0.72rem;
+    padding: 0.68rem;
+  }
+
+  .availability-result-product,
+  .availability-result-location {
+    grid-column: 1 / -1;
+  }
+
+  .availability-result-status {
+    justify-items: end;
+  }
+}
+
+/* FINAL v4 · Corrección lupa del buscador principal */
+.availability-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding-left: 0.72rem;
+}
+
+.availability-search-field > svg {
+  position: static !important;
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.42rem;
+  color: #8792a4;
+  pointer-events: none;
+}
+
+.availability-search-field input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding-left: 0 !important;
+  text-indent: 0 !important;
+}
+

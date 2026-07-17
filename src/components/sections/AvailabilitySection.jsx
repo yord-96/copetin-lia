@@ -20,8 +20,6 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, toDateKey }
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import ProductImage from '../common/ProductImage';
 
-const PAGE_SIZE = 24;
-
 const normalizeText = (value) =>
   String(value ?? '')
     .normalize('NFD')
@@ -153,12 +151,6 @@ function AvailabilitySection({
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [areaFilter, setAreaFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [page, setPage] = useState(1);
-  const [expandedItemId, setExpandedItemId] = useState('');
-  const [quickItemId, setQuickItemId] = useState('');
-  const [quickQuery, setQuickQuery] = useState('');
-  const [quickSearchOpen, setQuickSearchOpen] = useState(false);
-  const [quickQuantity, setQuickQuantity] = useState('1');
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(initialDate);
 
@@ -317,9 +309,6 @@ function AvailabilitySection({
       });
   }, [rows, query, categoryFilter, areaFilter, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const visibleRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const metrics = useMemo(() => {
     const controlled = rows.filter((row) => row.stockControlled);
@@ -333,31 +322,6 @@ function AvailabilitySection({
     };
   }, [rows]);
 
-  const quickOptions = useMemo(() => {
-    return rows
-      .filter((row) => row.stockControlled)
-      .filter((row) => matchesSearchTokens([
-        row.item.name,
-        row.item.sku,
-        row.item.category,
-        row.item.brand,
-        row.item.itemColor,
-        row.item.description,
-        getInventoryAreaLabel(row.area),
-      ].filter(Boolean).join(' '), quickQuery))
-      .sort((left, right) => String(left.item.name).localeCompare(String(right.item.name), 'es'))
-      .slice(0, 12);
-  }, [rows, quickQuery]);
-
-  const selectQuickRow = (row) => {
-    setQuickItemId(String(row.item.id));
-    setQuickQuery(row.item.name);
-    setQuickSearchOpen(false);
-  };
-
-  const quickRow = rows.find((row) => String(row.item.id) === String(quickItemId));
-  const requestedQuantity = Math.max(0, Math.trunc(Number(quickQuantity ?? 0)));
-  const quickShortage = quickRow ? Math.max(0, requestedQuantity - quickRow.projectedAvailable) : 0;
 
   const resolveDetailRecord = (record) => {
     const source = record.type === 'orden'
@@ -374,6 +338,32 @@ function AvailabilitySection({
     ...(row.hardReservedQtyRecords || []).map((record) => ({ ...resolveDetailRecord(record), commitmentTone: 'confirmed' })),
     ...(row.softReservedQtyRecords || []).map((record) => ({ ...resolveDetailRecord(record), commitmentTone: 'tentative' })),
   ];
+
+  const resultEntries = filteredRows
+    .flatMap((row) => {
+      const commitments = getItemCommitments(row);
+      if (commitments.length === 0) {
+        return [{
+          row,
+          record: null,
+          startDate: dateFrom,
+          endDate: dateTo || dateFrom,
+        }];
+      }
+      return commitments.map((record) => ({
+        row,
+        record,
+        startDate: record.deliveryDate || record.rentalDate || record.eventDate || record.startDate || dateFrom,
+        endDate: record.pickupDate || record.dueDate || record.endDate || record.deliveryDate || dateTo || dateFrom,
+      }));
+    })
+    .sort((left, right) => {
+      const byDate = String(left.startDate || '').localeCompare(String(right.startDate || ''));
+      if (byDate !== 0) return byDate;
+      const leftCode = left.record?.contractCode || left.record?.orderCode || left.record?.quoteCode || '';
+      const rightCode = right.record?.contractCode || right.record?.orderCode || right.record?.quoteCode || '';
+      return String(leftCode).localeCompare(String(rightCode), 'es', { numeric: true });
+    });
 
   const calendarCells = useMemo(() => getMonthGrid(calendarDate), [calendarDate]);
   const calendarStats = useMemo(() => {
@@ -427,7 +417,6 @@ function AvailabilitySection({
     setCategoryFilter('all');
     setAreaFilter('all');
     setStatusFilter('all');
-    setPage(1);
   };
 
   return (
@@ -478,18 +467,18 @@ function AvailabilitySection({
                   type="search"
                   value={query}
                   placeholder="Buscar producto, SKU, categoría o color..."
-                  onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+                  onChange={(event) => { setQuery(event.target.value) }}
                 />
               </label>
-              <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}>
+              <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value) }}>
                 <option value="all">Todas las categorías</option>
                 {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
               </select>
-              <select value={areaFilter} onChange={(event) => { setAreaFilter(event.target.value); setPage(1); }}>
+              <select value={areaFilter} onChange={(event) => { setAreaFilter(event.target.value) }}>
                 <option value="all">Todas las áreas</option>
                 {INVENTORY_AREAS.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
               </select>
-              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
+              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value) }}>
                 <option value="all">Todos los estados</option>
                 <option value="available">Disponible</option>
                 <option value="limited">Limitado</option>
@@ -508,95 +497,46 @@ function AvailabilitySection({
             <article><span className="availability-kpi-icon violet"><Clock3 /></span><small>Reservas tentativas</small><strong>{metrics.tentative.toLocaleString('es-BO')}</strong></article>
           </section>
 
-          <section className="availability-quick-check">
-            <header>
-              <div>
-                <span>RESPUESTA COMERCIAL INMEDIATA</span>
-                <h3>¿Cuánto puedo ofrecer al cliente?</h3>
-                <p>Selecciona un producto y escribe la cantidad solicitada.</p>
-              </div>
-              <CheckCircle2 size={26} />
-            </header>
-            <div className="availability-quick-form">
-              <label className="availability-quick-product-field">
-                <span>Producto</span>
-                <div className="availability-product-search">
-                  <Search size={17} />
-                  <input
-                    type="search"
-                    value={quickQuery}
-                    placeholder="Escribe nombre, color, SKU o categoría..."
-                    autoComplete="off"
-                    onFocus={() => setQuickSearchOpen(true)}
-                    onChange={(event) => {
-                      setQuickQuery(event.target.value);
-                      setQuickItemId('');
-                      setQuickSearchOpen(true);
-                    }}
-                  />
-                  {quickSearchOpen ? (
-                    <div className="availability-product-search-results">
-                      {quickOptions.length > 0 ? quickOptions.map((row) => (
-                        <button type="button" key={row.item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => selectQuickRow(row)}>
-                          <ProductImage item={row.item} alt="" fallback={<span>{String(row.item.name || '?').slice(0, 2)}</span>} />
-                          <span>
-                            <strong>{row.item.name}</strong>
-                            <small>{[row.item.category, row.item.itemColor, row.item.sku].filter(Boolean).join(' · ') || 'Sin datos adicionales'}</small>
-                          </span>
-                          <b>{row.projectedAvailable}</b>
-                        </button>
-                      )) : (
-                        <p>No encontramos productos que coincidan con esas palabras.</p>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </label>
-              <label>
-                <span>Cantidad solicitada</span>
-                <input type="number" min="1" step="1" value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} />
-              </label>
-              <div className={`availability-quick-result ${quickRow ? (quickShortage > 0 ? 'warning' : 'success') : 'empty'}`}>
-                {!quickRow ? (
-                  <p>Selecciona un producto para calcular la respuesta.</p>
-                ) : (
-                  <>
-                    <div><small>Stock total</small><strong>{quickRow.totalStock}</strong></div>
-                    <div><small>Comprometido</small><strong>{quickRow.hardReservedQty}</strong></div>
-                    <div><small>Disponible seguro</small><strong>{quickRow.projectedAvailable}</strong></div>
-                    <div><small>Disponible conservador</small><strong>{quickRow.projectedAfterSoftAvailable}</strong></div>
-                    <div className="availability-quick-message">
-                      {quickShortage > 0 ? (
-                        <><AlertTriangle size={18} /><span>Puedes ofrecer {quickRow.projectedAvailable} unidades propias. Faltan {quickShortage}.</span></>
-                      ) : (
-                        <><CheckCircle2 size={18} /><span>La cantidad solicitada está disponible para este periodo.</span></>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </section>
-
           <section className="availability-products-section">
             <header>
               <div>
                 <span>RESULTADO DEL PERIODO</span>
-                <h3>{filteredRows.length.toLocaleString('es-BO')} productos encontrados</h3>
+                <h3>{resultEntries.length.toLocaleString('es-BO')} resultados individuales</h3>
               </div>
               <small>{formatDate(dateFrom)} {dateTo !== dateFrom ? `al ${formatDate(dateTo)}` : ''}</small>
             </header>
 
-            <div className="availability-product-grid">
-              {visibleRows.map((row) => {
-                const isExpanded = expandedItemId === row.item.id;
-                const commitments = getItemCommitments(row);
+            <div className="availability-results-table">
+              <div className="availability-results-head">
+                <span>Producto</span>
+                <span>Fecha / periodo</span>
+                <span>Contrato / orden</span>
+                <span>Cliente y evento</span>
+                <span>Lugar</span>
+                <span>Cantidad</span>
+                <span>Estado</span>
+              </div>
+
+              {resultEntries.map(({ row, record, startDate, endDate }, index) => {
+                const documentCode = record?.contractCode || record?.orderCode || record?.quoteCode || record?.code || 'SIN DOCUMENTO';
+                const documentType = record?.type === 'cotizacion'
+                  ? 'Cotización'
+                  : record?.type === 'orden'
+                    ? 'Orden'
+                    : record
+                      ? 'Contrato'
+                      : 'Sin compromiso';
+                const location = record ? getRecordLocation(record, clientById) : 'Sin compromiso registrado para este periodo';
+                const quantity = record?.quantity ?? 0;
                 return (
-                  <article key={row.item.id} className={`availability-product-card tone-${row.statusMeta.tone} ${isExpanded ? 'expanded' : ''}`}>
-                    <div className="availability-product-main">
+                  <article
+                    key={`${row.item.id}-${documentCode}-${startDate}-${index}`}
+                    className={`availability-result-row ${record?.commitmentTone || 'free'}`}
+                  >
+                    <div className="availability-result-product">
                       <button
                         type="button"
-                        className="availability-product-image"
+                        className="availability-result-image"
                         onClick={() => {
                           const url = row.item.imageUrl || row.item.imageDataUrl || row.item.image;
                           if (url && onOpenImage) onOpenImage({ name: row.item.name, url });
@@ -604,62 +544,53 @@ function AvailabilitySection({
                       >
                         <ProductImage item={row.item} alt={row.item.name} fallback={<span>{String(row.item.name || '?').slice(0, 2)}</span>} />
                       </button>
-                      <div className="availability-product-copy">
-                        <div className="availability-product-title-row">
-                          <div>
-                            <small>{row.item.category || 'SIN CATEGORÍA'} · {getInventoryAreaLabel(row.area)}</small>
-                            <h4>{row.item.name}</h4>
-                            <p>{row.item.sku || 'Sin SKU'}{row.item.itemColor ? ` · ${row.item.itemColor}` : ''}</p>
-                          </div>
-                          <span className={`availability-status-pill ${row.statusMeta.tone}`}>{row.statusMeta.label}</span>
-                        </div>
-                        <div className="availability-stock-numbers">
-                          <div><small>Stock total</small><strong>{row.totalStock}</strong></div>
-                          <div><small>Comprometido</small><strong>{row.hardReservedQty}</strong></div>
-                          <div><small>Disponible</small><strong>{row.projectedAvailable}</strong></div>
-                          <div><small>Tentativo</small><strong>{row.softReservedQty}</strong></div>
-                          <div><small>Proveedor</small><strong>{row.supplierQty}</strong></div>
-                        </div>
-                        <div className="availability-progress-line">
-                          <span><i style={{ width: `${row.occupiedPercent}%` }} /></span>
-                          <small>{row.occupiedPercent}% del stock propio comprometido</small>
-                        </div>
+                      <div>
+                        <small>{row.item.category || 'SIN CATEGORÍA'} · {getInventoryAreaLabel(row.area)}</small>
+                        <strong>{row.item.name}</strong>
+                        <span>{row.item.sku || 'Sin SKU'}{row.item.itemColor ? ` · ${row.item.itemColor}` : ''}</span>
                       </div>
                     </div>
-                    <button type="button" className="availability-detail-toggle" onClick={() => setExpandedItemId(isExpanded ? '' : row.item.id)}>
-                      {commitments.length > 0 ? `${commitments.length} compromiso${commitments.length === 1 ? '' : 's'}` : 'Sin compromisos'}
-                      <ChevronDown size={17} />
-                    </button>
-                    {isExpanded ? (
-                      <div className="availability-commitment-list">
-                        {commitments.length === 0 ? <p className="availability-empty-detail">No existen contratos u órdenes que ocupen este artículo en el periodo.</p> : commitments.map((record, index) => (
-                          <div key={`${record.id || record.orderCode || index}-${index}`} className={`availability-commitment-row ${record.commitmentTone}`}>
-                            <div className="availability-contract-badge">
-                              <small>{record.type === 'cotizacion' ? 'COTIZACIÓN' : record.type === 'orden' ? 'ORDEN' : 'CONTRATO'}</small>
-                              <strong>{record.contractCode || record.orderCode || record.quoteCode || record.code || 'S/C'}</strong>
-                            </div>
-                            <div><small>Cliente</small><strong>{record.customerName || 'Sin cliente'}</strong><span><UsersRound size={14} /> {record.eventType || 'Evento no especificado'}</span></div>
-                            <div><small>Lugar</small><strong>{getRecordLocation(record, clientById)}</strong><span><MapPin size={14} /> {record.city || 'Sin ciudad'}</span></div>
-                            <div><small>Periodo</small><strong>{formatDate(record.deliveryDate || record.rentalDate || record.eventDate || record.startDate)} - {formatDate(record.pickupDate || record.dueDate || record.endDate)}</strong><span><Clock3 size={14} /> {formatTimeRange(record)}</span></div>
-                            <div className="availability-commitment-qty"><small>Cantidad</small><strong>{record.quantity}</strong><span>{record.commitmentTone === 'tentative' ? 'Tentativo' : 'Confirmado'}</span></div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
+
+                    <div className="availability-result-period">
+                      <strong>{formatDate(startDate)}</strong>
+                      <span>{String(endDate) !== String(startDate) ? `hasta ${formatDate(endDate)}` : 'Mismo día'}</span>
+                      {record ? <small>{formatTimeRange(record)}</small> : null}
+                    </div>
+
+                    <div className="availability-result-document">
+                      <small>{documentType}</small>
+                      <strong>{documentCode}</strong>
+                      {record?.orderCode && record?.contractCode ? <span>Orden {record.orderCode}</span> : null}
+                    </div>
+
+                    <div className="availability-result-client">
+                      <strong>{record?.customerName || 'Sin cliente'}</strong>
+                      <span>{record?.eventType || 'Evento no especificado'}</span>
+                    </div>
+
+                    <div className="availability-result-location">
+                      <strong>{location}</strong>
+                      <span>{record?.city || 'Sin ciudad registrada'}</span>
+                    </div>
+
+                    <div className="availability-result-quantity">
+                      <strong>{quantity}</strong>
+                      <span>unidades</span>
+                    </div>
+
+                    <div className="availability-result-status">
+                      <span className={`availability-status-pill ${record?.commitmentTone === 'tentative' ? 'warning' : record ? 'success' : row.statusMeta.tone}`}>
+                        {record?.commitmentTone === 'tentative' ? 'Tentativo' : record ? 'Confirmado' : row.statusMeta.label}
+                      </span>
+                      <small>Disponible: {row.projectedAvailable}</small>
+                    </div>
                   </article>
                 );
               })}
             </div>
 
-            {visibleRows.length === 0 ? <div className="availability-no-results"><PackageSearch size={34} /><strong>No encontramos productos</strong><p>Cambia la búsqueda o los filtros seleccionados.</p></div> : null}
+            {resultEntries.length === 0 ? <div className="availability-no-results"><PackageSearch size={34} /><strong>No encontramos productos</strong><p>Cambia la búsqueda o los filtros seleccionados.</p></div> : null}
 
-            {totalPages > 1 ? (
-              <footer className="availability-pagination">
-                <button type="button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft size={17} /> Anterior</button>
-                <span>Página {safePage} de {totalPages}</span>
-                <button type="button" disabled={safePage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Siguiente <ChevronRight size={17} /></button>
-              </footer>
-            ) : null}
           </section>
         </>
       ) : (
