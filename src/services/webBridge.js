@@ -7091,7 +7091,7 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: minmax(0, 1fr) 34mm;
     gap: 3mm;
-    margin-top: 3mm;
+    margin-top: 2mm;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -7123,16 +7123,16 @@ const getReferenceContractStyles = () => `
   .rc-bottom-title { margin: 0 0 1.2mm; color: #a66a20; font: 500 12.5px Georgia, "Times New Roman", serif; font-variant: small-caps; }
   .rc-bottom-title::after { content: ""; display: block; width: 18mm; height: .25mm; margin-top: .6mm; background: #a66a20; }
   .rc-observations, .rc-guarantee-control {
-    min-height: 23mm;
-    padding: 1.6mm;
+    min-height: 18mm;
+    padding: 1.35mm 1.5mm;
     border: .25mm solid #d8c29c;
     border-radius: 1.5mm;
     background: #fffdf9;
   }
   .rc-observations strong { display: block; margin-bottom: 1.2mm; font-size: 8.2px; }
   .rc-observations p { margin: 0; text-transform: uppercase; white-space: pre-line; }
-  .rc-change-lines { display: grid; gap: 1.6mm; padding-top: .4mm; }
-  .rc-change-line { display: block; width: 100%; height: 3.5mm; border-bottom: .25mm solid #777; }
+  .rc-change-lines { display: grid; gap: 1.25mm; padding-top: .2mm; }
+  .rc-change-line { display: block; width: 100%; height: 3mm; border-bottom: .25mm solid #777; }
   .rc-client-materials {
     margin-top: 0;
     break-inside: avoid;
@@ -7144,7 +7144,7 @@ const getReferenceContractStyles = () => `
     gap: 2.5mm;
   }
   .rc-material-box {
-    min-height: 42mm;
+    min-height: 30mm;
     display: grid;
     grid-template-rows: auto 1fr;
     border: .25mm solid #e4d3bb;
@@ -7161,12 +7161,12 @@ const getReferenceContractStyles = () => `
   .rc-material-lines {
     display: grid;
     align-content: stretch;
-    gap: 1.35mm;
+    gap: 1mm;
     padding: 1mm 1.2mm 1.4mm;
   }
-  .rc-material-lines span { display: block; min-height: 3.8mm; border-bottom: .25mm solid #777; }
+  .rc-material-lines span { display: block; min-height: 3mm; border-bottom: .25mm solid #777; }
   .rc-terms-section {
-    margin-top: 4mm;
+    margin-top: 3mm;
     padding-top: 0;
     border-top: 0;
     break-inside: avoid;
@@ -7215,8 +7215,8 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 4mm;
-    margin-top: 2.5mm;
-    padding-top: 1.5mm;
+    margin-top: 1.8mm;
+    padding-top: 1.2mm;
     border-top: .3mm solid #a66a20;
     color: #555;
     font-size: 8.5px;
@@ -7227,7 +7227,7 @@ const getReferenceContractStyles = () => `
   .rc-page-bottom {
     position: static;
     margin-top: auto;
-    padding-top: 4mm;
+    padding-top: 3mm;
     background: transparent;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -7327,8 +7327,8 @@ const getReferenceContractStyles = () => `
       page-break-inside: avoid;
     }
     .rc-page-bottom {
-      margin-top: 4mm;
-      padding-top: 0;
+      margin-top: 3mm;
+      padding-top: 5mm;
     }
   }
 `;
@@ -7349,14 +7349,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       ?? 0,
   );
   const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
-  const documentManagedBs = Math.max(0, Number(totalBs ?? 0)) + Math.max(0, Number(guaranteeBs ?? 0));
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
   const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
-  const pendingBs = contract?.payment?.pendingBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0;
-  const documentPendingBs = Math.max(
-    0,
-    Number(pendingBs ?? 0) + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0))),
-  );
   const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
   const hasDurationPricing = pricingPlan?.mode === 'duration';
   const hasDailySchedulePricing = pricingPlan?.mode === 'daily_schedule';
@@ -7471,6 +7465,24 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       };
     })
     : [];
+  const getDocumentLineUnitPriceBs = (line) => Number(line.rentalPriceBs ?? line.unitPriceBs ?? 0);
+  const getDocumentLineTotalBs = (line, multiplier = 1) => {
+    const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
+    const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
+    const unitPriceBs = getDocumentLineUnitPriceBs(line);
+    const storedLineTotalBs = Number(line.lineTotalBs ?? fulfillmentBreakdown.ownQty * unitPriceBs);
+    const ownLineTotalBs = Number((fulfillmentBreakdown.ownQty * unitPriceBs).toFixed(2));
+    const totalQuantityLineTotalBs = Number((fulfillmentBreakdown.totalQty * unitPriceBs).toFixed(2));
+    const supplierSaleBs = (Array.isArray(supplierSupportLines) ? supplierSupportLines : [])
+      .reduce((sum, entry) => sum + Number(entry.totalSaleBs ?? (Number(entry.neededQty ?? 0) * Number(entry.saleUnitPriceBs ?? unitPriceBs))), 0);
+
+    const baseLineTotalBs = Math.abs(storedLineTotalBs - ownLineTotalBs) < 0.01 && fulfillmentBreakdown.supplierQty > 0
+      ? Number((storedLineTotalBs + supplierSaleBs).toFixed(2))
+      : Math.max(storedLineTotalBs, totalQuantityLineTotalBs);
+
+    return Number((baseLineTotalBs * multiplier).toFixed(2));
+  };
   const renderContractItemRow = (line, multiplier = 1) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
@@ -7479,12 +7491,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
         const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
         const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
-        const unitPriceBs = Number(line.rentalPriceBs ?? 0) * multiplier;
+        const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
-        const manualSupplierSaleBs = (Array.isArray(supplierSupportLines) ? supplierSupportLines : [])
-          .filter((entry) => entry?.manualCoverage)
-          .reduce((sum, entry) => sum + Number(entry.totalSaleBs ?? 0), 0);
-        const lineTotalBs = (Number(line.lineTotalBs ?? displayQuantity * Number(line.rentalPriceBs ?? 0)) + manualSupplierSaleBs) * multiplier;
+        const lineTotalBs = getDocumentLineTotalBs(line, multiplier);
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -7541,7 +7550,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
-    const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
+    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
     return `
         <tr class="rc-duration-day-row">
           <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
@@ -7586,8 +7595,14 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       ?? rental?.totals?.servicesSubtotalBs
       ?? contractServices.reduce((sum, service) => sum + Number(service.lineTotalBs ?? 0), 0),
   );
+  const computedDocumentItemsSubtotalBs = hasDurationPricing
+    ? durationDayBreakdown.reduce((sum, dayInfo) => (
+      sum + documentItems.reduce((lineSum, line) => lineSum + getDocumentLineTotalBs(line, dayInfo.multiplier), 0)
+    ), 0)
+    : documentItems.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
   const documentItemsSubtotalBs = Math.max(
     0,
+    computedDocumentItemsSubtotalBs,
     hasDurationPricing
       ? Number(
         pricingPlan?.chargeableSubtotalBs
@@ -7598,6 +7613,17 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           ?? rental?.totals?.itemsSubtotalBs
           ?? Number(subtotalBs ?? 0) - servicesSubtotalBs,
       ),
+  );
+  const computedContractTotalBs = Number(Math.max(
+    0,
+    documentItemsSubtotalBs + servicesSubtotalBs - Number(discountBs ?? 0) + deliveryFeeBs,
+  ).toFixed(2));
+  const printedTotalBs = Math.max(Number(totalBs ?? 0), computedContractTotalBs);
+  const printedManagedBs = printedTotalBs + Math.max(0, Number(guaranteeBs ?? 0));
+  const printedPendingBs = Math.max(
+    0,
+    printedTotalBs - Math.max(0, Number(paidBs ?? 0)) - Math.max(0, Number(prepaidAppliedBs ?? 0))
+      + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0))),
   );
   const serviceRows = contractServices
     .map((service) => {
@@ -7620,7 +7646,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     .join('');
   const realItemCount = documentItems.length + contractServices.length;
   const usesMultipageContract = realItemCount >= 15;
-  const manualRowCount = 3;
+  const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
   const contractTableCols = `
           <colgroup>
@@ -7666,7 +7692,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       const dayLines = documentItems.filter((line) => resolveScheduleDayIndexForDocumentLine(line) === index);
       if (!dayLines.length) return '';
       const dayLabel = String(day?.label ?? '').trim() || `Dia ${index + 1}`;
-      const daySubtotalBs = dayLines.reduce((sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.rentalPriceBs ?? 0)), 0);
+      const daySubtotalBs = dayLines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
       return `
             <div class="rc-financial-item transport"><span>${escapeHtml(dayLabel)}</span><strong>${formatBs(daySubtotalBs)}</strong></div>`;
     }).join('')
@@ -7682,10 +7708,10 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'pagada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
             <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
-            <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(documentPendingBs)}</strong></div>
+            <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(printedPendingBs)}</strong></div>
             <div class="rc-financial-item manual"><span>A cuenta</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
-            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(documentManagedBs)}</strong></div>
+            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(printedManagedBs)}</strong></div>
             <div class="rc-financial-item manual"><span>Reposicion</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item manual"><span>Devolucion final</span><strong>&nbsp;</strong></div>
           </div>`;
