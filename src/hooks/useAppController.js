@@ -168,7 +168,7 @@ export const useAppController = () => {
       setError('');
     }
     try {
-      await api.sync.ensureLoaded();
+      await api.sync.ensureLoaded({ background: true });
       const [
         dashboardData,
         inventoryData,

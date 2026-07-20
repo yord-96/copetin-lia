@@ -579,7 +579,7 @@ const callServerPresence = async (action, payload) => {
   }
 };
 
-const syncServerState = async ({ force = false, required = false, reason = 'sync' } = {}) => {
+const syncServerState = async ({ force = false, required = false, reason = 'sync', preferCache = false, notifyWhenUpdated = false } = {}) => {
   if (!shouldUseServerState()) {
     return;
   }
@@ -596,6 +596,23 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
     return;
   }
   if (!force && now - lastSharedSyncAt < SYNC_THROTTLE_MS) {
+    return;
+  }
+  if (!force && preferCache && hasCachedLocalState()) {
+    lastSharedRevision = getCachedServerRevision();
+    lastSharedSyncAt = now;
+    hasLoadedServerState = true;
+    window.setTimeout(() => {
+      syncServerState({
+        force: true,
+        required: false,
+        reason: `${reason}:background-refresh`,
+        notifyWhenUpdated: true,
+      }).catch((error) => {
+        applyRemoteBackoff(error);
+        console.warn('[copetin-sync] No se pudo refrescar la cache en segundo plano.', error);
+      });
+    }, 0);
     return;
   }
 
@@ -617,6 +634,7 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
     const payload = await fetchServerState(reason);
     resetRemoteBackoff();
     if (payload?.initialized && payload.state) {
+      const previousRevision = lastSharedRevision ?? getCachedServerRevision();
       await replaceLocalState(payload.state);
       if (payload.revision) {
         lastSharedRevision = payload.revision;
@@ -624,6 +642,9 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
       }
       lastSharedSyncAt = Date.now();
       hasLoadedServerState = true;
+      if (notifyWhenUpdated && payload.revision && payload.revision !== previousRevision) {
+        notifySubscribers({ source: 'background-sync', reason, revision: payload.revision });
+      }
       return;
     }
 
@@ -955,7 +976,11 @@ export const runtimeInfo =
 export const api = {
   sync: {
     subscribe: subscribeToDataChanges,
-    ensureLoaded: () => syncServerState({ required: true, reason: 'initial-bootstrap' }),
+    ensureLoaded: (options = {}) => syncServerState({
+      required: options?.background ? false : true,
+      reason: 'initial-bootstrap',
+      preferCache: Boolean(options?.background),
+    }),
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
@@ -1036,6 +1061,19 @@ export const api = {
       if (!hasStoredSession) {
         console.info(`[copetin-sync] Sesion local ausente; se omite GET ${SERVER_STATE_ENDPOINT}`);
         return null;
+      }
+      const cachedSession = await bridge.auth.getSession();
+      if (cachedSession) {
+        syncServerState({
+          required: false,
+          reason: 'auth-session',
+          preferCache: true,
+          notifyWhenUpdated: true,
+        }).catch((error) => {
+          applyRemoteBackoff(error);
+          console.warn('[copetin-sync] No se pudo refrescar sesion en segundo plano.', error);
+        });
+        return cachedSession;
       }
       await syncServerState({ required: true, reason: 'auth-session' });
       return bridge.auth.getSession();
