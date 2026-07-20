@@ -3830,12 +3830,12 @@ function ServiceOrdersSection({
       setSupplierCoverageError('Indica nombre/modelo y categoria del item que prestara el proveedor.');
       return;
     }
-    if (supplierCost <= 0) {
-      setSupplierCoverageError('Indica el costo unitario que te cobrara el proveedor.');
+    if (supplierCost < 0) {
+      setSupplierCoverageError('El costo del proveedor no puede ser negativo.');
       return;
     }
-    if (salePrice <= 0) {
-      setSupplierCoverageError('Indica el precio unitario que se cobrara al cliente.');
+    if (salePrice < 0) {
+      setSupplierCoverageError('El precio al cliente no puede ser negativo.');
       return;
     }
 
@@ -8317,17 +8317,18 @@ function ServiceOrdersSection({
                   </small>
                 </label>
                 <label className="supplier-coverage-field">
-                  Costo proveedor Bs *
+                  Costo proveedor Bs
                   <input type="text" inputMode="decimal" value={supplierCoverageDraft.supplierUnitCostBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('supplierUnitCostBs', event.target.value)} />
+                  <small>Puede ser 0 para taller interno, reparacion propia o apoyo sin costo.</small>
                 </label>
                 <label className="supplier-coverage-field">
-                  Precio cliente Bs *
+                  Precio cliente Bs
                   <input type="text" inputMode="decimal" value={supplierCoverageDraft.saleUnitPriceBs} onFocus={selectNumericInput} onChange={(event) => setSupplierCoverageDraftField('saleUnitPriceBs', event.target.value)} />
-                  <small>Este precio queda en el item del contrato.</small>
+                  <small>Puede ser 0 si no debe afectar el total del contrato.</small>
                 </label>
                 <label className="supplier-coverage-field wide">
                   Notas internas
-                  <input value={supplierCoverageDraft.notes} onChange={(event) => setSupplierCoverageDraftField('notes', event.target.value)} placeholder="Condiciones, entrega, pago al proveedor..." />
+                  <input value={supplierCoverageDraft.notes} onChange={(event) => setSupplierCoverageDraftField('notes', event.target.value)} placeholder="Ej. verificar reparacion para la fecha, condiciones, entrega..." />
                 </label>
               </div>
 
