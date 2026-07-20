@@ -61246,3 +61246,304 @@ body:has(.accounting-bigcash-view) .workspace {
     grid-column: auto;
   }
 }
+
+/* FINAL v5 - Galeria estable del wizard de contratos */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-table-head {
+  display: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+  --wizard-catalog-card-height: 11.45rem;
+  --wizard-catalog-gap: 0.62rem;
+  height: 24.62rem !important;
+  min-height: 24.62rem !important;
+  max-height: 24.62rem !important;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)) !important;
+  grid-auto-rows: var(--wizard-catalog-card-height) !important;
+  align-items: stretch !important;
+  align-content: start !important;
+  gap: var(--wizard-catalog-gap) !important;
+  padding: 0.55rem !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  border: 1px solid #e3e8ef !important;
+  border-radius: 0.88rem !important;
+  background: #f8fafc !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 4.65rem minmax(0, 1fr) auto !important;
+  grid-template-rows: 4.65rem minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "image info info"
+    "details details details"
+    "price stock action" !important;
+  height: var(--wizard-catalog-card-height) !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  gap: 0.42rem 0.62rem !important;
+  align-items: start !important;
+  padding: 0.62rem !important;
+  overflow: hidden !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 0.72rem !important;
+  background: #ffffff !important;
+  box-shadow: 0 0.38rem 0.95rem rgba(15, 23, 42, 0.045) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb {
+  grid-area: image !important;
+  width: 4.65rem !important;
+  height: 4.65rem !important;
+  border-radius: 0.62rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info {
+  grid-area: info !important;
+  min-width: 0 !important;
+  height: 4.65rem !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  gap: 0.18rem !important;
+  align-content: start !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  min-height: 1.54rem !important;
+  max-height: 1.54rem !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  color: #17213d !important;
+  font-size: 0.76rem !important;
+  line-height: 1.08 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > span {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #61708a !important;
+  font-size: 0.57rem !important;
+  line-height: 1.1 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > .orders-product-detail-line {
+  display: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-detail-line,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row > .orders-product-table-details,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row > .orders-product-table-details {
+  grid-area: details !important;
+  min-height: 0 !important;
+  max-height: 2.15rem !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-content: flex-start !important;
+  gap: 0.22rem !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-detail-line span,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-table-details span {
+  max-width: 100% !important;
+  min-height: 1rem !important;
+  padding: 0.16rem 0.36rem !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 0.49rem !important;
+  line-height: 1 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics {
+  grid-column: 1 !important;
+  grid-row: 3 !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0.22rem !important;
+  align-self: end !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics.is-provisional {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics > span {
+  min-width: 0 !important;
+  min-height: 1.62rem !important;
+  padding: 0.16rem 0.12rem !important;
+  border-radius: 0.52rem !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics small {
+  font-size: 0.41rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics strong {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 0.62rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-price {
+  grid-area: price !important;
+  min-width: 4.85rem !important;
+  align-self: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  text-align: left !important;
+  font-size: 0.78rem !important;
+  line-height: 1.05 !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-price small {
+  font-size: 0.5rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-stock-badge {
+  grid-area: stock !important;
+  position: static !important;
+  align-self: center !important;
+  justify-self: center !important;
+  min-height: 1.74rem !important;
+  max-width: 6.55rem !important;
+  padding: 0.22rem 0.48rem !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  font-size: 0.5rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-catalog-card-chip {
+  position: absolute !important;
+  top: 0.48rem !important;
+  left: 0.48rem !important;
+  right: auto !important;
+  bottom: auto !important;
+  min-width: 0 !important;
+  padding: 0.14rem 0.38rem !important;
+  border-radius: 999px !important;
+  font-size: 0.45rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row .primary-button,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row .ghost-button,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row .primary-button {
+  grid-area: action !important;
+  width: auto !important;
+  min-width: 5.35rem !important;
+  min-height: 1.9rem !important;
+  align-self: center !important;
+  justify-self: end !important;
+  padding: 0.34rem 0.58rem !important;
+  border-radius: 0.58rem !important;
+  font-size: 0.56rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-body,
+.orders-wizard-modal .orders-wizard-main {
+  overscroll-behavior: contain;
+}
+
+.orders-modal-backdrop:has(.orders-wizard-modal) {
+  backdrop-filter: none !important;
+}
+
+.orders-wizard-modal {
+  overflow: hidden !important;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.orders-wizard-modal .orders-wizard-body {
+  overflow: auto !important;
+  scrollbar-gutter: stable both-edges;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row *,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row * {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-list {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 22rem !important;
+    grid-auto-rows: auto !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row,
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+    height: auto !important;
+    min-height: 8.4rem !important;
+  }
+}
+
+.orders-wizard-modal .orders-submit-progress {
+  min-height: 2.1rem;
+  max-width: min(30rem, 44vw);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  padding: 0.42rem 0.7rem;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.orders-wizard-modal .orders-submit-progress::before {
+  content: "";
+  width: 0.64rem;
+  height: 0.64rem;
+  flex: 0 0 auto;
+  border: 2px solid #fdba74;
+  border-top-color: #ea580c;
+  border-radius: 999px;
+  animation: orders-submit-spin 0.75s linear infinite;
+}
+
+@keyframes orders-submit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .orders-wizard-modal .orders-submit-progress {
+    order: -1;
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
+}

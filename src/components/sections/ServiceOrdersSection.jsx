@@ -1259,6 +1259,7 @@ function ServiceOrdersSection({
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatusMessage, setSubmitStatusMessage] = useState('');
   const [finalizedContractOverrides, setFinalizedContractOverrides] = useState(() => new Map());
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
@@ -1465,12 +1466,14 @@ function ServiceOrdersSection({
     if (submitLockRef.current) return false;
     submitLockRef.current = true;
     setIsSubmitting(true);
+    setSubmitStatusMessage('');
     return true;
   };
 
   const endSubmit = () => {
     submitLockRef.current = false;
     setIsSubmitting(false);
+    setSubmitStatusMessage('');
   };
 
   useEffect(() => {
@@ -5173,6 +5176,7 @@ function ServiceOrdersSection({
     setFormError('');
     setActionFeedback('');
     try {
+      setSubmitStatusMessage('Validando datos del contrato...');
       const payload = createQuotePayload();
       if (draft.entityType === 'contract') {
         const contractPayload = {
@@ -5180,6 +5184,7 @@ function ServiceOrdersSection({
           validUntil: null,
           status: draft.recordStatus || (draft.mode === 'order' ? 'pendiente' : 'borrador'),
         };
+        setSubmitStatusMessage(draft.recordId ? 'Actualizando contrato...' : 'Guardando contrato...');
         const savedContract = draft.recordId
           ? await onUpdateContract?.(contractPayload)
           : await onCreateContract?.(contractPayload);
@@ -5188,12 +5193,16 @@ function ServiceOrdersSection({
         }
 
         if (approveNow) {
+          setSubmitStatusMessage('Generando orden de servicio y reservando inventario...');
           await onApproveContract?.({ contractId: savedContract.id, contract: savedContract });
+          setSubmitStatusMessage('Contrato aprobado. Cerrando wizard...');
           setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`);
         } else {
+          setSubmitStatusMessage('Contrato guardado. Cerrando wizard...');
           setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} guardado correctamente.`);
         }
       } else {
+        setSubmitStatusMessage(draft.recordId ? 'Actualizando cotizacion...' : 'Guardando cotizacion...');
         const savedQuote = draft.recordId
           ? await onUpdateQuote?.({
             ...payload,
@@ -5201,6 +5210,7 @@ function ServiceOrdersSection({
           })
           : await onCreateQuote(payload);
         if (approveNow) {
+          setSubmitStatusMessage('Generando contrato desde la cotizacion...');
           const contract = await onApproveQuote?.({ quoteId: savedQuote.id });
           setActiveView('contracts');
           setActionFeedback(
@@ -5209,6 +5219,7 @@ function ServiceOrdersSection({
               : `Cotizacion ${savedQuote.quoteCode} aprobada y convertida en contrato.`,
           );
         } else {
+          setSubmitStatusMessage('Cotizacion guardada. Cerrando wizard...');
           setActionFeedback(`Cotizacion ${savedQuote.quoteCode} guardada correctamente.`);
         }
       }
@@ -11270,6 +11281,11 @@ function ServiceOrdersSection({
               </button>
 
               <div className="orders-modal-foot-right">
+                {isSubmitting && submitStatusMessage ? (
+                  <span className="orders-submit-progress" role="status" aria-live="polite">
+                    {submitStatusMessage}
+                  </span>
+                ) : null}
                 <button type="button" className="ghost-button" onClick={handlePrevStep} disabled={isSubmitting || currentStep === 0}>
                   Anterior
                 </button>
@@ -11297,7 +11313,7 @@ function ServiceOrdersSection({
                     </button>
                     <button type="button" className="primary-button" onClick={() => handleSaveQuote({ approveNow: true })} disabled={isSubmitting}>
                       {isSubmitting
-                        ? 'Procesando...'
+                        ? 'Aprobando...'
                         : draft.entityType === 'contract'
                         ? 'Guardar y aprobar'
                         : 'Guardar y generar contrato'}

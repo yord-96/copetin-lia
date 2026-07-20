@@ -41,6 +41,9 @@ const syncSubscribers = new Set();
 const inFlightMutations = new Map();
 let mutationQueue = Promise.resolve();
 let remotePresenceUnsupported = false;
+let mutationBatchDepth = 0;
+let mutationBatchPreflightPromise = null;
+let mutationBatchDirty = false;
 
 const getBridge = () => getWebBridge();
 
@@ -568,6 +571,30 @@ const enqueueMutation = (operation) => {
   return request;
 };
 
+const runBatchedMutations = async (operation) => {
+  mutationBatchDepth += 1;
+  try {
+    const result = await operation();
+    if (mutationBatchDepth === 1 && mutationBatchDirty) {
+      await pushServerState();
+      announceDataChange({ domain: 'batch', method: 'commit' });
+      mutationBatchDirty = false;
+    }
+    return result;
+  } catch (error) {
+    if (mutationBatchDepth === 1 && mutationBatchDirty) {
+      mutationBatchDirty = false;
+    }
+    throw error;
+  } finally {
+    mutationBatchDepth = Math.max(0, mutationBatchDepth - 1);
+    if (mutationBatchDepth === 0) {
+      mutationBatchPreflightPromise = null;
+      mutationBatchDirty = false;
+    }
+  }
+};
+
 const pollRemoteRevision = async () => {
   if (!shouldUseServerState() || syncSubscribers.size === 0) return;
 
@@ -653,11 +680,22 @@ const callBridge = async (domain, method, mutates, ...args) => {
   const request = (async () => {
     const runMutationAttempt = async (attempt = 0) => {
       try {
-        await syncServerState({
-          force: !isPresenceMutation,
-          required: !isPresenceMutation,
-          reason: `${domain}.${method}:mutation-preflight`,
-        });
+        if (mutationBatchDepth > 0 && !isPresenceMutation) {
+          if (!mutationBatchPreflightPromise) {
+            mutationBatchPreflightPromise = syncServerState({
+              force: true,
+              required: true,
+              reason: `batch.${domain}.${method}:mutation-preflight`,
+            });
+          }
+          await mutationBatchPreflightPromise;
+        } else {
+          await syncServerState({
+            force: !isPresenceMutation,
+            required: !isPresenceMutation,
+            reason: `${domain}.${method}:mutation-preflight`,
+          });
+        }
       } catch (error) {
         if (isTransientServerError(error) && attempt < MUTATION_TRANSIENT_RETRIES) {
           await sleep(getRetryDelayMs(error, attempt));
@@ -669,6 +707,10 @@ const callBridge = async (domain, method, mutates, ...args) => {
       const result = await getBridge()[domain][method](...args);
       if (isPresenceMutation) {
         announceDataChange({ domain, method });
+        return result;
+      }
+      if (mutationBatchDepth > 0) {
+        mutationBatchDirty = true;
         return result;
       }
       try {
@@ -774,6 +816,7 @@ export const api = {
     ensureLoaded: () => syncServerState({ required: true, reason: 'initial-bootstrap' }),
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     getRevision: fetchServerMeta,
+    batchMutations: runBatchedMutations,
   },
   inventory: {
     list: () => callBridge('inventory', 'list', false),

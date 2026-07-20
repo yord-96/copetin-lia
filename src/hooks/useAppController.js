@@ -1050,7 +1050,16 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.contracts.create({ ...getCurrentUserTrace(), ...payload });
-      await loadData();
+      setContracts((current) => (
+        current.some((entry) => entry.id === created.id)
+          ? current.map((entry) => (entry.id === created.id ? created : entry))
+          : [created, ...current]
+      ));
+      window.setTimeout(() => {
+        loadData({ silent: true }).catch((refreshError) => {
+          console.warn(refreshError);
+        });
+      }, 900);
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el contrato.');
@@ -1068,7 +1077,12 @@ export const useAppController = () => {
         updatedByName: trace.userName,
         updatedByRole: trace.userRole,
       });
-      await loadData();
+      setContracts((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+      window.setTimeout(() => {
+        loadData({ silent: true }).catch((refreshError) => {
+          console.warn(refreshError);
+        });
+      }, 900);
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el contrato.');
@@ -1614,85 +1628,82 @@ export const useAppController = () => {
         : null;
       const approvalTrace = getCurrentUserTrace();
 
-      const createdRental = await api.rentals.create({
-        ...approvalTrace,
-        createdBy: contractResponsible?.name ?? contract.createdBy ?? contract.createdByName ?? approvalTrace.createdBy,
-        createdById: contractResponsible?.id ?? contract.createdById ?? approvalTrace.createdById,
-        createdByName: contractResponsible?.name ?? contract.createdByName ?? approvalTrace.createdByName,
-        createdByRole: contractResponsible?.role ?? contract.createdByRole ?? approvalTrace.createdByRole,
-        clientId: contract.clientId ?? null,
-        customerName: contract.customerName,
-        customerPhone: contract.customerPhone,
-        rentalDate: contract.deliveryDate || contract.eventDate,
-        dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
-        dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
-        deliveryWindowStart: contract.deliveryWindowStart || '00:00',
-        deliveryWindowEnd: contract.deliveryWindowEnd || contract.eventTime || null,
-        pickupWindowStart: contract.pickupWindowStart || null,
-        pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
-        depositBs: guaranteeForCashBs,
-        guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? 0),
-        guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
-        guaranteePaymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
-        paidAtRentalBs: coveredAtApprovalBs,
-        initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
-        paymentMode,
-        prepaidClientId: prepaidAppliedBs > 0 ? contractClient.id : null,
-        prepaidAppliedBs,
-        notes: contract.observations,
-        billingMode: contract.billingMode ?? 'sin_factura',
-        logisticsMode: contract.logisticsMode ?? 'envio',
-        deliveryChargeMode: contract.deliveryChargeMode ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'extra' : 'included'),
-        deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
-        deliveryFeeReason: contract.deliveryFeeReason ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
-        pricingPlan: contract.pricingPlan ?? null,
-        supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
-        quotedTotals: contract.totals ?? null,
-        eventType: contract.eventType,
-        eventAddress: contract.address,
-        contractId: contract.id,
-        contractCode: contract.contractCode,
-        allowPastDueDate: true,
-        items: approvalItems,
-        services: approvalServices,
-      });
-
-      const approveContractPayload = {
-        id: contract.id,
-        status: 'aprobado',
-        approvedAt: contract.approvedAt ?? createdRental.createdAt ?? new Date().toISOString(),
-        rejectedAt: null,
-        rentalId: createdRental.id,
-        orderCode: createdRental.orderCode,
-        paidAtApprovalBs: coveredAtApprovalBs,
-        prepaidAppliedBs,
-        pricingPlan: contract.pricingPlan ?? null,
-        items: approvalItems,
-        services: approvalServices,
-        supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
-      };
-
       const refreshAfterApproval = () => {
         window.setTimeout(() => {
           loadData({ silent: true });
         }, 750);
       };
 
-      if (createdRental.reusedExisting) {
-        const updatedContract = await api.contracts.update(approveContractPayload);
-        setContracts((current) => current.map((entry) => (entry.id === updatedContract.id ? updatedContract : entry)));
-        setRentals((current) => (
-          current.some((entry) => entry.id === createdRental.id) ? current : [createdRental, ...current]
-        ));
-        refreshAfterApproval();
-        return createdRental;
-      }
+      let createdRental = null;
+      let updatedContract = null;
+      await api.sync.batchMutations(async () => {
+        createdRental = await api.rentals.create({
+          ...approvalTrace,
+          createdBy: contractResponsible?.name ?? contract.createdBy ?? contract.createdByName ?? approvalTrace.createdBy,
+          createdById: contractResponsible?.id ?? contract.createdById ?? approvalTrace.createdById,
+          createdByName: contractResponsible?.name ?? contract.createdByName ?? approvalTrace.createdByName,
+          createdByRole: contractResponsible?.role ?? contract.createdByRole ?? approvalTrace.createdByRole,
+          clientId: contract.clientId ?? null,
+          customerName: contract.customerName,
+          customerPhone: contract.customerPhone,
+          rentalDate: contract.deliveryDate || contract.eventDate,
+          dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
+          dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
+          deliveryWindowStart: contract.deliveryWindowStart || '00:00',
+          deliveryWindowEnd: contract.deliveryWindowEnd || contract.eventTime || null,
+          pickupWindowStart: contract.pickupWindowStart || null,
+          pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
+          depositBs: guaranteeForCashBs,
+          guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? 0),
+          guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
+          guaranteePaymentMethod: contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? 'efectivo',
+          paidAtRentalBs: coveredAtApprovalBs,
+          initialPaymentMethod: contract?.payment?.initialPaymentMethod ?? 'efectivo',
+          paymentMode,
+          prepaidClientId: prepaidAppliedBs > 0 ? contractClient.id : null,
+          prepaidAppliedBs,
+          notes: contract.observations,
+          billingMode: contract.billingMode ?? 'sin_factura',
+          logisticsMode: contract.logisticsMode ?? 'envio',
+          deliveryChargeMode: contract.deliveryChargeMode ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'extra' : 'included'),
+          deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+          deliveryFeeReason: contract.deliveryFeeReason ?? (Number(contract?.totals?.deliveryFeeBs ?? 0) > 0 ? 'quantity' : 'covered'),
+          pricingPlan: contract.pricingPlan ?? null,
+          supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
+          quotedTotals: contract.totals ?? null,
+          eventType: contract.eventType,
+          eventAddress: contract.address,
+          contractId: contract.id,
+          contractCode: contract.contractCode,
+          allowPastDueDate: true,
+          items: approvalItems,
+          services: approvalServices,
+        });
 
-      const updatedContract = await api.contracts.update(approveContractPayload);
+        updatedContract = await api.contracts.update({
+          id: contract.id,
+          status: 'aprobado',
+          approvedAt: contract.approvedAt ?? createdRental.createdAt ?? new Date().toISOString(),
+          rejectedAt: null,
+          rentalId: createdRental.id,
+          orderCode: createdRental.orderCode,
+          paidAtApprovalBs: coveredAtApprovalBs,
+          prepaidAppliedBs,
+          pricingPlan: contract.pricingPlan ?? null,
+          items: approvalItems,
+          services: approvalServices,
+          supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
+        });
+      });
+
       setContracts((current) => current.map((entry) => (entry.id === updatedContract.id ? updatedContract : entry)));
       setRentals((current) => (
         current.some((entry) => entry.id === createdRental.id) ? current : [createdRental, ...current]
       ));
+      if (createdRental.reusedExisting) {
+        refreshAfterApproval();
+        return createdRental;
+      }
 
       if (contract.quoteId) {
         api.quotes.update({
