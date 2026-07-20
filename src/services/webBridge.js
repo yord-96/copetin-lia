@@ -535,6 +535,68 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
     .filter(Boolean);
 };
 
+const repriceSupplierFulfillmentPlanFromItems = (plan, items = []) => {
+  const normalizedPlan = normalizeSupplierFulfillmentPlan(plan);
+  const normalizedItems = Array.isArray(items) ? items : [];
+  const itemByLineKey = new Map();
+  const itemsByItemId = new Map();
+
+  normalizedItems.forEach((line) => {
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const itemId = String(line?.itemId ?? '').trim();
+    if (lineKey) itemByLineKey.set(lineKey, line);
+    if (itemId) {
+      const current = itemsByItemId.get(itemId) ?? [];
+      current.push(line);
+      itemsByItemId.set(itemId, current);
+    }
+  });
+
+  return normalizedPlan.map((coverage) => {
+    const lineKey = String(coverage?.lineKey ?? '').trim();
+    const itemId = String(coverage?.itemId ?? '').trim();
+    const candidates = itemsByItemId.get(itemId) ?? [];
+    const linkedLine = (lineKey ? itemByLineKey.get(lineKey) : null)
+      ?? (candidates.length === 1 ? candidates[0] : null);
+
+    if (!linkedLine) return coverage;
+
+    const baseSaleUnitPriceBs = Math.max(
+      0,
+      toPositiveRoundedNumber(
+        linkedLine?.unitPriceBs
+        ?? coverage?.baseSaleUnitPriceBs
+        ?? coverage?.saleUnitPriceBs
+        ?? 0,
+      ),
+    );
+    const saleDiscountPercent = Math.min(
+      100,
+      Math.max(0, toPositiveRoundedNumber(linkedLine?.discountPercent ?? 0)),
+    );
+    const saleUnitPriceBs = Number(
+      (baseSaleUnitPriceBs * (1 - (saleDiscountPercent / 100))).toFixed(2),
+    );
+    const neededQty = Math.max(1, Math.trunc(Number(coverage?.neededQty ?? 1)));
+    const supplierUnitCostBs = Math.max(
+      0,
+      toPositiveRoundedNumber(coverage?.supplierUnitCostBs ?? 0),
+    );
+
+    return {
+      ...coverage,
+      lineKey: lineKey || String(linkedLine?.lineKey ?? '').trim() || null,
+      baseSaleUnitPriceBs,
+      saleDiscountPercent,
+      discountApplied: saleDiscountPercent > 0,
+      saleUnitPriceBs,
+      totalCostBs: Number((neededQty * supplierUnitCostBs).toFixed(2)),
+      totalSaleBs: Number((neededQty * saleUnitPriceBs).toFixed(2)),
+      marginBs: Number((neededQty * (saleUnitPriceBs - supplierUnitCostBs)).toFixed(2)),
+    };
+  });
+};
+
 const getManualSupplierSaleTotalBs = (supplierFulfillmentPlan) =>
   normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan)
     .filter((line) => line.manualCoverage)
@@ -7408,10 +7470,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   ).trim() || 'Sin responsable';
   const contractDocumentItems = Array.isArray(contract?.items) ? contract.items : [];
   const rentalDocumentItems = Array.isArray(rental?.items) ? rental.items : [];
-  const rentalItemsByKey = new Map(rentalDocumentItems.map((line, index) => [
-    String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`),
-    line,
-  ]));
   const contractItemsByKey = new Map(contractDocumentItems.map((line, index) => [
     String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `contract-${index}`),
     line,
@@ -13226,8 +13284,12 @@ const createWebBridge = () => ({
           };
         });
 
+        const normalizedSupplierFulfillmentPlan = repriceSupplierFulfillmentPlanFromItems(
+          payload?.supplierFulfillmentPlan,
+          normalizedItems,
+        );
         const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
-          + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
+          + getManualSupplierSaleTotalBs(normalizedSupplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
         const pricingPlan = enrichDailySchedulePricingPlan(
           calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
@@ -13309,7 +13371,7 @@ const createWebBridge = () => ({
           },
           items: alignedItems,
           services: alignedServices,
-          supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan),
+          supplierFulfillmentPlan: normalizedSupplierFulfillmentPlan,
           approvedAt: null,
           rejectedAt: null,
           isFinalized: false,
@@ -13890,9 +13952,9 @@ const createWebBridge = () => ({
         }
         if (payload.rentalId !== undefined) contract.rentalId = payload.rentalId ?? null;
         if (payload.orderCode !== undefined) contract.orderCode = payload.orderCode ?? null;
-        if (payload.supplierFulfillmentPlan !== undefined) {
-          contract.supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload.supplierFulfillmentPlan);
-        }
+        const requestedSupplierFulfillmentPlan = payload.supplierFulfillmentPlan !== undefined
+          ? payload.supplierFulfillmentPlan
+          : contract.supplierFulfillmentPlan;
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
@@ -13966,6 +14028,11 @@ const createWebBridge = () => ({
         if (payload.pricingPlan !== undefined) {
           contract.pricingPlan = payload.pricingPlan;
         }
+
+        contract.supplierFulfillmentPlan = repriceSupplierFulfillmentPlanFromItems(
+          requestedSupplierFulfillmentPlan,
+          contract.items ?? [],
+        );
 
         const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);

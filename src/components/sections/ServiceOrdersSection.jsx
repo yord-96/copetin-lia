@@ -1224,7 +1224,7 @@ function ServiceOrdersSection({
   onApproveContract,
   onGenerateOrderDocuments,
   onCreateSupplier,
-  onCreateSupplierQuote,
+  onCreateSupplierQuote: _onCreateSupplierQuote,
   onPrintCashMovementReceipt,
   onUpdateSettings,
   onOpenTransportModule,
@@ -3639,6 +3639,9 @@ function ServiceOrdersSection({
         neededQty: Number(line.neededQty ?? 0),
         supplierUnitCostBs: Number(line.supplierUnitCostBs ?? 0),
         saleUnitPriceBs: Number(line.saleUnitPriceBs ?? 0),
+        baseSaleUnitPriceBs: Number(line.baseSaleUnitPriceBs ?? line.saleUnitPriceBs ?? 0),
+        saleDiscountPercent: clampPercentValue(line.saleDiscountPercent),
+        discountApplied: Boolean(line.discountApplied || Number(line.saleDiscountPercent ?? 0) > 0),
         manualCoverage: Boolean(line.manualCoverage),
       }))
       : [],
@@ -3838,8 +3841,6 @@ function ServiceOrdersSection({
     const salePrice = Math.max(0, parseMoneyInput(supplierCoverageDraft.saleUnitPriceBs, 0));
     const itemName = String(supplierCoverageDraft.itemName ?? '').trim();
     const category = String(supplierCoverageDraft.category ?? '').trim();
-    const color = String(supplierCoverageDraft.color ?? '').trim();
-    const material = String(supplierCoverageDraft.material ?? '').trim();
     const notes = String(supplierCoverageDraft.notes ?? '').trim();
 
     if (!itemName || !category) {
