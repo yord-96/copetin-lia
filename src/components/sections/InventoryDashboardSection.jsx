@@ -237,6 +237,24 @@ const RETURN_REVIEW_OPTIONS = [
 const buildDispatchReviewForm = (row = null) => ({
   status: row?.dispatchReview?.status ?? 'complete',
   note: row?.dispatchReview?.note ?? '',
+  items: (row?.rental?.items ?? []).map((line, index) => {
+    const lineKey = String(line.lineKey ?? `${line.comboLineKey || 'item'}-${line.itemId || 'sin-item'}-${line.comboRuleIndex ?? index}-${index}`);
+    const savedLine = (row?.dispatchReview?.items ?? []).find((entry) => (
+      String(entry?.lineKey ?? '') === lineKey
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line.itemId ?? ''))
+    ));
+    const expectedQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+    const dispatchedQty = Math.max(0, Math.min(expectedQty, Math.trunc(Number(savedLine?.dispatchedQty ?? expectedQty))));
+    return {
+      lineKey,
+      itemId: line.itemId,
+      itemName: line.itemName,
+      expectedQty,
+      dispatchedQty,
+      pendingQty: Math.max(0, expectedQty - dispatchedQty),
+      note: String(savedLine?.note ?? '').trim(),
+    };
+  }),
 });
 
 const readStoredProductFilters = () => {
@@ -1027,6 +1045,7 @@ function InventoryDashboardSection({
   const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(initialInventoryOpsFiltersRef.current.dateFrom);
   const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(initialInventoryOpsFiltersRef.current.dateTo);
   const [showAllInventoryOrders, setShowAllInventoryOrders] = useState(false);
+  const [operationalOverrides, setOperationalOverrides] = useState({});
   const [dispatchReviewModal, setDispatchReviewModal] = useState(null);
   const [dispatchReviewForm, setDispatchReviewForm] = useState(buildDispatchReviewForm);
   const [dispatchReviewError, setDispatchReviewError] = useState('');
@@ -1486,12 +1505,16 @@ function InventoryDashboardSection({
         const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
         const lines = (rental.items ?? []).length;
         const priority = getPriority(operationDates[0] ?? deliveryDate, deliveryOut ?? deliveryBack);
-        const inventoryStatus = rental.operational?.inventoryStatus ?? 'pendiente';
+        const operational = {
+          ...(rental.operational ?? {}),
+          ...(operationalOverrides[String(rental.id)] ?? {}),
+        };
+        const inventoryStatus = operational.inventoryStatus ?? 'pendiente';
         const inventoryMeta = getInventoryMeta(inventoryStatus);
-        const revisionAlert = rental.operational?.revisionAlert?.active ? rental.operational.revisionAlert : null;
-        const clientPendingPickup = rental.operational?.clientPendingPickup?.active ? rental.operational.clientPendingPickup : null;
-        const dispatchReview = rental.operational?.dispatchReview ?? null;
-        const returnReview = rental.operational?.returnReview ?? null;
+        const revisionAlert = operational.revisionAlert?.active ? operational.revisionAlert : null;
+        const clientPendingPickup = operational.clientPendingPickup?.active ? operational.clientPendingPickup : null;
+        const dispatchReview = operational.dispatchReview ?? null;
+        const returnReview = operational.returnReview ?? null;
         return {
           id: rental.id,
           rental,
@@ -1516,7 +1539,7 @@ function InventoryDashboardSection({
           canConfirmInventory: inventoryMeta.canConfirm,
           inventorySortWeight: inventoryMeta.sortWeight,
           inventorySecondarySortWeight: inventoryMeta.secondarySortWeight,
-          inventoryNote: rental.operational?.inventoryNote ?? '',
+          inventoryNote: operational.inventoryNote ?? '',
           dispatchReview,
           returnReview,
           revisionAlert,
@@ -1534,7 +1557,7 @@ function InventoryDashboardSection({
         if (b.priority.weight !== a.priority.weight) return b.priority.weight - a.priority.weight;
         return new Date(a.operationSortDate ?? a.deliveryDate ?? 0) - new Date(b.operationSortDate ?? b.deliveryDate ?? 0);
       });
-  }, [contracts, deliveries, operationalRentals]);
+  }, [contracts, deliveries, operationalOverrides, operationalRentals]);
 
   const filteredPrepOrderRows = useMemo(() => {
     const normalizedQuery = normalizeText(inventoryOrderQuery);
@@ -3210,30 +3233,87 @@ function InventoryDashboardSection({
     setDispatchReviewForm(buildDispatchReviewForm(row));
   };
 
+  const updateDispatchLine = (lineKey, field, value) => {
+    setDispatchReviewForm((current) => ({
+      ...current,
+      items: current.items.map((line) => {
+        if (line.lineKey !== lineKey) return line;
+        const nextLine = { ...line, [field]: value };
+        if (field === 'dispatchedQty') {
+          const expectedQty = Math.max(0, Math.trunc(Number(nextLine.expectedQty ?? 0)));
+          const dispatchedQty = Math.max(0, Math.min(expectedQty, Math.trunc(Number(nextLine.dispatchedQty ?? 0))));
+          nextLine.dispatchedQty = dispatchedQty;
+          nextLine.pendingQty = Math.max(0, expectedQty - dispatchedQty);
+        }
+        if (field === 'pendingQty') {
+          const expectedQty = Math.max(0, Math.trunc(Number(nextLine.expectedQty ?? 0)));
+          const pendingQty = Math.max(0, Math.min(expectedQty, Math.trunc(Number(nextLine.pendingQty ?? 0))));
+          nextLine.pendingQty = pendingQty;
+          nextLine.dispatchedQty = Math.max(0, expectedQty - pendingQty);
+        }
+        return nextLine;
+      }),
+    }));
+  };
+
   const submitDispatchReview = async (event) => {
     event.preventDefault();
     if (!dispatchReviewModal || isSavingDispatchReview) return;
-    const needsNote = ['partial', 'pending_extra'].includes(dispatchReviewForm.status);
+    const normalizedItems = dispatchReviewForm.items.map((line) => ({
+      ...line,
+      expectedQty: Math.max(0, Math.trunc(Number(line.expectedQty ?? 0))),
+      dispatchedQty: Math.max(0, Math.trunc(Number(line.dispatchedQty ?? 0))),
+      pendingQty: Math.max(0, Math.trunc(Number(line.pendingQty ?? 0))),
+      note: String(line.note ?? '').trim(),
+    }));
+    const invalidLine = normalizedItems.find((line) => line.dispatchedQty + line.pendingQty !== line.expectedQty);
+    if (invalidLine) {
+      setDispatchReviewError(`Revisa "${invalidLine.itemName}": salio + pendiente debe sumar ${invalidLine.expectedQty}.`);
+      return;
+    }
+    const pendingQty = normalizedItems.reduce((sum, line) => sum + line.pendingQty, 0);
+    const status = pendingQty > 0
+      ? dispatchReviewForm.status === 'pending_extra' ? 'pending_extra' : 'partial'
+      : 'complete';
+    const needsNote = pendingQty > 0;
     if (needsNote && !String(dispatchReviewForm.note ?? '').trim()) {
       setDispatchReviewError('Describe que salio parcial o que queda pendiente por enviar.');
       return;
     }
     setDispatchReviewError('');
     setIsSavingDispatchReview(true);
+    const optimisticReview = {
+      status,
+      note: String(dispatchReviewForm.note ?? '').trim(),
+      items: normalizedItems,
+    };
+    setOperationalOverrides((current) => ({
+      ...current,
+      [dispatchReviewModal.rentalId]: {
+        ...(current[dispatchReviewModal.rentalId] ?? {}),
+        inventoryStatus: 'salio',
+        dispatchReview: optimisticReview,
+        revisionAlert: null,
+      },
+    }));
+    const targetOrderCode = dispatchReviewModal.orderCode;
+    setDispatchReviewModal(null);
     try {
       await onUpdateOrderOperational?.({
         id: dispatchReviewModal.rentalId,
         inventoryStatus: 'salio',
-        dispatchReview: {
-          status: dispatchReviewForm.status,
-          note: String(dispatchReviewForm.note ?? '').trim(),
-        },
+        dispatchReview: optimisticReview,
         clearOperationalRevisionAlert: true,
       });
-      setDispatchReviewModal(null);
-      showMessage(`Salida revisada para ${dispatchReviewModal.orderCode}.`);
+      showMessage(`Salida revisada para ${targetOrderCode}.`);
     } catch (error) {
-      setDispatchReviewError(error?.message || 'No se pudo registrar la salida.');
+      setOperationalOverrides((current) => {
+        const next = { ...current };
+        delete next[dispatchReviewModal.rentalId];
+        return next;
+      });
+      setFeedback(error?.message || 'No se pudo registrar la salida.');
+      setFeedbackType('error');
     } finally {
       setIsSavingDispatchReview(false);
     }
@@ -3250,6 +3330,13 @@ function InventoryDashboardSection({
         return;
       }
       const inventoryStatus = row.inventoryAction === 'dispatch' ? 'salio' : 'confirmado';
+      setOperationalOverrides((current) => ({
+        ...current,
+        [row.rentalId]: {
+          ...(current[row.rentalId] ?? {}),
+          inventoryStatus,
+        },
+      }));
       await onUpdateOrderOperational?.({ id: row.rentalId, inventoryStatus });
       showMessage(
         inventoryStatus === 'salio'
@@ -3257,6 +3344,11 @@ function InventoryDashboardSection({
           : `${row.orderCode} marcada como lista para salir.`,
       );
     } catch (error) {
+      setOperationalOverrides((current) => {
+        const next = { ...current };
+        delete next[row.rentalId];
+        return next;
+      });
       setFeedback(error?.message || 'No se pudo actualizar el estado de la orden.');
       setFeedbackType('error');
     }
@@ -6005,21 +6097,17 @@ function InventoryDashboardSection({
 
       {dispatchReviewModal ? (
         <div className="orders-modal-backdrop" onClick={() => !isSavingDispatchReview && setDispatchReviewModal(null)}>
-          <form className="orders-modal inventory-ops-review-modal" onSubmit={submitDispatchReview} onClick={(event) => event.stopPropagation()}>
+          <form className="orders-modal orders-preview-modal" onSubmit={submitDispatchReview} onClick={(event) => event.stopPropagation()}>
             <header className="orders-modal-head">
               <div>
                 <h3>Revision de salida {dispatchReviewModal.contractCode}</h3>
-                <p>Confirma si todo salio del galpon o si queda material pendiente por enviar.</p>
+                <p>Inventario constata que salio del galpon y que queda pendiente por enviar.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDispatchReviewModal(null)} disabled={isSavingDispatchReview}>
                 x
               </button>
             </header>
-            <div className="inventory-ops-review-body">
-              <div className="inventory-ops-review-context">
-                <strong>{dispatchReviewModal.customerName}</strong>
-                <span>{dispatchReviewModal.itemsText} | {dispatchReviewModal.address}</span>
-              </div>
+            <div className="orders-preview-body inventory-receiving-body">
               <label className="form-field">
                 <span>Resultado de salida</span>
                 <select
@@ -6032,14 +6120,44 @@ function InventoryDashboardSection({
                 </select>
               </label>
               <label className="form-field">
-                <span>Observacion de salida</span>
+                <span>Nota general</span>
                 <textarea
-                  rows={4}
+                  rows={3}
                   value={dispatchReviewForm.note}
                   onChange={(event) => setDispatchReviewForm((current) => ({ ...current, note: event.target.value }))}
                   placeholder="Ej: salieron 202 sillas propias; quedan 80 de proveedor para enviar en segundo viaje."
                 />
               </label>
+              <div className="inventory-receiving-summary">
+                <span><small>Items revisados</small><strong>{dispatchReviewForm.items.length}</strong></span>
+                <span><small>Unidades esperadas</small><strong>{dispatchReviewForm.items.reduce((sum, line) => sum + Math.max(0, Number(line.expectedQty ?? 0)), 0)}</strong></span>
+                <span><small>Salieron</small><strong>{dispatchReviewForm.items.reduce((sum, line) => sum + Math.max(0, Number(line.dispatchedQty ?? 0)), 0)}</strong></span>
+                <span><small>Pendientes</small><strong>{dispatchReviewForm.items.reduce((sum, line) => sum + Math.max(0, Number(line.pendingQty ?? 0)), 0)}</strong></span>
+              </div>
+              <div className="transport-checklist-table">
+                <div className="transport-checklist-head inventory-dispatch-head">
+                  <span>Item</span>
+                  <span>Esperado</span>
+                  <span>Salio</span>
+                  <span>Pendiente</span>
+                  <span>Observacion</span>
+                </div>
+                {dispatchReviewForm.items.map((line) => {
+                  const expectedQty = Math.max(0, Math.trunc(Number(line.expectedQty ?? 0)));
+                  const dispatchedQty = Math.max(0, Math.trunc(Number(line.dispatchedQty ?? 0)));
+                  const pendingQty = Math.max(0, Math.trunc(Number(line.pendingQty ?? 0)));
+                  const hasMismatch = dispatchedQty + pendingQty !== expectedQty;
+                  return (
+                    <div key={line.lineKey} className={`transport-checklist-row inventory-dispatch-row ${hasMismatch ? 'has-mismatch' : ''}`}>
+                      <strong>{line.itemName}</strong>
+                      <span>{expectedQty}</span>
+                      <input type="number" min="0" max={expectedQty} value={line.dispatchedQty} onChange={(event) => updateDispatchLine(line.lineKey, 'dispatchedQty', event.target.value)} />
+                      <input type="number" min="0" max={expectedQty} value={line.pendingQty} onChange={(event) => updateDispatchLine(line.lineKey, 'pendingQty', event.target.value)} />
+                      <input type="text" value={line.note} onChange={(event) => updateDispatchLine(line.lineKey, 'note', event.target.value)} placeholder="Detalle si salio parcial" />
+                    </div>
+                  );
+                })}
+              </div>
               {dispatchReviewModal.revisionAlert ? (
                 <p className="status warning">Este contrato tuvo cambios despues de salir. Al guardar esta revision se limpia la alerta.</p>
               ) : null}
@@ -6099,7 +6217,7 @@ function InventoryDashboardSection({
                 </label>
               </div>
               {receivingModal.returnReviewStatus === 'left_with_client' ? (
-                <p className="status warning">Este registro no cerrara la devolucion ni movera stock. La orden seguira fuera de almacen hasta recibir todo.</p>
+                <p className="status warning">Se reingresara lo que llego y la orden seguira abierta solo por el material pendiente con cliente.</p>
               ) : null}
               <div className="inventory-receiving-summary">
                 <span><small>Items revisados</small><strong>{receivingModal.items.length}</strong></span>

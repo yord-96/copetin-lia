@@ -15286,6 +15286,17 @@ const createWebBridge = () => ({
           rental.operational.dispatchReview = {
             status,
             note: String(payload.dispatchReview?.note ?? '').trim(),
+            items: Array.isArray(payload.dispatchReview?.items)
+              ? payload.dispatchReview.items.map((line) => ({
+                  lineKey: String(line?.lineKey ?? '').trim(),
+                  itemId: String(line?.itemId ?? '').trim(),
+                  itemName: String(line?.itemName ?? '').trim(),
+                  expectedQty: Math.max(0, Math.trunc(Number(line?.expectedQty ?? 0))),
+                  dispatchedQty: Math.max(0, Math.trunc(Number(line?.dispatchedQty ?? 0))),
+                  pendingQty: Math.max(0, Math.trunc(Number(line?.pendingQty ?? 0))),
+                  note: String(line?.note ?? '').trim(),
+                }))
+              : [],
             reviewedAt: now,
             reviewedByName: userName,
             reviewedByRole: userRole,

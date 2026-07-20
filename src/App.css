@@ -17125,6 +17125,17 @@ textarea:focus {
   gap: 0.38rem;
 }
 
+.inventory-dispatch-head,
+.inventory-dispatch-row {
+  grid-template-columns: minmax(220px, 1.6fr) 72px 86px 86px minmax(220px, 1fr);
+  gap: 0.48rem;
+}
+
+.inventory-dispatch-row.has-mismatch {
+  border-color: #f9b4a3;
+  background: #fff8f5;
+}
+
 .inventory-receiving-row.has-mismatch {
   border-color: #f9b4a3;
   background: #fff8f5;
