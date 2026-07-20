@@ -11,6 +11,11 @@ const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
+const jsonPayloadCache = {
+  key: null,
+  body: null,
+  gzip: null,
+};
 const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
 const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia']);
 const patchableCollections = new Set([
@@ -128,13 +133,22 @@ const requireInternalKey = (req, res, next) => {
 };
 
 const sendJsonPayload = async (req, res, payload) => {
-  const body = JSON.stringify(payload);
   const startedAt = Date.now();
+  const cacheKey = String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision');
+  if (jsonPayloadCache.key !== cacheKey || !jsonPayloadCache.body) {
+    jsonPayloadCache.key = cacheKey;
+    jsonPayloadCache.body = JSON.stringify(payload);
+    jsonPayloadCache.gzip = null;
+  }
+  const body = jsonPayloadCache.body;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Vary', 'Accept-Encoding');
 
   if (/\bgzip\b/i.test(String(req.get('Accept-Encoding') ?? '')) && body.length > 1024) {
-    const compressed = await gzipAsync(Buffer.from(body), { level: 6 });
+    if (!jsonPayloadCache.gzip) {
+      jsonPayloadCache.gzip = await gzipAsync(Buffer.from(body), { level: 6 });
+    }
+    const compressed = jsonPayloadCache.gzip;
     console.info('[state-route] Estado enviado comprimido.', {
       originalBytes: Buffer.byteLength(body),
       gzipBytes: compressed.length,

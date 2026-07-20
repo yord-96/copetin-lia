@@ -30,23 +30,6 @@ const PersonnelSection = lazy(() => import('./components/sections/PersonnelSecti
 const AccountingSection = lazy(() => import('./components/sections/AccountingSection'));
 const LinconWorkspaceSection = lazy(() => import('./components/sections/LinconWorkspaceSection'));
 
-const prefetchersByTab = {
-  resumen: () => import('./components/sections/SummarySection'),
-  caja: () => import('./components/sections/CalendarSection'),
-  items: () => import('./components/sections/ClientsSection'),
-  alquiler: () => import('./components/sections/ServiceOrdersSection'),
-  disponibilidad: () => import('./components/sections/AvailabilitySection'),
-  asistencia: () => import('./components/sections/AttendanceSection'),
-  proveedores: () => import('./components/sections/SuppliersSection'),
-  personal: () => import('./components/sections/PersonnelSection'),
-  inventario: () => import('./components/sections/InventoryDashboardSection'),
-  devolucion: () => import('./components/sections/ReturnSection'),
-  recibos: () => import('./components/sections/RecibosSection'),
-  contabilidad: () => import('./components/sections/AccountingSection'),
-  usuarios: () => import('./components/sections/UsersSection'),
-  categorias: () => import('./components/sections/CategoriesSection'),
-};
-
 const readDeveloperCompanyChoice = () => {
   if (typeof window === 'undefined') return '';
   return window.sessionStorage.getItem(DEVELOPER_COMPANY_STORAGE_KEY) || '';
@@ -191,17 +174,6 @@ function App() {
       : []),
     [controller.currentUser],
   );
-
-  useEffect(() => {
-    if (!controller.currentUser) return undefined;
-    const timer = window.setTimeout(() => {
-      allowedTabRoots
-        .map((tab) => prefetchersByTab[tab])
-        .filter(Boolean)
-        .forEach((prefetch) => prefetch());
-    }, 1400);
-    return () => window.clearTimeout(timer);
-  }, [allowedTabRoots, controller.currentUser]);
 
   useEffect(() => {
     if (!controller.currentUser || !isDeveloper(controller.currentUser)) {

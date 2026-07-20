@@ -125,8 +125,44 @@ export const useAppController = () => {
 
   const [imagePreview, setImagePreview] = useState(null);
 
+  const loadDeferredData = useCallback(async () => {
+    try {
+      const [
+        personnelData,
+        movementsData,
+        recoveriesData,
+        cashMovementsData,
+        cashDebtsData,
+        reportsData,
+        auditLogData,
+        attendanceRecordsData,
+      ] = await Promise.all([
+        api.personnel.listBundle(),
+        api.inventory.listMovements(),
+        api.inventory.listRecoveries(),
+        api.cash.listMovements(),
+        api.cash.listDebts(),
+        api.reports.listGenerated(),
+        api.audit.list(),
+        api.attendance.listRecords(),
+      ]);
+
+      setPersonnelBundle(personnelData);
+      setInventoryMovements(movementsData);
+      setStockRecoveries(recoveriesData);
+      setCashMovements(cashMovementsData);
+      setCashDebts(cashDebtsData);
+      setGeneratedReports(reportsData);
+      setAuditLog(auditLogData);
+      setAttendanceRecords(attendanceRecordsData);
+    } catch (deferredError) {
+      console.warn('[copetin] No se pudo completar la carga secundaria.', deferredError);
+    }
+  }, []);
+
   const loadData = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
+    const includeDeferred = options?.includeDeferred !== false;
     if (!silent) {
       setLoading(true);
       setError('');
@@ -142,14 +178,9 @@ export const useAppController = () => {
         contractsData,
         hiddenContractsData,
         suppliersData,
-        personnelData,
-        movementsData,
-        recoveriesData,
         rentalsData,
         cashSummaryData,
         cashSessionsData,
-        cashMovementsData,
-        cashDebtsData,
         clientsData,
         usersData,
         deliveriesData,
@@ -158,10 +189,7 @@ export const useAppController = () => {
         driversData,
         calendarEventsData,
         settingsData,
-        reportsData,
-        auditLogData,
         presenceData,
-        attendanceRecordsData,
       ] = await Promise.all([
         api.dashboard.get(),
         api.inventory.list(),
@@ -171,14 +199,9 @@ export const useAppController = () => {
         api.contracts.list(),
         api.contracts.listHidden(),
         api.suppliers.listBundle(),
-        api.personnel.listBundle(),
-        api.inventory.listMovements(),
-        api.inventory.listRecoveries(),
         api.rentals.list(),
         api.cash.getSummary(),
         api.cash.listSessions(),
-        api.cash.listMovements(),
-        api.cash.listDebts(),
         api.clients.list(),
         api.users.list(),
         api.transport.listDeliveries(),
@@ -187,10 +210,7 @@ export const useAppController = () => {
         api.transport.listDrivers(),
         api.calendar.listEvents(),
         api.settings.get(),
-        api.reports.listGenerated(),
-        api.audit.list(),
         api.presence.listActive(),
-        api.attendance.listRecords(),
       ]);
 
       setDashboard(dashboardData);
@@ -201,14 +221,9 @@ export const useAppController = () => {
       setContracts(contractsData);
       setHiddenContracts(hiddenContractsData);
       setSupplierBundle(suppliersData);
-      setPersonnelBundle(personnelData);
-      setInventoryMovements(movementsData);
-      setStockRecoveries(recoveriesData);
       setRentals(rentalsData);
       setCashSummary(cashSummaryData);
       setCashSessions(cashSessionsData);
-      setCashMovements(cashMovementsData);
-      setCashDebts(cashDebtsData);
       setClients(clientsData);
       setUsers(usersData);
       setDeliveries(deliveriesData);
@@ -217,10 +232,16 @@ export const useAppController = () => {
       setDrivers(driversData);
       setCalendarEvents(calendarEventsData);
       setSettingsBundle(settingsData);
-      setGeneratedReports(reportsData);
-      setAuditLog(auditLogData);
       setUserPresence(normalizePresenceList(presenceData));
-      setAttendanceRecords(attendanceRecordsData);
+
+      if (includeDeferred) {
+        const scheduleDeferredLoad = typeof window !== 'undefined' && 'requestIdleCallback' in window
+          ? (callback) => window.requestIdleCallback(callback, { timeout: 1800 })
+          : (callback) => window.setTimeout(callback, 120);
+        scheduleDeferredLoad(() => {
+          loadDeferredData();
+        });
+      }
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -230,7 +251,7 @@ export const useAppController = () => {
         setLoading(false);
       }
     }
-  }, []);
+  }, [loadDeferredData]);
 
   const publishPresence = useCallback(async () => {
     if (!currentUser) return;
