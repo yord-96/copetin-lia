@@ -13880,6 +13880,7 @@ const createWebBridge = () => ({
           deliveryFeeReason: payload?.deliveryFeeReason ?? contract?.deliveryFeeReason,
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
+        const now = new Date().toISOString();
         const storedPaidAtApprovalBs = Math.max(
           0,
           Number(contract?.payment?.paidAtApprovalBs ?? 0),
@@ -13937,7 +13938,6 @@ const createWebBridge = () => ({
           const responsibles = normalizeRecordResponsibles(payload);
           contract.responsibles = responsibles;
         }
-        const now = new Date().toISOString();
         cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncInitialPaymentCashMovement(state, contract, payload, now);
         cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
