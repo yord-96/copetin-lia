@@ -222,6 +222,23 @@ const RETURN_CHARGE_OWNER_OPTIONS = [
   { value: 'lavado', label: 'Lavado / post evento' },
 ];
 
+const DISPATCH_REVIEW_OPTIONS = [
+  { value: 'complete', label: 'Salio completo' },
+  { value: 'partial', label: 'Salio parcial' },
+  { value: 'pending_extra', label: 'Falta enviar material' },
+];
+
+const RETURN_REVIEW_OPTIONS = [
+  { value: 'complete', label: 'Todo volvio al galpon' },
+  { value: 'left_with_client', label: 'Material quedo con cliente' },
+  { value: 'issues', label: 'Con danos o faltantes' },
+];
+
+const buildDispatchReviewForm = (row = null) => ({
+  status: row?.dispatchReview?.status ?? 'complete',
+  note: row?.dispatchReview?.note ?? '',
+});
+
 const readStoredProductFilters = () => {
   if (typeof window === 'undefined') return DEFAULT_PRODUCT_FILTERS;
   try {
@@ -1010,6 +1027,10 @@ function InventoryDashboardSection({
   const [inventoryOperationDateFrom, setInventoryOperationDateFrom] = useState(initialInventoryOpsFiltersRef.current.dateFrom);
   const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(initialInventoryOpsFiltersRef.current.dateTo);
   const [showAllInventoryOrders, setShowAllInventoryOrders] = useState(false);
+  const [dispatchReviewModal, setDispatchReviewModal] = useState(null);
+  const [dispatchReviewForm, setDispatchReviewForm] = useState(buildDispatchReviewForm);
+  const [dispatchReviewError, setDispatchReviewError] = useState('');
+  const [isSavingDispatchReview, setIsSavingDispatchReview] = useState(false);
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
@@ -1467,6 +1488,10 @@ function InventoryDashboardSection({
         const priority = getPriority(operationDates[0] ?? deliveryDate, deliveryOut ?? deliveryBack);
         const inventoryStatus = rental.operational?.inventoryStatus ?? 'pendiente';
         const inventoryMeta = getInventoryMeta(inventoryStatus);
+        const revisionAlert = rental.operational?.revisionAlert?.active ? rental.operational.revisionAlert : null;
+        const clientPendingPickup = rental.operational?.clientPendingPickup?.active ? rental.operational.clientPendingPickup : null;
+        const dispatchReview = rental.operational?.dispatchReview ?? null;
+        const returnReview = rental.operational?.returnReview ?? null;
         return {
           id: rental.id,
           rental,
@@ -1492,6 +1517,11 @@ function InventoryDashboardSection({
           inventorySortWeight: inventoryMeta.sortWeight,
           inventorySecondarySortWeight: inventoryMeta.secondarySortWeight,
           inventoryNote: rental.operational?.inventoryNote ?? '',
+          dispatchReview,
+          returnReview,
+          revisionAlert,
+          clientPendingPickup,
+          hasOperationalAlert: Boolean(revisionAlert || clientPendingPickup || ['partial', 'pending_extra'].includes(dispatchReview?.status)),
         };
       })
       .sort((a, b) => {
@@ -3125,6 +3155,8 @@ function InventoryDashboardSection({
         ...row.rental,
         contractCode: row.contractCode ?? row.rental.contractCode ?? '',
       },
+      returnReviewStatus: row.returnReview?.status ?? 'complete',
+      clientPendingNote: row.clientPendingPickup?.note ?? '',
       notes: '',
       items: (row.rental.items ?? []).map((line, index) => {
         const returnLineKey = String(
@@ -3160,10 +3192,49 @@ function InventoryDashboardSection({
     });
   };
 
+  const openDispatchReviewModal = (row) => {
+    setDispatchReviewError('');
+    setDispatchReviewModal(row);
+    setDispatchReviewForm(buildDispatchReviewForm(row));
+  };
+
+  const submitDispatchReview = async (event) => {
+    event.preventDefault();
+    if (!dispatchReviewModal || isSavingDispatchReview) return;
+    const needsNote = ['partial', 'pending_extra'].includes(dispatchReviewForm.status);
+    if (needsNote && !String(dispatchReviewForm.note ?? '').trim()) {
+      setDispatchReviewError('Describe que salio parcial o que queda pendiente por enviar.');
+      return;
+    }
+    setDispatchReviewError('');
+    setIsSavingDispatchReview(true);
+    try {
+      await onUpdateOrderOperational?.({
+        id: dispatchReviewModal.rentalId,
+        inventoryStatus: 'salio',
+        dispatchReview: {
+          status: dispatchReviewForm.status,
+          note: String(dispatchReviewForm.note ?? '').trim(),
+        },
+        clearOperationalRevisionAlert: true,
+      });
+      setDispatchReviewModal(null);
+      showMessage(`Salida revisada para ${dispatchReviewModal.orderCode}.`);
+    } catch (error) {
+      setDispatchReviewError(error?.message || 'No se pudo registrar la salida.');
+    } finally {
+      setIsSavingDispatchReview(false);
+    }
+  };
+
   const handleInventoryOrderAction = async (row) => {
     try {
       if (row.inventoryAction === 'return') {
         openReceivingModal(row);
+        return;
+      }
+      if (row.inventoryAction === 'dispatch') {
+        openDispatchReviewModal(row);
         return;
       }
       const inventoryStatus = row.inventoryAction === 'dispatch' ? 'salio' : 'confirmado';
@@ -3278,10 +3349,62 @@ function InventoryDashboardSection({
     event.preventDefault();
     if (!receivingModal || isReceiving) return;
     setReceivingError('');
+    if (receivingModal.returnReviewStatus === 'left_with_client') {
+      const note = String(receivingModal.clientPendingNote ?? '').trim();
+      const pendingItems = receivingModal.items
+        .map((line) => {
+          const values = getReceivingLineNumbers(line);
+          return {
+            lineKey: line.lineKey,
+            itemId: line.itemId,
+            itemName: line.itemName,
+            expectedQty: values.expectedQty,
+            pendingQty: values.missingQty,
+            note: String(line.damageNote ?? '').trim(),
+          };
+        })
+        .filter((line) => line.pendingQty > 0);
+      if (!note) {
+        setReceivingError('Describe que material quedo con el cliente y como se recogera despues.');
+        return;
+      }
+      if (pendingItems.length === 0) {
+        setReceivingError('Registra en la columna pendiente la cantidad que quedo con el cliente.');
+        return;
+      }
+      setIsReceiving(true);
+      try {
+        await onUpdateOrderOperational?.({
+          id: receivingModal.rental.id,
+          inventoryStatus: 'salio',
+          returnReview: {
+            status: 'left_with_client',
+            note,
+          },
+          clientPendingPickup: {
+            active: true,
+            note,
+            items: pendingItems,
+          },
+        });
+        setReceivingModal(null);
+        showMessage('Quedo registrado el material pendiente con cliente. La orden sigue fuera de almacen.');
+      } catch (error) {
+        setReceivingError(error?.message || 'No se pudo registrar el pendiente con cliente.');
+      } finally {
+        setIsReceiving(false);
+      }
+      return;
+    }
     setIsReceiving(true);
     try {
       await onReceiveReturnedOrder?.({
         rentalId: receivingModal.rental.id,
+        returnReview: {
+          status: receivingModal.returnReviewStatus,
+          note: String(receivingModal.notes ?? '').trim(),
+        },
+        clientPendingPickup: { active: false, note: '' },
         returnedItems: receivingModal.items.map((line) => {
           const values = getReceivingLineNumbers(line);
           return {
@@ -3752,6 +3875,9 @@ function InventoryDashboardSection({
                     <div className="inventory-ops-state">
                       <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
                       <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : row.inventoryStatus === 'devuelto' ? 'Devuelto' : 'Pendiente'}</strong>
+                      {row.revisionAlert ? <small className="inventory-ops-alert">Revisar cambios nuevos</small> : null}
+                      {row.clientPendingPickup ? <small className="inventory-ops-alert pending">Pendiente con cliente</small> : null}
+                      {['partial', 'pending_extra'].includes(row.dispatchReview?.status) ? <small className="inventory-ops-alert pending">Salida parcial</small> : null}
                     </div>
                     <div className="inventory-ops-actions">
                       <button
@@ -3883,6 +4009,9 @@ function InventoryDashboardSection({
                       <div className="inventory-ops-state">
                         <span className={`inventory-ops-priority ${row.priority.key}`}>{row.priority.label}</span>
                         <strong>{row.inventoryStatus === 'salio' ? 'Fuera de almacen' : row.inventoryStatus === 'confirmado' ? 'Lista para salir' : row.inventoryStatus === 'devuelto' ? 'Devuelto' : 'Pendiente'}</strong>
+                        {row.revisionAlert ? <small className="inventory-ops-alert">Revisar cambios nuevos</small> : null}
+                        {row.clientPendingPickup ? <small className="inventory-ops-alert pending">Pendiente con cliente</small> : null}
+                        {['partial', 'pending_extra'].includes(row.dispatchReview?.status) ? <small className="inventory-ops-alert pending">Salida parcial</small> : null}
                       </div>
                       <div className="inventory-ops-actions">
                         <button type="button" className="ghost-button" onClick={() => openInventorySingleOrderDocument(row)}>
@@ -3988,8 +4117,9 @@ function InventoryDashboardSection({
             </div>
           ) : null}
 
-          {isMovementsModule ? (
+          {isMovementsModule && (cancelledOrderRows.length > 0 || receptionRows.length > 0) ? (
             <section className="inventory-movement-summary-grid" aria-label="Resumen de incidencias operativas">
+              {cancelledOrderRows.length > 0 ? (
               <article className="inventory-ops-card inventory-movement-summary-card">
                 <header className="inventory-ops-head">
                   <div>
@@ -4015,15 +4145,11 @@ function InventoryDashboardSection({
                       </div>
                     </div>
                   ))}
-                  {cancelledOrderRows.length === 0 ? (
-                    <div className="inventory-summary-empty">
-                      <strong>Sin ordenes anuladas</strong>
-                      <span>No hay registros anulados en el periodo visible.</span>
-                    </div>
-                  ) : null}
                 </div>
               </article>
+              ) : null}
 
+              {receptionRows.length > 0 ? (
               <article className="inventory-ops-card inventory-movement-summary-card">
                 <header className="inventory-ops-head">
                   <div>
@@ -4051,14 +4177,9 @@ function InventoryDashboardSection({
                       </div>
                     </div>
                   ))}
-                  {receptionRows.length === 0 ? (
-                    <div className="inventory-summary-empty">
-                      <strong>Todo recibido</strong>
-                      <span>No hay recojos pendientes de recepcion en galpon.</span>
-                    </div>
-                  ) : null}
                 </div>
               </article>
+              ) : null}
             </section>
           ) : null}
 
@@ -5855,6 +5976,60 @@ function InventoryDashboardSection({
         </div>
       ) : null}
 
+      {dispatchReviewModal ? (
+        <div className="orders-modal-backdrop" onClick={() => !isSavingDispatchReview && setDispatchReviewModal(null)}>
+          <form className="orders-modal inventory-ops-review-modal" onSubmit={submitDispatchReview} onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div>
+                <h3>Revision de salida {dispatchReviewModal.contractCode}</h3>
+                <p>Confirma si todo salio del galpon o si queda material pendiente por enviar.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setDispatchReviewModal(null)} disabled={isSavingDispatchReview}>
+                x
+              </button>
+            </header>
+            <div className="inventory-ops-review-body">
+              <div className="inventory-ops-review-context">
+                <strong>{dispatchReviewModal.customerName}</strong>
+                <span>{dispatchReviewModal.itemsText} | {dispatchReviewModal.address}</span>
+              </div>
+              <label className="form-field">
+                <span>Resultado de salida</span>
+                <select
+                  value={dispatchReviewForm.status}
+                  onChange={(event) => setDispatchReviewForm((current) => ({ ...current, status: event.target.value }))}
+                >
+                  {DISPATCH_REVIEW_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Observacion de salida</span>
+                <textarea
+                  rows={4}
+                  value={dispatchReviewForm.note}
+                  onChange={(event) => setDispatchReviewForm((current) => ({ ...current, note: event.target.value }))}
+                  placeholder="Ej: salieron 202 sillas propias; quedan 80 de proveedor para enviar en segundo viaje."
+                />
+              </label>
+              {dispatchReviewModal.revisionAlert ? (
+                <p className="status warning">Este contrato tuvo cambios despues de salir. Al guardar esta revision se limpia la alerta.</p>
+              ) : null}
+              {dispatchReviewError ? <p className="status error">{dispatchReviewError}</p> : null}
+            </div>
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setDispatchReviewModal(null)} disabled={isSavingDispatchReview}>
+                Cancelar
+              </button>
+              <button type="submit" className="primary-button" disabled={isSavingDispatchReview}>
+                {isSavingDispatchReview ? 'Guardando...' : 'Registrar salida'}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+
       {receivingModal ? (
         <div className="orders-modal-backdrop" onClick={() => setReceivingModal(null)}>
           <form className="orders-modal orders-preview-modal" onSubmit={submitReceiving} onClick={(event) => event.stopPropagation()}>
@@ -5862,13 +6037,43 @@ function InventoryDashboardSection({
               <div>
                 <h3>Recepcion de contrato {receivingModal.rental.contractCode || receivingModal.rental.orderCode}</h3>
                 {receivingModal.rental.contractCode && receivingModal.rental.orderCode ? <small>Orden {receivingModal.rental.orderCode}</small> : null}
-                <p>Inventario constata cantidades y estado final antes de cerrar cargos.</p>
+                <p>Inventario constata si todo volvio o si queda material pendiente con el cliente.</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setReceivingModal(null)}>
                 x
               </button>
             </header>
             <div className="orders-preview-body inventory-receiving-body">
+              <div className="inventory-ops-return-mode">
+                <label className="form-field">
+                  <span>Resultado del retorno</span>
+                  <select
+                    value={receivingModal.returnReviewStatus}
+                    onChange={(event) => setReceivingModal((current) => (current ? { ...current, returnReviewStatus: event.target.value } : current))}
+                  >
+                    {RETURN_REVIEW_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Nota general</span>
+                  <textarea
+                    rows={3}
+                    value={receivingModal.returnReviewStatus === 'left_with_client' ? receivingModal.clientPendingNote : receivingModal.notes}
+                    onChange={(event) => setReceivingModal((current) => {
+                      if (!current) return current;
+                      return current.returnReviewStatus === 'left_with_client'
+                        ? { ...current, clientPendingNote: event.target.value }
+                        : { ...current, notes: event.target.value };
+                    })}
+                    placeholder={receivingModal.returnReviewStatus === 'left_with_client' ? 'Detalle que quedo con el cliente y cuando se recogera.' : 'Observaciones generales del retorno.'}
+                  />
+                </label>
+              </div>
+              {receivingModal.returnReviewStatus === 'left_with_client' ? (
+                <p className="status warning">Este registro no cerrara la devolucion ni movera stock. La orden seguira fuera de almacen hasta recibir todo.</p>
+              ) : null}
               <div className="inventory-receiving-summary">
                 <span><small>Items revisados</small><strong>{receivingModal.items.length}</strong></span>
                 <span><small>Con novedad</small><strong>{receivingTotals.issueRows}</strong></span>
@@ -5881,7 +6086,7 @@ function InventoryDashboardSection({
                   <span>Esperado</span>
                   <span>Bueno</span>
                   <span>Danado</span>
-                  <span>Faltante</span>
+                  <span>{receivingModal.returnReviewStatus === 'left_with_client' ? 'Pendiente' : 'Faltante'}</span>
                   <span>Precio</span>
                   <span>Origen</span>
                   <span>Total</span>
@@ -5916,7 +6121,12 @@ function InventoryDashboardSection({
                         <strong>{formatBs(values.penaltyBs)}</strong>
                         {hasMismatch ? <small>Revisar suma: {values.balanceQty > 0 ? `faltan ${values.balanceQty}` : `sobran ${Math.abs(values.balanceQty)}`}</small> : null}
                       </span>
-                      <input type="text" value={line.damageNote} onChange={(event) => updateReceivingLine(line.returnLineKey, 'damageNote', event.target.value)} placeholder="Detalle si hay dano/faltante" />
+                      <input
+                        type="text"
+                        value={line.damageNote}
+                        onChange={(event) => updateReceivingLine(line.returnLineKey, 'damageNote', event.target.value)}
+                        placeholder={receivingModal.returnReviewStatus === 'left_with_client' ? 'Detalle de lo pendiente' : 'Detalle si hay dano/faltante'}
+                      />
                     </div>
                   );
                 })}
@@ -5928,7 +6138,7 @@ function InventoryDashboardSection({
                 Cancelar
               </button>
               <button type="submit" className="primary-button" disabled={isReceiving}>
-                {isReceiving ? 'Registrando...' : 'Cerrar recepcion'}
+                {isReceiving ? 'Registrando...' : receivingModal.returnReviewStatus === 'left_with_client' ? 'Registrar pendiente' : 'Cerrar recepcion'}
               </button>
             </footer>
           </form>

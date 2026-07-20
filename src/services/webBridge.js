@@ -1009,6 +1009,10 @@ const syncRentalTransportStatus = (state, rental, now = new Date().toISOString()
     transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
     transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
     transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
+    dispatchReview: rental.operational?.dispatchReview ?? null,
+    returnReview: rental.operational?.returnReview ?? null,
+    revisionAlert: rental.operational?.revisionAlert ?? null,
+    clientPendingPickup: rental.operational?.clientPendingPickup ?? null,
   };
 
   if (rental.logisticsMode === 'recojo') {
@@ -1821,6 +1825,10 @@ const normalizeState = (state) => {
           inventoryReturnedByRole: rental?.operational?.inventoryReturnedByRole ?? null,
           transportConfirmedByName: rental?.operational?.transportConfirmedByName ?? null,
           transportConfirmedByRole: rental?.operational?.transportConfirmedByRole ?? null,
+          dispatchReview: rental?.operational?.dispatchReview ?? null,
+          returnReview: rental?.operational?.returnReview ?? null,
+          revisionAlert: rental?.operational?.revisionAlert ?? null,
+          clientPendingPickup: rental?.operational?.clientPendingPickup ?? null,
         },
         totals: {
           ...(rental?.totals ?? {}),
@@ -9725,6 +9733,27 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   ));
   if (!rental) return;
 
+  const inventoryStatusBeforeSync = normalizeText(rental.operational?.inventoryStatus ?? '');
+  const wasAlreadyOutOfWarehouse = ['salio', 'devuelto'].includes(inventoryStatusBeforeSync);
+  const buildOperationalChangeSignature = (sourceContract) => JSON.stringify({
+    items: (sourceContract?.items ?? []).map((line, index) => ({
+      key: getInventoryLineKey(line, index),
+      itemId: String(line?.itemId ?? '').trim(),
+      name: normalizeText(line?.itemName ?? line?.name ?? ''),
+      quantity: Math.max(0, Math.trunc(Number(line?.quantity ?? 0))),
+      serviceDayId: String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim(),
+    })),
+    supplier: normalizeSupplierFulfillmentPlan(sourceContract?.supplierFulfillmentPlan).map((line) => ({
+      itemId: String(line?.itemId ?? '').trim(),
+      lineKey: String(line?.lineKey ?? '').trim(),
+      quantity: Math.max(0, Math.trunc(Number(line?.quantity ?? 0))),
+      mode: String(line?.mode ?? '').trim(),
+    })),
+  });
+  const operationalItemsChanged = beforeContract
+    ? buildOperationalChangeSignature(beforeContract) !== buildOperationalChangeSignature(contract)
+    : false;
+
   const userName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
   const userRole = String(payload?.updatedByRole ?? payload?.userRole ?? 'Operacion').trim() || 'Operacion';
   const oldLinesByItem = new Map();
@@ -10063,6 +10092,19 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   };
   const dueAt = new Date(`${contract.pickupDate}T${contract.pickupWindowEnd || '23:59'}:00`);
   if (!Number.isNaN(dueAt.getTime())) rental.dueAt = dueAt.toISOString();
+  if (wasAlreadyOutOfWarehouse && operationalItemsChanged) {
+    rental.operational = {
+      ...(rental.operational ?? {}),
+      revisionAlert: {
+        active: true,
+        reason: 'contract_changed_after_dispatch',
+        message: 'Contrato editado despues de la salida. Revisar material agregado, salida y retorno.',
+        changedAt: now,
+        changedByName: userName,
+        changedByRole: userRole,
+      },
+    };
+  }
   rental.updatedAt = now;
 
   const linkedDeliveries = state.deliveries
@@ -15192,6 +15234,10 @@ const createWebBridge = () => ({
           inventoryReturnedByRole: rental.operational?.inventoryReturnedByRole ?? null,
           transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
           transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
+          dispatchReview: rental.operational?.dispatchReview ?? null,
+          returnReview: rental.operational?.returnReview ?? null,
+          revisionAlert: rental.operational?.revisionAlert ?? null,
+          clientPendingPickup: rental.operational?.clientPendingPickup ?? null,
         };
 
         if (payload.inventoryStatus !== undefined) {
@@ -15234,6 +15280,62 @@ const createWebBridge = () => ({
         }
         if (payload.transportNote !== undefined) {
           rental.operational.transportNote = String(payload.transportNote ?? '').trim();
+        }
+        if (payload.dispatchReview !== undefined) {
+          const status = String(payload.dispatchReview?.status ?? 'complete').trim() || 'complete';
+          rental.operational.dispatchReview = {
+            status,
+            note: String(payload.dispatchReview?.note ?? '').trim(),
+            reviewedAt: now,
+            reviewedByName: userName,
+            reviewedByRole: userRole,
+          };
+        }
+        if (payload.returnReview !== undefined) {
+          const status = String(payload.returnReview?.status ?? 'complete').trim() || 'complete';
+          rental.operational.returnReview = {
+            status,
+            note: String(payload.returnReview?.note ?? '').trim(),
+            reviewedAt: now,
+            reviewedByName: userName,
+            reviewedByRole: userRole,
+          };
+        }
+        if (payload.clientPendingPickup !== undefined) {
+          const active = Boolean(payload.clientPendingPickup?.active);
+          rental.operational.clientPendingPickup = active
+            ? {
+                active: true,
+                note: String(payload.clientPendingPickup?.note ?? '').trim(),
+                items: Array.isArray(payload.clientPendingPickup?.items)
+                  ? payload.clientPendingPickup.items.map((line) => ({
+                      lineKey: String(line?.lineKey ?? '').trim(),
+                      itemId: String(line?.itemId ?? '').trim(),
+                      itemName: String(line?.itemName ?? '').trim(),
+                      expectedQty: Math.max(0, Math.trunc(Number(line?.expectedQty ?? 0))),
+                      pendingQty: Math.max(0, Math.trunc(Number(line?.pendingQty ?? 0))),
+                      note: String(line?.note ?? '').trim(),
+                    })).filter((line) => line.pendingQty > 0)
+                  : [],
+                registeredAt: now,
+                registeredByName: userName,
+                registeredByRole: userRole,
+              }
+            : null;
+        }
+        if (payload.revisionAlert !== undefined) {
+          rental.operational.revisionAlert = payload.revisionAlert ?? null;
+        }
+        if (payload.clearOperationalRevisionAlert) {
+          rental.operational.revisionAlert = rental.operational.revisionAlert
+            ? {
+                ...rental.operational.revisionAlert,
+                active: false,
+                resolvedAt: now,
+                resolvedByName: userName,
+                resolvedByRole: userRole,
+              }
+            : null;
         }
 
         rental.updatedAt = now;
@@ -15510,6 +15612,14 @@ const createWebBridge = () => ({
           inventoryReturnedAt: rental.returnedAt,
           inventoryReturnedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
           inventoryReturnedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+          returnReview: {
+            status: String(payload?.returnReview?.status ?? 'complete').trim() || 'complete',
+            note: String(payload?.returnReview?.note ?? '').trim(),
+            reviewedAt: rental.returnedAt,
+            reviewedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+            reviewedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+          },
+          clientPendingPickup: null,
         };
         rental.penaltiesBs = penaltiesBs;
         rental.internalPenaltiesBs = internalPenaltiesBs;
