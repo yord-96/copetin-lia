@@ -142,7 +142,7 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
   });
 };
 
-export const updateStateSnapshot = async (updater) => {
+export const updateStateSnapshot = async (updater, expectedRevision = undefined) => {
   if (typeof updater !== 'function') {
     throw new Error('Debes enviar una funcion de actualizacion.');
   }
@@ -150,6 +150,17 @@ export const updateStateSnapshot = async (updater) => {
   return withWriteLock(async () => {
     await ensureStateStore();
     const current = await readJsonFile();
+    const currentRevision = revisionForPayload(current);
+    if (expectedRevision !== undefined && normalizeRevision(expectedRevision) !== currentRevision) {
+      const error = new Error('La revision enviada no coincide con la revision actual.');
+      error.code = 'STATE_REVISION_CONFLICT';
+      error.currentRevision = currentRevision;
+      error.providedRevision = normalizeRevision(expectedRevision);
+      error.version = Number(current?.version ?? 0);
+      error.updatedAt = current?.updatedAt ?? null;
+      throw error;
+    }
+
     if (!current?.state) {
       return {
         ok: false,

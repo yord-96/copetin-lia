@@ -13,7 +13,7 @@ const MUTATION_CONFLICT_RETRIES = 3;
 const MUTATION_TRANSIENT_RETRIES = 4;
 const SAVE_TRANSIENT_RETRIES = 4;
 const DIRECT_STATE_SAVE_MAX_BYTES = 700 * 1024;
-const STATE_CHUNK_BYTES = 320 * 1024;
+const STATE_CHUNK_BYTES = 480 * 1024;
 const REMOTE_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_KEY = String(
   import.meta.env?.VITE_APP_INTERNAL_KEY
@@ -157,7 +157,8 @@ const businessCollections = [
   'vehicles',
   'drivers',
   'calendarEvents',
-  'reports',
+  'calendarBoardNotes',
+  'generatedReports',
   'cashSessions',
   'cashMovements',
   'cashDebts',
@@ -165,7 +166,11 @@ const businessCollections = [
   'resetLogs',
   'inventoryMovements',
   'stockRecoveries',
+  'systemAuditLog',
 ];
+const PATCHABLE_COLLECTIONS = businessCollections;
+const PATCH_MAX_CHANGED_ROWS = 250;
+const PATCH_MAX_BYTES = 650 * 1024;
 
 const hasBusinessData = (state) =>
   Boolean(
@@ -248,6 +253,34 @@ const fetchServerMeta = async () => {
     throw await createServerStateError(response, 'No se pudo consultar la version del servidor.');
   }
   return response.json();
+};
+
+const getKnownLocalRevision = () => lastSharedRevision ?? getCachedServerRevision();
+
+const ensureServerStateReadyForMutation = async ({ required = true, reason = 'mutation-preflight' } = {}) => {
+  if (!shouldUseServerState()) {
+    return;
+  }
+
+  if (!hasCachedLocalState()) {
+    await syncServerState({ force: true, required, reason });
+    return;
+  }
+
+  const meta = await fetchServerMeta();
+  resetRemoteBackoff();
+  const remoteRevision = meta?.revision ?? null;
+  const localRevision = getKnownLocalRevision();
+
+  if (remoteRevision && localRevision && remoteRevision === localRevision) {
+    lastSharedRevision = remoteRevision;
+    setCachedServerRevision(remoteRevision);
+    lastSharedSyncAt = Date.now();
+    hasLoadedServerState = true;
+    return;
+  }
+
+  await syncServerState({ force: true, required, reason: `${reason}:revision-mismatch` });
 };
 
 const bytesToBase64 = (bytes) => {
@@ -339,6 +372,111 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
       applyRemoteBackoff(error);
       await sleep(getRetryDelayMs(error, attempt));
       return pushServerState({ attempt: attempt + 1 });
+    }
+    throw error;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (payload?.revision) {
+    lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
+  }
+  return payload;
+};
+
+const stableJson = (value) => JSON.stringify(value ?? null);
+
+const buildStatePatch = (beforeState, afterState) => {
+  if (!beforeState || !afterState) return null;
+  const upserts = {};
+  const deletes = {};
+  let changedRows = 0;
+
+  for (const collection of PATCHABLE_COLLECTIONS) {
+    const beforeRows = Array.isArray(beforeState[collection]) ? beforeState[collection] : [];
+    const afterRows = Array.isArray(afterState[collection]) ? afterState[collection] : [];
+    const beforeById = new Map();
+    const afterIds = new Set();
+
+    for (const row of beforeRows) {
+      const id = String(row?.id ?? '').trim();
+      if (!id) return null;
+      beforeById.set(id, stableJson(row));
+    }
+
+    for (const row of afterRows) {
+      const id = String(row?.id ?? '').trim();
+      if (!id) return null;
+      afterIds.add(id);
+      if (beforeById.get(id) !== stableJson(row)) {
+        if (!upserts[collection]) upserts[collection] = [];
+        upserts[collection].push(row);
+        changedRows += 1;
+      }
+    }
+
+    const removedIds = beforeRows
+      .map((row) => String(row?.id ?? '').trim())
+      .filter((id) => id && !afterIds.has(id));
+    if (removedIds.length > 0) {
+      deletes[collection] = removedIds;
+      changedRows += removedIds.length;
+    }
+  }
+
+  const settingsChanged = stableJson(beforeState.settings) !== stableJson(afterState.settings);
+  const patch = {
+    upserts,
+    deletes,
+    ...(settingsChanged ? { settings: afterState.settings ?? {} } : {}),
+  };
+  const hasChanges = changedRows > 0 || settingsChanged;
+  if (!hasChanges) return { empty: true };
+  if (changedRows > PATCH_MAX_CHANGED_ROWS) return null;
+  const patchBytes = new TextEncoder().encode(JSON.stringify(patch)).length;
+  if (patchBytes > PATCH_MAX_BYTES) return null;
+  return patch;
+};
+
+const pushServerStatePatch = async ({ beforeState, afterState, attempt = 0 } = {}) => {
+  if (!shouldUseServerState()) {
+    return null;
+  }
+
+  const patch = buildStatePatch(beforeState, afterState);
+  if (patch?.empty) {
+    return null;
+  }
+  if (!patch) {
+    return pushServerState({ attempt });
+  }
+
+  const response = await fetch(getServerStateUrl('/patch'), {
+    method: 'POST',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      revision: lastSharedRevision ?? null,
+      ...patch,
+    }),
+  });
+
+  if (response.status === 404 || response.status === 405) {
+    return pushServerState({ attempt });
+  }
+
+  if (response.status === 409) {
+    throw await createServerStateError(
+      response,
+      'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
+    );
+  }
+
+  if (!response.ok) {
+    const error = await createServerStateError(response, 'No se pudo guardar el cambio en el servidor.');
+    if (isTransientServerError(error) && attempt < SAVE_TRANSIENT_RETRIES) {
+      applyRemoteBackoff(error);
+      await sleep(getRetryDelayMs(error, attempt));
+      return pushServerStatePatch({ beforeState, afterState, attempt: attempt + 1 });
     }
     throw error;
   }
@@ -680,21 +818,21 @@ const callBridge = async (domain, method, mutates, ...args) => {
   const request = (async () => {
     const runMutationAttempt = async (attempt = 0) => {
       try {
-        if (mutationBatchDepth > 0 && !isPresenceMutation) {
-          if (!mutationBatchPreflightPromise) {
-            mutationBatchPreflightPromise = syncServerState({
-              force: true,
+        if (!isPresenceMutation) {
+          if (mutationBatchDepth > 0) {
+            if (!mutationBatchPreflightPromise) {
+              mutationBatchPreflightPromise = ensureServerStateReadyForMutation({
+                required: true,
+                reason: `batch.${domain}.${method}:mutation-preflight`,
+              });
+            }
+            await mutationBatchPreflightPromise;
+          } else {
+            await ensureServerStateReadyForMutation({
               required: true,
-              reason: `batch.${domain}.${method}:mutation-preflight`,
+              reason: `${domain}.${method}:mutation-preflight`,
             });
           }
-          await mutationBatchPreflightPromise;
-        } else {
-          await syncServerState({
-            force: !isPresenceMutation,
-            required: !isPresenceMutation,
-            reason: `${domain}.${method}:mutation-preflight`,
-          });
         }
       } catch (error) {
         if (isTransientServerError(error) && attempt < MUTATION_TRANSIENT_RETRIES) {
@@ -704,6 +842,9 @@ const callBridge = async (domain, method, mutates, ...args) => {
         throw new Error(getSaveErrorMessage(error, 'No se pudo sincronizar la informacion antes de guardar.'));
       }
 
+      const beforeMutationState = !isPresenceMutation && mutationBatchDepth === 0
+        ? await exportLocalState()
+        : null;
       const result = await getBridge()[domain][method](...args);
       if (isPresenceMutation) {
         announceDataChange({ domain, method });
@@ -714,7 +855,8 @@ const callBridge = async (domain, method, mutates, ...args) => {
         return result;
       }
       try {
-        await pushServerState();
+        const afterMutationState = beforeMutationState ? await exportLocalState() : null;
+        await pushServerStatePatch({ beforeState: beforeMutationState, afterState: afterMutationState });
         announceDataChange({ domain, method });
         return result;
       } catch (error) {

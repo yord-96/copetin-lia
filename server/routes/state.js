@@ -13,6 +13,37 @@ const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
 const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
 const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia']);
+const patchableCollections = new Set([
+  'categories',
+  'clients',
+  'users',
+  'items',
+  'inventoryCombos',
+  'quotes',
+  'contracts',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+  'personnelEmployees',
+  'personnelAttendance',
+  'personnelIncidents',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'vehicles',
+  'drivers',
+  'calendarEvents',
+  'calendarBoardNotes',
+  'generatedReports',
+  'cashSessions',
+  'cashMovements',
+  'cashDebts',
+  'attendanceRecords',
+  'resetLogs',
+  'inventoryMovements',
+  'stockRecoveries',
+  'systemAuditLog',
+]);
 
 const makeEconomicLedgerId = () => `eco-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
@@ -329,6 +360,85 @@ router.post('/__copetin_db/chunked/commit', async (req, res, next) => {
     res.json(result);
   } catch (error) {
     chunkUploads.delete(uploadId);
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/patch', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revision actual para guardar el cambio.' });
+      return;
+    }
+
+    const upserts = req.body.upserts && typeof req.body.upserts === 'object' && !Array.isArray(req.body.upserts)
+      ? req.body.upserts
+      : {};
+    const deletes = req.body.deletes && typeof req.body.deletes === 'object' && !Array.isArray(req.body.deletes)
+      ? req.body.deletes
+      : {};
+    const settings = req.body.settings && typeof req.body.settings === 'object' && !Array.isArray(req.body.settings)
+      ? req.body.settings
+      : null;
+
+    const result = await updateStateSnapshot((state) => {
+      const nextState = { ...state };
+
+      Object.entries(upserts).forEach(([collection, rows]) => {
+        if (!patchableCollections.has(collection) || !Array.isArray(rows) || rows.length === 0) return;
+        const currentRows = Array.isArray(nextState[collection]) ? [...nextState[collection]] : [];
+        const indexById = new Map(currentRows.map((row, index) => [String(row?.id ?? ''), index]).filter(([id]) => id));
+        rows.forEach((row) => {
+          if (!row || typeof row !== 'object' || Array.isArray(row)) return;
+          const id = String(row.id ?? '').trim();
+          if (!id) return;
+          const currentIndex = indexById.get(id);
+          if (currentIndex >= 0) {
+            currentRows[currentIndex] = row;
+          } else {
+            indexById.set(id, currentRows.length);
+            currentRows.push(row);
+          }
+        });
+        nextState[collection] = currentRows;
+      });
+
+      Object.entries(deletes).forEach(([collection, ids]) => {
+        if (!patchableCollections.has(collection) || !Array.isArray(ids) || ids.length === 0) return;
+        const deleteIds = new Set(ids.map((id) => String(id ?? '').trim()).filter(Boolean));
+        if (!deleteIds.size) return;
+        nextState[collection] = Array.isArray(nextState[collection])
+          ? nextState[collection].filter((row) => !deleteIds.has(String(row?.id ?? '')))
+          : [];
+      });
+
+      if (settings) {
+        nextState.settings = settings;
+      }
+
+      return nextState;
+    }, req.body.revision);
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
     if (error?.code === 'STATE_REVISION_CONFLICT') {
       sendRevisionConflict(req, res, error);
       return;
