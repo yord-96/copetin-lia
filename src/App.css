@@ -61568,6 +61568,89 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 }
 
+/* Correccion final: el nombre del producto no debe ser tapado por metricas/chips. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row {
+  --wizard-catalog-card-height: 12.2rem;
+  grid-template-columns: 5.25rem minmax(0, 1fr) auto !important;
+  grid-template-rows: 6.05rem minmax(1.35rem, auto) 2.1rem !important;
+  grid-template-areas:
+    "image info info"
+    "details details details"
+    "price stock action" !important;
+  height: var(--wizard-catalog-card-height) !important;
+  min-height: var(--wizard-catalog-card-height) !important;
+  max-height: var(--wizard-catalog-card-height) !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-thumb {
+  width: 5.25rem !important;
+  height: 5.25rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info {
+  grid-area: info !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(1.7rem, auto) auto minmax(0, 1fr) !important;
+  gap: 0.16rem !important;
+  height: 6.05rem !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > strong {
+  grid-row: 1 !important;
+  display: -webkit-box !important;
+  min-height: 1.7rem !important;
+  max-height: 2.05rem !important;
+  overflow: hidden !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  color: #122245 !important;
+  font-size: 0.78rem !important;
+  line-height: 1.12 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  white-space: normal !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > span {
+  grid-row: 2 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-info > .orders-product-detail-line {
+  display: none !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-availability-metrics.is-provisional {
+  grid-row: 3 !important;
+  grid-area: auto !important;
+  align-self: end !important;
+  margin-top: 0.14rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-product-row > .orders-product-table-details,
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-combo-catalog-row > .orders-product-table-details {
+  grid-area: details !important;
+  display: flex !important;
+  min-height: 1.2rem !important;
+  max-height: 1.45rem !important;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-catalog-card-chip {
+  position: static !important;
+  grid-area: details !important;
+  align-self: end !important;
+  justify-self: start !important;
+  width: max-content !important;
+  max-width: 100% !important;
+}
+
 .orders-wizard-modal .orders-submit-progress {
   min-height: 2.1rem;
   max-width: min(30rem, 44vw);
