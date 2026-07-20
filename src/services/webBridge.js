@@ -6943,6 +6943,15 @@ const getReferenceContractStyles = () => `
   }
   .rc-items { margin-top: 1mm; }
   .rc-items .rc-block-title { margin-bottom: 0; }
+  .rc-day-section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .rc-day-section.starts-new-page {
+    break-before: page;
+    page-break-before: always;
+    padding-top: 10mm;
+  }
   .rc-table {
     width: 100%;
     border-collapse: separate;
@@ -7325,6 +7334,9 @@ const getReferenceContractStyles = () => `
     }
     .rc-table thead { display: table-header-group; }
     .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
+    .rc-day-section.starts-new-page {
+      padding-top: 10mm;
+    }
     .rc-bottom,
     .rc-closeout,
     .rc-client-materials,
@@ -7478,15 +7490,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
     const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
     const unitPriceBs = getDocumentLineUnitPriceBs(line);
-    const storedLineTotalBs = Number(line.lineTotalBs ?? fulfillmentBreakdown.ownQty * unitPriceBs);
+    const storedLineTotalBs = Number(line.lineTotalBs);
+    const hasStoredLineTotal = Number.isFinite(storedLineTotalBs);
     const ownLineTotalBs = Number((fulfillmentBreakdown.ownQty * unitPriceBs).toFixed(2));
     const totalQuantityLineTotalBs = Number((fulfillmentBreakdown.totalQty * unitPriceBs).toFixed(2));
     const supplierSaleBs = (Array.isArray(supplierSupportLines) ? supplierSupportLines : [])
       .reduce((sum, entry) => sum + Number(entry.totalSaleBs ?? (Number(entry.neededQty ?? 0) * Number(entry.saleUnitPriceBs ?? unitPriceBs))), 0);
-
-    const baseLineTotalBs = Math.abs(storedLineTotalBs - ownLineTotalBs) < 0.01 && fulfillmentBreakdown.supplierQty > 0
-      ? Number((storedLineTotalBs + supplierSaleBs).toFixed(2))
-      : Math.max(storedLineTotalBs, totalQuantityLineTotalBs);
+    const ownStoredLineTotalBs = hasStoredLineTotal ? storedLineTotalBs : ownLineTotalBs;
+    const baseLineTotalBs = fulfillmentBreakdown.supplierQty > 0
+      ? (
+        ownStoredLineTotalBs >= totalQuantityLineTotalBs - 0.01
+          ? ownStoredLineTotalBs
+          : Number((ownStoredLineTotalBs + supplierSaleBs).toFixed(2))
+      )
+      : (hasStoredLineTotal ? ownStoredLineTotalBs : totalQuantityLineTotalBs);
 
     return Number((baseLineTotalBs * multiplier).toFixed(2));
   };
@@ -7652,7 +7669,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     })
     .join('');
   const realItemCount = documentItems.length + contractServices.length;
-  const usesMultipageContract = realItemCount >= 15;
+  const usesDailySchedulePages = hasDailySchedulePricing && scheduleDaysForDocument.length > 1;
+  const usesMultipageContract = usesDailySchedulePages || realItemCount >= 15;
   const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
   const contractTableCols = `
@@ -7685,6 +7703,49 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           </table>
         </section>`
     : '';
+  const renderContractItemsTable = (bodyRows) => `
+        <table class="rc-table">
+          ${contractTableCols}
+          <thead>
+            <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
+          </thead>
+          <tbody>${bodyRows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
+        </table>`;
+  contractRowNumber = 0;
+  const dailyScheduleGroupsForPrint = hasDailySchedulePricing
+    ? (() => {
+      const fallbackDay = scheduleDaysForDocument[0] ?? { id: 'daily-default', label: 'Dia 1', date: contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate };
+      const grouped = new Map();
+      const ensureGroup = (day, index) => {
+        const key = String(day?.id ?? `day-${index}`);
+        if (!grouped.has(key)) {
+          grouped.set(key, { day: { ...day, id: key }, index, lines: [] });
+        }
+        return grouped.get(key);
+      };
+      (scheduleDaysForDocument.length > 0 ? scheduleDaysForDocument : [fallbackDay])
+        .forEach((day, index) => ensureGroup(day, index));
+      documentItems.forEach((line) => {
+        const foundIndex = resolveScheduleDayIndexForDocumentLine(line);
+        const group = foundIndex >= 0
+          ? ensureGroup(scheduleDaysForDocument[foundIndex], foundIndex)
+          : ensureGroup(fallbackDay, 0);
+        group.lines.push(line);
+      });
+      return Array.from(grouped.values())
+        .filter((group) => group.lines.length > 0)
+        .sort((a, b) => a.index - b.index);
+    })()
+    : [];
+  const itemTablesHtml = hasDailySchedulePricing
+    ? dailyScheduleGroupsForPrint.map((group, groupPosition) => {
+      const dayRows = `${renderScheduleDayHeader(group.day, group.index, group.lines)}${group.lines.map((line) => renderContractItemRow(line)).join('')}`;
+      const extraRows = groupPosition === dailyScheduleGroupsForPrint.length - 1 ? serviceRows : '';
+      return `<section class="rc-day-section${groupPosition > 0 ? ' starts-new-page' : ''}">
+          ${renderContractItemsTable(`${dayRows}${extraRows}`)}
+        </section>`;
+    }).join('')
+    : renderContractItemsTable(rows);
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = realItemCount + manualRowCount;
@@ -7695,10 +7756,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
             <div class="rc-financial-item transport"><span>Dia ${dayInfo.day} (${dayInfo.percent}%)</span><strong>${formatBs(dayInfo.totalBs)}</strong></div>`).join('')
     : '';
   const dailyScheduleFinancialItemsHtml = hasDailySchedulePricing
-    ? scheduleDaysForDocument.map((day, index) => {
-      const dayLines = documentItems.filter((line) => resolveScheduleDayIndexForDocumentLine(line) === index);
-      if (!dayLines.length) return '';
-      const dayLabel = String(day?.label ?? '').trim() || `Dia ${index + 1}`;
+    ? dailyScheduleGroupsForPrint.map((group) => {
+      const dayLabel = String(group.day?.label ?? '').trim() || `Dia ${group.index + 1}`;
+      const dayLines = group.lines ?? [];
       const daySubtotalBs = dayLines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
       return `
             <div class="rc-financial-item transport"><span>${escapeHtml(dayLabel)}</span><strong>${formatBs(daySubtotalBs)}</strong></div>`;
@@ -7786,13 +7846,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
       <section class="rc-items">
         <h2 class="rc-block-title">Detalle de items contratados</h2>
-        <table class="rc-table">
-          ${contractTableCols}
-          <thead>
-            <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
-          </thead>
-          <tbody>${rows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
-        </table>
+        ${itemTablesHtml}
         ${manualBlockHtml}
         <section class="rc-continuation-head">
           <div>
