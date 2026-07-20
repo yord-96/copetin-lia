@@ -506,6 +506,9 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
       const neededQty = Math.max(1, Math.trunc(Number(line?.neededQty ?? line?.quantity ?? 1)));
       const supplierUnitCostBs = Math.max(0, toPositiveRoundedNumber(line?.supplierUnitCostBs ?? line?.unitPriceBs ?? 0));
       const saleUnitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.saleUnitPriceBs ?? 0));
+      const baseSaleUnitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.baseSaleUnitPriceBs ?? saleUnitPriceBs));
+      const saleDiscountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(line?.saleDiscountPercent ?? 0)));
+      const discountApplied = Boolean(line?.discountApplied || saleDiscountPercent > 0);
       if (!itemId || !supplierId || !supplierName || !itemName) return null;
       return {
         id: String(line?.id ?? makeId('supfill')).trim() || makeId('supfill'),
@@ -519,6 +522,9 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
         neededQty,
         supplierUnitCostBs,
         saleUnitPriceBs,
+        baseSaleUnitPriceBs,
+        saleDiscountPercent,
+        discountApplied,
         manualCoverage: Boolean(line?.manualCoverage),
         totalCostBs: Number((neededQty * supplierUnitCostBs).toFixed(2)),
         totalSaleBs: Number((neededQty * saleUnitPriceBs).toFixed(2)),
@@ -7494,8 +7500,16 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     const hasStoredLineTotal = Number.isFinite(storedLineTotalBs);
     const ownLineTotalBs = Number((fulfillmentBreakdown.ownQty * unitPriceBs).toFixed(2));
     const totalQuantityLineTotalBs = Number((fulfillmentBreakdown.totalQty * unitPriceBs).toFixed(2));
+    const discountPercent = Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
     const supplierSaleBs = (Array.isArray(supplierSupportLines) ? supplierSupportLines : [])
-      .reduce((sum, entry) => sum + Number(entry.totalSaleBs ?? (Number(entry.neededQty ?? 0) * Number(entry.saleUnitPriceBs ?? unitPriceBs))), 0);
+      .reduce((sum, entry) => {
+        const rawSaleBs = Number(entry.totalSaleBs ?? (Number(entry.neededQty ?? 0) * Number(entry.saleUnitPriceBs ?? unitPriceBs)));
+        const alreadyDiscounted = Boolean(entry.discountApplied || Number(entry.saleDiscountPercent ?? 0) > 0);
+        const effectiveSaleBs = alreadyDiscounted
+          ? rawSaleBs
+          : Number((rawSaleBs * (1 - (discountPercent / 100))).toFixed(2));
+        return sum + effectiveSaleBs;
+      }, 0);
     const ownStoredLineTotalBs = hasStoredLineTotal ? storedLineTotalBs : ownLineTotalBs;
     const baseLineTotalBs = fulfillmentBreakdown.supplierQty > 0
       ? (

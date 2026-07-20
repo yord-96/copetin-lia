@@ -110,6 +110,14 @@ const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 8;
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
+const clampPercentValue = (value) => Math.min(100, Math.max(0, Number(value ?? 0)));
+
+const getSupplierCoverageEffectiveSaleUnitPriceBs = (line) => {
+  const saleUnitPriceBs = Math.max(0, Number(line?.saleUnitPriceBs ?? line?.unitPriceBs ?? 0));
+  const discountPercent = clampPercentValue(line?.discountPercent);
+  return Number((saleUnitPriceBs * (1 - (discountPercent / 100))).toFixed(2));
+};
+
 const normalizeLedgerPaymentMethod = (value) => {
   const method = String(value ?? '').trim().toLowerCase();
   return ['efectivo', 'qr', 'transferencia'].includes(method) ? method : 'efectivo';
@@ -3188,6 +3196,8 @@ function ServiceOrdersSection({
           itemId: line.itemId,
           itemName: line.item.name,
           saleUnitPriceBs: line.unitPriceBs,
+          effectiveSaleUnitPriceBs: getSupplierCoverageEffectiveSaleUnitPriceBs(line),
+          saleDiscountPercent: clampPercentValue(line.discountPercent),
           manualSaleQty: manualCoveredQty,
           shortageQty: effectiveShortageQty,
           coveredQty,
@@ -3206,7 +3216,13 @@ function ServiceOrdersSection({
   );
 
   const supplierCoverageTotals = useMemo(() => {
-    const coveredLines = supplierCoverageRows.flatMap((line) => line.coverages.map((coverage) => ({ ...coverage, saleUnitPriceBs: line.saleUnitPriceBs })));
+    const coveredLines = supplierCoverageRows.flatMap((line) => line.coverages.map((coverage) => ({
+      ...coverage,
+      saleUnitPriceBs: line.effectiveSaleUnitPriceBs,
+      baseSaleUnitPriceBs: line.saleUnitPriceBs,
+      saleDiscountPercent: line.saleDiscountPercent,
+      discountApplied: line.saleDiscountPercent > 0,
+    })));
     const totalCoveredQty = coveredLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line.neededQty ?? 0))), 0);
     const totalCostBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.supplierUnitCostBs ?? 0))), 0);
     const totalSaleBs = coveredLines.reduce((sum, line) => sum + (Math.max(0, Math.trunc(Number(line.neededQty ?? 0))) * Math.max(0, Number(line.saleUnitPriceBs ?? 0))), 0);
@@ -5043,7 +5059,10 @@ function ServiceOrdersSection({
         supplierQuoteCode: coverage.supplierQuoteCode,
         neededQty: coverage.neededQty,
         supplierUnitCostBs: coverage.supplierUnitCostBs,
-        saleUnitPriceBs: line.saleUnitPriceBs,
+        saleUnitPriceBs: line.effectiveSaleUnitPriceBs,
+        baseSaleUnitPriceBs: line.saleUnitPriceBs,
+        saleDiscountPercent: line.saleDiscountPercent,
+        discountApplied: line.saleDiscountPercent > 0,
         manualCoverage: Boolean(coverage.manualCoverage),
       })))
       .filter((line) => line.neededQty > 0 && line.supplierId && line.supplierName);
