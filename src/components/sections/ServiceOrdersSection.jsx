@@ -3722,6 +3722,23 @@ function ServiceOrdersSection({
     });
   };
 
+  const updateSupplierCoverageLine = (itemId, coverageId, patch) => {
+    setSupplierFulfillmentDraftByItem((current) => {
+      const currentCoverages = normalizeCoverageDraftLines(current[itemId]);
+      if (!currentCoverages.length) return current;
+      return {
+        ...current,
+        [itemId]: {
+          coverages: currentCoverages.map((coverage) => (
+            String(coverage.id) === String(coverageId)
+              ? { ...coverage, ...patch }
+              : coverage
+          )),
+        },
+      };
+    });
+  };
+
   const removeSupplierCoverageLine = (itemId, coverageId) => {
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
@@ -3849,7 +3866,9 @@ function ServiceOrdersSection({
 
       if (!supplier?.id) throw new Error('No se pudo determinar el proveedor.');
 
-      const quote = await onCreateSupplierQuote?.({
+      const coverageKey = supplierCoverageModal.coverageKey ?? supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId;
+      const coverageId = `cov-${coverageKey}-${Date.now()}`;
+      const quotePayload = {
         supplierId: supplier.id,
         title: `Cobertura para ${supplierCoverageModal.itemName}`,
         validFrom: draft.deliveryDate,
@@ -3868,21 +3887,34 @@ function ServiceOrdersSection({
           unitPriceBs: supplierCost,
           unit: 'unidad',
         }],
-      });
+      };
 
-      setDraftItemPrice(supplierCoverageModal.itemId, salePrice);
-      addSupplierCoverageLine(supplierCoverageModal.coverageKey ?? supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId, {
+      setDraftItemPrice(supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId, salePrice);
+      addSupplierCoverageLine(coverageKey, {
+        id: coverageId,
         lineKey: supplierCoverageModal.lineKey ?? null,
         supplierId: supplier.id,
         supplierName: supplier.name,
-        supplierQuoteId: quote?.id ?? null,
-        supplierQuoteCode: quote?.quoteCode ?? null,
+        supplierQuoteId: null,
+        supplierQuoteCode: null,
         neededQty: requestedQty,
         supplierUnitCostBs: supplierCost,
         manualCoverage: Boolean(supplierCoverageModal.manualMode),
       });
       setActionFeedback(`Proveedor ${supplier.name} vinculado al faltante de ${supplierCoverageModal.itemName}.`);
       closeSupplierCoverageModal(true);
+      onCreateSupplierQuote?.(quotePayload)
+        .then((quote) => {
+          if (!quote?.id && !quote?.quoteCode) return;
+          updateSupplierCoverageLine(coverageKey, coverageId, {
+            supplierQuoteId: quote?.id ?? null,
+            supplierQuoteCode: quote?.quoteCode ?? null,
+          });
+        })
+        .catch((requestError) => {
+          console.warn('[orders] No se pudo crear la cotizacion de proveedor en segundo plano.', requestError);
+          setActionFeedback('Cobertura agregada al contrato. La cotizacion interna del proveedor quedo pendiente.');
+        });
     } catch (requestError) {
       setSupplierCoverageError(requestError.message || 'No se pudo registrar la cobertura del proveedor.');
     } finally {

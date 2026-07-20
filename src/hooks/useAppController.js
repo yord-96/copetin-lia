@@ -1178,7 +1178,13 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.suppliers.create(payload);
-      await loadData({ silent: true });
+      setSupplierBundle((current) => ({
+        suppliers: [created, ...(current.suppliers ?? [])]
+          .filter(Boolean)
+          .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es')),
+        quotes: current.quotes ?? [],
+        loans: current.loans ?? [],
+      }));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el proveedor.');
@@ -1202,7 +1208,13 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.suppliers.createQuote(payload);
-      await loadData({ silent: true });
+      setSupplierBundle((current) => ({
+        suppliers: current.suppliers ?? [],
+        quotes: [created, ...(current.quotes ?? [])]
+          .filter(Boolean)
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+        loans: current.loans ?? [],
+      }));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear la cotizacion del proveedor.');
