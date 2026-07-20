@@ -3149,6 +3149,15 @@ function InventoryDashboardSection({
 
   const openReceivingModal = (row) => {
     const pickupItems = row.rental.pickupChecklist?.items ?? [];
+    const partialItems = Array.isArray(row.rental.partialReturnReport?.items) ? row.rental.partialReturnReport.items : [];
+    const getPreviouslyProcessedQty = (line, lineKey) => partialItems
+      .filter((entry) => (
+        String(entry?.lineKey ?? '') === String(lineKey)
+        || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line.itemId ?? ''))
+      ))
+      .reduce((sum, entry) => sum
+        + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+        + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
     setReceivingError('');
     setReceivingModal({
       rental: {
@@ -3167,6 +3176,8 @@ function InventoryDashboardSection({
           String(entry.lineKey ?? entry.returnLineKey ?? '') === returnLineKey
           || (!entry.lineKey && !entry.returnLineKey && entry.itemId === line.itemId)
         );
+        const originalExpectedQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+        const expectedQty = Math.max(0, originalExpectedQty - getPreviouslyProcessedQty(line, returnLineKey));
         return {
           lineKey: line.lineKey ?? returnLineKey,
           returnLineKey,
@@ -3177,12 +3188,13 @@ function InventoryDashboardSection({
           comboLineKey: line.comboLineKey ?? null,
           comboComponentName: line.comboComponentName ?? '',
           comboRuleIndex: line.comboRuleIndex ?? index,
-          expectedQty: Number(line.quantity ?? 0),
-          returnedQty: picked?.condition === 'faltante' ? 0 : Number(picked?.pickedQty ?? line.quantity ?? 0),
-          damagedQty: picked?.condition === 'danado' ? Number(picked?.pickedQty ?? 0) : 0,
+          expectedQty,
+          originalExpectedQty,
+          returnedQty: expectedQty <= 0 ? 0 : picked?.condition === 'faltante' ? 0 : Math.min(expectedQty, Number(picked?.pickedQty ?? expectedQty)),
+          damagedQty: expectedQty <= 0 ? 0 : picked?.condition === 'danado' ? Math.min(expectedQty, Number(picked?.pickedQty ?? 0)) : 0,
           missingQty: picked?.condition === 'faltante'
-            ? Number(line.quantity ?? 0)
-            : Math.max(0, Number(line.quantity ?? 0) - Number(picked?.pickedQty ?? line.quantity ?? 0)),
+            ? expectedQty
+            : Math.max(0, expectedQty - Number(picked?.pickedQty ?? expectedQty)),
           damagedUnitChargeBs: Number(line.damagedUnitChargeBs ?? line.rentalPriceBs ?? 0),
           missingUnitChargeBs: Number(line.missingUnitChargeBs ?? line.rentalPriceBs ?? 0),
           chargeOwner: 'cliente',
@@ -3332,14 +3344,18 @@ function InventoryDashboardSection({
 
   const receivingTotals = useMemo(() => {
     if (!receivingModal) return { penaltyBs: 0, clientPenaltyBs: 0, internalPenaltyBs: 0, issueRows: 0 };
+    const isPendingWithClient = receivingModal.returnReviewStatus === 'left_with_client';
     return receivingModal.items.reduce((totals, line) => {
       const values = getReceivingLineNumbers(line);
       if (values.damagedQty > 0 || values.missingQty > 0) totals.issueRows += 1;
-      totals.penaltyBs = Number((totals.penaltyBs + values.penaltyBs).toFixed(2));
+      const linePenaltyBs = isPendingWithClient
+        ? Number((values.damagedQty * values.damagedUnitChargeBs).toFixed(2))
+        : values.penaltyBs;
+      totals.penaltyBs = Number((totals.penaltyBs + linePenaltyBs).toFixed(2));
       if (line.chargeOwner === 'cliente') {
-        totals.clientPenaltyBs = Number((totals.clientPenaltyBs + values.penaltyBs).toFixed(2));
+        totals.clientPenaltyBs = Number((totals.clientPenaltyBs + linePenaltyBs).toFixed(2));
       } else {
-        totals.internalPenaltyBs = Number((totals.internalPenaltyBs + values.penaltyBs).toFixed(2));
+        totals.internalPenaltyBs = Number((totals.internalPenaltyBs + linePenaltyBs).toFixed(2));
       }
       return totals;
     }, { penaltyBs: 0, clientPenaltyBs: 0, internalPenaltyBs: 0, issueRows: 0 });
@@ -3374,9 +3390,9 @@ function InventoryDashboardSection({
       }
       setIsReceiving(true);
       try {
-        await onUpdateOrderOperational?.({
-          id: receivingModal.rental.id,
-          inventoryStatus: 'salio',
+        await onReceiveReturnedOrder?.({
+          rentalId: receivingModal.rental.id,
+          partialReturn: true,
           returnReview: {
             status: 'left_with_client',
             note,
@@ -3386,9 +3402,20 @@ function InventoryDashboardSection({
             note,
             items: pendingItems,
           },
+          returnedItems: receivingModal.items.map((line) => {
+            const values = getReceivingLineNumbers(line);
+            return {
+              ...line,
+              returnedQty: values.returnedQty,
+              damagedQty: values.damagedQty,
+              missingQty: values.missingQty,
+              damagedUnitChargeBs: values.damagedUnitChargeBs,
+              missingUnitChargeBs: values.missingUnitChargeBs,
+            };
+          }),
         });
         setReceivingModal(null);
-        showMessage('Quedo registrado el material pendiente con cliente. La orden sigue fuera de almacen.');
+        showMessage('Se reingreso lo recibido y quedo registrado el saldo pendiente con cliente.');
       } catch (error) {
         setReceivingError(error?.message || 'No se pudo registrar el pendiente con cliente.');
       } finally {
@@ -6095,6 +6122,9 @@ function InventoryDashboardSection({
                 {receivingModal.items.map((line) => {
                   const values = getReceivingLineNumbers(line);
                   const hasMismatch = values.balanceQty !== 0;
+                  const displayPenaltyBs = receivingModal.returnReviewStatus === 'left_with_client'
+                    ? Number((values.damagedQty * values.damagedUnitChargeBs).toFixed(2))
+                    : values.penaltyBs;
                   return (
                     <div key={line.returnLineKey} className={`transport-checklist-row inventory-receiving-row ${hasMismatch ? 'has-mismatch' : ''}`}>
                       <strong>{line.itemName}</strong>
@@ -6118,7 +6148,7 @@ function InventoryDashboardSection({
                         ))}
                       </select>
                       <span className="inventory-receiving-total">
-                        <strong>{formatBs(values.penaltyBs)}</strong>
+                        <strong>{formatBs(displayPenaltyBs)}</strong>
                         {hasMismatch ? <small>Revisar suma: {values.balanceQty > 0 ? `faltan ${values.balanceQty}` : `sobran ${Math.abs(values.balanceQty)}`}</small> : null}
                       </span>
                       <input

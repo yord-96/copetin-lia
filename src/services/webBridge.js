@@ -15406,6 +15406,7 @@ const createWebBridge = () => ({
     registerReturn: async (payload) => {
       const rentalId = payload?.rentalId;
       const lines = payload?.returnedItems ?? [];
+      const isPartialReturn = Boolean(payload?.partialReturn) || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client';
 
       if (!rentalId) {
         throw new Error('Debe seleccionar un alquiler para registrar la devolucion.');
@@ -15433,7 +15434,7 @@ const createWebBridge = () => ({
         if (rental.status === 'cancelled') {
           throw new Error('La orden esta anulada y no puede registrarse como devolucion.');
         }
-        if (rental.status === 'returned') {
+        if (rental.status === 'returned' && !isPartialReturn) {
           revertReturnEffects(state, rental);
         }
 
@@ -15445,6 +15446,28 @@ const createWebBridge = () => ({
 
         let penaltiesBs = 0;
         let internalPenaltiesBs = 0;
+        const previousPartialItems = Array.isArray(rental.partialReturnReport?.items)
+          ? rental.partialReturnReport.items
+          : [];
+        previousPartialItems.forEach((line) => {
+          const chargeOwner = normalizeReturnChargeOwner(line?.chargeOwner);
+          const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+          const damagedUnitChargeBs = Math.max(0, Number(line?.damagedUnitChargeBs ?? 0));
+          const damagedFeeBs = Number((damagedQty * damagedUnitChargeBs).toFixed(2));
+          if (chargeOwner === 'cliente') {
+            penaltiesBs = Number((penaltiesBs + damagedFeeBs).toFixed(2));
+          } else {
+            internalPenaltiesBs = Number((internalPenaltiesBs + damagedFeeBs).toFixed(2));
+          }
+        });
+        const getPreviouslyProcessedQty = (rentalLine, rentalLineKey) => previousPartialItems
+          .filter((entry) => (
+            String(entry?.lineKey ?? '') === String(rentalLineKey)
+            || (!entry?.lineKey && String(entry?.itemId ?? '') === String(rentalLine.itemId ?? ''))
+          ))
+          .reduce((sum, entry) => sum
+            + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+            + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
         const returnReport = rental.items.map((rentalLine, index) => {
           const rentalLineKey = getInventoryLineKey(rentalLine, index);
           const incomingLine = lines.find((entry) => String(entry?.lineKey ?? entry?.returnLineKey ?? '') === rentalLineKey)
@@ -15462,7 +15485,9 @@ const createWebBridge = () => ({
           const missingQty = Math.max(0, toInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
           const chargeOwner = normalizeReturnChargeOwner(incomingLine.chargeOwner);
           const damageNote = String(incomingLine.damageNote ?? '').trim();
-          const expectedQty = rentalLine.quantity;
+          const originalExpectedQty = Math.max(0, Math.trunc(Number(rentalLine.quantity ?? 0)));
+          const previousProcessedQty = getPreviouslyProcessedQty(rentalLine, rentalLineKey);
+          const expectedQty = Math.max(0, originalExpectedQty - previousProcessedQty);
 
           if (returnedQty + damagedQty + missingQty !== expectedQty) {
             throw new Error(
@@ -15556,6 +15581,8 @@ const createWebBridge = () => ({
               itemId: rentalLine.itemId,
               itemName: rentalLine.itemName,
               expectedQty,
+              originalExpectedQty,
+              previousProcessedQty,
               internalExpectedQty,
               supplierBackedQty: Math.max(0, expectedQty - internalExpectedQty),
               returnedQty,
@@ -15578,6 +15605,8 @@ const createWebBridge = () => ({
             itemId: rentalLine.itemId,
             itemName: rentalLine.itemName,
             expectedQty,
+            originalExpectedQty,
+            previousProcessedQty,
             returnedQty,
             returnedToAvailableQty: returnedQty,
             movedToCleaningQty: 0,
@@ -15593,6 +15622,64 @@ const createWebBridge = () => ({
           };
         });
 
+        if (isPartialReturn) {
+          const pendingItems = returnReport
+            .filter((line) => Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0)
+            .map((line) => ({
+              lineKey: line.lineKey,
+              itemId: line.itemId,
+              itemName: line.itemName,
+              expectedQty: line.expectedQty,
+              pendingQty: Math.max(0, Math.trunc(Number(line.missingQty ?? 0))),
+              note: String(line.damageNote ?? '').trim(),
+            }));
+          if (pendingItems.length === 0) {
+            throw new Error('Para registrar material con cliente debe existir al menos una cantidad pendiente.');
+          }
+
+          const partialItems = [
+            ...previousPartialItems,
+            ...returnReport
+              .filter((line) => (
+                Math.max(0, Math.trunc(Number(line.returnedQty ?? 0))) > 0
+                || Math.max(0, Math.trunc(Number(line.damagedQty ?? 0))) > 0
+                || Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0
+              ))
+              .map((line) => ({
+                ...line,
+                partialRegisteredAt: new Date().toISOString(),
+              })),
+          ];
+
+          rental.partialReturnReport = {
+            updatedAt: new Date().toISOString(),
+            updatedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+            items: partialItems,
+          };
+          rental.operational = {
+            ...(rental.operational ?? {}),
+            inventoryStatus: 'salio',
+            returnReview: {
+              status: 'left_with_client',
+              note: String(payload?.returnReview?.note ?? '').trim(),
+              reviewedAt: rental.partialReturnReport.updatedAt,
+              reviewedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+              reviewedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+            },
+            clientPendingPickup: {
+              active: true,
+              note: String(payload?.clientPendingPickup?.note ?? payload?.returnReview?.note ?? '').trim(),
+              items: pendingItems,
+              registeredAt: rental.partialReturnReport.updatedAt,
+              registeredByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+              registeredByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+            },
+          };
+          rental.updatedAt = rental.partialReturnReport.updatedAt;
+          returnedRental = deepClone(rental);
+          return state;
+        }
+
         const totalBs = Number(rental?.totals?.totalBs ?? 0);
         const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
         const outstandingRentalBs = Number(Math.max(0, totalBs - alreadyPaidBs).toFixed(2));
@@ -15605,7 +15692,12 @@ const createWebBridge = () => ({
 
         rental.status = 'returned';
         rental.returnedAt = new Date().toISOString();
-        rental.returnReport = returnReport;
+        const settledPartialItems = previousPartialItems.filter((line) => (
+          Math.max(0, Math.trunc(Number(line?.returnedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0))) > 0
+        ));
+        rental.returnReport = [...settledPartialItems, ...returnReport];
+        rental.partialReturnReport = null;
         rental.operational = {
           ...(rental.operational ?? {}),
           inventoryStatus: 'devuelto',
