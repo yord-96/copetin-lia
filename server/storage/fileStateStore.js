@@ -9,6 +9,28 @@ const defaultStateFile = path.join(projectRoot, 'data', 'app-state.json');
 const stateFilePath = path.resolve(process.env.APP_STATE_FILE || defaultStateFile);
 let writeQueue = Promise.resolve();
 
+const protectedBusinessCollections = [
+  'items',
+  'inventoryCombos',
+  'clients',
+  'quotes',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'cashMovements',
+  'cashDebts',
+  'inventoryMovements',
+  'stockRecoveries',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+  'calendarEvents',
+  'generatedReports',
+];
+
+const destructiveResetActions = new Set(['database_import', 'execute']);
+
 const checksumForState = (state) =>
   crypto
     .createHash('sha256')
@@ -61,6 +83,42 @@ const writeJsonFile = async (payload) => {
 };
 
 const cloneJson = (value) => JSON.parse(JSON.stringify(value ?? null));
+
+const countProtectedBusinessRows = (state) =>
+  protectedBusinessCollections.reduce((total, collection) => (
+    total + (Array.isArray(state?.[collection]) ? state[collection].length : 0)
+  ), 0);
+
+const hasRecentDestructiveResetLog = (state) => {
+  const logs = Array.isArray(state?.resetLogs) ? state.resetLogs : [];
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  return logs.some((log) => {
+    const action = String(log?.action ?? '').trim();
+    if (!destructiveResetActions.has(action)) return false;
+    if (String(log?.result ?? '').trim() === 'error') return false;
+    const createdAt = new Date(log?.createdAt ?? '').getTime();
+    return Number.isFinite(createdAt) && createdAt >= cutoff;
+  });
+};
+
+const assertSafeStateTransition = (currentState, nextState) => {
+  if (!currentState || !nextState) return;
+
+  const currentRows = countProtectedBusinessRows(currentState);
+  const nextRows = countProtectedBusinessRows(nextState);
+  if (currentRows < 50) return;
+  if (nextRows > Math.max(10, Math.floor(currentRows * 0.15))) return;
+  if (hasRecentDestructiveResetLog(nextState)) return;
+
+  const error = new Error(
+    `Guardado bloqueado por seguridad: la base pasaria de ${currentRows} registros operativos a ${nextRows}. Usa el panel de importacion/reset confirmado si realmente quieres reemplazarla.`,
+  );
+  error.code = 'STATE_DESTRUCTIVE_REPLACE_BLOCKED';
+  error.statusCode = 409;
+  error.currentRows = currentRows;
+  error.nextRows = nextRows;
+  throw error;
+};
 
 const withWriteLock = async (operation) => {
   const run = writeQueue.then(operation, operation);
@@ -121,6 +179,8 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
       error.updatedAt = current?.updatedAt ?? null;
       throw error;
     }
+
+    assertSafeStateTransition(current?.state, state);
 
     const version = Number(current?.version ?? 0) + 1;
     const checksum = checksumForState(state);
@@ -183,6 +243,8 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
         updatedAt: current.updatedAt ?? null,
       };
     }
+
+    assertSafeStateTransition(current.state, nextState);
 
     const version = Number(current?.version ?? 0) + 1;
     const checksum = checksumForState(nextState);
