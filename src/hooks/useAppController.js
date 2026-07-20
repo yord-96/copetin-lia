@@ -1615,7 +1615,12 @@ export const useAppController = () => {
       const availablePrepaidBs = contractClient?.prepaidEnabled
         ? Math.max(0, Number(contractClient.prepaidBalanceBs ?? 0))
         : 0;
-      const prepaidAppliedBs = Math.min(availablePrepaidBs, Math.max(0, totalBs - paidAtApprovalBs));
+      const requestedPrepaidAppliedBs = Math.max(0, Number(contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0));
+      const prepaidAppliedBs = Math.min(
+        requestedPrepaidAppliedBs,
+        availablePrepaidBs,
+        Math.max(0, totalBs - paidAtApprovalBs),
+      );
       const coveredAtApprovalBs = Number((paidAtApprovalBs + prepaidAppliedBs).toFixed(2));
       const paymentMode =
         coveredAtApprovalBs >= totalBs && totalBs > 0

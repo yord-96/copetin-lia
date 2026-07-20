@@ -9535,6 +9535,39 @@ const syncInitialPaymentCashMovement = (state, contract, payload, now) => {
   return movement;
 };
 
+const isAutoInitialRentalPaymentMovement = (movement) => {
+  const tag = normalizeText(movement?.accountingTag);
+  const notes = normalizeText(movement?.notes);
+  return tag === 'initial_rental_payment'
+    || notes.includes('pago inicial registrado desde contrato');
+};
+
+const voidAutoInitialPaymentCashMovements = (state, contract, payload = {}, now = new Date().toISOString()) => {
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const referenceKeys = getContractCashReferenceKeys(state, contract);
+  if (!referenceKeys.length) return;
+
+  const responsibleName = String(
+    payload?.updatedByName
+    ?? payload?.userName
+    ?? contract?.responsibles?.[0]?.name
+    ?? contract?.createdByName
+    ?? contract?.createdBy
+    ?? 'Sistema',
+  ).trim() || 'Sistema';
+
+  state.cashMovements
+    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => !isVoidedCashMovement(movement))
+    .filter(isAutoInitialRentalPaymentMovement)
+    .forEach((movement) => {
+      movement.receiptStatus = 'anulado';
+      movement.voidedAt = movement.voidedAt ?? now;
+      movement.voidedBy = movement.voidedBy || responsibleName;
+      movement.voidReason = movement.voidReason || `Anulado por correccion del pago inicial del contrato ${contract?.contractCode || contract?.id || ''}`.trim();
+    });
+};
+
 const isInitialPaymentLedgerEntry = (entry) => {
   if (String(entry?.type ?? '').trim() !== 'deposit') return false;
   const entryId = normalizeText(entry?.id);
@@ -9614,13 +9647,23 @@ const cleanupApprovedContractEconomicDuplicates = (state, contract, payload = {}
   ));
   if (rental?.payment) {
     const currentRentalPaidBs = Math.max(0, toPositiveRoundedNumber(rental.payment.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0));
+    const contractPaidBs = Math.max(0, toPositiveRoundedNumber(contract?.payment?.paidAtApprovalBs ?? 0));
     const normalizedRentalPaidBs = validCollectionBs > 0
       ? validCollectionBs
-      : Math.min(currentRentalPaidBs, targetCollectionBs);
-    if (currentRentalPaidBs - targetCollectionBs > 0.01 || (validCollectionBs > 0 && Math.abs(currentRentalPaidBs - validCollectionBs) > 0.01)) {
+      : Math.min(contractPaidBs, targetCollectionBs);
+    if (
+      currentRentalPaidBs - targetCollectionBs > 0.01
+      || Math.abs(currentRentalPaidBs - normalizedRentalPaidBs) > 0.01
+    ) {
       rental.payment.paidAtRentalBs = normalizedRentalPaidBs;
       rental.payment.pendingPaymentBs = Number(Math.max(0, targetCollectionBs - normalizedRentalPaidBs).toFixed(2));
       rental.payment.overpaidBs = 0;
+      rental.payment.status = normalizedRentalPaidBs >= targetCollectionBs && targetCollectionBs > 0
+        ? 'cancelado'
+        : normalizedRentalPaidBs > 0
+        ? 'a_cuenta'
+        : 'sin_pago';
+      rental.payment.mode = rental.payment.status;
       rental.totals = {
         ...(rental.totals ?? {}),
         paidAtRentalBs: normalizedRentalPaidBs,
@@ -13837,14 +13880,24 @@ const createWebBridge = () => ({
           deliveryFeeReason: payload?.deliveryFeeReason ?? contract?.deliveryFeeReason,
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
-        const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
         const storedPaidAtApprovalBs = Math.max(
           0,
           Number(contract?.payment?.paidAtApprovalBs ?? 0),
           Number(contract?.payment?.paidAtRentalBs ?? 0),
         );
-        const requestedPaidAtApprovalBs = Math.max(0, Number(payload?.paidAtApprovalBs ?? storedPaidAtApprovalBs));
-        const paidAtApprovalBs = Math.max(requestedPaidAtApprovalBs, storedPaidAtApprovalBs, registeredCollectionBs);
+        const hasRequestedPaidAtApproval = Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs');
+        const requestedPaidAtApprovalBs = Math.max(
+          0,
+          Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
+        );
+        const prepaidAppliedBs = Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0));
+        if (hasRequestedPaidAtApproval) {
+          voidAutoInitialPaymentCashMovements(state, contract, payload, now);
+        }
+        const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
+        const paidAtApprovalBs = hasRequestedPaidAtApproval
+          ? Math.max(requestedPaidAtApprovalBs, registeredCollectionBs)
+          : Math.max(requestedPaidAtApprovalBs, storedPaidAtApprovalBs, registeredCollectionBs);
         const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
 
         contract.deliveryChargeMode = deliveryCharge.deliveryChargeMode;
@@ -13867,7 +13920,7 @@ const createWebBridge = () => ({
           paidAtApprovalBs: Number(paidAtApprovalBs.toFixed(2)),
           pendingBs: Number(Math.max(0, totalBs - paidAtApprovalBs).toFixed(2)),
           overpaidBs,
-          prepaidAppliedBs: Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0)),
+          prepaidAppliedBs,
           initialPaymentMethod,
           initialPaymentAccount,
           guaranteeStatus,
