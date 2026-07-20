@@ -1314,6 +1314,7 @@ function ServiceOrdersSection({
   const menuRef = useRef(null);
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
+  const supplierCoverageHydrationKeyRef = useRef('');
   const canChooseResponsibles = isDeveloper(currentUser);
   const canViewHiddenContracts = isDeveloper(currentUser);
   const canManageContractEconomicLedger = !readOnly;
@@ -3056,16 +3057,28 @@ function ServiceOrdersSection({
   }, [items, supplierBundle?.quotes, supplierBundle?.suppliers]);
 
   useEffect(() => {
-    if (!modalOpen) return;
+    if (!modalOpen) {
+      supplierCoverageHydrationKeyRef.current = '';
+      return;
+    }
+    const sourcePlan = Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [];
+    const hydrationKey = `${draft.recordId || 'new'}|${sourcePlan
+      .map((line) => [
+        line?.lineKey ?? '',
+        line?.itemId ?? '',
+        line?.supplierId ?? '',
+        line?.supplierName ?? '',
+        line?.neededQty ?? '',
+        line?.supplierUnitCostBs ?? '',
+      ].join(':'))
+      .join(';')}`;
+    if (supplierCoverageHydrationKeyRef.current === hydrationKey) return;
+    supplierCoverageHydrationKeyRef.current = hydrationKey;
     const fromRecord = {};
-    (draft.supplierFulfillmentPlan ?? []).forEach((line) => {
+    sourcePlan.forEach((line) => {
       const itemId = String(line?.itemId ?? '').trim();
       if (!itemId) return;
-      const matchingLine = selectedItems.find((entry) =>
-        (line?.lineKey && String(entry.lineKey) === String(line.lineKey))
-        || String(entry.itemId) === itemId
-      );
-      const coverageKey = String(line?.lineKey ?? matchingLine?.lineKey ?? itemId).trim();
+      const coverageKey = String(line?.lineKey ?? itemId).trim();
       const current = normalizeCoverageDraftLines(fromRecord[coverageKey]);
       current.push({
         id: line?.id ?? `cov-${itemId}-${current.length}`,
@@ -3081,7 +3094,7 @@ function ServiceOrdersSection({
       fromRecord[coverageKey] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
-  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen, selectedItems]);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -3722,23 +3735,6 @@ function ServiceOrdersSection({
     });
   };
 
-  const updateSupplierCoverageLine = (itemId, coverageId, patch) => {
-    setSupplierFulfillmentDraftByItem((current) => {
-      const currentCoverages = normalizeCoverageDraftLines(current[itemId]);
-      if (!currentCoverages.length) return current;
-      return {
-        ...current,
-        [itemId]: {
-          coverages: currentCoverages.map((coverage) => (
-            String(coverage.id) === String(coverageId)
-              ? { ...coverage, ...patch }
-              : coverage
-          )),
-        },
-      };
-    });
-  };
-
   const removeSupplierCoverageLine = (itemId, coverageId) => {
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
@@ -3868,27 +3864,6 @@ function ServiceOrdersSection({
 
       const coverageKey = supplierCoverageModal.coverageKey ?? supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId;
       const coverageId = `cov-${coverageKey}-${Date.now()}`;
-      const quotePayload = {
-        supplierId: supplier.id,
-        title: `Cobertura para ${supplierCoverageModal.itemName}`,
-        validFrom: draft.deliveryDate,
-        validUntil: draft.pickupDate || draft.eventDate,
-        notes: [
-          `Cobertura creada desde ${draft.entityType === 'contract' ? 'contrato' : 'cotizacion'} en ordenes de servicio.`,
-          color ? `Color: ${color}` : '',
-          material ? `Material: ${material}` : '',
-          notes,
-        ].filter(Boolean).join(' | '),
-        items: [{
-          itemId: String(supplierCoverageModal.itemId).startsWith('quick-') ? '' : supplierCoverageModal.itemId,
-          itemName,
-          category,
-          quantity: requestedQty,
-          unitPriceBs: supplierCost,
-          unit: 'unidad',
-        }],
-      };
-
       setDraftItemPrice(supplierCoverageModal.lineKey ?? supplierCoverageModal.itemId, salePrice);
       addSupplierCoverageLine(coverageKey, {
         id: coverageId,
@@ -3903,18 +3878,6 @@ function ServiceOrdersSection({
       });
       setActionFeedback(`Proveedor ${supplier.name} vinculado al faltante de ${supplierCoverageModal.itemName}.`);
       closeSupplierCoverageModal(true);
-      onCreateSupplierQuote?.(quotePayload)
-        .then((quote) => {
-          if (!quote?.id && !quote?.quoteCode) return;
-          updateSupplierCoverageLine(coverageKey, coverageId, {
-            supplierQuoteId: quote?.id ?? null,
-            supplierQuoteCode: quote?.quoteCode ?? null,
-          });
-        })
-        .catch((requestError) => {
-          console.warn('[orders] No se pudo crear la cotizacion de proveedor en segundo plano.', requestError);
-          setActionFeedback('Cobertura agregada al contrato. La cotizacion interna del proveedor quedo pendiente.');
-        });
     } catch (requestError) {
       setSupplierCoverageError(requestError.message || 'No se pudo registrar la cobertura del proveedor.');
     } finally {
