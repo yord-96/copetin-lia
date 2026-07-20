@@ -3174,8 +3174,6 @@ const normalizeState = (state) => {
 let inMemoryState = createSeedData();
 let inMemoryStateHydrated = false;
 let localStorageStateDisabled = false;
-let queryStateSnapshot = null;
-let queryStateSnapshotBuildCount = 0;
 
 const disableLocalStateStorage = () => {
   localStorageStateDisabled = true;
@@ -3209,9 +3207,7 @@ const persistLocalStateSnapshot = (state) => {
   }
 };
 
-const invalidateQueryStateSnapshot = () => {
-  queryStateSnapshot = null;
-};
+const invalidateQueryStateSnapshot = () => {};
 
 const ensureStateHydrated = () => {
   if (inMemoryStateHydrated) return;
@@ -3250,17 +3246,11 @@ const readState = () => {
 
 const readQueryState = () => {
   ensureStateHydrated();
-  if (!queryStateSnapshot) {
-    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    queryStateSnapshot = deepClone(inMemoryState);
-    queryStateSnapshotBuildCount += 1;
-    const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    console.info(`[copetin-state] Snapshot compartido #${queryStateSnapshotBuildCount} creado`, {
-      durationMs: Math.round(finishedAt - startedAt),
-      items: queryStateSnapshot.items?.length ?? 0,
-    });
-  }
-  return queryStateSnapshot;
+  // Las consultas son de solo lectura. Evitamos clonar toda la base para cada
+  // ciclo de carga, porque en celulares esa copia duplicaba el consumo de memoria.
+  // Cada listado que ordena o transforma arreglos debe trabajar sobre una copia
+  // local con slice(), filter() o map().
+  return inMemoryState;
 };
 
 const writeState = (state) => {
@@ -10576,6 +10566,7 @@ const createWebBridge = () => ({
       const { stockRecoveries } = readQueryState();
       return stockRecoveries
         .filter((entry) => Number(entry.quantity ?? 0) > 0)
+        .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
     create: async (payload) => {

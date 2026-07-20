@@ -235,9 +235,16 @@ export const useAppController = () => {
       setUserPresence(normalizePresenceList(presenceData));
 
       if (includeDeferred) {
+        const isConstrainedDevice = typeof window !== 'undefined' && (
+          window.matchMedia?.('(pointer: coarse)')?.matches
+          || window.innerWidth <= 900
+          || Number(window.navigator?.hardwareConcurrency ?? 8) <= 4
+        );
+        const deferredTimeoutMs = isConstrainedDevice ? 15000 : 1800;
+        const fallbackDelayMs = isConstrainedDevice ? 8000 : 120;
         const scheduleDeferredLoad = typeof window !== 'undefined' && 'requestIdleCallback' in window
-          ? (callback) => window.requestIdleCallback(callback, { timeout: 1800 })
-          : (callback) => window.setTimeout(callback, 120);
+          ? (callback) => window.requestIdleCallback(callback, { timeout: deferredTimeoutMs })
+          : (callback) => window.setTimeout(callback, fallbackDelayMs);
         scheduleDeferredLoad(() => {
           loadDeferredData();
         });
