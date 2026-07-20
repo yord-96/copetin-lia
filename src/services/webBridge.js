@@ -7131,8 +7131,8 @@ const getReferenceContractStyles = () => `
   }
   .rc-observations strong { display: block; margin-bottom: 1.2mm; font-size: 8.2px; }
   .rc-observations p { margin: 0; text-transform: uppercase; white-space: pre-line; }
-  .rc-change-lines { display: grid; gap: 1.25mm; padding-top: .2mm; }
-  .rc-change-line { display: block; width: 100%; height: 3mm; border-bottom: .25mm solid #777; }
+  .rc-change-lines { display: block; min-height: 12mm; padding-top: .2mm; }
+  .rc-change-line { display: none; }
   .rc-client-materials {
     margin-top: 0;
     break-inside: avoid;
@@ -7159,12 +7159,11 @@ const getReferenceContractStyles = () => `
     text-transform: uppercase;
   }
   .rc-material-lines {
-    display: grid;
-    align-content: stretch;
-    gap: 1mm;
+    display: block;
+    min-height: 24mm;
     padding: 1mm 1.2mm 1.4mm;
   }
-  .rc-material-lines span { display: block; min-height: 3mm; border-bottom: .25mm solid #777; }
+  .rc-material-lines span { display: none; }
   .rc-terms-section {
     margin-top: 3mm;
     padding-top: 0;
@@ -7750,7 +7749,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       </section>
 
       <section class="rc-upper rc-operational">
-        <h2 class="rc-operational-title"><b>1.</b> Datos del cliente y cronograma</h2>
+        <h2 class="rc-operational-title">Datos del cliente y cronograma</h2>
         <div class="rc-operational-grid">
           <div class="rc-info-list">
             <div class="rc-info-line is-wide"><small>Cliente</small><strong>${escapeHtml(documentCustomerName)}</strong></div>
@@ -7778,7 +7777,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       </section>
 
       <section class="rc-items">
-        <h2 class="rc-block-title"><b>3.</b> Detalle de items contratados</h2>
+        <h2 class="rc-block-title">Detalle de items contratados</h2>
         <table class="rc-table">
           ${contractTableCols}
           <thead>
@@ -7836,7 +7835,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       <div class="rc-page-bottom">
         <section class="rc-terms-section">
           <div class="rc-terms-head">
-            <h2 class="rc-block-title"><b>4.</b> Condiciones del servicio</h2>
+            <h2 class="rc-block-title">Condiciones del servicio</h2>
             <section class="rc-signatures">
               <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div>
               <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>
