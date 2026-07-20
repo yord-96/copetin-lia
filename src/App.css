@@ -61706,3 +61706,43 @@ body:has(.accounting-bigcash-view) .workspace {
     justify-content: center;
   }
 }
+
+/* Topbar: sesiones activas a todo el ancho disponible con scroll horizontal. */
+.topbar-inner {
+  justify-content: flex-start !important;
+}
+
+.top-actions {
+  width: 100% !important;
+  min-width: 0 !important;
+  justify-content: flex-start !important;
+}
+
+.presence-strip {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.presence-session-list {
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #f18b52 transparent !important;
+}
+
+.presence-session-list::-webkit-scrollbar {
+  display: block !important;
+  height: 0.42rem;
+}
+
+.presence-session-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #f18b52;
+}
+
+.presence-strip .presence-session-list span {
+  flex: 0 0 clamp(10.5rem, 12vw, 12rem) !important;
+}

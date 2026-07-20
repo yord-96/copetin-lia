@@ -58,7 +58,7 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
   const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
   const activeUsersHere = safeUserPresence.filter((entry) => entry.activeTab === activeTab);
   const currentDevice = deviceLabel(currentUser?.device);
-  const visiblePresence = safeUserPresence.slice(0, 3);
+  const visiblePresence = safeUserPresence;
   return (
     <header className="topbar">
       <div className="topbar-inner">
