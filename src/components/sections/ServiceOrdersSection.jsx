@@ -1270,9 +1270,11 @@ function ServiceOrdersSection({
   const [actionFeedback, setActionFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatusMessage, setSubmitStatusMessage] = useState('');
+  const [contractActionStatus, setContractActionStatus] = useState('');
   const [finalizedContractOverrides, setFinalizedContractOverrides] = useState(() => new Map());
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
+  const deferredDocumentsOrder = useDeferredValue(documentsOrder);
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
   const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
@@ -1309,6 +1311,7 @@ function ServiceOrdersSection({
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
+  const deferredItemSearch = useDeferredValue(itemSearch);
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
   const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
@@ -2593,7 +2596,8 @@ function ServiceOrdersSection({
   }, [activeQuoteMenuRow, contractQuoteIdSet]);
 
   const documentsForSelectedOrder = useMemo(() => {
-    if (!documentsOrder) return [];
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder) return [];
     const isCenterDocument = (report) => {
       const sourceType = normalizeText(report?.sourceType ?? '');
       const reportName = normalizeText(report?.name ?? '');
@@ -2602,14 +2606,14 @@ function ServiceOrdersSection({
         || reportName.includes('contrato')
         || reportName.includes('inventario');
     };
-    const directDocs = (documentsByOrderId.get(documentsOrder.id) ?? []).filter(isCenterDocument);
+    const directDocs = (documentsByOrderId.get(activeDocumentsOrder.id) ?? []).filter(isCenterDocument);
     if (directDocs.length) return directDocs;
 
     const tokens = [
-      documentsOrder.rentalId,
-      documentsOrder.orderCode,
-      documentsOrder.contractId,
-      documentsOrder.contractCode,
+      activeDocumentsOrder.rentalId,
+      activeDocumentsOrder.orderCode,
+      activeDocumentsOrder.contractId,
+      activeDocumentsOrder.contractCode,
     ].map((entry) => String(entry ?? '').trim()).filter(Boolean);
     const normalizedTokens = tokens.map(normalizeText).filter(Boolean);
     return generatedReports
@@ -2620,17 +2624,18 @@ function ServiceOrdersSection({
           && (tokens.includes(sourceId) || normalizedTokens.some((token) => reportName.includes(token)));
       })
       .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
-  }, [documentsByOrderId, documentsOrder, generatedReports]);
+  }, [deferredDocumentsOrder, documentsByOrderId, generatedReports]);
 
   const selectedDocumentsContract = useMemo(() => {
-    if (!documentsOrder) return null;
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder) return null;
     return contracts.find((contract) =>
-      (documentsOrder.contractId && String(contract.id) === String(documentsOrder.contractId))
-      || (documentsOrder.contractCode && String(contract.contractCode) === String(documentsOrder.contractCode))
-      || (documentsOrder.rentalId && String(contract.rentalId) === String(documentsOrder.rentalId))
-      || (documentsOrder.orderCode && String(contract.orderCode) === String(documentsOrder.orderCode)),
+      (activeDocumentsOrder.contractId && String(contract.id) === String(activeDocumentsOrder.contractId))
+      || (activeDocumentsOrder.contractCode && String(contract.contractCode) === String(activeDocumentsOrder.contractCode))
+      || (activeDocumentsOrder.rentalId && String(contract.rentalId) === String(activeDocumentsOrder.rentalId))
+      || (activeDocumentsOrder.orderCode && String(contract.orderCode) === String(activeDocumentsOrder.orderCode)),
     ) ?? null;
-  }, [contracts, documentsOrder]);
+  }, [contracts, deferredDocumentsOrder]);
 
   const selectedDocumentsChangeRows = useMemo(() => {
     const revisions = Array.isArray(selectedDocumentsContract?.revisionHistory)
@@ -2650,31 +2655,33 @@ function ServiceOrdersSection({
   }, [selectedDocumentsContract]);
 
   const selectedDocumentsContractRow = useMemo(() => {
-    if (!documentsOrder && !selectedDocumentsContract) return null;
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder && !selectedDocumentsContract) return null;
     const candidates = [...contractRows, ...hiddenContractRows];
     return candidates.find((contract) =>
       (selectedDocumentsContract?.id && valuesMatch(contract.id, selectedDocumentsContract.id))
       || (selectedDocumentsContract?.contractCode && valuesMatch(contract.contractCode, selectedDocumentsContract.contractCode))
       || (selectedDocumentsContract?.orderCode && valuesMatch(contract.orderCode, selectedDocumentsContract.orderCode))
       || (selectedDocumentsContract?.rentalId && valuesMatch(contract.rentalId, selectedDocumentsContract.rentalId))
-      || (documentsOrder?.contractId && valuesMatch(contract.id, documentsOrder.contractId))
-      || (documentsOrder?.contractCode && valuesMatch(contract.contractCode, documentsOrder.contractCode))
-      || (documentsOrder?.orderCode && valuesMatch(contract.orderCode, documentsOrder.orderCode))
-      || (documentsOrder?.rentalId && valuesMatch(contract.rentalId, documentsOrder.rentalId))
+      || (activeDocumentsOrder?.contractId && valuesMatch(contract.id, activeDocumentsOrder.contractId))
+      || (activeDocumentsOrder?.contractCode && valuesMatch(contract.contractCode, activeDocumentsOrder.contractCode))
+      || (activeDocumentsOrder?.orderCode && valuesMatch(contract.orderCode, activeDocumentsOrder.orderCode))
+      || (activeDocumentsOrder?.rentalId && valuesMatch(contract.rentalId, activeDocumentsOrder.rentalId))
     ) ?? selectedDocumentsContract ?? null;
-  }, [contractRows, documentsOrder, hiddenContractRows, selectedDocumentsContract]);
+  }, [contractRows, deferredDocumentsOrder, hiddenContractRows, selectedDocumentsContract]);
 
   const selectedDocumentsClosureSummary = useMemo(() => {
-    if (!documentsOrder && !selectedDocumentsContractRow) return null;
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder && !selectedDocumentsContractRow) return null;
     const contract = selectedDocumentsContract ?? selectedDocumentsContractRow ?? {};
     const linkedOrder = orderRowsWithMeta.find((row) =>
       valuesMatch(row.contractId, contract.id)
       || valuesMatch(row.contractCode, contract.contractCode)
       || valuesMatch(row.orderCode, contract.orderCode)
       || valuesMatch(row.rentalId, contract.rentalId)
-      || valuesMatch(row.id, documentsOrder?.id)
-      || valuesMatch(row.orderCode, documentsOrder?.orderCode)
-    ) ?? documentsOrder ?? null;
+      || valuesMatch(row.id, activeDocumentsOrder?.id)
+      || valuesMatch(row.orderCode, activeDocumentsOrder?.orderCode)
+    ) ?? activeDocumentsOrder ?? null;
     const rental = rentals.find((entry) =>
       valuesMatch(entry.id, contract.rentalId)
       || valuesMatch(entry.contractId, contract.id)
@@ -2776,7 +2783,7 @@ function ServiceOrdersSection({
           : 'Cierre pendiente',
     };
   }, [
-    documentsOrder,
+    deferredDocumentsOrder,
     effectiveCashMovements,
     finalizedContractOverrides,
     orderRowsWithMeta,
@@ -2786,7 +2793,8 @@ function ServiceOrdersSection({
   ]);
 
   const documentOverviewRows = useMemo(() => {
-    if (!documentsOrder) return [];
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder) return [];
 
     const findLatestReport = (sourceType, nameToken) =>
       documentsForSelectedOrder.find((doc) => doc.sourceType === sourceType)
@@ -2800,10 +2808,10 @@ function ServiceOrdersSection({
       {
         id: 'contract',
         kind: 'contract',
-        title: documentsOrder.contractCode ? `Contrato ${documentsOrder.contractCode}` : `Contrato ${documentsOrder.orderCode}`,
-        description: documentsOrder.contractId ? 'Acuerdo comercial vinculado a la orden.' : 'Contrato pendiente de vincular.',
-        status: documentsOrder.contractId ? 'Disponible' : 'Pendiente',
-        statusClass: documentsOrder.contractId ? 'contract-approved' : 'contract-pending',
+        title: activeDocumentsOrder.contractCode ? `Contrato ${activeDocumentsOrder.contractCode}` : `Contrato ${activeDocumentsOrder.orderCode}`,
+        description: activeDocumentsOrder.contractId ? 'Acuerdo comercial vinculado a la orden.' : 'Contrato pendiente de vincular.',
+        status: activeDocumentsOrder.contractId ? 'Disponible' : 'Pendiente',
+        statusClass: activeDocumentsOrder.contractId ? 'contract-approved' : 'contract-pending',
         generatedAt: contractReport?.generatedAt ?? null,
         format: contractReport?.format ?? 'PDF',
         latestReportId: contractReport?.id ?? null,
@@ -2811,7 +2819,7 @@ function ServiceOrdersSection({
       {
         id: 'inventory',
         kind: 'inventory',
-        title: `Orden inventario ${documentsOrder.orderCode}`,
+        title: `Orden inventario ${activeDocumentsOrder.orderCode}`,
         description: 'Lista operativa para alistar, controlar y devolver items.',
         status: inventoryReport ? 'Generado' : 'Vista previa',
         statusClass: inventoryReport ? 'contract-approved' : 'quote-sent',
@@ -2820,17 +2828,17 @@ function ServiceOrdersSection({
         latestReportId: inventoryReport?.id ?? null,
       },
     ];
-  }, [documentsForSelectedOrder, documentsOrder]);
+  }, [deferredDocumentsOrder, documentsForSelectedOrder]);
 
   const historicalDocumentsForSelectedOrder = useMemo(() => {
-    if (!documentsOrder) return [];
+    if (!deferredDocumentsOrder) return [];
     const latestReportIds = new Set(
       documentOverviewRows
         .map((entry) => String(entry.latestReportId ?? '').trim())
         .filter(Boolean),
     );
     return documentsForSelectedOrder.filter((doc) => !latestReportIds.has(String(doc.id ?? '').trim()));
-  }, [documentOverviewRows, documentsForSelectedOrder, documentsOrder]);
+  }, [deferredDocumentsOrder, documentOverviewRows, documentsForSelectedOrder]);
 
   const selectedOperationalOrder = useMemo(() => {
     if (!operationalOrder) return null;
@@ -2948,6 +2956,8 @@ function ServiceOrdersSection({
 
   const availabilityByItemId = useMemo(
     () => {
+      const needsAvailability = modalOpen && currentStep >= 2;
+      if (!needsAvailability) return new Map();
       const draftContractCode = draft.entityType === 'contract'
         ? String(draft.manualDocumentCode ?? '').trim()
         : '';
@@ -2987,7 +2997,12 @@ function ServiceOrdersSection({
         },
       });
     },
-    [contracts, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, quotes, rentals],
+    [contracts, currentStep, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, modalOpen, quotes, rentals],
+  );
+
+  const itemById = useMemo(
+    () => new Map(items.map((item) => [String(item.id), item])),
+    [items],
   );
 
   const selectedItems = useMemo(() => {
@@ -2997,7 +3012,7 @@ function ServiceOrdersSection({
     ).map((day, index) => normalizeScheduleDay(day, index, draft.deliveryDate || draft.eventDate));
     return draft.items
       .map((line) => {
-        const item = items.find((entry) => entry.id === line.itemId) ?? (line.quickItem
+        const item = itemById.get(String(line.itemId)) ?? (line.quickItem
           ? {
             id: line.itemId,
             name: [line.quickItem.name, line.quickItem.color, line.quickItem.material].filter(Boolean).join(' '),
@@ -3056,7 +3071,7 @@ function ServiceOrdersSection({
         };
       })
       .filter(Boolean);
-  }, [availabilityByItemId, draft.deliveryDate, draft.eventDate, draft.items, draft.pickupDate, draft.scheduleDays, items]);
+  }, [availabilityByItemId, draft.deliveryDate, draft.eventDate, draft.items, draft.pickupDate, draft.scheduleDays, itemById]);
 
   const selectedServices = useMemo(
     () => (draft.services ?? [])
@@ -3639,10 +3654,12 @@ function ServiceOrdersSection({
   );
 
   const filteredCatalog = useMemo(() => {
+    const shouldBuildCatalog = modalOpen && (currentStep === 2 || catalogModalOpen);
+    if (!shouldBuildCatalog) return [];
     const productEntries = items
       .map((item) => {
         if (itemCategoryFilter !== 'all' && item.category !== itemCategoryFilter) return false;
-        const score = getCatalogSearchScore(itemSearch, [
+        const score = getCatalogSearchScore(deferredItemSearch, [
           item.name,
           item.sku,
           item.category,
@@ -3660,7 +3677,7 @@ function ServiceOrdersSection({
       .map((combo) => {
         if (itemCategoryFilter !== 'all' && itemCategoryFilter !== 'COMBOS') return false;
         const ingredientsText = (combo.ingredients ?? []).map((line) => line.itemName).join(' ');
-        const score = getCatalogSearchScore(itemSearch, [
+        const score = getCatalogSearchScore(deferredItemSearch, [
           combo.name,
           combo.sku,
           combo.category,
@@ -3674,7 +3691,7 @@ function ServiceOrdersSection({
     return [...productEntries, ...comboEntries].sort(
       (a, b) => b.searchScore - a.searchScore || a.name.localeCompare(b.name, 'es'),
     );
-  }, [combos, itemCategoryFilter, itemSearch, items]);
+  }, [catalogModalOpen, combos, currentStep, deferredItemSearch, itemCategoryFilter, items, modalOpen]);
 
   const visibleCatalog = useMemo(
     () => filteredCatalog.slice(0, catalogVisibleCount),
@@ -5735,6 +5752,7 @@ function ServiceOrdersSection({
 
   const handleEditContractClick = async (contract) => {
     let fullContract = contract;
+    setContractActionStatus(`Cargando contrato ${contract?.contractCode || contract?.id || ''} para editar...`);
     try {
       if (fullContract?._summaryOnly) {
         fullContract = await api.contracts.ensureFull(
@@ -5745,6 +5763,7 @@ function ServiceOrdersSection({
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo cargar el contrato completo para editar.');
       setMenuState(null);
+      setContractActionStatus('');
       return;
     }
     const linkedOrder = orderRowsWithMeta.find((row) =>
@@ -5883,6 +5902,7 @@ function ServiceOrdersSection({
 
     setMenuState(null);
     openCreateModal('order', 'contract', sourceContract);
+    setContractActionStatus('');
   };
 
   const handleCancelContractClick = (contractRow) => {
@@ -5998,6 +6018,7 @@ function ServiceOrdersSection({
   };
 
   const handleOpenDocumentsFromContract = (contractRow) => {
+    setContractActionStatus(`Abriendo centro documental ${contractRow?.contractCode || contractRow?.orderCode || ''}...`);
     const linkedOrder = orderRowsWithMeta.find(
       (row) =>
         (contractRow.rentalId && row.rentalId === contractRow.rentalId)
@@ -6006,6 +6027,7 @@ function ServiceOrdersSection({
     if (linkedOrder) {
       setDocumentsOrder(linkedOrder);
       setMenuState(null);
+      window.setTimeout(() => setContractActionStatus(''), 150);
       return;
     }
     setDocumentsOrder({
@@ -6019,6 +6041,7 @@ function ServiceOrdersSection({
       documents: [],
     });
     setMenuState(null);
+    window.setTimeout(() => setContractActionStatus(''), 150);
   };
 
   const handleEditContractFromDocuments = async () => {
@@ -6630,6 +6653,14 @@ function ServiceOrdersSection({
   };
 
   const handlePrintOrderDocument = async (kind, orderRow) => {
+    const documentLabel = kind === 'contract'
+      ? 'contrato'
+      : kind === 'inventory'
+        ? 'orden de inventario'
+        : kind === 'route'
+          ? 'hoja de ruta'
+          : 'documento';
+    setContractActionStatus(`Generando ${documentLabel} ${getOrderContractLabel(orderRow)}...`);
     try {
       let preview = null;
       if (kind === 'contract') {
@@ -6686,6 +6717,7 @@ function ServiceOrdersSection({
       setFormError(requestError.message || 'No se pudo abrir el documento seleccionado.');
     } finally {
       setMenuState(null);
+      setContractActionStatus('');
     }
   };
 
@@ -7046,6 +7078,7 @@ function ServiceOrdersSection({
           ))}
         </div>
 
+        {contractActionStatus ? <p className="status">{contractActionStatus}</p> : null}
         {actionFeedback ? <p className="status success">{actionFeedback}</p> : null}
         {formError ? <p className="status error">{formError}</p> : null}
 
