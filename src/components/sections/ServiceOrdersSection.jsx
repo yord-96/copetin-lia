@@ -5751,9 +5751,24 @@ function ServiceOrdersSection({
       || (fullContract?.orderCode && String(row.orderCode ?? '') === String(fullContract.orderCode))
       || (fullContract?.contractCode && String(row.contractCode ?? '') === String(fullContract.contractCode)),
     );
+    let linkedFullRental = null;
+    const linkedRentalIdentifier = fullContract?.rentalId
+      ?? linkedOrder?.rentalId
+      ?? fullContract?.orderCode
+      ?? linkedOrder?.orderCode
+      ?? '';
+    if (linkedRentalIdentifier) {
+      try {
+        linkedFullRental = await api.rentals.getFull(linkedRentalIdentifier);
+      } catch {
+        linkedFullRental = null;
+      }
+    }
 
     const contractPlan = Array.isArray(fullContract?.supplierFulfillmentPlan) ? fullContract.supplierFulfillmentPlan : [];
-    const linkedOrderPlan = Array.isArray(linkedOrder?.supplierFulfillmentPlan) ? linkedOrder.supplierFulfillmentPlan : [];
+    const linkedOrderPlan = Array.isArray(linkedFullRental?.supplierFulfillmentPlan) && linkedFullRental.supplierFulfillmentPlan.length > 0
+      ? linkedFullRental.supplierFulfillmentPlan
+      : Array.isArray(linkedOrder?.supplierFulfillmentPlan) ? linkedOrder.supplierFulfillmentPlan : [];
 
     const getLineDayKeys = (lines = []) => new Set(
       (Array.isArray(lines) ? lines : [])
@@ -5764,9 +5779,13 @@ function ServiceOrdersSection({
     );
 
     const contractItems = Array.isArray(fullContract?.items) ? fullContract.items : [];
-    const linkedOrderItems = Array.isArray(linkedOrder?.items) ? linkedOrder.items : [];
+    const linkedOrderItems = Array.isArray(linkedFullRental?.items) && linkedFullRental.items.length > 0
+      ? linkedFullRental.items
+      : Array.isArray(linkedOrder?.items) ? linkedOrder.items : [];
     const contractServices = Array.isArray(fullContract?.services) ? fullContract.services : [];
-    const linkedOrderServices = Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
+    const linkedOrderServices = Array.isArray(linkedFullRental?.services) && linkedFullRental.services.length > 0
+      ? linkedFullRental.services
+      : Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
     const recoverHistoricZeroPricedItems = (lines = [], subtotalBs = 0) => {
       const safeLines = Array.isArray(lines) ? lines : [];
       const currentSubtotalBs = safeLines.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
@@ -5808,12 +5827,39 @@ function ServiceOrdersSection({
         Number(line?.grossLineTotalBs ?? 0),
         Number(line?.lineTotalBs ?? 0),
       ) > 0);
-    const shouldUseLinkedOrderPrices = linkedOrderItems.length > 0
-      && !linesHaveMoney(contractItems)
-      && linesHaveMoney(linkedOrderItems);
-    const sourceItems = (shouldRecoverDailyLines || shouldUseLinkedOrderPrices) && linkedOrderItems.length > 0
+    const lineMoneyValue = (line) => Math.max(
+      Number(line?.unitPriceBs ?? 0),
+      Number(line?.rentalPriceBs ?? 0),
+      Number(line?.grossLineTotalBs ?? 0),
+      Number(line?.lineTotalBs ?? 0),
+      0,
+    );
+    const lineMatchKey = (line, index) => String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? line?.itemName ?? index ?? '').trim();
+    const linkedMoneyByKey = new Map(linkedOrderItems.map((line, index) => [lineMatchKey(line, index), line]));
+    const linkedMoneyByItem = new Map(linkedOrderItems.map((line) => [String(line?.itemId ?? '').trim(), line]).filter(([key]) => key));
+    const linkedMoneyByName = new Map(linkedOrderItems.map((line) => [normalizeText(line?.itemName ?? line?.name), line]).filter(([key]) => key));
+    const applyLinkedMoneyToContractLines = (lines = []) => (Array.isArray(lines) ? lines : []).map((line, index) => {
+      if (lineMoneyValue(line) > 0) return line;
+      const fallback = linkedMoneyByKey.get(lineMatchKey(line, index))
+        ?? linkedMoneyByItem.get(String(line?.itemId ?? '').trim())
+        ?? linkedMoneyByName.get(normalizeText(line?.itemName ?? line?.name))
+        ?? null;
+      if (!fallback || lineMoneyValue(fallback) <= 0) return line;
+      const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? fallback?.quantity ?? 1)));
+      const fallbackUnitPriceBs = Math.max(Number(fallback.unitPriceBs ?? 0), Number(fallback.rentalPriceBs ?? 0), 0);
+      const fallbackLineTotalBs = Math.max(Number(fallback.lineTotalBs ?? 0), quantity * fallbackUnitPriceBs, 0);
+      return {
+        ...line,
+        unitPriceBs: fallbackUnitPriceBs || Number((fallbackLineTotalBs / quantity).toFixed(2)),
+        grossLineTotalBs: Number(fallback.grossLineTotalBs ?? fallbackLineTotalBs),
+        lineTotalBs: fallbackLineTotalBs,
+      };
+    });
+    const sourceItems = shouldRecoverDailyLines && linkedOrderItems.length > 0
       ? linkedOrderItems
-      : contractItems;
+      : contractItems.length > 0
+        ? applyLinkedMoneyToContractLines(contractItems)
+        : linkedOrderItems;
     const recoveredSourceItems = recoverHistoricZeroPricedItems(
       sourceItems,
       fullContract?.totals?.itemsSubtotalBs
