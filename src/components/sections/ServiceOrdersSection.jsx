@@ -354,6 +354,7 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
     cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
     cashRegisteredAt: entry?.cashRegisteredAt ?? null,
+    reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
   };
 };
 
@@ -1849,7 +1850,11 @@ function ServiceOrdersSection({
         toMoneyNumber(linkedRental?.totals?.paidAtRentalBs),
       );
       const rowPenaltiesBs = toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs);
-      const rowChargeTargetBs = Number((totalBs + Math.max(rowLedgerTotals.chargesBs, rowPenaltiesBs)).toFixed(2));
+      const rowGuaranteeReserveBs = Math.max(guaranteeBs, rowLedgerTotals.guaranteeBs);
+      const rowChargesBs = Math.max(rowLedgerTotals.chargesBs, rowPenaltiesBs);
+      const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowChargesBs);
+      const rowUncoveredChargesBs = Math.max(0, Number((rowChargesBs - rowGuaranteeAppliedBs).toFixed(2)));
+      const rowChargeTargetBs = Number((totalBs + rowUncoveredChargesBs).toFixed(2));
       const economicDueBs = Math.max(0, Number((rowChargeTargetBs - collectionRegisteredBs).toFixed(2)));
       const paidOnAccountBs = Math.max(
         0,
@@ -1873,11 +1878,13 @@ function ServiceOrdersSection({
       const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeBs > 0);
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : hasReturnedGuarantee
-          ? 'returned'
-          : !isGuaranteeValidated
-          ? 'pending'
-          : 'held';
+        : rowGuaranteeAppliedBs >= rowGuaranteeReserveBs && rowGuaranteeReserveBs > 0
+          ? 'charged'
+          : hasReturnedGuarantee
+            ? 'returned'
+            : !isGuaranteeValidated
+              ? 'pending'
+              : 'held';
       return {
         ...contract,
         status,
@@ -2256,12 +2263,15 @@ function ServiceOrdersSection({
       if (entry.type !== 'guarantee') return false;
       const entryId = normalizeText(entry.id);
       const entryNote = normalizeText(entry.note);
+      const sameAmount = Math.abs(toMoneyNumber(entry.amountBs) - guaranteeValidatedBs) < 0.01;
       return (
-        entryId.includes('validated-guarantee')
+        sameAmount
+        || entryId.includes('validated-guarantee')
         || entryId.includes('garantia-validada')
         || entryNote.includes('garantia validada')
         || entryNote.includes('garantia ingresada')
         || entryNote.includes('ingreso garantia')
+        || entryNote.includes('garantia separada')
       );
     });
     const economicLedgerBase = [
@@ -2414,20 +2424,29 @@ function ServiceOrdersSection({
     const effectiveGuaranteeDeclaredBs = Math.max(guaranteeDeclaredBs, ledgerTotals.guaranteeBs);
     const effectiveGuaranteeValidatedBs = Math.max(guaranteeValidatedBs, ledgerTotals.guaranteeBs);
     const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
-    const ledgerChargeTargetBs = Number((totalBs + effectiveChargesBs).toFixed(2));
-    const ledgerAppliedToRentalBs = Math.min(ledgerTotals.receivedBs, ledgerChargeTargetBs);
-    const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerTotals.receivedBs).toFixed(2)));
-    const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerTotals.receivedBs - ledgerChargeTargetBs - ledgerTotals.refundedBs).toFixed(2)));
     const guaranteeReserveBs = Math.max(ledgerTotals.guaranteeBs, effectiveGuaranteeValidatedBs);
+    const reclassifiedGuaranteeBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'guarantee' && entry.reclassifiedFromPayment
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
+    const rentalReceivedBs = Math.max(0, Number((ledgerTotals.receivedBs - reclassifiedGuaranteeBs).toFixed(2)));
+    const guaranteeAppliedToChargesBs = Math.min(guaranteeReserveBs, effectiveChargesBs);
+    const uncoveredChargesBs = Math.max(0, Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)));
+    const ledgerChargeTargetBs = Number((totalBs + uncoveredChargesBs).toFixed(2));
+    const ledgerAppliedToRentalBs = Math.min(rentalReceivedBs, ledgerChargeTargetBs);
+    const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - rentalReceivedBs).toFixed(2)));
+    const excessPaymentBs = Math.max(0, Number((rentalReceivedBs - ledgerChargeTargetBs).toFixed(2)));
+    const ledgerRefundSuggestedBs = Math.max(0, Number((excessPaymentBs - ledgerTotals.refundedBs).toFixed(2)));
     const guaranteeRefundAvailableBs = Math.max(
       0,
-      Number((guaranteeReserveBs - ledgerDebtBs - ledgerTotals.chargesBs - ledgerTotals.refundedBs).toFixed(2)),
+      Number((guaranteeReserveBs - guaranteeAppliedToChargesBs - ledgerTotals.refundedBs).toFixed(2)),
     );
     const realIncomeBs = Number((totalBs + effectiveChargesBs).toFixed(2));
     const totalManagedBs = Number((rentalTotalBs + effectiveGuaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
     const effectivePaidBs = usesLedgerBalance
-      ? ledgerTotals.receivedBs
+      ? rentalReceivedBs
       : paidBs;
     const paidOnAccountBs = Math.max(
       0,
@@ -2440,11 +2459,11 @@ function ServiceOrdersSection({
         : sum
     ), 0);
     const cashRegisteredBs = Math.max(incomeBs, ledgerCashRegisteredBs);
-    const cashToRegisterBs = Math.max(0, ledgerChargeTargetBs - collectionRegisteredBs);
+    const cashToRegisterBs = Math.max(0, Number((ledgerChargeTargetBs - collectionRegisteredBs).toFixed(2)));
     const cashCollectionSuggestedBs = cashToRegisterBs;
     const managedDebtBs = usesLedgerBalance
-      ? cashCollectionSuggestedBs
-      : Math.max(0, Number((totalManagedBs - paidOnAccountBs).toFixed(2)));
+      ? ledgerDebtBs
+      : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
     const effectiveBalanceBs = managedDebtBs;
     const balanceDetailLabel = usesLedgerBalance
       ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
@@ -2485,14 +2504,23 @@ function ServiceOrdersSection({
       ledgerDebtBs,
       ledgerRefundSuggestedBs,
       guaranteeReserveBs,
+      guaranteeAppliedToChargesBs,
+      uncoveredChargesBs,
+      excessPaymentBs,
+      reclassifiedGuaranteeBs,
+      rentalReceivedBs,
       realIncomeBs,
       guaranteeDeclaredBs: effectiveGuaranteeDeclaredBs,
       guaranteeValidatedBs: effectiveGuaranteeValidatedBs,
       guaranteeStatus: effectiveGuaranteeDeclaredBs <= 0
         ? 'Sin garantia'
-        : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
-          ? 'Pagada'
-          : 'Debe',
+        : guaranteeAppliedToChargesBs >= guaranteeReserveBs && guaranteeReserveBs > 0
+          ? 'Cobrada por danos'
+          : ledgerTotals.refundedBs > 0 && guaranteeRefundAvailableBs <= 0
+            ? 'Devuelta'
+            : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
+              ? 'Retenida'
+              : 'Debe',
       guaranteeMethod: formatPaymentMethodLabel(
         contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.guarantee?.paymentMethod,
         contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.guarantee?.paymentAccount,
@@ -6016,37 +6044,108 @@ function ServiceOrdersSection({
     }
   };
 
-  const addContractEconomicLedgerQuickEntry = async ({ type, amountBs, note, successMessage }) => {
-    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
-    const amount = Math.max(0, toMoneyNumber(amountBs));
-    if (amount <= 0) return;
+  const printGuaranteeOperationReceipt = ({ title, amountBs, detail, guaranteeBeforeBs, guaranteeAfterBs, receiptWindow: providedWindow = null }) => {
+    const contractCode = contractEconomicsData?.contract?.contractCode || contractEconomicsData?.contract?.id || '';
+    const customerName = contractEconomicsData?.contract?.customerName || 'Cliente';
+    const receiptWindow = providedWindow || window.open('', '_blank', 'width=720,height=860');
+    if (!receiptWindow) return;
+    receiptWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} ${contractCode}</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#10254f;background:#f7f4ef}.ticket{max-width:680px;margin:auto;background:#fff;border:1px solid #eaded4;border-radius:16px;padding:26px}.brand{color:#e65300;font-weight:800;letter-spacing:.08em}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #e65300;padding-bottom:16px}.head h1{margin:6px 0 0;font-size:24px}.amount{font-size:28px;font-weight:900;color:#0b2d63}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.box{border:1px solid #e5ddd6;border-radius:12px;padding:14px}.box span{display:block;font-size:11px;text-transform:uppercase;color:#7a6f68;font-weight:800;margin-bottom:6px}.detail{margin-top:18px;padding:16px;border-radius:12px;background:#fff8f1;line-height:1.5}.foot{margin-top:26px;padding-top:14px;border-top:1px solid #e5ddd6;font-size:12px;color:#6b7280}@media print{body{background:#fff;padding:0}.ticket{border:0;box-shadow:none}}</style></head><body><main class="ticket"><div class="head"><div><div class="brand">EL COPETIN</div><h1>${title}</h1><p>Contrato ${contractCode} · ${customerName}</p></div><div class="amount">${formatBs(amountBs)}</div></div><div class="grid"><div class="box"><span>Garantia antes</span><strong>${formatBs(guaranteeBeforeBs)}</strong></div><div class="box"><span>Garantia despues</span><strong>${formatBs(guaranteeAfterBs)}</strong></div></div><div class="detail">${detail}</div><div class="foot">Comprobante interno generado el ${formatDateTime(new Date().toISOString())}. No representa un nuevo ingreso de efectivo cuando se trata de una reclasificacion o aplicacion de garantia.</div></main><script>window.onload=()=>{window.print();}</script></body></html>`);
+    receiptWindow.document.close();
+  };
 
-    const createdByName = String(
-      currentUser?.fullName
-        ?? currentUser?.name
-        ?? currentUser?.username
-        ?? currentUser?.email
-        ?? 'Sistema',
-    ).trim() || 'Sistema';
-    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])]
-      .reverse()
-      .find((entry) => entry.type !== 'note' && entry.paymentMethod);
+  const handleSeparateEconomicGuarantee = async () => {
+    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    const declaredGapBs = Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs);
+    const amount = Math.max(0, contractEconomicsData.excessPaymentBs > 0 ? contractEconomicsData.excessPaymentBs : declaredGapBs);
+    if (amount <= 0) return;
+    const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
+    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])].reverse().find((entry) => entry.type === 'deposit' && entry.paymentMethod);
+    const isReclassification = contractEconomicsData.excessPaymentBs > 0;
+    let cashResult = null;
+    let movementId = null;
+    if (!isReclassification) {
+      cashResult = await api.cash.createManualMovement({
+        type: 'ingreso',
+        cashBoxType: 'BIG_CASH',
+        amountBs: amount,
+        description: `Ingreso garantia: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: 'garantia',
+        paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
+        paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
+        responsible: createdByName,
+        notes: `Garantia recibida para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || ''}`,
+        linkedRentalId: contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '',
+        linkedContractId: contractEconomicsData.contract?.id ?? '',
+        linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+        accountingTag: 'validated_guarantee',
+        createdBy: createdByName,
+      });
+      movementId = resolveEconomicMovementId(cashResult);
+    }
     const entry = {
       id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      type,
+      type: 'guarantee',
       amountBs: amount,
-      paymentMethod: type === 'note' ? '' : lastPaidEntry?.paymentMethod || 'efectivo',
+      paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
       paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
-      note,
+      note: isReclassification
+        ? `Excedente de pago reclasificado como garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`
+        : `Garantia recibida para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+      createdAt: new Date().toISOString(),
+      createdByName,
+      reclassifiedFromPayment: isReclassification,
+      cashMovementId: movementId,
+      cashReceiptCode: String(cashResult?.receiptCode ?? cashResult?.movement?.receiptCode ?? '').trim(),
+      cashRegisteredAt: cashResult?.createdAt ?? cashResult?.movement?.createdAt ?? null,
+    };
+    const receiptWindow = isReclassification ? window.open('', '_blank', 'width=720,height=860') : null;
+    const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], isReclassification ? 'Excedente separado como garantia.' : 'Garantia registrada en Caja Grande.');
+    if (updated) {
+      if (isReclassification) {
+        printGuaranteeOperationReceipt({
+          title: 'Comprobante de separacion de garantia',
+          amountBs: amount,
+          detail: 'El excedente del pago fue separado como garantia y ya no se considera pago del alquiler.',
+          guaranteeBeforeBs: contractEconomicsData.guaranteeReserveBs,
+          guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs + amount,
+          receiptWindow,
+        });
+      } else if (movementId) {
+        await handlePrintEconomicReceipt({ id: movementId });
+      }
+      resetContractEconomicLedgerForm();
+    }
+  };
+
+  const handleApplyEconomicCharge = async () => {
+    if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    const pendingChargeBs = Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs);
+    const amount = Math.min(pendingChargeBs, contractEconomicsData.guaranteeRefundAvailableBs || contractEconomicsData.guaranteeReserveBs);
+    if (amount <= 0) return;
+    const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
+    const entry = {
+      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'charge',
+      amountBs: amount,
+      paymentMethod: '',
+      paymentAccount: '',
+      note: `Danos/faltantes aplicados contra la garantia de ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
       createdAt: new Date().toISOString(),
       createdByName,
     };
-
-    const updated = await saveContractEconomicLedgerRows(
-      [...(contractEconomicsData.economicLedger ?? []), entry],
-      successMessage,
-    );
-    if (updated) resetContractEconomicLedgerForm();
+    const receiptWindow = window.open('', '_blank', 'width=720,height=860');
+    const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], 'Dano o faltante aplicado contra la garantia.');
+    if (updated) {
+      printGuaranteeOperationReceipt({
+        title: 'Comprobante de aplicacion de garantia',
+        amountBs: amount,
+        detail: 'Este importe fue descontado de la garantia para cubrir danos o faltantes registrados en la devolucion.',
+        guaranteeBeforeBs: contractEconomicsData.guaranteeReserveBs,
+        guaranteeAfterBs: Math.max(0, contractEconomicsData.guaranteeReserveBs - amount),
+        receiptWindow,
+      });
+      resetContractEconomicLedgerForm();
+    }
   };
 
   const handleSubmitContractEconomicGuaranteeRefund = async (event) => {
@@ -7651,6 +7750,55 @@ function ServiceOrdersSection({
                 </article>
               </div>
 
+              <section style={{ marginBottom: '14px', border: '1px solid #eaded4', borderRadius: '14px', background: '#fffaf5', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ color: '#e65300', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase' }}>Asistente economico</span>
+                    <h4 style={{ margin: '4px 0 6px', color: '#0b2d63' }}>Que corresponde hacer ahora</h4>
+                    <p style={{ margin: 0, color: '#667085' }}>El sistema separa alquiler, garantia, danos y devoluciones sin contar dos veces el mismo dinero.</p>
+                  </div>
+                  <span style={{ borderRadius: '999px', padding: '7px 12px', background: contractEconomicsData.managedDebtBs > 0 ? '#fff1e8' : '#ecfdf3', color: contractEconomicsData.managedDebtBs > 0 ? '#c2410c' : '#15803d', fontWeight: 800 }}>
+                    {contractEconomicsData.managedDebtBs > 0 ? `Pendiente ${formatBs(contractEconomicsData.managedDebtBs)}` : 'Alquiler pagado'}
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px', marginTop: '14px' }}>
+                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
+                    <small style={{ color: '#667085' }}>Pago aplicado al alquiler</small>
+                    <strong style={{ display: 'block', marginTop: '4px', color: '#0b2d63', fontSize: '18px' }}>{formatBs(Math.min(contractEconomicsData.rentalReceivedBs, contractEconomicsData.ledgerChargeTargetBs))}</strong>
+                    <span style={{ color: '#667085', fontSize: '12px' }}>Objetivo: {formatBs(contractEconomicsData.ledgerChargeTargetBs)}</span>
+                  </article>
+                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
+                    <small style={{ color: '#667085' }}>Excedente disponible</small>
+                    <strong style={{ display: 'block', marginTop: '4px', color: '#7c3aed', fontSize: '18px' }}>{formatBs(contractEconomicsData.excessPaymentBs)}</strong>
+                    <span style={{ color: '#667085', fontSize: '12px' }}>Puede separarse como garantia</span>
+                  </article>
+                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
+                    <small style={{ color: '#667085' }}>Garantia disponible</small>
+                    <strong style={{ display: 'block', marginTop: '4px', color: '#7c3aed', fontSize: '18px' }}>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
+                    <span style={{ color: '#667085', fontSize: '12px' }}>{contractEconomicsData.guaranteeStatus}</span>
+                  </article>
+                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
+                    <small style={{ color: '#667085' }}>Danos cubiertos por garantia</small>
+                    <strong style={{ display: 'block', marginTop: '4px', color: '#c2410c', fontSize: '18px' }}>{formatBs(contractEconomicsData.guaranteeAppliedToChargesBs)}</strong>
+                    <span style={{ color: '#667085', fontSize: '12px' }}>Sin cobrar dos veces al cliente</span>
+                  </article>
+                </div>
+                {canManageContractEconomicLedger && (contractEconomicsData.excessPaymentBs > 0 || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs || contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs) ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px' }}>
+                    {(contractEconomicsData.excessPaymentBs > 0 || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs) ? (
+                      <button type="button" className="primary-button" onClick={handleSeparateEconomicGuarantee} disabled={readOnly || isSavingContractEconomicsLedger}>
+                        {contractEconomicsData.excessPaymentBs > 0 ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)} como garantia` : `Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
+                      </button>
+                    ) : null}
+                    {contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs && contractEconomicsData.guaranteeRefundAvailableBs > 0 ? (
+                      <button type="button" className="ghost-button" onClick={handleApplyEconomicCharge} disabled={readOnly || isSavingContractEconomicsLedger}>
+                        Aplicar danos a garantia {formatBs(Math.min(contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs, contractEconomicsData.guaranteeRefundAvailableBs))}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+
               <div className="contract-economics-story-layout">
                 <section className="contract-economics-flow-card">
                   <form className="contract-economics-collect compact" onSubmit={handleSubmitContractEconomicCollection}>
@@ -7798,7 +7946,7 @@ function ServiceOrdersSection({
                   </div>
                   <div>
                     <span>Dano descontado</span>
-                    <strong>- {formatBs(contractEconomicsData.ledgerTotals.chargesBs)}</strong>
+                    <strong>- {formatBs(contractEconomicsData.guaranteeAppliedToChargesBs)}</strong>
                   </div>
                   <div>
                     <span>Devolucion al cliente</span>
@@ -7852,25 +8000,15 @@ function ServiceOrdersSection({
                   <div className="contract-economics-quick-actions">
                     <button
                       type="button"
-                      onClick={() => addContractEconomicLedgerQuickEntry({
-                        type: 'guarantee',
-                        amountBs: Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs),
-                        note: `Garantia separada del pago total recibido para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
-                        successMessage: 'Garantia separada del pago total.',
-                      })}
-                      disabled={readOnly || isSavingContractEconomicsLedger || Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs) <= 0}
+                      onClick={handleSeparateEconomicGuarantee}
+                      disabled={readOnly || isSavingContractEconomicsLedger || (contractEconomicsData.excessPaymentBs <= 0 && Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0)}
                     >
-                      Separar garantia {formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerTotals.guaranteeBs))}
+                      {contractEconomicsData.excessPaymentBs > 0 ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)}` : `Separar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
                     </button>
                     <button
                       type="button"
-                      onClick={() => addContractEconomicLedgerQuickEntry({
-                        type: 'charge',
-                        amountBs: Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs),
-                        note: `Cobro de danos/faltantes aplicado contra garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
-                        successMessage: 'Cobro por dano/faltante aplicado a la garantia.',
-                      })}
-                      disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.ledgerTotals.guaranteeBs <= 0 || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0}
+                      onClick={handleApplyEconomicCharge}
+                      disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.guaranteeRefundAvailableBs <= 0 || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0}
                     >
                       Aplicar dano {formatBs(Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs))}
                     </button>

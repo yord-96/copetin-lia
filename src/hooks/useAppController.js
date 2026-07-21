@@ -240,14 +240,16 @@ export const useAppController = () => {
           ['contracts', 'rentals'],
           'open-service-orders',
         );
-        const [contractsData, hiddenContractsData, rentalsData] = await Promise.all([
+        const [contractsData, hiddenContractsData, rentalsData, cashMovementsData] = await Promise.all([
           api.contracts.list(),
           api.contracts.listHidden(),
           api.rentals.list(),
+          api.cash.listMovements(),
         ]);
         setContracts(contractsData);
         setHiddenContracts(hiddenContractsData);
         setRentals(rentalsData);
+        setCashMovements(cashMovementsData);
       };
     } else if (activeTab === 'asistencia') {
       group = 'attendance';
