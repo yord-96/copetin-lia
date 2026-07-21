@@ -240,16 +240,19 @@ export const useAppController = () => {
           ['contracts', 'rentals'],
           'open-service-orders',
         );
-        const [contractsData, hiddenContractsData, rentalsData, cashMovementsData] = await Promise.all([
+        const [contractsData, hiddenContractsData, rentalsData] = await Promise.all([
           api.contracts.list(),
           api.contracts.listHidden(),
           api.rentals.list(),
-          api.cash.listMovements(),
         ]);
         setContracts(contractsData);
         setHiddenContracts(hiddenContractsData);
         setRentals(rentalsData);
-        setCashMovements(cashMovementsData);
+        api.cash.listMovements()
+          .then(setCashMovements)
+          .catch((cashError) => {
+            console.warn('[copetin] No se pudieron cargar movimientos de caja en segundo plano.', cashError);
+          });
       };
     } else if (activeTab === 'asistencia') {
       group = 'attendance';
@@ -1132,7 +1135,25 @@ export const useAppController = () => {
         ...payload,
         ...getCurrentUserTrace(),
       });
-      await loadData();
+      setRentals((current) => current.map((rental) => (
+        rental.id === cancelled.id ? { ...rental, ...cancelled } : rental
+      )));
+      setContracts((current) => current.map((contract) => (
+        (payload.contractId && contract.id === payload.contractId)
+          || (cancelled.contractCode && contract.contractCode === cancelled.contractCode)
+          || (cancelled.orderCode && contract.orderCode === cancelled.orderCode)
+          ? {
+            ...contract,
+            status: 'anulado',
+            cancelledAt: cancelled.cancelledAt,
+            cancellationPenaltyPercent: cancelled.cancellationPenaltyPercent,
+            cancellationPenaltyBs: cancelled.cancellationPenaltyBs,
+            cancellationReason: cancelled.cancellationReason,
+            cancellationCutoffDate: cancelled.cancellationCutoffDate,
+          }
+          : contract
+      )));
+      void loadData({ silent: true });
       return cancelled;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo anular el contrato.');

@@ -55,6 +55,12 @@ const CASH_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
   'contracts',
   'rentals',
 ]);
+const RENTAL_CANCEL_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'contracts',
+  'rentals',
+  'deliveries',
+]);
 
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
@@ -1129,6 +1135,9 @@ const subscribeToDataChanges = (callback) => {
 const getTargetedMutationCollections = (domain, method) => {
   if (domain === 'cash') {
     return CASH_MOVEMENT_PATCH_COLLECTIONS;
+  }
+  if (domain === 'rentals' && method === 'cancel') {
+    return RENTAL_CANCEL_PATCH_COLLECTIONS;
   }
   if (domain !== 'contracts') return null;
   if (method === 'create') return CONTRACT_CREATE_PATCH_COLLECTIONS;
