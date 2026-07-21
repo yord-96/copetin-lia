@@ -1305,7 +1305,7 @@ function ServiceOrdersSection({
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
-  const [cancelReason, setCancelReason] = useState('');
+  const cancelReasonRef = useRef(null);
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -5737,7 +5737,6 @@ function ServiceOrdersSection({
       ),
       cancellationPenaltyBs: Number(contractRow?.cancellationPenaltyBs ?? 0),
     });
-    setCancelReason(String(contractRow?.cancellationReason ?? '').trim());
     setMenuState(null);
   };
 
@@ -6763,20 +6762,20 @@ function ServiceOrdersSection({
 
   const handleCancelOrderClick = (orderRow) => {
     setOrderToCancel(orderRow);
-    setCancelReason('');
     setMenuState(null);
   };
 
   const closeCancelOrderDialog = () => {
     if (isSubmitting) return;
     setOrderToCancel(null);
-    setCancelReason('');
   };
 
   const confirmCancelOrder = async () => {
     if (!orderToCancel) return;
-    if (!String(cancelReason ?? '').trim()) {
+    const cancellationReason = String(cancelReasonRef.current?.value ?? '').trim();
+    if (!cancellationReason) {
       setFormError('Debes escribir por que se esta anulando el contrato.');
+      cancelReasonRef.current?.focus();
       return;
     }
     if (!beginSubmit()) return;
@@ -6785,14 +6784,13 @@ function ServiceOrdersSection({
       const cancelled = await onCancelOrderContract?.({
         id: orderToCancel.rentalId,
         contractId: orderToCancel.contractId,
-        reason: cancelReason,
+        reason: cancellationReason,
       });
       const penaltyBs = Number(cancelled?.cancellationPenaltyBs ?? orderToCancel.cancellationPenaltyBs ?? 0);
       setActionFeedback(
         `Contrato ${orderToCancel.contractCode || orderToCancel.orderCode} anulado. Penalidad aplicada: ${formatBs(penaltyBs)}.`,
       );
       setOrderToCancel(null);
-      setCancelReason('');
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo anular el contrato.');
     } finally {
@@ -9253,8 +9251,8 @@ function ServiceOrdersSection({
             <label className="orders-note-field">
               Motivo de anulacion
               <textarea
-                value={cancelReason}
-                onChange={(event) => setCancelReason(event.target.value)}
+                ref={cancelReasonRef}
+                defaultValue={String(orderToCancel?.cancellationReason ?? '').trim()}
                 placeholder="Ej: cliente posterga el evento."
                 required
               />
