@@ -17,6 +17,37 @@ const PARTIAL_BOOTSTRAP_COLLECTIONS = Object.freeze([
   ...DEFERRED_BOOTSTRAP_COLLECTIONS,
   ...SUMMARIZED_BOOTSTRAP_COLLECTIONS,
 ]);
+const CONTRACT_CREATE_PATCH_COLLECTIONS = Object.freeze([
+  'clients',
+  'items',
+  'contracts',
+  'systemAuditLog',
+]);
+const CONTRACT_UPDATE_PATCH_COLLECTIONS = Object.freeze([
+  'clients',
+  'items',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'calendarEvents',
+  'generatedReports',
+  'inventoryMovements',
+  'systemAuditLog',
+]);
+const CONTRACT_REMOVE_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'quotes',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'inventoryMovements',
+  'cashMovements',
+  'generatedReports',
+  'supplierLoans',
+  'systemAuditLog',
+]);
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
 const SYNC_THROTTLE_MS = 2000;
@@ -60,8 +91,11 @@ let remotePresenceUnsupported = false;
 let mutationBatchDepth = 0;
 let mutationBatchPreflightPromise = null;
 let mutationBatchDirty = false;
+let mutationBatchCollections = null;
+let mutationBatchBeforeState = null;
 const loadedServerCollections = new Set();
 let serverStateIsPartial = false;
+let localServerCommitSerial = 0;
 
 const getBridge = () => getWebBridge();
 
@@ -246,6 +280,22 @@ const exportLocalState = async () => {
   return storage.exportState();
 };
 
+const exportLocalCollections = async (names = []) => {
+  const storage = getLocalStorageBridge();
+  if (storage?.exportCollections) {
+    return storage.exportCollections(names);
+  }
+  const state = await exportLocalState();
+  if (!state) return null;
+  const snapshot = { settings: state.settings ?? {} };
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(state, name)) {
+      snapshot[name] = state[name];
+    }
+  }
+  return snapshot;
+};
+
 const fetchServerState = async (reason = 'sync', { bootstrap = false } = {}) => {
   serverStateFetchCount += 1;
   const requestNumber = serverStateFetchCount;
@@ -304,6 +354,48 @@ const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') =>
   await fetchServerCollections(missingNames, reason);
 };
 
+
+const fetchFullServerContract = async (identifier, reason = 'contract-full-load') => {
+  const requestedId = String(identifier ?? '').trim();
+  if (!requestedId) {
+    throw new Error('Debes indicar el contrato que deseas cargar.');
+  }
+
+  const response = await fetch(getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el contrato completo.');
+  }
+
+  const payload = await response.json();
+  const contract = payload?.contract ?? null;
+  if (!contract?.id) {
+    throw new Error('El servidor no devolvio el contrato completo.');
+  }
+
+  if (payload?.revision) {
+    rememberServerRevision(payload.revision);
+  }
+
+  const localSnapshot = await exportLocalCollections(['contracts']);
+  const currentContracts = Array.isArray(localSnapshot?.contracts) ? localSnapshot.contracts : [];
+  const nextContracts = currentContracts.some((entry) => String(entry?.id ?? '') === String(contract.id))
+    ? currentContracts.map((entry) => (
+      String(entry?.id ?? '') === String(contract.id) ? contract : entry
+    ))
+    : [contract, ...currentContracts];
+
+  await mergeLocalState({ contracts: nextContracts });
+  console.info('[copetin-sync] Contrato completo cargado.', {
+    reason,
+    contractId: contract.id,
+    contractCode: contract.contractCode ?? null,
+  });
+  return contract;
+};
+
 const fetchServerMeta = async () => {
   const response = await fetch(getServerStateUrl('?meta=1'), {
     cache: 'no-store',
@@ -317,7 +409,33 @@ const fetchServerMeta = async () => {
 
 const getKnownLocalRevision = () => lastSharedRevision ?? getCachedServerRevision();
 
-const ensureServerStateReadyForMutation = async ({ required = true, reason = 'mutation-preflight' } = {}) => {
+const getRevisionVersion = (revision) => {
+  const match = String(revision ?? '').trim().match(/^(\d+)(?::|$)/);
+  return match ? Number(match[1]) : null;
+};
+
+const isIncomingRevisionNewer = (incomingRevision, currentRevision = getKnownLocalRevision()) => {
+  const incomingVersion = getRevisionVersion(incomingRevision);
+  const currentVersion = getRevisionVersion(currentRevision);
+  if (incomingVersion !== null && currentVersion !== null) {
+    return incomingVersion > currentVersion;
+  }
+  return Boolean(incomingRevision && incomingRevision !== currentRevision);
+};
+
+const rememberServerRevision = (revision) => {
+  if (!revision) return;
+  lastSharedRevision = revision;
+  setCachedServerRevision(revision);
+  lastSharedSyncAt = Date.now();
+  hasLoadedServerState = true;
+};
+
+const ensureServerStateReadyForMutation = async ({
+  required = true,
+  reason = 'mutation-preflight',
+  requiredCollections = null,
+} = {}) => {
   if (!shouldUseServerState()) {
     return;
   }
@@ -327,11 +445,14 @@ const ensureServerStateReadyForMutation = async ({ required = true, reason = 'mu
   }
 
   if (serverStateIsPartial) {
-    const missingCollections = PARTIAL_BOOTSTRAP_COLLECTIONS.filter(
+    const requestedCollections = Array.isArray(requiredCollections) && requiredCollections.length
+      ? requiredCollections.filter((name) => PARTIAL_BOOTSTRAP_COLLECTIONS.includes(name))
+      : PARTIAL_BOOTSTRAP_COLLECTIONS;
+    const missingCollections = requestedCollections.filter(
       (name) => !loadedServerCollections.has(name),
     );
     if (missingCollections.length) {
-      await fetchServerCollections(missingCollections, `${reason}:complete-partial-state`);
+      await fetchServerCollections(missingCollections, `${reason}:load-required-collections`);
     }
   }
 
@@ -419,7 +540,8 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
   if (!isLocalHost() && new TextEncoder().encode(serializedPayload).length > DIRECT_STATE_SAVE_MAX_BYTES) {
     const payload = await pushServerStateInChunks(state);
     if (payload?.revision) {
-      lastSharedRevision = payload.revision;
+      rememberServerRevision(payload.revision);
+      localServerCommitSerial += 1;
     }
     return payload;
   }
@@ -449,21 +571,21 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
 
   const payload = await response.json().catch(() => null);
   if (payload?.revision) {
-    lastSharedRevision = payload.revision;
-    setCachedServerRevision(payload.revision);
+    rememberServerRevision(payload.revision);
+    localServerCommitSerial += 1;
   }
   return payload;
 };
 
 const stableJson = (value) => JSON.stringify(value ?? null);
 
-const buildStatePatch = (beforeState, afterState) => {
+const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLECTIONS) => {
   if (!beforeState || !afterState) return null;
   const upserts = {};
   const deletes = {};
   let changedRows = 0;
 
-  for (const collection of PATCHABLE_COLLECTIONS) {
+  for (const collection of collections) {
     const beforeRows = Array.isArray(beforeState[collection]) ? beforeState[collection] : [];
     const afterRows = Array.isArray(afterState[collection]) ? afterState[collection] : [];
     const beforeById = new Map();
@@ -509,12 +631,12 @@ const buildStatePatch = (beforeState, afterState) => {
   return patch;
 };
 
-const pushServerStatePatch = async ({ beforeState, afterState, attempt = 0 } = {}) => {
+const pushServerStatePatch = async ({ beforeState, afterState, collections = PATCHABLE_COLLECTIONS, attempt = 0 } = {}) => {
   if (!shouldUseServerState()) {
     return null;
   }
 
-  const patch = buildStatePatch(beforeState, afterState);
+  const patch = buildStatePatch(beforeState, afterState, collections);
   if (patch?.empty) {
     return null;
   }
@@ -547,15 +669,15 @@ const pushServerStatePatch = async ({ beforeState, afterState, attempt = 0 } = {
     if (isTransientServerError(error) && attempt < SAVE_TRANSIENT_RETRIES) {
       applyRemoteBackoff(error);
       await sleep(getRetryDelayMs(error, attempt));
-      return pushServerStatePatch({ beforeState, afterState, attempt: attempt + 1 });
+      return pushServerStatePatch({ beforeState, afterState, collections, attempt: attempt + 1 });
     }
     throw error;
   }
 
   const payload = await response.json().catch(() => null);
   if (payload?.revision) {
-    lastSharedRevision = payload.revision;
-    setCachedServerRevision(payload.revision);
+    rememberServerRevision(payload.revision);
+    localServerCommitSerial += 1;
   }
   return payload;
 };
@@ -768,12 +890,14 @@ const markServerStateStale = (reason) => {
   console.info(`[copetin-sync] Estado local marcado como pendiente de sincronizacion`, { reason });
 };
 
-const announceDataChange = ({ domain, method }) => {
+const announceDataChange = ({ domain, method, collections = null }) => {
   const payload = {
     source: browserTabId,
+    origin: 'local-mutation',
     domain,
     method,
-    revision: lastSharedRevision,
+    revision: domain === 'presence' ? null : lastSharedRevision,
+    collections: Array.isArray(collections) ? collections : null,
     at: new Date().toISOString(),
   };
 
@@ -812,26 +936,48 @@ const enqueueMutation = (operation) => {
   return request;
 };
 
-const runBatchedMutations = async (operation) => {
+const runBatchedMutations = async (operation, options = {}) => {
+  const isOuterBatch = mutationBatchDepth === 0;
   mutationBatchDepth += 1;
   try {
+    if (isOuterBatch) {
+      mutationBatchCollections = [...new Set(
+        (Array.isArray(options?.collections) && options.collections.length
+          ? options.collections
+          : PATCHABLE_COLLECTIONS)
+          .filter((name) => PATCHABLE_COLLECTIONS.includes(name)),
+      )];
+      mutationBatchPreflightPromise = ensureServerStateReadyForMutation({
+        required: true,
+        reason: options?.reason || 'batch.mutation-preflight',
+        requiredCollections: mutationBatchCollections,
+      });
+      await mutationBatchPreflightPromise;
+      mutationBatchBeforeState = await exportLocalCollections(mutationBatchCollections);
+    }
+
     const result = await operation();
-    if (mutationBatchDepth === 1 && mutationBatchDirty) {
-      await pushServerState();
-      announceDataChange({ domain: 'batch', method: 'commit' });
+    if (isOuterBatch && mutationBatchDirty) {
+      const afterState = await exportLocalCollections(mutationBatchCollections);
+      await pushServerStatePatch({
+        beforeState: mutationBatchBeforeState,
+        afterState,
+        collections: mutationBatchCollections,
+      });
+      announceDataChange({ domain: 'batch', method: 'commit', collections: mutationBatchCollections });
       mutationBatchDirty = false;
     }
     return result;
   } catch (error) {
-    if (mutationBatchDepth === 1 && mutationBatchDirty) {
-      mutationBatchDirty = false;
-    }
+    if (isOuterBatch) mutationBatchDirty = false;
     throw error;
   } finally {
     mutationBatchDepth = Math.max(0, mutationBatchDepth - 1);
     if (mutationBatchDepth === 0) {
       mutationBatchPreflightPromise = null;
       mutationBatchDirty = false;
+      mutationBatchCollections = null;
+      mutationBatchBeforeState = null;
     }
   }
 };
@@ -846,16 +992,24 @@ const pollRemoteRevision = async () => {
   if (now - lastRemotePollAt < interval) return;
   lastRemotePollAt = now;
 
+  const commitSerialAtStart = localServerCommitSerial;
   try {
     const meta = await fetchServerMeta();
     resetRemoteBackoff();
+
+    // Una mutacion local pudo terminar mientras este GET meta estaba en vuelo.
+    // En ese caso la respuesta puede representar una revision anterior y no
+    // debe provocar un bootstrap completo.
+    if (commitSerialAtStart !== localServerCommitSerial) return;
+
     const remoteRevision = meta?.revision ?? null;
     if (!remoteRevision) return;
-    if (!lastSharedRevision) {
-      lastSharedRevision = remoteRevision;
+    const localRevision = getKnownLocalRevision();
+    if (!localRevision) {
+      rememberServerRevision(remoteRevision);
       return;
     }
-    if (remoteRevision !== lastSharedRevision) {
+    if (remoteRevision !== localRevision) {
       await syncServerState({ force: true, reason: 'remote-revision' });
       notifySubscribers({ source: 'remote', reason: 'remote-revision', revision: remoteRevision });
     }
@@ -877,14 +1031,25 @@ const ensureSyncListeners = () => {
   if ('BroadcastChannel' in window) {
     syncChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
     syncChannel.onmessage = (event) => {
-      if (!event.data || event.data.source === browserTabId) return;
-      if (event.data.domain !== 'presence') {
-        markServerStateStale('broadcast');
+      const payload = event.data;
+      if (!payload || payload.source === browserTabId) return;
+
+      // La presencia de otra pestana nunca representa un cambio de base.
+      // Antes podia devolver lastSharedRevision a una version antigua y hacer
+      // que la siguiente aprobacion descargara todo el bootstrap.
+      if (payload.domain === 'presence') {
+        notifySubscribers({ ...payload, reason: 'broadcast' });
+        return;
       }
-      if (event.data.revision) {
-        lastSharedRevision = event.data.revision;
+
+      // Ignora anuncios atrasados o duplicados. Solo una revision realmente
+      // posterior puede marcar el estado comercial como desactualizado.
+      if (payload.revision && !isIncomingRevisionNewer(payload.revision)) {
+        return;
       }
-      notifySubscribers({ ...event.data, reason: 'broadcast' });
+
+      markServerStateStale('broadcast');
+      notifySubscribers({ ...payload, reason: 'broadcast' });
     };
   } else {
     window.addEventListener('storage', (event) => {
@@ -911,9 +1076,18 @@ const subscribeToDataChanges = (callback) => {
   };
 };
 
+const getTargetedMutationCollections = (domain, method) => {
+  if (domain !== 'contracts') return null;
+  if (method === 'create') return CONTRACT_CREATE_PATCH_COLLECTIONS;
+  if (method === 'update') return CONTRACT_UPDATE_PATCH_COLLECTIONS;
+  if (method === 'remove') return CONTRACT_REMOVE_PATCH_COLLECTIONS;
+  return null;
+};
+
 const callBridge = async (domain, method, mutates, ...args) => {
   const mutationKey = mutates ? getMutationKey(domain, method, args) : '';
   const isPresenceMutation = domain === 'presence';
+  const targetedCollections = mutates ? getTargetedMutationCollections(domain, method) : null;
   if (mutationKey && inFlightMutations.has(mutationKey)) {
     return inFlightMutations.get(mutationKey);
   }
@@ -927,6 +1101,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
               mutationBatchPreflightPromise = ensureServerStateReadyForMutation({
                 required: true,
                 reason: `batch.${domain}.${method}:mutation-preflight`,
+                requiredCollections: targetedCollections,
               });
             }
             await mutationBatchPreflightPromise;
@@ -934,6 +1109,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
             await ensureServerStateReadyForMutation({
               required: true,
               reason: `${domain}.${method}:mutation-preflight`,
+              requiredCollections: targetedCollections,
             });
           }
         }
@@ -946,11 +1122,13 @@ const callBridge = async (domain, method, mutates, ...args) => {
       }
 
       const beforeMutationState = !isPresenceMutation && mutationBatchDepth === 0
-        ? await exportLocalState()
+        ? (targetedCollections
+          ? await exportLocalCollections(targetedCollections)
+          : await exportLocalState())
         : null;
       const result = await getBridge()[domain][method](...args);
       if (isPresenceMutation) {
-        announceDataChange({ domain, method });
+        announceDataChange({ domain, method, collections: targetedCollections });
         return result;
       }
       if (mutationBatchDepth > 0) {
@@ -958,9 +1136,17 @@ const callBridge = async (domain, method, mutates, ...args) => {
         return result;
       }
       try {
-        const afterMutationState = beforeMutationState ? await exportLocalState() : null;
-        await pushServerStatePatch({ beforeState: beforeMutationState, afterState: afterMutationState });
-        announceDataChange({ domain, method });
+        const afterMutationState = beforeMutationState
+          ? (targetedCollections
+            ? await exportLocalCollections(targetedCollections)
+            : await exportLocalState())
+          : null;
+        await pushServerStatePatch({
+          beforeState: beforeMutationState,
+          afterState: afterMutationState,
+          collections: targetedCollections ?? PATCHABLE_COLLECTIONS,
+        });
+        announceDataChange({ domain, method, collections: targetedCollections });
         return result;
       } catch (error) {
         if (isPresenceMutation) {
@@ -1101,6 +1287,7 @@ export const api = {
   contracts: {
     list: () => callBridge('contracts', 'list', false),
     listHidden: () => callBridge('contracts', 'listHidden', false),
+    ensureFull: (identifier, reason) => fetchFullServerContract(identifier, reason),
     create: (payload) => callBridge('contracts', 'create', true, payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
     updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),

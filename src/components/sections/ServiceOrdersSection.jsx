@@ -1320,6 +1320,7 @@ function ServiceOrdersSection({
 
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
+  const menuPreviewRef = useRef(null);
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
@@ -2639,8 +2640,17 @@ function ServiceOrdersSection({
     const clampedLeft = Math.max(12, Math.min(window.innerWidth - menuWidth - 12, rect.right - menuWidth));
     const top = openUp ? Math.max(12, rect.top - 8) : Math.max(12, rect.bottom + 8);
 
+    const preview = menuPreviewRef.current;
+    if (preview) {
+      preview.style.display = 'block';
+      preview.style.left = `${clampedLeft}px`;
+      preview.style.top = `${top}px`;
+      preview.style.transform = openUp ? 'translateY(-100%)' : 'none';
+    }
+
     setMenuState((current) => {
       if (current?.type === type && current?.id === id) {
+        if (preview) preview.style.display = 'none';
         return null;
       }
       return { type, id, top, left: clampedLeft, openUp };
@@ -5468,15 +5478,28 @@ function ServiceOrdersSection({
     }
   };
 
-  const handleEditContractClick = (contract) => {
+  const handleEditContractClick = async (contract) => {
+    let fullContract = contract;
+    try {
+      if (fullContract?._summaryOnly) {
+        fullContract = await api.contracts.ensureFull(
+          fullContract.id ?? fullContract.contractCode ?? fullContract.orderCode,
+          'edit-contract',
+        );
+      }
+    } catch (requestError) {
+      setFormError(requestError.message || 'No se pudo cargar el contrato completo para editar.');
+      setMenuState(null);
+      return;
+    }
     const linkedOrder = orderRowsWithMeta.find((row) =>
-      (contract?.id && String(row.contractId ?? '') === String(contract.id))
-      || (contract?.rentalId && String(row.rentalId ?? '') === String(contract.rentalId))
-      || (contract?.orderCode && String(row.orderCode ?? '') === String(contract.orderCode))
-      || (contract?.contractCode && String(row.contractCode ?? '') === String(contract.contractCode)),
+      (fullContract?.id && String(row.contractId ?? '') === String(fullContract.id))
+      || (fullContract?.rentalId && String(row.rentalId ?? '') === String(fullContract.rentalId))
+      || (fullContract?.orderCode && String(row.orderCode ?? '') === String(fullContract.orderCode))
+      || (fullContract?.contractCode && String(row.contractCode ?? '') === String(fullContract.contractCode)),
     );
 
-    const contractPlan = Array.isArray(contract?.supplierFulfillmentPlan) ? contract.supplierFulfillmentPlan : [];
+    const contractPlan = Array.isArray(fullContract?.supplierFulfillmentPlan) ? fullContract.supplierFulfillmentPlan : [];
     const linkedOrderPlan = Array.isArray(linkedOrder?.supplierFulfillmentPlan) ? linkedOrder.supplierFulfillmentPlan : [];
 
     const getLineDayKeys = (lines = []) => new Set(
@@ -5487,9 +5510,9 @@ function ServiceOrdersSection({
         .filter(Boolean),
     );
 
-    const contractItems = Array.isArray(contract?.items) ? contract.items : [];
+    const contractItems = Array.isArray(fullContract?.items) ? fullContract.items : [];
     const linkedOrderItems = Array.isArray(linkedOrder?.items) ? linkedOrder.items : [];
-    const contractServices = Array.isArray(contract?.services) ? contract.services : [];
+    const contractServices = Array.isArray(fullContract?.services) ? fullContract.services : [];
     const linkedOrderServices = Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
 
     const contractDayCount = getLineDayKeys([...contractItems, ...contractServices]).size;
@@ -5497,18 +5520,18 @@ function ServiceOrdersSection({
     const shouldRecoverDailyLines = linkedOrderDayCount > contractDayCount
       || (
         linkedOrder?.pricingPlan?.mode === 'daily_schedule'
-        && contract?.pricingPlan?.mode === 'daily_schedule'
+        && fullContract?.pricingPlan?.mode === 'daily_schedule'
         && linkedOrderDayCount > 1
         && contractDayCount <= 1
       );
 
     const sourceContract = {
-      ...contract,
+      ...fullContract,
       items: shouldRecoverDailyLines && linkedOrderItems.length > 0 ? linkedOrderItems : contractItems,
       services: shouldRecoverDailyLines && linkedOrderServices.length > 0 ? linkedOrderServices : contractServices,
       pricingPlan: shouldRecoverDailyLines && linkedOrder?.pricingPlan
         ? linkedOrder.pricingPlan
-        : contract?.pricingPlan,
+        : fullContract?.pricingPlan,
       supplierFulfillmentPlan: contractPlan.length > 0 ? contractPlan : linkedOrderPlan,
     };
 
@@ -6134,11 +6157,15 @@ function ServiceOrdersSection({
     try {
       let preview = null;
       if (kind === 'contract') {
+        const fullContract = await api.contracts.ensureFull(
+          orderRow.contractId ?? orderRow.contractCode ?? orderRow.orderCode,
+          'print-contract-document',
+        );
         preview = await onPrintContractDocument?.({
-          rentalId: orderRow.rentalId,
-          orderCode: orderRow.orderCode,
-          contractId: orderRow.contractId,
-          contractCode: orderRow.contractCode,
+          rentalId: orderRow.rentalId ?? fullContract?.rentalId,
+          orderCode: orderRow.orderCode ?? fullContract?.orderCode,
+          contractId: fullContract?.id ?? orderRow.contractId,
+          contractCode: fullContract?.contractCode ?? orderRow.contractCode,
         });
       } else if (kind === 'inventory') {
         preview = await onPrintInventoryWeekDocument?.({
@@ -6328,10 +6355,14 @@ function ServiceOrdersSection({
       }
 
       if (recordType === 'contract') {
+        const fullContract = await api.contracts.ensureFull(
+          row.id ?? row.contractCode ?? row.orderCode,
+          'preview-whatsapp-contract',
+        );
         const preview = await onPrintContractDocument?.({
-          contractId: row.id,
-          rentalId: row.rentalId,
-          orderCode: row.orderCode,
+          contractId: fullContract.id,
+          rentalId: fullContract.rentalId ?? row.rentalId,
+          orderCode: fullContract.orderCode ?? row.orderCode,
         });
         if (preview?.html) {
           setDocumentPreview({
@@ -7340,9 +7371,21 @@ function ServiceOrdersSection({
         )}
       </article>
 
+      <div
+        ref={menuPreviewRef}
+        className="transport-row-dropdown orders-floating-menu"
+        style={{ display: 'none', pointerEvents: 'none', minHeight: 52 }}
+        aria-hidden="true"
+      >
+        <span style={{ display: 'block', padding: '12px 14px' }}>Cargando acciones...</span>
+      </div>
+
       {menuState ? (
         <div
-          ref={menuRef}
+          ref={(node) => {
+            menuRef.current = node;
+            if (node && menuPreviewRef.current) menuPreviewRef.current.style.display = 'none';
+          }}
           className="transport-row-dropdown orders-floating-menu"
           style={{
             left: menuState.left,

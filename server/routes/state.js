@@ -266,6 +266,41 @@ router.post('/__copetin_db/presence/leave', async (req, res, next) => {
   }
 });
 
+
+router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const contracts = Array.isArray(snapshot?.state?.contracts) ? snapshot.state.contracts : [];
+    const contract = contracts.find((entry) =>
+      String(entry?.id ?? '') === requestedId
+      || String(entry?.contractCode ?? '') === requestedId
+      || String(entry?.number ?? '') === requestedId
+      || String(entry?.orderCode ?? '') === requestedId
+    );
+
+    if (!contract) {
+      res.status(404).json({ error: 'Contrato no encontrado.' });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      contract,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {

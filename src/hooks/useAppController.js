@@ -7,6 +7,22 @@ const isPrintCanceledError = (error) => {
   return message.includes('print job canceled') || message.includes('cancel');
 };
 
+const APPROVAL_BATCH_COLLECTIONS = Object.freeze([
+  'clients',
+  'items',
+  'quotes',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'calendarEvents',
+  'generatedReports',
+  'inventoryMovements',
+  'cashMovements',
+  'supplierLoans',
+  'systemAuditLog',
+]);
+
 const normalizePresenceList = (value) => {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.active)) return value.active;
@@ -341,12 +357,23 @@ export const useAppController = () => {
         return;
       }
 
+      // Los cambios de esta misma pestaña ya actualizaron el estado React
+      // desde el resultado de la mutacion. Solo refrescamos cuando el cambio
+      // proviene de otra pestaña/usuario o de una sincronizacion remota real.
+      const isRemoteChange = event?.reason === 'broadcast'
+        || event?.reason === 'storage'
+        || event?.reason === 'remote-revision'
+        || event?.source === 'remote'
+        || event?.source === 'storage';
+      const isBackgroundStateReplacement = event?.source === 'background-sync';
+      if (!isRemoteChange && !isBackgroundStateReplacement) return;
+
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         if (!disposed) {
           loadData({ silent: true });
         }
-      }, 450);
+      }, isRemoteChange ? 450 : 0);
     });
 
     return () => {
@@ -1101,11 +1128,7 @@ export const useAppController = () => {
           ? current.map((entry) => (entry.id === created.id ? created : entry))
           : [created, ...current]
       ));
-      window.setTimeout(() => {
-        loadData({ silent: true }).catch((refreshError) => {
-          console.warn(refreshError);
-        });
-      }, 900);
+      setHiddenContracts((current) => current.filter((entry) => entry.id !== created.id));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el contrato.');
@@ -1124,11 +1147,7 @@ export const useAppController = () => {
         updatedByRole: trace.userRole,
       });
       setContracts((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      window.setTimeout(() => {
-        loadData({ silent: true }).catch((refreshError) => {
-          console.warn(refreshError);
-        });
-      }, 900);
+      setHiddenContracts((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el contrato.');
@@ -1156,8 +1175,11 @@ export const useAppController = () => {
           ? updated
           : contract
       )));
-
-      void loadData({ silent: true });
+      setHiddenContracts((current) => current.map((contract) => (
+        String(contract?.id) === String(updated.id)
+          ? updated
+          : contract
+      )));
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo guardar el seguimiento economico del contrato.');
@@ -1175,7 +1197,35 @@ export const useAppController = () => {
         updatedByName: trace.userName,
         updatedByRole: trace.userRole,
       });
-      await loadData();
+
+      const [
+        contractsData,
+        hiddenContractsData,
+        rentalsData,
+        deliveriesData,
+        transportRoutesData,
+        inventoryData,
+        dashboardData,
+        settingsData,
+      ] = await Promise.all([
+        api.contracts.list(),
+        api.contracts.listHidden(),
+        api.rentals.list(),
+        api.transport.listDeliveries(),
+        api.transport.listRoutes(),
+        api.inventory.list(),
+        api.dashboard.get(),
+        api.settings.get(),
+      ]);
+
+      setContracts(contractsData);
+      setHiddenContracts(hiddenContractsData);
+      setRentals(rentalsData);
+      setDeliveries(deliveriesData);
+      setTransportRoutes(transportRoutesData);
+      setItems(inventoryData);
+      setDashboard(dashboardData);
+      setSettingsBundle(settingsData);
       return removed;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el contrato.');
@@ -1702,12 +1752,6 @@ export const useAppController = () => {
         : null;
       const approvalTrace = getCurrentUserTrace();
 
-      const refreshAfterApproval = () => {
-        window.setTimeout(() => {
-          loadData({ silent: true });
-        }, 750);
-      };
-
       let createdRental = null;
       let updatedContract = null;
       await api.sync.batchMutations(async () => {
@@ -1768,6 +1812,9 @@ export const useAppController = () => {
           services: approvalServices,
           supplierFulfillmentPlan: contract.supplierFulfillmentPlan ?? [],
         });
+      }, {
+        collections: APPROVAL_BATCH_COLLECTIONS,
+        reason: 'approve-contract',
       });
 
       setContracts((current) => current.map((entry) => (entry.id === updatedContract.id ? updatedContract : entry)));
@@ -1775,7 +1822,6 @@ export const useAppController = () => {
         current.some((entry) => entry.id === createdRental.id) ? current : [createdRental, ...current]
       ));
       if (createdRental.reusedExisting) {
-        refreshAfterApproval();
         return createdRental;
       }
 
@@ -1800,7 +1846,8 @@ export const useAppController = () => {
         let logisticsWarning = '';
         if ((contract.logisticsMode ?? 'envio') !== 'recojo') {
           try {
-            const refreshedDeliveries = await api.transport.listDeliveries();
+            await api.sync.batchMutations(async () => {
+              const refreshedDeliveries = await api.transport.listDeliveries();
             const linkedDeliveries = refreshedDeliveries.filter((entry) => entry.rentalId === createdRental.id);
             const autoDelivery = linkedDeliveries[0] ?? null;
             if (autoDelivery) {
@@ -1833,6 +1880,12 @@ export const useAppController = () => {
                 notes: `Recojo programado de ${createdRental.orderCode}`,
               });
             }
+            }, {
+              collections: ['deliveries', 'systemAuditLog'],
+              reason: 'approve-contract-logistics',
+            });
+            const refreshedDeliveries = await api.transport.listDeliveries();
+            setDeliveries(refreshedDeliveries);
           } catch (logisticsError) {
             logisticsWarning = logisticsError?.message || 'No se pudo completar la programacion de transporte.';
           }
@@ -1897,7 +1950,6 @@ export const useAppController = () => {
           documentsWarning = docsError?.message || 'No se pudieron generar los documentos automaticamente.';
         }
 
-        await loadData({ silent: true });
 
         if (documentsWarning || logisticsWarning) {
           const pendingTasks = [
@@ -1911,7 +1963,6 @@ export const useAppController = () => {
       window.setTimeout(() => {
         runApprovalFollowUps().catch((followUpError) => {
           setError(followUpError?.message || `${createdRental.orderCode} fue aprobada, pero no se completaron tareas secundarias.`);
-          refreshAfterApproval();
         });
       }, 250);
 

@@ -17454,6 +17454,19 @@ const createWebBridge = () => ({
 
   __storage: {
     exportState: async () => deepClone(readState()),
+    exportCollections: async (names = []) => {
+      const state = readState();
+      const requestedNames = [...new Set((Array.isArray(names) ? names : [])
+        .map((name) => String(name ?? '').trim())
+        .filter(Boolean))];
+      const snapshot = { settings: deepClone(state.settings ?? {}) };
+      for (const name of requestedNames) {
+        if (Object.prototype.hasOwnProperty.call(state, name)) {
+          snapshot[name] = deepClone(state[name]);
+        }
+      }
+      return snapshot;
+    },
     replaceState: async (state) => {
       writeState(state);
       return { ok: true };
