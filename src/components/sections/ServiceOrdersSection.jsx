@@ -2619,6 +2619,142 @@ function ServiceOrdersSection({
       }));
   }, [selectedDocumentsContract]);
 
+  const selectedDocumentsContractRow = useMemo(() => {
+    if (!documentsOrder && !selectedDocumentsContract) return null;
+    const candidates = [...contractRows, ...hiddenContractRows];
+    return candidates.find((contract) =>
+      (selectedDocumentsContract?.id && valuesMatch(contract.id, selectedDocumentsContract.id))
+      || (selectedDocumentsContract?.contractCode && valuesMatch(contract.contractCode, selectedDocumentsContract.contractCode))
+      || (selectedDocumentsContract?.orderCode && valuesMatch(contract.orderCode, selectedDocumentsContract.orderCode))
+      || (selectedDocumentsContract?.rentalId && valuesMatch(contract.rentalId, selectedDocumentsContract.rentalId))
+      || (documentsOrder?.contractId && valuesMatch(contract.id, documentsOrder.contractId))
+      || (documentsOrder?.contractCode && valuesMatch(contract.contractCode, documentsOrder.contractCode))
+      || (documentsOrder?.orderCode && valuesMatch(contract.orderCode, documentsOrder.orderCode))
+      || (documentsOrder?.rentalId && valuesMatch(contract.rentalId, documentsOrder.rentalId))
+    ) ?? selectedDocumentsContract ?? null;
+  }, [contractRows, documentsOrder, hiddenContractRows, selectedDocumentsContract]);
+
+  const selectedDocumentsClosureSummary = useMemo(() => {
+    if (!documentsOrder && !selectedDocumentsContractRow) return null;
+    const contract = selectedDocumentsContract ?? selectedDocumentsContractRow ?? {};
+    const linkedOrder = orderRowsWithMeta.find((row) =>
+      valuesMatch(row.contractId, contract.id)
+      || valuesMatch(row.contractCode, contract.contractCode)
+      || valuesMatch(row.orderCode, contract.orderCode)
+      || valuesMatch(row.rentalId, contract.rentalId)
+      || valuesMatch(row.id, documentsOrder?.id)
+      || valuesMatch(row.orderCode, documentsOrder?.orderCode)
+    ) ?? documentsOrder ?? null;
+    const rental = rentals.find((entry) =>
+      valuesMatch(entry.id, contract.rentalId)
+      || valuesMatch(entry.contractId, contract.id)
+      || valuesMatch(entry.contractCode, contract.contractCode)
+      || valuesMatch(entry.orderCode, contract.orderCode)
+      || valuesMatch(entry.id, linkedOrder?.rentalId)
+      || valuesMatch(entry.orderCode, linkedOrder?.orderCode)
+    ) ?? null;
+    const referenceKeys = new Set([
+      contract.id,
+      contract.rentalId,
+      contract.contractCode,
+      contract.orderCode,
+      linkedOrder?.id,
+      linkedOrder?.rentalId,
+      linkedOrder?.contractId,
+      linkedOrder?.contractCode,
+      linkedOrder?.orderCode,
+      rental?.id,
+      rental?.contractId,
+      rental?.contractCode,
+      rental?.orderCode,
+    ].map(normalizeText).filter(Boolean));
+    const hasReference = (value) => {
+      const normalized = normalizeText(value);
+      if (!normalized) return false;
+      return referenceKeys.has(normalized) || [...referenceKeys].some((key) => normalized.includes(key));
+    };
+    const relatedMovements = effectiveCashMovements
+      .filter((movement) => [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractId,
+        movement?.rentalId,
+        movement?.orderCode,
+        movement?.contractCode,
+        movement?.sourceId,
+        movement?.reference,
+        movement?.notes,
+        movement?.description,
+      ].some(hasReference))
+      .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
+    const receiptCodes = relatedMovements
+      .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
+      .filter(Boolean);
+    const ledger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      .map(normalizeEconomicLedgerEntry);
+    const ledgerTotals = ledger.reduce((totals, entry) => {
+      if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
+      if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
+      if (entry.type === 'charge') totals.chargesBs += entry.amountBs;
+      if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
+      return totals;
+    }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, refundedBs: 0 });
+    const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+      .filter((line) =>
+        toMoneyNumber(line?.damagedQty) > 0
+        || toMoneyNumber(line?.missingQty) > 0
+        || toMoneyNumber(line?.penaltyBs) > 0,
+      );
+    const dueBs = Math.max(0, toMoneyNumber(selectedDocumentsContractRow?.dueBs));
+    const guaranteeStatus = selectedDocumentsContractRow?.guaranteeStatus ?? '';
+    const isGuaranteeClosed = !selectedDocumentsContractRow?.guaranteeBs
+      || ['returned', 'charged', 'none'].includes(guaranteeStatus)
+      || ledgerTotals.refundedBs > 0
+      || (ledgerTotals.chargesBs > 0 && ledgerTotals.guaranteeBs <= ledgerTotals.chargesBs);
+    const isFinalized = finalizedContractOverrides.has(selectedDocumentsContractRow?.id)
+      ? finalizedContractOverrides.get(selectedDocumentsContractRow.id)
+      : Boolean(contract?.isFinalized ?? selectedDocumentsContractRow?.isFinalized);
+    const isSent = Boolean(selectedDocumentsContractRow?.isSent || rental?.status === 'active' || linkedOrder?.inventoryStatus === 'enviado' || linkedOrder?.transportStatus === 'enviado');
+    const isReturned = Boolean(selectedDocumentsContractRow?.isReturned || rental?.status === 'returned' || linkedOrder?.status === 'completed' || linkedOrder?.transportStatus === 'confirmado');
+    const canClose = isReturned && dueBs <= 0 && isGuaranteeClosed;
+
+    return {
+      contract,
+      linkedOrder,
+      rental,
+      dueBs,
+      receiptCodes,
+      receiptCount: receiptCodes.length,
+      ledgerCount: ledger.length,
+      ledgerTotals,
+      returnIssues,
+      hasDamages: returnIssues.length > 0 || ledgerTotals.chargesBs > 0,
+      isSent,
+      isReturned,
+      isFinalized,
+      canClose,
+      guaranteeStatusLabel: selectedDocumentsContractRow?.guaranteeSecondary || 'Sin garantia',
+      inventoryLabel: OPERATIONAL_STATUS_META[linkedOrder?.inventoryStatus]?.label ?? 'Pendiente',
+      inventoryClass: OPERATIONAL_STATUS_META[linkedOrder?.inventoryStatus]?.className ?? 'pending',
+      transportLabel: OPERATIONAL_STATUS_META[linkedOrder?.transportStatus]?.label ?? 'Pendiente',
+      transportClass: OPERATIONAL_STATUS_META[linkedOrder?.transportStatus]?.className ?? 'pending',
+      finalLabel: isFinalized
+        ? 'Contrato terminado'
+        : canClose
+          ? 'Listo para finalizar'
+          : 'Cierre pendiente',
+    };
+  }, [
+    documentsOrder,
+    effectiveCashMovements,
+    finalizedContractOverrides,
+    orderRowsWithMeta,
+    rentals,
+    selectedDocumentsContract,
+    selectedDocumentsContractRow,
+  ]);
+
   const documentOverviewRows = useMemo(() => {
     if (!documentsOrder) return [];
 
@@ -5715,6 +5851,51 @@ function ServiceOrdersSection({
     setMenuState(null);
   };
 
+  const handleEditContractFromDocuments = async () => {
+    const target = selectedDocumentsContractRow ?? selectedDocumentsContract;
+    if (!target) return;
+    setDocumentsOrder(null);
+    await handleEditContractClick(target);
+  };
+
+  const handleOpenEconomicsFromDocuments = () => {
+    const target = selectedDocumentsContractRow ?? selectedDocumentsContract;
+    if (!target) return;
+    setContractEconomicsTarget(target);
+    setContractEconomicsError('');
+    setContractEconomicsCollectionDraft({
+      amountBs: '',
+      paymentMethod: 'efectivo',
+      paymentAccount: '',
+      receipt: '',
+      note: '',
+    });
+    setDocumentsOrder(null);
+    setMenuState(null);
+  };
+
+  const handleSendClosureFromDocuments = () => {
+    const target = selectedDocumentsContractRow ?? selectedDocumentsContract;
+    if (!target) return;
+    const summary = selectedDocumentsClosureSummary;
+    setDocumentsOrder(null);
+    openWhatsAppModal('contract', {
+      ...target,
+      customerName: target.customerName || selectedDocumentsClosureSummary?.contract?.customerName,
+      customerPhone: target.customerPhone || selectedDocumentsClosureSummary?.contract?.customerPhone,
+    });
+    updateWhatsAppModal({
+      message: [
+        `Hola ${target.customerName || 'cliente'}, te escribo de El Copetin por el contrato ${target.contractCode || target.orderCode || ''}.`,
+        `Estado: ${summary?.finalLabel || 'en revision'}.`,
+        `Entrega: ${summary?.isSent ? 'concluida' : 'pendiente'} | Devolucion: ${summary?.isReturned ? 'concluida' : 'pendiente'}.`,
+        `Saldo: ${summary?.dueBs > 0 ? formatBs(summary.dueBs) : 'pagado'} | Garantia: ${summary?.guaranteeStatusLabel || 'sin novedad'}.`,
+        summary?.hasDamages ? 'Hay novedades registradas por danos/faltantes para revisar.' : 'Sin danos/faltantes registrados.',
+        summary?.receiptCodes?.length ? `Recibos: ${summary.receiptCodes.slice(0, 4).join(', ')}.` : 'Sin recibos pendientes por informar.',
+      ].filter(Boolean).join('\n'),
+    });
+  };
+
   const openCashReceiptWindow = () => {
     const printWindow = window.open('', '_blank', 'width=1120,height=760');
     if (!printWindow) {
@@ -6594,6 +6775,10 @@ function ServiceOrdersSection({
 
   const confirmCancelOrder = async () => {
     if (!orderToCancel) return;
+    if (!String(cancelReason ?? '').trim()) {
+      setFormError('Debes escribir por que se esta anulando el contrato.');
+      return;
+    }
     if (!beginSubmit()) return;
     setFormError('');
     try {
@@ -8622,6 +8807,83 @@ function ServiceOrdersSection({
                 </article>
               </section>
 
+              {selectedDocumentsClosureSummary ? (
+                <section className="orders-documents-panel orders-contract-control-panel">
+                  <div className="orders-documents-section-head">
+                    <div>
+                      <h4>Estado completo del contrato</h4>
+                      <p>Actualizacion, economia, movimientos y cierre para enviar al cliente cuando termine.</p>
+                    </div>
+                    <span className={`orders-contract-close-pill ${selectedDocumentsClosureSummary.isFinalized ? 'is-finalized' : selectedDocumentsClosureSummary.canClose ? 'is-ready' : 'is-pending'}`}>
+                      {selectedDocumentsClosureSummary.finalLabel}
+                    </span>
+                  </div>
+
+                  <div className="orders-contract-control-grid">
+                    <article>
+                      <span>Contrato</span>
+                      <strong>{selectedDocumentsClosureSummary.contract?.contractCode || documentsOrder.contractCode || documentsOrder.orderCode}</strong>
+                      <small>{selectedDocumentsClosureSummary.contract?.customerName || selectedDocumentsContractRow?.customerName || 'Cliente'}</small>
+                    </article>
+                    <article>
+                      <span>Entrega</span>
+                      <strong>{selectedDocumentsClosureSummary.isSent ? 'Con salida' : 'Pendiente'}</strong>
+                      <small className={`orders-status-badge ${selectedDocumentsClosureSummary.inventoryClass}`}>{selectedDocumentsClosureSummary.inventoryLabel}</small>
+                    </article>
+                    <article>
+                      <span>Devolucion</span>
+                      <strong>{selectedDocumentsClosureSummary.isReturned ? 'Con retorno' : 'Pendiente'}</strong>
+                      <small className={`orders-status-badge ${selectedDocumentsClosureSummary.transportClass}`}>{selectedDocumentsClosureSummary.transportLabel}</small>
+                    </article>
+                    <article className={selectedDocumentsClosureSummary.dueBs > 0 ? 'is-due' : 'is-ok'}>
+                      <span>Economico</span>
+                      <strong>{selectedDocumentsClosureSummary.dueBs > 0 ? formatBs(selectedDocumentsClosureSummary.dueBs) : 'Pagado'}</strong>
+                      <small>{selectedDocumentsClosureSummary.ledgerCount} linea(s) en cuaderno</small>
+                    </article>
+                    <article className={selectedDocumentsClosureSummary.hasDamages ? 'is-due' : 'is-ok'}>
+                      <span>Danos / faltantes</span>
+                      <strong>{selectedDocumentsClosureSummary.hasDamages ? formatBs(selectedDocumentsClosureSummary.ledgerTotals.chargesBs) : 'Sin novedades'}</strong>
+                      <small>{selectedDocumentsClosureSummary.returnIssues.length} item(s) observados</small>
+                    </article>
+                    <article>
+                      <span>Garantia</span>
+                      <strong>{selectedDocumentsClosureSummary.guaranteeStatusLabel}</strong>
+                      <small>Devuelto: {formatBs(selectedDocumentsClosureSummary.ledgerTotals.refundedBs)}</small>
+                    </article>
+                    <article>
+                      <span>Recibos</span>
+                      <strong>{selectedDocumentsClosureSummary.receiptCount || 'Sin recibos'}</strong>
+                      <small>{selectedDocumentsClosureSummary.receiptCodes.slice(0, 2).join(', ') || 'Aun sin cobro registrado'}</small>
+                    </article>
+                  </div>
+
+                  <div className="orders-contract-control-actions">
+                    <button type="button" className="ghost-button" onClick={handleEditContractFromDocuments} disabled={!selectedDocumentsContractRow && !selectedDocumentsContract}>
+                      <Pencil aria-hidden="true" />
+                      Actualizar contrato
+                    </button>
+                    <button type="button" className="ghost-button" onClick={handleOpenEconomicsFromDocuments} disabled={!selectedDocumentsContractRow && !selectedDocumentsContract}>
+                      <BookOpen aria-hidden="true" />
+                      Economico
+                    </button>
+                    <button
+                      type="button"
+                      className={`orders-finalized-check ${selectedDocumentsClosureSummary.isFinalized ? 'is-checked' : ''}`}
+                      onClick={() => handleToggleContractFinalized(selectedDocumentsContractRow ?? selectedDocumentsContract, !selectedDocumentsClosureSummary.isFinalized)}
+                      disabled={isSubmitting || (!selectedDocumentsContractRow && !selectedDocumentsContract)}
+                      title={selectedDocumentsClosureSummary.isFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
+                      aria-pressed={selectedDocumentsClosureSummary.isFinalized}
+                    >
+                      {selectedDocumentsClosureSummary.isFinalized ? <Check aria-hidden="true" /> : 'F'}
+                    </button>
+                    <button type="button" className="primary-button" onClick={handleSendClosureFromDocuments} disabled={!selectedDocumentsContractRow && !selectedDocumentsContract}>
+                      <MessageCircle aria-hidden="true" />
+                      Enviar cierre
+                    </button>
+                  </div>
+                </section>
+              ) : null}
+
               <section className="orders-documents-panel">
                 <div className="orders-documents-section-head">
                   <div>
@@ -8989,11 +9251,12 @@ function ServiceOrdersSection({
             </div>
 
             <label className="orders-note-field">
-              Motivo de anulacion (opcional)
+              Motivo de anulacion
               <textarea
                 value={cancelReason}
                 onChange={(event) => setCancelReason(event.target.value)}
                 placeholder="Ej: cliente posterga el evento."
+                required
               />
             </label>
 

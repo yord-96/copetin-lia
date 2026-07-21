@@ -11737,6 +11737,122 @@ textarea:focus {
   gap: 0.52rem;
 }
 
+.orders-contract-control-panel {
+  border-color: #d7e5f8;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+}
+
+.orders-contract-close-pill {
+  border-radius: 999px;
+  padding: 0.38rem 0.62rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.orders-contract-close-pill.is-finalized {
+  background: #dff7ed;
+  color: #137348;
+}
+
+.orders-contract-close-pill.is-ready {
+  background: #e8f5ff;
+  color: #156ca8;
+}
+
+.orders-contract-close-pill.is-pending {
+  background: #fff0e7;
+  color: #c2410c;
+}
+
+.orders-contract-control-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.44rem;
+}
+
+.orders-contract-control-grid article {
+  min-width: 0;
+  border: 1px solid #e3eaf8;
+  border-radius: 0.58rem;
+  background: #ffffff;
+  padding: 0.55rem 0.58rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.orders-contract-control-grid article.is-due {
+  border-color: #ffd1b8;
+  background: #fff8f2;
+}
+
+.orders-contract-control-grid article.is-ok {
+  border-color: #cdeedc;
+  background: #f5fff9;
+}
+
+.orders-contract-control-grid span {
+  color: #7380ae;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orders-contract-control-grid strong {
+  min-width: 0;
+  color: #24346a;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-contract-control-grid small {
+  min-width: 0;
+  color: #7580aa;
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-contract-control-grid .orders-status-badge {
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.18rem 0.44rem;
+  font-size: 0.62rem;
+}
+
+.orders-contract-control-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.orders-contract-control-actions .ghost-button,
+.orders-contract-control-actions .primary-button {
+  min-height: 2.16rem;
+  border-radius: 0.5rem;
+  padding: 0.42rem 0.62rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  font-size: 0.72rem;
+}
+
+.orders-contract-control-actions svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.orders-contract-control-actions .orders-finalized-check {
+  width: 2.16rem;
+  height: 2.16rem;
+  min-width: 2.16rem;
+}
+
 .orders-documents-section-head {
   display: flex;
   align-items: flex-start;
@@ -11976,6 +12092,10 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .orders-contract-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .orders-documents-main-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -11992,6 +12112,20 @@ textarea:focus {
 @media (max-width: 720px) {
   .orders-documents-summary {
     grid-template-columns: 1fr;
+  }
+
+  .orders-contract-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-contract-control-actions {
+    justify-content: stretch;
+  }
+
+  .orders-contract-control-actions .ghost-button,
+  .orders-contract-control-actions .primary-button {
+    flex: 1 1 9rem;
+    justify-content: center;
   }
 
   .orders-documents-main-grid {
@@ -35129,24 +35263,6 @@ button.calendar-dispatch-row:focus-visible {
     stroke-width: 3.2;
   }
 
-  .orders-view .orders-contracts-table tbody tr.is-finalized td,
-  .orders-view .orders-contracts-table tbody tr.is-finalized:nth-child(even) td,
-  .orders-view .orders-contracts-table tbody tr.is-finalized:hover td,
-  .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-sent-cell,
-  .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-returned-cell {
-    background: #1ff4ff !important;
-    color: #062044;
-    box-shadow: inset 0 0 0 1px rgba(0, 149, 185, 0.34);
-  }
-
-  .orders-view .orders-contracts-table tbody tr.is-finalized td:first-child {
-    border-left-color: #004cff;
-  }
-
-  .orders-view .orders-contracts-table tbody tr.is-finalized :is(strong, span, small, b) {
-    color: #062044 !important;
-  }
-
   .orders-view .orders-contracts-table td.orders-contract-sent-cell {
     background: #ff7a00 !important;
     box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.38);
@@ -35167,6 +35283,71 @@ button.calendar-dispatch-row:focus-visible {
 
   .orders-view .orders-contracts-table tbody tr:hover td.orders-contract-returned-cell {
     background: #5ff7ff !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(-n + 3),
+  .orders-view .orders-contracts-table tbody tr.is-finalized:nth-child(even) td:nth-child(-n + 3),
+  .orders-view .orders-contracts-table tbody tr.is-finalized:hover td:nth-child(-n + 3) {
+    background: #ff7a00 !important;
+    color: #17140c !important;
+    box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.38) !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(n + 4),
+  .orders-view .orders-contracts-table tbody tr.is-finalized:nth-child(even) td:nth-child(n + 4),
+  .orders-view .orders-contracts-table tbody tr.is-finalized:hover td:nth-child(n + 4),
+  .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-sent-cell,
+  .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-returned-cell {
+    background: #1ff4ff !important;
+    color: #062044 !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 149, 185, 0.34) !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.is-finalized td:first-child {
+    border-left-color: #004cff !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(-n + 3) :is(strong, span, small, b) {
+    color: #17140c !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.contract-anulado td,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado:nth-child(even) td,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado:hover td,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado td.orders-contract-sent-cell,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado td.orders-contract-returned-cell {
+    position: relative;
+    background: #8bf5ff !important;
+    color: #062044 !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 149, 185, 0.34) !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.contract-anulado td::after {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 2px solid rgba(6, 32, 68, 0.58);
+    pointer-events: none;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.contract-anulado td:first-child {
+    border-left-color: #004cff !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.contract-anulado :is(strong, span, small, b),
+  .orders-view .orders-contracts-table tbody tr.is-finalized :is(strong, span, small, b) {
+    color: #062044 !important;
+  }
+
+  .orders-view .orders-contracts-table tbody tr.contract-anulado .orders-status-badge,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado .orders-total-with-economics,
+  .orders-view .orders-contracts-table tbody tr.contract-anulado .orders-guarantee-state {
+    background: rgba(255, 255, 255, 0.78) !important;
+    border-color: rgba(6, 32, 68, 0.18) !important;
+    color: #062044 !important;
   }
 
   .orders-guarantee-cell {
@@ -56183,6 +56364,46 @@ body:has(.accounting-bigcash-view) .workspace {
     background: rgba(255, 255, 255, 0.58) !important;
   }
 
+  .orders-mobile-contract-card.contract-anulado {
+    border-color: rgba(0, 76, 255, 0.42) !important;
+    background: #8bf5ff !important;
+    box-shadow: 0 0.75rem 1.35rem rgba(0, 149, 185, 0.2) !important;
+  }
+
+  .orders-mobile-contract-card.contract-anulado::before {
+    background: #004cff !important;
+  }
+
+  .orders-mobile-contract-card.contract-anulado::after {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    left: 0.72rem;
+    right: 0.72rem;
+    top: 50%;
+    border-top: 2px solid rgba(6, 32, 68, 0.58);
+    pointer-events: none;
+  }
+
+  .orders-mobile-contract-card.contract-anulado :is(strong, span, small, b, em, p) {
+    color: #062044 !important;
+  }
+
+  .orders-mobile-contract-card.contract-anulado .orders-status-badge,
+  .orders-mobile-contract-card.contract-anulado .orders-total-with-economics,
+  .orders-mobile-contract-card.contract-anulado .orders-guarantee-state {
+    background: rgba(255, 255, 255, 0.72) !important;
+    border-color: rgba(6, 32, 68, 0.16) !important;
+    color: #062044 !important;
+  }
+
+  .orders-mobile-contract-card.contract-anulado .orders-mobile-contract-service,
+  .orders-mobile-contract-card.contract-anulado .orders-mobile-contract-address,
+  .orders-mobile-contract-card.contract-anulado .orders-guarantee-cell,
+  .orders-mobile-contract-card.contract-anulado .orders-transport-cell {
+    background: rgba(255, 255, 255, 0.58) !important;
+  }
+
   .orders-mobile-sent-zone {
     border: 1px solid rgba(179, 68, 0, 0.28) !important;
     border-radius: 0.72rem !important;
@@ -62225,4 +62446,3 @@ body:has(.accounting-bigcash-view) .workspace {
   .inventory-report-footer span { display: none; }
   .inventory-report-footer .primary-button { width: 100%; }
 }
-

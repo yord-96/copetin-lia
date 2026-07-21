@@ -11823,19 +11823,23 @@ const createWebBridge = () => ({
         const penaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
         const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
         const reason = String(payload?.reason ?? '').trim();
+        if (!reason) {
+          throw new Error('Debes indicar por que se esta anulando el contrato.');
+        }
         const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
         const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
 
         (rental.items ?? []).forEach((line) => {
-          const quantity = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
-          if (quantity <= 0) return;
-
           const item = state.items.find((entry) => entry.id === line.itemId);
-          if (!item) return;
+          if (!item || lineControlsStock(line, item) === false) return;
+          const reservedQty = Number.isFinite(Number(line.internalReservedQty))
+            ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+            : Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+          if (reservedQty <= 0) return;
 
           const beforeTotalStock = Number(item.totalStock ?? 0);
           const beforeAvailableStock = Number(item.availableStock ?? 0);
-          item.availableStock = beforeAvailableStock + quantity;
+          item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + reservedQty);
           item.updatedAt = nowIso;
 
           state.inventoryMovements.push({
@@ -11845,9 +11849,9 @@ const createWebBridge = () => ({
             category: item.category,
             type: 'reinsercion',
             reason: `Anulacion de contrato ${linkedContract?.contractCode ?? rental.orderCode}`,
-            detail: `Reintegro de ${quantity} unidades por anulacion de ${rental.orderCode}`,
+            detail: `Reintegro de ${reservedQty} unidades por anulacion de ${rental.orderCode}`,
             reference: rental.orderCode,
-            deltaUnits: quantity,
+            deltaUnits: reservedQty,
             beforeTotalStock,
             afterTotalStock: beforeTotalStock,
             beforeAvailableStock,
@@ -11896,6 +11900,12 @@ const createWebBridge = () => ({
           linkedContract.cancellationReason = reason;
           linkedContract.cancellationCutoffDate = toDateKey(cutoffDate);
           linkedContract.updatedAt = nowIso;
+          appendContractRevision(linkedContract, payload, nowIso, [
+            `Contrato anulado por ${userName}`,
+            `Motivo: ${reason}`,
+            `Items liberados de inventario para ${rental.orderCode}`,
+            `Numero de contrato conservado: ${linkedContract.contractCode}`,
+          ]);
         }
 
         cancelled = deepClone({
