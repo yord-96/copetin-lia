@@ -1635,19 +1635,24 @@ function ServiceOrdersSection({
   }, [contracts, deliveries, deliveryByRentalId, rentals]);
 
   const documentsByOrderId = useMemo(() => {
+    const bySourceId = new Map();
+    generatedReports.forEach((report) => {
+      const sourceId = String(report?.sourceId ?? '').trim();
+      if (!sourceId) return;
+      if (!bySourceId.has(sourceId)) bySourceId.set(sourceId, []);
+      bySourceId.get(sourceId).push(report);
+    });
+
     const map = new Map();
     orderRows.forEach((row) => {
-      const orderCodeToken = normalizeText(row.orderCode);
-      const docs = generatedReports
-        .filter((report) => {
-          const sourceId = String(report?.sourceId ?? '').trim();
-          const reportName = normalizeText(report?.name ?? '');
-          const bySourceId = sourceId && (sourceId === String(row.rentalId) || row.deliveryIds.includes(sourceId));
-          const byOrderCode = orderCodeToken && reportName.includes(orderCodeToken);
-          return bySourceId || byOrderCode;
-        })
-        .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
-      map.set(row.id, docs);
+      const docsById = new Map();
+      const addDocs = (docs = []) => docs.forEach((doc) => docsById.set(String(doc.id ?? `${doc.name}-${doc.generatedAt}`), doc));
+      addDocs(bySourceId.get(String(row.rentalId ?? '').trim()));
+      (row.deliveryIds ?? []).forEach((deliveryId) => addDocs(bySourceId.get(String(deliveryId ?? '').trim())));
+      map.set(
+        row.id,
+        Array.from(docsById.values()).sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt)),
+      );
     });
     return map;
   }, [generatedReports, orderRows]);
@@ -1769,6 +1774,72 @@ function ServiceOrdersSection({
     return references;
   }, [effectiveCashMovements]);
 
+  const collectionMovementIndex = useMemo(() => {
+    const movementsByReference = new Map();
+    const looseTextMovements = [];
+
+    effectiveCashMovements.forEach((movement, index) => {
+      if (isVoidedCashMovement(movement)) return;
+
+      const movementType = normalizeText(movement?.type);
+      const category = normalizeText(movement?.category);
+      const tag = normalizeText(movement?.accountingTag);
+      const isGuaranteeMovement = tag.includes('guarantee') || category.includes('garantia') || movementType.includes('garantia');
+      const cashBoxType = normalizeText(movement?.cashBoxType);
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
+      const isBigCash = ['big_cash', 'caja_grande', 'cajagrande'].includes(cashBoxType);
+      const isIncome = movementType.includes('ingreso')
+        || movementType.includes('cobro')
+        || category === 'cobro_contrato';
+      const isCollection = tag === 'contract_economic_collection'
+        || category === 'cobro_contrato'
+        || movementType === 'ingreso_alquiler'
+        || (Boolean(receiptCode) && isBigCash && isIncome);
+      if (isGuaranteeMovement || !isCollection) return;
+
+      const amountBs = Math.max(0, getCashMovementAmount(movement));
+      const indexedMovement = {
+        id: String(movement?.id ?? `movement-${index}`),
+        amountBs,
+      };
+      [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractId,
+        movement?.rentalId,
+        movement?.orderCode,
+        movement?.contractCode,
+        movement?.reference,
+        movement?.sourceId,
+      ].map(normalizeText).filter(Boolean).forEach((key) => {
+        if (!movementsByReference.has(key)) movementsByReference.set(key, []);
+        movementsByReference.get(key).push(indexedMovement);
+      });
+
+      const notes = [movement?.notes, movement?.description].map(normalizeText).filter(Boolean).join(' ');
+      if (notes) looseTextMovements.push({ ...indexedMovement, notes });
+    });
+
+    return { movementsByReference, looseTextMovements };
+  }, [effectiveCashMovements]);
+
+  const activeRentalByReference = useMemo(() => {
+    const map = new Map();
+    rentals.forEach((rental) => {
+      if (rental?.deletedAt) return;
+      [
+        rental?.id,
+        rental?.contractId,
+        rental?.contractCode,
+        rental?.orderCode,
+      ].map(normalizeText).filter(Boolean).forEach((key) => {
+        if (!map.has(key)) map.set(key, rental);
+      });
+    });
+    return map;
+  }, [rentals]);
+
   const buildContractRows = useCallback((sourceContracts) => {
     return sourceContracts.map((contract) => {
       const itemsCount = (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
@@ -1814,51 +1885,24 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText).filter(Boolean);
-      const collectionRegisteredBs = effectiveCashMovements.reduce((sum, movement) => {
-        if (isVoidedCashMovement(movement)) return sum;
-
-        const movementType = normalizeText(movement?.type);
-        const category = normalizeText(movement?.category);
-        const tag = normalizeText(movement?.accountingTag);
-        const isGuaranteeMovement = tag.includes('guarantee') || category.includes('garantia') || movementType.includes('garantia');
-        const cashBoxType = normalizeText(movement?.cashBoxType);
-        const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
-        const movementKeys = [
-          movement?.linkedContractId,
-          movement?.linkedRentalId,
-          movement?.linkedOrderCode,
-          movement?.contractId,
-          movement?.rentalId,
-          movement?.orderCode,
-          movement?.contractCode,
-          movement?.reference,
-          movement?.sourceId,
-        ].map(normalizeText).filter(Boolean);
-        const isLinked = movementKeys.some((key) => contractReferenceKeys.includes(key))
-          || [movement?.notes, movement?.description]
-            .map(normalizeText)
-            .some((textValue) => textValue && contractReferenceKeys.some((key) => textValue.includes(key)));
-        const isBigCash = ['big_cash', 'caja_grande', 'cajagrande'].includes(cashBoxType);
-        const isIncome = movementType.includes('ingreso')
-          || movementType.includes('cobro')
-          || category === 'cobro_contrato';
-        const isCollection = tag === 'contract_economic_collection'
-          || category === 'cobro_contrato'
-          || movementType === 'ingreso_alquiler'
-          || (Boolean(receiptCode) && isBigCash && isIncome);
-        if (isGuaranteeMovement) return sum;
-        if (!isLinked || !isCollection) return sum;
-        return sum + Math.max(0, getCashMovementAmount(movement));
-      }, 0);
-      const linkedRental = rentals.find((rental) => (
-        !rental?.deletedAt
-        && (
-          valuesMatch(rental?.id, contract?.rentalId)
-          || valuesMatch(rental?.contractId, contract?.id)
-          || valuesMatch(rental?.contractCode, contract?.contractCode)
-          || valuesMatch(rental?.orderCode, contract?.orderCode)
-        )
-      )) ?? null;
+      const linkedCollectionMovements = new Map();
+      contractReferenceKeys.forEach((key) => {
+        (collectionMovementIndex.movementsByReference.get(key) ?? [])
+          .forEach((movement) => linkedCollectionMovements.set(movement.id, movement));
+      });
+      collectionMovementIndex.looseTextMovements.forEach((movement) => {
+        if (contractReferenceKeys.some((key) => movement.notes.includes(key))) {
+          linkedCollectionMovements.set(movement.id, movement);
+        }
+      });
+      const collectionRegisteredBs = Number(
+        Array.from(linkedCollectionMovements.values())
+          .reduce((sum, movement) => sum + movement.amountBs, 0)
+          .toFixed(2),
+      );
+      const linkedRental = contractReferenceKeys
+        .map((key) => activeRentalByReference.get(key))
+        .find(Boolean) ?? null;
       const initialPaymentBs = Math.max(
         0,
         toMoneyNumber(contract?.payment?.paidAtApprovalBs),
@@ -1928,7 +1972,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [effectiveCashMovements, formatBs, orderByContractId, rentals, returnedGuaranteeReferences]);
+  }, [activeRentalByReference, collectionMovementIndex, formatBs, orderByContractId, returnedGuaranteeReferences]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
