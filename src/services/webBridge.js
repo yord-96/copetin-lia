@@ -7018,6 +7018,7 @@ const getReferenceContractStyles = () => `
     table-layout: fixed;
   }
   .rc-table thead { display: table-header-group; }
+  .rc-table tfoot { display: none; }
   .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
   .rc-table th {
     padding: 1.2mm 1.7mm;
@@ -7393,6 +7394,17 @@ const getReferenceContractStyles = () => `
       overflow: visible;
     }
     .rc-table thead { display: table-header-group; }
+    .rc-table tfoot { display: table-footer-group; }
+    .rc-table .rc-print-safety-footer td {
+      height: 7mm;
+      min-height: 7mm;
+      padding: 0 !important;
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      font-size: 0 !important;
+      line-height: 0 !important;
+    }
     .rc-table tbody { break-inside: auto; page-break-inside: auto; }
     .rc-table tr,
     .rc-table td,
@@ -7781,6 +7793,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
           <thead>
             <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
           </thead>
+          <tfoot aria-hidden="true">
+            <tr class="rc-print-safety-footer"><td colspan="8"></td></tr>
+          </tfoot>
           <tbody>${bodyRows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>`;
   contractRowNumber = 0;
