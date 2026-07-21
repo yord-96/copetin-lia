@@ -1294,7 +1294,12 @@ const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
       const lineType = String(line?.lineType ?? '').trim();
       const isCourtesyLine = lineType === 'courtesy';
-      const rentalPriceBs = isCourtesyLine ? 0 : Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? item?.rentalPriceBs ?? 0));
+      const rentalPriceBs = isCourtesyLine ? 0 : Math.max(
+        Number(line.unitPriceBs ?? 0),
+        Number(line.rentalPriceBs ?? 0),
+        Number(item?.rentalPriceBs ?? 0),
+        0,
+      );
       return {
         lineKey: getInventoryLineKey(line, index),
         itemId: line.itemId,
@@ -5328,21 +5333,29 @@ const buildRentalSnapshotFromContract = (contract) => {
     paymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod),
     paymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount),
   },
-  items: (contract?.items ?? []).map((line) => ({
-    lineKey: line.lineKey ?? null,
-    itemId: line.itemId,
-    itemName: line.itemName,
-    quantity: line.quantity,
-    rentalPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
-    lineTotalBs: Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
-    lineType: String(line?.lineType ?? '').trim(),
-    observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
-    comboLineKey: line.comboLineKey ?? null,
-    comboCategory: line.comboCategory ?? '',
-    serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? null,
-    serviceDate: line.serviceDate ?? line.date ?? null,
-    serviceDayLabel: line.serviceDayLabel ?? line.dayLabel ?? '',
-  })),
+  items: (contract?.items ?? []).map((line) => {
+    const quantity = Number(line.quantity ?? 0);
+    const rentalPriceBs = Math.max(
+      Number(line.unitPriceBs ?? 0),
+      Number(line.rentalPriceBs ?? 0),
+      0,
+    );
+    return {
+      lineKey: line.lineKey ?? null,
+      itemId: line.itemId,
+      itemName: line.itemName,
+      quantity: line.quantity,
+      rentalPriceBs,
+      lineTotalBs: Number(line.lineTotalBs ?? quantity * rentalPriceBs),
+      lineType: String(line?.lineType ?? '').trim(),
+      observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim(),
+      comboLineKey: line.comboLineKey ?? null,
+      comboCategory: line.comboCategory ?? '',
+      serviceDayId: line.serviceDayId ?? line.scheduleDayId ?? null,
+      serviceDate: line.serviceDate ?? line.date ?? null,
+      serviceDayLabel: line.serviceDayLabel ?? line.dayLabel ?? '',
+    };
+  }),
   services: normalizeContractServices(contract?.services),
   });
 };
@@ -7484,7 +7497,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         ?? fallback.lineTotalBs
         ?? 0,
     );
-    const rawUnitPriceBs = Number(primary.unitPriceBs ?? primary.rentalPriceBs ?? fallback.unitPriceBs ?? fallback.rentalPriceBs ?? 0);
+    const rawUnitPriceBs = Math.max(
+      Number(primary.unitPriceBs ?? 0),
+      Number(primary.rentalPriceBs ?? 0),
+      Number(fallback.unitPriceBs ?? 0),
+      Number(fallback.rentalPriceBs ?? 0),
+      0,
+    );
     const recoveredUnitPriceBs = rawUnitPriceBs > 0
       ? rawUnitPriceBs
       : quantity > 0 && lineTotalBs > 0
@@ -7492,7 +7511,13 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         : 0;
     const unitPriceBs = recoveredUnitPriceBs > 0
       ? recoveredUnitPriceBs
-      : Number(fallback.unitPriceBs ?? fallback.rentalPriceBs ?? primary.unitPriceBs ?? primary.rentalPriceBs ?? 0);
+      : Math.max(
+        Number(fallback.unitPriceBs ?? 0),
+        Number(fallback.rentalPriceBs ?? 0),
+        Number(primary.unitPriceBs ?? 0),
+        Number(primary.rentalPriceBs ?? 0),
+        0,
+      );
     return {
       ...fallback,
       ...primary,
@@ -10067,7 +10092,13 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     // el resto del contrato y agregar productos vigentes.
     if (!item) {
       if (!oldLine) throw new Error(`El item nuevo "${line.itemName}" no existe en inventario.`);
-      const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? oldLine.rentalPriceBs ?? 0));
+      const rentalPriceBs = Math.max(
+        Number(line.unitPriceBs ?? 0),
+        Number(line.rentalPriceBs ?? 0),
+        Number(oldLine.rentalPriceBs ?? 0),
+        Number(oldLine.unitPriceBs ?? 0),
+        0,
+      );
       return {
         ...oldLine,
         ...line,
@@ -10137,7 +10168,14 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       });
     }
 
-    const rentalPriceBs = Math.max(0, Number(line.unitPriceBs ?? oldLine?.rentalPriceBs ?? item.rentalPriceBs ?? 0));
+    const rentalPriceBs = Math.max(
+      Number(line.unitPriceBs ?? 0),
+      Number(line.rentalPriceBs ?? 0),
+      Number(oldLine?.rentalPriceBs ?? 0),
+      Number(oldLine?.unitPriceBs ?? 0),
+      Number(item.rentalPriceBs ?? 0),
+      0,
+    );
     return {
       ...oldLine,
       ...line,
@@ -14030,7 +14068,13 @@ const createWebBridge = () => ({
               : Number.isFinite(Number(previousLine?.lineTotalBs))
                 ? Math.max(0, toPositiveRoundedNumber(previousLine.lineTotalBs))
                 : 0;
-            const requestedUnitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0));
+            const requestedUnitPriceBs = Math.max(
+              toPositiveRoundedNumber(line?.unitPriceBs ?? 0),
+              toPositiveRoundedNumber(line?.rentalPriceBs ?? 0),
+              toPositiveRoundedNumber(previousLine?.unitPriceBs ?? 0),
+              toPositiveRoundedNumber(previousLine?.rentalPriceBs ?? 0),
+              0,
+            );
             const recoveredUnitPriceBs = requestedUnitPriceBs > 0
               ? requestedUnitPriceBs
               : requestedLineTotalBs > 0 && quantity > 0
