@@ -606,7 +606,7 @@ const exportProductsWorkbook = async ({ rows, filters }) => {
   );
 };
 
-const buildPremiumCatalogHtml = ({ rows, formatBs }) => {
+const buildPremiumCatalogHtml = ({ rows }) => {
   const areaMeta = {
     vajilla: {
       title: 'Cristaleria y Vajilla',
@@ -652,7 +652,6 @@ const buildPremiumCatalogHtml = ({ rows, formatBs }) => {
         </div>
         <footer>
           <span>${Number(row.total ?? 0)} u.</span>
-          <strong>${escapeHtml(formatBs(Number(row.price ?? row.rentalPriceBs ?? 0)))}</strong>
         </footer>
       </article>
     `;
@@ -684,17 +683,16 @@ const buildPremiumCatalogHtml = ({ rows, formatBs }) => {
     .section p{margin:0;color:#697386;font-size:14px}
     .section-count{color:var(--accent);font-size:28px;font-weight:950}
     .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    .product-card{min-height:314px;border:1px solid #eadfd3;border-radius:14px;overflow:hidden;background:#fff;display:grid;grid-template-rows:172px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
-    .product-image{background:linear-gradient(135deg,#f8fafc,#fff4ec);display:grid;place-items:center;overflow:hidden}
-    .product-image img{width:100%;height:100%;object-fit:cover}
+    .product-card{min-height:314px;border:1px solid #eadfd3;border-radius:14px;overflow:hidden;background:#fff;display:grid;grid-template-rows:184px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
+    .product-image{background:#fffaf4;display:grid;place-items:center;overflow:hidden;padding:10px}
+    .product-image img{width:100%;height:100%;object-fit:contain;object-position:center}
     .product-image span{color:#d64a00;font-size:12px;font-weight:900;letter-spacing:.14em}
     .product-copy{padding:14px 15px 4px}
     .product-copy small{color:var(--accent);font-size:11px;font-weight:900;text-transform:uppercase}
     .product-copy h3{margin:6px 0;color:#102044;font-size:18px;line-height:1.12}
     .product-copy p{color:#697386;font-size:12px;line-height:1.35}
-    .product-card footer{padding:12px 15px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .product-card footer{padding:12px 15px 14px;display:flex;align-items:center;justify-content:flex-start;gap:12px}
     .product-card footer span{border-radius:999px;background:#f3f4f6;padding:7px 10px;color:#4b5563;font-size:12px;font-weight:900}
-    .product-card footer strong{color:#d64a00;font-size:16px;white-space:nowrap}
     .foot{padding:28px 42px 38px;color:#697386;font-size:12px;border-top:1px solid #eadfd3}
     @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{min-height:260px}.product-card{box-shadow:none}@page{size:A4;margin:10mm}}
   </style>
@@ -717,7 +715,7 @@ const buildPremiumCatalogHtml = ({ rows, formatBs }) => {
         <div class="grid">${productCards(group)}</div>
       </section>
     `).join('')}
-    <footer class="foot">El Copetin - Catalogo referencial para clientes. Los precios, cantidades y disponibilidad se validan al confirmar el contrato.</footer>
+    <footer class="foot">El Copetin - Catalogo referencial para clientes. Las cantidades y disponibilidad se validan al confirmar el contrato.</footer>
   </main>
 </body>
 </html>`;
@@ -2661,7 +2659,7 @@ function InventoryDashboardSection({
       return;
     }
     catalogWindow.document.open();
-    catalogWindow.document.write(buildPremiumCatalogHtml({ rows: inventoryRows, formatBs }));
+    catalogWindow.document.write(buildPremiumCatalogHtml({ rows: inventoryRows }));
     catalogWindow.document.close();
     catalogWindow.focus();
     showMessage('Catalogo premium abierto. Usa "Imprimir / guardar PDF" para descargarlo.');

@@ -62475,4 +62475,34 @@ body:has(.accounting-bigcash-view) .workspace {
   body .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(n + 4) :is(strong, span, small, b) {
     color: #062044 !important;
   }
+
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(1),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(2),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(3),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized:hover > td:nth-of-type(1),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized:hover > td:nth-of-type(2),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized:hover > td:nth-of-type(3) {
+    background: #ff7a00 !important;
+    background-color: #ff7a00 !important;
+    color: #17140c !important;
+    box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.4) !important;
+  }
+
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(n + 4),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized:hover > td:nth-of-type(n + 4) {
+    background: #1ff4ff !important;
+    background-color: #1ff4ff !important;
+    color: #062044 !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 149, 185, 0.34) !important;
+  }
+
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(1) :is(strong, span, small, b),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(2) :is(strong, span, small, b),
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(3) :is(strong, span, small, b) {
+    color: #17140c !important;
+  }
+
+  body .orders-view table.orders-contracts-table tbody tr.orders-row.is-finalized > td:nth-of-type(n + 4) :is(strong, span, small, b) {
+    color: #062044 !important;
+  }
 }
