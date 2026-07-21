@@ -3729,6 +3729,8 @@ function ServiceOrdersSection({
       record?.totals?.itemsSubtotalBs
         ?? record?.totals?.baseSubtotalBs
         ?? record?.pricingPlan?.baseSubtotalBs
+        ?? record?.totals?.subtotalBs
+        ?? (Number(record?.totals?.totalBs ?? 0) - Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0))
         ?? 0,
     ));
     const recordItemsStoredSubtotalBs = recordItems.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
@@ -7668,7 +7670,7 @@ function ServiceOrdersSection({
                         </td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
-                            <button type="button" className="orders-open-btn" onClick={() => handlePrintOrderDocument('contract', row)}>
+                            <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                               Abrir
                             </button>
                             <button
@@ -7792,7 +7794,7 @@ function ServiceOrdersSection({
                       </div>
                     </div>
                     <div className="orders-mobile-contract-actions">
-                      <button type="button" className="orders-open-btn" onClick={() => handlePrintOrderDocument('contract', row)}>
+                      <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
                       </button>
                       <button
@@ -7975,7 +7977,7 @@ function ServiceOrdersSection({
               <>
                 <button
                   type="button"
-                  onClick={() => handlePrintOrderDocument('contract', activeContractMenuRow)}
+                  onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
                 >
                   Abrir contrato
                 </button>
@@ -8045,7 +8047,7 @@ function ServiceOrdersSection({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => handlePrintOrderDocument('contract', activeContractMenuRow)}
+                  onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
                 >
                   Abrir contrato
                 </button>

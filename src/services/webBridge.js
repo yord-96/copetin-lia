@@ -7547,6 +7547,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         ?? rental?.totals?.itemsSubtotalBs
         ?? contract?.totals?.baseSubtotalBs
         ?? rental?.totals?.baseSubtotalBs
+        ?? contract?.totals?.subtotalBs
+        ?? rental?.totals?.subtotalBs
+        ?? (Number(contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0) - Number(contract?.totals?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0))
         ?? 0,
     ));
     if (currentSubtotalBs > 0 || targetSubtotalBs <= 0) return safeLines;
