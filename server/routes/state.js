@@ -16,6 +16,61 @@ const jsonPayloadCache = {
   body: null,
   gzip: null,
 };
+
+const deferredBootstrapCollections = Object.freeze([
+  'inventoryMovements',
+  'stockRecoveries',
+  'cashMovements',
+  'cashDebts',
+  'generatedReports',
+  'systemAuditLog',
+  'attendanceRecords',
+  'personnelAttendance',
+  'personnelIncidents',
+]);
+const summarizedBootstrapCollections = Object.freeze(['contracts', 'rentals']);
+const readablePartialCollectionSet = new Set([
+  ...deferredBootstrapCollections,
+  ...summarizedBootstrapCollections,
+]);
+
+const summarizeItemLine = (line = {}) => ({
+  itemId: line.itemId ?? '',
+  itemName: line.itemName ?? line.name ?? '',
+  name: line.name ?? line.itemName ?? '',
+  quantity: line.quantity ?? 0,
+  controlsStock: line.controlsStock,
+  verificationStatus: line.verificationStatus,
+  supplierBackedQty: line.supplierBackedQty ?? 0,
+  internalReservedQty: line.internalReservedQty ?? null,
+  serviceDayId: line.serviceDayId ?? null,
+  serviceDate: line.serviceDate ?? null,
+  serviceDayLabel: line.serviceDayLabel ?? null,
+});
+
+const summarizeContract = (contract = {}) => ({
+  ...contract,
+  items: (Array.isArray(contract.items) ? contract.items : []).map(summarizeItemLine),
+  revisionHistory: [],
+  economicLedger: [],
+  deletionSnapshot: null,
+  _summaryOnly: true,
+});
+
+const summarizeRental = (rental = {}) => ({
+  ...rental,
+  items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeItemLine),
+  inventoryAvailabilityAssumptions: null,
+  returnReport: null,
+  returnSettlement: null,
+  _summaryOnly: true,
+});
+
+const summarizeBootstrapCollection = (name, rows) => {
+  if (name === 'contracts') return rows.map(summarizeContract);
+  if (name === 'rentals') return rows.map(summarizeRental);
+  return rows;
+};
 const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
 const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia']);
 const patchableCollections = new Set([
@@ -134,7 +189,12 @@ const requireInternalKey = (req, res, next) => {
 
 const sendJsonPayload = async (req, res, payload) => {
   const startedAt = Date.now();
-  const cacheKey = String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision');
+  const payloadScope = payload?.collections
+    ? `collections:${Object.keys(payload.collections).sort().join(',')}`
+    : payload?.partial
+      ? `bootstrap:${(payload.excludedCollections ?? []).join(',')}`
+      : 'full';
+  const cacheKey = `${String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision')}:${payloadScope}`;
   if (jsonPayloadCache.key !== cacheKey || !jsonPayloadCache.body) {
     jsonPayloadCache.key = cacheKey;
     jsonPayloadCache.body = JSON.stringify(payload);
@@ -461,6 +521,37 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
   }
 });
 
+router.get('/__copetin_db/collections', async (req, res, next) => {
+  try {
+    const requestedNames = String(req.query.names ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const invalidNames = requestedNames.filter((name) => !readablePartialCollectionSet.has(name));
+    if (!requestedNames.length || invalidNames.length) {
+      res.status(400).json({
+        error: 'Debes solicitar colecciones parciales validas.',
+        invalidCollections: invalidNames,
+      });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const collections = Object.fromEntries(
+      requestedNames.map((name) => [name, Array.isArray(snapshot?.state?.[name]) ? snapshot.state[name] : []]),
+    );
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      collections,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db', async (req, res, next) => {
   try {
     if (req.query.meta === '1') {
@@ -468,7 +559,27 @@ router.get('/__copetin_db', async (req, res, next) => {
       return;
     }
 
-    await sendJsonPayload(req, res, await getStateSnapshot());
+    const snapshot = await getStateSnapshot();
+    if (req.query.bootstrap === '1' && snapshot?.initialized && snapshot?.state) {
+      const state = { ...snapshot.state };
+      deferredBootstrapCollections.forEach((collection) => {
+        delete state[collection];
+      });
+      summarizedBootstrapCollections.forEach((collection) => {
+        const rows = Array.isArray(snapshot.state[collection]) ? snapshot.state[collection] : [];
+        state[collection] = summarizeBootstrapCollection(collection, rows);
+      });
+      await sendJsonPayload(req, res, {
+        ...snapshot,
+        state,
+        partial: true,
+        excludedCollections: deferredBootstrapCollections,
+        summarizedCollections: summarizedBootstrapCollections,
+      });
+      return;
+    }
+
+    await sendJsonPayload(req, res, snapshot);
   } catch (error) {
     next(error);
   }

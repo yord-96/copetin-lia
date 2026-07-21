@@ -1,6 +1,22 @@
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
+const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
+  'inventoryMovements',
+  'stockRecoveries',
+  'cashMovements',
+  'cashDebts',
+  'generatedReports',
+  'systemAuditLog',
+  'attendanceRecords',
+  'personnelAttendance',
+  'personnelIncidents',
+]);
+const SUMMARIZED_BOOTSTRAP_COLLECTIONS = Object.freeze(['contracts', 'rentals']);
+const PARTIAL_BOOTSTRAP_COLLECTIONS = Object.freeze([
+  ...DEFERRED_BOOTSTRAP_COLLECTIONS,
+  ...SUMMARIZED_BOOTSTRAP_COLLECTIONS,
+]);
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
 const SYNC_THROTTLE_MS = 2000;
@@ -44,6 +60,8 @@ let remotePresenceUnsupported = false;
 let mutationBatchDepth = 0;
 let mutationBatchPreflightPromise = null;
 let mutationBatchDirty = false;
+const loadedServerCollections = new Set();
+let serverStateIsPartial = false;
 
 const getBridge = () => getWebBridge();
 
@@ -210,6 +228,16 @@ const replaceLocalState = async (state) => {
   }
 };
 
+const mergeLocalState = async (state) => {
+  const storage = getLocalStorageBridge();
+  if (storage?.mergeState && state) {
+    await storage.mergeState(state);
+    return;
+  }
+  const currentState = await exportLocalState();
+  await replaceLocalState({ ...(currentState ?? {}), ...(state ?? {}) });
+};
+
 const exportLocalState = async () => {
   const storage = getLocalStorageBridge();
   if (!storage?.exportState) {
@@ -218,12 +246,12 @@ const exportLocalState = async () => {
   return storage.exportState();
 };
 
-const fetchServerState = async (reason = 'sync') => {
+const fetchServerState = async (reason = 'sync', { bootstrap = false } = {}) => {
   serverStateFetchCount += 1;
   const requestNumber = serverStateFetchCount;
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   console.info(`[copetin-sync] GET ${SERVER_STATE_ENDPOINT} #${requestNumber} iniciado`, { reason });
-  const response = await fetch(getServerStateUrl(), {
+  const response = await fetch(getServerStateUrl(bootstrap ? '?bootstrap=1' : ''), {
     cache: 'no-store',
     headers: getInternalHeaders(),
   });
@@ -242,6 +270,38 @@ const fetchServerState = async (reason = 'sync') => {
     setCachedServerRevision(payload.revision);
   }
   return payload;
+};
+
+const fetchServerCollections = async (names, reason = 'deferred-load') => {
+  const requestedNames = [...new Set((Array.isArray(names) ? names : [])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean))];
+  if (!requestedNames.length) return {};
+  const response = await fetch(getServerStateUrl(`/collections?names=${encodeURIComponent(requestedNames.join(','))}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudieron cargar los datos adicionales del sistema.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) {
+    lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
+  }
+  await mergeLocalState(payload?.collections ?? {});
+  requestedNames.forEach((name) => loadedServerCollections.add(name));
+  serverStateIsPartial = PARTIAL_BOOTSTRAP_COLLECTIONS.some((name) => !loadedServerCollections.has(name));
+  console.info('[copetin-sync] Colecciones diferidas cargadas.', { reason, collections: requestedNames });
+  return payload?.collections ?? {};
+};
+
+const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
+  if (!shouldUseServerState()) return;
+  const missingNames = (Array.isArray(names) ? names : [])
+    .filter((name) => !loadedServerCollections.has(name));
+  if (!missingNames.length) return;
+  await fetchServerCollections(missingNames, reason);
 };
 
 const fetchServerMeta = async () => {
@@ -264,7 +324,15 @@ const ensureServerStateReadyForMutation = async ({ required = true, reason = 'mu
 
   if (!hasCachedLocalState()) {
     await syncServerState({ force: true, required, reason });
-    return;
+  }
+
+  if (serverStateIsPartial) {
+    const missingCollections = PARTIAL_BOOTSTRAP_COLLECTIONS.filter(
+      (name) => !loadedServerCollections.has(name),
+    );
+    if (missingCollections.length) {
+      await fetchServerCollections(missingCollections, `${reason}:complete-partial-state`);
+    }
   }
 
   const meta = await fetchServerMeta();
@@ -336,6 +404,9 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
     return;
   }
 
+  if (serverStateIsPartial) {
+    await ensureServerCollectionsLoaded(DEFERRED_BOOTSTRAP_COLLECTIONS, 'full-save-preflight');
+  }
   const state = await exportLocalState();
   if (!state) {
     return;
@@ -631,11 +702,22 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
       }
     }
 
-    const payload = await fetchServerState(reason);
+    const payload = await fetchServerState(reason, { bootstrap: true });
     resetRemoteBackoff();
     if (payload?.initialized && payload.state) {
       const previousRevision = lastSharedRevision ?? getCachedServerRevision();
       await replaceLocalState(payload.state);
+      loadedServerCollections.clear();
+      const excludedCollections = Array.isArray(payload.excludedCollections) ? payload.excludedCollections : [];
+      const summarizedCollections = Array.isArray(payload.summarizedCollections) ? payload.summarizedCollections : [];
+      PARTIAL_BOOTSTRAP_COLLECTIONS.forEach((name) => {
+        if (!excludedCollections.includes(name) && !summarizedCollections.includes(name)) {
+          loadedServerCollections.add(name);
+        }
+      });
+      serverStateIsPartial = Boolean(
+        payload.partial && (excludedCollections.length || summarizedCollections.length),
+      );
       if (payload.revision) {
         lastSharedRevision = payload.revision;
         setCachedServerRevision(payload.revision);
@@ -984,6 +1066,7 @@ export const api = {
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
+    ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),
   },
   inventory: {
     list: () => callBridge('inventory', 'list', false),
@@ -994,9 +1077,9 @@ export const api = {
     createCombo: (payload) => callBridge('inventory', 'createCombo', true, payload),
     updateCombo: (payload) => callBridge('inventory', 'updateCombo', true, payload),
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),
-    listMovements: () => callBridge('inventory', 'listMovements', false),
+    listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
-    listRecoveries: () => callBridge('inventory', 'listRecoveries', false),
+    listRecoveries: async () => { await ensureServerCollectionsLoaded(['stockRecoveries'], 'stock-recoveries'); return callBridge('inventory', 'listRecoveries', false); },
     processRecovery: (payload) => callBridge('inventory', 'processRecovery', true, payload),
   },
   uploads: {
@@ -1034,7 +1117,7 @@ export const api = {
     updateLoanStatus: (payload) => callBridge('suppliers', 'updateLoanStatus', true, payload),
   },
   personnel: {
-    listBundle: () => callBridge('personnel', 'listBundle', false),
+    listBundle: async () => { await ensureServerCollectionsLoaded(['personnelAttendance', 'personnelIncidents'], 'personnel-bundle'); return callBridge('personnel', 'listBundle', false); },
     createEmployee: (payload) => callBridge('personnel', 'createEmployee', true, payload),
     updateEmployee: (payload) => callBridge('personnel', 'updateEmployee', true, payload),
     removeEmployee: (payload) => callBridge('personnel', 'removeEmployee', true, payload),
@@ -1062,24 +1145,21 @@ export const api = {
         console.info(`[copetin-sync] Sesion local ausente; se omite GET ${SERVER_STATE_ENDPOINT}`);
         return null;
       }
-      const cachedSession = await bridge.auth.getSession();
-      if (cachedSession) {
-        syncServerState({
-          required: false,
-          reason: 'auth-session',
-          preferCache: true,
-          notifyWhenUpdated: true,
-        }).catch((error) => {
-          applyRemoteBackoff(error);
-          console.warn('[copetin-sync] No se pudo refrescar sesion en segundo plano.', error);
-        });
-        return cachedSession;
-      }
-      await syncServerState({ required: true, reason: 'auth-session' });
+
+      // La sesion se reconstruye siempre contra el estado ya hidratado/sincronizado.
+      // Evita devolver durante el primer render un rol antiguo guardado en memoria
+      // mientras la base parcial todavía se está restaurando en segundo plano.
+      await syncServerState({
+        required: true,
+        reason: 'auth-session',
+        notifyWhenUpdated: false,
+      });
       return bridge.auth.getSession();
     },
     login: async (payload) => {
-      await syncServerState({ required: true, reason: 'auth-login' });
+      // Un cambio de usuario debe validar credenciales y rol contra la version
+      // vigente del servidor, aunque ya exista una carga previa en esta pestaña.
+      await syncServerState({ force: true, required: true, reason: 'auth-login' });
       const session = await getBridge().auth.login(payload);
       const { __requiresFullStatePush, ...publicSession } = session;
       if (__requiresFullStatePush) {
@@ -1150,11 +1230,11 @@ export const api = {
     update: (payload) => callBridge('settings', 'update', true, payload),
   },
   reports: {
-    listGenerated: () => callBridge('reports', 'listGenerated', false),
+    listGenerated: async () => { await ensureServerCollectionsLoaded(['generatedReports'], 'generated-reports'); return callBridge('reports', 'listGenerated', false); },
     generate: (payload) => callBridge('reports', 'generate', true, payload),
   },
   audit: {
-    list: () => callBridge('audit', 'list', false),
+    list: async () => { await ensureServerCollectionsLoaded(['systemAuditLog'], 'audit-log'); return callBridge('audit', 'list', false); },
   },
   rentals: {
     list: () => callBridge('rentals', 'list', false),
@@ -1167,8 +1247,8 @@ export const api = {
   cash: {
     getSummary: () => callBridge('cash', 'getSummary', false),
     listSessions: () => callBridge('cash', 'listSessions', false),
-    listMovements: (payload) => callBridge('cash', 'listMovements', false, payload),
-    listDebts: () => callBridge('cash', 'listDebts', false),
+    listMovements: async (payload) => { await ensureServerCollectionsLoaded(['cashMovements'], 'cash-movements'); return callBridge('cash', 'listMovements', false, payload); },
+    listDebts: async () => { await ensureServerCollectionsLoaded(['cashDebts'], 'cash-debts'); return callBridge('cash', 'listDebts', false); },
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
@@ -1181,7 +1261,7 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
-    listRecords: () => callBridge('attendance', 'listRecords', false),
+    listRecords: async () => { await ensureServerCollectionsLoaded(['attendanceRecords'], 'attendance-records'); return callBridge('attendance', 'listRecords', false); },
     createRecord: (payload) => callBridge('attendance', 'createRecord', true, payload),
   },
   system: {

@@ -17458,6 +17458,18 @@ const createWebBridge = () => ({
       writeState(state);
       return { ok: true };
     },
+    mergeState: async (partialState) => {
+      ensureStateHydrated();
+      if (!partialState || typeof partialState !== 'object' || Array.isArray(partialState)) {
+        return { ok: false };
+      }
+      const mergedState = {
+        ...inMemoryState,
+        ...partialState,
+      };
+      writeState(mergedState);
+      return { ok: true };
+    },
   },
 });
 

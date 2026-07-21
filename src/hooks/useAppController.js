@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { canAccessTab, getDefaultTabForUser, getUserDisplayRole } from '../utils/permissions';
 
@@ -122,47 +122,12 @@ export const useAppController = () => {
   const [settingsBundle, setSettingsBundle] = useState({ settings: null, categories: [] });
   const [generatedReports, setGeneratedReports] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
+  const deferredGroupsLoadedRef = useRef(new Set());
 
   const [imagePreview, setImagePreview] = useState(null);
 
-  const loadDeferredData = useCallback(async () => {
-    try {
-      const [
-        personnelData,
-        movementsData,
-        recoveriesData,
-        cashMovementsData,
-        cashDebtsData,
-        reportsData,
-        auditLogData,
-        attendanceRecordsData,
-      ] = await Promise.all([
-        api.personnel.listBundle(),
-        api.inventory.listMovements(),
-        api.inventory.listRecoveries(),
-        api.cash.listMovements(),
-        api.cash.listDebts(),
-        api.reports.listGenerated(),
-        api.audit.list(),
-        api.attendance.listRecords(),
-      ]);
-
-      setPersonnelBundle(personnelData);
-      setInventoryMovements(movementsData);
-      setStockRecoveries(recoveriesData);
-      setCashMovements(cashMovementsData);
-      setCashDebts(cashDebtsData);
-      setGeneratedReports(reportsData);
-      setAuditLog(auditLogData);
-      setAttendanceRecords(attendanceRecordsData);
-    } catch (deferredError) {
-      console.warn('[copetin] No se pudo completar la carga secundaria.', deferredError);
-    }
-  }, []);
-
   const loadData = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
-    const includeDeferred = options?.includeDeferred !== false;
     if (!silent) {
       setLoading(true);
       setError('');
@@ -234,21 +199,8 @@ export const useAppController = () => {
       setSettingsBundle(settingsData);
       setUserPresence(normalizePresenceList(presenceData));
 
-      if (includeDeferred) {
-        const isConstrainedDevice = typeof window !== 'undefined' && (
-          window.matchMedia?.('(pointer: coarse)')?.matches
-          || window.innerWidth <= 900
-          || Number(window.navigator?.hardwareConcurrency ?? 8) <= 4
-        );
-        const deferredTimeoutMs = isConstrainedDevice ? 15000 : 1800;
-        const fallbackDelayMs = isConstrainedDevice ? 8000 : 120;
-        const scheduleDeferredLoad = typeof window !== 'undefined' && 'requestIdleCallback' in window
-          ? (callback) => window.requestIdleCallback(callback, { timeout: deferredTimeoutMs })
-          : (callback) => window.setTimeout(callback, fallbackDelayMs);
-        scheduleDeferredLoad(() => {
-          loadDeferredData();
-        });
-      }
+      // Las colecciones históricas se cargan al abrir su módulo.
+
     } catch (loadError) {
       if (!silent) {
         setError(loadError.message || 'No se pudo cargar la informacion.');
@@ -258,7 +210,70 @@ export const useAppController = () => {
         setLoading(false);
       }
     }
-  }, [loadDeferredData]);
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !currentUser) return;
+
+    let group = null;
+    let loader = null;
+    if (activeTab === 'alquiler') {
+      group = 'commercial-details';
+      loader = async () => {
+        await api.sync.ensureCollectionsLoaded(
+          ['contracts', 'rentals'],
+          'open-service-orders',
+        );
+        const [contractsData, hiddenContractsData, rentalsData] = await Promise.all([
+          api.contracts.list(),
+          api.contracts.listHidden(),
+          api.rentals.list(),
+        ]);
+        setContracts(contractsData);
+        setHiddenContracts(hiddenContractsData);
+        setRentals(rentalsData);
+      };
+    } else if (activeTab === 'asistencia') {
+      group = 'attendance';
+      loader = async () => setAttendanceRecords(await api.attendance.listRecords());
+    } else if (activeTab === 'personal') {
+      group = 'personnel';
+      loader = async () => setPersonnelBundle(await api.personnel.listBundle());
+    } else if (activeTab === 'recibos') {
+      group = 'reports';
+      loader = async () => {
+        const [reportsData, auditData] = await Promise.all([
+          api.reports.listGenerated(),
+          api.audit.list(),
+        ]);
+        setGeneratedReports(reportsData);
+        setAuditLog(auditData);
+      };
+    } else if (activeTab === 'inventario' || String(activeTab).startsWith('contabilidad')) {
+      group = 'operations';
+      loader = async () => {
+        const [movementsData, recoveriesData, cashMovementsData, cashDebtsData, personnelData] = await Promise.all([
+          api.inventory.listMovements(),
+          api.inventory.listRecoveries(),
+          api.cash.listMovements(),
+          api.cash.listDebts(),
+          api.personnel.listBundle(),
+        ]);
+        setInventoryMovements(movementsData);
+        setStockRecoveries(recoveriesData);
+        setCashMovements(cashMovementsData);
+        setCashDebts(cashDebtsData);
+        setPersonnelBundle(personnelData);
+      };
+    }
+
+    if (!group || !loader || deferredGroupsLoadedRef.current.has(group)) return;
+    deferredGroupsLoadedRef.current.add(group);
+    loader().catch((deferredError) => {
+      deferredGroupsLoadedRef.current.delete(group);
+      console.warn(`[copetin] No se pudo cargar el grupo diferido ${group}.`, deferredError);
+    });
+  }, [activeTab, authReady, currentUser]);
 
   const publishPresence = useCallback(async () => {
     if (!currentUser) return;
@@ -482,12 +497,15 @@ export const useAppController = () => {
   const handleLogin = async (payload) => {
     setAuthError('');
     setError('');
+    setLoading(true);
     try {
       const session = await api.auth.login(payload);
+      deferredGroupsLoadedRef.current.clear();
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));
       return session;
     } catch (requestError) {
+      setLoading(false);
       setAuthError(requestError.message || 'No se pudo iniciar sesion.');
       throw requestError;
     }
@@ -1381,7 +1399,7 @@ export const useAppController = () => {
         (normalizedRentalId && row.id === normalizedRentalId)
         || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
     );
-    if (localRental) return localRental;
+    if (localRental && !localRental._summaryOnly) return localRental;
 
     const localContract = contracts.find(
       (row) =>
@@ -1389,8 +1407,14 @@ export const useAppController = () => {
         || (normalizedContractCode && row.contractCode === normalizedContractCode)
         || (normalizedOrderCode && row.orderCode === normalizedOrderCode),
     );
-    if (localContract) return buildRentalSnapshotFromContractForFlow(localContract);
+    if (localContract && !localContract._summaryOnly) {
+      return buildRentalSnapshotFromContractForFlow(localContract);
+    }
 
+    await api.sync.ensureCollectionsLoaded(
+      ['contracts', 'rentals'],
+      'document-flow-details',
+    );
     const allRentals = await api.rentals.list();
     const rentalFromApi = allRentals.find(
       (row) =>
@@ -1587,10 +1611,15 @@ export const useAppController = () => {
     setError('');
     try {
       const localContract = contracts.find((entry) => entry.id === contractId);
-      const allContracts = providedContract || localContract ? [] : await api.contracts.list();
+      const candidateContract = providedContract ?? localContract;
+      if (!candidateContract || candidateContract._summaryOnly) {
+        await api.sync.ensureCollectionsLoaded(['contracts', 'rentals'], 'approve-contract-details');
+      }
+      const allContracts = candidateContract && !candidateContract._summaryOnly
+        ? []
+        : await api.contracts.list();
       const contract =
-        providedContract
-        ?? localContract
+        (candidateContract && !candidateContract._summaryOnly ? candidateContract : null)
         ?? allContracts.find((entry) => entry.id === contractId);
 
       if (!contract) {
