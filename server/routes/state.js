@@ -267,6 +267,42 @@ router.post('/__copetin_db/presence/leave', async (req, res, next) => {
 });
 
 
+router.get('/__copetin_db/rentals/:id', async (req, res, next) => {
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar la orden.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const rentals = Array.isArray(snapshot?.state?.rentals) ? snapshot.state.rentals : [];
+    const rental = rentals.find((entry) =>
+      String(entry?.id ?? '') === requestedId
+      || String(entry?.orderCode ?? '') === requestedId
+      || String(entry?.contractCode ?? '') === requestedId
+      || String(entry?.number ?? '') === requestedId
+      || String(entry?.contractId ?? '') === requestedId
+    );
+
+    if (!rental) {
+      res.status(404).json({ error: 'Orden operativa no encontrada.' });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      rental,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
 router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
   try {
     const requestedId = String(req.params.id ?? '').trim();

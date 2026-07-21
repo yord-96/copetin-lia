@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getProductImageSrc } from '../../utils/productImage';
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import ProductImage from '../common/ProductImage';
+import { api } from '../../services/api';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -994,6 +995,8 @@ function InventoryDashboardSection({
   const [feedbackType, setFeedbackType] = useState('ok');
   const [rowMenuOpenId, setRowMenuOpenId] = useState(null);
   const [rowMenuPosition, setRowMenuPosition] = useState(null);
+  const [operationalReportRow, setOperationalReportRow] = useState(null);
+  const [isLoadingOperationalReport, setIsLoadingOperationalReport] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState(initialProductFiltersRef.current.categoryFilter);
   const [stockFilter, setStockFilter] = useState(initialProductFiltersRef.current.stockFilter);
   const [controlFilter, setControlFilter] = useState(initialProductFiltersRef.current.controlFilter);
@@ -1540,6 +1543,12 @@ function InventoryDashboardSection({
           inventorySortWeight: inventoryMeta.sortWeight,
           inventorySecondarySortWeight: inventoryMeta.secondarySortWeight,
           inventoryNote: operational.inventoryNote ?? '',
+          inventoryConfirmedAt: operational.inventoryConfirmedAt ?? null,
+          inventoryConfirmedByName: operational.inventoryConfirmedByName ?? null,
+          inventoryDispatchedAt: operational.inventoryDispatchedAt ?? null,
+          inventoryDispatchedByName: operational.inventoryDispatchedByName ?? null,
+          inventoryReturnedAt: operational.inventoryReturnedAt ?? null,
+          inventoryReturnedByName: operational.inventoryReturnedByName ?? null,
           dispatchReview,
           returnReview,
           revisionAlert,
@@ -3581,8 +3590,48 @@ function InventoryDashboardSection({
         }
       : undefined;
 
+  const openOperationalReport = async (row) => {
+    setRowMenuOpenId(null);
+    setRowMenuPosition(null);
+    setFeedback('');
+    setIsLoadingOperationalReport(true);
+    try {
+      const identifier = row?.rental?.id
+        || row?.rentalId
+        || row?.orderCode
+        || row?.contractCode;
+      const fullRental = await api.rentals.getFull(identifier);
+      setOperationalReportRow({
+        ...row,
+        rental: fullRental,
+        dispatchReview: fullRental?.dispatchReview ?? row?.dispatchReview ?? null,
+        returnReview: fullRental?.returnReview ?? row?.returnReview ?? null,
+        clientPendingPickup: fullRental?.clientPendingPickup ?? row?.clientPendingPickup ?? null,
+        inventoryStatus: fullRental?.inventoryStatus ?? row?.inventoryStatus,
+        inventoryConfirmedAt: fullRental?.inventoryConfirmedAt ?? row?.inventoryConfirmedAt,
+        inventoryConfirmedByName: fullRental?.inventoryConfirmedByName ?? row?.inventoryConfirmedByName,
+        inventoryDispatchedAt: fullRental?.inventoryDispatchedAt ?? row?.inventoryDispatchedAt,
+        inventoryDispatchedByName: fullRental?.inventoryDispatchedByName ?? row?.inventoryDispatchedByName,
+        inventoryReturnedAt: fullRental?.inventoryReturnedAt ?? fullRental?.returnedAt ?? row?.inventoryReturnedAt,
+        inventoryReturnedByName: fullRental?.inventoryReturnedByName ?? row?.inventoryReturnedByName,
+      });
+    } catch (reportError) {
+      setFeedbackType('error');
+      setFeedback(reportError?.message || 'No se pudo cargar el reporte operativo completo.');
+    } finally {
+      setIsLoadingOperationalReport(false);
+    }
+  };
+
   const renderOperationalRowMenu = (row, openUp = false) => (
     <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()} role="menu">
+      <button
+        type="button"
+        onClick={() => openOperationalReport(row)}
+        disabled={isLoadingOperationalReport}
+      >
+        {isLoadingOperationalReport ? 'Cargando reporte...' : 'Reporte operativo'}
+      </button>
       <button type="button" onClick={() => openOperationalEditModal(row)}>
         Editar
       </button>
@@ -6094,6 +6143,203 @@ function InventoryDashboardSection({
           </section>
         </div>
       ) : null}
+
+      {operationalReportRow ? (() => {
+        const dispatchItems = Array.isArray(operationalReportRow.dispatchReview?.items)
+          ? operationalReportRow.dispatchReview.items
+          : (operationalReportRow.rental?.items ?? []).map((line) => ({
+              itemId: line.itemId,
+              itemName: line.itemName ?? line.name,
+              expectedQty: Math.max(0, Number(line.quantity ?? 0)),
+              dispatchedQty: operationalReportRow.inventoryStatus === 'pendiente' || operationalReportRow.inventoryStatus === 'confirmado'
+                ? 0
+                : Math.max(0, Number(line.quantity ?? 0)),
+              pendingQty: 0,
+              note: '',
+            }));
+        const returnItems = Array.isArray(operationalReportRow.rental?.returnReport)
+          ? operationalReportRow.rental.returnReport
+          : [];
+        const expectedTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.expectedQty ?? 0)), 0);
+        const dispatchedTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.dispatchedQty ?? 0)), 0);
+        const pendingDispatchTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.pendingQty ?? 0)), 0);
+        const returnedGoodTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.returnedQty ?? 0)), 0);
+        const damagedTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.damagedQty ?? 0)), 0);
+        const missingTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.missingQty ?? 0)), 0);
+        const pendingClientItems = Array.isArray(operationalReportRow.clientPendingPickup?.items)
+          ? operationalReportRow.clientPendingPickup.items
+          : [];
+        const pendingClientTotal = pendingClientItems.reduce((sum, line) => sum + Math.max(0, Number(line.pendingQty ?? 0)), 0);
+        const finalMissingTotal = Math.max(missingTotal, pendingClientTotal);
+        const returnStatusLabel = operationalReportRow.returnReview?.status === 'left_with_client'
+          ? 'Material con cliente'
+          : operationalReportRow.inventoryStatus === 'devuelto'
+            ? (missingTotal > 0 || damagedTotal > 0 ? 'Volvió con novedades' : 'Volvió completo')
+            : 'Retorno pendiente';
+        const finalTone = operationalReportRow.inventoryStatus === 'devuelto'
+          ? (damagedTotal > 0 || finalMissingTotal > 0 ? 'warning' : 'success')
+          : 'pending';
+        const timeline = [
+          {
+            key: 'ready',
+            label: 'Alistado',
+            date: operationalReportRow.inventoryConfirmedAt,
+            person: operationalReportRow.inventoryConfirmedByName,
+            done: Boolean(operationalReportRow.inventoryConfirmedAt),
+          },
+          {
+            key: 'out',
+            label: 'Salida',
+            date: operationalReportRow.inventoryDispatchedAt,
+            person: operationalReportRow.inventoryDispatchedByName,
+            done: Boolean(operationalReportRow.inventoryDispatchedAt),
+          },
+          {
+            key: 'back',
+            label: 'Retorno',
+            date: operationalReportRow.inventoryReturnedAt,
+            person: operationalReportRow.inventoryReturnedByName,
+            done: Boolean(operationalReportRow.inventoryReturnedAt),
+          },
+        ];
+        const metrics = [
+          { label: 'Esperado', value: expectedTotal, tone: 'navy' },
+          { label: 'Salió', value: dispatchedTotal, tone: 'orange' },
+          { label: 'Falta enviar', value: pendingDispatchTotal, tone: pendingDispatchTotal > 0 ? 'warning' : 'muted' },
+          { label: 'Volvió bien', value: returnedGoodTotal, tone: 'success' },
+          { label: 'Dañado', value: damagedTotal, tone: damagedTotal > 0 ? 'warning' : 'muted' },
+          { label: 'Faltante / cliente', value: finalMissingTotal, tone: finalMissingTotal > 0 ? 'danger' : 'muted' },
+        ];
+        return (
+          <div className="orders-modal-backdrop inventory-report-backdrop" onClick={() => setOperationalReportRow(null)}>
+            <section className="inventory-report-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="inventory-report-hero">
+                <div className="inventory-report-hero-main">
+                  <div className="inventory-report-eyebrow-row">
+                    <span className="inventory-report-eyebrow">Reporte operativo</span>
+                    <span className={`inventory-report-status ${finalTone}`}>{returnStatusLabel}</span>
+                  </div>
+                  <h3>Contrato {operationalReportRow.contractCode}</h3>
+                  <p>{operationalReportRow.orderCode} · {operationalReportRow.customerName}</p>
+                </div>
+                <button type="button" className="inventory-report-close" onClick={() => setOperationalReportRow(null)} aria-label="Cerrar reporte">×</button>
+              </header>
+
+              <div className="inventory-report-body">
+                <section className="inventory-report-overview">
+                  <div className="inventory-report-client-card">
+                    <span>Cliente</span>
+                    <strong>{operationalReportRow.customerName}</strong>
+                    <small>{operationalReportRow.deliveryAddress || 'Sin dirección registrada'}</small>
+                  </div>
+                  <div className="inventory-report-client-card">
+                    <span>Contrato y orden</span>
+                    <strong>{operationalReportRow.contractCode}</strong>
+                    <small>{operationalReportRow.orderCode}</small>
+                  </div>
+                  <div className="inventory-report-client-card wide">
+                    <span>Observación general</span>
+                    <strong>{operationalReportRow.returnReview?.note || operationalReportRow.dispatchReview?.note || operationalReportRow.clientPendingPickup?.note || 'Sin observaciones registradas.'}</strong>
+                  </div>
+                </section>
+
+                <section className="inventory-report-timeline-card">
+                  <div className="inventory-report-section-head">
+                    <div>
+                      <span>Trazabilidad</span>
+                      <h4>Flujo de la orden</h4>
+                    </div>
+                    <small>Fechas, horas y responsables</small>
+                  </div>
+                  <div className="inventory-report-timeline">
+                    {timeline.map((step, index) => (
+                      <article key={step.key} className={`inventory-report-step ${step.done ? 'done' : 'pending'}`}>
+                        <div className="inventory-report-step-marker">{step.done ? '✓' : index + 1}</div>
+                        <div>
+                          <span>{step.label}</span>
+                          <strong>{step.date ? formatDateTime(step.date) : 'Pendiente'}</strong>
+                          <small>{step.person || 'Sin responsable registrado'}</small>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="inventory-report-metrics">
+                  {metrics.map((metric) => (
+                    <article key={metric.label} className={`inventory-report-metric ${metric.tone}`}>
+                      <span>{metric.label}</span>
+                      <strong>{metric.value}</strong>
+                      <small>unidades</small>
+                    </article>
+                  ))}
+                </section>
+
+                <section className="inventory-report-panel">
+                  <div className="inventory-report-section-head">
+                    <div>
+                      <span>Salida</span>
+                      <h4>Detalle de material despachado</h4>
+                    </div>
+                    <div className="inventory-report-inline-status orange">{dispatchedTotal} de {expectedTotal} unidades</div>
+                  </div>
+                  <div className="inventory-report-table-wrap">
+                    <table className="inventory-report-table">
+                      <thead><tr><th>Ítem</th><th>Esperado</th><th>Salió</th><th>Pendiente</th><th>Observación</th></tr></thead>
+                      <tbody>
+                        {dispatchItems.map((line, index) => (
+                          <tr key={line.lineKey || `${line.itemId}-${index}`}>
+                            <td><strong>{line.itemName || 'Ítem'}</strong></td>
+                            <td>{Math.max(0, Number(line.expectedQty ?? 0))}</td>
+                            <td><span className="inventory-report-number success">{Math.max(0, Number(line.dispatchedQty ?? 0))}</span></td>
+                            <td><span className={`inventory-report-number ${Number(line.pendingQty ?? 0) > 0 ? 'warning' : 'muted'}`}>{Math.max(0, Number(line.pendingQty ?? 0))}</span></td>
+                            <td>{line.note || 'Sin observación'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="inventory-report-panel">
+                  <div className="inventory-report-section-head">
+                    <div>
+                      <span>Retorno</span>
+                      <h4>Detalle de material recibido</h4>
+                    </div>
+                    <div className={`inventory-report-inline-status ${finalMissingTotal > 0 || damagedTotal > 0 ? 'warning' : 'success'}`}>
+                      {returnedGoodTotal} bien · {damagedTotal} dañados · {finalMissingTotal} faltantes
+                    </div>
+                  </div>
+                  <div className="inventory-report-table-wrap">
+                    <table className="inventory-report-table">
+                      <thead><tr><th>Ítem</th><th>Bueno</th><th>Dañado</th><th>Faltante</th><th>Observación</th></tr></thead>
+                      <tbody>
+                        {returnItems.length > 0 ? returnItems.map((line, index) => (
+                          <tr key={line.lineKey || line.returnLineKey || `${line.itemId}-${index}`}>
+                            <td><strong>{line.itemName || 'Ítem'}</strong></td>
+                            <td><span className="inventory-report-number success">{Math.max(0, Number(line.returnedQty ?? 0))}</span></td>
+                            <td><span className={`inventory-report-number ${Number(line.damagedQty ?? 0) > 0 ? 'warning' : 'muted'}`}>{Math.max(0, Number(line.damagedQty ?? 0))}</span></td>
+                            <td><span className={`inventory-report-number ${Number(line.missingQty ?? 0) > 0 ? 'danger' : 'muted'}`}>{Math.max(0, Number(line.missingQty ?? 0))}</span></td>
+                            <td>{line.damageNote || line.note || 'Sin observación'}</td>
+                          </tr>
+                        )) : (
+                          <tr><td colSpan="5" className="inventory-report-empty">Todavía no existe una recepción cerrada para esta orden.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+
+              <footer className="inventory-report-footer">
+                <span>Documento interno de trazabilidad de inventario</span>
+                <button type="button" className="primary-button" onClick={() => setOperationalReportRow(null)}>Cerrar</button>
+              </footer>
+            </section>
+          </div>
+        );
+      })() : null}
 
       {dispatchReviewModal ? (
         <div className="orders-modal-backdrop" onClick={() => !isSavingDispatchReview && setDispatchReviewModal(null)}>

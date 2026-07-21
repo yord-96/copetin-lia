@@ -9,6 +9,7 @@ import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
+import AccountingSection from './components/sections/AccountingSection';
 import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
 const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
@@ -27,7 +28,6 @@ const AttendanceSection = lazy(() => import('./components/sections/AttendanceSec
 const InventoryDashboardSection = lazy(() => import('./components/sections/InventoryDashboardSection'));
 const SuppliersSection = lazy(() => import('./components/sections/SuppliersSection'));
 const PersonnelSection = lazy(() => import('./components/sections/PersonnelSection'));
-const AccountingSection = lazy(() => import('./components/sections/AccountingSection'));
 const LinconWorkspaceSection = lazy(() => import('./components/sections/LinconWorkspaceSection'));
 
 const readDeveloperCompanyChoice = () => {

@@ -396,6 +396,48 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
   return contract;
 };
 
+const fetchFullServerRental = async (identifier, reason = 'rental-full-load') => {
+  const requestedId = String(identifier ?? '').trim();
+  if (!requestedId) {
+    throw new Error('Debes indicar la orden que deseas cargar.');
+  }
+
+  const response = await fetch(getServerStateUrl(`/rentals/${encodeURIComponent(requestedId)}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar la orden completa.');
+  }
+
+  const payload = await response.json();
+  const rental = payload?.rental ?? null;
+  if (!rental?.id) {
+    throw new Error('El servidor no devolvio la orden completa.');
+  }
+
+  if (payload?.revision) {
+    rememberServerRevision(payload.revision);
+  }
+
+  const localSnapshot = await exportLocalCollections(['rentals']);
+  const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
+  const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
+    ? currentRentals.map((entry) => (
+      String(entry?.id ?? '') === String(rental.id) ? rental : entry
+    ))
+    : [rental, ...currentRentals];
+
+  await mergeLocalState({ rentals: nextRentals });
+  console.info('[copetin-sync] Orden completa cargada.', {
+    reason,
+    rentalId: rental.id,
+    orderCode: rental.orderCode ?? null,
+    contractCode: rental.contractCode ?? null,
+  });
+  return rental;
+};
+
 const fetchServerMeta = async () => {
   const response = await fetch(getServerStateUrl('?meta=1'), {
     cache: 'no-store',
@@ -1425,6 +1467,7 @@ export const api = {
   },
   rentals: {
     list: () => callBridge('rentals', 'list', false),
+    getFull: (identifier) => fetchFullServerRental(identifier, 'rental-report'),
     create: (payload) => callBridge('rentals', 'create', true, payload),
     updateOperational: (payload) => callBridge('rentals', 'updateOperational', true, payload),
     cancel: (payload) => callBridge('rentals', 'cancel', true, payload),

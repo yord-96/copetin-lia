@@ -6640,7 +6640,7 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
 };
 
 const getReferenceContractStyles = () => `
-  @page { size: auto; margin: 0; }
+  @page { size: 216mm 330mm; margin: 9mm 10mm 10mm; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -7006,9 +7006,7 @@ const getReferenceContractStyles = () => `
     page-break-inside: auto;
   }
   .rc-day-section.starts-new-page {
-    break-before: page;
-    page-break-before: always;
-    padding-top: 10mm;
+    padding-top: 0;
   }
   .rc-table {
     width: 100%;
@@ -7044,6 +7042,10 @@ const getReferenceContractStyles = () => `
   .rc-table tbody tr.rc-cat-violet td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #7553a7; }
   .rc-table tbody tr.rc-cat-rose td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #ad4f64; }
   .rc-table tbody tr.rc-cat-slate td:nth-child(2) { box-shadow: inset 1.25mm 0 0 #56616f; }
+  .rc-duration-day-row {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
   .rc-duration-day-row td {
     padding: .8mm 1.5mm;
     border-right: 0;
@@ -7376,10 +7378,10 @@ const getReferenceContractStyles = () => `
     .rc-sheet {
       position: relative;
       width: auto;
-      max-width: 8.5in;
+      max-width: none;
       min-height: auto;
-      margin: 0 auto;
-      padding: .14in .38in .30in;
+      margin: 0;
+      padding: 0;
       display: block;
       box-shadow: none;
       background: #fffdfa;
@@ -7393,7 +7395,7 @@ const getReferenceContractStyles = () => `
     .rc-table thead { display: table-header-group; }
     .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
     .rc-day-section.starts-new-page {
-      padding-top: 10mm;
+      padding-top: 0;
     }
     .rc-bottom,
     .rc-closeout,
@@ -7799,15 +7801,9 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
         .sort((a, b) => a.index - b.index);
     })()
     : [];
-  const itemTablesHtml = hasDailySchedulePricing
-    ? dailyScheduleGroupsForPrint.map((group, groupPosition) => {
-      const dayRows = `${renderScheduleDayHeader(group.day, group.index, group.lines)}${group.lines.map((line) => renderContractItemRow(line)).join('')}`;
-      const extraRows = groupPosition === dailyScheduleGroupsForPrint.length - 1 ? serviceRows : '';
-      return `<section class="rc-day-section${groupPosition > 0 ? ' starts-new-page' : ''}">
-          ${renderContractItemsTable(`${dayRows}${extraRows}`)}
-        </section>`;
-    }).join('')
-    : renderContractItemsTable(rows);
+  // Todos los dias comparten una sola tabla. El navegador pagina por espacio
+  // disponible, repite el encabezado y evita desperdiciar una hoja por cada dia.
+  const itemTablesHtml = renderContractItemsTable(rows);
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = realItemCount + manualRowCount;
@@ -15605,17 +15601,49 @@ const createWebBridge = () => ({
           .reduce((sum, entry) => sum
             + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
             + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+        const consumedReturnLineIndexes = new Set();
         const returnReport = rental.items.map((rentalLine, index) => {
           const rentalLineKey = getInventoryLineKey(rentalLine, index);
-          const incomingLine = lines.find((entry) => String(entry?.lineKey ?? entry?.returnLineKey ?? '') === rentalLineKey)
-            ?? lines.find((entry) => (
-              !entry?.lineKey
-              && !entry?.returnLineKey
-              && entry.itemId === rentalLine.itemId
+          const normalizedRentalItemId = String(rentalLine?.itemId ?? '').trim();
+          const normalizedRentalItemName = normalizeText(rentalLine?.itemName ?? rentalLine?.name ?? '');
+          const normalizedRentalComboLineKey = String(rentalLine?.comboLineKey ?? '').trim();
+
+          const findAvailableLineIndex = (predicate) => lines.findIndex(
+            (entry, entryIndex) => !consumedReturnLineIndexes.has(entryIndex) && predicate(entry),
+          );
+
+          let incomingLineIndex = findAvailableLineIndex(
+            (entry) => Number(entry?.sourceLineIndex) === index,
+          );
+          if (incomingLineIndex < 0) {
+            incomingLineIndex = findAvailableLineIndex(
+              (entry) => String(entry?.lineKey ?? entry?.returnLineKey ?? '') === rentalLineKey,
+            );
+          }
+          if (incomingLineIndex < 0 && normalizedRentalComboLineKey) {
+            incomingLineIndex = findAvailableLineIndex((entry) => (
+              String(entry?.itemId ?? '').trim() === normalizedRentalItemId
+              && String(entry?.comboLineKey ?? '').trim() === normalizedRentalComboLineKey
+              && Number(entry?.comboRuleIndex ?? -1) === Number(rentalLine?.comboRuleIndex ?? -1)
             ));
+          }
+          if (incomingLineIndex < 0) {
+            incomingLineIndex = findAvailableLineIndex((entry) => (
+              String(entry?.itemId ?? '').trim() === normalizedRentalItemId
+              && normalizeText(entry?.itemName ?? entry?.name ?? '') === normalizedRentalItemName
+            ));
+          }
+          if (incomingLineIndex < 0) {
+            incomingLineIndex = findAvailableLineIndex(
+              (entry) => String(entry?.itemId ?? '').trim() === normalizedRentalItemId,
+            );
+          }
+
+          const incomingLine = incomingLineIndex >= 0 ? lines[incomingLineIndex] : null;
           if (!incomingLine) {
             throw new Error(`Falta detalle de devolucion para "${rentalLine.itemName}".`);
           }
+          consumedReturnLineIndexes.add(incomingLineIndex);
 
           const returnedQty = Math.max(0, toInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
           const damagedQty = Math.max(0, toInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));

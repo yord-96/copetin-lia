@@ -265,21 +265,25 @@ export const useAppController = () => {
         setGeneratedReports(reportsData);
         setAuditLog(auditData);
       };
-    } else if (activeTab === 'inventario' || String(activeTab).startsWith('contabilidad')) {
-      group = 'operations';
+    } else if (String(activeTab).startsWith('inventario')) {
+      group = 'inventory-operations';
       loader = async () => {
-        const [movementsData, recoveriesData, cashMovementsData, cashDebtsData, personnelData] = await Promise.all([
+        const [movementsData, recoveriesData] = await Promise.all([
           api.inventory.listMovements(),
           api.inventory.listRecoveries(),
-          api.cash.listMovements(),
-          api.cash.listDebts(),
-          api.personnel.listBundle(),
         ]);
         setInventoryMovements(movementsData);
         setStockRecoveries(recoveriesData);
+      };
+    } else if (String(activeTab).startsWith('contabilidad')) {
+      group = 'accounting-operations';
+      loader = async () => {
+        const [cashMovementsData, cashDebtsData] = await Promise.all([
+          api.cash.listMovements(),
+          api.cash.listDebts(),
+        ]);
         setCashMovements(cashMovementsData);
         setCashDebts(cashDebtsData);
-        setPersonnelBundle(personnelData);
       };
     }
 
