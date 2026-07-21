@@ -6640,7 +6640,7 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
 };
 
 const getReferenceContractStyles = () => `
-  @page { size: 216mm 330mm; margin: 3mm 4mm 5mm; }
+  @page { size: 216mm 330mm; margin: 3mm 4mm 9mm; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -7377,7 +7377,7 @@ const getReferenceContractStyles = () => `
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .rc-sheet {
       position: relative;
-      width: 100%;
+      width: auto;
       max-width: none;
       min-height: auto;
       margin: 0;
@@ -7386,24 +7386,21 @@ const getReferenceContractStyles = () => `
       box-shadow: none;
       background: #fffdfa;
     }
-    .rc-items,
-    .rc-table,
-    .rc-closeout,
-    .rc-page-bottom {
-      width: 100%;
-      max-width: none;
-    }
     .rc-table {
-      width: 100%;
-      border-collapse: collapse;
+      border-collapse: separate;
       border-spacing: 0;
       border-radius: 0;
       overflow: visible;
     }
-    .rc-table th { padding: 1mm 1.25mm; }
-    .rc-table td { padding: .8mm 1.2mm; }
     .rc-table thead { display: table-header-group; }
-    .rc-table tr { break-inside: avoid; page-break-inside: avoid; }
+    .rc-table tbody { break-inside: auto; page-break-inside: auto; }
+    .rc-table tr,
+    .rc-table td,
+    .rc-table th {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
+    .rc-table tr { position: relative; }
     .rc-day-section.starts-new-page {
       padding-top: 0;
     }
@@ -7419,6 +7416,7 @@ const getReferenceContractStyles = () => `
       margin-top: 3mm;
       padding-top: 5mm;
     }
+    .rc-items { padding-bottom: 1.5mm; }
   }
 `;
 
