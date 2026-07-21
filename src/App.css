@@ -62446,3 +62446,33 @@ body:has(.accounting-bigcash-view) .workspace {
   .inventory-report-footer span { display: none; }
   .inventory-report-footer .primary-button { width: 100%; }
 }
+
+/* Regla final de prioridad: contrato finalizado queda con bloque comercial naranja
+   y bloque operativo/economico celeste, como en la vista operativa. */
+@media (min-width: 769px) {
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(-n + 3),
+  body .orders-view .orders-contracts-table tbody tr.is-finalized:nth-child(even) td:nth-child(-n + 3),
+  body .orders-view .orders-contracts-table tbody tr.is-finalized:hover td:nth-child(-n + 3) {
+    background: #ff7a00 !important;
+    color: #17140c !important;
+    box-shadow: inset 0 0 0 1px rgba(172, 61, 0, 0.38) !important;
+  }
+
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(n + 4),
+  body .orders-view .orders-contracts-table tbody tr.is-finalized:nth-child(even) td:nth-child(n + 4),
+  body .orders-view .orders-contracts-table tbody tr.is-finalized:hover td:nth-child(n + 4),
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-sent-cell,
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td.orders-contract-returned-cell {
+    background: #1ff4ff !important;
+    color: #062044 !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 149, 185, 0.34) !important;
+  }
+
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(-n + 3) :is(strong, span, small, b) {
+    color: #17140c !important;
+  }
+
+  body .orders-view .orders-contracts-table tbody tr.is-finalized td:nth-child(n + 4) :is(strong, span, small, b) {
+    color: #062044 !important;
+  }
+}

@@ -350,6 +350,14 @@ const withHexAlpha = (color, alpha) => {
 
 const csvEscape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
 const downloadCsv = (name, lines) => {
   const csv = `${lines.join('\n')}\n`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -596,6 +604,123 @@ const exportProductsWorkbook = async ({ rows, filters }) => {
     `inventario-productos-${new Date().toISOString().slice(0, 10)}.xlsx`,
     new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
   );
+};
+
+const buildPremiumCatalogHtml = ({ rows, formatBs }) => {
+  const areaMeta = {
+    vajilla: {
+      title: 'Cristaleria y Vajilla',
+      subtitle: 'Piezas para mesa, bar, servicio y montaje fino.',
+      accent: '#0ea5e9',
+      soft: '#e8f7ff',
+    },
+    manteleria: {
+      title: 'Manteleria',
+      subtitle: 'Textiles, caminos, fundas y acabados para vestir el evento.',
+      accent: '#8b5cf6',
+      soft: '#f3efff',
+    },
+    mobiliario: {
+      title: 'Mobiliario',
+      subtitle: 'Mesas, sillas, lounges, estructuras y apoyo operativo.',
+      accent: '#16a34a',
+      soft: '#ecfdf3',
+    },
+  };
+  const groups = INVENTORY_AREAS.map((area) => ({
+    id: area.id,
+    ...(areaMeta[area.id] ?? { title: getInventoryAreaLabel(area.id), subtitle: '', accent: '#e65300', soft: '#fff4ec' }),
+    rows: rows
+      .filter((row) => resolveInventoryArea(row) === area.id)
+      .slice()
+      .sort((left, right) => String(left.name ?? '').localeCompare(String(right.name ?? ''), 'es')),
+  })).filter((group) => group.rows.length > 0);
+  const totalUnits = rows.reduce((sum, row) => sum + Number(row.total ?? row.totalStock ?? 0), 0);
+  const today = new Date().toLocaleDateString('es-BO', { day: '2-digit', month: 'long', year: 'numeric' });
+  const productCards = (group) => group.rows.map((row) => {
+    const imageSrc = getProductImageSrc(row);
+    const detail = [row.brand, row.itemColor].map((value) => String(value ?? '').trim()).filter(Boolean).join(' - ');
+    return `
+      <article class="product-card">
+        <div class="product-image">
+          ${imageSrc ? `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(row.name)}">` : '<span>EL COPETIN</span>'}
+        </div>
+        <div class="product-copy">
+          <small>${escapeHtml(row.category || group.title)}</small>
+          <h3>${escapeHtml(row.name)}</h3>
+          <p>${escapeHtml(detail || 'Catalogo premium para eventos')}</p>
+        </div>
+        <footer>
+          <span>${Number(row.total ?? 0)} u.</span>
+          <strong>${escapeHtml(formatBs(Number(row.price ?? row.rentalPriceBs ?? 0)))}</strong>
+        </footer>
+      </article>
+    `;
+  }).join('');
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Catalogo Premium El Copetin</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f5f1ea;color:#102044;font-family:"Inter","Segoe UI",Arial,sans-serif}
+    .catalog{max-width:1180px;margin:0 auto;background:#fffaf4;min-height:100vh}
+    .actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;gap:10px;padding:12px 16px;background:rgba(255,255,255,.94);border-bottom:1px solid #eadfd3}
+    .actions button{border:0;border-radius:10px;background:#e65300;color:#fff;padding:10px 14px;font-weight:900;cursor:pointer}
+    .hero{min-height:320px;padding:44px 48px;display:grid;align-content:end;gap:18px;background:linear-gradient(135deg,rgba(12,32,68,.94),rgba(206,71,0,.82));color:#fff}
+    .brand{display:flex;align-items:center;gap:14px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+    .brand-mark{width:46px;height:46px;border:2px solid rgba(255,255,255,.75);border-radius:50%;display:grid;place-items:center;font-size:20px}
+    h1{max-width:780px;margin:0;font-size:54px;line-height:.95;letter-spacing:-.02em}
+    .hero p{max-width:720px;margin:0;color:rgba(255,255,255,.84);font-size:17px;line-height:1.5}
+    .hero-stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+    .hero-stats span{border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(255,255,255,.12);padding:9px 13px;font-size:12px;font-weight:800}
+    .section{padding:34px 42px 42px;page-break-inside:avoid}
+    .section+.section{border-top:1px solid #eadfd3}
+    .section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:18px}
+    .kicker{display:inline-flex;border-radius:999px;padding:7px 11px;color:var(--accent);background:var(--soft);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+    .section h2{margin:10px 0 5px;font-size:30px;letter-spacing:-.01em}
+    .section p{margin:0;color:#697386;font-size:14px}
+    .section-count{color:var(--accent);font-size:28px;font-weight:950}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    .product-card{min-height:314px;border:1px solid #eadfd3;border-radius:14px;overflow:hidden;background:#fff;display:grid;grid-template-rows:172px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
+    .product-image{background:linear-gradient(135deg,#f8fafc,#fff4ec);display:grid;place-items:center;overflow:hidden}
+    .product-image img{width:100%;height:100%;object-fit:cover}
+    .product-image span{color:#d64a00;font-size:12px;font-weight:900;letter-spacing:.14em}
+    .product-copy{padding:14px 15px 4px}
+    .product-copy small{color:var(--accent);font-size:11px;font-weight:900;text-transform:uppercase}
+    .product-copy h3{margin:6px 0;color:#102044;font-size:18px;line-height:1.12}
+    .product-copy p{color:#697386;font-size:12px;line-height:1.35}
+    .product-card footer{padding:12px 15px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .product-card footer span{border-radius:999px;background:#f3f4f6;padding:7px 10px;color:#4b5563;font-size:12px;font-weight:900}
+    .product-card footer strong{color:#d64a00;font-size:16px;white-space:nowrap}
+    .foot{padding:28px 42px 38px;color:#697386;font-size:12px;border-top:1px solid #eadfd3}
+    @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{min-height:260px}.product-card{box-shadow:none}@page{size:A4;margin:10mm}}
+  </style>
+</head>
+<body>
+  <main class="catalog">
+    <div class="actions"><button type="button" onclick="window.print()">Imprimir / guardar PDF</button></div>
+    <section class="hero">
+      <div class="brand"><span class="brand-mark">EC</span><span>El Copetin</span></div>
+      <h1>Catalogo premium de alquiler</h1>
+      <p>Seleccion curada de cristaleria, manteleria y mobiliario para eventos. Disponibilidad sujeta a fecha, cantidades y confirmacion operativa.</p>
+      <div class="hero-stats"><span>${rows.length} productos</span><span>${totalUnits} unidades registradas</span><span>Generado ${escapeHtml(today)}</span></div>
+    </section>
+    ${groups.map((group) => `
+      <section class="section" style="--accent:${group.accent};--soft:${group.soft}">
+        <header class="section-head">
+          <div><span class="kicker">${escapeHtml(group.title)}</span><h2>${escapeHtml(group.title)}</h2><p>${escapeHtml(group.subtitle)}</p></div>
+          <strong class="section-count">${group.rows.length}</strong>
+        </header>
+        <div class="grid">${productCards(group)}</div>
+      </section>
+    `).join('')}
+    <footer class="foot">El Copetin - Catalogo referencial para clientes. Los precios, cantidades y disponibilidad se validan al confirmar el contrato.</footer>
+  </main>
+</body>
+</html>`;
 };
 
 const getDateRangeLabel = (dateFrom, dateTo) => {
@@ -2525,6 +2650,23 @@ function InventoryDashboardSection({
     }
   };
 
+  const handleExportPremiumCatalog = () => {
+    if (inventoryRows.length === 0) {
+      showMessage('No hay productos para generar el catalogo.', 'error');
+      return;
+    }
+    const catalogWindow = window.open('', '_blank', 'width=1180,height=860');
+    if (!catalogWindow) {
+      showMessage('Chrome bloqueo la ventana del catalogo. Habilita ventanas emergentes para guardar el PDF.', 'error');
+      return;
+    }
+    catalogWindow.document.open();
+    catalogWindow.document.write(buildPremiumCatalogHtml({ rows: inventoryRows, formatBs }));
+    catalogWindow.document.close();
+    catalogWindow.focus();
+    showMessage('Catalogo premium abierto. Usa "Imprimir / guardar PDF" para descargarlo.');
+  };
+
   const handleKpiLink = (card) => {
     if (!card) return;
     if (isCategoriesModule) {
@@ -4398,9 +4540,16 @@ function InventoryDashboardSection({
                   </button>
                 </>
               ) : (
-                <button type="button" className="link-button inventory-export-btn" onClick={handleExport}>
-                  {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar Excel'}
-                </button>
+                <>
+                  {isProductsModule ? (
+                    <button type="button" className="ghost-button inventory-export-btn" onClick={handleExportPremiumCatalog}>
+                      Catalogo PDF
+                    </button>
+                  ) : null}
+                  <button type="button" className="link-button inventory-export-btn" onClick={handleExport}>
+                    {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar Excel'}
+                  </button>
+                </>
               )}
             </header>
 
