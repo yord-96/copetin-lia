@@ -3015,9 +3015,19 @@ function ServiceOrdersSection({
         const availability = availabilityByItemId.get(line.itemId) ?? null;
         const isCourtesyLine = line.lineType === 'courtesy';
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
-        const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, Number(line.unitPriceBs ?? item.rentalPriceBs ?? 0));
-        const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
+        const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
+        const rawUnitPriceBs = Math.max(0, Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0));
+        const recoveredUnitPriceBs = explicitLineTotalBs && quantity > 0
+          ? Number((explicitLineTotalBs / quantity).toFixed(2))
+          : 0;
+        const unitPriceBs = isCourtesyLine
+          ? 0
+          : rawUnitPriceBs > 0
+            ? rawUnitPriceBs
+            : recoveredUnitPriceBs > 0
+              ? recoveredUnitPriceBs
+              : Math.max(0, Number(item.rentalPriceBs ?? 0));
         const grossLineTotalBs = isCourtesyLine ? 0 : explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
         const lineGrossTotalBs = isCourtesyLine ? 0 : explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
         const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
@@ -3030,7 +3040,7 @@ function ServiceOrdersSection({
           quantity,
           quantityInput: line.quantity === '' ? '' : String(line.quantity ?? quantity),
           unitPriceBs,
-          unitPriceInput: line.unitPriceBs === '' ? '' : String(line.unitPriceBs ?? unitPriceBs),
+          unitPriceInput: line.unitPriceBs === '' ? '' : String(rawUnitPriceBs > 0 ? line.unitPriceBs : unitPriceBs),
           item,
           availability,
           discountPercent,
@@ -5719,6 +5729,30 @@ function ServiceOrdersSection({
     const linkedOrderItems = Array.isArray(linkedOrder?.items) ? linkedOrder.items : [];
     const contractServices = Array.isArray(fullContract?.services) ? fullContract.services : [];
     const linkedOrderServices = Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
+    const recoverHistoricZeroPricedItems = (lines = [], subtotalBs = 0) => {
+      const safeLines = Array.isArray(lines) ? lines : [];
+      const currentSubtotalBs = safeLines.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
+      const targetSubtotalBs = Math.max(0, Number(subtotalBs ?? 0));
+      if (currentSubtotalBs > 0 || targetSubtotalBs <= 0) return safeLines;
+      const totalQuantity = safeLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line?.quantity ?? 0))), 0);
+      if (totalQuantity <= 0) return safeLines;
+      let accumulatedBs = 0;
+      return safeLines.map((line, index) => {
+        const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+        const isLast = index === safeLines.length - 1;
+        const lineTotalBs = isLast
+          ? Number(Math.max(0, targetSubtotalBs - accumulatedBs).toFixed(2))
+          : Number(((targetSubtotalBs * quantity) / totalQuantity).toFixed(2));
+        accumulatedBs = Number((accumulatedBs + lineTotalBs).toFixed(2));
+        const unitPriceBs = Number((lineTotalBs / quantity).toFixed(2));
+        return {
+          ...line,
+          unitPriceBs,
+          grossLineTotalBs: lineTotalBs,
+          lineTotalBs,
+        };
+      });
+    };
 
     const contractDayCount = getLineDayKeys([...contractItems, ...contractServices]).size;
     const linkedOrderDayCount = getLineDayKeys([...linkedOrderItems, ...linkedOrderServices]).size;
@@ -5729,10 +5763,19 @@ function ServiceOrdersSection({
         && linkedOrderDayCount > 1
         && contractDayCount <= 1
       );
+    const sourceItems = shouldRecoverDailyLines && linkedOrderItems.length > 0 ? linkedOrderItems : contractItems;
+    const recoveredSourceItems = recoverHistoricZeroPricedItems(
+      sourceItems,
+      fullContract?.totals?.itemsSubtotalBs
+        ?? fullContract?.totals?.baseSubtotalBs
+        ?? fullContract?.totals?.subtotalBs
+        ?? fullContract?.totals?.totalBs
+        ?? 0,
+    );
 
     const sourceContract = {
       ...fullContract,
-      items: shouldRecoverDailyLines && linkedOrderItems.length > 0 ? linkedOrderItems : contractItems,
+      items: recoveredSourceItems,
       services: shouldRecoverDailyLines && linkedOrderServices.length > 0 ? linkedOrderServices : contractServices,
       pricingPlan: shouldRecoverDailyLines && linkedOrder?.pricingPlan
         ? linkedOrder.pricingPlan

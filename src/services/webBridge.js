@@ -7478,8 +7478,21 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const mergeDocumentItemLine = (primaryLine, fallbackLine = null) => {
     const primary = primaryLine ?? {};
     const fallback = fallbackLine ?? {};
-    const unitPriceBs = Number(primary.unitPriceBs ?? primary.rentalPriceBs ?? fallback.unitPriceBs ?? fallback.rentalPriceBs ?? 0);
     const quantity = Number(primary.quantity ?? fallback.quantity ?? 0);
+    const lineTotalBs = Number(
+      primary.lineTotalBs
+        ?? fallback.lineTotalBs
+        ?? 0,
+    );
+    const rawUnitPriceBs = Number(primary.unitPriceBs ?? primary.rentalPriceBs ?? fallback.unitPriceBs ?? fallback.rentalPriceBs ?? 0);
+    const recoveredUnitPriceBs = rawUnitPriceBs > 0
+      ? rawUnitPriceBs
+      : quantity > 0 && lineTotalBs > 0
+        ? Number((lineTotalBs / quantity).toFixed(2))
+        : 0;
+    const unitPriceBs = recoveredUnitPriceBs > 0
+      ? recoveredUnitPriceBs
+      : Number(fallback.unitPriceBs ?? fallback.rentalPriceBs ?? primary.unitPriceBs ?? primary.rentalPriceBs ?? 0);
     return {
       ...fallback,
       ...primary,
@@ -7501,10 +7514,41 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`);
       return mergeDocumentItemLine(line, contractItemsByKey.get(key));
     });
+  const recoverHistoricDocumentItems = (lines = []) => {
+    const safeLines = Array.isArray(lines) ? lines : [];
+    const currentSubtotalBs = safeLines.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
+    const targetSubtotalBs = Math.max(0, Number(
+      contract?.totals?.itemsSubtotalBs
+        ?? rental?.totals?.itemsSubtotalBs
+        ?? contract?.totals?.baseSubtotalBs
+        ?? rental?.totals?.baseSubtotalBs
+        ?? 0,
+    ));
+    if (currentSubtotalBs > 0 || targetSubtotalBs <= 0) return safeLines;
+    const totalQuantity = safeLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line?.quantity ?? 0))), 0);
+    if (totalQuantity <= 0) return safeLines;
+    let accumulatedBs = 0;
+    return safeLines.map((line, index) => {
+      const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+      const isLast = index === safeLines.length - 1;
+      const lineTotalBs = isLast
+        ? Number(Math.max(0, targetSubtotalBs - accumulatedBs).toFixed(2))
+        : Number(((targetSubtotalBs * quantity) / totalQuantity).toFixed(2));
+      accumulatedBs = Number((accumulatedBs + lineTotalBs).toFixed(2));
+      const unitPriceBs = Number((lineTotalBs / quantity).toFixed(2));
+      return {
+        ...line,
+        rentalPriceBs: unitPriceBs,
+        unitPriceBs,
+        grossLineTotalBs: lineTotalBs,
+        lineTotalBs,
+      };
+    });
+  };
   const supplierSupportByItem = buildSupplierSupportByItem(
     pickFirstSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan, rental?.supplierFulfillmentPlan),
   );
-  const documentItems = rawDocumentItems
+  const documentItems = recoverHistoricDocumentItems(rawDocumentItems)
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
       const category = getContractLineCategory(line, item);
@@ -13981,7 +14025,22 @@ const createWebBridge = () => ({
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const lineType = String(line?.lineType ?? '').trim();
             const isCourtesyLine = lineType === 'courtesy';
-            const unitPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? item.rentalPriceBs ?? 0));
+            const requestedLineTotalBs = Number.isFinite(Number(line?.lineTotalBs))
+              ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
+              : Number.isFinite(Number(previousLine?.lineTotalBs))
+                ? Math.max(0, toPositiveRoundedNumber(previousLine.lineTotalBs))
+                : 0;
+            const requestedUnitPriceBs = Math.max(0, toPositiveRoundedNumber(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0));
+            const recoveredUnitPriceBs = requestedUnitPriceBs > 0
+              ? requestedUnitPriceBs
+              : requestedLineTotalBs > 0 && quantity > 0
+                ? Number((requestedLineTotalBs / quantity).toFixed(2))
+                : 0;
+            const unitPriceBs = isCourtesyLine
+              ? 0
+              : recoveredUnitPriceBs > 0
+                ? recoveredUnitPriceBs
+                : Math.max(0, toPositiveRoundedNumber(item.rentalPriceBs ?? previousLine?.unitPriceBs ?? previousLine?.rentalPriceBs ?? 0));
             const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));
             const discountBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.discountBs ?? 0));
             const grossLineTotalBs = isCourtesyLine ? 0 : Number.isFinite(Number(line.grossLineTotalBs))
