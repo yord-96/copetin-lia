@@ -648,7 +648,7 @@ const buildPremiumCatalogHtml = ({ rows }) => {
         <div class="product-copy">
           <small>${escapeHtml(row.category || group.title)}</small>
           <h3>${escapeHtml(row.name)}</h3>
-          <p>${escapeHtml(detail || 'Catalogo premium para eventos')}</p>
+          <p>${escapeHtml(detail || 'Disponible para eventos')}</p>
         </div>
         <footer>
           <span>${Number(row.total ?? 0)} u.</span>
@@ -661,18 +661,17 @@ const buildPremiumCatalogHtml = ({ rows }) => {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Catalogo Premium El Copetin</title>
+  <title>Catalogo El Copetin</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;background:#f5f1ea;color:#102044;font-family:"Inter","Segoe UI",Arial,sans-serif}
+    body{margin:0;background:#f2ede6;color:#102044;font-family:"Inter","Segoe UI",Arial,sans-serif}
     .catalog{max-width:1180px;margin:0 auto;background:#fffaf4;min-height:100vh}
-    .actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;gap:10px;padding:12px 16px;background:rgba(255,255,255,.94);border-bottom:1px solid #eadfd3}
+    .actions{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;gap:10px;padding:12px 16px;background:rgba(255,255,255,.95);border-bottom:1px solid #eadfd3}
     .actions button{border:0;border-radius:10px;background:#e65300;color:#fff;padding:10px 14px;font-weight:900;cursor:pointer}
-    .hero{min-height:320px;padding:44px 48px;display:grid;align-content:end;gap:18px;background:linear-gradient(135deg,rgba(12,32,68,.94),rgba(206,71,0,.82));color:#fff}
-    .brand{display:flex;align-items:center;gap:14px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
-    .brand-mark{width:46px;height:46px;border:2px solid rgba(255,255,255,.75);border-radius:50%;display:grid;place-items:center;font-size:20px}
-    h1{max-width:780px;margin:0;font-size:54px;line-height:.95;letter-spacing:-.02em}
-    .hero p{max-width:720px;margin:0;color:rgba(255,255,255,.84);font-size:17px;line-height:1.5}
+    .hero{padding:34px 42px 38px;background:#15110f;color:#fff}
+    .brand-logo{width:min(560px,100%);height:auto;display:block;margin:0 0 28px}
+    h1{max-width:780px;margin:0;font-size:48px;line-height:1;letter-spacing:-.01em}
+    .hero p{max-width:720px;margin:14px 0 0;color:rgba(255,255,255,.84);font-size:16px;line-height:1.5}
     .hero-stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
     .hero-stats span{border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(255,255,255,.12);padding:9px 13px;font-size:12px;font-weight:800}
     .section{padding:34px 42px 42px;page-break-inside:avoid}
@@ -682,10 +681,10 @@ const buildPremiumCatalogHtml = ({ rows }) => {
     .section h2{margin:10px 0 5px;font-size:30px;letter-spacing:-.01em}
     .section p{margin:0;color:#697386;font-size:14px}
     .section-count{color:var(--accent);font-size:28px;font-weight:950}
-    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    .product-card{min-height:314px;border:1px solid #eadfd3;border-radius:14px;overflow:hidden;background:#fff;display:grid;grid-template-rows:184px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
-    .product-image{background:#fffaf4;display:grid;place-items:center;overflow:hidden;padding:10px}
-    .product-image img{width:100%;height:100%;object-fit:contain;object-position:center}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .product-card{min-height:390px;border:1px solid #eadfd3;border-radius:12px;overflow:hidden;background:#fff;display:grid;grid-template-rows:250px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
+    .product-image{background:#fff;display:grid;place-items:center;overflow:hidden;padding:14px;border-bottom:1px solid #f1e5db}
+    .product-image img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;object-position:center}
     .product-image span{color:#d64a00;font-size:12px;font-weight:900;letter-spacing:.14em}
     .product-copy{padding:14px 15px 4px}
     .product-copy small{color:var(--accent);font-size:11px;font-weight:900;text-transform:uppercase}
@@ -694,16 +693,16 @@ const buildPremiumCatalogHtml = ({ rows }) => {
     .product-card footer{padding:12px 15px 14px;display:flex;align-items:center;justify-content:flex-start;gap:12px}
     .product-card footer span{border-radius:999px;background:#f3f4f6;padding:7px 10px;color:#4b5563;font-size:12px;font-weight:900}
     .foot{padding:28px 42px 38px;color:#697386;font-size:12px;border-top:1px solid #eadfd3}
-    @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{min-height:260px}.product-card{box-shadow:none}@page{size:A4;margin:10mm}}
+    @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{padding:24px 28px 30px}.brand-logo{max-width:440px;margin-bottom:20px}h1{font-size:36px}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.section{padding:24px 24px 30px}.product-card{min-height:390px;grid-template-rows:250px 1fr auto;box-shadow:none}@page{size:A4;margin:10mm}}
   </style>
 </head>
 <body>
   <main class="catalog">
     <div class="actions"><button type="button" onclick="window.print()">Imprimir / guardar PDF</button></div>
     <section class="hero">
-      <div class="brand"><span class="brand-mark">EC</span><span>El Copetin</span></div>
-      <h1>Catalogo premium de alquiler</h1>
-      <p>Seleccion curada de cristaleria, manteleria y mobiliario para eventos. Disponibilidad sujeta a fecha, cantidades y confirmacion operativa.</p>
+      <img class="brand-logo" src="/imagenes/logocontrato.png" alt="El Copetin">
+      <h1>Catalogo de alquiler para eventos</h1>
+      <p>Seleccion de cristaleria, manteleria y mobiliario para eventos. Disponibilidad sujeta a fecha, cantidades y confirmacion operativa.</p>
       <div class="hero-stats"><span>${rows.length} productos</span><span>${totalUnits} unidades registradas</span><span>Generado ${escapeHtml(today)}</span></div>
     </section>
     ${groups.map((group) => `
@@ -2662,7 +2661,7 @@ function InventoryDashboardSection({
     catalogWindow.document.write(buildPremiumCatalogHtml({ rows: inventoryRows }));
     catalogWindow.document.close();
     catalogWindow.focus();
-    showMessage('Catalogo premium abierto. Usa "Imprimir / guardar PDF" para descargarlo.');
+    showMessage('Catalogo abierto. Usa "Imprimir / guardar PDF" para descargarlo.');
   };
 
   const handleKpiLink = (card) => {
