@@ -1324,6 +1324,8 @@ function ServiceOrdersSection({
   const [menuState, setMenuState] = useState(null);
   const menuRef = useRef(null);
   const menuPreviewRef = useRef(null);
+  const contractSearchInputRef = useRef(null);
+  const contractSearchDebounceRef = useRef(null);
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
@@ -1950,6 +1952,12 @@ function ServiceOrdersSection({
       || normalizeText(row.customerName).includes(text)
       || normalizeText(row.customerPhone).includes(text)
       || normalizeText(row.customerReferencePhone).includes(text)
+      || normalizeText(row.responsibleName).includes(text)
+      || normalizeText(row.responsibleRole).includes(text)
+      || (Array.isArray(row.responsibles) && row.responsibles.some((responsible) =>
+        normalizeText(responsible?.name).includes(text)
+        || normalizeText(responsible?.role).includes(text)
+      ))
       || normalizeText(row.eventType).includes(text)
       || normalizeText(row.orderCode).includes(text)
     );
@@ -2005,6 +2013,28 @@ function ServiceOrdersSection({
       setContractFilter('all');
     }
   }, [canViewHiddenContracts, contractFilter]);
+
+  useEffect(() => {
+    const input = contractSearchInputRef.current;
+    if (!input || document.activeElement === input) return;
+    input.value = contractQuery;
+  }, [contractQuery]);
+
+  useEffect(() => () => {
+    if (contractSearchDebounceRef.current) {
+      clearTimeout(contractSearchDebounceRef.current);
+    }
+  }, []);
+
+  const handleContractSearchChange = useCallback((event) => {
+    const nextValue = event.target.value;
+    if (contractSearchDebounceRef.current) {
+      clearTimeout(contractSearchDebounceRef.current);
+    }
+    contractSearchDebounceRef.current = setTimeout(() => {
+      setContractQuery(nextValue);
+    }, 180);
+  }, []);
 
   const activeOrderMenuRow = useMemo(
     () => (menuState?.type === 'order' ? orderRowsWithMeta.find((row) => row.id === menuState.id) ?? null : null),
@@ -7342,10 +7372,11 @@ function ServiceOrdersSection({
               <header className="orders-toolbar">
                 <label className="orders-search">
                   <input
+                    ref={contractSearchInputRef}
                     type="search"
-                    placeholder="Buscar por numero de contrato, cliente o orden..."
-                    value={contractQuery}
-                    onChange={(event) => setContractQuery(event.target.value)}
+                    placeholder="Buscar por numero, cliente, orden o responsable..."
+                    defaultValue={contractQuery}
+                    onChange={handleContractSearchChange}
                   />
                 </label>
                 <div className="orders-date-range-filter" aria-label="Rango de fecha del evento">

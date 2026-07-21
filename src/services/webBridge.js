@@ -15498,6 +15498,144 @@ const createWebBridge = () => ({
 
       return updated;
     },
+    cancel: async (payload) => {
+      const id = String(payload?.id ?? payload?.rentalId ?? '').trim();
+      const contractId = String(payload?.contractId ?? '').trim();
+      if (!id && !contractId) {
+        throw new Error('No se pudo identificar el contrato u orden de servicio a anular.');
+      }
+
+      let cancelled = null;
+      transaction((state) => {
+        const nowIso = new Date().toISOString();
+        const todayKey = toDateKey(nowIso);
+        const linkedContractFromId = contractId
+          ? state.contracts.find((entry) => entry.id === contractId && !entry.deletedAt)
+          : null;
+        const rental = id
+          ? state.rentals.find((entry) => entry.id === id && !entry.deletedAt)
+          : state.rentals.find((entry) =>
+            !entry.deletedAt
+            && linkedContractFromId
+            && (
+              (linkedContractFromId.rentalId && entry.id === linkedContractFromId.rentalId)
+              || (linkedContractFromId.orderCode && entry.orderCode === linkedContractFromId.orderCode)
+            ),
+          );
+
+        if (!rental) throw new Error('Orden de servicio no encontrada.');
+        if (rental.status === 'returned') throw new Error('No se puede anular una orden ya devuelta.');
+        if (rental.status === 'cancelled') throw new Error('Esta orden ya fue anulada.');
+
+        const linkedContract = linkedContractFromId ?? state.contracts.find((entry) =>
+          !entry.deletedAt
+          && (
+            (entry.rentalId && entry.rentalId === rental.id)
+            || (entry.orderCode && rental.orderCode && entry.orderCode === rental.orderCode)
+          ),
+        ) ?? null;
+        const cutoffDate = linkedContract?.deliveryDate ?? rental.rentalDate ?? linkedContract?.eventDate ?? null;
+        if (!cutoffDate) throw new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
+        if (!isSameOrBeforeDay(todayKey, cutoffDate)) {
+          throw new Error(`Solo puedes anular hasta el dia de envio (${toDateKey(cutoffDate)}).`);
+        }
+
+        const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
+        const settings = state.settings ?? {};
+        const penaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
+        const reason = String(payload?.reason ?? '').trim();
+        if (!reason) throw new Error('Debes indicar por que se esta anulando el contrato.');
+        const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+        const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+
+        (rental.items ?? []).forEach((line) => {
+          const item = state.items.find((entry) => entry.id === line.itemId);
+          if (!item || lineControlsStock(line, item) === false) return;
+          const reservedQty = Number.isFinite(Number(line.internalReservedQty))
+            ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+            : Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
+          if (reservedQty <= 0) return;
+          const beforeTotalStock = Number(item.totalStock ?? 0);
+          const beforeAvailableStock = Number(item.availableStock ?? 0);
+          item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + reservedQty);
+          item.updatedAt = nowIso;
+          state.inventoryMovements.push({
+            id: makeId('mov'),
+            itemId: item.id,
+            itemName: item.name,
+            category: item.category,
+            type: 'reinsercion',
+            reason: `Anulacion de contrato ${linkedContract?.contractCode ?? rental.orderCode}`,
+            detail: `Reintegro de ${reservedQty} unidades por anulacion de ${rental.orderCode}`,
+            reference: rental.orderCode,
+            deltaUnits: reservedQty,
+            beforeTotalStock,
+            afterTotalStock: beforeTotalStock,
+            beforeAvailableStock,
+            afterAvailableStock: item.availableStock,
+            reservedStockAfter: item.totalStock - item.availableStock,
+            userName,
+            userRole,
+            createdAt: nowIso,
+            status: 'cancelado',
+          });
+        });
+
+        state.deliveries.forEach((delivery) => {
+          if (delivery.deletedAt) return;
+          if (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode) {
+            delivery.status = 'cancelada';
+            delivery.progress = 0;
+            delivery.updatedAt = nowIso;
+            if (!String(delivery.notes ?? '').includes('[ANULADO]')) {
+              delivery.notes = `${String(delivery.notes ?? '').trim()} [ANULADO]`.trim();
+            }
+          }
+        });
+
+        rental.status = 'cancelled';
+        rental.cancelledAt = nowIso;
+        rental.cancellationPenaltyPercent = penaltyPercent;
+        rental.cancellationPenaltyBs = penaltyBs;
+        rental.cancellationReason = reason;
+        rental.cancellationCutoffDate = toDateKey(cutoffDate);
+        rental.penaltiesBs = Number((Number(rental.penaltiesBs ?? 0) + penaltyBs).toFixed(2));
+        rental.operational = {
+          ...(rental.operational ?? {}),
+          inventoryStatus: 'anulado',
+          transportStatus: 'anulado',
+          inventoryNote: reason || rental.operational?.inventoryNote || '',
+          transportNote: reason || rental.operational?.transportNote || '',
+        };
+        rental.updatedAt = nowIso;
+
+        if (linkedContract) {
+          linkedContract.status = 'anulado';
+          linkedContract.cancelledAt = nowIso;
+          linkedContract.cancellationPenaltyPercent = penaltyPercent;
+          linkedContract.cancellationPenaltyBs = penaltyBs;
+          linkedContract.cancellationReason = reason;
+          linkedContract.cancellationCutoffDate = toDateKey(cutoffDate);
+          linkedContract.updatedAt = nowIso;
+          appendContractRevision(linkedContract, payload, nowIso, [
+            `Contrato anulado por ${userName}`,
+            `Motivo: ${reason}`,
+            `Items liberados de inventario para ${rental.orderCode}`,
+            `Numero de contrato conservado: ${linkedContract.contractCode}`,
+          ]);
+        }
+
+        cancelled = deepClone({
+          ...rental,
+          contractId: linkedContract?.id ?? null,
+          contractCode: linkedContract?.contractCode ?? null,
+        });
+        return state;
+      });
+
+      return cancelled;
+    },
     remove: async (payload) => {
       const id = String(payload?.id ?? payload?.rentalId ?? '').trim();
       if (!id) {
