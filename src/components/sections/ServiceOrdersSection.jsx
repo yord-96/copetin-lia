@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   Box,
@@ -1245,6 +1245,7 @@ function ServiceOrdersSection({
   const [quoteQuery, setQuoteQuery] = useState('');
   const [contractFilter, setContractFilter] = useState('all');
   const [contractQuery, setContractQuery] = useState('');
+  const deferredContractQuery = useDeferredValue(contractQuery);
   const [contractDateFrom, setContractDateFrom] = useState(DEFAULT_CONTRACT_WEEK_RANGE.from);
   const [contractDateTo, setContractDateTo] = useState(DEFAULT_CONTRACT_WEEK_RANGE.to);
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
@@ -1300,6 +1301,7 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
+  const [recentEconomicCashMovements, setRecentEconomicCashMovements] = useState([]);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
@@ -1727,9 +1729,18 @@ function ServiceOrdersSection({
     return map;
   }, [orderRowsWithMeta]);
 
+  const effectiveCashMovements = useMemo(() => {
+    const byId = new Map();
+    [...cashMovements, ...recentEconomicCashMovements].forEach((movement) => {
+      const key = String(movement?.id ?? movement?.receiptCode ?? '').trim();
+      if (key) byId.set(key, movement);
+    });
+    return [...byId.values()];
+  }, [cashMovements, recentEconomicCashMovements]);
+
   const returnedGuaranteeReferences = useMemo(() => {
     const references = new Set();
-    cashMovements.forEach((movement) => {
+    effectiveCashMovements.forEach((movement) => {
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
       const type = normalizeText(movement?.type);
@@ -1751,7 +1762,7 @@ function ServiceOrdersSection({
       });
     });
     return references;
-  }, [cashMovements]);
+  }, [effectiveCashMovements]);
 
   const buildContractRows = useCallback((sourceContracts) => {
     return sourceContracts.map((contract) => {
@@ -1798,7 +1809,7 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText).filter(Boolean);
-      const collectionRegisteredBs = cashMovements.reduce((sum, movement) => {
+      const collectionRegisteredBs = effectiveCashMovements.reduce((sum, movement) => {
         if (isVoidedCashMovement(movement)) return sum;
 
         const movementType = normalizeText(movement?.type);
@@ -1912,7 +1923,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [cashMovements, formatBs, orderByContractId, rentals, returnedGuaranteeReferences]);
+  }, [effectiveCashMovements, formatBs, orderByContractId, rentals, returnedGuaranteeReferences]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
@@ -1929,7 +1940,7 @@ function ServiceOrdersSection({
   }, [contractRows, hiddenContractRows.length]);
 
   const matchesContractSearch = useCallback((row) => {
-    const text = normalizeText(contractQuery);
+    const text = normalizeText(deferredContractQuery);
     const eventKey = getDateKey(row.eventDate);
     if (contractDateFrom && (!eventKey || eventKey < contractDateFrom)) return false;
     if (contractDateTo && (!eventKey || eventKey > contractDateTo)) return false;
@@ -1942,7 +1953,7 @@ function ServiceOrdersSection({
       || normalizeText(row.eventType).includes(text)
       || normalizeText(row.orderCode).includes(text)
     );
-  }, [contractDateFrom, contractDateTo, contractQuery]);
+  }, [contractDateFrom, contractDateTo, deferredContractQuery]);
 
   const searchedVisibleContracts = useMemo(
     () => contractRows.filter(matchesContractSearch),
@@ -2086,7 +2097,7 @@ function ServiceOrdersSection({
       return loose && [...looseReferenceKeys].some((key) => key && normalized.includes(key));
     };
 
-    const movements = cashMovements
+    const movements = effectiveCashMovements
       .filter((movement) => [
         movement?.linkedContractId,
         movement?.linkedRentalId,
@@ -2534,7 +2545,7 @@ function ServiceOrdersSection({
           ? 'Liquidacion con cargos'
           : 'Sin saldo pendiente',
     };
-  }, [cashMovements, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
+  }, [effectiveCashMovements, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
 
   const contractQuoteIdSet = useMemo(
     () =>
@@ -5740,6 +5751,21 @@ function ServiceOrdersSection({
     }
   };
 
+  const rememberEconomicCashResult = (result) => {
+    const movements = [
+      ...(Array.isArray(result?.movements) ? result.movements : []),
+      result?.movement,
+      result?.replacement,
+      result?.id ? result : null,
+    ].filter((movement) => movement?.id);
+    if (!movements.length) return;
+    setRecentEconomicCashMovements((current) => {
+      const byId = new Map(current.map((movement) => [String(movement.id), movement]));
+      movements.forEach((movement) => byId.set(String(movement.id), movement));
+      return [...byId.values()];
+    });
+  };
+
   const resolveEconomicMovementId = (result) => {
     if (!result) return '';
     if (result.id) return result.id;
@@ -5805,6 +5831,7 @@ function ServiceOrdersSection({
         notes: defaultNote,
         linkedRentalId: rentalId,
       });
+      rememberEconomicCashResult(result);
       const movementId = resolveEconomicMovementId(result);
       const movement = result?.movement ?? result ?? {};
       const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? contractEconomicsCollectionDraft.receipt ?? '').trim();
@@ -5819,7 +5846,6 @@ function ServiceOrdersSection({
         receipt: '',
         note: '',
       });
-      api.sync.pullLatest?.();
     } catch (error) {
       setContractEconomicsError(error.message || 'No se pudo registrar el cobro del contrato.');
     } finally {
@@ -6210,6 +6236,7 @@ function ServiceOrdersSection({
         accountingTag: 'guarantee_refund',
         createdBy: createdByName,
       });
+      rememberEconomicCashResult(result);
       const movementId = resolveEconomicMovementId(result);
       if (movementId) {
         await handlePrintEconomicReceipt({ id: movementId });
@@ -6244,7 +6271,6 @@ function ServiceOrdersSection({
           note: '',
         });
       }
-      api.sync.pullLatest?.();
     } catch (error) {
       setContractEconomicsError(error.message || 'No se pudo registrar la devolucion de garantia.');
     } finally {

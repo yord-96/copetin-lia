@@ -48,6 +48,14 @@ const CONTRACT_REMOVE_PATCH_COLLECTIONS = Object.freeze([
   'supplierLoans',
   'systemAuditLog',
 ]);
+const CASH_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
+  'cashSessions',
+  'cashMovements',
+  'cashDebts',
+  'contracts',
+  'rentals',
+]);
+
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
 const SYNC_THROTTLE_MS = 2000;
@@ -1119,6 +1127,9 @@ const subscribeToDataChanges = (callback) => {
 };
 
 const getTargetedMutationCollections = (domain, method) => {
+  if (domain === 'cash') {
+    return CASH_MOVEMENT_PATCH_COLLECTIONS;
+  }
   if (domain !== 'contracts') return null;
   if (method === 'create') return CONTRACT_CREATE_PATCH_COLLECTIONS;
   if (method === 'update') return CONTRACT_UPDATE_PATCH_COLLECTIONS;

@@ -1025,7 +1025,22 @@ export const useAppController = () => {
     setError('');
     try {
       const result = await api.cash.collectReceivable(payload);
-      await loadData();
+      const createdMovements = [
+        ...(Array.isArray(result?.movements) ? result.movements : []),
+        result?.movement,
+      ].filter((movement) => movement?.id);
+      if (createdMovements.length > 0) {
+        setCashMovements((current) => {
+          const byId = new Map(current.map((movement) => [String(movement.id), movement]));
+          createdMovements.forEach((movement) => byId.set(String(movement.id), movement));
+          return [...byId.values()];
+        });
+      }
+      if (result?.rental?.id) {
+        setRentals((current) => current.map((rental) => (
+          String(rental?.id) === String(result.rental.id) ? result.rental : rental
+        )));
+      }
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo confirmar el cobro.');
