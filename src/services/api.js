@@ -647,6 +647,9 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
 
 const stableJson = (value) => JSON.stringify(value ?? null);
 
+const isSummaryOnlyRow = (row) =>
+  Boolean(row && typeof row === 'object' && !Array.isArray(row) && row._summaryOnly);
+
 const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLECTIONS) => {
   if (!beforeState || !afterState) return null;
   const upserts = {};
@@ -669,6 +672,7 @@ const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLEC
       const id = String(row?.id ?? '').trim();
       if (!id) return null;
       afterIds.add(id);
+      if (isSummaryOnlyRow(row)) continue;
       if (beforeById.get(id) !== stableJson(row)) {
         if (!upserts[collection]) upserts[collection] = [];
         upserts[collection].push(row);

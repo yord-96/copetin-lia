@@ -562,6 +562,13 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
           const id = String(row.id ?? '').trim();
           if (!id) return;
           const currentIndex = indexById.get(id);
+          if (row._summaryOnly && currentIndex >= 0) {
+            console.warn('[state-route] Upsert resumido ignorado para proteger datos completos.', {
+              collection,
+              id,
+            });
+            return;
+          }
           if (currentIndex >= 0) {
             currentRows[currentIndex] = row;
           } else {
