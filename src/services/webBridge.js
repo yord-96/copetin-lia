@@ -7015,17 +7015,6 @@ const getReferenceContractStyles = () => `
   }
   .rc-items { margin-top: 1mm; }
   .rc-items .rc-block-title { margin-bottom: 0; }
-  .rc-data-warning {
-    margin: 1.2mm 0;
-    padding: 1.4mm 2mm;
-    border: .35mm solid #b45309;
-    border-radius: 1.5mm;
-    background: #fff7ed;
-    color: #7c2d12;
-    font-size: 9.2px;
-    font-weight: 800;
-    line-height: 1.25;
-  }
   .rc-day-section {
     break-inside: auto;
     page-break-inside: auto;
@@ -7546,16 +7535,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
   const supplierSupportByItem = buildSupplierSupportByItem(
     pickFirstSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan, rental?.supplierFulfillmentPlan),
   );
-  const hasUnpricedDocumentItems = rawDocumentItems.some((line) => {
-    const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
-    if (quantity <= 0 || String(line?.lineType ?? '').trim() === 'courtesy') return false;
-    return Math.max(
-      Number(line?.unitPriceBs ?? 0),
-      Number(line?.rentalPriceBs ?? 0),
-      Number(line?.grossLineTotalBs ?? 0),
-      Number(line?.lineTotalBs ?? 0),
-    ) <= 0;
-  });
   const documentItems = rawDocumentItems
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
@@ -7965,7 +7944,6 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
       <section class="rc-items">
         <h2 class="rc-block-title">Detalle de items contratados</h2>
-        ${hasUnpricedDocumentItems ? '<div class="rc-data-warning">Atencion: este contrato tiene items historicos sin precio unitario guardado por linea. No se imprimen precios reconstruidos automaticamente; revisa y corrige el detalle antes de entregar una copia final.</div>' : ''}
         ${itemTablesHtml}
         ${manualBlockHtml}
         <section class="rc-continuation-head">
