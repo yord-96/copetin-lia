@@ -39,6 +39,38 @@ const lineMoney = (line) => Math.max(
   0,
 );
 
+const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+const deriveUnitPrice = (line) => {
+  const quantity = Number(line?.quantity ?? 0);
+  const lineTotal = Number(line?.lineTotalBs ?? line?.grossLineTotalBs ?? 0);
+  if (quantity <= 0 || lineTotal <= 0) return 0;
+  return roundMoney(lineTotal / quantity);
+};
+
+const normalizeLineMoneyFields = (line) => {
+  const next = { ...line };
+  let changed = false;
+  const derivedUnitPrice = deriveUnitPrice(next);
+
+  if (derivedUnitPrice > 0 && Number(next.unitPriceBs ?? 0) <= 0) {
+    next.unitPriceBs = derivedUnitPrice;
+    changed = true;
+  }
+
+  if (derivedUnitPrice > 0 && Number(next.rentalPriceBs ?? 0) <= 0) {
+    next.rentalPriceBs = derivedUnitPrice;
+    changed = true;
+  }
+
+  if (Number(next.lineTotalBs ?? 0) > 0 && Number(next.grossLineTotalBs ?? 0) <= 0) {
+    next.grossLineTotalBs = roundMoney(next.lineTotalBs);
+    changed = true;
+  }
+
+  return { line: next, changed };
+};
+
 const countMoneyLines = (record) =>
   (Array.isArray(record?.items) ? record.items : []).filter((line) => lineMoney(line) > 0).length;
 
@@ -71,7 +103,7 @@ const buildSourceLineMap = (lines) => {
 };
 
 const mergeLineMoney = (targetLine, sourceLine) => {
-  if (!sourceLine || lineMoney(sourceLine) <= 0) return { line: targetLine, changed: false };
+  if (!sourceLine || lineMoney(sourceLine) <= 0) return normalizeLineMoneyFields(targetLine);
   const next = { ...targetLine };
   let changed = false;
   moneyKeys.forEach((key) => {
@@ -80,14 +112,15 @@ const mergeLineMoney = (targetLine, sourceLine) => {
     next[key] = sourceLine[key];
     changed = true;
   });
-  return { line: next, changed };
+  const normalized = normalizeLineMoneyFields(next);
+  return { line: normalized.line, changed: changed || normalized.changed };
 };
 
 const mergeRecordMoney = (target, source) => {
   if (!target || !source) return { record: target, changed: false, restoredLines: 0 };
   const targetLines = Array.isArray(target.items) ? target.items : [];
   const sourceLines = Array.isArray(source.items) ? source.items : [];
-  if (!targetLines.length || !sourceLines.length || countMoneyLines(source) <= countMoneyLines(target)) {
+  if (!targetLines.length || !sourceLines.length) {
     return { record: target, changed: false, restoredLines: 0 };
   }
 
