@@ -19,6 +19,12 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const getState = (payload) => payload?.state || payload;
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 const totalBs = (record) => Number(record?.totals?.totalBs ?? record?.totalBs ?? 0);
+const expectedItemSubtotalBs = (record) => Number(
+  record?.totals?.baseSubtotalBs
+  ?? record?.pricingPlan?.chargeableSubtotalBs
+  ?? record?.pricingPlan?.theoreticalSubtotalBs
+  ?? 0,
+);
 const lineTotal = (line) => Number(line?.lineTotalBs ?? line?.grossLineTotalBs ?? 0);
 const lineUnit = (line) => Number(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0);
 const lineQty = (line) => Number(line?.quantity ?? 0);
@@ -109,6 +115,7 @@ const rows = audited.map((contract) => {
   const positiveUnitWithZeroSubtotal = items.filter((line) => lineUnit(line) > 0 && lineQty(line) > 0 && lineTotal(line) <= 0).length;
   const total = roundMoney(totalBs(contract));
   const subtotal = itemSubtotal(contract);
+  const expectedItems = roundMoney(expectedItemSubtotalBs(contract));
   const source = sourceByContractId.get(String(contract?.id ?? '').trim());
   const sourceRecord = source?.record ?? null;
   const issues = [];
@@ -117,7 +124,9 @@ const rows = audited.map((contract) => {
   if (total > 0 && items.length > 0 && countMoneyLines(contract) === 0) issues.push('allLineMoneyZero');
   if (positiveSubtotalWithZeroUnit > 0) issues.push('subtotalWithoutUnit');
   if (positiveUnitWithZeroSubtotal > 0) issues.push('unitWithoutSubtotal');
-  if (total > 0 && subtotal > 0 && Math.abs(total - subtotal) > 0.01) issues.push('lineSubtotalDiffersFromTotal');
+  if (expectedItems > 0 && subtotal > 0 && Math.abs(expectedItems - subtotal) > 0.01) {
+    issues.push('lineSubtotalDiffersFromExpectedItems');
+  }
   if (sourceRecord && countMoneyLines(sourceRecord) > countMoneyLines(contract)) issues.push('backupHasMorePricedLines');
   if (sourceRecord && supplierRows(sourceRecord) > supplierRows(contract)) issues.push('backupHasSupplierPlan');
   if (sourceRecord && hasPricingPlan(sourceRecord) && !hasPricingPlan(contract)) issues.push('backupHasPricingPlan');
@@ -128,6 +137,7 @@ const rows = audited.map((contract) => {
     eventDate: recordDate(contract),
     clientName: contract.clientName ?? contract.client?.name ?? '',
     totalBs: total,
+    expectedItemSubtotalBs: expectedItems,
     itemSubtotalBs: subtotal,
     items: items.length,
     moneyLines: countMoneyLines(contract),
@@ -171,6 +181,7 @@ if (jsonOnly) {
     code: row.contractCode,
     date: row.eventDate,
     total: row.totalBs,
+    expected: row.expectedItemSubtotalBs,
     subtotal: row.itemSubtotalBs,
     items: row.items,
     money: row.moneyLines,

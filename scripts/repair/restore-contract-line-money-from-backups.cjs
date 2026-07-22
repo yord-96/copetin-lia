@@ -51,6 +51,8 @@ const deriveUnitPrice = (line) => {
 const normalizeLineMoneyFields = (line) => {
   const next = { ...line };
   let changed = false;
+  const quantity = Number(next.quantity ?? 0);
+  const existingUnitPrice = Number(next.unitPriceBs ?? next.rentalPriceBs ?? 0);
   const derivedUnitPrice = deriveUnitPrice(next);
 
   if (derivedUnitPrice > 0 && Number(next.unitPriceBs ?? 0) <= 0) {
@@ -60,6 +62,16 @@ const normalizeLineMoneyFields = (line) => {
 
   if (derivedUnitPrice > 0 && Number(next.rentalPriceBs ?? 0) <= 0) {
     next.rentalPriceBs = derivedUnitPrice;
+    changed = true;
+  }
+
+  if (quantity > 0 && existingUnitPrice > 0 && Number(next.lineTotalBs ?? 0) <= 0) {
+    next.lineTotalBs = roundMoney(quantity * existingUnitPrice);
+    changed = true;
+  }
+
+  if (quantity > 0 && existingUnitPrice > 0 && Number(next.grossLineTotalBs ?? 0) <= 0) {
+    next.grossLineTotalBs = roundMoney(quantity * existingUnitPrice);
     changed = true;
   }
 
