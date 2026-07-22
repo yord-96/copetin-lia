@@ -165,6 +165,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const isTransientServerError = (error) =>
   error?.status === 429 || error?.status === 503 || error?.status === 504;
 
+const isRevisionConflictError = (error) =>
+  error?.status === 409
+  && !error?.payload?.code
+  && (
+    Object.prototype.hasOwnProperty.call(error?.payload ?? {}, 'currentRevision')
+    || Object.prototype.hasOwnProperty.call(error?.payload ?? {}, 'providedRevision')
+    || /revision|actualiz/i.test(String(error?.message ?? ''))
+  );
+
 const getRetryDelayMs = (error, attempt) => {
   if (error?.retryAfterMs) {
     return Math.min(Math.max(error.retryAfterMs, 500), 8000);
@@ -185,6 +194,9 @@ const getSaveErrorMessage = (error, fallback) => {
     return 'El servidor esta recibiendo muchas operaciones al mismo tiempo. Espera unos segundos e intenta guardar otra vez.';
   }
   if (error?.status === 409) {
+    if (error?.payload?.code) {
+      return error.message || fallback;
+    }
     return 'Otro usuario actualizo datos al mismo tiempo. Vuelve a intentar para guardar con la informacion mas reciente.';
   }
   return error?.message || fallback;
@@ -1213,18 +1225,20 @@ const callBridge = async (domain, method, mutates, ...args) => {
       } catch (error) {
         if (isPresenceMutation) {
           applyRemoteBackoff(error);
-          if (error?.status === 409) {
-            await syncServerState({ force: true, reason: `${domain}.${method}:presence-conflict` });
-          }
+        if (isRevisionConflictError(error)) {
+          await syncServerState({ force: true, reason: `${domain}.${method}:presence-conflict` });
+        }
           return result;
         }
 
-        if (error?.status === 409 && attempt < MUTATION_CONFLICT_RETRIES) {
+        if (isRevisionConflictError(error) && attempt < MUTATION_CONFLICT_RETRIES) {
           await syncServerState({
             force: true,
             required: true,
             reason: `${domain}.${method}:revision-conflict`,
           });
+          const collectionsToReload = targetedCollections ?? PARTIAL_BOOTSTRAP_COLLECTIONS;
+          await ensureServerCollectionsLoaded(collectionsToReload, `${domain}.${method}:revision-conflict`);
           await sleep(getRetryDelayMs(error, attempt));
           return runMutationAttempt(attempt + 1);
         }
