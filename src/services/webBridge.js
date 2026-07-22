@@ -7015,6 +7015,17 @@ const getReferenceContractStyles = () => `
   }
   .rc-items { margin-top: 1mm; }
   .rc-items .rc-block-title { margin-bottom: 0; }
+  .rc-data-warning {
+    margin: 1.2mm 0;
+    padding: 1.4mm 2mm;
+    border: .35mm solid #b45309;
+    border-radius: 1.5mm;
+    background: #fff7ed;
+    color: #7c2d12;
+    font-size: 9.2px;
+    font-weight: 800;
+    line-height: 1.25;
+  }
   .rc-day-section {
     break-inside: auto;
     page-break-inside: auto;
@@ -7492,11 +7503,8 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     const primary = primaryLine ?? {};
     const fallback = fallbackLine ?? {};
     const quantity = Number(primary.quantity ?? fallback.quantity ?? 0);
-    const lineTotalBs = Number(
-      primary.lineTotalBs
-        ?? fallback.lineTotalBs
-        ?? 0,
-    );
+    const primaryLineTotalBs = Number(primary.lineTotalBs ?? 0);
+    const fallbackLineTotalBs = Number(fallback.lineTotalBs ?? 0);
     const rawUnitPriceBs = Math.max(
       Number(primary.unitPriceBs ?? 0),
       Number(primary.rentalPriceBs ?? 0),
@@ -7504,30 +7512,26 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       Number(fallback.rentalPriceBs ?? 0),
       0,
     );
-    const recoveredUnitPriceBs = rawUnitPriceBs > 0
+    const lineTotalBs = primaryLineTotalBs > 0
+      ? primaryLineTotalBs
+      : fallbackLineTotalBs > 0
+        ? fallbackLineTotalBs
+        : rawUnitPriceBs > 0
+          ? Number((quantity * rawUnitPriceBs).toFixed(2))
+          : 0;
+    const unitPriceBs = rawUnitPriceBs > 0
       ? rawUnitPriceBs
       : quantity > 0 && lineTotalBs > 0
         ? Number((lineTotalBs / quantity).toFixed(2))
         : 0;
-    const unitPriceBs = recoveredUnitPriceBs > 0
-      ? recoveredUnitPriceBs
-      : Math.max(
-        Number(fallback.unitPriceBs ?? 0),
-        Number(fallback.rentalPriceBs ?? 0),
-        Number(primary.unitPriceBs ?? 0),
-        Number(primary.rentalPriceBs ?? 0),
-        0,
-      );
     return {
       ...fallback,
       ...primary,
       quantity,
       rentalPriceBs: unitPriceBs,
-      lineTotalBs: Number(
-        primary.lineTotalBs
-          ?? fallback.lineTotalBs
-          ?? quantity * unitPriceBs,
-      ),
+      unitPriceBs,
+      grossLineTotalBs: Number(primary.grossLineTotalBs ?? fallback.grossLineTotalBs ?? lineTotalBs),
+      lineTotalBs,
       serviceDayId: primary.serviceDayId ?? primary.scheduleDayId ?? null,
       serviceDate: primary.serviceDate ?? primary.date ?? null,
       serviceDayLabel: primary.serviceDayLabel ?? primary.dayLabel ?? '',
@@ -7539,44 +7543,20 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
       const key = String(line?.lineKey ?? line?.comboLineKey ?? line?.itemId ?? `rental-${index}`);
       return mergeDocumentItemLine(line, contractItemsByKey.get(key));
     });
-  const recoverHistoricDocumentItems = (lines = []) => {
-    const safeLines = Array.isArray(lines) ? lines : [];
-    const currentSubtotalBs = safeLines.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
-    const targetSubtotalBs = Math.max(0, Number(
-      contract?.totals?.itemsSubtotalBs
-        ?? rental?.totals?.itemsSubtotalBs
-        ?? contract?.totals?.baseSubtotalBs
-        ?? rental?.totals?.baseSubtotalBs
-        ?? contract?.totals?.subtotalBs
-        ?? rental?.totals?.subtotalBs
-        ?? (Number(contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0) - Number(contract?.totals?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0))
-        ?? 0,
-    ));
-    if (currentSubtotalBs > 0 || targetSubtotalBs <= 0) return safeLines;
-    const totalQuantity = safeLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line?.quantity ?? 0))), 0);
-    if (totalQuantity <= 0) return safeLines;
-    let accumulatedBs = 0;
-    return safeLines.map((line, index) => {
-      const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-      const isLast = index === safeLines.length - 1;
-      const lineTotalBs = isLast
-        ? Number(Math.max(0, targetSubtotalBs - accumulatedBs).toFixed(2))
-        : Number(((targetSubtotalBs * quantity) / totalQuantity).toFixed(2));
-      accumulatedBs = Number((accumulatedBs + lineTotalBs).toFixed(2));
-      const unitPriceBs = Number((lineTotalBs / quantity).toFixed(2));
-      return {
-        ...line,
-        rentalPriceBs: unitPriceBs,
-        unitPriceBs,
-        grossLineTotalBs: lineTotalBs,
-        lineTotalBs,
-      };
-    });
-  };
   const supplierSupportByItem = buildSupplierSupportByItem(
     pickFirstSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan, rental?.supplierFulfillmentPlan),
   );
-  const documentItems = recoverHistoricDocumentItems(rawDocumentItems)
+  const hasUnpricedDocumentItems = rawDocumentItems.some((line) => {
+    const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+    if (quantity <= 0 || String(line?.lineType ?? '').trim() === 'courtesy') return false;
+    return Math.max(
+      Number(line?.unitPriceBs ?? 0),
+      Number(line?.rentalPriceBs ?? 0),
+      Number(line?.grossLineTotalBs ?? 0),
+      Number(line?.lineTotalBs ?? 0),
+    ) <= 0;
+  });
+  const documentItems = rawDocumentItems
     .map((line, index) => {
       const item = catalogById.get(String(line.itemId ?? ''));
       const category = getContractLineCategory(line, item);
@@ -7985,6 +7965,7 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
 
       <section class="rc-items">
         <h2 class="rc-block-title">Detalle de items contratados</h2>
+        ${hasUnpricedDocumentItems ? '<div class="rc-data-warning">Atencion: este contrato tiene items historicos sin precio unitario guardado por linea. No se imprimen precios reconstruidos automaticamente; revisa y corrige el detalle antes de entregar una copia final.</div>' : ''}
         ${itemTablesHtml}
         ${manualBlockHtml}
         <section class="rc-continuation-head">
@@ -10095,13 +10076,13 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     // el resto del contrato y agregar productos vigentes.
     if (!item) {
       if (!oldLine) throw new Error(`El item nuevo "${line.itemName}" no existe en inventario.`);
-      const rentalPriceBs = Math.max(
-        Number(line.unitPriceBs ?? 0),
-        Number(line.rentalPriceBs ?? 0),
-        Number(oldLine.rentalPriceBs ?? 0),
-        Number(oldLine.unitPriceBs ?? 0),
-        0,
-      );
+      const rentalPriceBs = line.rentalPriceBs !== undefined && line.rentalPriceBs !== null && line.rentalPriceBs !== ''
+        ? Math.max(0, Number(line.rentalPriceBs ?? 0))
+        : line.unitPriceBs !== undefined && line.unitPriceBs !== null && line.unitPriceBs !== ''
+          ? Math.max(0, Number(line.unitPriceBs ?? 0))
+          : oldLine.rentalPriceBs !== undefined && oldLine.rentalPriceBs !== null && oldLine.rentalPriceBs !== ''
+            ? Math.max(0, Number(oldLine.rentalPriceBs ?? 0))
+            : Math.max(0, Number(oldLine.unitPriceBs ?? 0));
       return {
         ...oldLine,
         ...line,
@@ -10171,14 +10152,15 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       });
     }
 
-    const rentalPriceBs = Math.max(
-      Number(line.unitPriceBs ?? 0),
-      Number(line.rentalPriceBs ?? 0),
-      Number(oldLine?.rentalPriceBs ?? 0),
-      Number(oldLine?.unitPriceBs ?? 0),
-      Number(item.rentalPriceBs ?? 0),
-      0,
-    );
+    const rentalPriceBs = line.rentalPriceBs !== undefined && line.rentalPriceBs !== null && line.rentalPriceBs !== ''
+      ? Math.max(0, Number(line.rentalPriceBs ?? 0))
+      : line.unitPriceBs !== undefined && line.unitPriceBs !== null && line.unitPriceBs !== ''
+        ? Math.max(0, Number(line.unitPriceBs ?? 0))
+        : oldLine?.rentalPriceBs !== undefined && oldLine?.rentalPriceBs !== null && oldLine?.rentalPriceBs !== ''
+          ? Math.max(0, Number(oldLine.rentalPriceBs ?? 0))
+          : oldLine?.unitPriceBs !== undefined && oldLine?.unitPriceBs !== null && oldLine?.unitPriceBs !== ''
+            ? Math.max(0, Number(oldLine.unitPriceBs ?? 0))
+            : Math.max(0, Number(item.rentalPriceBs ?? 0));
     return {
       ...oldLine,
       ...line,
@@ -14066,26 +14048,35 @@ const createWebBridge = () => ({
             const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
             const lineType = String(line?.lineType ?? '').trim();
             const isCourtesyLine = lineType === 'courtesy';
+            const hasExplicitUnitPrice = line?.unitPriceBs !== undefined && line?.unitPriceBs !== null && line?.unitPriceBs !== '';
+            const hasExplicitRentalPrice = line?.rentalPriceBs !== undefined && line?.rentalPriceBs !== null && line?.rentalPriceBs !== '';
+            const hasPreviousUnitPrice = previousLine?.unitPriceBs !== undefined && previousLine?.unitPriceBs !== null && previousLine?.unitPriceBs !== '';
+            const hasPreviousRentalPrice = previousLine?.rentalPriceBs !== undefined && previousLine?.rentalPriceBs !== null && previousLine?.rentalPriceBs !== '';
             const requestedLineTotalBs = Number.isFinite(Number(line?.lineTotalBs))
               ? Math.max(0, toPositiveRoundedNumber(line.lineTotalBs))
               : Number.isFinite(Number(previousLine?.lineTotalBs))
                 ? Math.max(0, toPositiveRoundedNumber(previousLine.lineTotalBs))
                 : 0;
-            const requestedUnitPriceBs = Math.max(
-              toPositiveRoundedNumber(line?.unitPriceBs ?? 0),
-              toPositiveRoundedNumber(line?.rentalPriceBs ?? 0),
-              toPositiveRoundedNumber(previousLine?.unitPriceBs ?? 0),
-              toPositiveRoundedNumber(previousLine?.rentalPriceBs ?? 0),
-              0,
-            );
-            const recoveredUnitPriceBs = requestedUnitPriceBs > 0
-              ? requestedUnitPriceBs
+            const explicitUnitPriceBs = hasExplicitUnitPrice
+              ? toPositiveRoundedNumber(line.unitPriceBs)
+              : hasExplicitRentalPrice
+                ? toPositiveRoundedNumber(line.rentalPriceBs)
+                : null;
+            const previousUnitPriceBs = hasPreviousUnitPrice
+              ? toPositiveRoundedNumber(previousLine.unitPriceBs)
+              : hasPreviousRentalPrice
+                ? toPositiveRoundedNumber(previousLine.rentalPriceBs)
+                : null;
+            const recoveredUnitPriceBs = explicitUnitPriceBs !== null
+              ? explicitUnitPriceBs
+              : previousUnitPriceBs !== null
+                ? previousUnitPriceBs
               : requestedLineTotalBs > 0 && quantity > 0
                 ? Number((requestedLineTotalBs / quantity).toFixed(2))
                 : 0;
             const unitPriceBs = isCourtesyLine
               ? 0
-              : recoveredUnitPriceBs > 0
+              : recoveredUnitPriceBs > 0 || explicitUnitPriceBs !== null || previousUnitPriceBs !== null
                 ? recoveredUnitPriceBs
                 : Math.max(0, toPositiveRoundedNumber(item.rentalPriceBs ?? previousLine?.unitPriceBs ?? previousLine?.rentalPriceBs ?? 0));
             const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, toPositiveRoundedNumber(line.discountPercent ?? 0)));

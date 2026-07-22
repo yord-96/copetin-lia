@@ -582,7 +582,7 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
   }
 
   if (serverStateIsPartial) {
-    await ensureServerCollectionsLoaded(DEFERRED_BOOTSTRAP_COLLECTIONS, 'full-save-preflight');
+    await ensureServerCollectionsLoaded(PARTIAL_BOOTSTRAP_COLLECTIONS, 'full-save-preflight');
   }
   const state = await exportLocalState();
   if (!state) {

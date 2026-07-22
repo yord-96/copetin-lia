@@ -3786,17 +3786,6 @@ function ServiceOrdersSection({
     const defaultScheduleDayId = scheduleDays[0]?.id ?? '';
     const resolveScheduleDay = (line) => findScheduleDayForLine(line, scheduleDays, scheduleDays[0] ?? null, { preferDate: true });
     const recordItems = Array.isArray(record?.items) ? record.items : [];
-    const recordItemsSubtotalBs = Math.max(0, Number(
-      record?.totals?.itemsSubtotalBs
-        ?? record?.totals?.baseSubtotalBs
-        ?? record?.pricingPlan?.baseSubtotalBs
-        ?? record?.totals?.subtotalBs
-        ?? (Number(record?.totals?.totalBs ?? 0) - Number(record?.totals?.deliveryFeeBs ?? record?.deliveryFeeBs ?? 0))
-        ?? 0,
-    ));
-    const recordItemsStoredSubtotalBs = recordItems.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
-    const recordItemsTotalQuantity = recordItems.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line?.quantity ?? 0))), 0);
-    let recoveredRecordItemsAccumulatedBs = 0;
     return {
     ...buildEmptyDraft(entityType === 'contract' ? 'order' : 'quote'),
     entityType,
@@ -3880,17 +3869,7 @@ function ServiceOrdersSection({
       const lineDiscountPercent = Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
       const storedLineTotalBs = Math.max(0, Number(line.lineTotalBs ?? 0));
       const storedGrossLineTotalBs = Math.max(0, Number(line.grossLineTotalBs ?? 0));
-      const fallbackLineTotalBs = recordItemsStoredSubtotalBs <= 0 && recordItemsSubtotalBs > 0 && recordItemsTotalQuantity > 0
-        ? (
-          index === recordItems.length - 1
-            ? Number(Math.max(0, recordItemsSubtotalBs - recoveredRecordItemsAccumulatedBs).toFixed(2))
-            : Number(((recordItemsSubtotalBs * quantity) / recordItemsTotalQuantity).toFixed(2))
-        )
-        : 0;
-      if (fallbackLineTotalBs > 0) {
-        recoveredRecordItemsAccumulatedBs = Number((recoveredRecordItemsAccumulatedBs + fallbackLineTotalBs).toFixed(2));
-      }
-      const effectiveLineTotalBs = storedLineTotalBs > 0 ? storedLineTotalBs : fallbackLineTotalBs;
+      const effectiveLineTotalBs = storedLineTotalBs;
       const effectiveGrossLineTotalBs = storedGrossLineTotalBs > 0
         ? storedGrossLineTotalBs
         : lineDiscountPercent > 0 && effectiveLineTotalBs > 0
@@ -5851,31 +5830,6 @@ function ServiceOrdersSection({
     const linkedOrderServices = Array.isArray(linkedFullRental?.services) && linkedFullRental.services.length > 0
       ? linkedFullRental.services
       : Array.isArray(linkedOrder?.services) ? linkedOrder.services : [];
-    const recoverHistoricZeroPricedItems = (lines = [], subtotalBs = 0) => {
-      const safeLines = Array.isArray(lines) ? lines : [];
-      const currentSubtotalBs = safeLines.reduce((sum, line) => sum + Math.max(0, Number(line?.lineTotalBs ?? 0)), 0);
-      const targetSubtotalBs = Math.max(0, Number(subtotalBs ?? 0));
-      if (currentSubtotalBs > 0 || targetSubtotalBs <= 0) return safeLines;
-      const totalQuantity = safeLines.reduce((sum, line) => sum + Math.max(0, Math.trunc(Number(line?.quantity ?? 0))), 0);
-      if (totalQuantity <= 0) return safeLines;
-      let accumulatedBs = 0;
-      return safeLines.map((line, index) => {
-        const quantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
-        const isLast = index === safeLines.length - 1;
-        const lineTotalBs = isLast
-          ? Number(Math.max(0, targetSubtotalBs - accumulatedBs).toFixed(2))
-          : Number(((targetSubtotalBs * quantity) / totalQuantity).toFixed(2));
-        accumulatedBs = Number((accumulatedBs + lineTotalBs).toFixed(2));
-        const unitPriceBs = Number((lineTotalBs / quantity).toFixed(2));
-        return {
-          ...line,
-          unitPriceBs,
-          grossLineTotalBs: lineTotalBs,
-          lineTotalBs,
-        };
-      });
-    };
-
     const contractDayCount = getLineDayKeys([...contractItems, ...contractServices]).size;
     const linkedOrderDayCount = getLineDayKeys([...linkedOrderItems, ...linkedOrderServices]).size;
     const shouldRecoverDailyLines = linkedOrderDayCount > contractDayCount
@@ -5885,13 +5839,6 @@ function ServiceOrdersSection({
         && linkedOrderDayCount > 1
         && contractDayCount <= 1
       );
-    const linesHaveMoney = (lines = []) => (Array.isArray(lines) ? lines : [])
-      .some((line) => Math.max(
-        Number(line?.unitPriceBs ?? 0),
-        Number(line?.rentalPriceBs ?? 0),
-        Number(line?.grossLineTotalBs ?? 0),
-        Number(line?.lineTotalBs ?? 0),
-      ) > 0);
     const lineMoneyValue = (line) => Math.max(
       Number(line?.unitPriceBs ?? 0),
       Number(line?.rentalPriceBs ?? 0),
@@ -5925,18 +5872,9 @@ function ServiceOrdersSection({
       : contractItems.length > 0
         ? applyLinkedMoneyToContractLines(contractItems)
         : linkedOrderItems;
-    const recoveredSourceItems = recoverHistoricZeroPricedItems(
-      sourceItems,
-      fullContract?.totals?.itemsSubtotalBs
-        ?? fullContract?.totals?.baseSubtotalBs
-        ?? fullContract?.totals?.subtotalBs
-        ?? fullContract?.totals?.totalBs
-        ?? 0,
-    );
-
     const sourceContract = {
       ...fullContract,
-      items: recoveredSourceItems,
+      items: sourceItems,
       services: shouldRecoverDailyLines && linkedOrderServices.length > 0 ? linkedOrderServices : contractServices,
       pricingPlan: shouldRecoverDailyLines && linkedOrder?.pricingPlan
         ? linkedOrder.pricingPlan
@@ -6708,6 +6646,14 @@ function ServiceOrdersSection({
     try {
       let preview = null;
       if (kind === 'contract') {
+        const contractIdentifier = orderRow.contractId ?? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id;
+        const rentalIdentifier = orderRow.rentalId ?? orderRow.orderCode ?? orderRow.contractCode ?? '';
+        if (contractIdentifier) {
+          await api.contracts.ensureFull(contractIdentifier, 'print-contract-document');
+        }
+        if (rentalIdentifier) {
+          await api.rentals.getFull(rentalIdentifier).catch(() => null);
+        }
         preview = await onPrintContractDocument?.({
           rentalId: orderRow.rentalId,
           orderCode: orderRow.orderCode,
