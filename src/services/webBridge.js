@@ -8858,12 +8858,33 @@ const commercialDocumentCodeExists = (state, collectionName, codeField, code, ex
   if (collectionHasCode) return true;
 
   if (collectionName !== 'contracts' || codeField !== 'contractCode') return false;
-  return (state.rentals ?? []).some((rental) => (
-    isActiveRentalRecord(rental)
-    && (!normalizedExcludeRentalId || String(rental.id ?? '') !== normalizedExcludeRentalId)
-    && (!normalizedExcludeContractId || String(rental.contractId ?? '') !== normalizedExcludeContractId)
-    && normalizeCommercialDocumentCode(rental.contractCode) === normalizedCode
-  ));
+
+  const activeContracts = (state.contracts ?? []).filter((contract) => contract && !contract.deletedAt);
+  return (state.rentals ?? []).some((rental) => {
+    if (!isActiveRentalRecord(rental)) return false;
+    if (normalizedExcludeRentalId && String(rental.id ?? '') === normalizedExcludeRentalId) return false;
+    if (normalizedExcludeContractId && String(rental.contractId ?? '') === normalizedExcludeContractId) return false;
+    if (normalizeCommercialDocumentCode(rental.contractCode) !== normalizedCode) return false;
+
+    const linkedContract = activeContracts.find((contract) => (
+      (rental.contractId && String(contract.id ?? '') === String(rental.contractId))
+      || (contract.rentalId && String(contract.rentalId ?? '') === String(rental.id ?? ''))
+      || (
+        rental.orderCode
+        && contract.orderCode
+        && String(contract.orderCode).trim() === String(rental.orderCode).trim()
+      )
+    ));
+
+    // Una orden puede conservar un numero antiguo después de editar su contrato.
+    // En ese caso manda el numero actual del contrato y el anterior queda libre.
+    if (linkedContract) {
+      return normalizeCommercialDocumentCode(linkedContract.contractCode) === normalizedCode;
+    }
+
+    // Una orden activa realmente huérfana sigue reservando su numero para evitar duplicados.
+    return true;
+  });
 };
 
 const consumeUniqueCommercialDocumentCode = (state, fieldPrefix, fieldNext, collectionName, codeField, size = 5) => {
