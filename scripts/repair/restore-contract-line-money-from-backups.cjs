@@ -88,6 +88,36 @@ const countMoneyLines = (record) =>
 
 const totalBs = (record) => Number(record?.totals?.totalBs ?? record?.totalBs ?? 0);
 
+const itemSubtotalBs = (record) => Math.round(
+  (Array.isArray(record?.items) ? record.items : [])
+    .reduce((sum, line) => sum + Number(line?.lineTotalBs ?? line?.grossLineTotalBs ?? 0), 0) * 100,
+) / 100;
+
+const normalizeRecordTotals = (record) => {
+  const subtotal = itemSubtotalBs(record);
+  if (subtotal <= 0) return { record, changed: false };
+  const totals = record?.totals && typeof record.totals === 'object' && !Array.isArray(record.totals)
+    ? { ...record.totals }
+    : {};
+  let changed = false;
+
+  ['baseSubtotalBs', 'subtotalBs', 'theoreticalSubtotalBs', 'totalBs'].forEach((key) => {
+    if (Number(totals[key] ?? 0) > 0) return;
+    totals[key] = subtotal;
+    changed = true;
+  });
+
+  if (!changed) return { record, changed: false };
+  return {
+    record: {
+      ...record,
+      totals,
+      totalBs: Number(record.totalBs ?? 0) > 0 ? record.totalBs : subtotal,
+    },
+    changed: true,
+  };
+};
+
 const normalizeText = (value) =>
   String(value ?? '')
     .normalize('NFD')
@@ -147,14 +177,12 @@ const mergeRecordMoney = (target, source) => {
     return result.line;
   });
 
-  if (!restoredLines) return { record: target, changed: false, restoredLines: 0 };
-
-  const next = {
+  let next = restoredLines ? {
     ...target,
     items: nextItems,
     moneyRestoredAt: new Date().toISOString(),
     moneyRestoredFrom: source.__sourceFile || null,
-  };
+  } : target;
 
   supplierKeys.forEach((key) => {
     if (target[key] === undefined || target[key] === null || (Array.isArray(target[key]) && target[key].length === 0)) {
@@ -169,6 +197,11 @@ const mergeRecordMoney = (target, source) => {
     });
     delete next._summaryOnly;
   }
+
+  const totalsResult = normalizeRecordTotals(next);
+  next = totalsResult.record;
+
+  if (!restoredLines && !totalsResult.changed) return { record: target, changed: false, restoredLines: 0 };
 
   return { record: next, changed: true, restoredLines };
 };
