@@ -132,7 +132,7 @@ const assertNoCommercialRecordRegression = (collection, currentRecord, nextRecor
   const label = collection === 'contracts' ? 'contrato' : 'orden';
   const code = currentRecord.contractCode ?? currentRecord.orderCode ?? currentRecord.number ?? currentRecord.id;
 
-  if (nextRecord._summaryOnly) {
+  if (nextRecord._summaryOnly && !currentRecord._summaryOnly) {
     const error = new Error(`Guardado bloqueado por seguridad: el ${label} ${code} venia resumido y podria borrar precios o proveedores historicos.`);
     error.code = 'STATE_SUMMARY_RECORD_BLOCKED';
     error.statusCode = 409;
