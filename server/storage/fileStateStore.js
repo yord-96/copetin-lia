@@ -183,6 +183,40 @@ const assertNoCommercialDataRegression = (currentState, nextState) => {
   });
 };
 
+const preserveFullCommercialRecords = (currentState, nextState) => {
+  if (!currentState || !nextState) return nextState;
+  const next = { ...nextState };
+
+  ['contracts', 'rentals'].forEach((collection) => {
+    const currentRows = Array.isArray(currentState?.[collection]) ? currentState[collection] : [];
+    const nextRows = Array.isArray(nextState?.[collection]) ? nextState[collection] : [];
+    if (!nextRows.length) return;
+
+    const currentById = new Map(currentRows
+      .map((row) => [String(row?.id ?? '').trim(), row])
+      .filter(([id]) => id));
+
+    let changed = false;
+    const mergedRows = nextRows.map((row) => {
+      if (!row?._summaryOnly) return row;
+      const current = currentById.get(String(row?.id ?? '').trim());
+      if (!current || current._summaryOnly) return row;
+      changed = true;
+      return current;
+    });
+
+    if (changed) {
+      console.warn('[state-store] Registros resumidos preservados desde estado completo.', {
+        collection,
+        preserved: mergedRows.filter((row, index) => row !== nextRows[index]).length,
+      });
+      next[collection] = mergedRows;
+    }
+  });
+
+  return next;
+};
+
 const assertSafeStateTransition = (currentState, nextState) => {
   if (!currentState || !nextState) return;
 
@@ -266,14 +300,15 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
       throw error;
     }
 
-    assertSafeStateTransition(current?.state, state);
+    const safeState = preserveFullCommercialRecords(current?.state, state);
+    assertSafeStateTransition(current?.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;
-    const checksum = checksumForState(state);
+    const checksum = checksumForState(safeState);
     const updatedAt = new Date().toISOString();
 
     await writeJsonFile({
-      state,
+      state: safeState,
       version,
       checksum,
       updatedAt,
@@ -330,14 +365,15 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
       };
     }
 
-    assertSafeStateTransition(current.state, nextState);
+    const safeState = preserveFullCommercialRecords(current.state, nextState);
+    assertSafeStateTransition(current.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;
-    const checksum = checksumForState(nextState);
+    const checksum = checksumForState(safeState);
     const updatedAt = new Date().toISOString();
 
     await writeJsonFile({
-      state: nextState,
+      state: safeState,
       version,
       checksum,
       updatedAt,
@@ -346,7 +382,7 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
     return {
       ok: true,
       initialized: true,
-      state: nextState,
+      state: safeState,
       revision: `${version}:${checksum}`,
       version,
       updatedAt,
