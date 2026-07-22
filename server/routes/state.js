@@ -169,6 +169,18 @@ const sendRevisionConflict = (req, res, error) => {
   });
 };
 
+const sendStateGuardError = (req, res, error) => {
+  console.warn('[state-route] Guardado bloqueado por proteccion de datos.', {
+    code: error?.code,
+    message: error?.message,
+    ip: req.ip,
+  });
+  res.status(error.statusCode || 409).json({
+    error: error.message || 'Guardado bloqueado por proteccion de datos.',
+    code: error.code || 'STATE_GUARD_BLOCKED',
+  });
+};
+
 const requireInternalKey = (req, res, next) => {
   if (!internalKey) {
     next();
@@ -509,6 +521,10 @@ router.post('/__copetin_db/chunked/commit', async (req, res, next) => {
       sendRevisionConflict(req, res, error);
       return;
     }
+    if (error?.statusCode) {
+      sendStateGuardError(req, res, error);
+      return;
+    }
     next(error);
   }
 });
@@ -586,6 +602,10 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'STATE_REVISION_CONFLICT') {
       sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      sendStateGuardError(req, res, error);
       return;
     }
     next(error);
@@ -684,6 +704,10 @@ router.put('/__copetin_db', async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'STATE_REVISION_CONFLICT') {
       sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      sendStateGuardError(req, res, error);
       return;
     }
 
