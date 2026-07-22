@@ -640,8 +640,11 @@ const buildPremiumCatalogHtml = ({ rows }) => {
     const detail = [row.brand, row.itemColor].map((value) => String(value ?? '').trim()).filter(Boolean).join(' - ');
     return `
       <article class="product-card">
-        <div class="product-image">
-          ${imageSrc ? `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(row.name)}">` : '<span>EL COPETIN</span>'}
+        <div class="product-image${imageSrc ? ' has-image' : ' is-empty'}">
+          ${imageSrc ? `
+            <img class="product-image-backdrop" src="${escapeHtml(imageSrc)}" alt="" aria-hidden="true">
+            <img class="product-image-main" src="${escapeHtml(imageSrc)}" alt="${escapeHtml(row.name)}">
+          ` : '<span><b>EL COPETIN</b><small>IMAGEN PENDIENTE</small></span>'}
         </div>
         <div class="product-copy">
           <small>${escapeHtml(row.category || group.title)}</small>
@@ -675,10 +678,15 @@ const buildPremiumCatalogHtml = ({ rows }) => {
     .section p{margin:0;color:#697386;font-size:14px}
     .section-count{color:var(--accent);font-size:28px;font-weight:950}
     .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-    .product-card{min-height:430px;border:1px solid #eadfd3;border-radius:12px;overflow:hidden;background:#fff;display:grid;grid-template-rows:290px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
-    .product-image{background:#fff;display:grid;place-items:center;overflow:hidden;padding:10px;border-bottom:1px solid #f1e5db}
-    .product-image img{display:block;width:100%;height:100%;object-fit:contain;object-position:center}
-    .product-image span{color:#d64a00;font-size:12px;font-weight:900;letter-spacing:.14em}
+    .product-card{min-height:450px;border:1px solid #eadfd3;border-radius:12px;overflow:hidden;background:#fff;display:grid;grid-template-rows:310px 1fr auto;break-inside:avoid;box-shadow:0 10px 24px rgba(16,32,68,.06)}
+    .product-image{position:relative;display:grid;place-items:center;overflow:hidden;background:#f7f3ee;border-bottom:1px solid #f1e5db;isolation:isolate}
+    .product-image.has-image::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.2));z-index:-1}
+    .product-image-backdrop{position:absolute;inset:-18px;width:calc(100% + 36px);height:calc(100% + 36px);object-fit:cover;filter:blur(18px) saturate(.8);opacity:.2;transform:scale(1.08);z-index:-2}
+    .product-image-main{position:relative;display:block;width:100%;height:100%;padding:12px;object-fit:contain;object-position:center;z-index:1}
+    .product-image.is-empty{background:linear-gradient(145deg,#fffaf4,#f7efe7)}
+    .product-image span{display:grid;place-items:center;gap:7px;color:#d64a00;text-align:center}
+    .product-image span b{font-size:13px;font-weight:950;letter-spacing:.14em}
+    .product-image span small{color:#9a7765;font-size:9px;font-weight:850;letter-spacing:.1em}
     .product-copy{padding:14px 15px 4px}
     .product-copy small{color:var(--accent);font-size:11px;font-weight:900;text-transform:uppercase}
     .product-copy h3{margin:6px 0;color:#102044;font-size:18px;line-height:1.12}
@@ -686,7 +694,7 @@ const buildPremiumCatalogHtml = ({ rows }) => {
     .product-card footer{padding:12px 15px 14px;display:flex;align-items:center;justify-content:flex-start;gap:12px}
     .product-card footer span{border-radius:999px;background:#f3f4f6;padding:7px 10px;color:#4b5563;font-size:12px;font-weight:900}
     .foot{padding:28px 42px 38px;color:#697386;font-size:12px;border-top:1px solid #eadfd3}
-    @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{height:calc((100vw - 20mm) * .43);min-height:310px;max-height:500px;background-size:cover;background-position:top center}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.section{padding:24px 24px 30px}.product-card{min-height:430px;grid-template-rows:290px 1fr auto;box-shadow:none}@page{size:A4;margin:10mm}}
+    @media print{body{background:#fff}.catalog{max-width:none}.actions{display:none}.hero{height:calc((100vw - 20mm) * .43);min-height:310px;max-height:500px;background-size:cover;background-position:top center}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.section{padding:24px 24px 30px}.product-card{min-height:445px;grid-template-rows:305px 1fr auto;box-shadow:none}.product-image-main{padding:8px}.product-image-backdrop{opacity:.12;filter:blur(14px)}@page{size:A4;margin:10mm}}
   </style>
 </head>
 <body>
