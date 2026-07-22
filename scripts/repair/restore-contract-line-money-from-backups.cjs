@@ -143,7 +143,10 @@ const listBackupFiles = () => {
     if (!fs.existsSync(dir)) return;
     fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
       const file = path.join(dir, entry.name);
-      if (entry.isDirectory()) return;
+      if (entry.isDirectory()) {
+        addFromDir(file);
+        return;
+      }
       if (!/copetin-base-datos-\d{4}-\d{2}-\d{2}T.*\.json$/i.test(entry.name)
         && !/^app-state-\d{4}-\d{2}-\d{2}[-T].*\.json$/i.test(entry.name)
         && !/^app-state-before-.*\.json$/i.test(entry.name)
