@@ -1,9 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const projectRoot = path.resolve(__dirname, '..', '..');
-const statePath = path.join(projectRoot, 'data', 'app-state.json');
+const statePath = path.resolve(process.env.APP_STATE_FILE || path.join(projectRoot, 'data', 'app-state.json'));
 const downloadsDir = path.join(process.env.USERPROFILE || 'C:\\Users\\Milton', 'Downloads');
 const repairsDir = path.join(projectRoot, 'data', 'repairs');
 const extraSourceFiles = process.argv.slice(2).map((entry) => path.resolve(entry));
@@ -144,7 +145,9 @@ const listBackupFiles = () => {
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) return;
       if (!/copetin-base-datos-\d{4}-\d{2}-\d{2}T.*\.json$/i.test(entry.name)
+        && !/^app-state-\d{4}-\d{2}-\d{2}[-T].*\.json$/i.test(entry.name)
         && !/^app-state-before-.*\.json$/i.test(entry.name)
+        && !/^pre-restore-.*\.json$/i.test(entry.name)
         && !/^\.app-state\.json\..*\.tmp$/i.test(entry.name)) return;
       addFile(file);
     });
