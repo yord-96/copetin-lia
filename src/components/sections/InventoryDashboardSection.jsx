@@ -3307,7 +3307,11 @@ function InventoryDashboardSection({
 
     try {
       await onCreateInventoryMovement?.(payload);
-      showMessage('Movimiento registrado correctamente.');
+      showMessage(
+        payload.type === 'ajuste'
+          ? `Stock fisico ajustado al valor final ${payload.targetTotalStock}.`
+          : 'Movimiento registrado correctamente.',
+      );
       closeMovementModal();
     } catch (error) {
       setMovementError(error?.message || 'No se pudo registrar el movimiento.');
@@ -5315,8 +5319,11 @@ function InventoryDashboardSection({
                 <input value={productForm.itemColor} onChange={(event) => setProductForm((current) => ({ ...current, itemColor: event.target.value }))} />
               </label>
               <label>
-                Stock total
-                <input type="number" min="1" step="1" value={productForm.totalStock} onChange={(event) => setProductForm((current) => ({ ...current, totalStock: event.target.value }))} required />
+                Stock fisico final
+                <input type="number" min="0" step="1" value={productForm.totalStock} onChange={(event) => setProductForm((current) => ({ ...current, totalStock: event.target.value }))} required />
+                <small>
+                  Este valor reemplaza el stock actual; no suma unidades. No registres luego la misma diferencia como entrada.
+                </small>
               </label>
               <label>
                 Precio alquiler (Bs)

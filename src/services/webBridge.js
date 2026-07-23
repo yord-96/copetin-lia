@@ -65,6 +65,52 @@ const getInventoryLineKey = (line, index = 0) => String(
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
 
+const getActiveReservedStockForItem = (state, itemId) => {
+  const requestedItemId = String(itemId ?? '').trim();
+  if (!requestedItemId) return 0;
+
+  return (Array.isArray(state?.rentals) ? state.rentals : [])
+    .filter((rental) => {
+      const status = normalizeText(rental?.status).trim();
+      return ['active', 'confirmed', 'pending'].includes(status)
+        && !rental?.deletedAt
+        && !rental?.cancelledAt
+        && !rental?.returnedAt;
+    })
+    .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
+      .filter((line) => String(line?.itemId ?? '').trim() === requestedItemId)
+      .reduce((lineTotal, line) => {
+        if (line?.controlsStock === false) return lineTotal;
+        const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+        const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
+        const hasStoredReservedQty = line?.internalReservedQty !== undefined
+          && line?.internalReservedQty !== null
+          && line?.internalReservedQty !== '';
+        const reservedQty = hasStoredReservedQty
+          ? Math.max(0, Math.trunc(Number(line.internalReservedQty ?? 0)))
+          : Math.max(0, quantity - supplierBackedQty);
+        return lineTotal + reservedQty;
+      }, 0), 0);
+};
+
+const getRecoveryStockForItem = (state, itemId) => {
+  const requestedItemId = String(itemId ?? '').trim();
+  if (!requestedItemId) return 0;
+  return (Array.isArray(state?.stockRecoveries) ? state.stockRecoveries : [])
+    .filter((entry) => String(entry?.itemId ?? '').trim() === requestedItemId)
+    .reduce((total, entry) => total + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))), 0);
+};
+
+const getInventoryStockCommitment = (state, itemId) => {
+  const reservedStock = getActiveReservedStockForItem(state, itemId);
+  const recoveryStock = getRecoveryStockForItem(state, itemId);
+  return {
+    reservedStock,
+    recoveryStock,
+    minimumPhysicalStock: reservedStock + recoveryStock,
+  };
+};
+
 const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin') => {
   const cleanFilePart = (value) =>
     String(value ?? '')
@@ -5335,11 +5381,12 @@ const buildRentalSnapshotFromContract = (contract) => {
   },
   items: (contract?.items ?? []).map((line) => {
     const quantity = Number(line.quantity ?? 0);
-    const rentalPriceBs = Math.max(
-      Number(line.unitPriceBs ?? 0),
-      Number(line.rentalPriceBs ?? 0),
-      0,
-    );
+    const hasStoredUnitPrice = line?.unitPriceBs !== undefined
+      && line?.unitPriceBs !== null
+      && line?.unitPriceBs !== '';
+    const rentalPriceBs = hasStoredUnitPrice
+      ? Math.max(0, Number(line.unitPriceBs ?? 0))
+      : Math.max(0, Number(line.rentalPriceBs ?? 0));
     return {
       lineKey: line.lineKey ?? null,
       itemId: line.itemId,
@@ -7494,13 +7541,27 @@ const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, ite
     const quantity = Number(primary.quantity ?? fallback.quantity ?? 0);
     const primaryLineTotalBs = Number(primary.lineTotalBs ?? 0);
     const fallbackLineTotalBs = Number(fallback.lineTotalBs ?? 0);
-    const rawUnitPriceBs = Math.max(
-      Number(primary.unitPriceBs ?? 0),
-      Number(primary.rentalPriceBs ?? 0),
-      Number(fallback.unitPriceBs ?? 0),
-      Number(fallback.rentalPriceBs ?? 0),
-      0,
-    );
+    const hasPrimaryUnitPrice = primary?.unitPriceBs !== undefined
+      && primary?.unitPriceBs !== null
+      && primary?.unitPriceBs !== '';
+    const hasPrimaryRentalPrice = primary?.rentalPriceBs !== undefined
+      && primary?.rentalPriceBs !== null
+      && primary?.rentalPriceBs !== '';
+    const hasFallbackUnitPrice = fallback?.unitPriceBs !== undefined
+      && fallback?.unitPriceBs !== null
+      && fallback?.unitPriceBs !== '';
+    const hasFallbackRentalPrice = fallback?.rentalPriceBs !== undefined
+      && fallback?.rentalPriceBs !== null
+      && fallback?.rentalPriceBs !== '';
+    const rawUnitPriceBs = hasPrimaryUnitPrice
+      ? Math.max(0, Number(primary.unitPriceBs ?? 0))
+      : hasPrimaryRentalPrice
+        ? Math.max(0, Number(primary.rentalPriceBs ?? 0))
+        : hasFallbackUnitPrice
+          ? Math.max(0, Number(fallback.unitPriceBs ?? 0))
+          : hasFallbackRentalPrice
+            ? Math.max(0, Number(fallback.rentalPriceBs ?? 0))
+            : 0;
     const lineTotalBs = primaryLineTotalBs > 0
       ? primaryLineTotalBs
       : fallbackLineTotalBs > 0
@@ -10743,7 +10804,11 @@ const createWebBridge = () => ({
         }
         const beforeItem = deepClone(item);
 
-        const reservedStock = item.totalStock - item.availableStock;
+        const {
+          reservedStock,
+          recoveryStock,
+          minimumPhysicalStock,
+        } = getInventoryStockCommitment(state, item.id);
 
         if (typeof payload.name === 'string') {
           const nextName = toBusinessUppercase(payload.name);
@@ -10790,11 +10855,17 @@ const createWebBridge = () => ({
 
         if (payload.totalStock !== undefined) {
           const nextTotalStock = Math.trunc(toNumber(payload.totalStock, 'stock total'));
-          if (nextTotalStock < reservedStock) {
-            throw new Error('El stock total no puede ser menor al stock ya alquilado.');
+          if (nextTotalStock < 0) {
+            throw new Error('El stock fisico no puede ser negativo.');
+          }
+          if (nextTotalStock < minimumPhysicalStock) {
+            throw new Error(
+              `El stock fisico no puede ser menor a ${minimumPhysicalStock}: `
+              + `${reservedStock} comprometido(s) y ${recoveryStock} en mantenimiento o recuperacion.`,
+            );
           }
           item.totalStock = nextTotalStock;
-          item.availableStock = nextTotalStock - reservedStock;
+          item.availableStock = Math.max(0, nextTotalStock - minimumPhysicalStock);
         }
 
         if (payload.rentalPriceBs !== undefined) {
@@ -11150,9 +11221,14 @@ const createWebBridge = () => ({
           throw new Error('El item seleccionado no existe.');
         }
 
-        const beforeTotalStock = item.totalStock;
-        const beforeAvailableStock = item.availableStock;
-        const reservedStock = beforeTotalStock - beforeAvailableStock;
+        const beforeTotalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
+        const beforeAvailableStock = Math.max(0, Math.trunc(Number(item.availableStock ?? 0)));
+        const {
+          reservedStock,
+          recoveryStock,
+          minimumPhysicalStock,
+        } = getInventoryStockCommitment(state, item.id);
+        const realAvailableStock = Math.max(0, beforeTotalStock - minimumPhysicalStock);
 
         let deltaUnits = 0;
         let movementDetail = '';
@@ -11163,34 +11239,37 @@ const createWebBridge = () => ({
           }
           deltaUnits = quantity;
           movementDetail = `Entrada de ${quantity} unidades`;
-          item.totalStock += quantity;
-          item.availableStock += quantity;
+          item.totalStock = beforeTotalStock + quantity;
+          item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
         }
 
         if (type === 'salida') {
           if (quantity <= 0) {
             throw new Error('La cantidad de salida debe ser mayor a 0.');
           }
-          if (quantity > item.availableStock) {
-            throw new Error(`No hay stock disponible suficiente para salida. Disponible: ${item.availableStock}.`);
+          if (quantity > realAvailableStock) {
+            throw new Error(`No hay stock fisico libre suficiente para salida. Disponible real: ${realAvailableStock}.`);
           }
           deltaUnits = -quantity;
           movementDetail = `Salida de ${quantity} unidades`;
-          item.totalStock -= quantity;
-          item.availableStock -= quantity;
+          item.totalStock = beforeTotalStock - quantity;
+          item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
         }
 
         if (type === 'ajuste') {
           if (targetTotalStock === null) {
-            throw new Error('Debes indicar el stock fisico para el ajuste.');
+            throw new Error('Debes indicar el stock fisico final para el ajuste.');
           }
-          if (targetTotalStock < reservedStock) {
-            throw new Error(`El stock fisico no puede ser menor al stock alquilado (${reservedStock}).`);
+          if (targetTotalStock < minimumPhysicalStock) {
+            throw new Error(
+              `El stock fisico no puede ser menor a ${minimumPhysicalStock}: `
+              + `${reservedStock} comprometido(s) y ${recoveryStock} en mantenimiento o recuperacion.`,
+            );
           }
           deltaUnits = targetTotalStock - beforeTotalStock;
-          movementDetail = `Ajuste a stock fisico ${targetTotalStock}`;
+          movementDetail = `Ajuste de stock fisico final a ${targetTotalStock}`;
           item.totalStock = targetTotalStock;
-          item.availableStock = targetTotalStock - reservedStock;
+          item.availableStock = Math.max(0, targetTotalStock - minimumPhysicalStock);
         }
 
         item.updatedAt = new Date().toISOString();
@@ -11208,7 +11287,9 @@ const createWebBridge = () => ({
           afterTotalStock: item.totalStock,
           beforeAvailableStock,
           afterAvailableStock: item.availableStock,
-          reservedStockAfter: item.totalStock - item.availableStock,
+          reservedStockAfter: reservedStock,
+          recoveryStockAfter: recoveryStock,
+          minimumPhysicalStockAfter: minimumPhysicalStock,
           userName,
           userRole,
           createdAt: new Date().toISOString(),

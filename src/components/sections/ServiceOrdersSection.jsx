@@ -3878,10 +3878,19 @@ function ServiceOrdersSection({
       const recoveredUnitPriceBs = effectiveGrossLineTotalBs > 0
         ? Number((effectiveGrossLineTotalBs / quantity).toFixed(2))
         : 0;
-      const unitPriceBs = Math.max(
-        Math.max(0, Number(line.unitPriceBs ?? 0)),
-        Math.max(0, Number(line.rentalPriceBs ?? 0)),
-      ) || recoveredUnitPriceBs;
+      const hasStoredUnitPrice = line?.unitPriceBs !== undefined
+        && line?.unitPriceBs !== null
+        && line?.unitPriceBs !== '';
+      const hasLegacyRentalPrice = line?.rentalPriceBs !== undefined
+        && line?.rentalPriceBs !== null
+        && line?.rentalPriceBs !== '';
+      const unitPriceBs = hasStoredUnitPrice
+        ? Math.max(0, Number(line.unitPriceBs ?? 0))
+        : recoveredUnitPriceBs > 0
+          ? recoveredUnitPriceBs
+          : hasLegacyRentalPrice
+            ? Math.max(0, Number(line.rentalPriceBs ?? 0))
+            : 0;
       return {
       lineKey: getDraftLineKey(line, index),
       itemId: line.itemId,
