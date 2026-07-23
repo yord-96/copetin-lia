@@ -62506,3 +62506,1875 @@ body:has(.accounting-bigcash-view) .workspace {
     color: #062044 !important;
   }
 }
+
+/* Calendario · pizarra operativa limpia y compacta */
+.calendar-dashboard .calendar-board-card {
+  position: relative;
+  overflow: visible;
+  padding: 1rem 1.05rem 1.05rem;
+  border: 1px solid rgba(15, 35, 70, 0.09);
+  border-radius: 1rem;
+  background: #ffffff;
+  box-shadow: 0 0.85rem 2rem rgba(15, 23, 42, 0.065);
+}
+
+.calendar-dashboard .calendar-board-card::before,
+.calendar-dashboard .calendar-board-card::after {
+  display: none !important;
+}
+
+.calendar-dashboard .calendar-board-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.82rem;
+  padding: 0 0 0.72rem;
+  border-bottom: 1px solid rgba(15, 35, 70, 0.09);
+}
+
+.calendar-dashboard .calendar-board-card > header > div {
+  min-width: 0;
+}
+
+.calendar-dashboard .calendar-board-card > header h3 {
+  position: relative;
+  margin: 0;
+  padding-left: 0.72rem;
+  color: #10254f;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-decoration: none;
+}
+
+.calendar-dashboard .calendar-board-card > header h3::before {
+  content: "";
+  position: absolute;
+  inset: 0.05rem auto 0.05rem 0;
+  width: 0.24rem;
+  border-radius: 999px;
+  background: #ef4b0a;
+}
+
+.calendar-dashboard .calendar-board-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2rem;
+  border: 1px solid #dbe5f1;
+  border-radius: 999px;
+  padding: 0.34rem 0.68rem;
+  background: #f8fafc;
+  color: #32507d;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.calendar-dashboard .calendar-board-date .calendar-asset-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.calendar-dashboard .calendar-dispatch-board {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.85rem !important;
+  align-items: start;
+}
+
+.calendar-dashboard .calendar-dispatch-column,
+.calendar-dashboard .calendar-dispatch-column + .calendar-dispatch-column {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 !important;
+  border: 1px solid #e1e8f1 !important;
+  border-radius: 0.85rem;
+  background: #ffffff !important;
+  overflow: hidden;
+}
+
+.calendar-dashboard .calendar-dispatch-column > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.62rem 0.78rem;
+  border-bottom: 1px solid #e1e8f1;
+  background: #fff7f2;
+}
+
+.calendar-dashboard .calendar-dispatch-column.return > header {
+  background: #f4f8ff;
+}
+
+.calendar-dashboard .calendar-dispatch-column > header > div {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.calendar-dashboard .calendar-dispatch-column h4 {
+  margin: 0;
+  color: #d94808;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.calendar-dashboard .calendar-dispatch-column.return h4 {
+  color: #1f5fae;
+}
+
+.calendar-dashboard .calendar-dispatch-column > header p {
+  margin: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.48rem;
+  background: rgba(239, 75, 10, 0.1);
+  color: #c2410c;
+  font-family: inherit;
+  font-size: 0.6rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.calendar-dashboard .calendar-dispatch-column.return > header p {
+  background: rgba(37, 99, 235, 0.09);
+  color: #1d4ed8;
+}
+
+.calendar-dashboard .calendar-dispatch-table {
+  display: grid !important;
+  min-height: 0 !important;
+  background: #fff;
+}
+
+.calendar-dashboard .calendar-dispatch-row,
+.calendar-dashboard .calendar-dispatch-row-head {
+  grid-template-columns: 3.9rem 4.2rem minmax(6.5rem, 0.92fr) minmax(9rem, 1.65fr) minmax(5rem, 0.72fr) 2rem !important;
+  column-gap: 0.55rem !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row-head {
+  min-height: 2rem !important;
+  padding: 0.42rem 0.62rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e6ebf2 !important;
+  background: #f8fafc;
+}
+
+.calendar-dashboard .calendar-dispatch-row-head span {
+  color: #66758d !important;
+  font-family: inherit !important;
+  font-size: 0.56rem !important;
+  font-style: normal !important;
+  font-weight: 900 !important;
+  line-height: 1.05;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.calendar-dashboard .calendar-dispatch-row-head span:last-child {
+  font-size: 0 !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row-head span:last-child::after {
+  content: "Nota";
+  font-size: 0.56rem;
+}
+
+.calendar-dashboard .calendar-dispatch-row {
+  position: relative;
+  align-items: center;
+  min-height: 3.65rem !important;
+  padding: 0.58rem 0.62rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e8edf4 !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  color: #253858;
+  font-family: inherit;
+  font-style: normal;
+  text-align: left;
+}
+
+.calendar-dashboard .calendar-dispatch-row:nth-child(odd) {
+  background: #fbfcfe !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row:last-of-type {
+  border-bottom: 0 !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row:hover {
+  z-index: 1;
+  background: #fff8f3 !important;
+  box-shadow: inset 3px 0 0 #ef4b0a !important;
+}
+
+.calendar-dashboard .calendar-dispatch-column.return .calendar-dispatch-row:hover {
+  background: #f5f9ff !important;
+  box-shadow: inset 3px 0 0 #2563eb !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row.has-operational-alert {
+  background: #fff8f7 !important;
+  box-shadow: inset 3px 0 0 #ef4444 !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row.has-board-note {
+  min-height: 3.65rem !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row.reminder-open {
+  min-height: 6.6rem !important;
+}
+
+.calendar-dashboard .calendar-dispatch-row > strong,
+.calendar-dashboard .calendar-dispatch-row > span {
+  min-width: 0;
+  color: #253858;
+  font-family: inherit !important;
+  font-size: 0.67rem !important;
+  font-style: normal !important;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.calendar-dashboard .calendar-dispatch-row > strong {
+  color: #e6480b;
+  font-size: 0.72rem !important;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.calendar-dashboard .calendar-dispatch-column.return .calendar-dispatch-row > strong {
+  color: #2563eb;
+}
+
+.calendar-dashboard .calendar-dispatch-row > span:nth-child(2),
+.calendar-dashboard .calendar-dispatch-row > span:nth-child(3) {
+  color: #244f8f;
+  font-weight: 900;
+}
+
+.calendar-dashboard .calendar-dispatch-detail {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.calendar-dashboard .calendar-dispatch-detail b {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #253858;
+  font-family: inherit !important;
+  font-size: 0.66rem !important;
+  font-style: normal !important;
+  font-weight: 800;
+  line-height: 1.28;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.calendar-dashboard .calendar-dispatch-warning {
+  width: fit-content;
+  margin: 0;
+  border-radius: 999px;
+  padding: 0.12rem 0.34rem;
+  background: #fff0f0;
+  color: #d62f3f !important;
+  font-family: inherit !important;
+  font-size: 0.5rem !important;
+  font-style: normal !important;
+  font-weight: 900;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.calendar-dashboard .calendar-dispatch-row .calendar-event-state {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+  border-radius: 999px;
+  padding: 0.27rem 0.48rem;
+  font-family: inherit !important;
+  font-size: 0.57rem !important;
+  font-style: normal !important;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.calendar-dashboard .calendar-board-row-bell {
+  justify-self: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.calendar-dashboard .calendar-board-row-bell.active {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #ea580c;
+  box-shadow: none;
+}
+
+.calendar-dashboard .calendar-board-reminder-card {
+  grid-column: 4 / -1;
+  margin: 0.2rem 0 0;
+  border: 1px solid #fed7aa;
+  border-left: 3px solid #ef4b0a;
+  border-radius: 0.58rem;
+  padding: 0.45rem 0.52rem;
+  background: #fffaf5;
+  box-shadow: none;
+}
+
+.calendar-dashboard .calendar-board-reminder-card small {
+  color: #7c3d12 !important;
+  font-family: inherit !important;
+  font-size: 0.6rem !important;
+  font-style: normal !important;
+  line-height: 1.32;
+}
+
+.calendar-dashboard .calendar-dispatch-empty {
+  min-height: 8rem !important;
+  border: 0;
+  background: #fbfcfe;
+}
+
+@media (min-width: 901px) and (max-width: 1280px) {
+  .calendar-dashboard .calendar-dispatch-row,
+  .calendar-dashboard .calendar-dispatch-row-head {
+    grid-template-columns: 3.5rem 3.8rem minmax(5.5rem, 0.85fr) minmax(7rem, 1.45fr) minmax(4.7rem, 0.7fr) 1.8rem !important;
+    column-gap: 0.4rem !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row {
+    padding-inline: 0.48rem !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .calendar-dashboard .calendar-board-card {
+    padding: 0.85rem;
+  }
+
+  .calendar-dashboard .calendar-board-card > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.52rem;
+  }
+
+  .calendar-dashboard .calendar-board-date {
+    white-space: normal;
+  }
+
+  .calendar-dashboard .calendar-dispatch-board {
+    grid-template-columns: 1fr !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row,
+  .calendar-dashboard .calendar-dispatch-row-head {
+    grid-template-columns: 3.6rem 4rem minmax(6rem, 0.9fr) minmax(8rem, 1.45fr) minmax(4.8rem, 0.7fr) 1.8rem !important;
+  }
+}
+
+/* ==========================================================================
+   CALENDARIO · CONSOLIDADO FINAL
+   - Recupera la distribución compacta superior.
+   - Rediseña la Pizarra operativa según la opción 1.
+   - Se limita a escritorio; la experiencia móvil existente permanece intacta.
+   ========================================================================== */
+
+@media (min-width: 769px) {
+  /* Distribución general compacta */
+  .calendar-dashboard.panel {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0.55rem clamp(0.85rem, 1.45vw, 1.35rem) 1.5rem !important;
+    gap: 0.72rem !important;
+  }
+
+  .calendar-dashboard > .calendar-header {
+    display: none !important;
+  }
+
+  /* KPI compactos */
+  .calendar-dashboard .calendar-kpis {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: clamp(0.72rem, 1.15vw, 1rem) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-kpi-card,
+  .calendar-dashboard .calendar-kpi-card:nth-child(n) {
+    min-width: 0 !important;
+    min-height: 6.15rem !important;
+    height: auto !important;
+    padding: 0.82rem 1rem !important;
+    border: 1px solid rgba(15, 35, 70, 0.08) !important;
+    border-radius: 0.9rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.65rem 1.55rem rgba(15, 23, 42, 0.055) !important;
+    column-gap: 0.72rem !important;
+    row-gap: 0.08rem !important;
+  }
+
+  .calendar-dashboard .calendar-kpi-icon,
+  .calendar-dashboard .calendar-kpi-ring,
+  .calendar-dashboard .calendar-kpi-ring .calendar-kpi-icon {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    min-height: 2.25rem !important;
+  }
+
+  .calendar-dashboard .calendar-kpi-card > strong {
+    font-size: clamp(1.34rem, 1.6vw, 1.68rem) !important;
+    line-height: 1 !important;
+  }
+
+  .calendar-dashboard .calendar-kpi-card p {
+    min-height: 0 !important;
+    margin: 0.18rem 0 0 !important;
+    font-size: 0.72rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .calendar-dashboard .calendar-kpi-card a,
+  .calendar-dashboard .calendar-kpi-card button {
+    margin-top: 0.35rem !important;
+    font-size: 0.67rem !important;
+  }
+
+  /* Tarjeta principal y encabezado del calendario */
+  .calendar-dashboard .calendar-main-card {
+    padding: 0.82rem 0.9rem 0.75rem !important;
+    gap: 0.5rem !important;
+    border-radius: 0.95rem !important;
+  }
+
+  .calendar-dashboard .calendar-main-card > header {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-main-card > header h3 {
+    margin: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-controls {
+    width: 100% !important;
+    margin: 0.48rem 0 0 !important;
+  }
+
+  .calendar-dashboard .calendar-filters {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 0.38rem !important;
+    border: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-filters button {
+    min-height: 1.82rem !important;
+    padding: 0.3rem 0.62rem !important;
+    border-radius: 999px !important;
+    font-size: 0.62rem !important;
+    line-height: 1 !important;
+  }
+
+  .calendar-dashboard .calendar-nav-strip {
+    margin: 0.48rem 0 0 !important;
+    gap: 0.45rem !important;
+  }
+
+  .calendar-dashboard .calendar-month-bar {
+    min-height: 2.45rem !important;
+    grid-template-columns: 2rem minmax(0, 1fr) 2rem !important;
+    gap: 0.4rem !important;
+  }
+
+  .calendar-dashboard .calendar-month-bar > button {
+    width: 2rem !important;
+    height: 2rem !important;
+    min-height: 2rem !important;
+  }
+
+  .calendar-dashboard .calendar-month-bar h3 {
+    font-size: 1rem !important;
+    line-height: 1.05 !important;
+  }
+
+  .calendar-dashboard .calendar-month-bar p {
+    margin-top: 0.08rem !important;
+    font-size: 0.6rem !important;
+  }
+
+  .calendar-dashboard .calendar-view-toggle {
+    min-height: 2rem !important;
+    padding: 0.1rem !important;
+  }
+
+  .calendar-dashboard .calendar-view-toggle button {
+    min-height: 1.76rem !important;
+    padding: 0.25rem 0.62rem !important;
+    font-size: 0.61rem !important;
+  }
+
+  /* Pizarra operativa · opción 1 */
+  .calendar-dashboard .calendar-board-card {
+    position: relative !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    border: 1px solid rgba(15, 35, 70, 0.09) !important;
+    border-radius: 1rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.9rem 2rem rgba(15, 23, 42, 0.065) !important;
+  }
+
+  .calendar-dashboard .calendar-board-card::before,
+  .calendar-dashboard .calendar-board-card::after {
+    display: none !important;
+  }
+
+  .calendar-dashboard .calendar-board-card > header {
+    min-height: 4.1rem !important;
+    margin: 0 !important;
+    padding: 0.78rem 0.95rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 1rem !important;
+    border-bottom: 1px solid #e8edf4 !important;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%) !important;
+  }
+
+  .calendar-dashboard .calendar-board-card > header > div {
+    position: relative !important;
+    min-width: 0 !important;
+    padding-left: 2.8rem !important;
+  }
+
+  .calendar-dashboard .calendar-board-card > header > div::before {
+    content: "▣";
+    position: absolute;
+    inset: 50% auto auto 0;
+    width: 2.2rem;
+    height: 2.2rem;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    border-radius: 0.7rem;
+    background: linear-gradient(145deg, #ff6a1f, #e94806);
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 950;
+    box-shadow: 0 0.55rem 1rem rgba(233, 72, 6, 0.2);
+  }
+
+  .calendar-dashboard .calendar-board-card > header h3 {
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #14213d !important;
+    font-size: 1.08rem !important;
+    font-weight: 950 !important;
+    line-height: 1.05 !important;
+    letter-spacing: -0.025em !important;
+  }
+
+  .calendar-dashboard .calendar-board-card > header h3::before {
+    display: none !important;
+  }
+
+  .calendar-dashboard .calendar-board-card > header h3::after {
+    content: "Vista operativa del día · Entregas y recojos programados";
+    display: block;
+    margin-top: 0.28rem;
+    color: #77839a;
+    font-size: 0.63rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .calendar-dashboard .calendar-board-date {
+    flex: 0 0 auto !important;
+    min-height: 2.15rem !important;
+    padding: 0.38rem 0.68rem !important;
+    border: 1px solid #dce4ee !important;
+    border-radius: 0.68rem !important;
+    background: #ffffff !important;
+    color: #334766 !important;
+    font-size: 0.66rem !important;
+    font-weight: 900 !important;
+    box-shadow: 0 0.2rem 0.55rem rgba(15, 23, 42, 0.04);
+  }
+
+  .calendar-dashboard .calendar-dispatch-board {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.78rem !important;
+    align-items: start !important;
+    padding: 0.82rem !important;
+    background: #f8fafc !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column,
+  .calendar-dashboard .calendar-dispatch-column + .calendar-dispatch-column {
+    min-width: 0 !important;
+    min-height: 100% !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid #dfe6ef !important;
+    border-radius: 0.82rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.35rem 0.8rem rgba(15, 23, 42, 0.035) !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column > header {
+    min-height: 3.15rem !important;
+    margin: 0 !important;
+    padding: 0.68rem 0.78rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid #e7ebf1 !important;
+    background: linear-gradient(180deg, #fffaf7 0%, #fff6f0 100%) !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return > header {
+    background: linear-gradient(180deg, #f7faff 0%, #eef5ff 100%) !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column > header > div {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.65rem !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column h4 {
+    position: relative !important;
+    margin: 0 !important;
+    padding-left: 1.75rem !important;
+    color: #df4b09 !important;
+    font-size: 0.78rem !important;
+    font-weight: 950 !important;
+    letter-spacing: 0.045em !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column h4::before {
+    content: "□";
+    position: absolute;
+    inset: 50% auto auto 0;
+    width: 1.35rem;
+    height: 1.35rem;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    border-radius: 0.42rem;
+    background: #ffede3;
+    color: #ed4d08;
+    font-size: 0.72rem;
+    font-weight: 950;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return h4 {
+    color: #1d5fbf !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return h4::before {
+    background: #e7f0ff;
+    color: #2563eb;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column > header p {
+    margin: 0 !important;
+    min-width: 1.75rem !important;
+    min-height: 1.75rem !important;
+    padding: 0.28rem 0.48rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid #ffd5c2 !important;
+    border-radius: 999px !important;
+    background: #fff0e8 !important;
+    color: #dd4a08 !important;
+    font-size: 0.64rem !important;
+    font-weight: 950 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return > header p {
+    border-color: #cfe0ff !important;
+    background: #eaf2ff !important;
+    color: #2563eb !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-table {
+    display: grid !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row,
+  .calendar-dashboard .calendar-dispatch-row-head {
+    grid-template-columns:
+      3.65rem
+      3.7rem
+      minmax(5.7rem, 0.92fr)
+      minmax(8.7rem, 1.55fr)
+      minmax(4.8rem, 0.72fr)
+      1.65rem !important;
+    column-gap: 0.42rem !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row-head {
+    min-height: 2.15rem !important;
+    padding: 0.44rem 0.58rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid #e7ebf1 !important;
+    background: #f8fafc !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row-head span {
+    color: #66758d !important;
+    font-size: 0.53rem !important;
+    font-weight: 950 !important;
+    letter-spacing: 0.035em !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row-head span:last-child {
+    font-size: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row-head span:last-child::after {
+    content: "Nota";
+    font-size: 0.53rem;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row {
+    position: relative !important;
+    align-items: center !important;
+    min-height: 3.72rem !important;
+    padding: 0.58rem !important;
+    border: 0 !important;
+    border-bottom: 1px solid #e9edf3 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    transition: background 0.15s ease, box-shadow 0.15s ease !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row:nth-child(odd) {
+    background: #fcfdff !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row:last-of-type {
+    border-bottom: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row:hover {
+    z-index: 1 !important;
+    background: #fff8f3 !important;
+    box-shadow: inset 3px 0 0 #f05a17 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return .calendar-dispatch-row:hover {
+    background: #f4f8ff !important;
+    box-shadow: inset 3px 0 0 #2563eb !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row.has-operational-alert {
+    background: #fffafa !important;
+    box-shadow: inset 2px 0 0 #ff5d63 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row > strong,
+  .calendar-dashboard .calendar-dispatch-row > span {
+    min-width: 0 !important;
+    color: #243858 !important;
+    font-size: 0.64rem !important;
+    font-weight: 760 !important;
+    line-height: 1.22 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row > strong {
+    color: #eb4b0b !important;
+    font-size: 0.69rem !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-column.return .calendar-dispatch-row > strong {
+    color: #2563eb !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row > span:nth-child(2) {
+    color: #203b67 !important;
+    font-weight: 950 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row > span:nth-child(3) {
+    color: #1760bc !important;
+    font-weight: 900 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-detail {
+    display: grid !important;
+    gap: 0.15rem !important;
+    min-width: 0 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-detail b {
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    color: #263858 !important;
+    font-size: 0.63rem !important;
+    font-weight: 820 !important;
+    line-height: 1.26 !important;
+    text-transform: none !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-warning {
+    width: fit-content !important;
+    margin: 0 !important;
+    padding: 0.12rem 0.34rem !important;
+    border: 1px solid #ffd0d3 !important;
+    border-radius: 999px !important;
+    background: #fff1f2 !important;
+    color: #e23b47 !important;
+    font-size: 0.48rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row .calendar-event-state {
+    min-width: 0 !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    justify-self: start !important;
+    padding: 0.26rem 0.45rem !important;
+    border-radius: 999px !important;
+    font-size: 0.54rem !important;
+    font-weight: 900 !important;
+    white-space: nowrap !important;
+  }
+
+  .calendar-dashboard .calendar-board-row-bell {
+    justify-self: center !important;
+    width: 1.55rem !important;
+    height: 1.55rem !important;
+    border-radius: 0.45rem !important;
+  }
+
+  .calendar-dashboard .calendar-board-row-bell.active {
+    border-color: #fed7aa !important;
+    background: #fff7ed !important;
+    color: #ea580c !important;
+  }
+
+  .calendar-dashboard .calendar-board-reminder-card {
+    grid-column: 4 / -1 !important;
+    margin: 0.18rem 0 0 !important;
+    padding: 0.42rem 0.5rem !important;
+    border: 1px solid #fed7aa !important;
+    border-left: 3px solid #ef4b0a !important;
+    border-radius: 0.5rem !important;
+    background: #fffaf5 !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-empty {
+    min-height: 7rem !important;
+    border: 0 !important;
+    background: #fbfcfe !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .calendar-dashboard .calendar-dispatch-row,
+  .calendar-dashboard .calendar-dispatch-row-head {
+    grid-template-columns:
+      3.25rem
+      3.35rem
+      minmax(5rem, 0.85fr)
+      minmax(6.7rem, 1.35fr)
+      minmax(4.35rem, 0.68fr)
+      1.5rem !important;
+    column-gap: 0.32rem !important;
+  }
+
+  .calendar-dashboard .calendar-dispatch-row {
+    padding-inline: 0.44rem !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .calendar-dashboard .calendar-dispatch-board {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ==========================================================================
+   INVENTARIO PRODUCTOS MÓVIL · CONSOLIDADO FINAL
+   Encaminado al lenguaje visual móvil de Calendario, Órdenes y Clientes.
+   No altera escritorio ni la lógica de inventario.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .workspace:has(.inventory-view-products) {
+    width: 100% !important;
+    max-width: 100vw !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    background: #f5f6fa !important;
+  }
+
+  .inventory-dashboard.inventory-view-products,
+  .inventory-dashboard.inventory-view-products *,
+  .inventory-dashboard.inventory-view-products *::before,
+  .inventory-dashboard.inventory-view-products *::after {
+    box-sizing: border-box !important;
+  }
+
+  .inventory-dashboard.inventory-view-products.panel {
+    width: 100% !important;
+    max-width: 100vw !important;
+    min-height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 0 5.8rem !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #f5f6fa !important;
+    color: #101828 !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Hero móvil */
+  .inventory-view-products > .inventory-header {
+    position: relative !important;
+    min-height: 11.4rem !important;
+    margin: 0 !important;
+    padding: 1rem 1rem 1.25rem !important;
+    border: 0 !important;
+    border-radius: 0 0 1.5rem 1.5rem !important;
+    background:
+      radial-gradient(circle at 88% 19%, rgba(255,255,255,.2) 0 20%, transparent 21%),
+      radial-gradient(circle at 105% 105%, rgba(255,255,255,.14) 0 31%, transparent 32%),
+      linear-gradient(135deg, #ef4b05 0%, #ff7435 100%) !important;
+    box-shadow: 0 1.15rem 2rem rgba(223, 63, 5, 0.18) !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-content: start !important;
+    gap: 0.85rem !important;
+    overflow: hidden !important;
+  }
+
+  .inventory-view-products > .inventory-header > div:first-child {
+    min-width: 0 !important;
+    padding-right: 5.7rem !important;
+  }
+
+  .inventory-view-products > .inventory-header > div:first-child::before {
+    content: "GESTIÓN DE INVENTARIO";
+    display: block;
+    margin-bottom: 0.28rem;
+    color: rgba(255,255,255,.92);
+    font-size: 0.54rem;
+    font-weight: 950;
+    letter-spacing: 0.09em;
+  }
+
+  .inventory-view-products > .inventory-header h2 {
+    margin: 0 !important;
+    color: #ffffff !important;
+    font-size: 2rem !important;
+    font-weight: 950 !important;
+    line-height: 0.98 !important;
+    letter-spacing: -0.055em !important;
+  }
+
+  .inventory-view-products > .inventory-header p {
+    max-width: 17rem !important;
+    margin: 0.42rem 0 0 !important;
+    color: rgba(255,255,255,.9) !important;
+    font-size: 0.68rem !important;
+    font-weight: 650 !important;
+    line-height: 1.3 !important;
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.45rem !important;
+    align-items: stretch !important;
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 2.35rem !important;
+    margin: 0 !important;
+    padding: 0.44rem 0.52rem !important;
+    border-radius: 0.78rem !important;
+    border: 1px solid rgba(255,255,255,.36) !important;
+    background: rgba(255,255,255,.17) !important;
+    color: #ffffff !important;
+    font-size: 0.61rem !important;
+    font-weight: 900 !important;
+    line-height: 1.12 !important;
+    box-shadow: none !important;
+    backdrop-filter: blur(8px);
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions .primary-button {
+    background: #ffffff !important;
+    border-color: #ffffff !important;
+    color: #e94a00 !important;
+    box-shadow: 0 0.55rem 1rem rgba(138, 36, 0, 0.14) !important;
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions .link-button {
+    background: rgba(95, 23, 0, 0.16) !important;
+  }
+
+  /* Contenido principal */
+  .inventory-view-products .inventory-content-grid,
+  .inventory-view-products .inventory-left-stack {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* KPI en cuadrícula compacta 2x2 */
+  .inventory-view-products .inventory-kpis {
+    position: relative !important;
+    z-index: 2 !important;
+    width: auto !important;
+    margin: -0.85rem 0.78rem 0 !important;
+    padding: 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.55rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card,
+  .inventory-view-products .inventory-kpi-card:nth-child(n) {
+    min-width: 0 !important;
+    min-height: 6.15rem !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0.72rem !important;
+    border: 1px solid #edf0f5 !important;
+    border-radius: 1.05rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.72rem 1.5rem rgba(31, 41, 55, 0.075) !important;
+    display: grid !important;
+    grid-template-columns: 2.1rem minmax(0, 1fr) !important;
+    grid-template-rows: auto auto 1fr !important;
+    column-gap: 0.55rem !important;
+    row-gap: 0.1rem !important;
+    align-content: start !important;
+    overflow: hidden !important;
+  }
+
+  .inventory-view-products .inventory-kpi-head {
+    grid-column: 1 !important;
+    grid-row: 1 / span 2 !important;
+    margin: 0 !important;
+  }
+
+  .inventory-view-products .inventory-kpi-icon {
+    width: 2.05rem !important;
+    height: 2.05rem !important;
+    min-width: 2.05rem !important;
+    min-height: 2.05rem !important;
+    border-radius: 0.68rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card > strong {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    align-self: end !important;
+    min-width: 0 !important;
+    color: #e94a00 !important;
+    font-size: 1.12rem !important;
+    font-weight: 950 !important;
+    line-height: 1 !important;
+    letter-spacing: -0.03em !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card > p {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    min-width: 0 !important;
+    margin: 0.12rem 0 0 !important;
+    color: #667085 !important;
+    font-size: 0.56rem !important;
+    font-weight: 750 !important;
+    line-height: 1.15 !important;
+  }
+
+  .inventory-view-products .inventory-kpi-link {
+    grid-column: 1 / -1 !important;
+    grid-row: 3 !important;
+    justify-self: start !important;
+    align-self: end !important;
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0.35rem 0 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #e94a00 !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+    box-shadow: none !important;
+  }
+
+  /* Buscador, filtros y exportación */
+  .inventory-view-products .inventory-table-card {
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0.75rem 0.78rem 0 !important;
+    padding: 0.7rem !important;
+    border: 0 !important;
+    border-radius: 1.18rem !important;
+    background: #ffffff !important;
+    box-shadow: 0 0.8rem 1.8rem rgba(31, 41, 55, 0.075) !important;
+    overflow: visible !important;
+  }
+
+  .inventory-view-products .inventory-toolbar {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 0.48rem !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+  }
+
+  .inventory-view-products .inventory-search {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 2.72rem !important;
+    border: 1px solid #e3e8ef !important;
+    border-radius: 0.88rem !important;
+    background: #f9fafc !important;
+    box-shadow: none !important;
+  }
+
+  .inventory-view-products .inventory-search input {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 2.7rem !important;
+    padding: 0.72rem 0.78rem 0.72rem 2.15rem !important;
+    color: #172554 !important;
+    font-size: 0.68rem !important;
+    font-weight: 750 !important;
+  }
+
+  .inventory-view-products .inventory-filter-btn,
+  .inventory-view-products .inventory-export-btn {
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 2.35rem !important;
+    padding: 0.5rem 0.68rem !important;
+    border: 1px solid #f1cdb9 !important;
+    border-radius: 0.78rem !important;
+    background: #fff8f3 !important;
+    color: #d94b00 !important;
+    font-size: 0.61rem !important;
+    font-weight: 900 !important;
+  }
+
+  .inventory-view-products .inventory-toolbar > .inventory-export-btn:last-child {
+    justify-self: end !important;
+  }
+
+  .inventory-view-products .inventory-filter-line.product-filter-line {
+    width: 100% !important;
+    margin: 0.55rem 0 0 !important;
+    padding: 0.58rem !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.42rem !important;
+    border: 1px solid #f2d8ca !important;
+    border-radius: 0.88rem !important;
+    background: #fffaf7 !important;
+  }
+
+  .inventory-view-products .inventory-filter-dropdown,
+  .inventory-view-products .inventory-filter-dropdown.wide {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .inventory-view-products .inventory-filter-trigger {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 2.3rem !important;
+    padding: 0.5rem 0.6rem !important;
+    font-size: 0.59rem !important;
+  }
+
+  /* Tabla convertida en tarjetas móviles */
+  .inventory-view-products .inventory-table-wrap-modern {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 0.65rem !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .inventory-view-products .inventory-table-modern {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border: 0 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern thead {
+    display: none !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody {
+    display: grid !important;
+    width: 100% !important;
+    gap: 0.58rem !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody tr {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "product menu"
+      "category category"
+      "details details"
+      "status status" !important;
+    gap: 0.48rem 0.62rem !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0.68rem !important;
+    border: 1px solid #e8edf4 !important;
+    border-radius: 1rem !important;
+    background: #fbfcfe !important;
+    box-shadow: 0 0.42rem 1rem rgba(31, 41, 55, 0.045) !important;
+    overflow: visible !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody tr::before {
+    content: "";
+    position: absolute;
+    inset: 0.72rem auto 0.72rem 0;
+    width: 0.2rem;
+    border-radius: 0 999px 999px 0;
+    background: #ef5a18;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #25304a !important;
+    font-size: 0.64rem !important;
+    font-weight: 760 !important;
+    line-height: 1.2 !important;
+    white-space: normal !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(1) {
+    grid-area: product !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(2) {
+    grid-area: category !important;
+    justify-self: start !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    grid-area: details !important;
+    display: grid !important;
+    grid-template-columns: minmax(5.2rem, 0.7fr) minmax(0, 1fr) !important;
+    gap: 0.45rem !important;
+    align-items: center !important;
+    padding: 0.38rem 0 !important;
+    border-top: 1px solid #edf0f5 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3)::before {
+    content: "Marca";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4)::before {
+    content: "Color / descripción";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5)::before {
+    content: "Unidad";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6)::before {
+    content: "Stock total";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7)::before {
+    content: "Disponible";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3)::before,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4)::before,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5)::before,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6)::before,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7)::before {
+    color: #748096 !important;
+    font-size: 0.55rem !important;
+    font-weight: 850 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(8) {
+    grid-area: status !important;
+    justify-self: start !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(9) {
+    grid-area: menu !important;
+    align-self: start !important;
+    justify-self: end !important;
+  }
+
+  .inventory-view-products .inventory-product-cell {
+    display: grid !important;
+    grid-template-columns: 3.7rem minmax(0, 1fr) !important;
+    gap: 0.62rem !important;
+    align-items: center !important;
+    min-width: 0 !important;
+  }
+
+  .inventory-view-products .inventory-product-thumb {
+    width: 3.7rem !important;
+    height: 3.7rem !important;
+    min-width: 3.7rem !important;
+    border: 1px solid #ead8cc !important;
+    border-radius: 0.86rem !important;
+    background: linear-gradient(145deg, #fff8f3, #f2f6fc) !important;
+    overflow: hidden !important;
+  }
+
+  .inventory-view-products .inventory-product-thumb img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .inventory-view-products .inventory-product-cell strong {
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    color: #102b59 !important;
+    font-size: 0.75rem !important;
+    font-weight: 950 !important;
+    line-height: 1.15 !important;
+    text-transform: uppercase !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .inventory-view-products .inventory-product-cell span {
+    display: block !important;
+    margin-top: 0.16rem !important;
+    color: #758199 !important;
+    font-size: 0.56rem !important;
+    font-weight: 780 !important;
+  }
+
+  .inventory-view-products .inventory-pill {
+    min-height: 1.55rem !important;
+    padding: 0.22rem 0.48rem !important;
+    border-radius: 999px !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+  }
+
+  .inventory-view-products .inventory-status {
+    min-height: 1.58rem !important;
+    padding: 0.24rem 0.5rem !important;
+    border-radius: 999px !important;
+    font-size: 0.55rem !important;
+    font-weight: 900 !important;
+  }
+
+  .inventory-view-products .inventory-stock-mode-note {
+    margin-top: 0.18rem !important;
+    font-size: 0.5rem !important;
+  }
+
+  .inventory-view-products .inventory-row-menu-button {
+    width: 2rem !important;
+    height: 2rem !important;
+    min-width: 2rem !important;
+    min-height: 2rem !important;
+    border: 1px solid #f1cdb9 !important;
+    border-radius: 0.65rem !important;
+    background: #fff8f3 !important;
+    color: #e94a00 !important;
+    font-size: 1rem !important;
+  }
+
+  .inventory-view-products .inventory-actions-menu {
+    right: 0 !important;
+    left: auto !important;
+    width: min(14rem, calc(100vw - 2.4rem)) !important;
+    z-index: 40 !important;
+  }
+
+  /* Pie y paginación */
+  .inventory-view-products .inventory-table-footer-modern {
+    width: 100% !important;
+    margin-top: 0.7rem !important;
+    padding: 0.58rem 0 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0.55rem !important;
+    border-top: 1px solid #edf0f5 !important;
+  }
+
+  .inventory-view-products .inventory-table-footer-modern > span {
+    color: #758199 !important;
+    font-size: 0.58rem !important;
+    font-weight: 750 !important;
+    text-align: center !important;
+  }
+
+  .inventory-view-products .inventory-pagination-modern {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 2.25rem 2.25rem 2.25rem minmax(0, 1fr) !important;
+    gap: 0.38rem !important;
+  }
+
+  .inventory-view-products .inventory-pagination-modern button,
+  .inventory-view-products .inventory-page-size-select {
+    min-width: 0 !important;
+    min-height: 2.25rem !important;
+    border-radius: 0.7rem !important;
+    font-size: 0.61rem !important;
+  }
+
+  /* Modales como hoja inferior móvil */
+  .inventory-modal-backdrop:has(.inventory-product-modal) {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .inventory-product-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 94svh !important;
+    margin: 0 !important;
+    border-radius: 1.15rem 1.15rem 0 0 !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .inventory-view-products .inventory-kpis {
+    margin-inline: 0.62rem !important;
+    gap: 0.45rem !important;
+  }
+
+  .inventory-view-products .inventory-table-card {
+    margin-inline: 0.62rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card,
+  .inventory-view-products .inventory-kpi-card:nth-child(n) {
+    min-height: 6.45rem !important;
+    padding: 0.62rem !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    grid-template-columns: 4.8rem minmax(0, 1fr) !important;
+  }
+}
+
+/* ==========================================================================
+   INVENTARIO PRODUCTOS MÓVIL · AJUSTE V2
+   Corrige ancho útil, espacio superior y superposición de textos.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* Aprovechar todo el ancho real del dispositivo */
+  .app-content:has(.inventory-view-products) {
+    width: 100% !important;
+    max-width: 100vw !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .app-content:has(.inventory-view-products) > .workspace,
+  .app-content .workspace:has(.inventory-view-products) {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .inventory-dashboard.inventory-view-products.panel {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+  }
+
+  /* Eliminar el vacío entre la barra superior y el hero */
+  .inventory-view-products > .inventory-header {
+    margin-top: 0 !important;
+    border-radius: 0 0 1.35rem 1.35rem !important;
+  }
+
+  /* Reducir ligeramente el hero para mostrar más contenido */
+  .inventory-view-products > .inventory-header {
+    min-height: 10.35rem !important;
+    padding: 0.85rem 0.88rem 1rem !important;
+    gap: 0.68rem !important;
+  }
+
+  .inventory-view-products > .inventory-header h2 {
+    font-size: 1.82rem !important;
+  }
+
+  .inventory-view-products > .inventory-header p {
+    margin-top: 0.3rem !important;
+    font-size: 0.63rem !important;
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions {
+    gap: 0.38rem !important;
+  }
+
+  .inventory-view-products > .inventory-header .inventory-actions button {
+    min-height: 2.15rem !important;
+    padding: 0.38rem 0.42rem !important;
+    font-size: 0.57rem !important;
+  }
+
+  /* KPI un poco más anchos y menos altos */
+  .inventory-view-products .inventory-kpis {
+    margin: -0.72rem 0.58rem 0 !important;
+    gap: 0.46rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card,
+  .inventory-view-products .inventory-kpi-card:nth-child(n) {
+    min-height: 5.65rem !important;
+    padding: 0.62rem !important;
+    border-radius: 0.92rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card > strong {
+    font-size: 1.02rem !important;
+  }
+
+  .inventory-view-products .inventory-kpi-card > p {
+    font-size: 0.52rem !important;
+  }
+
+  /* Área de búsqueda más ancha */
+  .inventory-view-products .inventory-table-card {
+    width: auto !important;
+    margin: 0.62rem 0.58rem 0 !important;
+    padding: 0.6rem !important;
+    border-radius: 1rem !important;
+  }
+
+  .inventory-view-products .inventory-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 0.4rem !important;
+  }
+
+  .inventory-view-products .inventory-search {
+    min-height: 2.5rem !important;
+  }
+
+  .inventory-view-products .inventory-search input {
+    height: 2.48rem !important;
+    padding-block: 0.62rem !important;
+    font-size: 0.64rem !important;
+  }
+
+  .inventory-view-products .inventory-filter-btn,
+  .inventory-view-products .inventory-export-btn {
+    min-height: 2.2rem !important;
+    padding: 0.44rem 0.58rem !important;
+    font-size: 0.56rem !important;
+  }
+
+  /* Neutralizar etiquetas móviles globales que se montaban sobre el contenido */
+  .inventory-view-products .inventory-table-modern tbody td::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  /* Tarjeta de producto completamente reordenada */
+  .inventory-view-products .inventory-table-modern tbody {
+    gap: 0.52rem !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody tr {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "product menu"
+      "category status"
+      "brand brand"
+      "color color"
+      "unit stock"
+      "available available" !important;
+    gap: 0.38rem 0.55rem !important;
+    min-height: 0 !important;
+    padding: 0.62rem 0.62rem 0.68rem 0.72rem !important;
+    border-radius: 0.9rem !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    text-align: left !important;
+    font-size: 0.61rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(1) {
+    grid-area: product !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(2) {
+    grid-area: category !important;
+    align-self: center !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3) {
+    grid-area: brand !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4) {
+    grid-area: color !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5) {
+    grid-area: unit !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6) {
+    grid-area: stock !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    grid-area: available !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(8) {
+    grid-area: status !important;
+    align-self: center !important;
+    justify-self: end !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(9) {
+    grid-area: menu !important;
+    align-self: start !important;
+    justify-self: end !important;
+  }
+
+  /* Filas de detalle legibles, una debajo de otra */
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    display: grid !important;
+    grid-template-columns: 5.35rem minmax(0, 1fr) !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+    padding-top: 0.34rem !important;
+    border-top: 1px solid #edf0f5 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3)::after {
+    content: "Marca";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4)::after {
+    content: "Color / descripción";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5)::after {
+    content: "Unidad";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6)::after {
+    content: "Stock total";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7)::after {
+    content: "Disponible";
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3)::after,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4)::after,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5)::after,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6)::after,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7)::after {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    color: #7b8497 !important;
+    font-size: 0.51rem !important;
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    color: #172554 !important;
+    font-weight: 850 !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3) > *,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4) > *,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5) > *,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6) > *,
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) > * {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  /* En celdas de texto directo, colocar el valor en la segunda columna */
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    text-align: right !important;
+  }
+
+  .inventory-view-products .inventory-product-cell {
+    grid-template-columns: 3.25rem minmax(0, 1fr) !important;
+    gap: 0.52rem !important;
+    padding-right: 0.15rem !important;
+  }
+
+  .inventory-view-products .inventory-product-thumb {
+    width: 3.25rem !important;
+    height: 3.25rem !important;
+    min-width: 3.25rem !important;
+  }
+
+  .inventory-view-products .inventory-product-cell strong {
+    font-size: 0.69rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .inventory-view-products .inventory-product-cell span {
+    font-size: 0.52rem !important;
+  }
+
+  .inventory-view-products .inventory-pill,
+  .inventory-view-products .inventory-status {
+    min-height: 1.42rem !important;
+    padding: 0.2rem 0.42rem !important;
+    font-size: 0.5rem !important;
+  }
+
+  .inventory-view-products .inventory-row-menu-button {
+    width: 1.85rem !important;
+    height: 1.85rem !important;
+    min-width: 1.85rem !important;
+    min-height: 1.85rem !important;
+  }
+
+  .inventory-view-products .inventory-stock-mode-note {
+    margin-top: 0.12rem !important;
+    font-size: 0.47rem !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .inventory-view-products .inventory-kpis,
+  .inventory-view-products .inventory-table-card {
+    margin-inline: 0.45rem !important;
+  }
+
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(3),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(4),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(5),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(6),
+  .inventory-view-products .inventory-table-modern tbody td:nth-child(7) {
+    grid-template-columns: 4.7rem minmax(0, 1fr) !important;
+  }
+}
+
