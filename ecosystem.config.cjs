@@ -14,6 +14,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || 4000,
+        CHROMIUM_EXECUTABLE_PATH: '/usr/bin/google-chrome-stable',
       },
       error_file: './logs/prestamos-app-error.log',
       out_file: './logs/prestamos-app-out.log',
