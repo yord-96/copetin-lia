@@ -64378,3 +64378,556 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 }
 
+/* ==========================================================================
+   TRAZABILIDAD DE DISPONIBILIDAD EN CONTRATOS
+   ========================================================================== */
+
+.orders-availability-metric-button {
+  min-width: 0;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orders-availability-metric-button em {
+  display: block;
+  margin-top: 0.12rem;
+  color: #7c879a;
+  font-size: 0.48rem;
+  font-style: normal;
+  font-weight: 850;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.orders-availability-metric-button:hover,
+.orders-availability-metric-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(239, 75, 10, 0.28), 0 0.35rem 0.85rem rgba(15, 23, 42, 0.07);
+  transform: translateY(-1px);
+}
+
+.orders-availability-metric-button:hover em,
+.orders-availability-metric-button:focus-visible em {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.orders-availability-detail-backdrop {
+  z-index: 480;
+}
+
+.orders-availability-detail-modal {
+  width: min(70rem, calc(100vw - 2rem));
+  max-height: min(88vh, 52rem);
+  overflow: hidden;
+}
+
+.orders-availability-detail-head > div > span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #ee4c08;
+  font-size: 0.63rem;
+  font-weight: 950;
+  letter-spacing: 0.065em;
+}
+
+.orders-availability-detail-body {
+  min-height: 0;
+  padding: 1rem;
+  overflow: auto;
+  background: #f7f9fc;
+}
+
+.orders-availability-detail-description {
+  margin: 0 0 0.85rem;
+  color: #65738a;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.orders-availability-formula {
+  display: grid;
+  grid-template-columns: repeat(7, auto);
+  gap: 0.55rem;
+  align-items: center;
+  justify-content: start;
+  padding: 0.78rem;
+  border: 1px solid #e2e8f1;
+  border-radius: 0.9rem;
+  background: #fff;
+}
+
+.orders-availability-formula.returns {
+  grid-template-columns: auto auto auto;
+}
+
+.orders-availability-formula > span {
+  min-width: 7rem;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid #e5eaf2;
+  border-radius: 0.72rem;
+  background: #f9fbfd;
+}
+
+.orders-availability-formula > span.result {
+  border-color: #b8e3c9;
+  background: #edfbf3;
+}
+
+.orders-availability-formula small,
+.orders-availability-formula strong {
+  display: block;
+}
+
+.orders-availability-formula small {
+  color: #758198;
+  font-size: 0.58rem;
+  font-weight: 850;
+}
+
+.orders-availability-formula strong {
+  margin-top: 0.12rem;
+  color: #112c59;
+  font-size: 1.2rem;
+  font-weight: 950;
+}
+
+.orders-availability-formula > b {
+  color: #8390a5;
+  font-size: 1rem;
+}
+
+.orders-availability-soft-note {
+  margin-top: 0.55rem;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid #fed7aa;
+  border-radius: 0.72rem;
+  background: #fff8ec;
+  color: #a64b0a;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.orders-availability-records-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0 0.55rem;
+}
+
+.orders-availability-records-head h4,
+.orders-availability-records-head p {
+  margin: 0;
+}
+
+.orders-availability-records-head h4 {
+  color: #102854;
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.orders-availability-records-head p {
+  margin-top: 0.15rem;
+  color: #788499;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.orders-availability-records-head > strong {
+  min-width: 2rem;
+  min-height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff0e7;
+  color: #e94b06;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.orders-availability-records {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.orders-availability-record {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(9rem, 1.2fr) minmax(7rem, 0.75fr) minmax(7rem, 0.75fr) 4rem auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.72rem 0.78rem 0.72rem 0.95rem;
+  border: 1px solid #e2e8f1;
+  border-radius: 0.82rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.orders-availability-record::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.22rem;
+  background: #ef4444;
+}
+
+.orders-availability-record.is-positive::before {
+  background: #16a34a;
+}
+
+.orders-availability-record.is-warning::before {
+  background: #f59e0b;
+}
+
+.orders-availability-record span,
+.orders-availability-record strong,
+.orders-availability-record small {
+  display: block;
+  min-width: 0;
+}
+
+.orders-availability-record span {
+  color: #7a879c;
+  font-size: 0.52rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orders-availability-record strong {
+  margin-top: 0.12rem;
+  color: #17305d;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.orders-availability-record small {
+  margin-top: 0.08rem;
+  color: #7d899c;
+  font-size: 0.56rem;
+  font-weight: 750;
+}
+
+.orders-availability-record-quantity {
+  text-align: center;
+}
+
+.orders-availability-record-quantity strong {
+  font-size: 1rem;
+}
+
+.orders-availability-impact {
+  justify-self: end;
+  min-width: 7rem;
+  padding: 0.34rem 0.5rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.56rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.orders-availability-impact.is-danger {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.orders-availability-impact.is-positive {
+  border: 1px solid #bbf7d0;
+  background: #effdf4;
+  color: #15803d;
+}
+
+.orders-availability-impact.is-warning {
+  border: 1px solid #fed7aa;
+  background: #fff8eb;
+  color: #b45309;
+}
+
+.orders-availability-empty {
+  min-height: 10rem;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.32rem;
+  padding: 1rem;
+  border: 1px dashed #d9e0ea;
+  border-radius: 0.82rem;
+  background: #fff;
+  text-align: center;
+}
+
+.orders-availability-empty svg {
+  width: 2rem;
+  color: #9aa6b8;
+}
+
+.orders-availability-empty strong {
+  color: #20375f;
+  font-size: 0.78rem;
+}
+
+.orders-availability-empty p {
+  max-width: 32rem;
+  margin: 0;
+  color: #7a879b;
+  font-size: 0.66rem;
+}
+
+@media (max-width: 900px) {
+  .orders-availability-formula,
+  .orders-availability-formula.returns {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-availability-formula > b {
+    display: none;
+  }
+
+  .orders-availability-record {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-availability-impact {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 600px) {
+  .orders-availability-detail-modal {
+    width: 100%;
+    max-height: 94svh;
+    margin-top: auto;
+    border-radius: 1rem 1rem 0 0;
+  }
+
+  .orders-availability-detail-body {
+    padding: 0.72rem;
+  }
+
+  .orders-availability-record {
+    grid-template-columns: 1fr;
+  }
+
+  .orders-availability-record-quantity {
+    text-align: left;
+  }
+}
+
+/* ==========================================================================
+   TRAZABILIDAD DISPONIBILIDAD · CONSOLIDADO FINAL
+   Modal desplazable + métricas compactas clickeables.
+   ========================================================================== */
+
+/* Modal por encima del wizard */
+.orders-availability-detail-backdrop {
+  z-index: 480 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 1rem !important;
+  overflow: hidden !important;
+}
+
+/* Estructura fija: encabezado, cuerpo desplazable y pie */
+.orders-availability-detail-modal {
+  width: min(70rem, calc(100vw - 2rem)) !important;
+  height: min(88vh, 52rem) !important;
+  max-height: min(88vh, 52rem) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  overflow: hidden !important;
+}
+
+.orders-availability-detail-modal > .orders-modal-head {
+  position: relative !important;
+  z-index: 2 !important;
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+  background: #ffffff !important;
+}
+
+.orders-availability-detail-body {
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.orders-availability-detail-modal > .orders-modal-foot {
+  position: relative !important;
+  z-index: 2 !important;
+  margin: 0 !important;
+  flex: 0 0 auto !important;
+  border-top: 1px solid #e5eaf1 !important;
+  background: #ffffff !important;
+}
+
+.orders-availability-detail-body::-webkit-scrollbar {
+  width: 0.72rem;
+}
+
+.orders-availability-detail-body::-webkit-scrollbar-track {
+  background: #f2f5f9;
+}
+
+.orders-availability-detail-body::-webkit-scrollbar-thumb {
+  border: 0.16rem solid #f2f5f9;
+  border-radius: 999px;
+  background: #aeb9c9;
+}
+
+/* Métricas compactas como la versión original */
+.orders-availability-metrics {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.28rem !important;
+}
+
+.orders-availability-metrics > span,
+.orders-availability-metrics > button {
+  position: relative !important;
+  width: auto !important;
+  min-width: 2.9rem !important;
+  min-height: 2.25rem !important;
+  height: 2.25rem !important;
+  margin: 0 !important;
+  padding: 0.28rem 0.38rem !important;
+  border: 1px solid #e1e7f0 !important;
+  border-radius: 0.52rem !important;
+  background: #f8fafc !important;
+  display: grid !important;
+  grid-template-rows: auto auto !important;
+  align-content: center !important;
+  justify-items: center !important;
+  gap: 0.06rem !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.orders-availability-metrics > button {
+  appearance: none !important;
+  cursor: pointer !important;
+  font: inherit !important;
+  text-align: center !important;
+}
+
+.orders-availability-metrics > button::after {
+  display: none !important;
+  content: none !important;
+}
+
+.orders-availability-metrics > button.primary {
+  border-color: #f1d3c2 !important;
+  background: #fff8f3 !important;
+}
+
+.orders-availability-metrics > button.positive {
+  border-color: #ccebd7 !important;
+  background: #f2fcf6 !important;
+}
+
+.orders-availability-metrics > span.warning {
+  border-color: #fed7aa !important;
+  background: #fff8eb !important;
+}
+
+.orders-availability-metrics > button:hover,
+.orders-availability-metrics > button:focus-visible {
+  border-color: #ef5a18 !important;
+  background: #fff6f0 !important;
+  box-shadow: 0 0 0 2px rgba(239, 90, 24, 0.1) !important;
+  outline: none !important;
+}
+
+.orders-availability-metrics small {
+  display: block !important;
+  margin: 0 !important;
+  color: #6f7d93 !important;
+  font-size: 0.38rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+.orders-availability-metrics strong {
+  display: block !important;
+  margin: 0 !important;
+  color: #1d355f !important;
+  font-size: 0.68rem !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  letter-spacing: -0.02em !important;
+  white-space: nowrap !important;
+}
+
+.orders-availability-metrics > button.primary strong {
+  color: #e65300 !important;
+}
+
+.orders-availability-metrics > button.positive strong {
+  color: #15803d !important;
+}
+
+.orders-availability-metrics > span.warning strong {
+  color: #b45309 !important;
+}
+
+.orders-availability-metric-button em {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .orders-availability-detail-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .orders-availability-detail-modal {
+    width: 100% !important;
+    height: 94svh !important;
+    max-height: 94svh !important;
+    margin: 0 !important;
+    border-radius: 1rem 1rem 0 0 !important;
+  }
+
+  .orders-availability-detail-body {
+    padding: 0.72rem !important;
+  }
+
+  .orders-availability-metrics {
+    gap: 0.22rem !important;
+  }
+
+  .orders-availability-metrics > span,
+  .orders-availability-metrics > button {
+    min-width: 2.55rem !important;
+    height: 2.15rem !important;
+    min-height: 2.15rem !important;
+    padding: 0.25rem 0.3rem !important;
+    border-radius: 0.48rem !important;
+  }
+
+  .orders-availability-metrics small {
+    font-size: 0.35rem !important;
+  }
+
+  .orders-availability-metrics strong {
+    font-size: 0.63rem !important;
+  }
+}
+

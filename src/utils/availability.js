@@ -152,6 +152,7 @@ const pushLineImpact = (summary, record, line, bucket) => {
     customerName: record.customerName,
     quantity: line.quantity,
     startDate: record.period.startDate,
+    startTime: record.period.startTime,
     endDate: record.period.endDate,
     endTime: record.period.endTime,
     type: record.type,
@@ -182,6 +183,7 @@ export function getProjectedInventoryAvailability({
       currentAvailable,
       unavailableOutsideRentals: 0,
       activeRentalQty: 0,
+      activeRentalQtyRecords: [],
       hardReservedQty: 0,
       hardReservedQtyRecords: [],
       returningBeforeStartQty: 0,
@@ -267,7 +269,7 @@ export function getProjectedInventoryAvailability({
       const summary = summaries.get(line.itemId);
       if (!summary) return;
       if (record.affectsCurrentStock) {
-        summary.activeRentalQty += line.quantity;
+        pushLineImpact(summary, record, line, 'activeRentalQty');
       }
       if (!targetPeriod) return;
       if (finishesBefore(record.period, targetPeriod) || finishesByStartDate(record.period, targetPeriod)) {

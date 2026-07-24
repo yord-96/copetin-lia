@@ -15998,16 +15998,27 @@ const createWebBridge = () => ({
             throw new Error(`Debes registrar la observacion para "${rentalLine.itemName}".`);
           }
 
-          const damagedUnitChargeBs = Number.isFinite(Number(incomingLine.damagedUnitChargeBs))
-            ? Math.max(0, Number(incomingLine.damagedUnitChargeBs))
+          const currentInventoryItem = state.items.find((entry) => entry.id === rentalLine.itemId);
+          const configuredDamagedUnitChargeBs = Number.isFinite(Number(currentInventoryItem?.damagedUnitChargeBs))
+            ? Math.max(0, Number(currentInventoryItem.damagedUnitChargeBs))
             : Number.isFinite(Number(rentalLine.damagedUnitChargeBs))
-            ? Math.max(0, Number(rentalLine.damagedUnitChargeBs))
-            : Number((rentalLine.rentalPriceBs * damageMultiplier).toFixed(2));
-          const missingUnitChargeBs = Number.isFinite(Number(incomingLine.missingUnitChargeBs))
-            ? Math.max(0, Number(incomingLine.missingUnitChargeBs))
+              ? Math.max(0, Number(rentalLine.damagedUnitChargeBs))
+              : Number((rentalLine.rentalPriceBs * damageMultiplier).toFixed(2));
+          const configuredMissingUnitChargeBs = Number.isFinite(Number(currentInventoryItem?.missingUnitChargeBs))
+            ? Math.max(0, Number(currentInventoryItem.missingUnitChargeBs))
             : Number.isFinite(Number(rentalLine.missingUnitChargeBs))
-            ? Math.max(0, Number(rentalLine.missingUnitChargeBs))
-            : Number((rentalLine.rentalPriceBs * missingMultiplier).toFixed(2));
+              ? Math.max(0, Number(rentalLine.missingUnitChargeBs))
+              : Number((rentalLine.rentalPriceBs * missingMultiplier).toFixed(2));
+          const damagedUnitChargeBs = damagedQty > 0
+            ? Number.isFinite(Number(incomingLine.damagedUnitChargeBs))
+              ? Math.max(0, Number(incomingLine.damagedUnitChargeBs))
+              : configuredDamagedUnitChargeBs
+            : 0;
+          const missingUnitChargeBs = missingQty > 0
+            ? Number.isFinite(Number(incomingLine.missingUnitChargeBs))
+              ? Math.max(0, Number(incomingLine.missingUnitChargeBs))
+              : configuredMissingUnitChargeBs
+            : 0;
 
           const damagedFeeBs = Number((damagedQty * damagedUnitChargeBs).toFixed(2));
           const missingFeeBs = Number((missingQty * missingUnitChargeBs).toFixed(2));
@@ -16018,7 +16029,7 @@ const createWebBridge = () => ({
             internalPenaltiesBs = Number((internalPenaltiesBs + linePenaltyBs).toFixed(2));
           }
 
-          const item = state.items.find((entry) => entry.id === rentalLine.itemId);
+          const item = currentInventoryItem;
           if (item) {
             const internalExpectedQty = Math.max(
               0,

@@ -1265,6 +1265,7 @@ function ServiceOrdersSection({
   const [isWizardSummaryCollapsed, setIsWizardSummaryCollapsed] = useState(false);
   const [comboConfigurator, setComboConfigurator] = useState(null);
   const [itemObservationModal, setItemObservationModal] = useState(null);
+  const [availabilityDetailModal, setAvailabilityDetailModal] = useState(null);
   const [draggedSelectedItemKey, setDraggedSelectedItemKey] = useState('');
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
@@ -9961,6 +9962,180 @@ function ServiceOrdersSection({
         </div>
       ) : null}
 
+      {availabilityDetailModal ? (() => {
+        const mode = availabilityDetailModal.mode;
+        const item = availabilityDetailModal.item ?? {};
+        const summary = availabilityDetailModal.summary ?? {};
+        const totalStock = Math.max(0, Number(summary.totalStock ?? item.totalStock ?? 0));
+        const currentAvailable = Math.max(0, Number(summary.currentAvailable ?? item.availableStock ?? 0));
+        const activeQty = Math.max(0, Number(summary.activeRentalQty ?? 0));
+        const externalUnavailable = Math.max(0, Number(summary.unavailableOutsideRentals ?? 0));
+        const hardQty = Math.max(0, Number(summary.hardReservedQty ?? 0));
+        const softQty = Math.max(0, Number(summary.softReservedQty ?? 0));
+        const returningQty = Math.max(0, Number(summary.returningBeforeStartQty ?? 0));
+        const projectedAvailable = Math.max(0, Number(summary.projectedAvailable ?? currentAvailable));
+        const projectedAfterSoft = Math.max(0, Number(summary.projectedAfterSoftAvailable ?? projectedAvailable));
+        const activeRecords = Array.isArray(summary.activeRentalQtyRecords) ? summary.activeRentalQtyRecords : [];
+        const hardRecords = Array.isArray(summary.hardReservedQtyRecords) ? summary.hardReservedQtyRecords : [];
+        const softRecords = Array.isArray(summary.softReservedQtyRecords) ? summary.softReservedQtyRecords : [];
+        const returnRecords = Array.isArray(summary.returningBeforeStartQtyRecords) ? summary.returningBeforeStartQtyRecords : [];
+
+        const modalMeta = mode === 'now'
+          ? {
+            eyebrow: 'DISPONIBILIDAD ACTUAL',
+            title: `Por qué hay ${currentAvailable} ahora`,
+            description: 'Muestra las unidades físicamente disponibles y las órdenes activas que mantienen este producto comprometido.',
+            records: activeRecords.map((record) => ({ ...record, impactLabel: 'Compromete ahora', tone: 'danger' })),
+          }
+          : mode === 'returns'
+            ? {
+              eyebrow: 'DEVOLUCIONES ANTES DEL EVENTO',
+              title: `Por qué vuelven ${returningQty}`,
+              description: 'Estas órdenes deben devolver el producto antes de que empiece el periodo del nuevo contrato.',
+              records: returnRecords.map((record) => ({ ...record, impactLabel: 'Se libera antes', tone: 'positive' })),
+            }
+            : {
+              eyebrow: 'DISPONIBILIDAD PARA LA FECHA',
+              title: `Por qué hay ${projectedAvailable} para la fecha`,
+              description: 'Se parte del stock físico y solo se descuentan las ocupaciones que coinciden con el periodo seleccionado.',
+              records: [
+                ...hardRecords.map((record) => ({ ...record, impactLabel: 'Resta en la fecha', tone: 'danger' })),
+                ...returnRecords.map((record) => ({ ...record, impactLabel: 'Vuelve antes', tone: 'positive' })),
+                ...softRecords.map((record) => ({ ...record, impactLabel: 'Riesgo sin aprobar', tone: 'warning' })),
+              ],
+            };
+
+        return (
+          <div
+            className="orders-modal-backdrop orders-availability-detail-backdrop"
+            onClick={() => setAvailabilityDetailModal(null)}
+          >
+            <section
+              className="orders-modal orders-availability-detail-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="orders-modal-head orders-availability-detail-head">
+                <div>
+                  <span>{modalMeta.eyebrow}</span>
+                  <h3>{modalMeta.title}</h3>
+                  <p>{item.name || summary.itemName || 'Producto'}</p>
+                </div>
+                <button
+                  type="button"
+                  className="orders-modal-close"
+                  onClick={() => setAvailabilityDetailModal(null)}
+                  aria-label="Cerrar detalle de disponibilidad"
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </header>
+
+              <div className="orders-availability-detail-body">
+                <p className="orders-availability-detail-description">{modalMeta.description}</p>
+
+                {mode === 'now' ? (
+                  <div className="orders-availability-formula">
+                    <span><small>Stock físico</small><strong>{totalStock}</strong></span>
+                    <b>−</b>
+                    <span><small>Comprometido ahora</small><strong>{activeQty}</strong></span>
+                    <b>−</b>
+                    <span><small>Mantenimiento / otros</small><strong>{externalUnavailable}</strong></span>
+                    <b>=</b>
+                    <span className="result"><small>Disponible ahora</small><strong>{currentAvailable}</strong></span>
+                  </div>
+                ) : null}
+
+                {mode === 'date' ? (
+                  <>
+                    <div className="orders-availability-formula">
+                      <span><small>Stock físico</small><strong>{totalStock}</strong></span>
+                      <b>−</b>
+                      <span><small>Mantenimiento / otros</small><strong>{externalUnavailable}</strong></span>
+                      <b>−</b>
+                      <span><small>Coinciden con la fecha</small><strong>{hardQty}</strong></span>
+                      <b>=</b>
+                      <span className="result"><small>Para fecha</small><strong>{projectedAvailable}</strong></span>
+                    </div>
+                    {softQty > 0 ? (
+                      <div className="orders-availability-soft-note">
+                        Hay {softQty} unidad(es) en cotizaciones o contratos aún no aprobados. Si se confirman, quedarían {projectedAfterSoft}.
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {mode === 'returns' ? (
+                  <div className="orders-availability-formula returns">
+                    <span><small>Órdenes que devuelven antes</small><strong>{returnRecords.length}</strong></span>
+                    <b>→</b>
+                    <span className="result"><small>Unidades que vuelven</small><strong>{returningQty}</strong></span>
+                  </div>
+                ) : null}
+
+                <div className="orders-availability-records-head">
+                  <div>
+                    <h4>Contratos y órdenes relacionados</h4>
+                    <p>Entrega, devolución, cliente, cantidad y efecto sobre el cálculo.</p>
+                  </div>
+                  <strong>{modalMeta.records.length}</strong>
+                </div>
+
+                <div className="orders-availability-records">
+                  {modalMeta.records.length > 0 ? modalMeta.records.map((record, index) => {
+                    const code = record.contractCode || record.code || record.orderCode || `Registro ${index + 1}`;
+                    return (
+                      <article
+                        key={`${mode}-${record.id || code}-${record.startDate || ''}-${index}`}
+                        className={`orders-availability-record is-${record.tone}`}
+                      >
+                        <div className="orders-availability-record-main">
+                          <span>Contrato / orden</span>
+                          <strong>{code}</strong>
+                          {record.orderCode && record.orderCode !== code ? <small>{record.orderCode}</small> : null}
+                        </div>
+                        <div>
+                          <span>Cliente</span>
+                          <strong>{record.customerName || 'Sin cliente registrado'}</strong>
+                        </div>
+                        <div>
+                          <span>Entrega</span>
+                          <strong>{formatDate(record.startDate)}</strong>
+                          <small>{record.startTime || '00:00'}</small>
+                        </div>
+                        <div>
+                          <span>Devolución</span>
+                          <strong>{formatDate(record.endDate)}</strong>
+                          <small>{record.endTime || '23:59'}</small>
+                        </div>
+                        <div className="orders-availability-record-quantity">
+                          <span>Cantidad</span>
+                          <strong>{Math.max(0, Number(record.quantity ?? 0))}</strong>
+                        </div>
+                        <div className={`orders-availability-impact is-${record.tone}`}>
+                          {record.impactLabel}
+                        </div>
+                      </article>
+                    );
+                  }) : (
+                    <div className="orders-availability-empty">
+                      <Box aria-hidden="true" />
+                      <strong>No hay contratos que afecten este indicador.</strong>
+                      <p>La cantidad se explica únicamente por el stock físico y las unidades fuera de disponibilidad por mantenimiento u otros motivos.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <footer className="orders-modal-foot">
+                <button type="button" className="primary-button" onClick={() => setAvailabilityDetailModal(null)}>
+                  Entendido
+                </button>
+              </footer>
+            </section>
+          </div>
+        );
+      })() : null}
+
       {modalOpen ? (
         <div className="orders-modal-backdrop">
           <div
@@ -10785,18 +10960,48 @@ function ServiceOrdersSection({
                               </div>
                             ) : (
                               <div className="orders-availability-metrics">
-                                <span className="primary">
+                                <button
+                                  type="button"
+                                  className="primary orders-availability-metric-button"
+                                  onClick={() => setAvailabilityDetailModal({
+                                    mode: 'date',
+                                    item,
+                                    summary: availability,
+                                  })}
+                                  title="Ver por qué esta cantidad está disponible para la fecha"
+                                >
                                   <small>Para fecha</small>
                                   <strong>{projectedAvailable}</strong>
-                                </span>
-                                <span>
+                                  <em>Ver detalle</em>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="orders-availability-metric-button"
+                                  onClick={() => setAvailabilityDetailModal({
+                                    mode: 'now',
+                                    item,
+                                    summary: availability,
+                                  })}
+                                  title="Ver por qué esta cantidad está disponible ahora"
+                                >
                                   <small>Ahora</small>
                                   <strong>{Math.max(0, Number(item.availableStock ?? 0))}</strong>
-                                </span>
-                                <span className={returningQty > 0 ? 'positive' : ''}>
+                                  <em>Ver detalle</em>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`orders-availability-metric-button${returningQty > 0 ? ' positive' : ''}`}
+                                  onClick={() => setAvailabilityDetailModal({
+                                    mode: 'returns',
+                                    item,
+                                    summary: availability,
+                                  })}
+                                  title="Ver qué contratos devuelven este producto antes de la fecha"
+                                >
                                   <small>Vuelven</small>
                                   <strong>{returningQty}</strong>
-                                </span>
+                                  <em>Ver detalle</em>
+                                </button>
                                 {softQty > 0 ? (
                                   <span className="warning">
                                     <small>Riesgo</small>

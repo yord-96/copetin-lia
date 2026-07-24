@@ -3349,6 +3349,33 @@ function InventoryDashboardSection({
         );
         const originalExpectedQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
         const expectedQty = Math.max(0, originalExpectedQty - getPreviouslyProcessedQty(line, returnLineKey));
+        const inventoryItem = items.find((item) => String(item?.id ?? '') === String(line?.itemId ?? ''));
+        const configuredDamagedUnitChargeBs = Math.max(
+          0,
+          Number(
+            inventoryItem?.damagedUnitChargeBs
+            ?? line?.damagedUnitChargeBs
+            ?? line?.rentalPriceBs
+            ?? 0,
+          ),
+        );
+        const configuredMissingUnitChargeBs = Math.max(
+          0,
+          Number(
+            inventoryItem?.missingUnitChargeBs
+            ?? line?.missingUnitChargeBs
+            ?? line?.rentalPriceBs
+            ?? 0,
+          ),
+        );
+        const damagedQty = expectedQty <= 0
+          ? 0
+          : picked?.condition === 'danado'
+            ? Math.min(expectedQty, Number(picked?.pickedQty ?? 0))
+            : 0;
+        const missingQty = picked?.condition === 'faltante'
+          ? expectedQty
+          : Math.max(0, expectedQty - Number(picked?.pickedQty ?? expectedQty));
         return {
           lineKey: line.lineKey ?? returnLineKey,
           returnLineKey,
@@ -3362,12 +3389,12 @@ function InventoryDashboardSection({
           expectedQty,
           originalExpectedQty,
           returnedQty: expectedQty <= 0 ? 0 : picked?.condition === 'faltante' ? 0 : Math.min(expectedQty, Number(picked?.pickedQty ?? expectedQty)),
-          damagedQty: expectedQty <= 0 ? 0 : picked?.condition === 'danado' ? Math.min(expectedQty, Number(picked?.pickedQty ?? 0)) : 0,
-          missingQty: picked?.condition === 'faltante'
-            ? expectedQty
-            : Math.max(0, expectedQty - Number(picked?.pickedQty ?? expectedQty)),
-          damagedUnitChargeBs: Number(line.damagedUnitChargeBs ?? line.rentalPriceBs ?? 0),
-          missingUnitChargeBs: Number(line.missingUnitChargeBs ?? line.rentalPriceBs ?? 0),
+          damagedQty,
+          missingQty,
+          configuredDamagedUnitChargeBs,
+          configuredMissingUnitChargeBs,
+          damagedUnitChargeBs: damagedQty > 0 ? configuredDamagedUnitChargeBs : 0,
+          missingUnitChargeBs: missingQty > 0 ? configuredMissingUnitChargeBs : 0,
           chargeOwner: 'cliente',
           damageNote: picked?.note ?? '',
         };
@@ -3564,6 +3591,25 @@ function InventoryDashboardSection({
             const damagedQty = Math.max(0, Math.trunc(Number(nextLine.damagedQty ?? 0)));
             nextLine.missingQty = String(Math.max(0, expectedQty - returnedQty - damagedQty));
           }
+
+          const damagedQty = Math.max(0, Math.trunc(Number(nextLine.damagedQty ?? 0)));
+          const missingQty = Math.max(0, Math.trunc(Number(nextLine.missingQty ?? 0)));
+
+          if (field !== 'damagedUnitChargeBs') {
+            nextLine.damagedUnitChargeBs = damagedQty > 0
+              ? Number(nextLine.damagedUnitChargeBs ?? 0) > 0
+                ? nextLine.damagedUnitChargeBs
+                : nextLine.configuredDamagedUnitChargeBs
+              : 0;
+          }
+          if (field !== 'missingUnitChargeBs') {
+            nextLine.missingUnitChargeBs = missingQty > 0
+              ? Number(nextLine.missingUnitChargeBs ?? 0) > 0
+                ? nextLine.missingUnitChargeBs
+                : nextLine.configuredMissingUnitChargeBs
+              : 0;
+          }
+
           return nextLine;
         }),
       };
@@ -6648,11 +6694,27 @@ function InventoryDashboardSection({
                       <div className="inventory-receiving-price-stack">
                         <label>
                           <small>Dano</small>
-                          <input type="number" min="0" step="0.01" value={line.damagedUnitChargeBs} onChange={(event) => updateReceivingLine(line.returnLineKey, 'damagedUnitChargeBs', event.target.value)} />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={values.damagedQty > 0 ? line.damagedUnitChargeBs : 0}
+                            disabled={values.damagedQty <= 0}
+                            onChange={(event) => updateReceivingLine(line.returnLineKey, 'damagedUnitChargeBs', event.target.value)}
+                            title={values.damagedQty > 0 ? 'Cargo unitario por dano para esta recepcion' : 'Se habilita al registrar unidades danadas'}
+                          />
                         </label>
                         <label>
                           <small>Falta</small>
-                          <input type="number" min="0" step="0.01" value={line.missingUnitChargeBs} onChange={(event) => updateReceivingLine(line.returnLineKey, 'missingUnitChargeBs', event.target.value)} />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={values.missingQty > 0 ? line.missingUnitChargeBs : 0}
+                            disabled={values.missingQty <= 0}
+                            onChange={(event) => updateReceivingLine(line.returnLineKey, 'missingUnitChargeBs', event.target.value)}
+                            title={values.missingQty > 0 ? 'Cargo unitario por faltante para esta recepcion' : 'Se habilita al registrar unidades faltantes'}
+                          />
                         </label>
                       </div>
                       <select value={line.chargeOwner} onChange={(event) => updateReceivingLine(line.returnLineKey, 'chargeOwner', event.target.value)}>
