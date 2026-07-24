@@ -111,6 +111,40 @@ const loadedServerCollections = new Set();
 let serverStateIsPartial = false;
 let localServerCommitSerial = 0;
 
+const FULL_RECORD_CACHE_TTL_MS = 30 * 1000;
+const fullContractCache = new Map();
+const fullRentalCache = new Map();
+const fullContractRequests = new Map();
+const fullRentalRequests = new Map();
+
+const readFreshFullRecordCache = (cache, identifier) => {
+  const key = String(identifier ?? '').trim();
+  if (!key) return null;
+  const cached = cache.get(key);
+  if (!cached || Date.now() - cached.cachedAt > FULL_RECORD_CACHE_TTL_MS) {
+    if (cached) cache.delete(key);
+    return null;
+  }
+  return cached.record;
+};
+
+const rememberFullRecordCache = (cache, record, identifiers = []) => {
+  if (!record?.id) return;
+  const entry = { record, cachedAt: Date.now() };
+  [
+    record.id,
+    record.contractId,
+    record.rentalId,
+    record.contractCode,
+    record.orderCode,
+    record.number,
+    ...identifiers,
+  ].forEach((identifier) => {
+    const key = String(identifier ?? '').trim();
+    if (key) cache.set(key, entry);
+  });
+};
+
 const getBridge = () => getWebBridge();
 
 const getServerStateUrl = (suffix = '') =>
@@ -387,6 +421,11 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
     throw new Error('Debes indicar el contrato que deseas cargar.');
   }
 
+  const cachedContract = readFreshFullRecordCache(fullContractCache, requestedId);
+  if (cachedContract) return cachedContract;
+  if (fullContractRequests.has(requestedId)) return fullContractRequests.get(requestedId);
+
+  const requestPromise = (async () => {
   const response = await fetch(getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}`), {
     cache: 'no-store',
     headers: getInternalHeaders(),
@@ -414,12 +453,21 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
     : [contract, ...currentContracts];
 
   await mergeLocalState({ contracts: nextContracts });
+  rememberFullRecordCache(fullContractCache, contract, [requestedId]);
   console.info('[copetin-sync] Contrato completo cargado.', {
     reason,
     contractId: contract.id,
     contractCode: contract.contractCode ?? null,
   });
   return contract;
+  })();
+
+  fullContractRequests.set(requestedId, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    fullContractRequests.delete(requestedId);
+  }
 };
 
 const fetchFullServerRental = async (identifier, reason = 'rental-full-load') => {
@@ -428,6 +476,11 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
     throw new Error('Debes indicar la orden que deseas cargar.');
   }
 
+  const cachedRental = readFreshFullRecordCache(fullRentalCache, requestedId);
+  if (cachedRental) return cachedRental;
+  if (fullRentalRequests.has(requestedId)) return fullRentalRequests.get(requestedId);
+
+  const requestPromise = (async () => {
   const response = await fetch(getServerStateUrl(`/rentals/${encodeURIComponent(requestedId)}`), {
     cache: 'no-store',
     headers: getInternalHeaders(),
@@ -455,6 +508,7 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
     : [rental, ...currentRentals];
 
   await mergeLocalState({ rentals: nextRentals });
+  rememberFullRecordCache(fullRentalCache, rental, [requestedId]);
   console.info('[copetin-sync] Orden completa cargada.', {
     reason,
     rentalId: rental.id,
@@ -462,6 +516,14 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
     contractCode: rental.contractCode ?? null,
   });
   return rental;
+  })();
+
+  fullRentalRequests.set(requestedId, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    fullRentalRequests.delete(requestedId);
+  }
 };
 
 const fetchServerMeta = async () => {

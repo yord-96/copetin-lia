@@ -1655,10 +1655,24 @@ export const useAppController = () => {
     ]);
   };
 
-  const handlePrintContractDocument = async ({ rentalId, orderCode, contractId, contractCode }) => {
+  const handlePrintContractDocument = async ({
+    rentalId,
+    orderCode,
+    contractId,
+    contractCode,
+    fullContract = null,
+    fullRental = null,
+  }) => {
     setError('');
     try {
-      return await api.printer.printContract({ rentalId, orderCode, contractId, contractCode });
+      return await api.printer.printContract({
+        rentalId,
+        orderCode,
+        contractId,
+        contractCode,
+        fullContract,
+        fullRental,
+      });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir el contrato.');
@@ -1677,10 +1691,24 @@ export const useAppController = () => {
     }
   };
 
-  const handlePrintInventoryWeekDocument = async ({ weekStart, format, rentalId, orderCode, contractCode }) => {
+  const handlePrintInventoryWeekDocument = async ({
+    weekStart,
+    format,
+    rentalId,
+    orderCode,
+    contractCode,
+    fullRental = null,
+  }) => {
     setError('');
     try {
-      return await api.printer.printInventoryWeek({ weekStart, format, rentalId, orderCode, contractCode });
+      return await api.printer.printInventoryWeek({
+        weekStart,
+        format,
+        rentalId,
+        orderCode,
+        contractCode,
+        fullRental,
+      });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
       setError(requestError.message || 'No se pudo abrir la hoja semanal de inventario.');

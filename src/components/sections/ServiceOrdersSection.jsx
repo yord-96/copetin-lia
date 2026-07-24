@@ -1312,6 +1312,9 @@ function ServiceOrdersSection({
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
+  const documentPreviewCacheRef = useRef(new Map());
+  const documentPreviewUrlRef = useRef('');
+  const documentsPrefetchTimerRef = useRef(null);
   const deferredItemSearch = useDeferredValue(itemSearch);
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
@@ -1333,6 +1336,36 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
+  useEffect(() => {
+    const previousUrl = documentPreviewUrlRef.current;
+    if (previousUrl) {
+      URL.revokeObjectURL(previousUrl);
+      documentPreviewUrlRef.current = '';
+    }
+
+    if (!documentPreview?.html) return undefined;
+
+    const blob = new Blob([documentPreview.html], { type: 'text/html;charset=utf-8' });
+    const nextUrl = URL.createObjectURL(blob);
+    documentPreviewUrlRef.current = nextUrl;
+    setDocumentPreview((current) => (
+      current?.html === documentPreview.html
+        ? { ...current, blobUrl: nextUrl }
+        : current
+    ));
+
+    return () => {
+      if (documentPreviewUrlRef.current === nextUrl) {
+        URL.revokeObjectURL(nextUrl);
+        documentPreviewUrlRef.current = '';
+      }
+    };
+  }, [documentPreview?.html]);
+
+  const closeDocumentPreview = () => {
+    setDocumentPreview(null);
+  };
+
   const canChooseResponsibles = isDeveloper(currentUser);
   const canViewHiddenContracts = isDeveloper(currentUser);
   const canManageContractEconomicLedger = !readOnly;
@@ -5945,6 +5978,30 @@ function ServiceOrdersSection({
   const handleOpenDocumentsPanel = (orderRow) => {
     setDocumentsOrder(orderRow);
     setMenuState(null);
+
+    window.clearTimeout(documentsPrefetchTimerRef.current);
+    window.requestAnimationFrame(() => {
+      documentsPrefetchTimerRef.current = window.setTimeout(() => {
+        const contractIdentifier = orderRow?.contractId
+          ?? orderRow?.contractCode
+          ?? orderRow?.orderCode
+          ?? orderRow?.id
+          ?? '';
+        const rentalIdentifier = orderRow?.rentalId
+          ?? orderRow?.orderCode
+          ?? orderRow?.contractCode
+          ?? '';
+
+        Promise.all([
+          contractIdentifier
+            ? api.contracts.ensureFull(contractIdentifier, 'documents-panel-prefetch').catch(() => null)
+            : Promise.resolve(null),
+          rentalIdentifier
+            ? api.rentals.getFull(rentalIdentifier).catch(() => null)
+            : Promise.resolve(null),
+        ]).catch(() => {});
+      }, 0);
+    });
   };
 
   const handleCloseDocumentsPanel = () => {
@@ -6652,39 +6709,113 @@ function ServiceOrdersSection({
         : kind === 'route'
           ? 'hoja de ruta'
           : 'documento';
+    const baseDocumentCode = kind === 'contract'
+      ? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id
+      : orderRow.orderCode ?? orderRow.id;
+    const loadingTitle = `${kind === 'contract'
+      ? 'Contrato'
+      : kind === 'inventory'
+        ? 'Orden de inventario'
+        : kind === 'route'
+          ? 'Hoja de ruta'
+          : 'Resumen proveedor'} ${baseDocumentCode}`;
+
+    setDocumentPreview({
+      kind,
+      orderCode: orderRow.orderCode,
+      title: loadingTitle,
+      fileName: kind === 'contract'
+        ? buildDocumentFileBase(orderRow.customerName ?? orderRow.client, baseDocumentCode, 'contrato')
+        : undefined,
+      html: '',
+      blobUrl: '',
+      loading: true,
+    });
     setContractActionStatus(`Generando ${documentLabel} ${getOrderContractLabel(orderRow)}...`);
+    setMenuState(null);
+
+    // Permite que React pinte el modal de carga antes de construir el HTML pesado.
+    await new Promise((resolve) => window.requestAnimationFrame(() => window.setTimeout(resolve, 0)));
+
     try {
       let preview = null;
+      let cacheKey = `${kind}:${String(baseDocumentCode ?? '').trim()}`;
+
       if (kind === 'contract') {
         const contractIdentifier = orderRow.contractId ?? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id;
         const rentalIdentifier = orderRow.rentalId ?? orderRow.orderCode ?? orderRow.contractCode ?? '';
-        if (contractIdentifier) {
-          await api.contracts.ensureFull(contractIdentifier, 'print-contract-document');
+        const [fullContract, fullRental] = await Promise.all([
+          contractIdentifier
+            ? api.contracts.ensureFull(contractIdentifier, 'print-contract-document')
+            : Promise.resolve(null),
+          rentalIdentifier
+            ? api.rentals.getFull(rentalIdentifier).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (!fullContract || fullContract._summaryOnly) {
+          throw new Error('No se pudo cargar el contrato completo. No se generó el documento para proteger sus datos.');
         }
-        if (rentalIdentifier) {
-          await api.rentals.getFull(rentalIdentifier).catch(() => null);
+
+        cacheKey = [
+          kind,
+          fullContract.id ?? contractIdentifier,
+          fullContract.updatedAt ?? fullContract.createdAt ?? '',
+          fullRental?.updatedAt ?? fullRental?.createdAt ?? '',
+        ].join(':');
+
+        preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
+        if (!preview) {
+          preview = await onPrintContractDocument?.({
+            rentalId: orderRow.rentalId,
+            orderCode: orderRow.orderCode,
+            contractId: orderRow.contractId ?? orderRow.id,
+            contractCode: orderRow.contractCode,
+            fullContract,
+            fullRental,
+          });
+          if (preview?.html) documentPreviewCacheRef.current.set(cacheKey, preview);
         }
-        preview = await onPrintContractDocument?.({
-          rentalId: orderRow.rentalId,
-          orderCode: orderRow.orderCode,
-          contractId: orderRow.contractId ?? orderRow.id,
-          contractCode: orderRow.contractCode,
-        });
       } else if (kind === 'inventory') {
-        preview = await onPrintInventoryWeekDocument?.({
-          weekStart: orderRow.deliveryDate ?? orderRow.rentalDate ?? orderRow.createdAt?.slice(0, 10),
-          format: 'individual',
-          rentalId: orderRow.rentalId,
-          orderCode: orderRow.orderCode,
-          contractCode: orderRow.contractCode,
-        });
+        const rentalIdentifier = orderRow.rentalId ?? orderRow.orderCode ?? orderRow.contractCode ?? '';
+        const fullRental = rentalIdentifier ? await api.rentals.getFull(rentalIdentifier) : null;
+        if (!fullRental || fullRental._summaryOnly) {
+          throw new Error('No se pudo cargar la orden completa. No se generó el documento para proteger sus datos.');
+        }
+
+        cacheKey = [
+          kind,
+          fullRental.id ?? rentalIdentifier,
+          fullRental.updatedAt ?? fullRental.createdAt ?? '',
+        ].join(':');
+
+        preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
+        if (!preview) {
+          preview = await onPrintInventoryWeekDocument?.({
+            weekStart: orderRow.deliveryDate ?? orderRow.rentalDate ?? orderRow.createdAt?.slice(0, 10),
+            format: 'individual',
+            rentalId: orderRow.rentalId,
+            orderCode: orderRow.orderCode,
+            contractCode: orderRow.contractCode,
+            fullRental,
+          });
+          if (preview?.html) documentPreviewCacheRef.current.set(cacheKey, preview);
+        }
       } else if (kind === 'route') {
-        preview = await onPrintRouteSheetDocument?.({
-          rentalId: orderRow.rentalId,
-          orderCode: orderRow.orderCode,
-          contractId: orderRow.contractId,
-          contractCode: orderRow.contractCode,
-        });
+        cacheKey = [
+          kind,
+          orderRow.rentalId ?? orderRow.id,
+          orderRow.updatedAt ?? orderRow.createdAt ?? '',
+        ].join(':');
+        preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
+        if (!preview) {
+          preview = await onPrintRouteSheetDocument?.({
+            rentalId: orderRow.rentalId,
+            orderCode: orderRow.orderCode,
+            contractId: orderRow.contractId,
+            contractCode: orderRow.contractCode,
+          });
+          if (preview?.html) documentPreviewCacheRef.current.set(cacheKey, preview);
+        }
       } else if (kind === 'supplier-internal') {
         const contract = selectedDocumentsContract
           ?? contracts.find((entry) =>
@@ -6693,30 +6824,43 @@ function ServiceOrdersSection({
             || (orderRow.orderCode && String(entry.orderCode) === String(orderRow.orderCode)),
           )
           ?? null;
-        preview = {
-          title: `Resumen proveedor ${contract?.contractCode ?? orderRow.contractCode ?? orderRow.orderCode}`,
-          html: buildSupplierInternalDocumentHtml({ order: orderRow, contract, formatDate, formatBs }),
-        };
-      }
-      if (preview?.html) {
-        const documentCode = kind === 'contract'
-          ? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id
-          : orderRow.orderCode ?? orderRow.id;
-        setDocumentPreview({
+        cacheKey = [
           kind,
-          orderCode: orderRow.orderCode,
-          title: preview.title ?? `${kind === 'contract' ? 'Contrato' : kind === 'inventory' ? 'Orden de inventario' : kind === 'route' ? 'Hoja de ruta' : 'Resumen proveedor'} ${orderRow.orderCode}`,
-          fileName: kind === 'contract'
-            ? buildDocumentFileBase(orderRow.customerName ?? orderRow.client, documentCode, 'contrato')
-            : undefined,
-          html: preview.html,
-        });
+          contract?.id ?? orderRow.contractId ?? orderRow.id,
+          contract?.updatedAt ?? contract?.createdAt ?? '',
+        ].join(':');
+        preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
+        if (!preview) {
+          preview = {
+            title: `Resumen proveedor ${contract?.contractCode ?? orderRow.contractCode ?? orderRow.orderCode}`,
+            html: buildSupplierInternalDocumentHtml({ order: orderRow, contract, formatDate, formatBs }),
+          };
+          documentPreviewCacheRef.current.set(cacheKey, preview);
+        }
       }
+
+      if (!preview?.html) {
+        throw new Error('El documento no pudo prepararse correctamente.');
+      }
+
+      setDocumentPreview({
+        kind,
+        orderCode: orderRow.orderCode,
+        title: preview.title ?? loadingTitle,
+        fileName: kind === 'contract'
+          ? buildDocumentFileBase(orderRow.customerName ?? orderRow.client, baseDocumentCode, 'contrato')
+          : undefined,
+        html: preview.html,
+        blobUrl: '',
+        loading: false,
+        cacheKey,
+      });
+
       setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para contrato ${getOrderContractLabel(orderRow)}.`);
     } catch (requestError) {
+      setDocumentPreview(null);
       setFormError(requestError.message || 'No se pudo abrir el documento seleccionado.');
     } finally {
-      setMenuState(null);
       setContractActionStatus('');
     }
   };
@@ -6733,6 +6877,7 @@ function ServiceOrdersSection({
   };
 
   const handlePrintPreview = () => {
+    if (documentPreview?.loading || !documentPreview?.blobUrl) return;
     const frame = document.getElementById('orders-document-preview-frame');
     const frameDocument = frame?.contentDocument ?? frame?.contentWindow?.document;
     const previousTitle = document.title;
@@ -9397,30 +9542,56 @@ function ServiceOrdersSection({
       ) : null}
 
       {documentPreview ? (
-        <div className="orders-modal-backdrop document-preview-backdrop" onClick={() => setDocumentPreview(null)}>
+        <div className="orders-modal-backdrop document-preview-backdrop" onClick={closeDocumentPreview}>
           <div className="orders-modal orders-preview-modal" onClick={(event) => event.stopPropagation()}>
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
                 <p>Vista previa del documento. Puedes revisarlo e imprimirlo desde aqui.</p>
               </div>
-              <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>
+              <button type="button" className="orders-modal-close" onClick={closeDocumentPreview}>
                 x
               </button>
             </header>
             <div className="orders-preview-body">
-              <iframe
-                id="orders-document-preview-frame"
-                title={documentPreview.title}
-                srcDoc={documentPreview.html}
-                className="orders-document-frame"
-              />
+              {documentPreview.loading || !documentPreview.blobUrl ? (
+                <div
+                  className="orders-document-loading"
+                  role="status"
+                  aria-live="polite"
+                  style={{
+                    minHeight: '28rem',
+                    display: 'grid',
+                    placeItems: 'center',
+                    alignContent: 'center',
+                    gap: '0.6rem',
+                    color: '#667085',
+                    textAlign: 'center',
+                  }}
+                >
+                  <RefreshCw aria-hidden="true" />
+                  <strong>Preparando documento...</strong>
+                  <span>Estamos cargando la versión completa y verificando que no falte ningún dato.</span>
+                </div>
+              ) : (
+                <iframe
+                  id="orders-document-preview-frame"
+                  title={documentPreview.title}
+                  src={documentPreview.blobUrl}
+                  className="orders-document-frame"
+                />
+              )}
             </div>
             <footer className="orders-modal-foot">
-              <button type="button" className="ghost-button" onClick={() => setDocumentPreview(null)}>
+              <button type="button" className="ghost-button" onClick={closeDocumentPreview}>
                 Cerrar
               </button>
-              <button type="button" className="primary-button" onClick={handlePrintPreview}>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handlePrintPreview}
+                disabled={documentPreview.loading || !documentPreview.blobUrl}
+              >
                 Imprimir / guardar PDF
               </button>
             </footer>

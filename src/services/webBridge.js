@@ -17673,25 +17673,35 @@ const createWebBridge = () => ({
       };
     },
     printContract: async (payload) => {
-      const state = readState();
+      const state = readQueryState();
+      const payloadContract = payload?.fullContract && !payload.fullContract._summaryOnly
+        ? payload.fullContract
+        : null;
+      const payloadRental = payload?.fullRental && !payload.fullRental._summaryOnly
+        ? payload.fullRental
+        : null;
       const contractId = String(payload?.contractId ?? '').trim();
       const contractCode = String(payload?.contractCode ?? '').trim();
-      const contractById = contractId || contractCode
+      const contractById = payloadContract ?? (contractId || contractCode
         ? state.contracts.find(
           (entry) =>
             !entry.deletedAt
+            && !entry._summaryOnly
             && (
               (contractId && entry.id === contractId)
               || (contractCode && entry.contractCode === contractCode)
             ),
         )
-        : null;
-      const linkedRental = resolveRentalForPrinting(state, payload);
+        : null);
+      const linkedRental = payloadRental ?? resolveRentalForPrinting(state, payload);
       const rental = linkedRental ?? (contractById ? buildRentalSnapshotFromContract(contractById) : null);
       if (!rental) {
-        throw new Error('No se encontro la orden o contrato para abrir el documento.');
+        throw new Error('No se encontro la orden o contrato completo para abrir el documento.');
       }
       const contract = contractById ?? resolveContractForRental(state, rental);
+      if (!contract || contract._summaryOnly) {
+        throw new Error('El contrato completo no esta disponible. No se genero el documento para proteger sus datos.');
+      }
       const deliveries = resolveDeliveriesForRental(state, rental);
       const title = `Contrato ${contract?.contractCode ?? rental.orderCode ?? rental.id}`;
       return { ok: true, title, html: buildContractDocumentHtml({ rental, contract, deliveries, settings: state.settings, items: state.items }) };
@@ -17707,10 +17717,14 @@ const createWebBridge = () => ({
       return { ok: true, title, html: buildInventoryOrderHtml({ rental, deliveries, settings: state.settings }) };
     },
     printInventoryWeek: async (payload) => {
-      const state = readState();
+      const state = readQueryState();
       const requestedFormat = String(payload?.format ?? '').trim();
       const format = requestedFormat === 'individual' ? 'individual' : 'standard';
-      const selectedRental = format === 'individual' ? resolveRentalForPrinting(state, payload) : null;
+      const selectedRental = format === 'individual'
+        ? payload?.fullRental && !payload.fullRental._summaryOnly
+          ? payload.fullRental
+          : resolveRentalForPrinting(state, payload)
+        : null;
       const selectedContract = selectedRental ? resolveContractForRental(state, selectedRental) : null;
       const selectedDeliveries = selectedRental ? resolveDeliveriesForRental(state, selectedRental) : [];
       const rentalsForInventory = selectedRental
