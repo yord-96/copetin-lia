@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
 import documentRoutes from './routes/documents.js';
+import contractTransactionRoutes from './routes/contractTransactions.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import {
@@ -106,6 +107,7 @@ app.use(
 
 app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 app.use(documentRoutes);
+app.use(contractTransactionRoutes);
 
 app.get('/health', async (_req, res, next) => {
   try {

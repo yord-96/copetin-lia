@@ -1116,6 +1116,68 @@ const runBatchedMutations = async (operation, options = {}) => {
   }
 };
 
+const mergeTransactionChangesIntoLocalState = async (changes = {}) => {
+  const bridge = getBridge();
+  const collectionNames = Object.keys(changes).filter((name) => Array.isArray(changes[name]));
+  if (!collectionNames.length) return;
+  const current = await bridge.__storage.exportCollections(collectionNames);
+  const partialState = {};
+
+  collectionNames.forEach((name) => {
+    const existingRows = Array.isArray(current?.[name]) ? current[name] : [];
+    const nextRows = [...existingRows];
+    const indexById = new Map(nextRows.map((row, index) => [String(row?.id ?? ''), index]));
+    changes[name].forEach((row) => {
+      if (!row || row._summaryOnly) return;
+      const id = String(row?.id ?? '').trim();
+      if (!id) return;
+      const currentIndex = indexById.get(id);
+      if (currentIndex === undefined) {
+        indexById.set(id, nextRows.length);
+        nextRows.unshift(row);
+      } else {
+        nextRows[currentIndex] = row;
+      }
+    });
+    partialState[name] = nextRows;
+  });
+
+  await bridge.__storage.mergeState(partialState);
+};
+
+const createAndApproveContractOnServer = async ({ contract, trace } = {}) => {
+  if (!shouldUseServerState()) {
+    throw new Error('La aprobacion transaccional requiere conexion con el servidor.');
+  }
+  if (!contract || contract._summaryOnly) {
+    throw new Error('No se puede aprobar un contrato incompleto o resumido.');
+  }
+
+  const meta = await fetchServerMeta();
+  const revision = meta?.revision ?? getKnownLocalRevision();
+  const response = await fetch(getServerStateUrl('/contracts/create-and-approve'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ contract, trace, revision }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo crear y aprobar el contrato.');
+  }
+  const payload = await response.json();
+  await mergeTransactionChangesIntoLocalState(payload?.changes ?? {});
+  if (payload?.revision) {
+    rememberServerRevision(payload.revision);
+    localServerCommitSerial += 1;
+  }
+  announceDataChange({
+    domain: 'contracts',
+    method: 'create-and-approve',
+    collections: Object.keys(payload?.changes ?? {}),
+  });
+  return payload;
+};
+
 const pollRemoteRevision = async () => {
   if (!shouldUseServerState() || syncSubscribers.size === 0) return;
 
@@ -1431,6 +1493,7 @@ export const api = {
     listHidden: () => callBridge('contracts', 'listHidden', false),
     ensureFull: (identifier, reason) => fetchFullServerContract(identifier, reason),
     create: (payload) => callBridge('contracts', 'create', true, payload),
+    createAndApprove: (payload) => createAndApproveContractOnServer(payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
     updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),

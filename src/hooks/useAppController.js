@@ -1727,6 +1727,88 @@ export const useAppController = () => {
     }
   };
 
+  const handleCreateAndApproveContract = async (contractPayload) => {
+    setError('');
+    try {
+      const payload = await api.contracts.createAndApprove({
+        contract: {
+          ...getCurrentUserTrace(),
+          ...contractPayload,
+        },
+        trace: getCurrentUserTrace(),
+      });
+      const createdContract = payload?.contract;
+      const createdRental = payload?.rental;
+      if (!createdContract || !createdRental) {
+        throw new Error('El servidor no devolvio el contrato y la orden completos.');
+      }
+
+      setContracts((current) => {
+        const index = current.findIndex((entry) => entry.id === createdContract.id);
+        if (index < 0) return [createdContract, ...current];
+        return [...current.slice(0, index), createdContract, ...current.slice(index + 1)];
+      });
+      setRentals((current) => {
+        const index = current.findIndex((entry) => entry.id === createdRental.id);
+        if (index < 0) return [createdRental, ...current];
+        return [...current.slice(0, index), createdRental, ...current.slice(index + 1)];
+      });
+      if (Array.isArray(payload?.changes?.deliveries)) {
+        setDeliveries((current) => {
+          const next = [...current];
+          payload.changes.deliveries.forEach((row) => {
+            const index = next.findIndex((entry) => entry.id === row.id);
+            if (index < 0) next.unshift(row);
+            else next[index] = row;
+          });
+          return next;
+        });
+      }
+      if (Array.isArray(payload?.changes?.cashMovements)) {
+        setCashMovements((current) => {
+          const next = [...current];
+          payload.changes.cashMovements.forEach((row) => {
+            const index = next.findIndex((entry) => entry.id === row.id);
+            if (index < 0) next.unshift(row);
+            else next[index] = row;
+          });
+          return next;
+        });
+      }
+      if (Array.isArray(payload?.changes?.generatedReports)) {
+        setGeneratedReports((current) => {
+          const next = [...current];
+          payload.changes.generatedReports.forEach((row) => {
+            const index = next.findIndex((entry) => entry.id === row.id);
+            if (index < 0) next.unshift(row);
+            else next[index] = row;
+          });
+          return next;
+        });
+      }
+      if (Array.isArray(payload?.changes?.supplierLoans)) {
+        setSupplierBundle((current) => {
+          const nextLoans = [...(current.loans ?? [])];
+          payload.changes.supplierLoans.forEach((row) => {
+            const index = nextLoans.findIndex((entry) => entry.id === row.id);
+            if (index < 0) nextLoans.unshift(row);
+            else nextLoans[index] = row;
+          });
+          return { ...current, loans: nextLoans };
+        });
+      }
+
+      return {
+        contract: createdContract,
+        rental: createdRental,
+        durationMs: payload?.durationMs ?? null,
+      };
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo crear y aprobar el contrato.');
+      throw requestError;
+    }
+  };
+
   const handleApproveContract = async ({ contractId, contract: providedContract = null }) => {
     setError('');
     try {
@@ -2355,6 +2437,7 @@ export const useAppController = () => {
     handleUpdateSupplierLoanStatus,
     handleCreateContractFromQuote,
     handleCreateContractFromOrder,
+    handleCreateAndApproveContract,
     handleApproveContract,
     handleApproveQuote,
     handleGenerateOrderDocuments,

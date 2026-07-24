@@ -61,6 +61,57 @@ const readJsonFile = async () => {
   }
 };
 
+const sleep = (milliseconds) => new Promise((resolve) => {
+  setTimeout(resolve, milliseconds);
+});
+
+const replaceFileWithRetry = async (temporaryPath, serialized) => {
+  if (process.platform === 'win32') {
+    const backupPath = `${stateFilePath}.write-backup`;
+    let hasBackup = false;
+
+    try {
+      await fs.rm(backupPath, { force: true });
+      try {
+        await fs.copyFile(stateFilePath, backupPath);
+        hasBackup = true;
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+
+      // Windows puede rechazar rename() cuando el destino existe o es inspeccionado
+      // temporalmente por antivirus/indexadores. La escritura directa evita ese bloqueo.
+      await fs.writeFile(stateFilePath, serialized, 'utf8');
+      await fs.rm(temporaryPath, { force: true });
+      await fs.rm(backupPath, { force: true });
+      return;
+    } catch (error) {
+      if (hasBackup) {
+        await fs.copyFile(backupPath, stateFilePath).catch(() => {});
+      }
+      throw error;
+    } finally {
+      await fs.rm(backupPath, { force: true }).catch(() => {});
+    }
+  }
+
+  const maxAttempts = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fs.rename(temporaryPath, stateFilePath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(String(error?.code ?? '')) || attempt === maxAttempts) break;
+      await sleep(50 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const writeJsonFile = async (payload) => {
   await fs.mkdir(path.dirname(stateFilePath), { recursive: true });
   const temporaryPath = path.join(
@@ -69,8 +120,9 @@ const writeJsonFile = async (payload) => {
   );
 
   try {
-    await fs.writeFile(temporaryPath, JSON.stringify(payload, null, 2), 'utf8');
-    await fs.rename(temporaryPath, stateFilePath);
+    const serialized = JSON.stringify(payload, null, 2);
+    await fs.writeFile(temporaryPath, serialized, 'utf8');
+    await replaceFileWithRetry(temporaryPath, serialized);
   } catch (error) {
     console.error('[state-store] No se pudo escribir el estado del sistema.', {
       stateFilePath,
@@ -79,6 +131,8 @@ const writeJsonFile = async (payload) => {
       message: error?.message,
     });
     throw error;
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {});
   }
 };
 

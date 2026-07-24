@@ -1229,6 +1229,7 @@ function ServiceOrdersSection({
   onRestoreContract,
   onRevertContractToQuote,
   onCreateContractFromOrder,
+  onCreateAndApproveContract,
   onApproveContract,
   onGenerateOrderDocuments,
   onCreateSupplier,
@@ -5562,22 +5563,36 @@ function ServiceOrdersSection({
           validUntil: null,
           status: draft.recordStatus || (draft.mode === 'order' ? 'pendiente' : 'borrador'),
         };
-        setSubmitStatusMessage(draft.recordId ? 'Actualizando contrato...' : 'Guardando contrato...');
-        const savedContract = draft.recordId
-          ? await onUpdateContract?.(contractPayload)
-          : await onCreateContract?.(contractPayload);
-        if (!savedContract) {
-          throw new Error('No se pudo guardar el contrato.');
-        }
-
-        if (approveNow) {
-          setSubmitStatusMessage('Generando orden de servicio y reservando inventario...');
-          await onApproveContract?.({ contractId: savedContract.id, contract: savedContract });
+        let savedContract = null;
+        if (approveNow && !draft.recordId && onCreateAndApproveContract) {
+          setSubmitStatusMessage('Creando contrato, orden, inventario y registros vinculados...');
+          const transactionResult = await onCreateAndApproveContract(contractPayload);
+          savedContract = transactionResult?.contract ?? null;
+          if (!savedContract || !transactionResult?.rental) {
+            throw new Error('No se pudo completar la aprobacion transaccional del contrato.');
+          }
           setSubmitStatusMessage('Contrato aprobado. Cerrando wizard...');
-          setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`);
+          setActionFeedback(
+            `Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`,
+          );
         } else {
-          setSubmitStatusMessage('Contrato guardado. Cerrando wizard...');
-          setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} guardado correctamente.`);
+          setSubmitStatusMessage(draft.recordId ? 'Actualizando contrato...' : 'Guardando contrato...');
+          savedContract = draft.recordId
+            ? await onUpdateContract?.(contractPayload)
+            : await onCreateContract?.(contractPayload);
+          if (!savedContract) {
+            throw new Error('No se pudo guardar el contrato.');
+          }
+
+          if (approveNow) {
+            setSubmitStatusMessage('Generando orden de servicio y reservando inventario...');
+            await onApproveContract?.({ contractId: savedContract.id, contract: savedContract });
+            setSubmitStatusMessage('Contrato aprobado. Cerrando wizard...');
+            setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`);
+          } else {
+            setSubmitStatusMessage('Contrato guardado. Cerrando wizard...');
+            setActionFeedback(`Contrato ${savedContract.contractCode ?? savedContract.id} guardado correctamente.`);
+          }
         }
       } else {
         setSubmitStatusMessage(draft.recordId ? 'Actualizando cotizacion...' : 'Guardando cotizacion...');

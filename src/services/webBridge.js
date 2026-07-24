@@ -3226,6 +3226,8 @@ const normalizeState = (state) => {
 let inMemoryState = createSeedData();
 let inMemoryStateHydrated = false;
 let localStorageStateDisabled = false;
+let activeServerBatchState = null;
+let serverBatchRollbackState = null;
 
 const disableLocalStateStorage = () => {
   localStorageStateDisabled = true;
@@ -3315,6 +3317,15 @@ const writeState = (state) => {
 };
 
 const transaction = (mutator) => {
+  if (activeServerBatchState) {
+    const result = mutator(activeServerBatchState);
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+      activeServerBatchState = result;
+      inMemoryState = activeServerBatchState;
+    }
+    return result ?? activeServerBatchState;
+  }
+
   const state = readState();
   const clone = deepClone(state);
   const result = mutator(clone);
@@ -17841,7 +17852,51 @@ const createWebBridge = () => ({
   },
 
   __storage: {
-    exportState: async () => deepClone(readState()),
+    beginBatch: async (state) => {
+      if (activeServerBatchState) {
+        throw new Error('Ya existe una transaccion interna activa.');
+      }
+      if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        throw new Error('El estado recibido para la transaccion no es valido.');
+      }
+
+      // updateStateSnapshot ya entrega una copia JSON aislada del estado persistido.
+      // Volver a clonar y normalizar aqui recorria toda la base y consumia varios
+      // segundos sin aportar aislamiento adicional.
+      serverBatchRollbackState = inMemoryStateHydrated ? inMemoryState : null;
+      activeServerBatchState = state;
+      inMemoryState = activeServerBatchState;
+      inMemoryStateHydrated = true;
+      invalidateQueryStateSnapshot();
+      return { ok: true };
+    },
+    commitBatch: async () => {
+      if (!activeServerBatchState) {
+        throw new Error('No existe una transaccion interna activa.');
+      }
+
+      // Las mutaciones del bridge ya operaron sobre la copia aislada de la
+      // transaccion. fileStateStore vuelve a ejecutar las protecciones de
+      // integridad, checksum y escritura antes de confirmar el cambio.
+      const committed = activeServerBatchState;
+      inMemoryState = committed;
+      inMemoryStateHydrated = true;
+      activeServerBatchState = null;
+      serverBatchRollbackState = null;
+      invalidateQueryStateSnapshot();
+      return committed;
+    },
+    rollbackBatch: async () => {
+      if (serverBatchRollbackState) {
+        inMemoryState = serverBatchRollbackState;
+        inMemoryStateHydrated = true;
+      }
+      activeServerBatchState = null;
+      serverBatchRollbackState = null;
+      invalidateQueryStateSnapshot();
+      return { ok: true };
+    },
+    exportState: async () => deepClone(activeServerBatchState ?? readState()),
     exportCollections: async (names = []) => {
       const state = readState();
       const requestedNames = [...new Set((Array.isArray(names) ? names : [])
