@@ -1,5 +1,5 @@
-import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability';
-import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea';
+import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
+import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
@@ -7481,7 +7481,7 @@ const getReferenceContractStyles = () => `
   }
 `;
 
-const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, items = [] }) => {
+export const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, items = [] }) => {
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
   const company = getDocumentCompany(settings);

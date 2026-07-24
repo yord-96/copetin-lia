@@ -1,0 +1,227 @@
+import { Router } from 'express';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getStateSnapshot } from '../storage/fileStateStore.js';
+import {
+  renderHtmlDocumentToPdf,
+} from '../storage/documentPdfRenderer.js';
+import {
+  buildContractDocumentHtml,
+} from '../../src/services/webBridge.js';
+
+const router = Router();
+const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
+const maxDocumentHtmlBytes = Number(
+  process.env.DOCUMENT_HTML_MAX_BYTES ?? 4 * 1024 * 1024,
+);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '../..');
+const contractLogoPath = path.join(
+  projectRoot,
+  'public',
+  'imagenes',
+  'logo_el_copetin_redisenado.png',
+);
+let contractLogoDataUrlPromise = null;
+
+const getContractLogoDataUrl = async () => {
+  if (!contractLogoDataUrlPromise) {
+    contractLogoDataUrlPromise = fs.readFile(contractLogoPath)
+      .then((buffer) => `data:image/png;base64,${buffer.toString('base64')}`)
+      .catch((error) => {
+        contractLogoDataUrlPromise = null;
+        throw error;
+      });
+  }
+  return contractLogoDataUrlPromise;
+};
+
+const embedContractAssets = async (html) => {
+  const logoDataUrl = await getContractLogoDataUrl();
+  return String(html ?? '')
+    .replace(
+      /(?:https?:\/\/[^"'\s>]+)?\/imagenes\/logo_el_copetin_redisenado\.png/gi,
+      logoDataUrl,
+    );
+};
+
+const requireInternalKey = (req, res, next) => {
+  if (!internalKey) {
+    next();
+    return;
+  }
+
+  const providedKey = String(req.get('X-App-Internal-Key') ?? '').trim();
+  if (!providedKey) {
+    res.status(401).json({ error: 'Clave interna requerida.' });
+    return;
+  }
+  if (providedKey !== internalKey) {
+    res.status(403).json({ error: 'Clave interna inválida.' });
+    return;
+  }
+  next();
+};
+
+const matchesIdentifier = (entry, requestedId) => [
+  entry?.id,
+  entry?.contractId,
+  entry?.rentalId,
+  entry?.contractCode,
+  entry?.orderCode,
+  entry?.number,
+].some((value) => String(value ?? '').trim() === requestedId);
+
+const sanitizeFilePart = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 _-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const buildContractPdfFileName = (contract, rental) => {
+  const customer = sanitizeFilePart(
+    contract?.customerName ?? rental?.customerName ?? '',
+  ).split(' ').filter(Boolean).slice(0, 2).join(' ');
+  const code = sanitizeFilePart(
+    contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? 'contrato',
+  );
+  return [customer, code].filter(Boolean).join(' ').toUpperCase() || 'CONTRATO';
+};
+
+const resolveContractContext = (state, requestedId) => {
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : [];
+  const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const allDeliveries = Array.isArray(state?.deliveries) ? state.deliveries : [];
+
+  const contract = contracts.find((entry) => matchesIdentifier(entry, requestedId)) ?? null;
+  if (!contract) return null;
+
+  const rental = rentals.find((entry) =>
+    String(entry?.contractId ?? '').trim() === String(contract.id ?? '').trim()
+    || (
+      contract?.contractCode
+      && String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
+    )
+    || (
+      contract?.orderCode
+      && String(entry?.orderCode ?? '').trim() === String(contract.orderCode).trim()
+    )
+  ) ?? null;
+
+  const deliveries = allDeliveries
+    .filter((entry) =>
+      (
+        rental?.id
+        && String(entry?.rentalId ?? '').trim() === String(rental.id).trim()
+      )
+      || (
+        rental?.orderCode
+        && String(entry?.orderCode ?? '').trim() === String(rental.orderCode).trim()
+      )
+      || (
+        contract?.id
+        && String(entry?.contractId ?? '').trim() === String(contract.id).trim()
+      )
+      || (
+        contract?.contractCode
+        && String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
+      )
+    )
+    .sort((left, right) =>
+      new Date(left?.createdAt ?? 0).getTime() - new Date(right?.createdAt ?? 0).getTime()
+    );
+
+  return { contract, rental, deliveries };
+};
+
+router.get(
+  '/__copetin_db/contracts/:id/pdf',
+  requireInternalKey,
+  async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const requestedId = String(req.params.id ?? '').trim();
+      if (!requestedId) {
+        res.status(400).json({ error: 'Debes indicar el contrato.' });
+        return;
+      }
+
+      const snapshot = await getStateSnapshot();
+      const context = resolveContractContext(snapshot?.state, requestedId);
+      if (!context?.contract) {
+        res.status(404).json({ error: 'Contrato no encontrado.' });
+        return;
+      }
+
+      if (context.contract?._summaryOnly) {
+        res.status(409).json({
+          error: 'El servidor no dispone del contrato completo para generar el PDF.',
+        });
+        return;
+      }
+
+      const rawHtml = buildContractDocumentHtml({
+        contract: context.contract,
+        rental: context.rental ?? {},
+        deliveries: context.deliveries,
+        settings: snapshot?.state?.settings ?? {},
+        items: Array.isArray(snapshot?.state?.items) ? snapshot.state.items : [],
+      });
+      const html = await embedContractAssets(rawHtml);
+
+      const result = await renderHtmlDocumentToPdf({
+        html,
+        baseUrl: `${req.protocol}://${req.get('host')}`,
+        fileName: buildContractPdfFileName(context.contract, context.rental),
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+      res.setHeader('Content-Length', String(result.buffer.length));
+      res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
+      res.setHeader('X-Document-Key', result.cacheKey);
+      res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+      res.send(result.buffer);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Compatibility endpoint for other document types that still send HTML.
+router.post('/__copetin_db/documents/render-pdf', requireInternalKey, async (req, res, next) => {
+  try {
+    const html = String(req.body?.html ?? '');
+    if (!html.trim()) {
+      res.status(400).json({ error: 'Debes enviar el contenido del documento.' });
+      return;
+    }
+
+    if (Buffer.byteLength(html, 'utf8') > maxDocumentHtmlBytes) {
+      res.status(413).json({ error: 'El documento supera el tamaño máximo permitido.' });
+      return;
+    }
+
+    const result = await renderHtmlDocumentToPdf({
+      html,
+      baseUrl: req.body?.baseUrl,
+      fileName: req.body?.fileName,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+    res.setHeader('Content-Length', String(result.buffer.length));
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
+    res.setHeader('X-Document-Key', result.cacheKey);
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

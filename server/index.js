@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
+import documentRoutes from './routes/documents.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import {
@@ -18,6 +19,7 @@ import {
   ensureAttendanceUploadDirectory,
   getAttendanceUploadInfo,
 } from './storage/attendancePhotoStore.js';
+import { warmDocumentPdfRenderer } from './storage/documentPdfRenderer.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -89,7 +91,21 @@ app.use(
   }),
 );
 app.use(uploadRoutes);
+
+// Los documentos PDF se renderizan desde el servidor. En desarrollo, Vite sirve
+// /public en el puerto 5173, pero Chromium genera el PDF contra el puerto 4000.
+// Exponemos las imágenes institucionales también desde Express para que el logo
+// y los recursos del contrato estén disponibles en ambos entornos.
+app.use(
+  '/imagenes',
+  express.static(path.join(projectRoot, 'public', 'imagenes'), {
+    maxAge: isProduction ? '7d' : 0,
+    index: false,
+  }),
+);
+
 app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
+app.use(documentRoutes);
 
 app.get('/health', async (_req, res, next) => {
   try {
@@ -182,6 +198,12 @@ const start = async () => {
   await ensureStateStore();
   await ensureProductUploadDirectory();
   await ensureAttendanceUploadDirectory();
+  try {
+    await warmDocumentPdfRenderer();
+    console.log('Motor PDF listo.');
+  } catch (error) {
+    console.warn('Motor PDF no disponible al iniciar:', error?.message ?? error);
+  }
   app.listen(port, () => {
     console.log(`Copetin API escuchando en puerto ${port}`);
   });

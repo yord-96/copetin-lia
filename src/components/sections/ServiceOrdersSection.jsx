@@ -109,6 +109,13 @@ const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 8;
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
+const DOCUMENT_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
+const DOCUMENT_INTERNAL_KEY = String(
+  import.meta.env?.VITE_APP_INTERNAL_KEY
+    ?? import.meta.env?.APP_INTERNAL_KEY
+    ?? '',
+).trim();
+const getDocumentApiUrl = (path) => DOCUMENT_API_BASE_URL ? `${DOCUMENT_API_BASE_URL}${path}` : path;
 
 const clampPercentValue = (value) => Math.min(100, Math.max(0, Number(value ?? 0)));
 
@@ -1313,11 +1320,7 @@ function ServiceOrdersSection({
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
   const documentPreviewCacheRef = useRef(new Map());
-  const documentPreparationRef = useRef(new Map());
-  const documentPrewarmFramesRef = useRef(new Map());
   const documentPreviewUrlRef = useRef('');
-  const documentsPrefetchTimerRef = useRef(null);
-  const documentsPrefetchIdleRef = useRef(null);
   const deferredItemSearch = useDeferredValue(itemSearch);
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
@@ -1372,21 +1375,10 @@ function ServiceOrdersSection({
   };
 
   useEffect(() => () => {
-    window.clearTimeout(documentsPrefetchTimerRef.current);
-    if (typeof window.cancelIdleCallback === 'function' && documentsPrefetchIdleRef.current) {
-      window.cancelIdleCallback(documentsPrefetchIdleRef.current);
-    }
-
-    documentPrewarmFramesRef.current.forEach((frame) => {
-      frame.remove();
-    });
-    documentPrewarmFramesRef.current.clear();
-
     documentPreviewCacheRef.current.forEach((entry) => {
       if (entry?.blobUrl) URL.revokeObjectURL(entry.blobUrl);
     });
     documentPreviewCacheRef.current.clear();
-    documentPreparationRef.current.clear();
   }, []);
 
   const canChooseResponsibles = isDeveloper(currentUser);
@@ -5998,139 +5990,43 @@ function ServiceOrdersSection({
     }
   };
 
-  const prepareContractDocumentPreview = async (orderRow, reason = 'documents-panel-prewarm') => {
-    const contractIdentifier = orderRow?.contractId
-      ?? orderRow?.contractCode
-      ?? orderRow?.orderCode
-      ?? orderRow?.id
-      ?? '';
-    const rentalIdentifier = orderRow?.rentalId
-      ?? orderRow?.orderCode
-      ?? orderRow?.contractCode
-      ?? '';
-    const preparationKey = [
-      'contract',
-      String(contractIdentifier),
-      String(rentalIdentifier),
-    ].join(':');
-
-    if (documentPreparationRef.current.has(preparationKey)) {
-      return documentPreparationRef.current.get(preparationKey);
+  const fetchContractPdf = async ({ identifier }) => {
+    const requestedId = String(identifier ?? '').trim();
+    if (!requestedId) {
+      throw new Error('No se pudo identificar el contrato.');
     }
 
-    const preparationPromise = (async () => {
-      const [fullContract, fullRental] = await Promise.all([
-        contractIdentifier
-          ? api.contracts.ensureFull(contractIdentifier, reason)
-          : Promise.resolve(null),
-        rentalIdentifier
-          ? api.rentals.getFull(rentalIdentifier).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+    const response = await fetch(
+      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf`),
+      {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
+        },
+      },
+    );
 
-      if (!fullContract || fullContract._summaryOnly) {
-        throw new Error('No se pudo cargar el contrato completo. No se preparó el documento para proteger sus datos.');
-      }
-
-      const cacheKey = [
-        'contract',
-        fullContract.id ?? contractIdentifier,
-        fullContract.updatedAt ?? fullContract.createdAt ?? '',
-        fullRental?.updatedAt ?? fullRental?.createdAt ?? '',
-      ].join(':');
-
-      const cachedPreview = documentPreviewCacheRef.current.get(cacheKey);
-      if (cachedPreview?.blobUrl) {
-        return { preview: cachedPreview, cacheKey, fullContract, fullRental };
-      }
-
-      const generatedPreview = await onPrintContractDocument?.({
-        rentalId: orderRow?.rentalId,
-        orderCode: orderRow?.orderCode,
-        contractId: orderRow?.contractId ?? orderRow?.id,
-        contractCode: orderRow?.contractCode,
-        fullContract,
-        fullRental,
-      });
-
-      if (!generatedPreview?.html) {
-        throw new Error('El contrato no pudo prepararse correctamente.');
-      }
-
-      const blob = new Blob([generatedPreview.html], { type: 'text/html;charset=utf-8' });
-      const blobUrl = URL.createObjectURL(blob);
-      const preparedPreview = {
-        ...generatedPreview,
-        blobUrl,
-        html: '',
-      };
-
-      const previousPreview = documentPreviewCacheRef.current.get(cacheKey);
-      if (previousPreview?.blobUrl && previousPreview.blobUrl !== blobUrl) {
-        URL.revokeObjectURL(previousPreview.blobUrl);
-      }
-      documentPreviewCacheRef.current.set(cacheKey, preparedPreview);
-
-      // Chrome procesa el documento en segundo plano. Al pulsar Abrir,
-      // el mismo Blob URL ya fue interpretado y su primera visualización es más rápida.
-      if (typeof document !== 'undefined') {
-        const previousFrame = documentPrewarmFramesRef.current.get(cacheKey);
-        if (previousFrame) previousFrame.remove();
-
-        const prewarmFrame = document.createElement('iframe');
-        prewarmFrame.title = 'Precarga segura de contrato';
-        prewarmFrame.tabIndex = -1;
-        prewarmFrame.setAttribute('aria-hidden', 'true');
-        prewarmFrame.style.position = 'fixed';
-        prewarmFrame.style.left = '-10000px';
-        prewarmFrame.style.top = '0';
-        prewarmFrame.style.width = '960px';
-        prewarmFrame.style.height = '1200px';
-        prewarmFrame.style.visibility = 'hidden';
-        prewarmFrame.style.pointerEvents = 'none';
-        prewarmFrame.src = blobUrl;
-        document.body.appendChild(prewarmFrame);
-        documentPrewarmFramesRef.current.set(cacheKey, prewarmFrame);
-      }
-
-      return { preview: preparedPreview, cacheKey, fullContract, fullRental };
-    })();
-
-    documentPreparationRef.current.set(preparationKey, preparationPromise);
-    try {
-      return await preparationPromise;
-    } finally {
-      documentPreparationRef.current.delete(preparationKey);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'No se pudo obtener el PDF del contrato.');
     }
+
+    const pdfBlob = await response.blob();
+    if (pdfBlob.type && pdfBlob.type !== 'application/pdf') {
+      throw new Error('El servidor no devolvió un documento PDF válido.');
+    }
+
+    return {
+      blobUrl: URL.createObjectURL(pdfBlob),
+      cacheStatus: response.headers.get('X-Document-Cache') ?? '',
+      durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
+    };
   };
 
   const handleOpenDocumentsPanel = (orderRow) => {
     setDocumentsOrder(orderRow);
     setMenuState(null);
-
-    window.clearTimeout(documentsPrefetchTimerRef.current);
-    if (typeof window.cancelIdleCallback === 'function' && documentsPrefetchIdleRef.current) {
-      window.cancelIdleCallback(documentsPrefetchIdleRef.current);
-    }
-
-    const prepareWhenBrowserIsFree = () => {
-      prepareContractDocumentPreview(orderRow, 'documents-panel-prewarm').catch((error) => {
-        console.warn('[copetin] No se pudo precalentar el contrato documental.', error);
-      });
-    };
-
-    window.requestAnimationFrame(() => {
-      documentsPrefetchTimerRef.current = window.setTimeout(() => {
-        if (typeof window.requestIdleCallback === 'function') {
-          documentsPrefetchIdleRef.current = window.requestIdleCallback(
-            prepareWhenBrowserIsFree,
-            { timeout: 700 },
-          );
-        } else {
-          prepareWhenBrowserIsFree();
-        }
-      }, 80);
-    });
   };
 
   const handleCloseDocumentsPanel = () => {
@@ -6871,12 +6767,33 @@ function ServiceOrdersSection({
       let cacheKey = `${kind}:${String(baseDocumentCode ?? '').trim()}`;
 
       if (kind === 'contract') {
-        const preparedContract = await prepareContractDocumentPreview(
-          orderRow,
-          'print-contract-document',
-        );
-        cacheKey = preparedContract.cacheKey;
-        preview = preparedContract.preview;
+        const contractIdentifier = orderRow.contractId
+          ?? orderRow.contractCode
+          ?? orderRow.orderCode
+          ?? orderRow.id;
+
+        cacheKey = [
+          kind,
+          String(contractIdentifier ?? ''),
+          String(orderRow.updatedAt ?? orderRow.createdAt ?? ''),
+        ].join(':');
+
+        preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
+        if (!preview) {
+          const renderedPdf = await fetchContractPdf({
+            identifier: contractIdentifier,
+          });
+
+          preview = {
+            title: loadingTitle,
+            html: '',
+            blobUrl: renderedPdf.blobUrl,
+            mimeType: 'application/pdf',
+            cacheStatus: renderedPdf.cacheStatus,
+            durationMs: renderedPdf.durationMs,
+          };
+          documentPreviewCacheRef.current.set(cacheKey, preview);
+        }
       } else if (kind === 'inventory') {
         const rentalIdentifier = orderRow.rentalId ?? orderRow.orderCode ?? orderRow.contractCode ?? '';
         const fullRental = rentalIdentifier ? await api.rentals.getFull(rentalIdentifier) : null;
@@ -6954,6 +6871,7 @@ function ServiceOrdersSection({
           : undefined,
         html: preview.html ?? '',
         blobUrl: preview.blobUrl ?? '',
+        mimeType: preview.mimeType ?? 'text/html',
         loading: false,
         cacheKey,
       });
@@ -6980,6 +6898,10 @@ function ServiceOrdersSection({
 
   const handlePrintPreview = () => {
     if (documentPreview?.loading || !documentPreview?.blobUrl) return;
+    if (documentPreview?.mimeType === 'application/pdf') {
+      window.open(documentPreview.blobUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
     const frame = document.getElementById('orders-document-preview-frame');
     const frameDocument = frame?.contentDocument ?? frame?.contentWindow?.document;
     const previousTitle = document.title;
