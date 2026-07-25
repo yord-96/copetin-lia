@@ -3,6 +3,7 @@ import { getProductImageSrc } from '../../utils/productImage';
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import ProductImage from '../common/ProductImage';
 import { api } from '../../services/api';
+import InventoryOpsSection from './InventoryOpsSection';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -1085,6 +1086,7 @@ function InventoryDashboardSection({
   onUpdateInventoryCombo,
   onRemoveInventoryCombo,
   onCreateInventoryMovement,
+  onProcessStockRecovery,
   onCreateCategory,
   onUpdateCategory,
   onRemoveCategory,
@@ -1269,10 +1271,13 @@ function InventoryDashboardSection({
   const isCombosModule = activeModule === 'inventario_combos';
   const isCategoriesModule = activeModule === 'inventario_categorias';
   const isMovementsModule = activeModule === 'inventario_movimientos';
+  const isMaintenanceModule = activeModule === 'inventario_mantenimiento';
   const isAdjustModule = activeModule === 'inventario_ajustes';
-  const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isAdjustModule;
+  const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isMaintenanceModule && !isAdjustModule;
 
-  const moduleViewClass = isMovementsModule
+  const moduleViewClass = isMaintenanceModule
+    ? 'inventory-view-maintenance'
+    : isMovementsModule
     ? 'inventory-view-movements'
     : isAdjustModule
     ? 'inventory-view-adjust'
@@ -1284,7 +1289,9 @@ function InventoryDashboardSection({
     ? 'inventory-view-products'
     : '';
 
-  const moduleTitle = isProductsModule
+  const moduleTitle = isMaintenanceModule
+    ? 'Lavado y Reparacion'
+    : isProductsModule
     ? 'Productos'
     : isCombosModule
     ? 'Combos'
@@ -1296,7 +1303,9 @@ function InventoryDashboardSection({
     ? 'Ajustes de Stock'
     : 'Inventario';
 
-  const moduleSubtitle = isProductsModule
+  const moduleSubtitle = isMaintenanceModule
+    ? 'Revisa unidades pendientes y devuelve al stock solo las que ya estan listas'
+    : isProductsModule
     ? 'Gestiona el catalogo de items alquilables'
     : isCombosModule
     ? 'Arma paquetes con productos existentes, precio propio y control de stock por ingrediente'
@@ -1309,7 +1318,7 @@ function InventoryDashboardSection({
     : 'Controla tu stock en tiempo real';
 
   useEffect(() => {
-    if (isMovementsModule || isAdjustModule || isCategoriesModule || isCombosModule) return;
+    if (isMovementsModule || isMaintenanceModule || isAdjustModule || isCategoriesModule || isCombosModule) return;
     writeStoredProductFilters({
       query,
       page,
@@ -1330,6 +1339,7 @@ function InventoryDashboardSection({
     controlFilter,
     sortFilter,
     isMovementsModule,
+    isMaintenanceModule,
     isAdjustModule,
     isCategoriesModule,
     isCombosModule,
@@ -3985,6 +3995,43 @@ function InventoryDashboardSection({
       </button>
     </div>
   );
+
+  if (isMaintenanceModule) {
+    return (
+      <section className={`inventory-maintenance-workspace ${moduleViewClass}`}>
+        <header className="inventory-header">
+          <div>
+            <h2>{moduleTitle}</h2>
+            <p>{moduleSubtitle}</p>
+          </div>
+          <div className="inventory-actions">
+            <button type="button" className="link-button" onClick={() => onSwitchInventoryModule?.('inventario')}>
+              Volver a Inventario
+            </button>
+            <button type="button" className="ghost-button" onClick={() => onSwitchInventoryModule?.('inventario_movimientos')}>
+              Ver Movimientos
+            </button>
+          </div>
+        </header>
+
+        {feedback ? (
+          <p className={`status ${feedbackType === 'error' ? 'error' : ''}`}>{feedback}</p>
+        ) : null}
+
+        <InventoryOpsSection
+          items={items}
+          activeRentals={activeRentals}
+          stockRecoveries={stockRecoveries}
+          inventoryMovements={inventoryMovements}
+          stockMovementForm={movementForm}
+          setStockMovementForm={setMovementForm}
+          handleStockMovementSubmit={handleSubmitMovement}
+          handleProcessRecovery={onProcessStockRecovery}
+          formatBs={formatBs}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className={`panel inventory-dashboard ${moduleViewClass}`}>

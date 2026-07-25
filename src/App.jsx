@@ -481,6 +481,7 @@ function App() {
             onUpdateInventoryCombo={controller.handleUpdateInventoryCombo}
             onRemoveInventoryCombo={controller.handleRemoveInventoryCombo}
             onCreateInventoryMovement={controller.handleCreateInventoryMovement}
+            onProcessStockRecovery={controller.handleProcessStockRecovery}
             onCreateCategory={controller.handleCreateCategory}
             onUpdateCategory={controller.handleUpdateCategory}
             onRemoveCategory={controller.handleRemoveCategory}

@@ -32,6 +32,7 @@ const operationTabs = [
       { id: 'inventario_combos', label: 'Combos', targetId: 'inventario_combos' },
       { id: 'inventario_categorias', label: 'Categorias', targetId: 'inventario_categorias' },
       { id: 'inventario_movimientos', label: 'Movimientos', targetId: 'inventario_movimientos' },
+      { id: 'inventario_mantenimiento', label: 'Lavado y Reparacion', targetId: 'inventario_mantenimiento' },
       { id: 'inventario_ajustes', label: 'Ajustes de Stock', targetId: 'inventario_ajustes' },
     ],
   },

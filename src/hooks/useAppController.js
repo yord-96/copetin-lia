@@ -918,6 +918,33 @@ export const useAppController = () => {
     }
   };
 
+  const handleProcessStockRecovery = async (payload) => {
+    setError('');
+    try {
+      const result = await api.inventory.processRecovery({
+        ...payload,
+        ...getCurrentUserTrace(),
+      });
+
+      // Estas colecciones ya fueron actualizadas por la mutacion local/remota.
+      // Refrescarlas directamente evita mantener tarjetas eliminadas en React y
+      // evita recargar toda la aplicacion con loadData().
+      const [itemsData, movementsData, recoveriesData] = await Promise.all([
+        api.inventory.list(),
+        api.inventory.listMovements(),
+        api.inventory.listRecoveries(),
+      ]);
+      setItems(itemsData);
+      setInventoryMovements(movementsData);
+      setStockRecoveries(recoveriesData);
+
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo procesar la unidad en lavado o reparacion.');
+      throw requestError;
+    }
+  };
+
   const handleOpenCashSession = async (payload) => {
     setError('');
     try {
@@ -2405,6 +2432,7 @@ export const useAppController = () => {
     handleUpdateInventoryCombo,
     handleRemoveInventoryCombo,
     handleCreateInventoryMovement,
+    handleProcessStockRecovery,
     handleOpenCashSession,
     handleCloseCashSession,
     handleCreateCashDebt,

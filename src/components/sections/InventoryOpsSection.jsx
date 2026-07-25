@@ -21,6 +21,42 @@ const formatDateTime = (value) => {
   });
 };
 
+
+const normalizeRecoverySearchText = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+
+const recoveryMatchesSearch = (entry, searchValue) => {
+  const tokens = normalizeRecoverySearchText(searchValue).split(' ').filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const stageLabel = entry?.stage === 'lavado' ? 'lavado lavando' : 'reparacion reparando';
+  const searchableText = normalizeRecoverySearchText([
+    entry?.itemName,
+    entry?.name,
+    entry?.category,
+    entry?.brand,
+    entry?.itemColor,
+    entry?.sku,
+    entry?.sourceCustomerName,
+    entry?.customerName,
+    entry?.sourceContractCode,
+    entry?.contractCode,
+    entry?.sourceOrderCode,
+    entry?.orderCode,
+    stageLabel,
+    entry?.note,
+  ].filter(Boolean).join(' '));
+
+  return tokens.every((token) => searchableText.includes(token));
+};
+
 const toSafeQuantity = (value, fallback = 1) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -100,23 +136,10 @@ function InventoryOpsSection({
 
   const latestMovements = useMemo(() => inventoryMovements.slice(0, 25), [inventoryMovements]);
 
-  const filteredRecoveries = useMemo(() => {
-    const query = String(recoverySearch ?? '').trim().toLowerCase();
-    if (!query) {
-      return stockRecoveries;
-    }
-
-    return stockRecoveries.filter((entry) => {
-      const stageLabel = entry.stage === 'lavado' ? 'lavado' : 'reparacion';
-      return (
-        String(entry.itemName ?? '').toLowerCase().includes(query)
-        || String(entry.category ?? '').toLowerCase().includes(query)
-        || String(entry.sourceCustomerName ?? '').toLowerCase().includes(query)
-        || stageLabel.includes(query)
-        || String(entry.note ?? '').toLowerCase().includes(query)
-      );
-    });
-  }, [recoverySearch, stockRecoveries]);
+  const filteredRecoveries = useMemo(
+    () => stockRecoveries.filter((entry) => recoveryMatchesSearch(entry, recoverySearch)),
+    [recoverySearch, stockRecoveries],
+  );
 
   const updateRecoveryDraft = (recoveryId, field, value) => {
     setRecoveryDrafts((current) => ({
