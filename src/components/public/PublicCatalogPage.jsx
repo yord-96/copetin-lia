@@ -152,9 +152,6 @@ export default function PublicCatalogPage() {
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => window.print()}>
-          Imprimir catalogo
-        </button>
       </section>
 
       <section className="public-catalog-summary" aria-live="polite">
