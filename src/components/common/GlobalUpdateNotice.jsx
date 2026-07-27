@@ -38,15 +38,20 @@ const hasBlockingWorkOpen = () => {
 function UpdateMascot() {
   return (
     <span className="update-mascot" aria-hidden="true">
+      <span className="update-mascot-shadow" />
       <span className="update-mascot-cap" />
+      <span className="update-mascot-hair" />
       <span className="update-mascot-face">
         <i />
         <i />
+        <em />
+        <em />
         <b />
       </span>
       <span className="update-mascot-body">EC</span>
       <span className="update-mascot-arm update-mascot-arm-left" />
       <span className="update-mascot-arm update-mascot-arm-right" />
+      <span className="update-mascot-hand" />
     </span>
   );
 }
