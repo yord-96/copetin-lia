@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
@@ -87,6 +87,7 @@ const getMonthGrid = (referenceDate) => {
 };
 
 const lineSupplierQuantity = (line) => Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
+const RESULT_BATCH_SIZE = 80;
 
 const recordPeriod = (record = {}) =>
   buildAvailabilityPeriod({
@@ -151,6 +152,7 @@ function AvailabilitySection({
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [areaFilter, setAreaFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [visibleResultCount, setVisibleResultCount] = useState(RESULT_BATCH_SIZE);
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(initialDate);
 
@@ -323,7 +325,7 @@ function AvailabilitySection({
   }, [rows]);
 
 
-  const resolveDetailRecord = (record) => {
+  const resolveDetailRecord = useCallback((record) => {
     const source = record.type === 'orden'
       ? rentalById.get(String(record.id))
       : record.type === 'cotizacion'
@@ -332,14 +334,14 @@ function AvailabilitySection({
     if (!source) return record;
     const linkedContract = source.contractId ? contractById.get(String(source.contractId)) : null;
     return { ...source, ...linkedContract, quantity: record.quantity, type: record.type };
-  };
+  }, [contractById, quoteById, rentalById]);
 
-  const getItemCommitments = (row) => [
+  const getItemCommitments = useCallback((row) => [
     ...(row.hardReservedQtyRecords || []).map((record) => ({ ...resolveDetailRecord(record), commitmentTone: 'confirmed' })),
     ...(row.softReservedQtyRecords || []).map((record) => ({ ...resolveDetailRecord(record), commitmentTone: 'tentative' })),
-  ];
+  ], [resolveDetailRecord]);
 
-  const resultEntries = filteredRows
+  const resultEntries = useMemo(() => filteredRows
     .flatMap((row) => {
       const commitments = getItemCommitments(row);
       if (commitments.length === 0) {
@@ -363,7 +365,12 @@ function AvailabilitySection({
       const leftCode = left.record?.contractCode || left.record?.orderCode || left.record?.quoteCode || '';
       const rightCode = right.record?.contractCode || right.record?.orderCode || right.record?.quoteCode || '';
       return String(leftCode).localeCompare(String(rightCode), 'es', { numeric: true });
-    });
+    }), [dateFrom, dateTo, filteredRows, getItemCommitments]);
+  const visibleResultEntries = useMemo(
+    () => resultEntries.slice(0, visibleResultCount),
+    [resultEntries, visibleResultCount],
+  );
+  const hiddenResultCount = Math.max(0, resultEntries.length - visibleResultEntries.length);
 
   const calendarCells = useMemo(() => getMonthGrid(calendarDate), [calendarDate]);
   const calendarStats = useMemo(() => {
@@ -417,6 +424,7 @@ function AvailabilitySection({
     setCategoryFilter('all');
     setAreaFilter('all');
     setStatusFilter('all');
+    setVisibleResultCount(RESULT_BATCH_SIZE);
   };
 
   return (
@@ -450,11 +458,11 @@ function AvailabilitySection({
             <div className="availability-date-grid">
               <label>
                 <span>Desde</span>
-                <input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); if (!dateTo || event.target.value > dateTo) setDateTo(event.target.value); }} />
+                <input type="date" value={dateFrom} onChange={(event) => { setDateFrom(event.target.value); if (!dateTo || event.target.value > dateTo) setDateTo(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }} />
               </label>
               <label>
                 <span>Hasta</span>
-                <input type="date" value={dateTo} min={dateFrom} onChange={(event) => setDateTo(event.target.value)} />
+                <input type="date" value={dateTo} min={dateFrom} onChange={(event) => { setDateTo(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }} />
               </label>
               <p className="availability-full-day-note">
                 La consulta toma el primer día desde las 00:00 y el último día hasta las 23:59.
@@ -467,18 +475,18 @@ function AvailabilitySection({
                   type="search"
                   value={query}
                   placeholder="Buscar producto, SKU, categoría o color..."
-                  onChange={(event) => { setQuery(event.target.value) }}
+                  onChange={(event) => { setQuery(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }}
                 />
               </label>
-              <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value) }}>
+              <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }}>
                 <option value="all">Todas las categorías</option>
                 {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
               </select>
-              <select value={areaFilter} onChange={(event) => { setAreaFilter(event.target.value) }}>
+              <select value={areaFilter} onChange={(event) => { setAreaFilter(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }}>
                 <option value="all">Todas las áreas</option>
                 {INVENTORY_AREAS.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
               </select>
-              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value) }}>
+              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setVisibleResultCount(RESULT_BATCH_SIZE); }}>
                 <option value="all">Todos los estados</option>
                 <option value="available">Disponible</option>
                 <option value="limited">Limitado</option>
@@ -502,6 +510,9 @@ function AvailabilitySection({
               <div>
                 <span>RESULTADO DEL PERIODO</span>
                 <h3>{resultEntries.length.toLocaleString('es-BO')} resultados individuales</h3>
+                {hiddenResultCount > 0 ? (
+                  <p>Mostrando {visibleResultEntries.length.toLocaleString('es-BO')} primero para mantener la vista fluida.</p>
+                ) : null}
               </div>
               <small>{formatDate(dateFrom)} {dateTo !== dateFrom ? `al ${formatDate(dateTo)}` : ''}</small>
             </header>
@@ -517,7 +528,7 @@ function AvailabilitySection({
                 <span>Estado</span>
               </div>
 
-              {resultEntries.map(({ row, record, startDate, endDate }, index) => {
+              {visibleResultEntries.map(({ row, record, startDate, endDate }, index) => {
                 const documentCode = record?.contractCode || record?.orderCode || record?.quoteCode || record?.code || 'SIN DOCUMENTO';
                 const documentType = record?.type === 'cotizacion'
                   ? 'Cotización'
@@ -590,6 +601,18 @@ function AvailabilitySection({
             </div>
 
             {resultEntries.length === 0 ? <div className="availability-no-results"><PackageSearch size={34} /><strong>No encontramos productos</strong><p>Cambia la búsqueda o los filtros seleccionados.</p></div> : null}
+            {hiddenResultCount > 0 ? (
+              <div className="availability-load-more">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setVisibleResultCount((current) => current + RESULT_BATCH_SIZE)}
+                >
+                  Ver {Math.min(RESULT_BATCH_SIZE, hiddenResultCount).toLocaleString('es-BO')} resultados mas
+                </button>
+                <span>Quedan {hiddenResultCount.toLocaleString('es-BO')} resultados.</span>
+              </div>
+            ) : null}
 
           </section>
         </>
