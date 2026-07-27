@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState, useTransition } from 'react';
 import './App.css';
 import { useAppController } from './hooks/useAppController';
 import { runtimeInfo } from './services/api';
@@ -15,20 +15,78 @@ import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, is
 const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
 const SIDEBAR_SEEN_STORAGE_KEY = 'copetin-sidebar-seen-counts-v3-empty';
 const DEFAULT_SIDEBAR_SEEN_COUNTS = { inventario: 0, devolucion: 0 };
-const SummarySection = lazy(() => import('./components/sections/SummarySection'));
-const CategoriesSection = lazy(() => import('./components/sections/CategoriesSection'));
-const RecibosSection = lazy(() => import('./components/sections/RecibosSection'));
-const ReturnSection = lazy(() => import('./components/sections/ReturnSection'));
-const CalendarSection = lazy(() => import('./components/sections/CalendarSection'));
-const ClientsSection = lazy(() => import('./components/sections/ClientsSection'));
-const UsersSection = lazy(() => import('./components/sections/UsersSection'));
-const ServiceOrdersSection = lazy(() => import('./components/sections/ServiceOrdersSection'));
-const AvailabilitySection = lazy(() => import('./components/sections/AvailabilitySection'));
-const AttendanceSection = lazy(() => import('./components/sections/AttendanceSection'));
-const InventoryDashboardSection = lazy(() => import('./components/sections/InventoryDashboardSection'));
-const SuppliersSection = lazy(() => import('./components/sections/SuppliersSection'));
-const PersonnelSection = lazy(() => import('./components/sections/PersonnelSection'));
-const LinconWorkspaceSection = lazy(() => import('./components/sections/LinconWorkspaceSection'));
+const loadSummarySection = () => import('./components/sections/SummarySection');
+const loadCategoriesSection = () => import('./components/sections/CategoriesSection');
+const loadRecibosSection = () => import('./components/sections/RecibosSection');
+const loadReturnSection = () => import('./components/sections/ReturnSection');
+const loadCalendarSection = () => import('./components/sections/CalendarSection');
+const loadClientsSection = () => import('./components/sections/ClientsSection');
+const loadUsersSection = () => import('./components/sections/UsersSection');
+const loadServiceOrdersSection = () => import('./components/sections/ServiceOrdersSection');
+const loadAvailabilitySection = () => import('./components/sections/AvailabilitySection');
+const loadAttendanceSection = () => import('./components/sections/AttendanceSection');
+const loadInventoryDashboardSection = () => import('./components/sections/InventoryDashboardSection');
+const loadSuppliersSection = () => import('./components/sections/SuppliersSection');
+const loadPersonnelSection = () => import('./components/sections/PersonnelSection');
+const loadLinconWorkspaceSection = () => import('./components/sections/LinconWorkspaceSection');
+
+const SummarySection = lazy(loadSummarySection);
+const CategoriesSection = lazy(loadCategoriesSection);
+const RecibosSection = lazy(loadRecibosSection);
+const ReturnSection = lazy(loadReturnSection);
+const CalendarSection = lazy(loadCalendarSection);
+const ClientsSection = lazy(loadClientsSection);
+const UsersSection = lazy(loadUsersSection);
+const ServiceOrdersSection = lazy(loadServiceOrdersSection);
+const AvailabilitySection = lazy(loadAvailabilitySection);
+const AttendanceSection = lazy(loadAttendanceSection);
+const InventoryDashboardSection = lazy(loadInventoryDashboardSection);
+const SuppliersSection = lazy(loadSuppliersSection);
+const PersonnelSection = lazy(loadPersonnelSection);
+const LinconWorkspaceSection = lazy(loadLinconWorkspaceSection);
+
+const PRELOADERS_BY_TAB = Object.freeze({
+  resumen: loadSummarySection,
+  caja: loadCalendarSection,
+  items: loadClientsSection,
+  alquiler: loadServiceOrdersSection,
+  disponibilidad: loadAvailabilitySection,
+  asistencia: loadAttendanceSection,
+  proveedores: loadSuppliersSection,
+  personal: loadPersonnelSection,
+  recibos: loadRecibosSection,
+  categorias: loadCategoriesSection,
+  usuarios: loadUsersSection,
+  inventario: loadInventoryDashboardSection,
+  devolucion: loadReturnSection,
+});
+
+const getTabPreloadKey = (tabId) => {
+  const target = String(tabId ?? '');
+  if (target.startsWith('inventario')) return 'inventario';
+  if (target.startsWith('devolucion')) return 'devolucion';
+  return target;
+};
+
+const getTabLabel = (tabId) => {
+  const target = getTabPreloadKey(tabId);
+  if (target === 'alquiler') return 'Ordenes';
+  if (target === 'asistencia') return 'Asistencia';
+  if (target === 'proveedores') return 'Proveedores';
+  if (target === 'inventario') return 'Inventario';
+  if (target === 'devolucion') return 'Transporte';
+  if (target === 'caja') return 'Calendario';
+  if (target === 'items') return 'Clientes';
+  if (target === 'recibos') return 'Reportes';
+  if (target === 'personal') return 'Personal';
+  return 'vista';
+};
+
+const preloadTabModule = (tabId) => {
+  const loader = PRELOADERS_BY_TAB[getTabPreloadKey(tabId)];
+  if (!loader) return;
+  loader().catch(() => {});
+};
 
 const readDeveloperCompanyChoice = () => {
   if (typeof window === 'undefined') return '';
@@ -168,12 +226,16 @@ function App() {
   const [sidebarSeenCounts, setSidebarSeenCounts] = useState(readSidebarSeenCounts);
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [developerCompanyChoice, setDeveloperCompanyChoice] = useState(readDeveloperCompanyChoice);
+  const [pendingNavigationTab, setPendingNavigationTab] = useState('');
+  const [isNavigationPending, startNavigationTransition] = useTransition();
   const allowedTabRoots = useMemo(
     () => (controller.currentUser
       ? Array.from(getAllowedTabRoots(controller.currentUser)).filter((tab) => canAccessTab(controller.currentUser, tab))
       : []),
     [controller.currentUser],
   );
+  const navigationDisplayTab = pendingNavigationTab || controller.activeTab;
+  const isNavigating = Boolean(pendingNavigationTab && pendingNavigationTab !== controller.activeTab) || isNavigationPending;
 
   useEffect(() => {
     if (!controller.currentUser || !isDeveloper(controller.currentUser)) {
@@ -187,6 +249,51 @@ function App() {
     }
     setDeveloperCompanyChoice(readDeveloperCompanyChoice());
   }, [controller.currentUser]);
+
+  useEffect(() => {
+    if (pendingNavigationTab && pendingNavigationTab === controller.activeTab) {
+      const timeoutId = window.setTimeout(() => setPendingNavigationTab(''), 0);
+      return () => window.clearTimeout(timeoutId);
+    }
+    return undefined;
+  }, [controller.activeTab, pendingNavigationTab]);
+
+  useEffect(() => {
+    if (!controller.authReady || !controller.currentUser || typeof window === 'undefined') return undefined;
+
+    const preloadOrder = [
+      'alquiler',
+      'inventario',
+      'devolucion',
+      'caja',
+      'items',
+      'proveedores',
+      'asistencia',
+      'personal',
+      'recibos',
+    ].filter((tabId) => allowedTabRoots.length === 0 || allowedTabRoots.includes(tabId));
+    const timeoutIds = [];
+    const runPreload = () => {
+      preloadOrder.forEach((tabId, index) => {
+        const timeoutId = window.setTimeout(() => preloadTabModule(tabId), index * 350);
+        timeoutIds.push(timeoutId);
+      });
+    };
+
+    let idleId = null;
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(runPreload, { timeout: 2500 });
+    } else {
+      timeoutIds.push(window.setTimeout(runPreload, 1200));
+    }
+
+    return () => {
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [allowedTabRoots, controller.authReady, controller.currentUser]);
 
   useEffect(() => {
     if (!controller.currentUser || canAccessTab(controller.currentUser, controller.activeTab)) return;
@@ -253,11 +360,20 @@ function App() {
 
   const handleSidebarTabChange = (targetTab) => {
     if (!canAccessTab(controller.currentUser, targetTab)) {
+      setPendingNavigationTab('');
       controller.setActiveTab(getDefaultTabForUser(controller.currentUser));
       return;
     }
     markSidebarModuleAsSeen(targetTab);
-    controller.setActiveTab(targetTab);
+    if (targetTab === controller.activeTab) {
+      setPendingNavigationTab('');
+      return;
+    }
+    setPendingNavigationTab(targetTab);
+    preloadTabModule(targetTab);
+    startNavigationTransition(() => {
+      controller.setActiveTab(targetTab);
+    });
   };
 
   const openResetDialog = () => {
@@ -632,7 +748,7 @@ function App() {
       <div className="app-layout">
         <aside className="app-sidebar">
           <TabsNav
-            activeTab={controller.activeTab}
+            activeTab={navigationDisplayTab}
             isCatalogView={controller.isCatalogView}
             onChange={handleSidebarTabChange}
             notificationCounts={sidebarNotificationCounts}
@@ -653,6 +769,11 @@ function App() {
 
           <main className="app-content">
             <section className={controller.isCatalogView ? 'workspace workspace-inventory' : 'workspace'}>
+              {isNavigating ? (
+                <p className="status navigation-status" aria-live="polite">
+                  Abriendo {getTabLabel(pendingNavigationTab || controller.activeTab)}...
+                </p>
+              ) : null}
               <Suspense fallback={<p className="status">Preparando vista...</p>}>
                 {renderWorkspaceContent()}
               </Suspense>
@@ -662,7 +783,7 @@ function App() {
       </div>
 
       <MobileNavigation
-        activeTab={controller.activeTab}
+        activeTab={navigationDisplayTab}
         allowedTabs={allowedTabRoots}
         notificationCounts={sidebarNotificationCounts}
         isOpen={isMobileMoreOpen}

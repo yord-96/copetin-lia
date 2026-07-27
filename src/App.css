@@ -5349,6 +5349,18 @@ textarea:focus {
   color: #87510b;
 }
 
+.navigation-status {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin-bottom: 0.8rem;
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(154, 52, 18, 0.08);
+}
+
 .image-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -64930,4 +64942,3 @@ body:has(.accounting-bigcash-view) .workspace {
     font-size: 0.63rem !important;
   }
 }
-
