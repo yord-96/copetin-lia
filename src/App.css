@@ -11105,7 +11105,7 @@ textarea:focus {
 }
 
 .contract-economics-collect.compact {
-  grid-template-columns: minmax(220px, 1fr) 110px 120px 130px minmax(150px, 0.7fr) auto;
+  grid-template-columns: minmax(210px, 0.9fr) minmax(330px, 1.25fr) 110px 120px minmax(150px, 0.7fr) auto;
   padding: 0.72rem;
 }
 
@@ -11147,6 +11147,56 @@ textarea:focus {
 .contract-economics-collect .primary-button {
   min-height: 2.42rem;
   white-space: nowrap;
+}
+
+.contract-economics-collection-targets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  gap: 0.38rem;
+  align-self: stretch;
+}
+
+.contract-economics-collection-targets button {
+  display: grid;
+  gap: 0.12rem;
+  align-content: center;
+  min-height: 2.42rem;
+  border: 1px solid #d8e2f3;
+  border-radius: 0.58rem;
+  background: #ffffff;
+  color: #314162;
+  padding: 0.3rem 0.42rem;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.contract-economics-collection-targets button:hover:not(:disabled),
+.contract-economics-collection-targets button.active {
+  border-color: #ea580c;
+  background: #fff7ed;
+  box-shadow: 0 0.35rem 0.85rem rgba(234, 88, 12, 0.12);
+}
+
+.contract-economics-collection-targets button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.contract-economics-collection-targets span {
+  color: #667493;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.contract-economics-collection-targets strong {
+  color: #071c46;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1.05;
 }
 
 .contract-economics-card {
@@ -57075,6 +57125,10 @@ body:has(.accounting-bigcash-view) .workspace {
     width: 100% !important;
     min-height: 2.55rem !important;
     border-radius: 0.64rem !important;
+  }
+
+  .contract-economics-collection-targets {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   .contract-economics-money-story {

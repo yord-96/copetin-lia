@@ -342,6 +342,33 @@ const ECONOMIC_LEDGER_TYPE_META = {
   note: { label: 'Nota interna', tone: 'slate' },
 };
 
+const ECONOMIC_COLLECTION_TARGETS = {
+  rental: {
+    label: 'Items / alquiler',
+    shortLabel: 'Items',
+    tag: 'contract_items_collection',
+    category: 'cobro_items_contrato',
+  },
+  transport: {
+    label: 'Transporte',
+    shortLabel: 'Transporte',
+    tag: 'transport_revenue',
+    category: 'transporte_cobrado',
+  },
+  damage: {
+    label: 'Danos / faltantes',
+    shortLabel: 'Danos',
+    tag: 'contract_damage_collection',
+    category: 'cobro_danos_faltantes',
+  },
+  balance: {
+    label: 'Saldo general',
+    shortLabel: 'General',
+    tag: 'contract_economic_collection',
+    category: 'cobro_contrato',
+  },
+};
+
 const normalizeEconomicLedgerEntry = (entry, index = 0) => {
   const type = ECONOMIC_LEDGER_TYPE_META[entry?.type] ? entry.type : 'note';
   const paymentMethod = type === 'note' ? '' : normalizeLedgerPaymentMethod(entry?.paymentMethod ?? entry?.method);
@@ -1287,6 +1314,7 @@ function ServiceOrdersSection({
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
   const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
+    target: 'rental',
     amountBs: '',
     paymentMethod: 'efectivo',
     paymentAccount: '',
@@ -2283,6 +2311,41 @@ function ServiceOrdersSection({
       if (!isCollection) return sum;
       return sum + Math.max(0, getCashMovementAmount(movement));
     }, 0);
+    const collectionByTarget = postedMovements.reduce((totals, movement) => {
+      const amount = Math.max(0, getCashMovementAmount(movement));
+      if (amount <= 0 || isGuaranteeMovement(movement)) return totals;
+      const type = normalizeText(movement?.type);
+      const category = normalizeText(movement?.category);
+      const tag = normalizeText(movement?.accountingTag);
+      const cashBoxType = normalizeText(movement?.cashBoxType);
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
+      const isBigCash = ['big_cash', 'caja_grande', 'cajagrande'].includes(cashBoxType);
+      const isIncome = type.includes('ingreso') || type.includes('cobro') || category.includes('cobro');
+      if (!isIncome && !(receiptCode && isBigCash)) return totals;
+      const transportPart = Math.max(0, Math.min(amount, toMoneyNumber(movement?.transportRevenueBs)));
+      const damagePart = tag === 'contract_damage_collection' || category === 'cobro_danos_faltantes' || type.includes('dano') || type.includes('faltante')
+        ? amount
+        : 0;
+      const transportOnly = tag === 'transport_revenue' || category === 'transporte_cobrado' || type.includes('transporte');
+      const next = { ...totals };
+      if (damagePart > 0) {
+        next.damageBs = Number((next.damageBs + damagePart).toFixed(2));
+        return next;
+      }
+      if (transportOnly || transportPart > 0) {
+        const appliedTransport = transportOnly ? amount : transportPart;
+        next.transportBs = Number((next.transportBs + appliedTransport).toFixed(2));
+        const remainder = Math.max(0, Number((amount - appliedTransport).toFixed(2)));
+        if (remainder > 0) next.rentalBs = Number((next.rentalBs + remainder).toFixed(2));
+        return next;
+      }
+      next.rentalBs = Number((next.rentalBs + amount).toFixed(2));
+      return next;
+    }, {
+      rentalBs: 0,
+      transportBs: 0,
+      damageBs: 0,
+    });
 
     const totalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
     const guaranteeDeclaredBs = toMoneyNumber(
@@ -2572,6 +2635,16 @@ function ServiceOrdersSection({
     const guaranteeAppliedToChargesBs = Math.min(guaranteeReserveBs, effectiveChargesBs);
     const uncoveredChargesBs = Math.max(0, Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)));
     const ledgerChargeTargetBs = Number((totalBs + uncoveredChargesBs).toFixed(2));
+    const collectionTargetTotals = {
+      rentalBs: Math.max(0, Number((totalBs - deliveryFeeBs).toFixed(2))),
+      transportBs: Math.max(0, Number(deliveryFeeBs.toFixed(2))),
+      damageBs: uncoveredChargesBs,
+    };
+    const collectionTargetPending = {
+      rentalBs: Math.max(0, Number((collectionTargetTotals.rentalBs - collectionByTarget.rentalBs).toFixed(2))),
+      transportBs: Math.max(0, Number((collectionTargetTotals.transportBs - collectionByTarget.transportBs).toFixed(2))),
+      damageBs: Math.max(0, Number((collectionTargetTotals.damageBs - collectionByTarget.damageBs).toFixed(2))),
+    };
     const ledgerAppliedToRentalBs = Math.min(rentalReceivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - rentalReceivedBs).toFixed(2)));
     const excessPaymentBs = Math.max(0, Number((rentalReceivedBs - ledgerChargeTargetBs).toFixed(2)));
@@ -2624,6 +2697,9 @@ function ServiceOrdersSection({
       paidOnAccountBs,
       managedDebtBs,
       collectionRegisteredBs,
+      collectionByTarget,
+      collectionTargetTotals,
+      collectionTargetPending,
       balanceBs: effectiveBalanceBs,
       cashRegisteredBs,
       cashToRegisterBs,
@@ -2673,6 +2749,42 @@ function ServiceOrdersSection({
           : 'Sin saldo pendiente',
     };
   }, [effectiveCashMovements, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
+
+  const contractEconomicsCollectionOptions = useMemo(() => {
+    if (!contractEconomicsData) return [];
+    const pending = contractEconomicsData.collectionTargetPending ?? {};
+    return [
+      {
+        key: 'rental',
+        amountBs: toMoneyNumber(pending.rentalBs),
+        detail: 'Solo items, alquiler y servicios del contrato.',
+      },
+      {
+        key: 'transport',
+        amountBs: toMoneyNumber(pending.transportBs),
+        detail: 'Solo envio, recojo o logistica cobrada al cliente.',
+      },
+      {
+        key: 'damage',
+        amountBs: toMoneyNumber(pending.damageBs),
+        detail: 'Solo cargos no cubiertos por garantia.',
+      },
+      {
+        key: 'balance',
+        amountBs: toMoneyNumber(contractEconomicsData.cashCollectionSuggestedBs),
+        detail: 'Saldo completo pendiente, para casos generales.',
+      },
+    ].map((option) => ({
+      ...option,
+      ...(ECONOMIC_COLLECTION_TARGETS[option.key] ?? ECONOMIC_COLLECTION_TARGETS.balance),
+    }));
+  }, [contractEconomicsData]);
+
+  const selectedContractEconomicsCollectionOption = useMemo(() => (
+    contractEconomicsCollectionOptions.find((option) => option.key === contractEconomicsCollectionDraft.target)
+    ?? contractEconomicsCollectionOptions[0]
+    ?? { key: 'rental', amountBs: 0, ...ECONOMIC_COLLECTION_TARGETS.rental }
+  ), [contractEconomicsCollectionDraft.target, contractEconomicsCollectionOptions]);
 
   const contractQuoteIdSet = useMemo(
     () =>
@@ -6274,10 +6386,21 @@ function ServiceOrdersSection({
     event.preventDefault();
     if (!contractEconomicsData || isSavingContractEconomicsCollection) return;
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
-    const suggestedBs = Math.max(0, toMoneyNumber(contractEconomicsData.cashCollectionSuggestedBs));
+    const collectionTarget = ECONOMIC_COLLECTION_TARGETS[contractEconomicsCollectionDraft.target]
+      ? contractEconomicsCollectionDraft.target
+      : 'rental';
+    const targetPending = contractEconomicsData.collectionTargetPending ?? {};
+    const suggestedByTarget = {
+      rental: toMoneyNumber(targetPending.rentalBs),
+      transport: toMoneyNumber(targetPending.transportBs),
+      damage: toMoneyNumber(targetPending.damageBs),
+      balance: toMoneyNumber(contractEconomicsData.cashCollectionSuggestedBs),
+    };
+    const suggestedBs = Math.max(0, suggestedByTarget[collectionTarget] ?? 0);
+    const targetMeta = ECONOMIC_COLLECTION_TARGETS[collectionTarget] ?? ECONOMIC_COLLECTION_TARGETS.rental;
     const amountBs = Math.max(0, toMoneyNumber(contractEconomicsCollectionDraft.amountBs || suggestedBs));
     if (suggestedBs <= 0) {
-      setContractEconomicsError('Este contrato ya no tiene saldo pendiente por cobrar.');
+      setContractEconomicsError(`Este contrato ya no tiene saldo pendiente para ${targetMeta.label.toLowerCase()}.`);
       return;
     }
     if (amountBs <= 0) {
@@ -6285,7 +6408,7 @@ function ServiceOrdersSection({
       return;
     }
     if (amountBs - suggestedBs > 0.01) {
-      setContractEconomicsError(`El saldo pendiente por cobrar es Bs ${suggestedBs.toFixed(2)}. No se puede registrar un cobro mayor.`);
+      setContractEconomicsError(`El saldo pendiente para ${targetMeta.label.toLowerCase()} es Bs ${suggestedBs.toFixed(2)}. No se puede registrar un cobro mayor.`);
       return;
     }
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsCollectionDraft.paymentMethod);
@@ -6302,16 +6425,18 @@ function ServiceOrdersSection({
       const createdBy = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
       const defaultNote = contractEconomicsCollectionDraft.note
         || contractEconomicsCollectionDraft.receipt
-        || `Cobro registrado desde economico contrato ${contractEconomicsData.contract?.contractCode || ''}`;
+        || `Cobro ${targetMeta.label.toLowerCase()} contrato ${contractEconomicsData.contract?.contractCode || ''}`;
       const commonPayload = {
         amountBs,
         paymentMethod,
         paymentAccount,
         receipt: contractEconomicsCollectionDraft.receipt,
         note: defaultNote,
+        collectionTarget,
         linkedContractId: contractEconomicsData.contract?.id ?? '',
         linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-        accountingTag: 'contract_economic_collection',
+        accountingTag: targetMeta.tag,
+        category: targetMeta.category,
         createdBy,
       };
       const result = rentalId ? await api.cash.collectReceivable({
@@ -6321,8 +6446,8 @@ function ServiceOrdersSection({
         ...commonPayload,
         type: 'ingreso',
         cashBoxType: 'BIG_CASH',
-        description: `Cobro contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
-        category: 'cobro_contrato',
+        description: `Cobro ${targetMeta.label.toLowerCase()} contrato ${contractEconomicsData.contract?.contractCode || ''}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: targetMeta.category,
         responsible: createdBy,
         notes: defaultNote,
         linkedRentalId: rentalId,
@@ -6336,6 +6461,7 @@ function ServiceOrdersSection({
       }
       setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}${receiptCode ? ` con recibo ${receiptCode}` : ''}.`);
       setContractEconomicsCollectionDraft({
+        target: 'rental',
         amountBs: '',
         paymentMethod: 'efectivo',
         paymentAccount: '',
@@ -8430,12 +8556,32 @@ function ServiceOrdersSection({
                 <section className="contract-economics-flow-card">
                   <form className="contract-economics-collect compact" onSubmit={handleSubmitContractEconomicCollection}>
                     <div>
-                      <h4>Cobro con recibo a Caja Grande</h4>
+                      <h4>Cobro separado con recibo</h4>
                       <p>
-                        {contractEconomicsData.cashCollectionSuggestedBs > 0
-                          ? `Falta registrar/cobrar segun cuaderno: ${formatBs(contractEconomicsData.cashCollectionSuggestedBs)}. Este registro genera recibo e ingreso real en Caja Grande.`
+                        {selectedContractEconomicsCollectionOption.amountBs > 0
+                          ? `${selectedContractEconomicsCollectionOption.label}: pendiente ${formatBs(selectedContractEconomicsCollectionOption.amountBs)}. Genera recibo propio e ingreso real en Caja Grande.`
                           : `Caja registrada: ${formatBs(contractEconomicsData.cashRegisteredBs)}. Usa el cuaderno solo para separar garantia, cargos y devoluciones.`}
                       </p>
+                    </div>
+                    <div className="contract-economics-collection-targets" role="group" aria-label="Concepto a cobrar">
+                      {contractEconomicsCollectionOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          className={contractEconomicsCollectionDraft.target === option.key ? 'active' : ''}
+                          onClick={() => setContractEconomicsCollectionDraft((current) => ({
+                            ...current,
+                            target: option.key,
+                            amountBs: option.amountBs > 0 ? option.amountBs.toFixed(2) : '',
+                            note: current.note,
+                          }))}
+                          disabled={readOnly || isSavingContractEconomicsCollection || option.amountBs <= 0}
+                          title={option.detail}
+                        >
+                          <span>{option.shortLabel}</span>
+                          <strong>{formatBs(option.amountBs)}</strong>
+                        </button>
+                      ))}
                     </div>
                     <label>
                       Monto
@@ -8445,8 +8591,8 @@ function ServiceOrdersSection({
                         step="0.01"
                         value={contractEconomicsCollectionDraft.amountBs}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={contractEconomicsData.cashCollectionSuggestedBs > 0 ? String(contractEconomicsData.cashCollectionSuggestedBs.toFixed(2)) : '0.00'}
-                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
+                        placeholder={selectedContractEconomicsCollectionOption.amountBs > 0 ? String(selectedContractEconomicsCollectionOption.amountBs.toFixed(2)) : '0.00'}
+                        disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <label>
@@ -8454,7 +8600,7 @@ function ServiceOrdersSection({
                       <select
                         value={contractEconomicsCollectionDraft.paymentMethod}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                       >
                         <option value="efectivo">Efectivo</option>
                         <option value="qr">QR</option>
@@ -8467,7 +8613,7 @@ function ServiceOrdersSection({
                         <select
                           value={contractEconomicsCollectionDraft.paymentAccount}
                           onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                          disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
+                          disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                         >
                           <option value="">Seleccionar</option>
                           {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
@@ -8480,15 +8626,15 @@ function ServiceOrdersSection({
                         value={contractEconomicsCollectionDraft.receipt}
                         onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
                         placeholder="Referencia opcional"
-                        disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
+                        disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                       />
                     </label>
                     <button
                       type="submit"
                       className="primary-button"
-                      disabled={readOnly || contractEconomicsData.cashCollectionSuggestedBs <= 0 || isSavingContractEconomicsCollection}
+                      disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                     >
-                      {isSavingContractEconomicsCollection ? 'Registrando...' : 'Registrar cobro'}
+                      {isSavingContractEconomicsCollection ? 'Registrando...' : `Cobrar ${selectedContractEconomicsCollectionOption.shortLabel}`}
                     </button>
                   </form>
 

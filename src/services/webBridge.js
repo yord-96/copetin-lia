@@ -17065,6 +17065,9 @@ const createWebBridge = () => ({
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
       const note = String(payload?.note ?? '').trim();
       const accountingTag = String(payload?.accountingTag ?? '').trim();
+      const collectionTarget = ['rental', 'transport', 'damage', 'balance'].includes(String(payload?.collectionTarget ?? '').trim())
+        ? String(payload.collectionTarget).trim()
+        : 'balance';
 
       if (!rentalId) {
         throw new Error('No se pudo identificar la orden a cobrar.');
@@ -17102,8 +17105,15 @@ const createWebBridge = () => ({
           : 0;
         const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
         const remainingDeliveryFeeBs = Math.max(0, Number((deliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
-        const transportCollectedNowBs = Math.min(amountBs, remainingDeliveryFeeBs);
-        const rentalCollectedNowBs = Math.max(0, Number((amountBs - transportCollectedNowBs).toFixed(2)));
+        const transportCollectedNowBs = collectionTarget === 'transport'
+          ? amountBs
+          : collectionTarget === 'balance'
+            ? Math.min(amountBs, remainingDeliveryFeeBs)
+            : 0;
+        const damageCollectedNowBs = collectionTarget === 'damage' ? amountBs : 0;
+        const rentalCollectedNowBs = ['rental', 'balance'].includes(collectionTarget)
+          ? Math.max(0, Number((amountBs - transportCollectedNowBs).toFixed(2)))
+          : 0;
         const now = new Date().toISOString();
 
         rental.payment = {
@@ -17113,6 +17123,7 @@ const createWebBridge = () => ({
           overpaidBs: Number((previousOverpaidBs + overpaidNowBs).toFixed(2)),
           deliveryFeeCollectedBs: Number((previousDeliveryFeeCollectedBs + transportCollectedNowBs).toFixed(2)),
           rentalCollectedBs: Number((Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0) + rentalCollectedNowBs).toFixed(2)),
+          damageCollectedBs: Number((Number(rental?.payment?.damageCollectedBs ?? rental?.totals?.damageCollectedBs ?? 0) + damageCollectedNowBs).toFixed(2)),
           status: remainingBs > 0
             ? 'saldo_pendiente'
             : isReturned
@@ -17130,6 +17141,7 @@ const createWebBridge = () => ({
           overpaidBs: rental.payment.overpaidBs,
           deliveryFeeCollectedBs: rental.payment.deliveryFeeCollectedBs,
           rentalCollectedBs: rental.payment.rentalCollectedBs,
+          damageCollectedBs: rental.payment.damageCollectedBs,
         };
 
         if (isReturned) {
@@ -17169,11 +17181,31 @@ const createWebBridge = () => ({
         });
 
         const sourceType = isReturned ? 'return' : 'rental';
-        const movementType = isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
-        const description = note
-          || (isReturned
-            ? `Cobro saldo liquidacion: ${rental.customerName}`
-            : `Cobro saldo alquiler: ${rental.customerName}`);
+        let movementType = isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
+        let defaultDescription = isReturned
+          ? `Cobro saldo liquidacion: ${rental.customerName}`
+          : `Cobro saldo alquiler: ${rental.customerName}`;
+        let defaultCategory = isReturned ? 'cobro_liquidacion' : 'cobro_contrato';
+        let defaultAccountingTag = '';
+
+        if (collectionTarget === 'transport') {
+          movementType = 'ingreso_transporte_cliente';
+          defaultDescription = `Transporte cobrado al cliente: ${rental.customerName}`;
+          defaultCategory = 'transporte_cobrado';
+          defaultAccountingTag = 'transport_revenue';
+        } else if (collectionTarget === 'damage') {
+          movementType = 'ingreso_danos_faltantes';
+          defaultDescription = `Danos/faltantes cobrados al cliente: ${rental.customerName}`;
+          defaultCategory = 'cobro_danos_faltantes';
+          defaultAccountingTag = 'contract_damage_collection';
+        }
+
+        const description = note || defaultDescription;
+        const movementDescription = collectionTarget === 'balance' && transportCollectedNowBs > 0
+          ? `${description} | Transporte incluido: Bs ${transportCollectedNowBs.toFixed(2)}`
+          : description;
+        const movementCategory = String(payload?.category ?? '').trim() || defaultCategory;
+        const movementAccountingTag = accountingTag || defaultAccountingTag;
 
         const receiptCode = nextCashReceiptCode(state);
         const commonMovementPayload = {
@@ -17195,19 +17227,11 @@ const createWebBridge = () => ({
         const createdMovements = [
           buildCashMovement({
             ...commonMovementPayload,
-            type: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'ingreso_transporte_cliente' : movementType,
+            type: movementType,
             amountBs,
-            description: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0
-              ? `Transporte cobrado al cliente: ${rental.customerName}`
-              : transportCollectedNowBs > 0
-              ? `${description} | Transporte incluido: Bs ${transportCollectedNowBs.toFixed(2)}`
-              : description,
-            category: transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0
-              ? 'transporte_cobrado'
-              : isReturned
-              ? 'cobro_liquidacion'
-              : 'cobro_contrato',
-            accountingTag: accountingTag || (transportCollectedNowBs > 0 && rentalCollectedNowBs <= 0 ? 'transport_revenue' : ''),
+            description: movementDescription,
+            category: movementCategory,
+            accountingTag: movementAccountingTag,
             transportRevenueBs: transportCollectedNowBs,
           }),
         ];
