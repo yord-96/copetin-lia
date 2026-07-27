@@ -3104,8 +3104,21 @@ function ServiceOrdersSection({
       ? draft.scheduleDays
       : buildScheduleDaysFromRange(draft.deliveryDate || draft.eventDate, draft.pickupDate || draft.eventDate)
     ).map((day, index) => normalizeScheduleDay(day, index, draft.deliveryDate || draft.eventDate));
+    const explicitComboPriceLineKeys = new Set();
+    const firstComboLineKeyByGroup = new Map();
+    draft.items.forEach((line, index) => {
+      const comboLineKey = String(line?.comboLineKey ?? '').trim();
+      if (!comboLineKey) return;
+      const draftLineKey = getDraftLineKey(line, index);
+      if (!firstComboLineKeyByGroup.has(comboLineKey)) {
+        firstComboLineKeyByGroup.set(comboLineKey, draftLineKey);
+      }
+      if (String(line?.comboPricingRole ?? '').trim() === 'price') {
+        explicitComboPriceLineKeys.add(draftLineKey);
+      }
+    });
     return draft.items
-      .map((line) => {
+      .map((line, index) => {
         const item = itemById.get(String(line.itemId)) ?? (line.quickItem
           ? {
             id: line.itemId,
@@ -3124,31 +3137,45 @@ function ServiceOrdersSection({
         const availability = availabilityByItemId.get(line.itemId) ?? null;
         const isCourtesyLine = line.lineType === 'courtesy';
         const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
+        const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
+        const comboLineKey = String(line.comboLineKey ?? '').trim();
+        const storedComboPricingRole = String(line.comboPricingRole ?? '').trim();
+        const comboPricingRole = comboLineKey
+          ? storedComboPricingRole
+            || (explicitComboPriceLineKeys.size > 0
+              ? explicitComboPriceLineKeys.has(getDraftLineKey(line, index)) ? 'price' : 'component'
+              : firstComboLineKeyByGroup.get(comboLineKey) === getDraftLineKey(line, index) ? 'price' : 'component')
+          : storedComboPricingRole;
+        const isIncludedComboComponent = Boolean(comboLineKey && comboPricingRole !== 'price');
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
         const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
-        const rawUnitPriceBs = Math.max(
+        const rawUnitPriceBs = isIncludedComboComponent ? 0 : Math.max(
           Math.max(0, Number(line.unitPriceBs ?? 0)),
           Math.max(0, Number(line.rentalPriceBs ?? 0)),
         );
-        const recoveredUnitPriceBs = explicitLineTotalBs && quantity > 0
+        const recoveredUnitPriceBs = !isIncludedComboComponent && explicitLineTotalBs && quantity > 0
           ? Number((explicitLineTotalBs / quantity).toFixed(2))
           : 0;
-        const unitPriceBs = isCourtesyLine
+        const unitPriceBs = isCourtesyLine || isIncludedComboComponent
           ? 0
           : rawUnitPriceBs > 0
             ? rawUnitPriceBs
             : recoveredUnitPriceBs > 0
               ? recoveredUnitPriceBs
               : Math.max(0, Number(item.rentalPriceBs ?? 0));
-        const grossLineTotalBs = isCourtesyLine ? 0 : explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
-        const lineGrossTotalBs = isCourtesyLine ? 0 : explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
-        const discountPercent = isCourtesyLine ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
+        const grossLineTotalBs = isCourtesyLine || isIncludedComboComponent
+          ? 0
+          : explicitLineTotalBs !== null ? explicitLineTotalBs : quantity * unitPriceBs;
+        const lineGrossTotalBs = isCourtesyLine || isIncludedComboComponent
+          ? 0
+          : explicitGrossLineTotalBs !== null ? explicitGrossLineTotalBs : grossLineTotalBs;
+        const discountPercent = isCourtesyLine || isIncludedComboComponent ? 0 : Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
         const lineDiscountBs = Number((lineGrossTotalBs * (discountPercent / 100)).toFixed(2));
-        const lineKey = String(line.lineKey ?? line.comboLineKey ?? line.itemId);
         const serviceDay = findScheduleDayForLine(line, draftScheduleDays, draftScheduleDays[0] ?? null);
         return {
           ...line,
           lineKey,
+          comboPricingRole,
           quantity,
           quantityInput: line.quantity === '' ? '' : String(line.quantity ?? quantity),
           unitPriceBs,
@@ -3161,7 +3188,7 @@ function ServiceOrdersSection({
           serviceDayLabel: serviceDay?.label ?? line.serviceDayLabel ?? '',
           grossLineTotalBs: lineGrossTotalBs,
           lineDiscountBs,
-          lineTotalBs: isCourtesyLine ? 0 : Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
+          lineTotalBs: isCourtesyLine || isIncludedComboComponent ? 0 : Number(Math.max(0, lineGrossTotalBs - lineDiscountBs).toFixed(2)),
         };
       })
       .filter(Boolean);
@@ -3255,8 +3282,14 @@ function ServiceOrdersSection({
 
   const selectedItemAreaGroups = useMemo(() => {
     const groupMap = new Map();
+    const comboAreaByLineKey = new Map();
     selectedItemsForActiveDay.forEach((line) => {
-      const area = resolveWizardItemArea(line);
+      const comboLineKey = String(line?.comboLineKey ?? '').trim();
+      if (!comboLineKey || comboAreaByLineKey.has(comboLineKey)) return;
+      comboAreaByLineKey.set(comboLineKey, resolveWizardItemArea(line));
+    });
+    selectedItemsForActiveDay.forEach((line) => {
+      const area = comboAreaByLineKey.get(String(line?.comboLineKey ?? '').trim()) ?? resolveWizardItemArea(line);
       const current = groupMap.get(area.key) ?? { area, lines: [] };
       current.lines.push(line);
       groupMap.set(area.key, current);

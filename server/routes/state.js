@@ -54,6 +54,19 @@ const summarizeItemLine = (line = {}) => ({
   serviceDayId: line.serviceDayId ?? null,
   serviceDate: line.serviceDate ?? null,
   serviceDayLabel: line.serviceDayLabel ?? null,
+  comboId: line.comboId ?? null,
+  comboName: line.comboName ?? '',
+  comboLineKey: line.comboLineKey ?? null,
+  comboComponentName: line.comboComponentName ?? '',
+  comboQuantity: line.comboQuantity ?? 1,
+  comboComponentQuantity: line.comboComponentQuantity ?? 1,
+  comboPricingRole: line.comboPricingRole ?? '',
+  comboPricingCondition: line.comboPricingCondition ?? null,
+  comboRuleIndex: line.comboRuleIndex ?? 0,
+  comboSlotLabel: line.comboSlotLabel ?? '',
+  comboSelectionMode: line.comboSelectionMode ?? 'item',
+  comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
+  comboCategory: line.comboCategory ?? '',
 });
 
 const summarizeContract = (contract = {}) => ({
