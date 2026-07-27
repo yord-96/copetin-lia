@@ -8554,8 +8554,8 @@ function ServiceOrdersSection({
 
               <div className="contract-economics-story-layout">
                 <section className="contract-economics-flow-card">
-                  <form className="contract-economics-collect compact" onSubmit={handleSubmitContractEconomicCollection}>
-                    <div>
+                  <form className="contract-economics-collect compact split-collection" onSubmit={handleSubmitContractEconomicCollection}>
+                    <div className="contract-economics-collection-intro">
                       <h4>Cobro separado con recibo</h4>
                       <p>
                         {selectedContractEconomicsCollectionOption.amountBs > 0
@@ -8583,59 +8583,61 @@ function ServiceOrdersSection({
                         </button>
                       ))}
                     </div>
-                    <label>
-                      Monto
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={contractEconomicsCollectionDraft.amountBs}
-                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={selectedContractEconomicsCollectionOption.amountBs > 0 ? String(selectedContractEconomicsCollectionOption.amountBs.toFixed(2)) : '0.00'}
-                        disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
-                      />
-                    </label>
-                    <label>
-                      Metodo
-                      <select
-                        value={contractEconomicsCollectionDraft.paymentMethod}
-                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
-                      >
-                        <option value="efectivo">Efectivo</option>
-                        <option value="qr">QR</option>
-                        <option value="transferencia">Transferencia</option>
-                      </select>
-                    </label>
-                    {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
+                    <div className="contract-economics-collection-fields">
                       <label>
-                        Cuenta QR
+                        Monto
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={contractEconomicsCollectionDraft.amountBs}
+                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                          placeholder={selectedContractEconomicsCollectionOption.amountBs > 0 ? String(selectedContractEconomicsCollectionOption.amountBs.toFixed(2)) : '0.00'}
+                          disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
+                        />
+                      </label>
+                      <label>
+                        Metodo
                         <select
-                          value={contractEconomicsCollectionDraft.paymentAccount}
-                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                          value={contractEconomicsCollectionDraft.paymentMethod}
+                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
                           disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
                         >
-                          <option value="">Seleccionar</option>
-                          {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                          <option value="efectivo">Efectivo</option>
+                          <option value="qr">QR</option>
+                          <option value="transferencia">Transferencia</option>
                         </select>
                       </label>
-                    ) : null}
-                    <label>
-                      Comprobante / nota
-                      <input
-                        value={contractEconomicsCollectionDraft.receipt}
-                        onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
-                        placeholder="Referencia opcional"
+                      {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
+                        <label>
+                          Cuenta QR
+                          <select
+                            value={contractEconomicsCollectionDraft.paymentAccount}
+                            onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                            disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
+                          >
+                            <option value="">Seleccionar</option>
+                            {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                          </select>
+                        </label>
+                      ) : null}
+                      <label className="receipt-field">
+                        Comprobante / nota
+                        <input
+                          value={contractEconomicsCollectionDraft.receipt}
+                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
+                          placeholder="Referencia opcional"
+                          disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="primary-button"
                         disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="primary-button"
-                      disabled={readOnly || selectedContractEconomicsCollectionOption.amountBs <= 0 || isSavingContractEconomicsCollection}
-                    >
-                      {isSavingContractEconomicsCollection ? 'Registrando...' : `Cobrar ${selectedContractEconomicsCollectionOption.shortLabel}`}
-                    </button>
+                      >
+                        {isSavingContractEconomicsCollection ? 'Registrando...' : `Cobrar ${selectedContractEconomicsCollectionOption.shortLabel}`}
+                      </button>
+                    </div>
                   </form>
 
                   <form className="contract-economics-collect compact guarantee-refund" onSubmit={handleSubmitContractEconomicGuaranteeRefund}>
