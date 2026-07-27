@@ -1016,6 +1016,7 @@ const EMPTY_PRODUCT_FORM = {
   brand: '',
   itemColor: '',
   totalStock: '1',
+  originalTotalStock: null,
   rentalPriceBs: '0',
   damagedUnitChargeBs: '0',
   missingUnitChargeBs: '0',
@@ -2784,6 +2785,7 @@ function InventoryDashboardSection({
       brand: row.brand ?? '',
       itemColor: row.itemColor ?? '',
       totalStock: String(row.total),
+      originalTotalStock: Math.trunc(Number(row.total ?? 0)),
       rentalPriceBs: String(row.price),
       damagedUnitChargeBs: String(row.damagedUnitChargeBs),
       missingUnitChargeBs: String(row.missingUnitChargeBs),
@@ -3134,6 +3136,14 @@ function InventoryDashboardSection({
     if (isSavingProduct) return;
     setProductError('');
 
+    const nextTotalStock = Math.trunc(Number(productForm.totalStock ?? 0));
+    const originalTotalStock = productForm.originalTotalStock === null || productForm.originalTotalStock === undefined
+      ? null
+      : Math.trunc(Number(productForm.originalTotalStock));
+    const stockWasEdited = productModalMode !== 'edit'
+      || originalTotalStock === null
+      || nextTotalStock !== originalTotalStock;
+
     const payload = {
       id: productForm.id,
       name: String(productForm.name ?? '').trim(),
@@ -3141,13 +3151,15 @@ function InventoryDashboardSection({
       category: String(productForm.category ?? '').trim(),
       brand: String(productForm.brand ?? '').trim(),
       itemColor: String(productForm.itemColor ?? '').trim(),
-      totalStock: Math.trunc(Number(productForm.totalStock ?? 0)),
       rentalPriceBs: Number(productForm.rentalPriceBs ?? 0),
       damagedUnitChargeBs: Number(productForm.damagedUnitChargeBs ?? 0),
       missingUnitChargeBs: Number(productForm.missingUnitChargeBs ?? 0),
       needsCleaningOnReturn: Boolean(productForm.needsCleaningOnReturn),
       imageUrl: productForm.imageUrl || null,
     };
+    if (stockWasEdited) {
+      payload.totalStock = nextTotalStock;
+    }
     if (productForm.imageRemoved) {
       payload.imageUrl = null;
       payload.imageDataUrl = null;
@@ -3161,7 +3173,7 @@ function InventoryDashboardSection({
       setProductError('Selecciona una categoria para el producto.');
       return;
     }
-    if (!Number.isFinite(payload.totalStock) || payload.totalStock <= 0) {
+    if (stockWasEdited && (!Number.isFinite(payload.totalStock) || payload.totalStock <= 0)) {
       setProductError('El stock total debe ser mayor a 0.');
       return;
     }
