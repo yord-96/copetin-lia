@@ -118,6 +118,7 @@ export const useAppController = () => {
   const [cashDebts, setCashDebts] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [userPresence, setUserPresence] = useState([]);
+  const [updateNotice, setUpdateNotice] = useState(null);
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
@@ -318,10 +319,21 @@ export const useAppController = () => {
     }
   }, [activeTab, currentUser]);
 
+  const refreshUpdateNotice = useCallback(async () => {
+    try {
+      const notice = await api.updateNotice.get();
+      setUpdateNotice(notice);
+    } catch {
+      // El aviso es informativo; no debe bloquear la operacion.
+    }
+  }, []);
+
   useEffect(() => {
     if (!authReady || !currentUser) return undefined;
     publishPresence();
+    refreshUpdateNotice();
     const intervalId = window.setInterval(publishPresence, 60000);
+    const noticeIntervalId = window.setInterval(refreshUpdateNotice, 60000);
     const publishWhenVisible = () => {
       if (document.visibilityState === 'visible') {
         publishPresence();
@@ -334,10 +346,11 @@ export const useAppController = () => {
     window.addEventListener('pagehide', leavePresence);
     return () => {
       window.clearInterval(intervalId);
+      window.clearInterval(noticeIntervalId);
       document.removeEventListener('visibilitychange', publishWhenVisible);
       window.removeEventListener('pagehide', leavePresence);
     };
-  }, [authReady, currentUser, publishPresence]);
+  }, [authReady, currentUser, publishPresence, refreshUpdateNotice]);
 
   useEffect(() => {
     if (!authReady || !currentUser) return undefined;
@@ -362,7 +375,10 @@ export const useAppController = () => {
 
       if (event?.domain === 'presence') {
         window.clearTimeout(presenceTimer);
-        presenceTimer = window.setTimeout(refreshPresence, 250);
+        presenceTimer = window.setTimeout(() => {
+          refreshPresence();
+          refreshUpdateNotice();
+        }, 250);
         return;
       }
 
@@ -391,7 +407,7 @@ export const useAppController = () => {
       window.clearTimeout(presenceTimer);
       unsubscribe();
     };
-  }, [authReady, currentUser, loadData]);
+  }, [authReady, currentUser, loadData, refreshUpdateNotice]);
 
   useEffect(() => {
     let isMounted = true;
@@ -2349,6 +2365,17 @@ export const useAppController = () => {
     }
   };
 
+  const handlePublishUpdateNotice = async () => {
+    if (!currentUser) return null;
+    const notice = await api.updateNotice.publish({
+      message: 'Hay nuevas mejoras. Te recomiendo actualizar.',
+      version: new Date().toISOString(),
+      publishedBy: currentUser.fullName || currentUser.username || 'Developer',
+    });
+    setUpdateNotice(notice);
+    return notice;
+  };
+
   return {
     activeTab,
     setActiveTab,
@@ -2383,6 +2410,7 @@ export const useAppController = () => {
     cashDebts,
     attendanceRecords,
     userPresence,
+    updateNotice,
     activeCashSession,
     clients,
     users,
@@ -2482,5 +2510,6 @@ export const useAppController = () => {
     handleExecuteSystemReset,
     handleExportSystemDatabase,
     handleImportSystemDatabase,
+    handlePublishUpdateNotice,
   };
 };

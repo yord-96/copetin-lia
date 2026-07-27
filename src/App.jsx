@@ -7,6 +7,7 @@ import TopBar from './components/layout/TopBar';
 import TabsNav, { MobileNavigation } from './components/layout/TabsNav';
 import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
+import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import AccountingSection from './components/sections/AccountingSection';
@@ -765,6 +766,7 @@ function App() {
             canReset={isDeveloper(controller.currentUser)}
             userPresence={controller.userPresence}
             activeTab={controller.activeTab}
+            onPublishUpdateNotice={isDeveloper(controller.currentUser) ? controller.handlePublishUpdateNotice : undefined}
           />
 
           <main className="app-content">
@@ -793,6 +795,7 @@ function App() {
       />
 
       <ImageModal imagePreview={controller.imagePreview} onClose={() => controller.setImagePreview(null)} />
+      <GlobalUpdateNotice notice={controller.updateNotice} />
 
       {isResetDialogOpen && (
         <SystemResetPanel

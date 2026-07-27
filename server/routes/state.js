@@ -4,6 +4,7 @@ import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
+import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -280,6 +281,34 @@ router.post('/__copetin_db/presence/leave', async (req, res, next) => {
     }
 
     res.json({ ok: true, active: await leavePresence(req.body) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/update-notice', async (req, res, next) => {
+  try {
+    res.json({ notice: await getUpdateNotice() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/update-notice/publish', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'El aviso debe enviarse como objeto JSON.' });
+      return;
+    }
+    res.json({ notice: await publishUpdateNotice(req.body) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/update-notice/clear', async (req, res, next) => {
+  try {
+    res.json({ notice: await clearUpdateNotice() });
   } catch (error) {
     next(error);
   }

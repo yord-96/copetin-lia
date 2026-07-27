@@ -53482,6 +53482,280 @@ body:has(.accounting-bigcash-view) .workspace {
   max-width: none !important;
 }
 
+.admin-update-button {
+  min-height: 2.25rem;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  padding: 0 0.82rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(194, 65, 12, 0.08);
+  white-space: nowrap;
+}
+
+.admin-update-button:hover {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
+
+.admin-update-button:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.update-notice-card,
+.update-notice-mini {
+  position: fixed;
+  z-index: 9990;
+}
+
+.update-notice-card {
+  left: 286px;
+  top: 92px;
+  width: min(420px, calc(100vw - 310px));
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: end;
+  gap: 0.35rem;
+  pointer-events: none;
+  animation: updateNoticeIn 0.34s ease both;
+}
+
+.update-notice-card > * {
+  pointer-events: auto;
+}
+
+.update-notice-mini {
+  left: 22px;
+  top: 106px;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  border-radius: 999px;
+  background: rgba(255, 247, 237, 0.94);
+  color: #9a3412;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem 0.3rem 0.28rem;
+  font-size: 0.72rem;
+  font-weight: 950;
+  box-shadow: 0 16px 34px rgba(67, 20, 7, 0.18);
+  cursor: pointer;
+}
+
+.update-notice-mini .update-mascot {
+  width: 2.2rem;
+  height: 2.45rem;
+  transform: none;
+}
+
+.update-mascot {
+  position: relative;
+  display: block;
+  width: 6.2rem;
+  height: 7.4rem;
+  transform-origin: 50% 100%;
+  animation: updateMascotHello 2.8s ease-in-out infinite;
+}
+
+.update-mascot-face {
+  position: absolute;
+  left: 1.45rem;
+  top: 1.45rem;
+  width: 3.25rem;
+  height: 3.2rem;
+  border: 3px solid #7c2d12;
+  border-radius: 48% 48% 46% 46%;
+  background: #ffe3c4;
+  box-shadow: inset 0 -0.35rem 0 rgba(194, 65, 12, 0.12);
+}
+
+.update-mascot-face i {
+  position: absolute;
+  top: 1.1rem;
+  width: 0.34rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.update-mascot-face i:first-child { left: 0.86rem; }
+.update-mascot-face i:nth-child(2) { right: 0.86rem; }
+
+.update-mascot-face b {
+  position: absolute;
+  left: 1.23rem;
+  top: 1.78rem;
+  width: 0.8rem;
+  height: 0.38rem;
+  border-bottom: 3px solid #9a3412;
+  border-radius: 0 0 999px 999px;
+}
+
+.update-mascot-cap {
+  position: absolute;
+  left: 0.85rem;
+  top: 0.3rem;
+  width: 4.55rem;
+  height: 1.8rem;
+  border: 3px solid #7c2d12;
+  border-radius: 80% 80% 38% 38%;
+  background: #f97316;
+  transform: rotate(-5deg);
+  box-shadow: inset 0.2rem 0.3rem 0 rgba(255, 255, 255, 0.24);
+}
+
+.update-mascot-cap::after {
+  content: "";
+  position: absolute;
+  right: -0.85rem;
+  bottom: -0.25rem;
+  width: 1.55rem;
+  height: 0.58rem;
+  border-radius: 999px;
+  background: #ea580c;
+  border: 2px solid #7c2d12;
+}
+
+.update-mascot-body {
+  position: absolute;
+  left: 1.55rem;
+  top: 4.55rem;
+  width: 3.15rem;
+  height: 2.08rem;
+  border: 3px solid #7c2d12;
+  border-radius: 0.9rem 0.9rem 0.7rem 0.7rem;
+  background: #f97316;
+  color: #fff7ed;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.update-mascot-arm {
+  position: absolute;
+  top: 4.75rem;
+  width: 1.45rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: #7c2d12;
+}
+
+.update-mascot-arm-left {
+  left: 0.45rem;
+  transform: rotate(-34deg);
+}
+
+.update-mascot-arm-right {
+  right: 0.45rem;
+  transform: rotate(34deg);
+}
+
+.update-notice-sign {
+  position: relative;
+  min-height: 7rem;
+  border: 3px solid #8b3a18;
+  border-radius: 0.7rem;
+  background: #fffaf5;
+  color: #431407;
+  padding: 0.75rem 0.82rem 0.82rem;
+  box-shadow: 0 18px 38px rgba(67, 20, 7, 0.22);
+}
+
+.update-notice-sign::before {
+  content: "";
+  position: absolute;
+  left: -0.8rem;
+  top: 46%;
+  width: 0.75rem;
+  height: 0.18rem;
+  background: #8b3a18;
+}
+
+.update-notice-sign span {
+  display: block;
+  color: #9a3412;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.update-notice-sign strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: #111827;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.update-notice-sign p {
+  margin: 0.45rem 0 0;
+  color: #b42318;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.update-notice-sign div {
+  display: flex;
+  gap: 0.45rem;
+  margin-top: 0.62rem;
+}
+
+.update-notice-sign button {
+  min-height: 1.9rem;
+  border-radius: 0.55rem;
+  border: 1px solid #fed7aa;
+  padding: 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.update-notice-sign button:first-child {
+  border-color: #ea580c;
+  background: #ea580c;
+  color: #fff;
+}
+
+.update-notice-sign button:last-child {
+  background: #fff;
+  color: #7c2d12;
+}
+
+@keyframes updateMascotHello {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  45% { transform: rotate(-2deg) translateY(-0.12rem); }
+  65% { transform: rotate(2deg) translateY(0); }
+}
+
+@keyframes updateNoticeIn {
+  from { opacity: 0; transform: translateY(-0.4rem) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 900px) {
+  .update-notice-card {
+    left: 0.9rem;
+    right: 0.9rem;
+    top: 5rem;
+    width: auto;
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .update-mascot {
+    width: 4.8rem;
+    height: 6.2rem;
+    transform: scale(0.82);
+  }
+
+  .update-notice-mini {
+    left: 0.8rem;
+    top: 4.6rem;
+  }
+}
+
 body:has(.accounting-bigcash-view) .workspace {
   padding-inline: clamp(1rem, 1.8vw, 1.8rem) !important;
 }

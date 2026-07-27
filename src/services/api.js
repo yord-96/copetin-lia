@@ -844,6 +844,36 @@ const postServerPresence = async (action, payload) => {
   return response.json();
 };
 
+const fetchServerUpdateNotice = async () => {
+  const response = await fetch(getServerStateUrl('/update-notice'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo leer el aviso de actualizacion.');
+  }
+
+  return response.json();
+};
+
+const postServerUpdateNotice = async (action, payload) => {
+  const response = await fetch(getServerStateUrl(`/update-notice/${action}`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload ?? {}),
+  });
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo publicar el aviso de actualizacion.');
+  }
+
+  const result = await response.json();
+  announceDataChange({ domain: 'presence', method: `updateNotice.${action}` });
+  return result;
+};
+
 const uploadProductImage = async (file, { itemId } = {}) => {
   if (!(file instanceof File)) {
     throw new Error('Selecciona una imagen valida para subir.');
@@ -1590,6 +1620,23 @@ export const api = {
       const active = await callServerPresence('leave', payload);
       if (active) return normalizePresenceList(active);
       return normalizePresenceList(await callBridge('presence', 'leave', true, payload));
+    },
+  },
+  updateNotice: {
+    get: async () => {
+      if (!shouldUseServerState() || isLocalHost()) return null;
+      const result = await fetchServerUpdateNotice();
+      return result?.notice ?? null;
+    },
+    publish: async (payload) => {
+      if (!shouldUseServerState() || isLocalHost()) return null;
+      const result = await postServerUpdateNotice('publish', payload);
+      return result?.notice ?? null;
+    },
+    clear: async () => {
+      if (!shouldUseServerState() || isLocalHost()) return null;
+      const result = await postServerUpdateNotice('clear');
+      return result?.notice ?? null;
     },
   },
   transport: {

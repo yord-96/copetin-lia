@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const initialsFromName = (name) =>
   String(name ?? '')
     .split(' ')
@@ -55,11 +57,29 @@ const deviceLabel = (device) =>
     .replace(/^Computadora\b/i, 'PC')
     .trim() || 'Dispositivo';
 
-function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = false, userPresence = [], activeTab = '' }) {
+function TopBar({
+  onOpenResetDialog,
+  currentUser = null,
+  onLogout,
+  canReset = false,
+  userPresence = [],
+  activeTab = '',
+  onPublishUpdateNotice,
+}) {
+  const [isPublishingNotice, setIsPublishingNotice] = useState(false);
   const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
   const activeUsersHere = safeUserPresence.filter((entry) => entry.activeTab === activeTab);
   const currentDevice = deviceLabel(currentUser?.device);
   const visiblePresence = safeUserPresence;
+  const handlePublishNotice = async () => {
+    if (!onPublishUpdateNotice || isPublishingNotice) return;
+    try {
+      setIsPublishingNotice(true);
+      await onPublishUpdateNotice();
+    } finally {
+      setIsPublishingNotice(false);
+    }
+  };
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -102,6 +122,17 @@ function TopBar({ onOpenResetDialog, currentUser = null, onLogout, canReset = fa
               {activeUsersHere.length > 0 ? <small>{activeUsersHere.length} aqui</small> : null}
             </div>
           </div>
+          {canReset ? (
+            <button
+              type="button"
+              className="admin-update-button"
+              onClick={handlePublishNotice}
+              disabled={isPublishingNotice}
+              title="Publicar aviso global de actualizacion"
+            >
+              {isPublishingNotice ? 'Avisando...' : 'Avisar mejoras'}
+            </button>
+          ) : null}
           {canReset ? (
             <button
               type="button"
