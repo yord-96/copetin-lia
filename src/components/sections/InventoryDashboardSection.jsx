@@ -4644,9 +4644,18 @@ function InventoryDashboardSection({
               ) : (
                 <>
                   {isProductsModule ? (
-                    <button type="button" className="ghost-button inventory-export-btn" onClick={handleExportPremiumCatalog}>
-                      Catalogo PDF
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="ghost-button inventory-export-btn"
+                        onClick={() => window.open('/catalogo', '_blank', 'noopener,noreferrer')}
+                      >
+                        Catalogo web
+                      </button>
+                      <button type="button" className="ghost-button inventory-export-btn" onClick={handleExportPremiumCatalog}>
+                        Catalogo PDF
+                      </button>
+                    </>
                   ) : null}
                   <button type="button" className="link-button inventory-export-btn" onClick={handleExport}>
                     {isCategoriesModule ? 'Exportar categorias' : isCombosModule ? 'Exportar combos' : 'Exportar Excel'}

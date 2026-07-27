@@ -10,6 +10,7 @@ import ImageModal from './components/common/ImageModal';
 import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
+import PublicCatalogPage from './components/public/PublicCatalogPage';
 import AccountingSection from './components/sections/AccountingSection';
 import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
@@ -221,7 +222,7 @@ function DeveloperCompanyModal({ onSelect }) {
   );
 }
 
-function App() {
+function AdminApp() {
   const controller = useAppController();
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [sidebarSeenCounts, setSidebarSeenCounts] = useState(readSidebarSeenCounts);
@@ -813,6 +814,17 @@ function App() {
       ) : null}
     </div>
   );
+}
+
+function App() {
+  const isPublicCatalogRoute = typeof window !== 'undefined'
+    && window.location.pathname.replace(/\/+$/, '') === '/catalogo';
+
+  if (isPublicCatalogRoute) {
+    return <PublicCatalogPage />;
+  }
+
+  return <AdminApp />;
 }
 
 export default App;
