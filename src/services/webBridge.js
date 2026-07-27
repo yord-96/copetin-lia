@@ -2957,7 +2957,23 @@ const normalizeState = (state) => {
         linkedContractId: String(movement?.linkedContractId ?? movement?.contractId ?? '').trim() || null,
         linkedOrderCode: String(movement?.linkedOrderCode ?? movement?.orderCode ?? '').trim() || null,
         accountingTag: String(movement?.accountingTag ?? '').trim(),
+        collectionTarget: String(movement?.collectionTarget ?? '').trim(),
+        collectionTargets: Array.isArray(movement?.collectionTargets)
+          ? movement.collectionTargets.map((target) => String(target ?? '').trim()).filter(Boolean)
+          : [],
+        collectionBreakdown: Array.isArray(movement?.collectionBreakdown)
+          ? movement.collectionBreakdown.map((entry) => ({
+            target: String(entry?.target ?? '').trim(),
+            label: String(entry?.label ?? '').trim(),
+            amountBs: Number(Number(entry?.amountBs ?? 0).toFixed(2)),
+            detail: String(entry?.detail ?? '').trim(),
+            category: String(entry?.category ?? '').trim(),
+            accountingTag: String(entry?.accountingTag ?? '').trim(),
+          })).filter((entry) => entry.target && entry.amountBs > 0)
+          : [],
+        receiptDetail: String(movement?.receiptDetail ?? '').trim(),
         transportRevenueBs: Number(movement?.transportRevenueBs ?? 0),
+        damageCollectedBs: Number(movement?.damageCollectedBs ?? 0),
         transportExpenseBs: Number(movement?.transportExpenseBs ?? 0),
       };
     })
@@ -4152,7 +4168,12 @@ const buildCashMovement = ({
   linkedContractId = null,
   linkedOrderCode = null,
   accountingTag = '',
+  collectionTarget = '',
+  collectionTargets = [],
+  collectionBreakdown = [],
+  receiptDetail = '',
   transportRevenueBs = 0,
+  damageCollectedBs = 0,
   transportExpenseBs = 0,
 }) => ({
   id: makeId('mov'),
@@ -4185,7 +4206,21 @@ const buildCashMovement = ({
   linkedContractId: String(linkedContractId ?? '').trim() || null,
   linkedOrderCode: String(linkedOrderCode ?? '').trim() || null,
   accountingTag: String(accountingTag ?? '').trim(),
+  collectionTarget: String(collectionTarget ?? '').trim(),
+  collectionTargets: Array.isArray(collectionTargets) ? collectionTargets.map((target) => String(target ?? '').trim()).filter(Boolean) : [],
+  collectionBreakdown: Array.isArray(collectionBreakdown)
+    ? collectionBreakdown.map((entry) => ({
+      target: String(entry?.target ?? '').trim(),
+      label: String(entry?.label ?? '').trim(),
+      amountBs: Number(Number(entry?.amountBs ?? 0).toFixed(2)),
+      detail: String(entry?.detail ?? '').trim(),
+      category: String(entry?.category ?? '').trim(),
+      accountingTag: String(entry?.accountingTag ?? '').trim(),
+    })).filter((entry) => entry.target && entry.amountBs > 0)
+    : [],
+  receiptDetail: String(receiptDetail ?? '').trim(),
   transportRevenueBs: Number(Number(transportRevenueBs ?? 0).toFixed(2)),
+  damageCollectedBs: Number(Number(damageCollectedBs ?? 0).toFixed(2)),
   transportExpenseBs: Number(Number(transportExpenseBs ?? 0).toFixed(2)),
   createdAt: new Date().toISOString(),
 });
@@ -4790,11 +4825,13 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const reference = isPersonnelAdvance
     ? (movement.receipt || receiptCode)
     : contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
-  const detail = isPersonnelAdvance
+  const storedReceiptDetail = String(movement?.receiptDetail ?? '').trim();
+  const detail = storedReceiptDetail || (isPersonnelAdvance
     ? movement.description || 'Adelanto de personal'
     : contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
     ? `${movementLabel} por contrato ${contractCode}`
-    : movement.description || movement.category || 'Movimiento de caja';
+    : movement.description || movement.category || 'Movimiento de caja');
+  const detailHtml = escapeHtml(detail).replace(/\n/g, '<br>');
   const rawObservation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
   const observation = contractCode
     ? String(rawObservation).replace(/OS-\d+/gi, `Contrato ${contractCode}`)
@@ -5128,7 +5165,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           <div class="info-col">
             <p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
             <p class="info-line is-important"><strong>${escapeHtml(contextResponsibleLabel)}</strong><b>:</b><span>${escapeHtml(contextResponsibleValue)}</span></p>
-            <p class="info-line"><strong>Concepto</strong><b>:</b><span>${escapeHtml(detail)}</span></p>
+            <p class="info-line"><strong>Concepto</strong><b>:</b><span>${detailHtml}</span></p>
             <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
           </div>
         </section>
@@ -5147,7 +5184,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           <tbody>
             <tr>
               <td>1</td>
-              <td class="detail">${escapeHtml(detail)}</td>
+              <td class="detail">${detailHtml}</td>
               <td>${escapeHtml(cashBoxLabel)}</td>
               <td>${escapeHtml(collectionUser)}</td>
               <td>${escapeHtml(contextResponsibleValue)}</td>
@@ -17065,9 +17102,29 @@ const createWebBridge = () => ({
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
       const note = String(payload?.note ?? '').trim();
       const accountingTag = String(payload?.accountingTag ?? '').trim();
-      const collectionTarget = ['rental', 'transport', 'damage', 'balance'].includes(String(payload?.collectionTarget ?? '').trim())
+      const collectionTarget = ['rental', 'transport', 'damage', 'balance', 'mixed'].includes(String(payload?.collectionTarget ?? '').trim())
         ? String(payload.collectionTarget).trim()
         : 'balance';
+      const collectionBreakdownPayload = Array.isArray(payload?.collectionBreakdown)
+        ? payload.collectionBreakdown
+          .map((entry) => {
+            const target = String(entry?.target ?? '').trim();
+            const amountBs = Math.max(0, Number(Number(entry?.amountBs ?? 0).toFixed(2)));
+            return {
+              target,
+              amountBs,
+              label: String(entry?.label ?? '').trim(),
+              detail: String(entry?.detail ?? '').trim(),
+              category: String(entry?.category ?? '').trim(),
+              accountingTag: String(entry?.accountingTag ?? '').trim(),
+            };
+          })
+          .filter((entry) => ['rental', 'transport', 'damage', 'balance'].includes(entry.target) && entry.amountBs > 0)
+        : [];
+      const collectionTargetsPayload = Array.isArray(payload?.collectionTargets)
+        ? payload.collectionTargets.map((target) => String(target ?? '').trim()).filter((target) => ['rental', 'transport', 'damage', 'balance'].includes(target))
+        : [];
+      const receiptDetail = String(payload?.receiptDetail ?? '').trim();
 
       if (!rentalId) {
         throw new Error('No se pudo identificar la orden a cobrar.');
@@ -17105,15 +17162,25 @@ const createWebBridge = () => ({
           : 0;
         const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
         const remainingDeliveryFeeBs = Math.max(0, Number((deliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
-        const transportCollectedNowBs = collectionTarget === 'transport'
-          ? amountBs
-          : collectionTarget === 'balance'
-            ? Math.min(amountBs, remainingDeliveryFeeBs)
-            : 0;
-        const damageCollectedNowBs = collectionTarget === 'damage' ? amountBs : 0;
-        const rentalCollectedNowBs = ['rental', 'balance'].includes(collectionTarget)
-          ? Math.max(0, Number((amountBs - transportCollectedNowBs).toFixed(2)))
-          : 0;
+        const collectionBreakdown = collectionBreakdownPayload.length
+          ? collectionBreakdownPayload
+          : [{ target: collectionTarget, amountBs, label: '', detail: '', category: '', accountingTag: '' }];
+        const explicitTransportBs = collectionBreakdown
+          .filter((entry) => entry.target === 'transport')
+          .reduce((sum, entry) => sum + entry.amountBs, 0);
+        const explicitDamageBs = collectionBreakdown
+          .filter((entry) => entry.target === 'damage')
+          .reduce((sum, entry) => sum + entry.amountBs, 0);
+        const explicitRentalBs = collectionBreakdown
+          .filter((entry) => entry.target === 'rental')
+          .reduce((sum, entry) => sum + entry.amountBs, 0);
+        const balanceBs = collectionBreakdown
+          .filter((entry) => entry.target === 'balance')
+          .reduce((sum, entry) => sum + entry.amountBs, 0);
+        const balanceTransportBs = balanceBs > 0 ? Math.min(balanceBs, remainingDeliveryFeeBs) : 0;
+        const transportCollectedNowBs = Number((explicitTransportBs + balanceTransportBs).toFixed(2));
+        const damageCollectedNowBs = Number(explicitDamageBs.toFixed(2));
+        const rentalCollectedNowBs = Number((explicitRentalBs + Math.max(0, balanceBs - balanceTransportBs)).toFixed(2));
         const now = new Date().toISOString();
 
         rental.payment = {
@@ -17188,7 +17255,12 @@ const createWebBridge = () => ({
         let defaultCategory = isReturned ? 'cobro_liquidacion' : 'cobro_contrato';
         let defaultAccountingTag = '';
 
-        if (collectionTarget === 'transport') {
+        if (collectionBreakdown.length > 1 || collectionTarget === 'mixed') {
+          movementType = 'ingreso_cobro_mixto_contrato';
+          defaultDescription = `Cobro mixto contrato: ${rental.customerName}`;
+          defaultCategory = 'cobro_mixto_contrato';
+          defaultAccountingTag = 'contract_mixed_collection';
+        } else if (collectionTarget === 'transport') {
           movementType = 'ingreso_transporte_cliente';
           defaultDescription = `Transporte cobrado al cliente: ${rental.customerName}`;
           defaultCategory = 'transporte_cobrado';
@@ -17201,11 +17273,16 @@ const createWebBridge = () => ({
         }
 
         const description = note || defaultDescription;
-        const movementDescription = collectionTarget === 'balance' && transportCollectedNowBs > 0
+        const movementDescription = receiptDetail
+          ? receiptDetail.split('\n').filter(Boolean).slice(0, 2).join(' | ')
+          : collectionTarget === 'balance' && transportCollectedNowBs > 0
           ? `${description} | Transporte incluido: Bs ${transportCollectedNowBs.toFixed(2)}`
           : description;
         const movementCategory = String(payload?.category ?? '').trim() || defaultCategory;
         const movementAccountingTag = accountingTag || defaultAccountingTag;
+        const collectionTargets = collectionTargetsPayload.length
+          ? collectionTargetsPayload
+          : collectionBreakdown.map((entry) => entry.target).filter(Boolean);
 
         const receiptCode = nextCashReceiptCode(state);
         const commonMovementPayload = {
@@ -17223,6 +17300,10 @@ const createWebBridge = () => ({
           linkedRentalId: rental.id,
           linkedContractId: rental.contractId,
           linkedOrderCode: rental.orderCode,
+          collectionTarget,
+          collectionTargets,
+          collectionBreakdown,
+          receiptDetail,
         };
         const createdMovements = [
           buildCashMovement({
@@ -17233,6 +17314,7 @@ const createWebBridge = () => ({
             category: movementCategory,
             accountingTag: movementAccountingTag,
             transportRevenueBs: transportCollectedNowBs,
+            damageCollectedBs: damageCollectedNowBs,
           }),
         ];
         state.cashMovements.push(...createdMovements);
