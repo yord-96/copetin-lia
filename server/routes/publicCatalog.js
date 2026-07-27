@@ -109,7 +109,7 @@ const buildPublicCatalog = (state) => {
   };
 };
 
-router.get('/api/public/catalog', async (_req, res, next) => {
+const sendPublicCatalog = async (_req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
     res.set('Cache-Control', 'public, max-age=60');
@@ -117,6 +117,9 @@ router.get('/api/public/catalog', async (_req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+};
+
+router.get('/api/public/catalog', sendPublicCatalog);
+router.get('/__copetin_db/public/catalog', sendPublicCatalog);
 
 export default router;

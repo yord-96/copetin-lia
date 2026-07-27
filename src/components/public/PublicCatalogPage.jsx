@@ -15,8 +15,12 @@ const formatUnits = (value) => {
   return `${Math.max(0, Math.trunc(number)).toLocaleString('es-BO')} u.`;
 };
 
+const PUBLIC_CATALOG_ENDPOINTS = ['/__copetin_db/public/catalog', '/api/public/catalog'];
+
 function PublicCatalogImage({ item }) {
-  if (!item.imageUrl) {
+  const [failed, setFailed] = useState(false);
+
+  if (!item.imageUrl || failed) {
     return (
       <div className="public-catalog-card-placeholder" aria-label="Producto sin foto">
         El Copetin
@@ -24,7 +28,7 @@ function PublicCatalogImage({ item }) {
     );
   }
 
-  return <img src={item.imageUrl} alt={item.name} loading="lazy" />;
+  return <img src={item.imageUrl} alt={item.name} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 export default function PublicCatalogPage() {
@@ -40,13 +44,29 @@ export default function PublicCatalogPage() {
 
     const loadCatalog = async () => {
       try {
-        const response = await fetch('/api/public/catalog', {
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) {
-          throw new Error('No se pudo cargar el catalogo.');
+        let payload = null;
+        let lastError = null;
+
+        for (const endpoint of PUBLIC_CATALOG_ENDPOINTS) {
+          try {
+            const response = await fetch(endpoint, {
+              headers: { Accept: 'application/json' },
+            });
+            const contentType = response.headers.get('content-type') || '';
+            if (!response.ok || !contentType.includes('application/json')) {
+              throw new Error(`Respuesta invalida de ${endpoint}`);
+            }
+            payload = await response.json();
+            break;
+          } catch (error) {
+            lastError = error;
+          }
         }
-        const payload = await response.json();
+
+        if (!payload) {
+          throw lastError || new Error('No se pudo cargar el catalogo.');
+        }
+
         if (!active) return;
         setCatalog({
           products: Array.isArray(payload.products) ? payload.products : [],

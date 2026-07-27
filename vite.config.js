@@ -271,7 +271,7 @@ const sharedDemoDbPlugin = (env) => {
   return {
   name: 'copetin-shared-demo-db',
   configureServer(server) {
-    server.middlewares.use('/api/public/catalog', async (req, res) => {
+    const servePublicCatalog = async (req, res) => {
       if (req.method !== 'GET') {
         sendJson(res, 405, { error: 'Metodo no permitido.' })
         return
@@ -291,7 +291,10 @@ const sharedDemoDbPlugin = (env) => {
         server.config.logger.error(error)
         sendJson(res, 500, { error: error.message || 'No se pudo cargar el catalogo publico.' })
       }
-    })
+    }
+
+    server.middlewares.use('/api/public/catalog', servePublicCatalog)
+    server.middlewares.use('/__copetin_db/public/catalog', servePublicCatalog)
 
     server.middlewares.use('/api/uploads/products', async (req, res) => {
       if (req.method !== 'POST') {
