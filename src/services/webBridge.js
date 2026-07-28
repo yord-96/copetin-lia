@@ -8364,14 +8364,71 @@ export const buildWeeklyInventoryHtml = ({
     if (area === 'manteleria') return { id: 'manteleria', label: 'Mantelería', order: 2 };
     return { id: 'mobiliario', label: 'Mobiliario', order: 3 };
   };
-  const groupInventoryLines = (lines) => {
+  const getInventoryLineProductKey = (line) => {
+    const itemId = String(line?.itemId ?? '').trim();
+    if (itemId) return `id:${itemId}`;
+    return `name:${String(line?.itemName ?? line?.name ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()}`;
+  };
+  const pushUniqueText = (list, value) => {
+    const normalized = String(value ?? '').trim();
+    if (normalized && !list.includes(normalized)) list.push(normalized);
+  };
+  const aggregateInventoryLines = (lines, supplierSupportByItem = new Map()) => {
+    const aggregated = new Map();
+    (lines ?? []).forEach((line, lineIndex) => {
+      const group = getInventoryGroup(line);
+      const key = `${group.id}:${getInventoryLineProductKey(line)}`;
+      const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+        ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
+      const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
+      const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
+      const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
+      if (!aggregated.has(key)) {
+        aggregated.set(key, {
+          ...line,
+          quantity: 0,
+          _inventoryDisplayQty: 0,
+          _inventoryGroup: group,
+          _inventorySortIndex: lineIndex,
+          _inventorySupplierLabels: [],
+          _inventoryObservations: [],
+          _inventoryMergedCount: 0,
+        });
+      }
+      const nextLine = aggregated.get(key);
+      nextLine.quantity = Number(nextLine.quantity ?? 0) + Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+      nextLine._inventoryDisplayQty += fulfillmentBreakdown.totalQty;
+      nextLine._inventoryMergedCount += 1;
+      pushUniqueText(nextLine._inventorySupplierLabels, supplierSupportLabel);
+      pushUniqueText(nextLine._inventoryObservations, itemObservation);
+      if (!nextLine.imageUrl && line?.imageUrl) nextLine.imageUrl = line.imageUrl;
+      if (!nextLine.imageDataUrl && line?.imageDataUrl) nextLine.imageDataUrl = line.imageDataUrl;
+    });
+
+    return [...aggregated.values()]
+      .sort((left, right) => left._inventorySortIndex - right._inventorySortIndex)
+      .map((line) => ({
+        ...line,
+        quantity: line._inventoryDisplayQty,
+        _inventorySupportLabel: line._inventorySupplierLabels.join(' / '),
+        observation: line._inventoryMergedCount > 1
+          ? ''
+          : line._inventoryObservations[0] ?? line.observation ?? line.observations ?? line.note ?? '',
+      }));
+  };
+  const groupInventoryLines = (lines, supplierSupportByItem = new Map()) => {
     const groups = new Map([
       ['vajilla', { id: 'vajilla', label: 'Vajilla', order: 1, lines: [] }],
       ['manteleria', { id: 'manteleria', label: 'Mantelería', order: 2, lines: [] }],
       ['mobiliario', { id: 'mobiliario', label: 'Mobiliario', order: 3, lines: [] }],
     ]);
-    lines.forEach((line) => {
-      const group = getInventoryGroup(line);
+    aggregateInventoryLines(lines, supplierSupportByItem).forEach((line) => {
+      const group = line._inventoryGroup ?? getInventoryGroup(line);
       groups.get(group.id)?.lines.push(line);
     });
     return [...groups.values()].filter((group) => group.lines.length > 0).sort((a, b) => a.order - b.order);
@@ -8389,8 +8446,12 @@ export const buildWeeklyInventoryHtml = ({
     const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
       ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
     const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
-    const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
-    const displayQuantity = fulfillmentBreakdown.totalQty;
+    const supplierSupportLabel = line._inventorySupportLabel
+      ?? fulfillmentBreakdown.label
+      ?? formatSupplierSupportLabel(supplierSupportLines);
+    const displayQuantity = Number.isFinite(Number(line._inventoryDisplayQty))
+      ? Math.max(0, Math.trunc(Number(line._inventoryDisplayQty)))
+      : fulfillmentBreakdown.totalQty;
     return `
           <tr>
             <td class="wi-index">${offset + index + 1}</td>
@@ -8416,7 +8477,7 @@ export const buildWeeklyInventoryHtml = ({
   }).join('');
   const renderGroupedItemRows = (lines, manualRowsPerGroup = 0, supplierSupportByItem = new Map()) => {
     let offset = 0;
-    return groupInventoryLines(lines).map((group) => {
+    return groupInventoryLines(lines, supplierSupportByItem).map((group) => {
       const rows = renderItemRows(group.lines, offset, supplierSupportByItem);
       offset += group.lines.length;
       return `
