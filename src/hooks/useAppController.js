@@ -234,28 +234,7 @@ export const useAppController = () => {
 
     let group = null;
     let loader = null;
-    if (activeTab === 'alquiler') {
-      group = 'commercial-details';
-      loader = async () => {
-        await api.sync.ensureCollectionsLoaded(
-          ['contracts', 'rentals'],
-          'open-service-orders',
-        );
-        const [contractsData, hiddenContractsData, rentalsData] = await Promise.all([
-          api.contracts.list(),
-          api.contracts.listHidden(),
-          api.rentals.list(),
-        ]);
-        setContracts(contractsData);
-        setHiddenContracts(hiddenContractsData);
-        setRentals(rentalsData);
-        api.cash.listMovements()
-          .then(setCashMovements)
-          .catch((cashError) => {
-            console.warn('[copetin] No se pudieron cargar movimientos de caja en segundo plano.', cashError);
-          });
-      };
-    } else if (activeTab === 'asistencia') {
+    if (activeTab === 'asistencia') {
       group = 'attendance';
       loader = async () => setAttendanceRecords(await api.attendance.listRecords());
     } else if (activeTab === 'personal') {
@@ -393,6 +372,15 @@ export const useAppController = () => {
       const isBackgroundStateReplacement = event?.source === 'background-sync';
       if (!isRemoteChange && !isBackgroundStateReplacement) return;
 
+      // Órdenes trabaja con los resúmenes ya cargados y obtiene el detalle
+      // individual desde el backend. Un refresco global en esta vista reemplaza
+      // contratos, alquileres y otras colecciones grandes, bloqueando el hilo
+      // principal y dejando los clics en cola. Los cambios hechos desde esta
+      // pestaña ya actualizan React de forma puntual.
+      if (activeTab === 'alquiler') {
+        return;
+      }
+
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         if (!disposed) {
@@ -407,7 +395,7 @@ export const useAppController = () => {
       window.clearTimeout(presenceTimer);
       unsubscribe();
     };
-  }, [authReady, currentUser, loadData, refreshUpdateNotice]);
+  }, [activeTab, authReady, currentUser, loadData, refreshUpdateNotice]);
 
   useEffect(() => {
     let isMounted = true;
