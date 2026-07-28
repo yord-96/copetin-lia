@@ -15,6 +15,18 @@ const formatUnits = (value) => {
   return `${Math.max(0, Math.trunc(number)).toLocaleString('es-BO')} u.`;
 };
 
+const getCatalogAvailabilityLabel = (item) => {
+  if (item.kind === 'combo') {
+    const available = Number(item.totalStock);
+    if (Number.isFinite(available) && available > 0) {
+      return `${Math.trunc(available).toLocaleString('es-BO')} combos`;
+    }
+    const pieces = Number(item.ingredientsCount);
+    return Number.isFinite(pieces) && pieces > 0 ? `${Math.trunc(pieces)} piezas` : 'Combo';
+  }
+  return formatUnits(item.totalStock);
+};
+
 const PUBLIC_CATALOG_ENDPOINTS = ['/__copetin_db/public/catalog', '/api/public/catalog'];
 
 function PublicCatalogImage({ item }) {
@@ -176,10 +188,10 @@ export default function PublicCatalogPage() {
                   <span className="public-catalog-card-area">{item.areaLabel || item.category || 'Catalogo'}</span>
                   <h2>{item.name}</h2>
                   <p>
-                    {[item.category, item.color, item.material].filter(Boolean).join(' - ') || 'Disponible para eventos'}
+                    {item.detailText || [item.category, item.color, item.material].filter(Boolean).join(' - ') || 'Disponible para eventos'}
                   </p>
                   <div className="public-catalog-card-meta">
-                    <span>{formatUnits(item.totalStock)}</span>
+                    <span>{getCatalogAvailabilityLabel(item)}</span>
                     <small>Cod. {item.sku}</small>
                   </div>
                 </div>

@@ -65887,6 +65887,10 @@ body:has(.accounting-bigcash-view) .workspace {
   color: #64748b;
   font-size: 0.86rem;
   line-height: 1.35;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .public-catalog-card-meta {
