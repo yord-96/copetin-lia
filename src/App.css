@@ -35375,34 +35375,51 @@ button.calendar-dispatch-row:focus-visible {
   }
 
   .orders-economic-note-bubble {
-    width: 2.2rem;
-    height: 2.2rem;
+    position: relative;
+    width: 2.05rem;
+    height: 2.05rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.16rem;
-    border: 1px solid #ff9b45;
+    border: 1px solid rgba(194, 65, 12, 0.18);
     border-radius: 999px;
-    background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
-    color: #c2410c;
-    font-size: 0.68rem;
+    background: linear-gradient(180deg, #f97316 0%, #dc4b05 100%);
+    color: #ffffff;
+    font-size: 0;
     font-weight: 950;
     cursor: pointer;
-    box-shadow: 0 8px 18px rgba(234, 88, 12, 0.14);
-    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+    box-shadow: 0 7px 16px rgba(234, 88, 12, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
   }
 
   .orders-economic-note-bubble svg {
-    width: 0.9rem;
-    height: 0.9rem;
+    width: 0.96rem;
+    height: 0.96rem;
     stroke-width: 2.4;
+  }
+
+  .orders-economic-note-bubble span {
+    position: absolute;
+    top: -0.34rem;
+    right: -0.34rem;
+    min-width: 1rem;
+    height: 1rem;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid #ffffff;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 0.58rem;
+    line-height: 1;
+    box-shadow: 0 3px 8px rgba(154, 52, 18, 0.16);
   }
 
   .orders-economic-note-bubble:hover,
   .orders-economic-note-bubble:focus-visible {
     transform: translateY(-1px);
-    border-color: #ea580c;
-    box-shadow: 0 10px 22px rgba(234, 88, 12, 0.2);
+    filter: saturate(1.06);
+    box-shadow: 0 10px 22px rgba(234, 88, 12, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.3);
     outline: none;
   }
 
