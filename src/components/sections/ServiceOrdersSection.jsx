@@ -8205,7 +8205,7 @@ function ServiceOrdersSection({
                             )}
                           </div>
                         </td>
-                        <td className="orders-economic-note-cell">
+                        <td className={`orders-economic-note-cell ${row.isReturned ? 'orders-contract-returned-cell' : ''}`}>
                           {economicInternalNotes.length > 0 ? (
                             <button
                               type="button"
