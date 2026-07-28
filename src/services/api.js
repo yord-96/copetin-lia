@@ -51,9 +51,13 @@ const CONTRACT_REMOVE_PATCH_COLLECTIONS = Object.freeze([
 const CASH_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
   'cashSessions',
   'cashMovements',
-  'cashDebts',
   'contracts',
   'rentals',
+]);
+const CASH_DEBT_PATCH_COLLECTIONS = Object.freeze([
+  'cashSessions',
+  'cashMovements',
+  'cashDebts',
 ]);
 const RENTAL_CANCEL_PATCH_COLLECTIONS = Object.freeze([
   'items',
@@ -315,21 +319,93 @@ const hasCachedLocalState = () => {
   return Boolean(window.localStorage.getItem(WEB_DB_STORAGE_KEY));
 };
 
+const isSummaryOnlyRow = (row) =>
+  Boolean(row && typeof row === 'object' && !Array.isArray(row) && row._summaryOnly);
+
+const mergeSummaryRecordDetails = (incomingRecord, currentRecord, detailKeys = []) => {
+  if (!isSummaryOnlyRow(incomingRecord) || !currentRecord || isSummaryOnlyRow(currentRecord)) {
+    return incomingRecord;
+  }
+  const merged = { ...incomingRecord };
+  detailKeys.forEach((key) => {
+    const incomingValue = incomingRecord[key];
+    const currentValue = currentRecord[key];
+    const incomingIsEmptyArray = Array.isArray(incomingValue) && incomingValue.length === 0;
+    const incomingIsEmptyObject = incomingValue
+      && typeof incomingValue === 'object'
+      && !Array.isArray(incomingValue)
+      && Object.keys(incomingValue).length === 0;
+    const incomingIsEmpty = incomingValue == null || incomingIsEmptyArray || incomingIsEmptyObject;
+    if (incomingIsEmpty && currentValue != null) {
+      merged[key] = currentValue;
+    }
+  });
+  return merged;
+};
+
+const preserveLocalDetailsInSummaries = async (state) => {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
+  const hasSummarizedContracts = Array.isArray(state.contracts) && state.contracts.some(isSummaryOnlyRow);
+  const hasSummarizedRentals = Array.isArray(state.rentals) && state.rentals.some(isSummaryOnlyRow);
+  if (!hasSummarizedContracts && !hasSummarizedRentals) return state;
+
+  const current = await exportLocalCollections([
+    ...(hasSummarizedContracts ? ['contracts'] : []),
+    ...(hasSummarizedRentals ? ['rentals'] : []),
+  ]);
+  const nextState = { ...state };
+
+  if (hasSummarizedContracts) {
+    const currentContractsById = new Map((Array.isArray(current?.contracts) ? current.contracts : [])
+      .map((row) => [String(row?.id ?? '').trim(), row])
+      .filter(([id]) => id));
+    nextState.contracts = state.contracts.map((row) => mergeSummaryRecordDetails(
+      row,
+      currentContractsById.get(String(row?.id ?? '').trim()),
+      [
+        'economicLedger',
+        'revisionHistory',
+        'supplierFulfillmentPlan',
+        'pricingPlan',
+        'deletionSnapshot',
+      ],
+    ));
+  }
+
+  if (hasSummarizedRentals) {
+    const currentRentalsById = new Map((Array.isArray(current?.rentals) ? current.rentals : [])
+      .map((row) => [String(row?.id ?? '').trim(), row])
+      .filter(([id]) => id));
+    nextState.rentals = state.rentals.map((row) => mergeSummaryRecordDetails(
+      row,
+      currentRentalsById.get(String(row?.id ?? '').trim()),
+      [
+        'inventoryAvailabilityAssumptions',
+        'returnReport',
+        'returnSettlement',
+        'supplierFulfillmentPlan',
+      ],
+    ));
+  }
+
+  return nextState;
+};
+
 const replaceLocalState = async (state) => {
   const storage = getLocalStorageBridge();
   if (storage?.replaceState && state) {
-    await storage.replaceState(state);
+    await storage.replaceState(await preserveLocalDetailsInSummaries(state));
   }
 };
 
 const mergeLocalState = async (state) => {
   const storage = getLocalStorageBridge();
   if (storage?.mergeState && state) {
-    await storage.mergeState(state);
+    await storage.mergeState(await preserveLocalDetailsInSummaries(state));
     return;
   }
   const currentState = await exportLocalState();
-  await replaceLocalState({ ...(currentState ?? {}), ...(state ?? {}) });
+  await replaceLocalState(await preserveLocalDetailsInSummaries({ ...(currentState ?? {}), ...(state ?? {}) }));
 };
 
 const exportLocalState = async () => {
@@ -708,9 +784,6 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
 };
 
 const stableJson = (value) => JSON.stringify(value ?? null);
-
-const isSummaryOnlyRow = (row) =>
-  Boolean(row && typeof row === 'object' && !Array.isArray(row) && row._summaryOnly);
 
 const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLECTIONS) => {
   if (!beforeState || !afterState) return null;
@@ -1304,6 +1377,9 @@ const subscribeToDataChanges = (callback) => {
 
 const getTargetedMutationCollections = (domain, method) => {
   if (domain === 'cash') {
+    if (['createDebt', 'payDebt', 'deleteDebt'].includes(method)) {
+      return CASH_DEBT_PATCH_COLLECTIONS;
+    }
     return CASH_MOVEMENT_PATCH_COLLECTIONS;
   }
   if (domain === 'rentals' && method === 'cancel') {

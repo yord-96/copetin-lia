@@ -73,7 +73,7 @@ const summarizeContract = (contract = {}) => ({
   ...contract,
   items: (Array.isArray(contract.items) ? contract.items : []).map(summarizeItemLine),
   revisionHistory: [],
-  economicLedger: [],
+  economicLedger: Array.isArray(contract.economicLedger) ? contract.economicLedger : [],
   deletionSnapshot: null,
   _summaryOnly: true,
 });

@@ -1330,6 +1330,7 @@ function ServiceOrdersSection({
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const deferredDocumentsOrder = useDeferredValue(documentsOrder);
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
+  const [contractEconomicsFullRental, setContractEconomicsFullRental] = useState(null);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
   const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
     target: 'rental',
@@ -2235,14 +2236,17 @@ function ServiceOrdersSection({
       || valuesMatch(entry.orderCode, target.orderCode)
       || valuesMatch(entry.rentalId, target.rentalId),
     ) ?? null;
-    const contract = matchedContract
-      ? {
-        ...matchedContract,
-        ...(target?.economicLedger !== undefined ? { economicLedger: target.economicLedger } : {}),
-        ...(target?.economicLedgerUpdatedAt !== undefined ? { economicLedgerUpdatedAt: target.economicLedgerUpdatedAt } : {}),
-        ...(target?.economicLedgerUpdatedByName !== undefined ? { economicLedgerUpdatedByName: target.economicLedgerUpdatedByName } : {}),
-      }
-      : target;
+    const contract = matchedContract?._summaryOnly && !target?._summaryOnly
+      ? { ...matchedContract, ...target }
+      : (matchedContract
+        ? {
+          ...target,
+          ...matchedContract,
+          ...(target?.economicLedger !== undefined ? { economicLedger: target.economicLedger } : {}),
+          ...(target?.economicLedgerUpdatedAt !== undefined ? { economicLedgerUpdatedAt: target.economicLedgerUpdatedAt } : {}),
+          ...(target?.economicLedgerUpdatedByName !== undefined ? { economicLedgerUpdatedByName: target.economicLedgerUpdatedByName } : {}),
+        }
+        : target);
 
     const linkedOrder = orderRowsWithMeta.find((row) =>
       valuesMatch(row.contractId, contract.id)
@@ -2251,7 +2255,7 @@ function ServiceOrdersSection({
       || valuesMatch(row.rentalId, contract.rentalId),
     ) ?? null;
 
-    const rental = rentals.find((entry) =>
+    const matchedRental = rentals.find((entry) =>
       valuesMatch(entry.id, contract.rentalId)
       || valuesMatch(entry.contractId, contract.id)
       || valuesMatch(entry.contractCode, contract.contractCode)
@@ -2259,6 +2263,20 @@ function ServiceOrdersSection({
       || valuesMatch(entry.id, linkedOrder?.rentalId)
       || valuesMatch(entry.orderCode, linkedOrder?.orderCode),
     ) ?? null;
+    const isFullRentalMatch = contractEconomicsFullRental
+      && (
+        valuesMatch(contractEconomicsFullRental.id, contract.rentalId)
+        || valuesMatch(contractEconomicsFullRental.contractId, contract.id)
+        || valuesMatch(contractEconomicsFullRental.contractCode, contract.contractCode)
+        || valuesMatch(contractEconomicsFullRental.orderCode, contract.orderCode)
+        || valuesMatch(contractEconomicsFullRental.id, linkedOrder?.rentalId)
+        || valuesMatch(contractEconomicsFullRental.orderCode, linkedOrder?.orderCode)
+      );
+    const rental = matchedRental?._summaryOnly && isFullRentalMatch
+      ? { ...matchedRental, ...contractEconomicsFullRental }
+      : (isFullRentalMatch && !contractEconomicsFullRental?._summaryOnly
+        ? contractEconomicsFullRental
+        : matchedRental);
 
     const referenceValues = [
       contract.id,
@@ -2810,7 +2828,7 @@ function ServiceOrdersSection({
           ? 'Liquidacion con cargos'
           : 'Sin saldo pendiente',
     };
-  }, [effectiveCashMovements, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
+  }, [effectiveCashMovements, contractEconomicsFullRental, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
 
   const contractEconomicsCollectionOptions = useMemo(() => {
     if (!contractEconomicsData) return [];
@@ -6359,21 +6377,65 @@ function ServiceOrdersSection({
     });
   };
 
-  const handleOpenContractEconomics = (contractRow) => {
-    setContractEconomicsTarget(contractRow);
-    setContractEconomicsError('');
+  const resetContractEconomicsCollectionDraft = () => {
     setContractEconomicsCollectionDraft({
+      target: 'rental',
+      targets: ['rental'],
       amountBs: '',
       paymentMethod: 'efectivo',
       paymentAccount: '',
       receipt: '',
       note: '',
     });
+  };
+
+  const loadFullContractEconomicsTarget = async (contractRow, reason = 'contract-economics') => {
+    let fullContract = contractRow;
+    if (fullContract?._summaryOnly) {
+      fullContract = await api.contracts.ensureFull(
+        fullContract.id ?? fullContract.contractCode ?? fullContract.orderCode,
+        reason,
+      );
+    }
+
+    const linkedOrder = orderRowsWithMeta.find((row) =>
+      valuesMatch(row.contractId, fullContract?.id)
+      || valuesMatch(row.contractCode, fullContract?.contractCode)
+      || valuesMatch(row.orderCode, fullContract?.orderCode)
+      || valuesMatch(row.rentalId, fullContract?.rentalId),
+    ) ?? null;
+    const rentalIdentifier = fullContract?.rentalId
+      ?? linkedOrder?.rentalId
+      ?? fullContract?.orderCode
+      ?? linkedOrder?.orderCode
+      ?? '';
+    const fullRental = rentalIdentifier
+      ? await api.rentals.getFull(rentalIdentifier)
+      : null;
+    return { fullContract, fullRental };
+  };
+
+  const handleOpenContractEconomics = async (contractRow) => {
+    setContractEconomicsError('');
+    resetContractEconomicsCollectionDraft();
     setMenuState(null);
+    setContractActionStatus(`Cargando seguimiento economico ${contractRow?.contractCode || contractRow?.orderCode || ''}...`);
+    try {
+      const { fullContract, fullRental } = await loadFullContractEconomicsTarget(contractRow, 'contract-economics-open');
+      setContractEconomicsFullRental(fullRental);
+      setContractEconomicsTarget(fullContract);
+    } catch (requestError) {
+      setContractEconomicsError(requestError.message || 'No se pudo cargar el seguimiento economico completo.');
+      setContractEconomicsFullRental(null);
+      setContractEconomicsTarget(contractRow);
+    } finally {
+      setContractActionStatus('');
+    }
   };
 
   const closeContractEconomics = () => {
     setContractEconomicsTarget(null);
+    setContractEconomicsFullRental(null);
     setContractEconomicsError('');
     setIsSavingContractEconomicsCollection(false);
     setIsSavingContractEconomicsLedger(false);
@@ -6418,20 +6480,25 @@ function ServiceOrdersSection({
     await handleEditContractClick(target);
   };
 
-  const handleOpenEconomicsFromDocuments = () => {
+  const handleOpenEconomicsFromDocuments = async () => {
     const target = selectedDocumentsContractRow ?? selectedDocumentsContract;
     if (!target) return;
-    setContractEconomicsTarget(target);
     setContractEconomicsError('');
-    setContractEconomicsCollectionDraft({
-      amountBs: '',
-      paymentMethod: 'efectivo',
-      paymentAccount: '',
-      receipt: '',
-      note: '',
-    });
+    resetContractEconomicsCollectionDraft();
     setDocumentsOrder(null);
     setMenuState(null);
+    setContractActionStatus(`Cargando seguimiento economico ${target?.contractCode || target?.orderCode || ''}...`);
+    try {
+      const { fullContract, fullRental } = await loadFullContractEconomicsTarget(target, 'contract-economics-documents');
+      setContractEconomicsFullRental(fullRental);
+      setContractEconomicsTarget(fullContract);
+    } catch (requestError) {
+      setContractEconomicsError(requestError.message || 'No se pudo cargar el seguimiento economico completo.');
+      setContractEconomicsFullRental(null);
+      setContractEconomicsTarget(target);
+    } finally {
+      setContractActionStatus('');
+    }
   };
 
   const handleSendClosureFromDocuments = () => {
