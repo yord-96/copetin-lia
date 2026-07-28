@@ -3161,23 +3161,6 @@ function ServiceOrdersSection({
     [contractCounts, quoteCounts],
   );
 
-  const activeViewMeta = useMemo(() => {
-    if (activeView === 'quotes') {
-      return {
-        title: 'Cotizaciones',
-        count: filteredQuotes.length,
-        total: quoteRows.length,
-        helper: 'Propuestas comerciales antes de convertirse en contrato.',
-      };
-    }
-    return {
-      title: 'Contratos',
-      count: filteredContracts.length,
-      total: contractRows.length,
-      helper: 'Acuerdos aprobados o pendientes. Cada contrato centraliza sus ordenes de servicio.',
-    };
-  }, [activeView, contractRows.length, filteredContracts.length, filteredQuotes.length, quoteRows.length]);
-
   const workflowTabs = useMemo(
     () => [
       {
@@ -7570,18 +7553,6 @@ function ServiceOrdersSection({
       </header>
 
       <article className="orders-table-card">
-        <div className="orders-board-head">
-          <div>
-            <span className="orders-board-eyebrow">Flujo comercial</span>
-            <h3>{activeViewMeta.title}</h3>
-            <p>{activeViewMeta.helper}</p>
-          </div>
-          <div className="orders-board-count">
-            <strong>{activeViewMeta.count}</strong>
-            <span>de {activeViewMeta.total}</span>
-          </div>
-        </div>
-
         <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''} ${activeView === 'contracts' ? 'has-numbering' : ''}`}>
           {workflowTabs.map((tab, index) => (
             <Fragment key={tab.id}>
