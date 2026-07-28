@@ -9921,13 +9921,8 @@ const syncInitialPaymentCashMovement = (state, contract, payload, now) => {
   const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(contract?.payment?.paidAtApprovalBs ?? 0));
   const prepaidAppliedBs = Math.max(0, toPositiveRoundedNumber(contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0));
   const cashPaymentBs = Math.max(0, Number((paidAtApprovalBs - prepaidAppliedBs).toFixed(2)));
-  if (cashPaymentBs <= 0) return null;
-
   state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
-  const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
-  const amountToRegisterBs = Math.max(0, Number((cashPaymentBs - registeredCollectionBs).toFixed(2)));
-  if (amountToRegisterBs <= 0) return null;
-
+  const referenceKeys = getContractCashReferenceKeys(state, contract);
   const activeSession = getActiveSession(state);
   const responsibleName = String(
     payload?.updatedByName
@@ -9941,10 +9936,55 @@ const syncInitialPaymentCashMovement = (state, contract, payload, now) => {
   const paymentAccount = paymentMethod === 'qr'
     ? normalizeQrPaymentAccount(contract?.payment?.initialPaymentAccount ?? contract?.payment?.paymentAccount)
     : '';
+  const linkedInitialMovements = state.cashMovements
+    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => !isVoidedCashMovement(movement))
+    .filter(isAutoInitialRentalPaymentMovement)
+    .sort((a, b) => new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0));
+
+  if (cashPaymentBs <= 0) {
+    linkedInitialMovements.forEach((movement) => {
+      movement.receiptStatus = 'anulado';
+      movement.voidedAt = movement.voidedAt ?? now;
+      movement.voidedBy = movement.voidedBy || responsibleName;
+      movement.voidReason = movement.voidReason || `Anulado porque el pago inicial del contrato ${contract?.contractCode || contract?.id || ''} quedo en cero`.trim();
+    });
+    return null;
+  }
+
+  const existingMovement = linkedInitialMovements[0] ?? null;
+  if (existingMovement) {
+    linkedInitialMovements.slice(1).forEach((movement) => {
+      movement.receiptStatus = 'anulado';
+      movement.voidedAt = movement.voidedAt ?? now;
+      movement.voidedBy = movement.voidedBy || responsibleName;
+      movement.voidReason = movement.voidReason || `Anulado por duplicado del pago inicial del contrato ${contract?.contractCode || contract?.id || ''}`.trim();
+    });
+    existingMovement.amountBs = cashPaymentBs;
+    existingMovement.description = `Cobro inicial alquiler: ${contract?.customerName || 'Cliente'}`;
+    existingMovement.sourceType = contract?.rentalId ? 'rental' : 'contract';
+    existingMovement.sourceId = contract?.rentalId || contract?.id;
+    existingMovement.createdByName = existingMovement.createdByName || responsibleName;
+    existingMovement.userName = existingMovement.userName || responsibleName;
+    existingMovement.responsible = existingMovement.responsible || responsibleName;
+    existingMovement.cashBoxType = CASH_BOX_TYPES.BIG_CASH;
+    existingMovement.category = 'cobro_contrato';
+    existingMovement.paymentMethod = paymentMethod;
+    existingMovement.paymentAccount = paymentAccount;
+    existingMovement.receiptCode = existingMovement.receiptCode || nextCashReceiptCode(state);
+    existingMovement.notes = `Pago inicial actualizado desde contrato ${contract?.contractCode || contract?.id || ''}`.trim();
+    existingMovement.linkedRentalId = contract?.rentalId ?? existingMovement.linkedRentalId ?? '';
+    existingMovement.linkedContractId = contract?.id ?? existingMovement.linkedContractId ?? '';
+    existingMovement.linkedOrderCode = contract?.orderCode ?? existingMovement.linkedOrderCode ?? '';
+    existingMovement.accountingTag = 'initial_rental_payment';
+    existingMovement.updatedAt = now;
+    return existingMovement;
+  }
+
   const movement = buildCashMovement({
     sessionId: activeSession?.id ?? null,
     type: 'ingreso_alquiler',
-    amountBs: amountToRegisterBs,
+    amountBs: cashPaymentBs,
     description: `Cobro inicial alquiler: ${contract?.customerName || 'Cliente'}`,
     sourceType: contract?.rentalId ? 'rental' : 'contract',
     sourceId: contract?.rentalId || contract?.id,
@@ -9973,32 +10013,6 @@ const isAutoInitialRentalPaymentMovement = (movement) => {
   const notes = normalizeText(movement?.notes);
   return tag === 'initial_rental_payment'
     || notes.includes('pago inicial registrado desde contrato');
-};
-
-const voidAutoInitialPaymentCashMovements = (state, contract, payload = {}, now = new Date().toISOString()) => {
-  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
-  const referenceKeys = getContractCashReferenceKeys(state, contract);
-  if (!referenceKeys.length) return;
-
-  const responsibleName = String(
-    payload?.updatedByName
-    ?? payload?.userName
-    ?? contract?.responsibles?.[0]?.name
-    ?? contract?.createdByName
-    ?? contract?.createdBy
-    ?? 'Sistema',
-  ).trim() || 'Sistema';
-
-  state.cashMovements
-    .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
-    .filter((movement) => !isVoidedCashMovement(movement))
-    .filter(isAutoInitialRentalPaymentMovement)
-    .forEach((movement) => {
-      movement.receiptStatus = 'anulado';
-      movement.voidedAt = movement.voidedAt ?? now;
-      movement.voidedBy = movement.voidedBy || responsibleName;
-      movement.voidReason = movement.voidReason || `Anulado por correccion del pago inicial del contrato ${contract?.contractCode || contract?.id || ''}`.trim();
-    });
 };
 
 const isInitialPaymentLedgerEntry = (entry) => {
@@ -14447,12 +14461,9 @@ const createWebBridge = () => ({
           Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
         );
         const prepaidAppliedBs = Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0));
-        if (hasRequestedPaidAtApproval) {
-          voidAutoInitialPaymentCashMovements(state, contract, payload, now);
-        }
         const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
         const paidAtApprovalBs = hasRequestedPaidAtApproval
-          ? Math.max(requestedPaidAtApprovalBs, registeredCollectionBs)
+          ? requestedPaidAtApprovalBs
           : Math.max(requestedPaidAtApprovalBs, storedPaidAtApprovalBs, registeredCollectionBs);
         const overpaidBs = Math.max(0, Number((paidAtApprovalBs - totalBs).toFixed(2)));
 
