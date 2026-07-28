@@ -61986,6 +61986,293 @@ body:has(.accounting-bigcash-view) .workspace {
   text-indent: 0 !important;
 }
 
+/* FINAL v6 - Disponibilidad con lectura tabular tipo contratos */
+.availability-products-section {
+  padding: 0;
+}
+
+.availability-results-table {
+  width: 100%;
+  overflow-x: auto;
+  background: #fff;
+}
+
+.availability-results-grid {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.availability-results-grid thead th {
+  height: 2.65rem;
+  border: 0;
+  background: #123566;
+  color: #fff;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.availability-results-grid thead th:first-child {
+  border-radius: 0.62rem 0 0 0;
+}
+
+.availability-results-grid thead th:last-child {
+  border-radius: 0 0.62rem 0 0;
+}
+
+.availability-results-grid th:nth-child(1),
+.availability-results-grid td:nth-child(1) { width: 24%; }
+.availability-results-grid th:nth-child(2),
+.availability-results-grid td:nth-child(2) { width: 12%; }
+.availability-results-grid th:nth-child(3),
+.availability-results-grid td:nth-child(3) { width: 12%; }
+.availability-results-grid th:nth-child(4),
+.availability-results-grid td:nth-child(4) { width: 15%; }
+.availability-results-grid th:nth-child(5),
+.availability-results-grid td:nth-child(5) { width: 18%; }
+.availability-results-grid th:nth-child(6),
+.availability-results-grid td:nth-child(6) {
+  width: 8%;
+  text-align: center;
+}
+.availability-results-grid th:nth-child(7),
+.availability-results-grid td:nth-child(7) { width: 11%; }
+
+.availability-results-grid tbody tr {
+  position: relative;
+  display: table-row;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  transition: background 150ms ease;
+}
+
+.availability-results-grid tbody tr::before {
+  display: none;
+}
+
+.availability-results-grid tbody tr:nth-child(even) td {
+  background: #f8fafd;
+}
+
+.availability-results-grid tbody tr:nth-child(odd) td {
+  background: #fff;
+}
+
+.availability-results-grid tbody tr:hover td {
+  background: #fff7f1;
+}
+
+.availability-results-grid tbody td {
+  height: 4.8rem;
+  border-bottom: 1px solid #dce4f0;
+  color: #263552;
+  padding: 0.58rem 0.72rem;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.availability-results-grid tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.availability-results-grid tbody td:first-child {
+  border-left: 3px solid #20a150;
+}
+
+.availability-results-grid tbody tr.tentative td:first-child {
+  border-left-color: #e7a51b;
+}
+
+.availability-results-grid tbody tr.free td:first-child {
+  border-left-color: #94a3b8;
+}
+
+.availability-result-product {
+  grid-template-columns: 3.35rem minmax(0, 1fr);
+  gap: 0.58rem;
+}
+
+.availability-result-image {
+  cursor: pointer;
+}
+
+.availability-result-product > div,
+.availability-result-period,
+.availability-result-document,
+.availability-result-client,
+.availability-result-location,
+.availability-result-quantity,
+.availability-result-available,
+.availability-result-status {
+  gap: 0.12rem;
+}
+
+.availability-result-product small,
+.availability-result-period small,
+.availability-result-document small,
+.availability-result-status small {
+  color: #7a869c;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.availability-result-product strong,
+.availability-result-period strong,
+.availability-result-document strong,
+.availability-result-client strong,
+.availability-result-location strong {
+  color: #102b59;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.availability-result-document strong {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  border-radius: 0.42rem;
+  background: #fff0e7;
+  color: #d94a0b;
+  padding: 0.22rem 0.38rem;
+}
+
+.availability-result-product span,
+.availability-result-period span,
+.availability-result-document span,
+.availability-result-client span,
+.availability-result-location span,
+.availability-result-available span,
+.availability-result-quantity span {
+  color: #758199;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.availability-result-quantity {
+  justify-items: center;
+}
+
+.availability-result-quantity strong,
+.availability-result-available > strong {
+  color: #102b59;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.availability-result-available {
+  align-items: start;
+}
+
+.availability-result-available > strong {
+  color: #0f7a3c;
+  line-height: 1;
+}
+
+.availability-results-grid .availability-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.58rem;
+  padding: 0.26rem 0.58rem;
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+@media (max-width: 768px) {
+  .availability-results-table {
+    padding: 0.62rem;
+    overflow: visible;
+  }
+
+  .availability-results-grid,
+  .availability-results-grid thead,
+  .availability-results-grid tbody,
+  .availability-results-grid tr,
+  .availability-results-grid td {
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .availability-results-grid thead {
+    display: none;
+  }
+
+  .availability-results-grid tbody {
+    display: grid;
+    gap: 0.58rem;
+  }
+
+  .availability-results-grid tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.62rem;
+    border: 1px solid #e1e8f1;
+    border-left: 3px solid #20a150;
+    border-radius: 0.72rem;
+    background: #fff;
+    padding: 0.68rem;
+  }
+
+  .availability-results-grid tbody tr.tentative {
+    border-left-color: #e7a51b;
+  }
+
+  .availability-results-grid tbody tr.free {
+    border-left-color: #94a3b8;
+  }
+
+  .availability-results-grid tbody td,
+  .availability-results-grid tbody tr:nth-child(even) td,
+  .availability-results-grid tbody tr:nth-child(odd) td {
+    height: auto;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .availability-results-grid tbody td:first-child {
+    grid-column: 1 / -1;
+    border-left: 0;
+  }
+
+  .availability-results-grid tbody td:nth-child(5) {
+    grid-column: 1 / -1;
+  }
+
+  .availability-results-grid tbody td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.18rem;
+    color: #9a6a4d;
+    font-size: 0.56rem;
+    font-weight: 900;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .availability-results-grid tbody td:first-child::before {
+    display: none;
+  }
+
+  .availability-result-available {
+    align-items: end;
+    text-align: right;
+  }
+}
+
 
 
 /* Descuento general: porcentaje o monto fijo */

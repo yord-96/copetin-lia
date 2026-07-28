@@ -518,15 +518,19 @@ function AvailabilitySection({
             </header>
 
             <div className="availability-results-table">
-              <div className="availability-results-head">
-                <span>Producto</span>
-                <span>Fecha / periodo</span>
-                <span>Contrato / orden</span>
-                <span>Cliente y evento</span>
-                <span>Lugar</span>
-                <span>Cantidad</span>
-                <span>Estado</span>
-              </div>
+              <table className="availability-results-grid">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Fecha / periodo</th>
+                    <th>Contrato / orden</th>
+                    <th>Cliente y evento</th>
+                    <th>Lugar</th>
+                    <th>Alquilado</th>
+                    <th>Disponible</th>
+                  </tr>
+                </thead>
+                <tbody>
 
               {visibleResultEntries.map(({ row, record, startDate, endDate }, index) => {
                 const documentCode = record?.contractCode || record?.orderCode || record?.quoteCode || record?.code || 'SIN DOCUMENTO';
@@ -538,13 +542,14 @@ function AvailabilitySection({
                       ? 'Contrato'
                       : 'Sin compromiso';
                 const location = record ? getRecordLocation(record, clientById) : 'Sin compromiso registrado para este periodo';
-                const quantity = record?.quantity ?? 0;
+                const rentedQuantity = record?.quantity ?? 0;
                 return (
-                  <article
+                  <tr
                     key={`${row.item.id}-${documentCode}-${startDate}-${index}`}
                     className={`availability-result-row ${record?.commitmentTone || 'free'}`}
                   >
-                    <div className="availability-result-product">
+                    <td data-label="Producto">
+                      <div className="availability-result-product">
                       <button
                         type="button"
                         className="availability-result-image"
@@ -555,49 +560,60 @@ function AvailabilitySection({
                       >
                         <ProductImage item={row.item} alt={row.item.name} fallback={<span>{String(row.item.name || '?').slice(0, 2)}</span>} />
                       </button>
-                      <div>
+                        <div>
                         <small>{row.item.category || 'SIN CATEGORÍA'} · {getInventoryAreaLabel(row.area)}</small>
                         <strong>{row.item.name}</strong>
                         <span>{row.item.sku || 'Sin SKU'}{row.item.itemColor ? ` · ${row.item.itemColor}` : ''}</span>
+                        </div>
                       </div>
-                    </div>
+                    </td>
 
-                    <div className="availability-result-period">
+                    <td data-label="Fecha / periodo">
+                      <div className="availability-result-period">
                       <strong>{formatDate(startDate)}</strong>
                       <span>{String(endDate) !== String(startDate) ? `hasta ${formatDate(endDate)}` : 'Mismo día'}</span>
                       {record ? <small>{formatTimeRange(record)}</small> : null}
-                    </div>
+                      </div>
+                    </td>
 
-                    <div className="availability-result-document">
+                    <td data-label="Contrato / orden">
+                      <div className="availability-result-document">
                       <small>{documentType}</small>
                       <strong>{documentCode}</strong>
                       {record?.orderCode && record?.contractCode ? <span>Orden {record.orderCode}</span> : null}
-                    </div>
+                      </div>
+                    </td>
 
-                    <div className="availability-result-client">
+                    <td data-label="Cliente y evento">
+                      <div className="availability-result-client">
                       <strong>{record?.customerName || 'Sin cliente'}</strong>
                       <span>{record?.eventType || 'Evento no especificado'}</span>
-                    </div>
+                      </div>
+                    </td>
 
-                    <div className="availability-result-location">
+                    <td data-label="Lugar">
+                      <div className="availability-result-location">
                       <strong>{location}</strong>
                       <span>{record?.city || 'Sin ciudad registrada'}</span>
-                    </div>
+                      </div>
+                    </td>
 
-                    <div className="availability-result-quantity">
-                      <strong>{quantity}</strong>
-                      <span>unidades</span>
-                    </div>
+                    <td data-label="Alquilado">
+                      <div className="availability-result-quantity">
+                      <strong>{rentedQuantity}</strong>
+                      </div>
+                    </td>
 
-                    <div className="availability-result-status">
-                      <span className={`availability-status-pill ${record?.commitmentTone === 'tentative' ? 'warning' : record ? 'success' : row.statusMeta.tone}`}>
-                        {record?.commitmentTone === 'tentative' ? 'Tentativo' : record ? 'Confirmado' : row.statusMeta.label}
-                      </span>
-                      <small>Disponible: {row.projectedAvailable}</small>
-                    </div>
-                  </article>
+                    <td data-label="Disponible">
+                      <div className="availability-result-available">
+                        <strong>{row.projectedAvailable}</strong>
+                      </div>
+                    </td>
+                  </tr>
                 );
-              })}
+                  })}
+                </tbody>
+              </table>
             </div>
 
             {resultEntries.length === 0 ? <div className="availability-no-results"><PackageSearch size={34} /><strong>No encontramos productos</strong><p>Cambia la búsqueda o los filtros seleccionados.</p></div> : null}
