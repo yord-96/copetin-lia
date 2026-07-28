@@ -2031,11 +2031,19 @@ function ServiceOrdersSection({
       const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowChargesBs);
       const rowUncoveredChargesBs = Math.max(0, Number((rowChargesBs - rowGuaranteeAppliedBs).toFixed(2)));
       const rowChargeTargetBs = Number((totalBs + rowUncoveredChargesBs).toFixed(2));
-      const economicDueBs = Math.max(0, Number((rowChargeTargetBs - collectionRegisteredBs).toFixed(2)));
+      const ledgerReceivedForRentalBs = Math.min(
+        rowChargeTargetBs,
+        Math.max(0, Number(rowLedgerTotals.receivedBs.toFixed(2))),
+      );
       const paidOnAccountBs = Math.max(
         0,
         Number(initialPaymentBs.toFixed(2)),
         Number(collectionRegisteredBs.toFixed(2)),
+        Number(ledgerReceivedForRentalBs.toFixed(2)),
+      );
+      const economicDueBs = Math.max(
+        0,
+        Number((rowChargeTargetBs - paidOnAccountBs).toFixed(2)),
       );
       const dueBs = hasEconomicLedger
         ? economicDueBs
@@ -2713,10 +2721,29 @@ function ServiceOrdersSection({
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
-    const rentalReceivedBs = Math.max(0, Number((ledgerTotals.receivedBs - reclassifiedGuaranteeBs).toFixed(2)));
+    const ledgerRecordedRentalBs = Math.max(
+      0,
+      Number((ledgerTotals.receivedBs - reclassifiedGuaranteeBs).toFixed(2)),
+    );
     const guaranteeAppliedToChargesBs = Math.min(guaranteeReserveBs, effectiveChargesBs);
     const uncoveredChargesBs = Math.max(0, Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)));
     const ledgerChargeTargetBs = Number((totalBs + uncoveredChargesBs).toFixed(2));
+    const storedRentalPaidBs = Math.max(
+      0,
+      toMoneyNumber(contract?.payment?.paidAtApprovalBs),
+      toMoneyNumber(rental?.payment?.paidAtRentalBs),
+      toMoneyNumber(rental?.totals?.paidAtRentalBs),
+      toMoneyNumber(rental?.payment?.rentalCollectedBs),
+      toMoneyNumber(rental?.totals?.rentalCollectedBs),
+    );
+    const rentalReceivedBs = Math.min(
+      ledgerChargeTargetBs,
+      Math.max(
+        storedRentalPaidBs,
+        collectionRegisteredBs,
+        ledgerRecordedRentalBs,
+      ),
+    );
     const collectionTargetTotals = {
       rentalBs: Math.max(0, Number((totalBs - deliveryFeeBs).toFixed(2))),
       transportBs: Math.max(0, Number(deliveryFeeBs.toFixed(2))),
@@ -2729,7 +2756,12 @@ function ServiceOrdersSection({
     };
     const ledgerAppliedToRentalBs = Math.min(rentalReceivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - rentalReceivedBs).toFixed(2)));
-    const excessPaymentBs = Math.max(0, Number((rentalReceivedBs - ledgerChargeTargetBs).toFixed(2)));
+    const excessPaymentBs = Math.max(
+      0,
+      toMoneyNumber(contract?.payment?.overpaidBs),
+      toMoneyNumber(rental?.payment?.overpaidBs),
+      toMoneyNumber(rental?.totals?.overpaidBs),
+    );
     const ledgerRefundSuggestedBs = Math.max(0, Number((excessPaymentBs - ledgerTotals.refundedBs).toFixed(2)));
     const guaranteeRefundAvailableBs = Math.max(
       0,
@@ -2759,7 +2791,7 @@ function ServiceOrdersSection({
       : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
     const effectiveBalanceBs = managedDebtBs;
     const balanceDetailLabel = usesLedgerBalance
-      ? `Cuaderno: recibido ${formatBs(ledgerTotals.receivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
+      ? `Pago reconocido ${formatBs(rentalReceivedBs)} - garantia ${formatBs(ledgerTotals.guaranteeBs)}`
       : pendingPaymentBs > 0
       ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(effectiveGuaranteeValidatedBs)}`
       : `Total ${formatBs(totalBs)} - pagado ${formatBs(paidBs)}`;
