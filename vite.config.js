@@ -128,7 +128,7 @@ const resolvePublicCatalogArea = (item) => {
   ].filter(Boolean).join(' '))
 
   for (const area of publicCatalogAreas) {
-    if (publicCatalogAreaKeywords[area.id].some((keyword) => haystack.includes(keyword))) {
+    if ((publicCatalogAreaKeywords[area.id] ?? []).some((keyword) => haystack.includes(keyword))) {
       return area.id
     }
   }

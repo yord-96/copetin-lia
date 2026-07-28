@@ -47,7 +47,7 @@ const resolveInventoryArea = (item) => {
   ].filter(Boolean).join(' '));
 
   for (const area of INVENTORY_AREAS) {
-    if (AREA_KEYWORDS[area.id].some((keyword) => haystack.includes(keyword))) {
+    if ((AREA_KEYWORDS[area.id] ?? []).some((keyword) => haystack.includes(keyword))) {
       return area.id;
     }
   }
