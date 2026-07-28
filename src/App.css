@@ -9713,7 +9713,7 @@ textarea:focus {
 }
 
 .orders-table.orders-contracts-table {
-  min-width: 1160px;
+  min-width: 1240px;
 }
 
 .orders-commercial-table th:nth-child(1),
@@ -9734,25 +9734,27 @@ textarea:focus {
 .orders-commercial-table td:nth-child(8) { width: 8%; }
 
 .orders-contracts-table th:nth-child(1),
-.orders-contracts-table td:nth-child(1) { width: 8%; }
+.orders-contracts-table td:nth-child(1) { width: 7%; }
 .orders-contracts-table th:nth-child(2),
 .orders-contracts-table td:nth-child(2) { width: 10%; }
 .orders-contracts-table th:nth-child(3),
-.orders-contracts-table td:nth-child(3) { width: 13%; }
+.orders-contracts-table td:nth-child(3) { width: 12%; }
 .orders-contracts-table th:nth-child(4),
-.orders-contracts-table td:nth-child(4) { width: 13%; }
+.orders-contracts-table td:nth-child(4) { width: 12%; }
 .orders-contracts-table th:nth-child(5),
-.orders-contracts-table td:nth-child(5) { width: 17%; }
+.orders-contracts-table td:nth-child(5) { width: 16%; }
 .orders-contracts-table th:nth-child(6),
-.orders-contracts-table td:nth-child(6) { width: 8%; }
+.orders-contracts-table td:nth-child(6) { width: 5%; }
 .orders-contracts-table th:nth-child(7),
-.orders-contracts-table td:nth-child(7) { width: 9%; }
+.orders-contracts-table td:nth-child(7) { width: 8%; }
 .orders-contracts-table th:nth-child(8),
 .orders-contracts-table td:nth-child(8) { width: 8%; }
 .orders-contracts-table th:nth-child(9),
-.orders-contracts-table td:nth-child(9) { width: 6%; }
+.orders-contracts-table td:nth-child(9) { width: 8%; }
 .orders-contracts-table th:nth-child(10),
-.orders-contracts-table td:nth-child(10) { width: 9%; }
+.orders-contracts-table td:nth-child(10) { width: 6%; }
+.orders-contracts-table th:nth-child(11),
+.orders-contracts-table td:nth-child(11) { width: 8%; }
 
 .orders-table th,
 .orders-table td {
@@ -10185,6 +10187,10 @@ textarea:focus {
   z-index: 420;
 }
 
+.orders-modal-backdrop.orders-economic-note-backdrop {
+  z-index: 430;
+}
+
 .orders-modal {
   width: min(1180px, 100%);
   max-height: calc(100vh - 2rem);
@@ -10205,6 +10211,42 @@ textarea:focus {
 
 .availability-contract-modal {
   width: min(780px, 100%);
+}
+
+.orders-economic-note-modal {
+  width: min(560px, 100%);
+}
+
+.orders-economic-note-modal-body {
+  display: grid;
+  gap: 0.76rem;
+  padding: 1rem;
+  background: #fffaf6;
+}
+
+.orders-economic-note-card {
+  border: 1px solid #ffd0ad;
+  border-radius: 0.72rem;
+  background: #ffffff;
+  padding: 0.86rem 0.95rem;
+  box-shadow: 0 10px 24px rgba(194, 65, 12, 0.08);
+}
+
+.orders-economic-note-card span {
+  display: block;
+  margin-bottom: 0.42rem;
+  color: #9a3412;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.orders-economic-note-card p {
+  margin: 0;
+  color: #18233f;
+  font-size: 0.95rem;
+  line-height: 1.48;
+  white-space: pre-wrap;
 }
 
 .contract-economics-backdrop {
@@ -33960,6 +34002,18 @@ button.calendar-dispatch-row:focus-visible {
   .orders-table td:nth-child(7)::before { content: "Total"; }
   .orders-table td:nth-child(8)::before { content: "Acciones"; }
 
+  .orders-contracts-table td:nth-child(1)::before { content: "Contrato"; }
+  .orders-contracts-table td:nth-child(2)::before { content: "Fecha evento"; }
+  .orders-contracts-table td:nth-child(3)::before { content: "Cliente"; }
+  .orders-contracts-table td:nth-child(4)::before { content: "Responsable"; }
+  .orders-contracts-table td:nth-child(5)::before { content: "Servicio"; }
+  .orders-contracts-table td:nth-child(6)::before { content: "Nota"; }
+  .orders-contracts-table td:nth-child(7)::before { content: "Estado"; }
+  .orders-contracts-table td:nth-child(8)::before { content: "Garantia"; }
+  .orders-contracts-table td:nth-child(9)::before { content: "Debe"; }
+  .orders-contracts-table td:nth-child(10)::before { content: "Finalizado"; }
+  .orders-contracts-table td:nth-child(11)::before { content: "Acciones"; }
+
   .inventory-table-modern td:nth-child(1)::before,
   .inventory-table td:nth-child(1)::before { content: "Producto"; }
   .inventory-table-modern td:nth-child(2)::before,
@@ -35306,6 +35360,63 @@ button.calendar-dispatch-row:focus-visible {
   .orders-view .orders-contracts-table .orders-total.is-due,
   .orders-total-with-economics.is-due {
     color: #102b59;
+  }
+
+  .orders-economic-note-cell {
+    text-align: center;
+  }
+
+  .orders-economic-note-bubble {
+    width: 2.2rem;
+    height: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.16rem;
+    border: 1px solid #ff9b45;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+    color: #c2410c;
+    font-size: 0.68rem;
+    font-weight: 950;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(234, 88, 12, 0.14);
+    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  }
+
+  .orders-economic-note-bubble svg {
+    width: 0.9rem;
+    height: 0.9rem;
+    stroke-width: 2.4;
+  }
+
+  .orders-economic-note-bubble:hover,
+  .orders-economic-note-bubble:focus-visible {
+    transform: translateY(-1px);
+    border-color: #ea580c;
+    box-shadow: 0 10px 22px rgba(234, 88, 12, 0.2);
+    outline: none;
+  }
+
+  .orders-economic-note-mobile-button {
+    min-height: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.36rem;
+    border: 1px solid #ff9b45;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #c2410c;
+    padding: 0.42rem 0.72rem;
+    font-size: 0.72rem;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .orders-economic-note-mobile-button svg {
+    width: 0.92rem;
+    height: 0.92rem;
   }
 
   .orders-finalized-cell {

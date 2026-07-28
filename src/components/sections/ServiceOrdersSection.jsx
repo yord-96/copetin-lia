@@ -403,6 +403,11 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
   };
 };
 
+const getEconomicInternalNotes = (contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+  .map(normalizeEconomicLedgerEntry)
+  .filter((entry) => entry.type === 'note' && entry.note)
+  .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime());
+
 const getCatalogSearchScore = (searchValue, fields = []) => {
   const query = normalizeSearchText(searchValue);
   if (!query) return 1;
@@ -1345,6 +1350,7 @@ function ServiceOrdersSection({
     paymentAccount: '',
   });
   const [contractEconomicsLedgerEditingId, setContractEconomicsLedgerEditingId] = useState(null);
+  const [contractEconomicNotePreview, setContractEconomicNotePreview] = useState(null);
   const contractEconomicsLedgerTypeRef = useRef(null);
   const contractEconomicsLedgerAmountRef = useRef(null);
   const contractEconomicsLedgerNoteRef = useRef(null);
@@ -1945,6 +1951,7 @@ function ServiceOrdersSection({
       const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
       const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
         .map(normalizeEconomicLedgerEntry);
+      const economicInternalNotes = getEconomicInternalNotes({ economicLedger });
       const hasEconomicLedger = economicLedger
         .some((entry) => toMoneyNumber(entry?.amountBs) > 0);
       const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
@@ -2047,6 +2054,7 @@ function ServiceOrdersSection({
         isSent,
         isReturned,
         hasEconomicLedger,
+        economicInternalNotes,
         guaranteeBs,
         guaranteeStatus,
         deletedByName: String(contract?.deletedByName ?? deletionRevision?.updatedByName ?? '').trim(),
@@ -8138,6 +8146,7 @@ function ServiceOrdersSection({
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Servicio</th>
+                    <th>Nota</th>
                     <th>Estado</th>
                     <th>Garantía</th>
                     <th>Debe</th>
@@ -8148,6 +8157,7 @@ function ServiceOrdersSection({
                 <tbody>
                   {filteredContracts.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
+                    const economicInternalNotes = row.economicInternalNotes ?? [];
                     const isRowFinalized = finalizedContractOverrides.has(row.id)
                       ? finalizedContractOverrides.get(row.id)
                       : Boolean(row.isFinalized);
@@ -8194,6 +8204,20 @@ function ServiceOrdersSection({
                               </>
                             )}
                           </div>
+                        </td>
+                        <td className="orders-economic-note-cell">
+                          {economicInternalNotes.length > 0 ? (
+                            <button
+                              type="button"
+                              className="orders-economic-note-bubble"
+                              onClick={() => setContractEconomicNotePreview({ contract: row, notes: economicInternalNotes })}
+                              title="Ver nota interna economica"
+                              aria-label={`Ver nota interna economica del contrato ${row.contractCode}`}
+                            >
+                              <MessageCircle aria-hidden="true" />
+                              <span>{economicInternalNotes.length}</span>
+                            </button>
+                          ) : null}
                         </td>
                         <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-hidden-status-cell">
@@ -8260,7 +8284,7 @@ function ServiceOrdersSection({
                   })}
                   {filteredContracts.length === 0 ? (
                     <tr>
-                      <td colSpan={10}>
+                      <td colSpan={11}>
                         <div className="orders-empty-state">
                           <span className="orders-empty-icon"><OrdersKpiIcon kind="contract" /></span>
                           <strong>No hay contratos con esos filtros</strong>
@@ -8277,6 +8301,7 @@ function ServiceOrdersSection({
               {filteredContracts.map((row) => {
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                 const transportMeta = getContractTransportLabel(row);
+                const economicInternalNotes = row.economicInternalNotes ?? [];
                 const isRowFinalized = finalizedContractOverrides.has(row.id)
                   ? finalizedContractOverrides.get(row.id)
                   : Boolean(row.isFinalized);
@@ -8361,6 +8386,16 @@ function ServiceOrdersSection({
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
                       </button>
+                      {economicInternalNotes.length > 0 ? (
+                        <button
+                          type="button"
+                          className="orders-economic-note-mobile-button"
+                          onClick={() => setContractEconomicNotePreview({ contract: row, notes: economicInternalNotes })}
+                        >
+                          <MessageCircle aria-hidden="true" />
+                          Nota economica
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
@@ -8623,6 +8658,49 @@ function ServiceOrdersSection({
               </>
             )
           ) : null}
+        </div>
+      ) : null}
+
+      {contractEconomicNotePreview ? (
+        <div
+          className="orders-modal-backdrop orders-economic-note-backdrop"
+          onClick={() => setContractEconomicNotePreview(null)}
+        >
+          <section
+            className="orders-modal orders-economic-note-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="orders-modal-head">
+              <div>
+                <h3>Nota interna economica</h3>
+                <p>
+                  Contrato {contractEconomicNotePreview.contract?.contractCode || '-'}
+                  {' | '}
+                  {contractEconomicNotePreview.contract?.customerName || 'Cliente sin registrar'}
+                </p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setContractEconomicNotePreview(null)}>
+                x
+              </button>
+            </header>
+            <div className="orders-economic-note-modal-body">
+              {contractEconomicNotePreview.notes.map((note) => (
+                <article key={note.id} className="orders-economic-note-card">
+                  <span>
+                    {formatDateTime(note.createdAt)}
+                    {' | '}
+                    {note.createdByName || 'Sistema'}
+                  </span>
+                  <p>{note.note}</p>
+                </article>
+              ))}
+            </div>
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setContractEconomicNotePreview(null)}>
+                Cerrar
+              </button>
+            </footer>
+          </section>
         </div>
       ) : null}
 
