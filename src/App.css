@@ -10082,6 +10082,25 @@ textarea:focus {
   font-size: 0.73rem;
 }
 
+.orders-load-more-button {
+  border: 1px solid #ffd0ad;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.42rem 0.75rem;
+  box-shadow: 0 6px 16px rgba(234, 88, 12, 0.08);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.orders-load-more-button:hover {
+  background: #ffedd5;
+  border-color: #fb923c;
+  transform: translateY(-1px);
+}
+
 .orders-empty-state {
   min-height: 9.4rem;
   display: grid;

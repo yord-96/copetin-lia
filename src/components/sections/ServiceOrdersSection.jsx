@@ -108,6 +108,7 @@ const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\
 
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 8;
+const CONTRACT_RENDER_BATCH_SIZE = 80;
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 const DOCUMENT_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const DOCUMENT_INTERNAL_KEY = String(
@@ -1296,6 +1297,8 @@ function ServiceOrdersSection({
   const [contractFilter, setContractFilter] = useState('all');
   const [contractQuery, setContractQuery] = useState('');
   const deferredContractQuery = useDeferredValue(contractQuery);
+  const [visibleContractLimit, setVisibleContractLimit] = useState(CONTRACT_RENDER_BATCH_SIZE);
+  const [isMobileCommercialLayout, setIsMobileCommercialLayout] = useState(false);
   const [contractDateFrom, setContractDateFrom] = useState(DEFAULT_CONTRACT_WEEK_RANGE.from);
   const [contractDateTo, setContractDateTo] = useState(DEFAULT_CONTRACT_WEEK_RANGE.to);
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
@@ -1388,6 +1391,20 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    const updateLayout = () => setIsMobileCommercialLayout(mediaQuery.matches);
+    updateLayout();
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateLayout);
+      return () => mediaQuery.removeEventListener('change', updateLayout);
+    }
+    mediaQuery.addListener(updateLayout);
+    return () => mediaQuery.removeListener(updateLayout);
+  }, []);
+
   useEffect(() => {
     if (documentPreview?.blobUrl) return undefined;
 
@@ -2133,6 +2150,17 @@ function ServiceOrdersSection({
     if (contractFilter === 'oculto') return searchedHiddenContracts;
     return searchedVisibleContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
   }, [contractFilter, searchedHiddenContracts, searchedVisibleContracts]);
+
+  useEffect(() => {
+    setVisibleContractLimit(CONTRACT_RENDER_BATCH_SIZE);
+  }, [activeView, contractDateFrom, contractDateTo, contractFilter, deferredContractQuery]);
+
+  const visibleContractsForRender = useMemo(
+    () => filteredContracts.slice(0, visibleContractLimit),
+    [filteredContracts, visibleContractLimit],
+  );
+
+  const hasMoreFilteredContracts = visibleContractsForRender.length < filteredContracts.length;
 
   useEffect(() => {
     if (activeView !== 'quotes' && activeView !== 'contracts') return;
@@ -7990,57 +8018,59 @@ function ServiceOrdersSection({
               </table>
             </div>
 
-            <div className="orders-mobile-commercial-list">
-              {filteredQuotes.map((row) => {
-                const statusMeta = QUOTE_STATUS_META[row.status] ?? QUOTE_STATUS_META.borrador;
-                return (
-                  <article key={row.id} className={`orders-mobile-contract-card quote-${row.status}`}>
-                    <header>
-                      <strong>{row.quoteCode}</strong>
-                      <span className={`orders-status-badge quote-${statusMeta.className}`}>{statusMeta.label}</span>
-                      <b>{formatBs(row.totalBs)}</b>
-                    </header>
-                    <div className="orders-mobile-contract-main">
-                      <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
-                      <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
-                    </div>
-                    <div className="orders-mobile-contract-meta">
-                      <span className="orders-mobile-date-line">Fecha: {formatDate(row.deliveryDate)} - {formatDate(row.pickupDate)}</span>
-                      <span>{LOGISTICS_MODE_META[row.logisticsMode] ?? 'Entrega / recojo'}</span>
-                    </div>
-                    <div className="orders-mobile-contract-bottom">
-                      <div className="orders-responsible-cell">
-                        <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
-                        <div>
-                          <strong>{row.responsibleName}</strong>
-                          <small>{row.responsibleRole}</small>
+            {isMobileCommercialLayout ? (
+              <div className="orders-mobile-commercial-list">
+                {filteredQuotes.map((row) => {
+                  const statusMeta = QUOTE_STATUS_META[row.status] ?? QUOTE_STATUS_META.borrador;
+                  return (
+                    <article key={row.id} className={`orders-mobile-contract-card quote-${row.status}`}>
+                      <header>
+                        <strong>{row.quoteCode}</strong>
+                        <span className={`orders-status-badge quote-${statusMeta.className}`}>{statusMeta.label}</span>
+                        <b>{formatBs(row.totalBs)}</b>
+                      </header>
+                      <div className="orders-mobile-contract-main">
+                        <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
+                        <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
+                      </div>
+                      <div className="orders-mobile-contract-meta">
+                        <span className="orders-mobile-date-line">Fecha: {formatDate(row.deliveryDate)} - {formatDate(row.pickupDate)}</span>
+                        <span>{LOGISTICS_MODE_META[row.logisticsMode] ?? 'Entrega / recojo'}</span>
+                      </div>
+                      <div className="orders-mobile-contract-bottom">
+                        <div className="orders-responsible-cell">
+                          <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
+                          <div>
+                            <strong>{row.responsibleName}</strong>
+                            <small>{row.responsibleRole}</small>
+                          </div>
+                        </div>
+                        <div className="orders-row-actions">
+                          <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
+                            Abrir
+                          </button>
+                          <button
+                            type="button"
+                            className="whatsapp-bubble-button"
+                            onClick={() => openWhatsAppModal('quote', row)}
+                            aria-label={`Enviar cotizacion ${row.quoteCode} por WhatsApp`}
+                          >
+                            <WhatsAppGlyph />
+                          </button>
                         </div>
                       </div>
-                      <div className="orders-row-actions">
-                        <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
-                          Abrir
-                        </button>
-                        <button
-                          type="button"
-                          className="whatsapp-bubble-button"
-                          onClick={() => openWhatsAppModal('quote', row)}
-                          aria-label={`Enviar cotizacion ${row.quoteCode} por WhatsApp`}
-                        >
-                          <WhatsAppGlyph />
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-              {filteredQuotes.length === 0 ? (
-                <div className="orders-empty-state">
-                  <span className="orders-empty-icon"><OrdersKpiIcon kind="quote" /></span>
-                  <strong>No hay cotizaciones con esos filtros</strong>
-                  <p>Crea una cotizacion o limpia los filtros para revisar propuestas anteriores.</p>
-                </div>
-              ) : null}
-            </div>
+                    </article>
+                  );
+                })}
+                {filteredQuotes.length === 0 ? (
+                  <div className="orders-empty-state">
+                    <span className="orders-empty-icon"><OrdersKpiIcon kind="quote" /></span>
+                    <strong>No hay cotizaciones con esos filtros</strong>
+                    <p>Crea una cotizacion o limpia los filtros para revisar propuestas anteriores.</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <footer className="orders-footer">
               <span>Mostrando {filteredQuotes.length} de {quoteRows.length} cotizaciones</span>
@@ -8126,7 +8156,7 @@ function ServiceOrdersSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredContracts.map((row) => {
+                  {visibleContractsForRender.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                     const economicInternalNotes = row.economicInternalNotes ?? [];
                     const isRowFinalized = finalizedContractOverrides.has(row.id)
@@ -8268,8 +8298,9 @@ function ServiceOrdersSection({
               </table>
             </div>
 
-            <div className="orders-mobile-commercial-list">
-              {filteredContracts.map((row) => {
+            {isMobileCommercialLayout ? (
+              <div className="orders-mobile-commercial-list">
+              {visibleContractsForRender.map((row) => {
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                 const transportMeta = getContractTransportLabel(row);
                 const economicInternalNotes = row.economicInternalNotes ?? [];
@@ -8405,13 +8436,24 @@ function ServiceOrdersSection({
                   <p>Los contratos apareceran aqui cuando una cotizacion sea aprobada o registres un contrato manual.</p>
                 </div>
               ) : null}
-            </div>
+              </div>
+            ) : null}
 
             <footer className="orders-footer">
               <span>
-                Mostrando {filteredContracts.length} de {searchedContracts.length} contratos
+                Mostrando {visibleContractsForRender.length} de {filteredContracts.length} contratos
+                {filteredContracts.length !== searchedContracts.length ? ` (${searchedContracts.length} encontrados)` : ''}
                 {contractQuery ? ` filtrados (${contractRows.length} total)` : ''}
               </span>
+              {hasMoreFilteredContracts ? (
+                <button
+                  type="button"
+                  className="orders-load-more-button"
+                  onClick={() => setVisibleContractLimit((current) => current + CONTRACT_RENDER_BATCH_SIZE)}
+                >
+                  Mostrar {Math.min(CONTRACT_RENDER_BATCH_SIZE, filteredContracts.length - visibleContractsForRender.length)} mas
+                </button>
+              ) : null}
             </footer>
           </>
         )}
