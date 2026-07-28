@@ -1506,6 +1506,32 @@ const callBridge = async (domain, method, mutates, ...args) => {
   return request;
 };
 
+
+const callDirectCashOperation = async (path, payload = {}) => {
+  if (!shouldUseServerState()) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  try {
+    const clientOperationId = String(payload?.clientOperationId ?? '').trim()
+      || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `cash-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const response = await fetch(getServerStateUrl(path), {
+      method: 'POST', cache: 'no-store', signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ ...payload, clientOperationId }),
+    });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo registrar la operacion de caja.');
+    const result = await response.json();
+    if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
+      lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
+    }
+    announceDataChange({ domain: 'cash', method: path.includes('collect') ? 'collectReceivable' : 'createManualMovement' });
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('El servidor tardo demasiado en confirmar la operacion. No la repitas: vuelve a abrir el contrato para verificar el recibo.');
+    throw error;
+  } finally { clearTimeout(timeoutId); }
+};
+
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return null;
@@ -1768,9 +1794,18 @@ export const api = {
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
-    createManualMovement: (payload) => callBridge('cash', 'createManualMovement', true, payload),
+    createManualMovement: async (payload) => {
+      if (shouldUseServerState() && (payload?.linkedContractId || String(payload?.accountingTag ?? '').includes('guarantee') || String(payload?.category ?? '').includes('garantia'))) {
+        const result = await callDirectCashOperation('/cash/manual-economic-movement', payload);
+        return result?.movement ?? result;
+      }
+      return callBridge('cash', 'createManualMovement', true, payload);
+    },
     voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
-    collectReceivable: (payload) => callBridge('cash', 'collectReceivable', true, payload),
+    collectReceivable: async (payload) => {
+      if (shouldUseServerState()) return callDirectCashOperation('/cash/collect-receivable', payload);
+      return callBridge('cash', 'collectReceivable', true, payload);
+    },
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
     payDebt: (payload) => callBridge('cash', 'payDebt', true, payload),
     deleteDebt: (payload) => callBridge('cash', 'deleteDebt', true, payload),

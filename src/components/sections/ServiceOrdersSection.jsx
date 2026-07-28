@@ -6727,7 +6727,10 @@ function ServiceOrdersSection({
       const movement = result?.movement ?? result ?? {};
       const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? contractEconomicsCollectionDraft.receipt ?? '').trim();
       if (movementId) {
-        await handlePrintEconomicReceipt({ id: movementId });
+        void handlePrintEconomicReceipt({ id: movementId }).catch((printError) => {
+          console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
+          setActionFeedback('El cobro fue guardado correctamente, pero el recibo no pudo abrirse automaticamente. Puedes abrirlo desde Ver documentos.');
+        });
       }
       setActionFeedback(`Cobro registrado en Caja Grande para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id}${receiptCode ? ` con recibo ${receiptCode}` : ''}.`);
       setContractEconomicsCollectionDraft({
@@ -7030,7 +7033,10 @@ function ServiceOrdersSection({
           receiptWindow,
         });
       } else if (movementId) {
-        await handlePrintEconomicReceipt({ id: movementId });
+        void handlePrintEconomicReceipt({ id: movementId }).catch((printError) => {
+          console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
+          setActionFeedback('El cobro fue guardado correctamente, pero el recibo no pudo abrirse automaticamente. Puedes abrirlo desde Ver documentos.');
+        });
       }
       resetContractEconomicLedgerForm();
     }
@@ -7132,7 +7138,10 @@ function ServiceOrdersSection({
       rememberEconomicCashResult(result);
       const movementId = resolveEconomicMovementId(result);
       if (movementId) {
-        await handlePrintEconomicReceipt({ id: movementId });
+        void handlePrintEconomicReceipt({ id: movementId }).catch((printError) => {
+          console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
+          setActionFeedback('El cobro fue guardado correctamente, pero el recibo no pudo abrirse automaticamente. Puedes abrirlo desde Ver documentos.');
+        });
       }
 
       const entry = {

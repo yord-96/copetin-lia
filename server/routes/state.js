@@ -31,6 +31,7 @@ const deferredBootstrapCollections = Object.freeze([
 ]);
 const summarizedBootstrapCollections = Object.freeze(['contracts', 'rentals']);
 const readablePartialCollectionSet = new Set([
+  'cashSessions',
   ...deferredBootstrapCollections,
   ...summarizedBootstrapCollections,
 ]);
@@ -396,6 +397,186 @@ router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+
+const directMoney = (value) => Number(Math.max(0, Number(value ?? 0)).toFixed(2));
+const directId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
+const directPaymentMethod = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['efectivo', 'qr', 'transferencia'].includes(normalized) ? normalized : 'efectivo';
+};
+const directPaymentAccount = (method, value) => directPaymentMethod(method) === 'qr'
+  ? String(value ?? '').trim().toUpperCase()
+  : '';
+const nextDirectReceiptCode = (state) => {
+  const movements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const maxPersisted = movements.reduce((max, movement) => {
+    const match = String(movement?.receiptCode ?? '').match(/^RC-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `RC-${String(maxPersisted > 0 ? maxPersisted + 1 : movements.length + 1).padStart(4, '0')}`;
+};
+const buildDirectMovement = (state, payload = {}) => ({
+  id: directId('mov'),
+  sessionId: payload.sessionId ?? null,
+  type: String(payload.type ?? '').trim(),
+  amountBs: Number(Number(payload.amountBs ?? 0).toFixed(2)),
+  description: String(payload.description ?? '').trim(),
+  sourceType: payload.sourceType ?? null,
+  sourceId: payload.sourceId ?? null,
+  createdBy: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+  createdByName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+  userName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+  cashBoxType: String(payload.cashBoxType ?? 'BIG_CASH').trim() || 'BIG_CASH',
+  category: String(payload.category ?? '').trim(),
+  paymentMethod: directPaymentMethod(payload.paymentMethod),
+  paymentAccount: directPaymentAccount(payload.paymentMethod, payload.paymentAccount),
+  responsible: String(payload.responsible ?? payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+  receipt: String(payload.receipt ?? '').trim(),
+  receiptCode: String(payload.receiptCode ?? nextDirectReceiptCode(state)).trim(),
+  notes: String(payload.notes ?? '').trim(),
+  isInternalTransfer: false,
+  transferGroupId: null,
+  receiptStatus: '',
+  voidedAt: null,
+  voidedBy: '',
+  voidReason: '',
+  replacedByMovementId: null,
+  replacementOfMovementId: null,
+  linkedRentalId: String(payload.linkedRentalId ?? '').trim() || null,
+  linkedContractId: String(payload.linkedContractId ?? '').trim() || null,
+  linkedOrderCode: String(payload.linkedOrderCode ?? '').trim() || null,
+  accountingTag: String(payload.accountingTag ?? '').trim(),
+  collectionTarget: String(payload.collectionTarget ?? '').trim(),
+  collectionTargets: Array.isArray(payload.collectionTargets) ? payload.collectionTargets : [],
+  collectionBreakdown: Array.isArray(payload.collectionBreakdown) ? payload.collectionBreakdown : [],
+  receiptDetail: String(payload.receiptDetail ?? '').trim(),
+  transportRevenueBs: directMoney(payload.transportRevenueBs),
+  damageCollectedBs: directMoney(payload.damageCollectedBs),
+  transportExpenseBs: directMoney(payload.transportExpenseBs),
+  clientOperationId: String(payload.clientOperationId ?? '').trim() || null,
+  createdAt: new Date().toISOString(),
+});
+const findDirectOperation = (state, clientOperationId) => {
+  const operationId = String(clientOperationId ?? '').trim();
+  if (!operationId) return null;
+  return (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+    .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
+};
+
+router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rentalId = String(payload.rentalId ?? '').trim();
+    const amountBs = directMoney(payload.amountBs);
+    if (!rentalId) return res.status(400).json({ error: 'No se pudo identificar la orden a cobrar.' });
+    if (amountBs <= 0) return res.status(400).json({ error: 'El monto cobrado debe ser mayor a 0.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.cashSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      state.serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+
+      const duplicate = findDirectOperation(state, payload.clientOperationId);
+      if (duplicate) {
+        const rental = state.rentals.find((entry) => String(entry?.id) === String(duplicate.linkedRentalId));
+        responseData = { rental, movement: duplicate, movements: [duplicate], duplicate: true };
+        return state;
+      }
+
+      const rental = state.rentals.find((entry) => String(entry?.id) === rentalId && !entry?.deletedAt);
+      if (!rental) { const error = new Error('No se encontro la orden seleccionada.'); error.statusCode = 404; throw error; }
+      const isReturned = rental.status === 'returned';
+      const settlement = rental.returnSettlement ?? {};
+      const currentPending = Number(isReturned
+        ? settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0
+        : rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+      if (currentPending <= 0) { const error = new Error('Esta orden no tiene saldo pendiente por cobrar.'); error.statusCode = 409; throw error; }
+      if (amountBs - currentPending > 0.01) { const error = new Error(`El saldo pendiente es Bs ${currentPending.toFixed(2)}.`); error.statusCode = 409; throw error; }
+
+      const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
+      const breakdown = Array.isArray(payload.collectionBreakdown) && payload.collectionBreakdown.length
+        ? payload.collectionBreakdown.map((entry) => ({ ...entry, amountBs: directMoney(entry?.amountBs) })).filter((entry) => entry.amountBs > 0)
+        : [{ target: String(payload.collectionTarget ?? 'balance'), amountBs }];
+      const deliveryFeeBs = !isReturned ? directMoney(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs) : 0;
+      const previousTransport = directMoney(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs);
+      const remainingTransport = directMoney(deliveryFeeBs - previousTransport);
+      const explicitTransport = directMoney(breakdown.filter((e) => e.target === 'transport').reduce((s,e)=>s+e.amountBs,0));
+      const explicitDamage = directMoney(breakdown.filter((e) => e.target === 'damage').reduce((s,e)=>s+e.amountBs,0));
+      const explicitRental = directMoney(breakdown.filter((e) => e.target === 'rental').reduce((s,e)=>s+e.amountBs,0));
+      const balance = directMoney(breakdown.filter((e) => e.target === 'balance').reduce((s,e)=>s+e.amountBs,0));
+      const balanceTransport = Math.min(balance, remainingTransport);
+      const transportNow = directMoney(explicitTransport + balanceTransport);
+      const rentalNow = directMoney(explicitRental + Math.max(0, balance - balanceTransport));
+      const now = new Date().toISOString();
+      const previousPaid = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs);
+
+      rental.payment = { ...(rental.payment ?? {}), paidAtRentalBs: directMoney(previousPaid + amountBs), pendingPaymentBs: remainingBs,
+        deliveryFeeCollectedBs: directMoney(previousTransport + transportNow),
+        rentalCollectedBs: directMoney(Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0) + rentalNow),
+        damageCollectedBs: directMoney(Number(rental?.payment?.damageCollectedBs ?? rental?.totals?.damageCollectedBs ?? 0) + explicitDamage),
+        status: remainingBs > 0 ? 'saldo_pendiente' : (isReturned ? 'cobrado_finalizado' : 'cancelado'),
+        mode: remainingBs > 0 ? 'a_cuenta' : 'cancelado', lastCollectionAt: now, lastCollectionBy: String(payload.createdBy ?? 'Sistema') };
+      rental.totals = { ...(rental.totals ?? {}), ...rental.payment };
+      if (isReturned) {
+        rental.returnSettlement = { ...settlement, pendingCollectionBs: remainingBs,
+          collectedAfterReturnBs: directMoney(Number(settlement.collectedAfterReturnBs ?? 0) + amountBs),
+          collectedAt: remainingBs === 0 ? now : settlement.collectedAt ?? null,
+          collectedBy: remainingBs === 0 ? String(payload.createdBy ?? 'Sistema') : settlement.collectedBy ?? null };
+        rental.accountingStatus = remainingBs === 0 ? 'cobrado_finalizado' : 'finalizado_pendiente_cobro';
+        rental.finalizedAt = remainingBs === 0 ? now : rental.finalizedAt ?? null;
+      } else rental.accountingStatus = remainingBs === 0 ? 'cobrado' : 'saldo_pendiente';
+      rental.updatedAt = now;
+
+      state.contracts.forEach((contract) => {
+        if (String(contract?.rentalId ?? '') === rental.id || (contract?.orderCode && contract.orderCode === rental.orderCode)) {
+          contract.accountingStatus = rental.accountingStatus; contract.paymentStatus = rental.payment.status; contract.updatedAt = now;
+        }
+      });
+      state.serviceOrders.forEach((order) => {
+        if (String(order?.rentalId ?? '') === rental.id || String(order?.id ?? '') === rental.id || order?.codigo === rental.orderCode) {
+          order.saldo_pendiente = remainingBs; order.estado = isReturned && remainingBs === 0 ? 'cobrado_finalizado' : remainingBs === 0 ? 'cobrada' : 'pendiente_cobro'; order.updated_at = now;
+        }
+      });
+
+      const target = String(payload.collectionTarget ?? 'balance');
+      const mixed = breakdown.length > 1 || target === 'mixed';
+      const type = mixed ? 'ingreso_cobro_mixto_contrato' : target === 'transport' ? 'ingreso_transporte_cliente' : target === 'damage' ? 'ingreso_danos_faltantes' : isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
+      const movement = buildDirectMovement(state, { ...payload, type, amountBs,
+        description: String(payload.receiptDetail ?? '').trim().split('\n').filter(Boolean).slice(0,2).join(' | ') || String(payload.note ?? '').trim() || `Cobro contrato: ${rental.customerName ?? ''}`,
+        sourceType: isReturned ? 'return' : 'rental', sourceId: rental.id, cashBoxType: 'BIG_CASH',
+        category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
+        linkedRentalId: rental.id, linkedContractId: rental.contractId, linkedOrderCode: rental.orderCode,
+        transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note });
+      state.cashMovements.push(movement);
+      responseData = { rental: structuredClone(rental), movement: structuredClone(movement), movements: [structuredClone(movement)] };
+      return state;
+    });
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) { if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const amountBs = directMoney(payload.amountBs);
+    if (amountBs <= 0) return res.status(400).json({ error: 'El monto del movimiento debe ser mayor a 0.' });
+    if (!String(payload.description ?? '').trim()) return res.status(400).json({ error: 'Debes escribir una descripcion para el movimiento.' });
+    let movement = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      const duplicate = findDirectOperation(state, payload.clientOperationId);
+      if (duplicate) { movement = duplicate; return state; }
+      movement = buildDirectMovement(state, { ...payload, type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual', amountBs: payload.type === 'egreso' ? -amountBs : amountBs });
+      state.cashMovements.push(movement);
+      return state;
+    });
+    res.json({ ok: true, movement, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) { next(error); }
 });
 
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
