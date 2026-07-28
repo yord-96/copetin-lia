@@ -400,6 +400,124 @@ router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
 });
 
 
+const normalizeEconomicContextKey = (value) =>
+  String(value ?? '').trim().toLocaleLowerCase('es-BO');
+
+const getEconomicContextIdentifiers = (...records) => {
+  const keys = new Set();
+  records.filter(Boolean).forEach((record) => {
+    [
+      record?.id,
+      record?.contractId,
+      record?.rentalId,
+      record?.contractCode,
+      record?.orderCode,
+      record?.number,
+      record?.codigo,
+    ].forEach((value) => {
+      const key = normalizeEconomicContextKey(value);
+      if (key) keys.add(key);
+    });
+  });
+  return keys;
+};
+
+const economicMovementMatches = (movement, identifiers) => {
+  const directValues = [
+    movement?.linkedContractId,
+    movement?.linkedRentalId,
+    movement?.linkedOrderCode,
+    movement?.contractId,
+    movement?.rentalId,
+    movement?.orderCode,
+    movement?.contractCode,
+    movement?.sourceId,
+    movement?.reference,
+  ];
+  if (directValues.some((value) => identifiers.has(normalizeEconomicContextKey(value)))) {
+    return true;
+  }
+
+  // Compatibilidad con movimientos históricos que guardaron la referencia
+  // únicamente dentro de la descripción o las notas.
+  const looseText = normalizeEconomicContextKey([
+    movement?.description,
+    movement?.notes,
+    movement?.note,
+    movement?.detail,
+    movement?.receiptDetail,
+  ].filter(Boolean).join(' '));
+  if (!looseText) return false;
+
+  return [...identifiers].some((key) => key.length >= 3 && looseText.includes(key));
+};
+
+router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next) => {
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const rentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+    const cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+
+    const requestedKey = normalizeEconomicContextKey(requestedId);
+    const contract = contracts.find((entry) => [
+      entry?.id,
+      entry?.contractCode,
+      entry?.number,
+      entry?.orderCode,
+      entry?.rentalId,
+    ].some((value) => normalizeEconomicContextKey(value) === requestedKey)) ?? null;
+
+    if (!contract) {
+      res.status(404).json({ error: 'Contrato no encontrado.' });
+      return;
+    }
+
+    const contractIdentifiers = getEconomicContextIdentifiers(contract);
+    const rental = rentals.find((entry) => {
+      const rentalIdentifiers = getEconomicContextIdentifiers(entry);
+      return [...rentalIdentifiers].some((key) => contractIdentifiers.has(key));
+    }) ?? null;
+
+    const identifiers = getEconomicContextIdentifiers(contract, rental);
+    const serviceOrder = serviceOrders.find((entry) => {
+      const orderIdentifiers = getEconomicContextIdentifiers(entry);
+      return [...orderIdentifiers].some((key) => identifiers.has(key));
+    }) ?? null;
+
+    getEconomicContextIdentifiers(serviceOrder).forEach((key) => identifiers.add(key));
+
+    const movements = cashMovements
+      .filter((movement) => economicMovementMatches(movement, identifiers))
+      .sort((left, right) =>
+        new Date(right?.createdAt ?? 0).getTime() - new Date(left?.createdAt ?? 0).getTime()
+      );
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      contract,
+      rental,
+      serviceOrder,
+      cashMovements: movements,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
 const directMoney = (value) => Number(Math.max(0, Number(value ?? 0)).toFixed(2));
 const directId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
 const directPaymentMethod = (value) => {

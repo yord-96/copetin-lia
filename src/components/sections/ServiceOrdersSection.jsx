@@ -1331,6 +1331,8 @@ function ServiceOrdersSection({
   const deferredDocumentsOrder = useDeferredValue(documentsOrder);
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
   const [contractEconomicsFullRental, setContractEconomicsFullRental] = useState(null);
+  const [contractEconomicsContextMovements, setContractEconomicsContextMovements] = useState([]);
+  const [isLoadingContractEconomics, setIsLoadingContractEconomics] = useState(false);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
   const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
     target: 'rental',
@@ -1854,12 +1856,12 @@ function ServiceOrdersSection({
 
   const effectiveCashMovements = useMemo(() => {
     const byId = new Map();
-    [...cashMovements, ...recentEconomicCashMovements].forEach((movement) => {
+    [...cashMovements, ...contractEconomicsContextMovements, ...recentEconomicCashMovements].forEach((movement) => {
       const key = String(movement?.id ?? movement?.receiptCode ?? '').trim();
       if (key) byId.set(key, movement);
     });
     return [...byId.values()];
-  }, [cashMovements, recentEconomicCashMovements]);
+  }, [cashMovements, contractEconomicsContextMovements, recentEconomicCashMovements]);
 
   const returnedGuaranteeReferences = useMemo(() => {
     const references = new Set();
@@ -6419,23 +6421,33 @@ function ServiceOrdersSection({
     setContractEconomicsError('');
     resetContractEconomicsCollectionDraft();
     setMenuState(null);
-    setContractActionStatus(`Cargando seguimiento economico ${contractRow?.contractCode || contractRow?.orderCode || ''}...`);
+    setContractEconomicsTarget(contractRow);
+    setContractEconomicsFullRental(null);
+    setContractEconomicsContextMovements([]);
+    setIsLoadingContractEconomics(true);
     try {
-      const { fullContract, fullRental } = await loadFullContractEconomicsTarget(contractRow, 'contract-economics-open');
-      setContractEconomicsFullRental(fullRental);
-      setContractEconomicsTarget(fullContract);
+      const identifier = contractRow?.id ?? contractRow?.contractCode ?? contractRow?.orderCode;
+      const context = await api.contracts.getEconomicContext(identifier);
+      setContractEconomicsTarget(context?.contract ?? contractRow);
+      setContractEconomicsFullRental(context?.rental ?? null);
+      setContractEconomicsContextMovements(
+        Array.isArray(context?.cashMovements) ? context.cashMovements : [],
+      );
     } catch (requestError) {
-      setContractEconomicsError(requestError.message || 'No se pudo cargar el seguimiento economico completo.');
+      setContractEconomicsError(
+        requestError.message || 'No se pudo cargar el seguimiento economico completo.',
+      );
       setContractEconomicsFullRental(null);
-      setContractEconomicsTarget(contractRow);
     } finally {
-      setContractActionStatus('');
+      setIsLoadingContractEconomics(false);
     }
   };
 
   const closeContractEconomics = () => {
     setContractEconomicsTarget(null);
     setContractEconomicsFullRental(null);
+    setContractEconomicsContextMovements([]);
+    setIsLoadingContractEconomics(false);
     setContractEconomicsError('');
     setIsSavingContractEconomicsCollection(false);
     setIsSavingContractEconomicsLedger(false);
@@ -8815,6 +8827,9 @@ function ServiceOrdersSection({
             </header>
 
             <div className="contract-economics-body">
+              {isLoadingContractEconomics ? (
+                <p className="status">Cargando informacion economica del contrato...</p>
+              ) : null}
               {contractEconomicsError ? <p className="status error">{contractEconomicsError}</p> : null}
 
               <div className="contract-economics-kpis">

@@ -1532,6 +1532,54 @@ const callDirectCashOperation = async (path, payload = {}) => {
   } finally { clearTimeout(timeoutId); }
 };
 
+
+const fetchContractEconomicContext = async (identifier) => {
+  const requestedId = String(identifier ?? '').trim();
+  if (!requestedId) {
+    throw new Error('Debes indicar el contrato para abrir el seguimiento economico.');
+  }
+
+  if (!shouldUseServerState()) {
+    const contract = await callBridge('contracts', 'getById', false, requestedId);
+    return { contract, rental: null, serviceOrder: null, cashMovements: [] };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(
+      getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-context`),
+      {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: getInternalHeaders(),
+      },
+    );
+
+    if (!response.ok) {
+      throw await createServerStateError(
+        response,
+        'No se pudo cargar el seguimiento economico del contrato.',
+      );
+    }
+
+    const result = await response.json();
+    if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
+      lastSharedRevision = result.revision;
+      setCachedServerRevision(result.revision);
+    }
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en abrir el seguimiento economico.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return null;
@@ -1624,6 +1672,7 @@ export const api = {
     list: () => callBridge('contracts', 'list', false),
     listHidden: () => callBridge('contracts', 'listHidden', false),
     ensureFull: (identifier, reason) => fetchFullServerContract(identifier, reason),
+    getEconomicContext: (identifier) => fetchContractEconomicContext(identifier),
     create: (payload) => callBridge('contracts', 'create', true, payload),
     createAndApprove: (payload) => createAndApproveContractOnServer(payload),
     update: (payload) => callBridge('contracts', 'update', true, payload),
