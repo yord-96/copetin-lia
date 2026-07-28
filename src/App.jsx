@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState, useTransition } from 'react';
+import { Suspense, lazy, memo, useEffect, useMemo, useState, useTransition } from 'react';
 import './App.css';
 import { useAppController } from './hooks/useAppController';
 import { runtimeInfo } from './services/api';
@@ -40,6 +40,66 @@ const CalendarSection = lazy(loadCalendarSection);
 const ClientsSection = lazy(loadClientsSection);
 const UsersSection = lazy(loadUsersSection);
 const ServiceOrdersSection = lazy(loadServiceOrdersSection);
+const EMPTY_SERVICE_ORDER_CASH_MOVEMENTS = Object.freeze([]);
+const collectionSignatureCache = new WeakMap();
+
+const getCollectionSignature = (rows, kind) => {
+  if (!Array.isArray(rows)) return '';
+  const cached = collectionSignatureCache.get(rows);
+  if (cached?.kind === kind) return cached.signature;
+
+  const signature = rows.map((row) => {
+    if (kind === 'contracts') {
+      return [
+        row?.id,
+        row?.contractCode,
+        row?.orderCode,
+        row?.status,
+        row?.updatedAt,
+        row?.deletedAt,
+        row?.totals?.totalBs,
+        row?.totals?.guaranteeBs,
+        row?.payment?.paidAtApprovalBs,
+        row?.guarantee?.status,
+      ].join(':');
+    }
+
+    return [
+      row?.id,
+      row?.contractId,
+      row?.contractCode,
+      row?.orderCode,
+      row?.status,
+      row?.updatedAt,
+      row?.paidAtRentalBs,
+      row?.depositBs,
+      row?.returnedAt,
+      row?.cancelledAt,
+    ].join(':');
+  }).join('|');
+
+  collectionSignatureCache.set(rows, { kind, signature });
+  return signature;
+};
+
+const areServiceOrdersPropsEqual = (previous, next) => {
+  const ignoredKeys = new Set(['contracts', 'rentals', 'cashMovements']);
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+
+  for (const key of keys) {
+    if (ignoredKeys.has(key)) continue;
+    if (previous[key] !== next[key]) return false;
+  }
+
+  return (
+    getCollectionSignature(previous.contracts, 'contracts')
+      === getCollectionSignature(next.contracts, 'contracts')
+    && getCollectionSignature(previous.rentals, 'rentals')
+      === getCollectionSignature(next.rentals, 'rentals')
+  );
+};
+
+const StableServiceOrdersSection = memo(ServiceOrdersSection, areServiceOrdersPropsEqual);
 const AvailabilitySection = lazy(loadAvailabilitySection);
 const AttendanceSection = lazy(loadAttendanceSection);
 const InventoryDashboardSection = lazy(loadInventoryDashboardSection);
@@ -555,7 +615,7 @@ function AdminApp() {
             stockRecoveries={controller.stockRecoveries}
             cashSummary={controller.cashSummary}
             cashSessions={controller.cashSessions}
-            cashMovements={controller.cashMovements}
+            cashMovements={EMPTY_SERVICE_ORDER_CASH_MOVEMENTS}
             cashDebts={controller.cashDebts}
             currentUser={controller.currentUser}
             formatBs={formatBs}
@@ -628,7 +688,7 @@ function AdminApp() {
         )}
 
         {controller.activeTab === 'alquiler' && (
-          <ServiceOrdersSection
+          <StableServiceOrdersSection
             quotes={controller.quotes}
             contracts={controller.contracts}
             hiddenContracts={controller.hiddenContracts}
