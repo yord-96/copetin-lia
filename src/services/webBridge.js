@@ -8211,7 +8211,7 @@ const buildInventoryOrderHtml = ({ rental, deliveries, settings }) => {
   });
 };
 
-const buildWeeklyInventoryHtml = ({
+export const buildWeeklyInventoryHtml = ({
   rentals,
   contracts,
   deliveries,
