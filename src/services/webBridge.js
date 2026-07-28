@@ -4628,6 +4628,21 @@ const escapeHtml = (value) =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
+const resolveDocumentAssetUrl = (value) => {
+  const source = String(value ?? '').trim();
+  if (!source || source.startsWith('data:') || source.startsWith('blob:') || /^https?:\/\//i.test(source)) {
+    return source;
+  }
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return source;
+  }
+  try {
+    return new URL(source.startsWith('/') ? source : `/${source}`, window.location.origin).toString();
+  } catch {
+    return source;
+  }
+};
+
 const formatBs = (value) =>
   new Intl.NumberFormat('es-BO', {
     style: 'currency',
@@ -8363,11 +8378,13 @@ const buildWeeklyInventoryHtml = ({
   };
   const renderItemRows = (lines, offset = 0, supplierSupportByItem = new Map()) => lines.map((line, index) => {
     const catalogItem = itemById.get(String(line.itemId ?? '')) ?? null;
-    const imageDataUrl = catalogItem?.imageUrl
-      ?? catalogItem?.imageDataUrl
-      ?? line.imageUrl
-      ?? line.imageDataUrl
-      ?? '';
+    const imageDataUrl = resolveDocumentAssetUrl(
+      catalogItem?.imageUrl
+        ?? catalogItem?.imageDataUrl
+        ?? line.imageUrl
+        ?? line.imageDataUrl
+        ?? '',
+    );
     const itemObservation = String(line?.observation ?? line?.observations ?? line?.note ?? '').trim();
     const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
       ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());

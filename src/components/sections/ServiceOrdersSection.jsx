@@ -6238,6 +6238,45 @@ function ServiceOrdersSection({
     };
   };
 
+  const renderDocumentHtmlToPdf = async ({ html, fileName }) => {
+    if (!html?.trim()) {
+      throw new Error('No se pudo preparar el documento para PDF.');
+    }
+
+    const response = await fetch(
+      getDocumentApiUrl('/__copetin_db/documents/render-pdf'),
+      {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
+        },
+        body: JSON.stringify({
+          html,
+          baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+          fileName,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'No se pudo renderizar el documento.');
+    }
+
+    const pdfBlob = await response.blob();
+    if (pdfBlob.type && pdfBlob.type !== 'application/pdf') {
+      throw new Error('El servidor no devolvio un documento PDF valido.');
+    }
+
+    return {
+      blobUrl: URL.createObjectURL(pdfBlob),
+      mimeType: 'application/pdf',
+      cacheStatus: response.headers.get('X-Document-Cache') ?? '',
+    };
+  };
+
   const handleOpenDocumentsPanel = (orderRow) => {
     setDocumentsOrder(orderRow);
     setMenuState(null);
@@ -7108,7 +7147,7 @@ function ServiceOrdersSection({
 
         preview = documentPreviewCacheRef.current.get(cacheKey) ?? null;
         if (!preview) {
-          preview = await onPrintInventoryWeekDocument?.({
+          const inventoryPreview = await onPrintInventoryWeekDocument?.({
             weekStart: orderRow.deliveryDate ?? orderRow.rentalDate ?? orderRow.createdAt?.slice(0, 10),
             format: 'individual',
             rentalId: orderRow.rentalId,
@@ -7116,7 +7155,25 @@ function ServiceOrdersSection({
             contractCode: orderRow.contractCode,
             fullRental,
           });
-          if (preview?.html) documentPreviewCacheRef.current.set(cacheKey, preview);
+          preview = inventoryPreview;
+          if (inventoryPreview?.html) {
+            try {
+              const renderedPdf = await renderDocumentHtmlToPdf({
+                html: inventoryPreview.html,
+                fileName: buildDocumentFileBase(orderRow.customerName ?? orderRow.client, baseDocumentCode, 'inventario'),
+              });
+              preview = {
+                ...inventoryPreview,
+                html: '',
+                blobUrl: renderedPdf.blobUrl,
+                mimeType: renderedPdf.mimeType,
+                cacheStatus: renderedPdf.cacheStatus,
+              };
+            } catch {
+              preview = inventoryPreview;
+            }
+          }
+          if (preview?.html || preview?.blobUrl) documentPreviewCacheRef.current.set(cacheKey, preview);
         }
       } else if (kind === 'route') {
         cacheKey = [
