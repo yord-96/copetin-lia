@@ -43,6 +43,44 @@ const compactInventorySearchText = (value) => normalizeInventorySearchText(value
 
 const getInventorySearchTokens = (value) => normalizeInventorySearchText(value).split(' ').filter(Boolean);
 
+const getComboIngredientSignature = (line) => {
+  const optionIds = Array.isArray(line?.optionItemIds) && line.optionItemIds.length > 0
+    ? line.optionItemIds
+    : [line?.itemId];
+  const optionKey = [...new Set(optionIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    .sort()
+    .join('|');
+  const categoryKey = normalizeText(line?.categoryRule ?? line?.category ?? '');
+  const labelKey = normalizeText(line?.slotLabel ?? line?.itemName ?? '');
+  return [
+    normalizeText(line?.selectionMode ?? 'item'),
+    categoryKey,
+    optionKey,
+    categoryKey ? '' : labelKey,
+  ].join('::');
+};
+
+const dedupeComboIngredientLines = (ingredients = []) => {
+  const bySignature = new Map();
+  (Array.isArray(ingredients) ? ingredients : []).forEach((line) => {
+    if (!line) return;
+    const signature = getComboIngredientSignature(line);
+    if (!signature.trim()) return;
+    if (!bySignature.has(signature)) {
+      bySignature.set(signature, line);
+      return;
+    }
+    const current = bySignature.get(signature);
+    const currentQuantity = Math.max(1, Math.trunc(Number(current?.quantity ?? 1)));
+    const nextQuantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+    bySignature.set(signature, {
+      ...current,
+      quantity: Math.max(currentQuantity, nextQuantity),
+    });
+  });
+  return [...bySignature.values()];
+};
+
 const getInventorySearchFields = (row) => [
   row?.name ?? row?.itemName,
   row?.category,
@@ -1865,8 +1903,9 @@ function InventoryDashboardSection({
   const comboRows = useMemo(() => {
     const itemById = new Map(inventoryRows.map((row) => [row.id, row]));
     return (combos ?? []).map((combo) => {
-      const ingredients = (Array.isArray(combo.ingredients) ? combo.ingredients : [])
-        .map((line) => {
+      const ingredients = dedupeComboIngredientLines(
+        (Array.isArray(combo.ingredients) ? combo.ingredients : [])
+          .map((line) => {
           const item = itemById.get(String(line?.itemId ?? ''));
           const selectionMode = line?.selectionMode ?? 'item';
           const categoryRule = line?.category ?? '';
@@ -1894,8 +1933,9 @@ function InventoryDashboardSection({
             categoryRule,
             optionsCount: optionRows.length,
           };
-        })
-        .filter((line) => line.itemId);
+          })
+          .filter((line) => line.itemId),
+      );
       const catalogValue = ingredients.reduce((sum, line) => sum + (line.quantity * line.unitPriceBs), 0);
       const allVerified = ingredients.length > 0 && ingredients.every((line) => line.controlsStock);
       const minAvailable = ingredients.reduce((min, line) => {
@@ -2853,7 +2893,7 @@ function InventoryDashboardSection({
         aboveUnitPriceBs: String(row.pricingCondition?.aboveUnitPriceBs ?? 0),
       },
       notes: row.notes ?? '',
-      ingredients: row.ingredients.map((line) => ({
+      ingredients: dedupeComboIngredientLines(row.ingredients).map((line) => ({
         itemId: line.itemId,
         quantity: String(line.quantity),
         selectionMode: line.selectionMode ?? 'item',
@@ -2892,16 +2932,17 @@ function InventoryDashboardSection({
         return;
       }
       const defaultItem = candidates[0];
+      const nextLine = {
+        itemId: defaultItem.id,
+        quantity: String(quantity),
+        selectionMode: 'category',
+        category: comboRuleDraft.category,
+        optionItemIds: candidates.map((row) => row.id),
+        slotLabel: comboRuleDraft.label.trim() || comboRuleDraft.category,
+      };
       setComboForm((current) => ({
         ...current,
-        ingredients: [...current.ingredients, {
-          itemId: defaultItem.id,
-          quantity: String(quantity),
-          selectionMode: 'category',
-          category: comboRuleDraft.category,
-          optionItemIds: candidates.map((row) => row.id),
-          slotLabel: comboRuleDraft.label.trim() || comboRuleDraft.category,
-        }],
+        ingredients: dedupeComboIngredientLines([...current.ingredients, nextLine]),
       }));
     } else {
       if (comboRuleDraft.itemIds.length === 0) {
@@ -2909,16 +2950,17 @@ function InventoryDashboardSection({
         return;
       }
       const defaultItem = inventoryRows.find((row) => row.id === comboRuleDraft.itemIds[0]);
+      const nextLine = {
+        itemId: comboRuleDraft.itemIds[0],
+        quantity: String(quantity),
+        selectionMode: comboRuleDraft.itemIds.length > 1 ? 'options' : 'item',
+        category: '',
+        optionItemIds: comboRuleDraft.itemIds,
+        slotLabel: comboRuleDraft.label.trim() || defaultItem?.name || 'Componente',
+      };
       setComboForm((current) => ({
         ...current,
-        ingredients: [...current.ingredients, {
-          itemId: comboRuleDraft.itemIds[0],
-          quantity: String(quantity),
-          selectionMode: comboRuleDraft.itemIds.length > 1 ? 'options' : 'item',
-          category: '',
-          optionItemIds: comboRuleDraft.itemIds,
-          slotLabel: comboRuleDraft.label.trim() || defaultItem?.name || 'Componente',
-        }],
+        ingredients: dedupeComboIngredientLines([...current.ingredients, nextLine]),
       }));
     }
     setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
@@ -3215,6 +3257,7 @@ function InventoryDashboardSection({
     if (isSavingCombo) return;
     setComboError('');
 
+    const normalizedIngredients = dedupeComboIngredientLines(comboForm.ingredients);
     const payload = {
       id: comboForm.id,
       name: String(comboForm.name ?? '').trim(),
@@ -3228,7 +3271,7 @@ function InventoryDashboardSection({
       },
       notes: String(comboForm.notes ?? '').trim(),
       imageUrl: comboForm.imageUrl || null,
-      ingredients: comboForm.ingredients.map((line) => ({
+      ingredients: normalizedIngredients.map((line) => ({
         itemId: line.itemId,
         quantity: Math.max(1, Math.trunc(Number(line.quantity ?? 1))),
         selectionMode: line.selectionMode ?? 'item',

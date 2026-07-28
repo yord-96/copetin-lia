@@ -4613,6 +4613,33 @@ function ServiceOrdersSection({
     return optionIds.map((id) => items.find((item) => item.id === id)).filter(Boolean);
   };
 
+  const getComboRuleSignature = (rule) => {
+    const optionIds = Array.isArray(rule?.optionItemIds) && rule.optionItemIds.length > 0
+      ? rule.optionItemIds
+      : [rule?.itemId];
+    const optionKey = [...new Set(optionIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+      .sort()
+      .join('|');
+    const categoryKey = normalizeText(rule?.category ?? '');
+    const labelKey = normalizeText(rule?.slotLabel ?? rule?.itemName ?? '');
+    return [
+      normalizeText(rule?.selectionMode ?? 'item'),
+      categoryKey,
+      optionKey,
+      categoryKey ? '' : labelKey,
+    ].join('::');
+  };
+
+  const getComboRules = (combo) => {
+    const bySignature = new Map();
+    (Array.isArray(combo?.ingredients) ? combo.ingredients : []).forEach((rule) => {
+      const signature = getComboRuleSignature(rule);
+      if (!signature.trim() || bySignature.has(signature)) return;
+      bySignature.set(signature, rule);
+    });
+    return [...bySignature.values()];
+  };
+
   const getComboOptionAvailable = (item) => {
     if (!item) return 0;
     const availability = availabilityByItemId.get(item.id);
@@ -4651,7 +4678,7 @@ function ServiceOrdersSection({
     const selections = {};
     const quantityMap = {};
     const comboQty = Math.max(1, Math.trunc(Number(comboQuantity ?? 1)));
-    (combo?.ingredients ?? []).forEach((rule, index) => {
+    getComboRules(combo).forEach((rule, index) => {
       const options = getComboRuleOptions(rule);
       const firstAvailable = options.find((option) => getComboOptionAvailable(option) > 0);
       const selectedOption = firstAvailable ?? options[0] ?? null;
@@ -4669,7 +4696,7 @@ function ServiceOrdersSection({
   };
 
   const getComboMaxQuantity = (combo, selections = {}) => {
-    const ingredients = Array.isArray(combo?.ingredients) ? combo.ingredients : [];
+    const ingredients = getComboRules(combo);
     const groupMaximums = ingredients.map((rule, index) => {
       const options = getComboRuleOptions(rule);
       const selectedIds = getSelectedComboOptionIds(selections[index], []);
@@ -4684,7 +4711,7 @@ function ServiceOrdersSection({
   };
 
   const buildComboAllocations = (combo, selections, comboQuantity) => {
-    const ingredients = Array.isArray(combo?.ingredients) ? combo.ingredients : [];
+    const ingredients = getComboRules(combo);
     const allocations = [];
     let shortageMessage = '';
     const quantityMap = getComboSelectionQuantityMap(selections);
@@ -4745,7 +4772,7 @@ function ServiceOrdersSection({
 
   const appendConfiguredCombo = (combo, selections = {}, existingComboLineKey = '') => {
     const comboLineKey = existingComboLineKey || `combo-${combo.id}-${Date.now()}`;
-    const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+    const ingredients = getComboRules(combo);
     const requestedComboQuantity = Math.max(1, Math.trunc(Number(selections.__comboQuantity ?? 1)));
     const maxQuantity = getComboMaxQuantity(combo, selections);
     if (maxQuantity <= 0) {
@@ -4826,7 +4853,7 @@ function ServiceOrdersSection({
     const existingLines = existingComboLineKey
       ? draft.items.filter((entry) => entry.comboLineKey === existingComboLineKey)
       : [];
-    (combo.ingredients ?? []).forEach((line, index) => {
+    getComboRules(combo).forEach((line, index) => {
       const existingIds = existingLines
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .map((entry) => entry.itemId)
@@ -4855,7 +4882,7 @@ function ServiceOrdersSection({
     const nextSelections = { ...(current.selections ?? {}) };
     const nextQuantityMap = { ...getComboSelectionQuantityMap(nextSelections) };
 
-    (current.combo?.ingredients ?? []).forEach((rule, index) => {
+    getComboRules(current.combo).forEach((rule, index) => {
       const selectedIds = getSelectedComboOptionIds(nextSelections[index], []);
       if (selectedIds.length === 0) return;
       const requiredUnits = Math.max(1, Math.trunc(Number(rule.quantity ?? 1))) * comboQty;
@@ -4887,7 +4914,7 @@ function ServiceOrdersSection({
     setComboConfigurator((current) => {
       if (!current) return current;
       const parsedQty = Math.max(0, Math.trunc(Number(value ?? 0)));
-      const rule = current.combo?.ingredients?.[ruleIndex] ?? {};
+      const rule = getComboRules(current.combo)[ruleIndex] ?? {};
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule.quantity ?? 1)));
       const currentSelectedIds = getSelectedComboOptionIds(current.selections?.[ruleIndex], []);
       const selectedIds = currentSelectedIds.includes(itemId)
@@ -4942,7 +4969,7 @@ function ServiceOrdersSection({
   const addDraftCombo = (comboId) => {
     const combo = (combos ?? []).find((entry) => entry.id === comboId);
     if (!combo) return;
-    if ((combo.ingredients ?? []).length > 0) {
+    if (getComboRules(combo).length > 0) {
       openComboConfigurator(combo);
       return;
     }
@@ -10149,7 +10176,7 @@ function ServiceOrdersSection({
               {filteredCatalog.map((entry) => {
                 if (entry.type === 'combo') {
                   const combo = entry.combo;
-                  const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+                  const ingredients = getComboRules(combo);
                   return (
                     <article className="orders-catalog-browser-card is-combo" key={`catalog-modal-combo-${combo.id}`}>
                       <div className="orders-product-thumb orders-combo-thumb">
@@ -10277,7 +10304,7 @@ function ServiceOrdersSection({
               </button>
             </header>
             <div className="orders-combo-configurator-body">
-              {(comboConfigurator.combo.ingredients ?? []).map((rule, index) => {
+              {getComboRules(comboConfigurator.combo).map((rule, index) => {
                 const allOptions = getComboRuleOptions(rule);
                 const search = normalizeText(comboConfigurator.search[index] ?? '');
                 const visibleOptions = allOptions.filter((item) => (
@@ -11382,7 +11409,7 @@ function ServiceOrdersSection({
                       {visibleCatalog.map((entry) => {
                         if (entry.type === 'combo') {
                           const combo = entry.combo;
-                          const ingredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+                          const ingredients = getComboRules(combo);
                           const defaultComboSelections = {};
                           ingredients.forEach((line, index) => {
                             defaultComboSelections[index] = getComboRuleOptions(line).map((option) => option.id);

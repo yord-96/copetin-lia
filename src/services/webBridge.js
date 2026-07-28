@@ -170,6 +170,44 @@ const normalizeComboRule = (line, inventoryItems = []) => {
   };
 };
 
+const getComboIngredientSignature = (line) => {
+  const optionIds = Array.isArray(line?.optionItemIds) && line.optionItemIds.length > 0
+    ? line.optionItemIds
+    : [line?.itemId];
+  const optionKey = [...new Set(optionIds.map((id) => String(id ?? '').trim()).filter(Boolean))]
+    .sort()
+    .join('|');
+  const categoryKey = normalizeText(line?.category ?? '');
+  const labelKey = normalizeText(line?.slotLabel ?? '');
+  return [
+    normalizeText(line?.selectionMode ?? 'item'),
+    categoryKey,
+    optionKey,
+    categoryKey ? '' : labelKey,
+  ].join('::');
+};
+
+const dedupeComboIngredients = (ingredients = []) => {
+  const bySignature = new Map();
+  (Array.isArray(ingredients) ? ingredients : []).forEach((line) => {
+    if (!line) return;
+    const signature = getComboIngredientSignature(line);
+    if (!signature.trim()) return;
+    if (!bySignature.has(signature)) {
+      bySignature.set(signature, line);
+      return;
+    }
+    const current = bySignature.get(signature);
+    const currentQuantity = Math.max(1, Math.trunc(Number(current?.quantity ?? 1)));
+    const nextQuantity = Math.max(1, Math.trunc(Number(line?.quantity ?? 1)));
+    bySignature.set(signature, {
+      ...current,
+      quantity: Math.max(currentQuantity, nextQuantity),
+    });
+  });
+  return [...bySignature.values()];
+};
+
 const normalizeComboPricingCondition = (condition) => {
   const enabled = Boolean(condition?.enabled);
   const upToQuantity = Math.max(1, Math.trunc(Number(condition?.upToQuantity ?? 3)));
@@ -1826,9 +1864,11 @@ const normalizeState = (state) => {
     : [];
 
   const normalizeComboIngredients = (ingredients) => {
-    return (Array.isArray(ingredients) ? ingredients : [])
-      .map((line) => normalizeComboRule(line, source.items))
-      .filter(Boolean);
+    return dedupeComboIngredients(
+      (Array.isArray(ingredients) ? ingredients : [])
+        .map((line) => normalizeComboRule(line, source.items))
+        .filter(Boolean),
+    );
   };
 
   source.inventoryCombos = Array.isArray(source.inventoryCombos)
@@ -11200,9 +11240,11 @@ const createWebBridge = () => ({
         if ((state.inventoryCombos ?? []).some((entry) => !entry.deletedAt && normalizeText(entry.name) === normalizeText(name))) {
           throw new Error('Ya existe un combo con ese nombre.');
         }
-        const ingredients = (Array.isArray(payload?.ingredients) ? payload.ingredients : [])
-          .map((line) => normalizeComboRule(line, state.items))
-          .filter(Boolean);
+        const ingredients = dedupeComboIngredients(
+          (Array.isArray(payload?.ingredients) ? payload.ingredients : [])
+            .map((line) => normalizeComboRule(line, state.items))
+            .filter(Boolean),
+        );
         if (ingredients.length === 0) {
           throw new Error('Agrega al menos un producto existente al combo.');
         }
@@ -11283,9 +11325,11 @@ const createWebBridge = () => ({
           if (nextImageUrl) combo.imageDataUrl = null;
         }
         if (payload.ingredients !== undefined) {
-          const ingredients = (Array.isArray(payload.ingredients) ? payload.ingredients : [])
-            .map((line) => normalizeComboRule(line, state.items))
-            .filter(Boolean);
+          const ingredients = dedupeComboIngredients(
+            (Array.isArray(payload.ingredients) ? payload.ingredients : [])
+              .map((line) => normalizeComboRule(line, state.items))
+              .filter(Boolean),
+          );
           if (ingredients.length === 0) {
             throw new Error('Agrega al menos un producto existente al combo.');
           }
