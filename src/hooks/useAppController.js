@@ -234,6 +234,7 @@ export const useAppController = () => {
 
     let group = null;
     let loader = null;
+    const activeInventoryTab = String(activeTab);
     if (activeTab === 'asistencia') {
       group = 'attendance';
       loader = async () => setAttendanceRecords(await api.attendance.listRecords());
@@ -250,14 +251,16 @@ export const useAppController = () => {
         setGeneratedReports(reportsData);
         setAuditLog(auditData);
       };
-    } else if (String(activeTab).startsWith('inventario')) {
-      group = 'inventory-operations';
+    } else if (activeInventoryTab === 'inventario_movimientos' || activeInventoryTab === 'inventario_ajustes') {
+      group = 'inventory-movements';
       loader = async () => {
-        const [movementsData, recoveriesData] = await Promise.all([
-          api.inventory.listMovements(),
-          api.inventory.listRecoveries(),
-        ]);
+        const movementsData = await api.inventory.listMovements();
         setInventoryMovements(movementsData);
+      };
+    } else if (activeInventoryTab === 'inventario_mantenimiento') {
+      group = 'inventory-recoveries';
+      loader = async () => {
+        const recoveriesData = await api.inventory.listRecoveries();
         setStockRecoveries(recoveriesData);
       };
     } else if (String(activeTab).startsWith('contabilidad')) {
@@ -725,7 +728,23 @@ export const useAppController = () => {
         ...getCurrentUserTrace(),
         requireCashSession: false,
       });
-      await loadData();
+      setRentals((current) => current.map((rental) => (
+        rental.id === returned.id ? returned : rental
+      )));
+      void Promise.all([
+        api.inventory.list(),
+        api.inventory.listRecoveries(),
+      ]).then(([itemsData, recoveriesData]) => {
+        setItems(itemsData);
+        setStockRecoveries(recoveriesData);
+      }).catch((refreshError) => {
+        console.warn('[copetin] No se pudo refrescar inventario despues de devolucion.', refreshError);
+      });
+      void api.inventory.listMovements()
+        .then(setInventoryMovements)
+        .catch((refreshError) => {
+          console.warn('[copetin] No se pudo refrescar movimientos despues de devolucion.', refreshError);
+        });
       return returned;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo recibir la devolucion en inventario.');
@@ -924,23 +943,56 @@ export const useAppController = () => {
 
   const handleProcessStockRecovery = async (payload) => {
     setError('');
+    const recoveryId = String(payload?.recoveryId ?? '').trim();
+    const action = String(payload?.action ?? '').trim();
+    const quantity = Math.max(0, Math.trunc(Number(payload?.quantity ?? 0)));
+    const currentRecovery = stockRecoveries.find((entry) => entry.id === recoveryId);
     try {
       const result = await api.inventory.processRecovery({
         ...payload,
         ...getCurrentUserTrace(),
       });
 
-      // Estas colecciones ya fueron actualizadas por la mutacion local/remota.
-      // Refrescarlas directamente evita mantener tarjetas eliminadas en React y
-      // evita recargar toda la aplicacion con loadData().
-      const [itemsData, movementsData, recoveriesData] = await Promise.all([
-        api.inventory.list(),
-        api.inventory.listMovements(),
-        api.inventory.listRecoveries(),
-      ]);
-      setItems(itemsData);
-      setInventoryMovements(movementsData);
-      setStockRecoveries(recoveriesData);
+      if (currentRecovery && quantity > 0) {
+        setStockRecoveries((current) => current
+          .map((entry) => (
+            entry.id === recoveryId
+              ? {
+                  ...entry,
+                  quantity: Math.max(0, Number(entry.quantity ?? 0) - quantity),
+                  updatedAt: new Date().toISOString(),
+                }
+              : entry
+          ))
+          .filter((entry) => Number(entry.quantity ?? 0) > 0));
+        setItems((current) => current.map((item) => {
+          if (item.id !== currentRecovery.itemId) return item;
+          if (action === 'reinsert') {
+            return {
+              ...item,
+              availableStock: Math.min(
+                Number(item.totalStock ?? 0),
+                Number(item.availableStock ?? 0) + quantity,
+              ),
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          if (action === 'discard') {
+            return {
+              ...item,
+              totalStock: Math.max(0, Number(item.totalStock ?? 0) - quantity),
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return item;
+        }));
+      }
+
+      void api.inventory.listMovements()
+        .then(setInventoryMovements)
+        .catch((refreshError) => {
+          console.warn('[copetin] No se pudo refrescar movimientos despues de lavado/reparacion.', refreshError);
+        });
 
       return result;
     } catch (requestError) {
@@ -1139,7 +1191,6 @@ export const useAppController = () => {
       setRentals((current) => current.map((rental) => (
         rental.id === updated.id ? updated : rental
       )));
-      void loadData({ silent: true });
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la orden operativa.');

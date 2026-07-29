@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { getProductImageSrc } from '../../utils/productImage';
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import ProductImage from '../common/ProductImage';
@@ -254,6 +254,7 @@ const DEFAULT_PRODUCT_FILTERS = {
   controlFilter: 'all',
   sortFilter: 'default',
 };
+const INVENTORY_MOVEMENT_RENDER_LIMIT = 650;
 
 const INVENTORY_OPS_FILTERS_STORAGE_KEY = 'copetin.inventory.opsFilters';
 const RETURN_CHARGE_OWNER_OPTIONS = [
@@ -1215,6 +1216,8 @@ function InventoryDashboardSection({
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
+  const deferredQuery = useDeferredValue(query);
+  const deferredMovementItemQuery = useDeferredValue(movementItemQuery);
 
   const rowMenuRef = useRef(null);
   const productFilterRef = useRef(null);
@@ -2087,8 +2090,30 @@ function InventoryDashboardSection({
     });
 
     return [...persistedRows, ...serviceOrderRows]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, INVENTORY_MOVEMENT_RENDER_LIMIT);
   }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
+
+  const movementStats = useMemo(() => {
+    const counts = { total: 0, entrada: 0, salida: 0, ajuste: 0 };
+    inventoryMovements.forEach((movement) => {
+      counts.total += 1;
+      if (movement.type === 'entrada' || movement.type === 'reinsercion') counts.entrada += 1;
+      else if (movement.type === 'salida' || movement.type === 'reserva') counts.salida += 1;
+      else counts.ajuste += 1;
+    });
+    activeRentals.forEach((rental) => {
+      const lines = Array.isArray(rental?.items) ? rental.items : [];
+      const status = rental?.operational?.inventoryStatus ?? 'pendiente';
+      if (['confirmado', 'salio', 'devuelto', 'anulado'].includes(status)) return;
+      lines.forEach((line) => {
+        if (!line?.itemId || Number(line?.quantity ?? 0) <= 0) return;
+        counts.total += 1;
+        counts.salida += 1;
+      });
+    });
+    return counts;
+  }, [activeRentals, inventoryMovements]);
 
   const detailMovementTrace = useMemo(() => {
     if (!detailRow?.id) return [];
@@ -2121,13 +2146,14 @@ function InventoryDashboardSection({
   }, [detailRow]);
 
   const movementSelectableRows = useMemo(() => {
-    if (!normalizeInventorySearchText(movementItemQuery)) return inventoryRows;
+    if (!normalizeInventorySearchText(deferredMovementItemQuery)) return inventoryRows.slice(0, 80);
     return inventoryRows
-      .map((row) => ({ row, searchScore: getInventorySearchScore(movementItemQuery, row) }))
+      .map((row) => ({ row, searchScore: getInventorySearchScore(deferredMovementItemQuery, row) }))
       .filter((entry) => entry.searchScore >= 0)
       .sort((a, b) => b.searchScore - a.searchScore || a.row.name.localeCompare(b.row.name, 'es'))
+      .slice(0, 80)
       .map((entry) => entry.row);
-  }, [inventoryRows, movementItemQuery]);
+  }, [deferredMovementItemQuery, inventoryRows]);
 
   const adjustRows = useMemo(
     () =>
@@ -2203,14 +2229,11 @@ function InventoryDashboardSection({
 
   const kpiCards = useMemo(() => {
     if (isMovementsModule) {
-      const entries = movementRows.filter((row) => row.typeKey === 'entrada');
-      const exits = movementRows.filter((row) => row.typeKey === 'salida');
-      const adjusts = movementRows.filter((row) => row.typeKey === 'ajuste');
       return [
-        { tone: 'lilac', icon: 'box', value: movementRows.length, label: 'Total movimientos', link: 'Ver historial completo' },
-        { tone: 'mint', icon: 'check', value: entries.length, label: 'Entradas', link: 'Filtrar entradas' },
-        { tone: 'peach', icon: 'tag', value: exits.length, label: 'Reservas / salidas', link: 'Filtrar salidas' },
-        { tone: 'sky', icon: 'bag', value: adjusts.length, label: 'Ajustes', link: 'Filtrar ajustes' },
+        { tone: 'lilac', icon: 'box', value: movementStats.total, label: 'Total movimientos', link: 'Historial optimizado' },
+        { tone: 'mint', icon: 'check', value: movementStats.entrada, label: 'Entradas', link: 'Filtrar entradas' },
+        { tone: 'peach', icon: 'tag', value: movementStats.salida, label: 'Reservas / salidas', link: 'Filtrar salidas' },
+        { tone: 'sky', icon: 'bag', value: movementStats.ajuste, label: 'Ajustes', link: 'Filtrar ajustes' },
       ];
     }
 
@@ -2254,7 +2277,7 @@ function InventoryDashboardSection({
       { tone: 'sky', icon: 'bag', value: totals.lowStockCount, label: 'Stock bajo minimo', link: 'Revisar alertas' },
       { tone: 'peach', icon: 'tag', value: formatBs(totals.value), label: 'Valor total del inventario', link: 'Ver valuacion' },
     ];
-  }, [adjustRows, categoriesList, comboRows, formatBs, isAdjustModule, isCategoriesModule, isCombosModule, isMovementsModule, movementRows, totals]);
+  }, [adjustRows, categoriesList, comboRows, formatBs, isAdjustModule, isCategoriesModule, isCombosModule, isMovementsModule, movementStats, totals]);
 
   const recentActivity = useMemo(() => {
     return movementRows.slice(0, 4).map((movement) => ({
@@ -2291,7 +2314,7 @@ function InventoryDashboardSection({
   }, [inventoryRows]);
 
   const filteredRows = useMemo(() => {
-    const text = normalizeInventorySearchText(query);
+    const text = normalizeInventorySearchText(deferredQuery);
     let base = isMovementsModule
       ? movementRows
       : isAdjustModule
@@ -2362,7 +2385,7 @@ function InventoryDashboardSection({
 
     if (!text) return base;
     const matchedRows = base
-      .map((row) => ({ row, searchScore: getInventorySearchScore(query, row) }))
+      .map((row) => ({ row, searchScore: getInventorySearchScore(deferredQuery, row) }))
       .filter((entry) => entry.searchScore >= 0);
 
     if (!isMovementsModule && !isAdjustModule && !isCategoriesModule && !isCombosModule && sortFilter === 'default') {
@@ -2380,7 +2403,7 @@ function InventoryDashboardSection({
     isAdjustModule,
     isCombosModule,
     isMovementsModule,
-    query,
+    deferredQuery,
     categoryFilter,
     stockFilter,
     controlFilter,

@@ -65,6 +65,28 @@ const RENTAL_CANCEL_PATCH_COLLECTIONS = Object.freeze([
   'rentals',
   'deliveries',
 ]);
+const RENTAL_OPERATIONAL_PATCH_COLLECTIONS = Object.freeze([
+  'rentals',
+]);
+const RENTAL_RETURN_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'rentals',
+  'deliveries',
+  'inventoryMovements',
+  'stockRecoveries',
+  'cashMovements',
+  'cashDebts',
+  'cashSessions',
+]);
+const INVENTORY_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'inventoryMovements',
+]);
+const INVENTORY_RECOVERY_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'inventoryMovements',
+  'stockRecoveries',
+]);
 
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
@@ -1381,6 +1403,16 @@ const getTargetedMutationCollections = (domain, method) => {
       return CASH_DEBT_PATCH_COLLECTIONS;
     }
     return CASH_MOVEMENT_PATCH_COLLECTIONS;
+  }
+  if (domain === 'inventory') {
+    if (method === 'processRecovery') return INVENTORY_RECOVERY_PATCH_COLLECTIONS;
+    if (method === 'createMovement') return INVENTORY_MOVEMENT_PATCH_COLLECTIONS;
+  }
+  if (domain === 'rentals' && method === 'updateOperational') {
+    return RENTAL_OPERATIONAL_PATCH_COLLECTIONS;
+  }
+  if (domain === 'rentals' && method === 'registerReturn') {
+    return RENTAL_RETURN_PATCH_COLLECTIONS;
   }
   if (domain === 'rentals' && method === 'cancel') {
     return RENTAL_CANCEL_PATCH_COLLECTIONS;

@@ -2,6 +2,10 @@ import { useMemo, useState } from 'react';
 import { getProductImageSrc } from '../../utils/productImage';
 import ProductImage from '../common/ProductImage';
 
+const RECOVERY_RENDER_LIMIT = 120;
+const STOCK_TABLE_LIMIT = 220;
+const ITEM_SELECT_LIMIT = 300;
+
 const formatDateTime = (value) => {
   if (!value) {
     return '-';
@@ -140,6 +144,18 @@ function InventoryOpsSection({
     () => stockRecoveries.filter((entry) => recoveryMatchesSearch(entry, recoverySearch)),
     [recoverySearch, stockRecoveries],
   );
+  const visibleRecoveries = useMemo(
+    () => filteredRecoveries.slice(0, RECOVERY_RENDER_LIMIT),
+    [filteredRecoveries],
+  );
+  const visibleItems = useMemo(
+    () => items.slice(0, STOCK_TABLE_LIMIT),
+    [items],
+  );
+  const selectableItems = useMemo(
+    () => items.slice(0, ITEM_SELECT_LIMIT),
+    [items],
+  );
 
   const updateRecoveryDraft = (recoveryId, field, value) => {
     setRecoveryDrafts((current) => ({
@@ -226,8 +242,14 @@ function InventoryOpsSection({
         {filteredRecoveries.length === 0 ? (
           <p className="inventory-ops-recovery-empty">No hay unidades pendientes de reinsercion.</p>
         ) : (
-          <div className="inventory-ops-recovery-gallery">
-            {filteredRecoveries.map((recovery) => {
+          <>
+            {filteredRecoveries.length > visibleRecoveries.length ? (
+              <p className="inventory-ops-recovery-empty">
+                Mostrando {visibleRecoveries.length} de {filteredRecoveries.length}. Usa el buscador para ubicar un item puntual.
+              </p>
+            ) : null}
+            <div className="inventory-ops-recovery-gallery">
+              {visibleRecoveries.map((recovery) => {
               const draft = recoveryDrafts[recovery.id] ?? {};
               const quantityValue = draft.quantity ?? String(recovery.quantity);
               const isBusyReinsert = processingRecoveryId === `${recovery.id}:reinsert`;
@@ -305,8 +327,9 @@ function InventoryOpsSection({
                   </div>
                 </article>
               );
-            })}
-          </div>
+              })}
+            </div>
+          </>
         )}
       </article>
 
@@ -324,7 +347,7 @@ function InventoryOpsSection({
                 required
               >
                 {items.length === 0 && <option value="">No hay items</option>}
-                {items.map((item) => (
+                {selectableItems.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name} ({item.availableStock}/{item.totalStock})
                   </option>
@@ -470,7 +493,7 @@ function InventoryOpsSection({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => {
+              {visibleItems.map((item) => {
                 const itemRecoveries = recoveryByItem[item.id] ?? { lavado: 0, reparacion: 0 };
                 const rented = Number(rentalUnitsByItem[item.id] ?? 0);
                 const inCleaning = itemRecoveries.lavado;
@@ -496,6 +519,11 @@ function InventoryOpsSection({
                   </tr>
                 );
               })}
+              {items.length > visibleItems.length ? (
+                <tr>
+                  <td colSpan={11}>Mostrando {visibleItems.length} de {items.length} productos. Usa Productos para buscar el catalogo completo.</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
