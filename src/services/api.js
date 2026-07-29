@@ -84,6 +84,13 @@ const INVENTORY_RECOVERY_PATCH_COLLECTIONS = Object.freeze([
   'inventoryMovements',
   'stockRecoveries',
 ]);
+const INVENTORY_ITEM_PATCH_COLLECTIONS = Object.freeze([
+  'items',
+  'systemAuditLog',
+]);
+const INVENTORY_COMBO_PATCH_COLLECTIONS = Object.freeze([
+  'inventoryCombos',
+]);
 
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
@@ -1447,6 +1454,8 @@ const getTargetedMutationCollections = (domain, method) => {
   if (domain === 'inventory') {
     if (method === 'processRecovery') return INVENTORY_RECOVERY_PATCH_COLLECTIONS;
     if (method === 'createMovement') return INVENTORY_MOVEMENT_PATCH_COLLECTIONS;
+    if (['create', 'update', 'remove'].includes(method)) return INVENTORY_ITEM_PATCH_COLLECTIONS;
+    if (['createCombo', 'updateCombo', 'removeCombo'].includes(method)) return INVENTORY_COMBO_PATCH_COLLECTIONS;
   }
   if (domain === 'rentals' && method === 'updateOperational') {
     return RENTAL_OPERATIONAL_PATCH_COLLECTIONS;
@@ -1464,10 +1473,26 @@ const getTargetedMutationCollections = (domain, method) => {
   return null;
 };
 
+// El preflight solo carga las colecciones necesarias para validar la operación.
+// Las colecciones del patch pueden ser más amplias, por ejemplo para agregar
+// una entrada de auditoría sin descargar previamente todo el historial.
+const getMutationPreflightCollections = (domain, method, targetedCollections) => {
+  if (domain === 'inventory' && ['create', 'update', 'remove'].includes(method)) {
+    return ['items'];
+  }
+  if (domain === 'inventory' && ['createCombo', 'updateCombo', 'removeCombo'].includes(method)) {
+    return ['inventoryCombos', 'items'];
+  }
+  return targetedCollections;
+};
+
 const callBridge = async (domain, method, mutates, ...args) => {
   const mutationKey = mutates ? getMutationKey(domain, method, args) : '';
   const isPresenceMutation = domain === 'presence';
   const targetedCollections = mutates ? getTargetedMutationCollections(domain, method) : null;
+  const preflightCollections = mutates
+    ? getMutationPreflightCollections(domain, method, targetedCollections)
+    : null;
   if (mutationKey && inFlightMutations.has(mutationKey)) {
     return inFlightMutations.get(mutationKey);
   }
@@ -1481,7 +1506,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
               mutationBatchPreflightPromise = ensureServerStateReadyForMutation({
                 required: true,
                 reason: `batch.${domain}.${method}:mutation-preflight`,
-                requiredCollections: targetedCollections,
+                requiredCollections: preflightCollections,
               });
             }
             await mutationBatchPreflightPromise;
@@ -1489,7 +1514,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
             await ensureServerStateReadyForMutation({
               required: true,
               reason: `${domain}.${method}:mutation-preflight`,
-              requiredCollections: targetedCollections,
+              requiredCollections: preflightCollections,
             });
           }
         }

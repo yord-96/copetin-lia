@@ -840,8 +840,13 @@ export const useAppController = () => {
   const handleCreateInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.create({ ...getCurrentUserTrace(), ...payload });
-      await loadData();
+      const createdItem = await api.inventory.create({ ...getCurrentUserTrace(), ...payload });
+      setItems((current) => (
+        [...current.filter((item) => item.id !== createdItem.id), createdItem]
+          .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es'))
+      ));
+      api.dashboard.get().then(setDashboard).catch(() => {});
+      return createdItem;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el producto de inventario.');
       throw requestError;
@@ -861,8 +866,14 @@ export const useAppController = () => {
   const handleUpdateInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.update({ ...getCurrentUserTrace(), ...payload });
-      await loadData();
+      const updatedItem = await api.inventory.update({ ...getCurrentUserTrace(), ...payload });
+      setItems((current) => (
+        current
+          .map((item) => (item.id === updatedItem.id ? updatedItem : item))
+          .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), 'es'))
+      ));
+      api.dashboard.get().then(setDashboard).catch(() => {});
+      return updatedItem;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el producto de inventario.');
       throw requestError;
@@ -872,8 +883,11 @@ export const useAppController = () => {
   const handleRemoveInventoryItem = async (payload) => {
     setError('');
     try {
-      await api.inventory.remove({ ...getCurrentUserTrace(), ...payload });
-      await loadData();
+      const removedItem = await api.inventory.remove({ ...getCurrentUserTrace(), ...payload });
+      const removedId = removedItem?.id ?? payload?.id;
+      setItems((current) => current.filter((item) => item.id !== removedId));
+      api.dashboard.get().then(setDashboard).catch(() => {});
+      return removedItem;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el producto de inventario.');
       throw requestError;
