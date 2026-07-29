@@ -25153,6 +25153,44 @@ body,
   margin-top: 0.75rem;
 }
 
+.supplier-loan-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(140px, 0.9fr) minmax(120px, 0.75fr) minmax(120px, 0.75fr) minmax(120px, 0.75fr);
+  gap: 0.5rem;
+  align-items: end;
+  margin-top: 0.65rem;
+}
+
+.supplier-loan-filters label {
+  display: grid;
+  gap: 0.28rem;
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.supplier-loan-filters input,
+.supplier-loan-filters select {
+  width: 100%;
+  min-height: 2.45rem;
+  border: 1px solid #ecd7ca;
+  border-radius: 0.65rem;
+  background: #fffdfb;
+  color: #18233d;
+  padding: 0.52rem 0.65rem;
+  font: inherit;
+}
+
+.supplier-loan-filters .suppliers-search {
+  width: 100%;
+  border-radius: 0.65rem;
+}
+
+.supplier-loan-filter-actions {
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}
+
 .suppliers-table {
   width: 100%;
   border-collapse: collapse;
@@ -25615,7 +25653,8 @@ body,
 
 @media (max-width: 1180px) {
   .suppliers-content-grid,
-  .suppliers-kpi-grid {
+  .suppliers-kpi-grid,
+  .supplier-loan-filters {
     grid-template-columns: 1fr;
   }
 
@@ -25637,6 +25676,7 @@ body,
   }
 
   .suppliers-actions,
+  .supplier-loan-filter-actions,
   .supplier-period-controls,
   .supplier-row {
     flex-direction: column;

@@ -773,6 +773,14 @@ const isBetweenDates = (value, dateFrom, dateTo) => {
   return true;
 };
 
+const yieldToBrowser = () => new Promise((resolve) => {
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+    return;
+  }
+  setTimeout(resolve, 0);
+});
+
 const parseInventoryCsv = (text, allowedCategories) => {
   const lines = String(text ?? '')
     .split(/\r?\n/)
@@ -1216,6 +1224,7 @@ function InventoryDashboardSection({
   const [receivingModal, setReceivingModal] = useState(null);
   const [receivingError, setReceivingError] = useState('');
   const [isReceiving, setIsReceiving] = useState(false);
+  const [returnProcessingMessage, setReturnProcessingMessage] = useState('');
   const deferredQuery = useDeferredValue(query);
   const deferredMovementItemQuery = useDeferredValue(movementItemQuery);
 
@@ -3774,9 +3783,13 @@ function InventoryDashboardSection({
         return;
       }
       setIsReceiving(true);
+      const currentRentalId = receivingModal.rental.id;
+      setReceivingModal(null);
+      setReturnProcessingMessage('Registrando recepcion de inventario...');
       try {
+        await yieldToBrowser();
         await onReceiveReturnedOrder?.({
-          rentalId: receivingModal.rental.id,
+          rentalId: currentRentalId,
           partialReturn: true,
           returnReview: {
             status: 'left_with_client',
@@ -3799,19 +3812,24 @@ function InventoryDashboardSection({
             };
           }),
         });
-        setReceivingModal(null);
         showMessage('Se reingreso lo recibido y quedo registrado el saldo pendiente con cliente.');
       } catch (error) {
+        setReceivingModal(receivingModal);
         setReceivingError(error?.message || 'No se pudo registrar el pendiente con cliente.');
       } finally {
         setIsReceiving(false);
+        setReturnProcessingMessage('');
       }
       return;
     }
     setIsReceiving(true);
+    const currentRentalId = receivingModal.rental.id;
+    setReceivingModal(null);
+    setReturnProcessingMessage('Cerrando recepcion de inventario...');
     try {
+      await yieldToBrowser();
       await onReceiveReturnedOrder?.({
-        rentalId: receivingModal.rental.id,
+        rentalId: currentRentalId,
         returnReview: {
           status: receivingModal.returnReviewStatus,
           note: String(receivingModal.notes ?? '').trim(),
@@ -3829,12 +3847,13 @@ function InventoryDashboardSection({
           };
         }),
       });
-      setReceivingModal(null);
       showMessage('Recepcion de inventario registrada correctamente.');
     } catch (error) {
+      setReceivingModal(receivingModal);
       setReceivingError(error?.message || 'No se pudo registrar la recepcion.');
     } finally {
       setIsReceiving(false);
+      setReturnProcessingMessage('');
     }
   };
 
@@ -4106,6 +4125,7 @@ function InventoryDashboardSection({
         {feedback ? (
           <p className={`status ${feedbackType === 'error' ? 'error' : ''}`}>{feedback}</p>
         ) : null}
+        {returnProcessingMessage ? <p className="status">{returnProcessingMessage}</p> : null}
 
         <InventoryOpsSection
           items={items}
@@ -4230,6 +4250,7 @@ function InventoryDashboardSection({
       {feedback ? (
         <p className={`status ${feedbackType === 'error' ? 'error' : ''}`}>{feedback}</p>
       ) : null}
+      {returnProcessingMessage ? <p className="status">{returnProcessingMessage}</p> : null}
 
       <div className="inventory-content-grid">
         <div className="inventory-left-stack">

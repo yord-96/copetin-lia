@@ -51,6 +51,24 @@ const formatDate = (value) => {
   return parsed.toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+const getDateKey = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+const isBetweenLoanDates = (value, dateFrom, dateTo) => {
+  const date = getDateKey(value);
+  if (!date) return true;
+  if (dateFrom && date < dateFrom) return false;
+  if (dateTo && date > dateTo) return false;
+  return true;
+};
+
 const getLineTotal = (line) =>
   Math.max(1, Math.trunc(Number(line.quantity ?? 1))) * Math.max(0, Number(line.unitPriceBs ?? 0));
 
@@ -122,6 +140,11 @@ function SuppliersSection({
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
   const [loanLines, setLoanLines] = useState([{ ...EMPTY_LINE }]);
   const [supplierSearch, setSupplierSearch] = useState('');
+  const [loanSearch, setLoanSearch] = useState('');
+  const [loanSupplierFilter, setLoanSupplierFilter] = useState('all');
+  const [loanStatusFilter, setLoanStatusFilter] = useState('all');
+  const [loanDateFrom, setLoanDateFrom] = useState('');
+  const [loanDateTo, setLoanDateTo] = useState('');
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -165,6 +188,54 @@ function SuppliersSection({
       || normalizeText(supplier.whatsapp).includes(query)
     ));
   }, [supplierSearch, supplierStats]);
+
+  const loanStatusOptions = useMemo(() => (
+    Array.from(new Set(loans.map((loan) => loan.status).filter(Boolean)))
+      .sort((a, b) => String(a).localeCompare(String(b), 'es'))
+  ), [loans]);
+
+  const filteredLoans = useMemo(() => {
+    const tokens = normalizeText(loanSearch).split(' ').filter(Boolean);
+    return loans.filter((loan) => {
+      if (loanSupplierFilter !== 'all' && String(loan.supplierId) !== loanSupplierFilter) return false;
+      if (loanStatusFilter !== 'all' && String(loan.status) !== loanStatusFilter) return false;
+      if (!isBetweenLoanDates(loan.requestDate ?? loan.createdAt, loanDateFrom, loanDateTo)) return false;
+      if (tokens.length === 0) return true;
+      const itemText = (loan.items ?? [])
+        .map((line) => `${line.itemName ?? ''} ${line.category ?? ''}`)
+        .join(' ');
+      const haystack = normalizeText([
+        loan.loanCode,
+        loan.supplierName,
+        loan.eventName,
+        loan.sourceOrderCode,
+        loan.contractCode,
+        loan.orderCode,
+        loan.reference,
+        loan.notes,
+        formatDate(loan.requestDate),
+        itemText,
+      ].join(' '));
+      return tokens.every((token) => haystack.includes(token));
+    });
+  }, [loanDateFrom, loanDateTo, loanSearch, loanStatusFilter, loanSupplierFilter, loans]);
+
+  const filteredLoanTotals = useMemo(() => {
+    const totalCostBs = filteredLoans.reduce((sum, loan) => sum + Number(loan?.totals?.totalBs ?? 0), 0);
+    const totalSaleBs = filteredLoans.reduce(
+      (sum, loan) => sum + (loan.items ?? []).reduce((lineSum, line) => lineSum + getLineSaleTotal(line), 0),
+      0,
+    );
+    return { totalCostBs, totalSaleBs };
+  }, [filteredLoans]);
+
+  const clearLoanFilters = () => {
+    setLoanSearch('');
+    setLoanSupplierFilter('all');
+    setLoanStatusFilter('all');
+    setLoanDateFrom('');
+    setLoanDateTo('');
+  };
 
   const latestPrices = useMemo(() => {
     const map = new Map();
@@ -619,9 +690,52 @@ function SuppliersSection({
                 <p>Costo proveedor {formatBs(requestTotals.totalCostBs)} · venta ref. {formatBs(requestTotals.totalSaleBs)}</p>
               </div>
             </div>
+            <div className="supplier-loan-filters">
+              <label className="supplier-loan-filter-search">
+                Buscar
+                <input
+                  className="suppliers-search"
+                  placeholder="Proveedor, contrato, referencia, item..."
+                  value={loanSearch}
+                  onChange={(event) => setLoanSearch(event.target.value)}
+                />
+              </label>
+              <label>
+                Proveedor
+                <select value={loanSupplierFilter} onChange={(event) => setLoanSupplierFilter(event.target.value)}>
+                  <option value="all">Todos</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Estado
+                <select value={loanStatusFilter} onChange={(event) => setLoanStatusFilter(event.target.value)}>
+                  <option value="all">Todos</option>
+                  {loanStatusOptions.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Desde
+                <input type="date" value={loanDateFrom} onChange={(event) => setLoanDateFrom(event.target.value)} />
+              </label>
+              <label>
+                Hasta
+                <input type="date" value={loanDateTo} onChange={(event) => setLoanDateTo(event.target.value)} />
+              </label>
+            </div>
+            <div className="suppliers-actions supplier-loan-filter-actions">
+              <span className="suppliers-hint">
+                {filteredLoans.length} de {loans.length} solicitud(es) - costo {formatBs(filteredLoanTotals.totalCostBs)} - venta ref. {formatBs(filteredLoanTotals.totalSaleBs)}
+              </span>
+              <button type="button" className="ghost-button" onClick={clearLoanFilters}>Limpiar filtros</button>
+            </div>
             <div className="suppliers-table-wrap">
               <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Referencia</th><th>Fecha</th><th>A pagar</th><th>Venta ref.</th><th>Estado</th><th></th></tr></thead><tbody>
-                {loans.map((loan) => (
+                {filteredLoans.map((loan) => (
                   <tr key={loan.id}>
                     <td>{loan.loanCode}</td>
                     <td>{loan.supplierName}</td>
@@ -637,7 +751,7 @@ function SuppliersSection({
                     </td>
                   </tr>
                 ))}
-                {loans.length === 0 ? <tr><td colSpan={8}>Sin solicitudes registradas.</td></tr> : null}
+                {filteredLoans.length === 0 ? <tr><td colSpan={8}>Sin solicitudes con esos filtros.</td></tr> : null}
               </tbody></table>
             </div>
           </section>
