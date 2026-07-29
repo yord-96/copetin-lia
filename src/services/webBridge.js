@@ -7812,6 +7812,26 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
 
     return Number((baseLineTotalBs * multiplier).toFixed(2));
   };
+  const getDocumentLineGrossTotalBs = (line, multiplier = 1) => {
+    const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
+      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
+    const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
+    const unitPriceBs = getDocumentLineUnitPriceBs(line);
+    const storedGrossLineTotalBs = Number(line.grossLineTotalBs);
+    const storedLineTotalBs = Number(line.lineTotalBs);
+    const storedDiscountBs = Number(line.discountBs ?? 0);
+    const quantityGrossBs = Number((fulfillmentBreakdown.totalQty * unitPriceBs).toFixed(2));
+    const recoveredGrossBs = storedLineTotalBs > 0 && storedDiscountBs > 0
+      ? Number((storedLineTotalBs + storedDiscountBs).toFixed(2))
+      : 0;
+    const grossLineTotalBs = Number.isFinite(storedGrossLineTotalBs) && storedGrossLineTotalBs > 0
+      ? storedGrossLineTotalBs
+      : recoveredGrossBs > 0
+        ? recoveredGrossBs
+        : quantityGrossBs;
+
+    return Number((grossLineTotalBs * multiplier).toFixed(2));
+  };
   const renderContractItemRow = (line, multiplier = 1) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
@@ -7822,7 +7842,7 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
         const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
         const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
-        const lineTotalBs = getDocumentLineTotalBs(line, multiplier);
+        const lineTotalBs = getDocumentLineGrossTotalBs(line, multiplier);
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -7879,7 +7899,7 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
   const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
-    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
+    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineGrossTotalBs(line), 0);
     return `
         <tr class="rc-duration-day-row">
           <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
