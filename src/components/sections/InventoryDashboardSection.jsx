@@ -1426,10 +1426,17 @@ function InventoryDashboardSection({
 
   const reservedByItem = useMemo(() => {
     const map = {};
+    const todayKey = getDateKey(new Date());
     activeRentals.forEach((rental) => {
+      const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus ?? '');
+      const startKey = getDateKey(rental?.rentalDate ?? rental?.deliveryDate);
+      const endKey = getDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
+      const affectsCurrentStock = inventoryStatus === 'salio'
+        || Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+      if (!affectsCurrentStock || inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return;
       (rental.items ?? []).forEach((line) => {
         if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
-        map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.quantity ?? 0);
+        map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.internalReservedQty ?? line.quantity ?? 0);
       });
     });
     return map;
@@ -1802,8 +1809,7 @@ function InventoryDashboardSection({
       const reserved = Number(reservedByItem[item.id] ?? 0);
       const maintenance = Number(maintenanceByItem[item.id] ?? 0);
       const totalStock = Number(item.totalStock ?? 0);
-      const storedAvailable = Number(item.availableStock ?? 0);
-      const effectiveAvailable = Math.max(0, Math.min(storedAvailable, totalStock - reserved - maintenance));
+      const effectiveAvailable = Math.max(0, totalStock - reserved - maintenance);
       const stockControlled = item.controlsStock !== false
         && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
         && String(item.adoptionSource ?? '').trim() !== 'service_order_quick_item'
@@ -2017,7 +2023,10 @@ function InventoryDashboardSection({
           : linkedRental?.createdByRole ?? movement.userRole ?? 'Operacion';
       return {
         id: movement.id,
-        createdAt: movement.createdAt,
+        createdAt: isReservation
+          ? movement.operationDate ?? movement.deliveryDate ?? linkedContract?.deliveryDate ?? linkedRental?.rentalDate ?? movement.createdAt
+          : movement.createdAt,
+        registeredAt: movement.createdAt,
         typeKey: isEntry ? 'entrada' : isExit ? 'salida' : 'ajuste',
         typeLabel: movement.type === 'reserva' ? 'Reserva' : isEntry ? 'Entrada' : movement.type === 'salida' ? 'Salida' : 'Ajuste',
         itemName: movement.itemName ?? 'Item',
@@ -2045,6 +2054,7 @@ function InventoryDashboardSection({
       const reference = rental.orderCode ?? rental.id;
       const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
       const displayReference = contract?.contractCode ?? rental.contractCode ?? reference;
+      const operationDate = contract?.deliveryDate ?? contract?.eventDate ?? rental.rentalDate ?? rental.createdAt ?? rental.rentalAt ?? new Date().toISOString();
       return (rental.items ?? [])
         .map((line, index) => {
           const key = `${reference}::${line.itemId ?? ''}`;
@@ -2057,7 +2067,8 @@ function InventoryDashboardSection({
           const afterStock = Number(itemRow?.available ?? 0);
           return {
             id: `service-order-${rental.id}-${line.itemId}-${index}`,
-            createdAt: rental.createdAt ?? rental.rentalAt ?? new Date().toISOString(),
+            createdAt: operationDate,
+            registeredAt: rental.createdAt ?? rental.rentalAt ?? new Date().toISOString(),
             typeKey: 'salida',
             typeLabel: 'Reserva',
             itemName: line.itemName ?? itemRow?.name ?? 'Item',

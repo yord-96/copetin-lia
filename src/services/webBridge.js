@@ -65,18 +65,25 @@ const getInventoryLineKey = (line, index = 0) => String(
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
 
+const rentalAffectsCurrentStock = (rental, todayKey = toDateKey(new Date())) => {
+  if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
+  const status = normalizeRentalStatus(rental?.status);
+  if (!['active', 'confirmed', 'pending'].includes(status)) return false;
+  const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus ?? '');
+  if (inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return false;
+  if (inventoryStatus === 'salio') return true;
+  const startKey = toDateKey(rental?.rentalDate ?? rental?.deliveryDate);
+  const endKey = toDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
+  return Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+};
+
 const getActiveReservedStockForItem = (state, itemId) => {
   const requestedItemId = String(itemId ?? '').trim();
   if (!requestedItemId) return 0;
 
+  const todayKey = toDateKey(new Date());
   return (Array.isArray(state?.rentals) ? state.rentals : [])
-    .filter((rental) => {
-      const status = normalizeText(rental?.status).trim();
-      return ['active', 'confirmed', 'pending'].includes(status)
-        && !rental?.deletedAt
-        && !rental?.cancelledAt
-        && !rental?.returnedAt;
-    })
+    .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
     .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
       .filter((line) => String(line?.itemId ?? '').trim() === requestedItemId)
       .reduce((lineTotal, line) => {
@@ -3249,8 +3256,9 @@ const normalizeState = (state) => {
     : [];
 
   const activeReservedByItem = new Map();
+  const todayKey = toDateKey(new Date());
   source.rentals
-    .filter((rental) => ['active', 'confirmed', 'pending'].includes(normalizeRentalStatus(rental?.status)) && !rental?.deletedAt)
+    .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
     .forEach((rental) => {
       (Array.isArray(rental?.items) ? rental.items : []).forEach((line) => {
         const itemId = String(line?.itemId ?? '').trim();
@@ -3271,9 +3279,8 @@ const normalizeState = (state) => {
     const totalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
     const reservedQty = Math.max(0, Math.trunc(Number(activeReservedByItem.get(String(item.id)) ?? 0)));
     const recoveryQty = Math.max(0, Math.trunc(Number(recoveryByItem.get(String(item.id)) ?? 0)));
-    if (reservedQty <= 0 && recoveryQty <= 0) return;
-    const maxAvailable = Math.max(0, totalStock - reservedQty - recoveryQty);
-    item.availableStock = Math.min(Math.max(0, Math.trunc(Number(item.availableStock ?? 0))), maxAvailable);
+    const expectedAvailable = Math.max(0, totalStock - reservedQty - recoveryQty);
+    item.availableStock = expectedAvailable;
   });
 
   return normalizeBusinessTextInState(source);
@@ -10363,11 +10370,8 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     if (reservationDelta !== 0) {
       const beforeAvailableStock = Number(item.availableStock ?? 0);
       const beforeTotalStock = Number(item.totalStock ?? 0);
-      item.availableStock = Math.min(
-        beforeTotalStock,
-        Math.max(0, beforeAvailableStock - reservationDelta),
-      );
       item.updatedAt = now;
+      const operationDate = String(contract.deliveryDate || contract.eventDate || rental.rentalDate || '').trim();
       if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
       state.inventoryMovements.push({
         id: makeId('mov'),
@@ -10384,8 +10388,12 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
         beforeTotalStock,
         afterTotalStock: beforeTotalStock,
         beforeAvailableStock,
-        afterAvailableStock: item.availableStock,
-        reservedStockAfter: beforeTotalStock - item.availableStock,
+        afterAvailableStock: beforeAvailableStock,
+        reservedStockAfter: beforeTotalStock - beforeAvailableStock,
+        operationDate,
+        deliveryDate: operationDate,
+        eventDate: String(contract.eventDate ?? '').trim() || operationDate,
+        stockEffect: 'reservation_only',
         userName,
         userRole,
         createdAt: now,
@@ -10426,8 +10434,8 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     if (releasedQty <= 0) return;
     const beforeAvailableStock = Number(item.availableStock ?? 0);
     const beforeTotalStock = Number(item.totalStock ?? 0);
-    item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + releasedQty);
     item.updatedAt = now;
+    const operationDate = String(contract.deliveryDate || contract.eventDate || rental.rentalDate || '').trim();
     if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
     state.inventoryMovements.push({
       id: makeId('mov'),
@@ -10442,8 +10450,12 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       beforeTotalStock,
       afterTotalStock: beforeTotalStock,
       beforeAvailableStock,
-      afterAvailableStock: item.availableStock,
-      reservedStockAfter: beforeTotalStock - item.availableStock,
+      afterAvailableStock: beforeAvailableStock,
+      reservedStockAfter: beforeTotalStock - beforeAvailableStock,
+      operationDate,
+      deliveryDate: operationDate,
+      eventDate: String(contract.eventDate ?? '').trim() || operationDate,
+      stockEffect: 'reservation_only',
       userName,
       userRole,
       createdAt: now,
@@ -15327,6 +15339,7 @@ const createWebBridge = () => ({
           })
           .filter((line) => Number(line.quantity ?? 0) > 0);
         const rentalDate = String(payload?.rentalDate ?? now.toISOString().slice(0, 10));
+        const operationDate = String(payload?.deliveryDate ?? payload?.eventDate ?? rentalDate).trim() || rentalDate;
         const availabilityPeriod = buildAvailabilityPeriod({
           deliveryDate: rentalDate,
           deliveryWindowStart: payload?.deliveryWindowStart || '00:00',
@@ -15427,7 +15440,6 @@ const createWebBridge = () => ({
           if (internalReservationQty > 0) {
             const beforeTotalStock = item.totalStock;
             const beforeAvailableStock = item.availableStock;
-            item.availableStock = Math.max(0, item.availableStock - internalReservationQty);
             item.updatedAt = now.toISOString();
 
             reservationMovements.push({
@@ -15443,8 +15455,12 @@ const createWebBridge = () => ({
               beforeTotalStock,
               afterTotalStock: item.totalStock,
               beforeAvailableStock,
-              afterAvailableStock: item.availableStock,
-              reservedStockAfter: item.totalStock - item.availableStock,
+              afterAvailableStock: beforeAvailableStock,
+              reservedStockAfter: item.totalStock - beforeAvailableStock,
+              operationDate,
+              deliveryDate: operationDate,
+              eventDate: String(payload?.eventDate ?? '').trim() || operationDate,
+              stockEffect: 'reservation_only',
               userName,
               userRole,
               createdAt: now.toISOString(),
