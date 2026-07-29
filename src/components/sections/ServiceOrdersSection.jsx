@@ -8857,7 +8857,14 @@ function ServiceOrdersSection({
           ) : null}
 
           {menuState.type === 'contract' && activeContractMenuRow ? (
-            activeContractMenuRow.status === 'oculto' ? (
+            activeContractMenuRow.status === 'anulado' ? (
+              <button
+                type="button"
+                onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
+              >
+                Previsualizar contrato PDF
+              </button>
+            ) : activeContractMenuRow.status === 'oculto' ? (
               <>
                 <button
                   type="button"
@@ -10428,7 +10435,8 @@ function ServiceOrdersSection({
               <div>
                 <h3>Anular contrato y orden</h3>
                 <p>
-                  Solo se permite hasta el dia de envio. La orden seguira visible como anulada en Inventario y Transporte.
+                  Se permite hasta el dia de envio. Si la fecha ya paso, solo se anulara cuando la orden nunca salio,
+                  no fue entregada y no registra cobros. El contrato conservara su codigo y los items quedaran liberados.
                 </p>
               </div>
             </header>
@@ -10437,7 +10445,8 @@ function ServiceOrdersSection({
               <strong>{orderToCancel.contractCode || orderToCancel.orderCode}</strong>
               <span>{orderToCancel.client} · {formatBs(orderToCancel.totalBs)}</span>
               <small>
-                La penalidad se calculara segun el porcentaje vigente en Configuracion.
+                La penalidad se aplicara dentro del plazo normal. Para una orden vencida que nunca salio y no tiene cobros,
+                la anulacion administrativa no generara penalidad.
               </small>
             </div>
 

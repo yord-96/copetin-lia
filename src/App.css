@@ -66232,3 +66232,27 @@ body:has(.accounting-bigcash-view) .workspace {
     break-inside: avoid;
   }
 }
+
+
+/* Contratos y ordenes anulados: se conservan como trazabilidad, pero quedan
+   visualmente fuera de la operacion activa. */
+.orders-view .orders-contracts-table tbody tr.contract-anulado td,
+.orders-view .orders-table tbody tr.cancelled td {
+  background: #dff4fb !important;
+  border-color: #b8e3f2 !important;
+  color: #4f7180 !important;
+}
+
+.orders-view .orders-contracts-table tbody tr.contract-anulado td:not(:last-child),
+.orders-view .orders-table tbody tr.cancelled td:not(:last-child) {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: rgba(55, 119, 145, 0.72);
+}
+
+.orders-view .orders-contracts-table tbody tr.contract-anulado td:last-child,
+.orders-view .orders-table tbody tr.cancelled td:last-child,
+.orders-view .orders-contracts-table tbody tr.contract-anulado button,
+.orders-view .orders-table tbody tr.cancelled button {
+  text-decoration: none;
+}

@@ -12221,13 +12221,43 @@ const createWebBridge = () => ({
         if (!cutoffDate) {
           throw new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
         }
-        if (!isSameOrBeforeDay(todayKey, cutoffDate)) {
-          throw new Error(`Solo puedes anular hasta el dia de envio (${toDateKey(cutoffDate)}).`);
+
+        const isWithinCancellationWindow = isSameOrBeforeDay(todayKey, cutoffDate);
+        const operational = rental.operational ?? {};
+        const inventoryStatus = normalizeText(operational.inventoryStatus ?? '');
+        const transportStatus = normalizeText(operational.transportStatus ?? '');
+        const wasOperationallySent = Boolean(
+          operational.inventorySentAt
+          || operational.inventoryDispatchedAt
+          || operational.transportSentAt
+          || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
+          || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
+          || rental.returnedAt
+          || Array.isArray(rental.returnReport),
+        );
+        const collectedBs = Math.max(
+          Number(rental?.payment?.paidAtRentalBs ?? 0),
+          Number(rental?.totals?.paidAtRentalBs ?? 0),
+          Number(rental?.payment?.cashCollectedBs ?? 0),
+          Number(rental?.payment?.rentalCollectedBs ?? 0),
+          Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
+          0,
+        );
+        const guaranteeWasCollected = ['pagada', 'pagado', 'validada', 'validado', 'retenida', 'retenido']
+          .includes(normalizeText(rental?.payment?.guaranteeStatus ?? linkedContract?.guarantee?.status ?? ''));
+        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent && collectedBs <= 0 && !guaranteeWasCollected;
+
+        if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
+          throw new Error(
+            `El plazo de anulacion vencio el ${toDateKey(cutoffDate)}. `
+            + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
+          );
         }
 
         const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
         const settings = state.settings ?? {};
-        const penaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const configuredPenaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const penaltyPercent = isWithinCancellationWindow ? configuredPenaltyPercent : 0;
         const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
         const reason = String(payload?.reason ?? '').trim();
         if (!reason) {
@@ -16011,14 +16041,46 @@ const createWebBridge = () => ({
           ),
         ) ?? null;
         const cutoffDate = linkedContract?.deliveryDate ?? rental.rentalDate ?? linkedContract?.eventDate ?? null;
-        if (!cutoffDate) throw new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
-        if (!isSameOrBeforeDay(todayKey, cutoffDate)) {
-          throw new Error(`Solo puedes anular hasta el dia de envio (${toDateKey(cutoffDate)}).`);
+        if (!cutoffDate) {
+          throw new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
+        }
+
+        const isWithinCancellationWindow = isSameOrBeforeDay(todayKey, cutoffDate);
+        const operational = rental.operational ?? {};
+        const inventoryStatus = normalizeText(operational.inventoryStatus ?? '');
+        const transportStatus = normalizeText(operational.transportStatus ?? '');
+        const wasOperationallySent = Boolean(
+          operational.inventorySentAt
+          || operational.inventoryDispatchedAt
+          || operational.transportSentAt
+          || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
+          || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
+          || rental.returnedAt
+          || Array.isArray(rental.returnReport),
+        );
+        const collectedBs = Math.max(
+          Number(rental?.payment?.paidAtRentalBs ?? 0),
+          Number(rental?.totals?.paidAtRentalBs ?? 0),
+          Number(rental?.payment?.cashCollectedBs ?? 0),
+          Number(rental?.payment?.rentalCollectedBs ?? 0),
+          Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
+          0,
+        );
+        const guaranteeWasCollected = ['pagada', 'pagado', 'validada', 'validado', 'retenida', 'retenido']
+          .includes(normalizeText(rental?.payment?.guaranteeStatus ?? linkedContract?.guarantee?.status ?? ''));
+        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent && collectedBs <= 0 && !guaranteeWasCollected;
+
+        if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
+          throw new Error(
+            `El plazo de anulacion vencio el ${toDateKey(cutoffDate)}. `
+            + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
+          );
         }
 
         const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
         const settings = state.settings ?? {};
-        const penaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const configuredPenaltyPercent = Math.max(0, Number(settings.contractCancellationPenaltyPercent ?? 20));
+        const penaltyPercent = isWithinCancellationWindow ? configuredPenaltyPercent : 0;
         const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
         const reason = String(payload?.reason ?? '').trim();
         if (!reason) throw new Error('Debes indicar por que se esta anulando el contrato.');
