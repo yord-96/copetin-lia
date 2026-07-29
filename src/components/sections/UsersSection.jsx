@@ -81,6 +81,21 @@ function UserIcon({ kind }) {
       </svg>
     );
   }
+  if (kind === 'eye') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" d="M2.8 12s3.3-5.5 9.2-5.5 9.2 5.5 9.2 5.5-3.3 5.5-9.2 5.5S2.8 12 2.8 12Z" />
+        <circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.9" />
+      </svg>
+    );
+  }
+  if (kind === 'eye-off') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" d="m3 3 18 18M10.6 6.7A9.8 9.8 0 0 1 12 6.5c5.9 0 9.2 5.5 9.2 5.5a15 15 0 0 1-3 3.7M6.1 6.1C3.9 7.7 2.8 12 2.8 12s3.3 5.5 9.2 5.5a9.4 9.4 0 0 0 3.1-.5M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      </svg>
+    );
+  }
   if (kind === 'edit') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -113,6 +128,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openActionsUserId, setOpenActionsUserId] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const canManageUsers = isDeveloper(currentUser);
 
@@ -152,6 +168,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
   const openCreateUser = () => {
     setForm(EMPTY_USER_FORM);
     setFormError('');
+    setShowPassword(false);
     setIsModalOpen(true);
   };
 
@@ -167,6 +184,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       status: user.status ?? 'active',
     });
     setFormError('');
+    setShowPassword(false);
     setIsModalOpen(true);
   };
 
@@ -174,6 +192,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
     if (isSubmitting) return;
     setIsModalOpen(false);
     setFormError('');
+    setShowPassword(false);
     setForm(EMPTY_USER_FORM);
   };
 
@@ -283,12 +302,25 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
             </label>
             <label>
               Contrasena
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-                placeholder={form.id ? 'Dejar vacia para mantener' : 'Minimo 4 caracteres'}
-              />
+              <span className="user-password-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                  placeholder={form.id ? 'Dejar vacia para mantener' : 'Minimo 4 caracteres'}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="user-password-toggle"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                  aria-pressed={showPassword}
+                  title={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+                >
+                  <UserIcon kind={showPassword ? 'eye-off' : 'eye'} />
+                </button>
+              </span>
             </label>
             <label>
               Telefono

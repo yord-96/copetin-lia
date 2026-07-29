@@ -2769,6 +2769,46 @@ const normalizeState = (state) => {
     ? source.supplierLoans
       .map((loan) => {
         const supplier = source.suppliers.find((entry) => entry.id === loan?.supplierId) ?? null;
+        const sourceContractId = String(loan?.sourceContractId ?? '').trim();
+        const sourceRentalId = String(loan?.sourceRentalId ?? '').trim();
+        const sourceOrderCode = String(loan?.sourceOrderCode ?? '').trim();
+
+        const linkedRental = (Array.isArray(source.rentals) ? source.rentals : []).find((entry) => (
+          (sourceRentalId && String(entry?.id ?? '').trim() === sourceRentalId)
+          || (sourceOrderCode && String(entry?.orderCode ?? '').trim() === sourceOrderCode)
+        )) ?? null;
+
+        const linkedContract = (Array.isArray(source.contracts) ? source.contracts : []).find((entry) => (
+          (sourceContractId && String(entry?.id ?? '').trim() === sourceContractId)
+          || (
+            linkedRental?.contractId
+            && String(entry?.id ?? '').trim() === String(linkedRental.contractId).trim()
+          )
+          || (
+            linkedRental?.contractCode
+            && String(entry?.contractCode ?? '').trim() === String(linkedRental.contractCode).trim()
+          )
+        )) ?? null;
+
+        const sourceContractCode = String(
+          loan?.sourceContractCode
+          ?? loan?.contractCode
+          ?? linkedContract?.contractCode
+          ?? linkedRental?.contractCode
+          ?? '',
+        ).trim();
+
+        const eventDate = String(
+          loan?.eventDate
+          ?? loan?.serviceDate
+          ?? linkedContract?.eventDate
+          ?? linkedContract?.deliveryDate
+          ?? linkedRental?.rentalDate
+          ?? linkedRental?.deliveryDate
+          ?? loan?.requestDate
+          ?? '',
+        ).trim();
+
         const items = Array.isArray(loan?.items)
           ? loan.items
             .map((line) => {
@@ -2797,6 +2837,7 @@ const normalizeState = (state) => {
           direction,
           flowType: 'paid',
           requestDate: String(loan?.requestDate ?? '').trim(),
+          eventDate,
           returnDate: String(loan?.returnDate ?? '').trim() || null,
           eventName: String(loan?.eventName ?? '').trim(),
           status: String(loan?.status ?? 'programado').trim() || 'programado',
@@ -2805,9 +2846,10 @@ const normalizeState = (state) => {
           totals: { totalBs: Number(totalBs.toFixed(2)) },
           items,
           settledAt: loan?.settledAt ?? null,
-          sourceContractId: String(loan?.sourceContractId ?? '').trim() || null,
-          sourceRentalId: String(loan?.sourceRentalId ?? '').trim() || null,
-          sourceOrderCode: String(loan?.sourceOrderCode ?? '').trim() || null,
+          sourceContractId: sourceContractId || linkedContract?.id || null,
+          sourceContractCode: sourceContractCode || null,
+          sourceRentalId: sourceRentalId || linkedRental?.id || null,
+          sourceOrderCode: sourceOrderCode || linkedRental?.orderCode || null,
           autoCreated: Boolean(loan?.autoCreated),
           createdAt: loan?.createdAt ?? now,
           updatedAt: loan?.updatedAt ?? loan?.createdAt ?? now,
@@ -15274,6 +15316,7 @@ const createWebBridge = () => ({
           direction,
           flowType,
           requestDate,
+          eventDate: String(payload?.eventDate ?? payload?.serviceDate ?? requestDate).trim() || requestDate,
           returnDate: String(payload?.returnDate ?? '').trim() || null,
           eventName: String(payload?.eventName ?? '').trim(),
           status: String(payload?.status ?? 'programado').trim() || 'programado',
@@ -15283,6 +15326,7 @@ const createWebBridge = () => ({
           items,
           settledAt: null,
           sourceContractId: String(payload?.sourceContractId ?? '').trim() || null,
+          sourceContractCode: String(payload?.sourceContractCode ?? payload?.contractCode ?? '').trim() || null,
           sourceRentalId: String(payload?.sourceRentalId ?? '').trim() || null,
           sourceOrderCode: String(payload?.sourceOrderCode ?? '').trim() || null,
           autoCreated: Boolean(payload?.autoCreated),

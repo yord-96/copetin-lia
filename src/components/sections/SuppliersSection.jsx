@@ -77,6 +77,29 @@ const getLineSaleTotal = (line) =>
 
 const getMarginTotal = (line) => getLineSaleTotal(line) - getLineTotal(line);
 
+const getSupplierLoanContractCode = (loan) => String(
+  loan?.sourceContractCode
+  ?? loan?.contractCode
+  ?? loan?.linkedContractCode
+  ?? '',
+).trim();
+
+const getSupplierLoanEventDate = (loan) => String(
+  loan?.eventDate
+  ?? loan?.serviceDate
+  ?? loan?.rentalDate
+  ?? loan?.deliveryDate
+  ?? loan?.requestDate
+  ?? '',
+).trim();
+
+const getSupplierLoanReferenceLabel = (loan) => (
+  getSupplierLoanContractCode(loan)
+  || loan?.eventName
+  || loan?.sourceOrderCode
+  || 'Solicitud manual'
+);
+
 const createDocumentHtml = (loan) => `
   <!doctype html>
   <html>
@@ -100,10 +123,10 @@ const createDocumentHtml = (loan) => `
       <h1>Solicitud de abastecimiento proveedor</h1>
       <p><strong>${loan.loanCode}</strong> - ${loan.supplierName}</p>
       <div class="meta">
-        <div class="box"><strong>Fecha solicitada</strong><br />${formatDate(loan.requestDate)}</div>
+        <div class="box"><strong>Fecha del evento</strong><br />${formatDate(getSupplierLoanEventDate(loan))}</div>
         <div class="box"><strong>Fecha devolucion</strong><br />${formatDate(loan.returnDate)}</div>
         <div class="box"><strong>Operacion</strong><br />Proveedor entrega a Copetin</div>
-        <div class="box"><strong>Evento / referencia</strong><br />${loan.eventName || '-'}</div>
+        <div class="box"><strong>Contrato / referencia</strong><br />${getSupplierLoanReferenceLabel(loan)}</div>
       </div>
       <table>
         <thead><tr><th>Item</th><th>Categoria</th><th>Cantidad</th><th>Costo proveedor</th><th>Precio cliente</th><th>Total a pagar</th></tr></thead>
@@ -199,7 +222,7 @@ function SuppliersSection({
     return loans.filter((loan) => {
       if (loanSupplierFilter !== 'all' && String(loan.supplierId) !== loanSupplierFilter) return false;
       if (loanStatusFilter !== 'all' && String(loan.status) !== loanStatusFilter) return false;
-      if (!isBetweenLoanDates(loan.requestDate ?? loan.createdAt, loanDateFrom, loanDateTo)) return false;
+      if (!isBetweenLoanDates(getSupplierLoanEventDate(loan) || loan.createdAt, loanDateFrom, loanDateTo)) return false;
       if (tokens.length === 0) return true;
       const itemText = (loan.items ?? [])
         .map((line) => `${line.itemName ?? ''} ${line.category ?? ''}`)
@@ -209,11 +232,12 @@ function SuppliersSection({
         loan.supplierName,
         loan.eventName,
         loan.sourceOrderCode,
+        loan.sourceContractCode,
         loan.contractCode,
         loan.orderCode,
         loan.reference,
         loan.notes,
-        formatDate(loan.requestDate),
+        formatDate(getSupplierLoanEventDate(loan)),
         itemText,
       ].join(' '));
       return tokens.every((token) => haystack.includes(token));
@@ -739,8 +763,8 @@ function SuppliersSection({
                   <tr key={loan.id}>
                     <td>{loan.loanCode}</td>
                     <td>{loan.supplierName}</td>
-                    <td>{loan.eventName || loan.sourceOrderCode || 'Solicitud manual'}</td>
-                    <td>{formatDate(loan.requestDate)}</td>
+                    <td>{getSupplierLoanReferenceLabel(loan)}</td>
+                    <td>{formatDate(getSupplierLoanEventDate(loan))}</td>
                     <td>{formatBs(loan?.totals?.totalBs ?? 0)}</td>
                     <td>{formatBs((loan.items ?? []).reduce((sum, line) => sum + getLineSaleTotal(line), 0))}</td>
                     <td>{loan.status}</td>

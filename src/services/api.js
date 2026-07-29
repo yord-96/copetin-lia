@@ -88,6 +88,9 @@ const INVENTORY_ITEM_PATCH_COLLECTIONS = Object.freeze([
 const INVENTORY_COMBO_PATCH_COLLECTIONS = Object.freeze([
   'inventoryCombos',
 ]);
+const USER_PATCH_COLLECTIONS = Object.freeze([
+  'users',
+]);
 
 const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
@@ -1453,6 +1456,9 @@ const getTargetedMutationCollections = (domain, method) => {
     if (method === 'createMovement') return INVENTORY_MOVEMENT_PATCH_COLLECTIONS;
     if (['create', 'update', 'remove'].includes(method)) return INVENTORY_ITEM_PATCH_COLLECTIONS;
     if (['createCombo', 'updateCombo', 'removeCombo'].includes(method)) return INVENTORY_COMBO_PATCH_COLLECTIONS;
+  }
+  if (domain === 'users' && ['create', 'update', 'remove', 'resendInvite'].includes(method)) {
+    return USER_PATCH_COLLECTIONS;
   }
   if (domain === 'rentals' && method === 'updateOperational') {
     return RENTAL_OPERATIONAL_PATCH_COLLECTIONS;

@@ -529,8 +529,12 @@ export const useAppController = () => {
   const handleCreateUser = async (payload) => {
     setError('');
     try {
-      await api.users.create(payload);
-      await loadData();
+      const createdUser = await api.users.create(payload);
+      setUsers((current) => (
+        [...current.filter((user) => user.id !== createdUser.id), createdUser]
+          .sort((a, b) => String(a.fullName ?? '').localeCompare(String(b.fullName ?? ''), 'es'))
+      ));
+      return createdUser;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el usuario.');
       throw requestError;
@@ -573,8 +577,19 @@ export const useAppController = () => {
   const handleUpdateUser = async (payload) => {
     setError('');
     try {
-      await api.users.update(payload);
-      await loadData();
+      const updatedUser = await api.users.update(payload);
+      setUsers((current) => (
+        current
+          .map((user) => (user.id === updatedUser.id ? updatedUser : user))
+          .sort((a, b) => String(a.fullName ?? '').localeCompare(String(b.fullName ?? ''), 'es'))
+      ));
+
+      // Si el developer modifica su propio usuario, mantenemos la sesión visual
+      // sincronizada sin forzar una recarga completa de toda la aplicación.
+      if (updatedUser?.id && updatedUser.id === currentUser?.id) {
+        setCurrentUser((current) => current ? { ...current, ...updatedUser } : current);
+      }
+      return updatedUser;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el usuario.');
       throw requestError;
@@ -584,8 +599,10 @@ export const useAppController = () => {
   const handleRemoveUser = async (payload) => {
     setError('');
     try {
-      await api.users.remove(payload);
-      await loadData();
+      const removedUser = await api.users.remove(payload);
+      const removedId = removedUser?.id ?? payload?.id;
+      setUsers((current) => current.filter((user) => user.id !== removedId));
+      return removedUser;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el usuario.');
       throw requestError;
@@ -595,8 +612,13 @@ export const useAppController = () => {
   const handleResendInvite = async (payload) => {
     setError('');
     try {
-      await api.users.resendInvite(payload);
-      await loadData();
+      const updatedUser = await api.users.resendInvite(payload);
+      if (updatedUser?.id) {
+        setUsers((current) => current.map((user) => (
+          user.id === updatedUser.id ? updatedUser : user
+        )));
+      }
+      return updatedUser;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo reenviar la invitacion.');
       throw requestError;

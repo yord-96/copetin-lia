@@ -66256,3 +66256,50 @@ body:has(.accounting-bigcash-view) .workspace {
 .orders-view .orders-table tbody tr.cancelled button {
   text-decoration: none;
 }
+
+
+/* Usuarios: mostrar u ocultar la nueva contraseña */
+.user-editor-modal .user-password-field {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.user-editor-modal .user-password-field input {
+  width: 100%;
+  padding-right: 3rem;
+}
+
+.user-editor-modal .user-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.42rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.user-editor-modal .user-password-toggle:hover {
+  background: #fff1e8;
+  color: #e84b05;
+}
+
+.user-editor-modal .user-password-toggle:focus-visible {
+  outline: 2px solid rgba(232, 75, 5, 0.35);
+  outline-offset: 1px;
+}
+
+.user-editor-modal .user-password-toggle svg {
+  width: 1.18rem;
+  height: 1.18rem;
+}
