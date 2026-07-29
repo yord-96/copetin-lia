@@ -540,6 +540,7 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
   if (!shouldUseServerState()) return;
   const missingNames = (Array.isArray(names) ? names : [])
+    .filter((name) => PARTIAL_BOOTSTRAP_COLLECTIONS.includes(name) || name === 'cashSessions')
     .filter((name) => !loadedServerCollections.has(name));
   if (!missingNames.length) return;
   await fetchServerCollections(missingNames, reason);
@@ -920,10 +921,19 @@ const pushServerStatePatch = async ({ beforeState, afterState, collections = PAT
   }
 
   if (response.status === 409) {
-    throw await createServerStateError(
+    const error = await createServerStateError(
       response,
       'Los datos fueron actualizados por otro usuario. Recarga la pagina antes de continuar.',
     );
+    if (isRevisionConflictError(error) && attempt < MUTATION_CONFLICT_RETRIES) {
+      const meta = await fetchServerMeta();
+      if (meta?.revision) {
+        rememberServerRevision(meta.revision);
+      }
+      await sleep(getRetryDelayMs(error, attempt));
+      return pushServerStatePatch({ beforeState, afterState, collections, attempt: attempt + 1 });
+    }
+    throw error;
   }
 
   if (!response.ok) {

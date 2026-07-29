@@ -3826,6 +3826,19 @@ function InventoryDashboardSection({
     const currentRentalId = receivingModal.rental.id;
     setReceivingModal(null);
     setReturnProcessingMessage('Cerrando recepcion de inventario...');
+    setOperationalOverrides((current) => ({
+      ...current,
+      [currentRentalId]: {
+        ...(current[currentRentalId] ?? {}),
+        inventoryStatus: 'devuelto',
+        returnReview: {
+          status: receivingModal.returnReviewStatus,
+          note: String(receivingModal.notes ?? '').trim(),
+        },
+        clientPendingPickup: null,
+        inventoryReturnedAt: new Date().toISOString(),
+      },
+    }));
     try {
       await yieldToBrowser();
       await onReceiveReturnedOrder?.({
@@ -3849,6 +3862,11 @@ function InventoryDashboardSection({
       });
       showMessage('Recepcion de inventario registrada correctamente.');
     } catch (error) {
+      setOperationalOverrides((current) => {
+        const next = { ...current };
+        delete next[currentRentalId];
+        return next;
+      });
       setReceivingModal(receivingModal);
       setReceivingError(error?.message || 'No se pudo registrar la recepcion.');
     } finally {
