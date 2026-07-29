@@ -171,6 +171,39 @@ const rememberFullRecordCache = (cache, record, identifiers = []) => {
   });
 };
 
+const forgetFullRecordCache = (cache, recordOrIdentifiers = []) => {
+  const identifiers = Array.isArray(recordOrIdentifiers)
+    ? recordOrIdentifiers
+    : [
+      recordOrIdentifiers?.id,
+      recordOrIdentifiers?.contractId,
+      recordOrIdentifiers?.rentalId,
+      recordOrIdentifiers?.contractCode,
+      recordOrIdentifiers?.orderCode,
+      recordOrIdentifiers?.number,
+    ];
+  const keys = new Set(identifiers.map((identifier) => String(identifier ?? '').trim()).filter(Boolean));
+  if (!keys.size) {
+    cache.clear();
+    return;
+  }
+  cache.forEach((entry, key) => {
+    const record = entry?.record ?? {};
+    const entryKeys = [
+      key,
+      record.id,
+      record.contractId,
+      record.rentalId,
+      record.contractCode,
+      record.orderCode,
+      record.number,
+    ].map((identifier) => String(identifier ?? '').trim()).filter(Boolean);
+    if (entryKeys.some((entryKey) => keys.has(entryKey))) {
+      cache.delete(key);
+    }
+  });
+};
+
 const getBridge = () => getWebBridge();
 
 const getServerStateUrl = (suffix = '') =>
@@ -1797,10 +1830,29 @@ export const api = {
     listHidden: () => callBridge('contracts', 'listHidden', false),
     ensureFull: (identifier, reason) => fetchFullServerContract(identifier, reason),
     getEconomicContext: (identifier) => fetchContractEconomicContext(identifier),
-    create: (payload) => callBridge('contracts', 'create', true, payload),
-    createAndApprove: (payload) => createAndApproveContractOnServer(payload),
-    update: (payload) => callBridge('contracts', 'update', true, payload),
-    updateEconomicLedger: (payload) => updateContractEconomicLedgerOnServer(payload),
+    create: async (payload) => {
+      const created = await callBridge('contracts', 'create', true, payload);
+      forgetFullRecordCache(fullContractCache, created);
+      return created;
+    },
+    createAndApprove: async (payload) => {
+      const result = await createAndApproveContractOnServer(payload);
+      forgetFullRecordCache(fullContractCache, result?.contract ?? payload);
+      if (result?.rental) forgetFullRecordCache(fullRentalCache, result.rental);
+      return result;
+    },
+    update: async (payload) => {
+      forgetFullRecordCache(fullContractCache, payload);
+      const updated = await callBridge('contracts', 'update', true, payload);
+      forgetFullRecordCache(fullContractCache, updated);
+      return updated;
+    },
+    updateEconomicLedger: async (payload) => {
+      forgetFullRecordCache(fullContractCache, payload);
+      const updated = await updateContractEconomicLedgerOnServer(payload);
+      forgetFullRecordCache(fullContractCache, updated);
+      return updated;
+    },
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
     restore: (payload) => callBridge('contracts', 'restore', true, payload),
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),

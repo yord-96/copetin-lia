@@ -1466,6 +1466,38 @@ function ServiceOrdersSection({
     documentPreviewCacheRef.current.clear();
   }, []);
 
+  const invalidateContractDocumentPreviewCache = useCallback((contractLike) => {
+    const identifiers = new Set([
+      contractLike?.id,
+      contractLike?.contractId,
+      contractLike?.contractCode,
+      contractLike?.orderCode,
+      contractLike?.rentalId,
+    ].map((value) => String(value ?? '').trim()).filter(Boolean));
+    if (!identifiers.size) return;
+
+    documentPreviewCacheRef.current.forEach((entry, key) => {
+      if (!String(key).startsWith('contract:')) return;
+      const matches = [...identifiers].some((identifier) => String(key).includes(identifier));
+      if (!matches) return;
+      if (entry?.blobUrl) URL.revokeObjectURL(entry.blobUrl);
+      documentPreviewCacheRef.current.delete(key);
+    });
+
+    setDocumentPreview((current) => {
+      if (current?.kind !== 'contract') return current;
+      const currentKey = String(current?.cacheKey ?? '');
+      const currentOrderCode = String(current?.orderCode ?? '').trim();
+      const matches = [...identifiers].some((identifier) => (
+        currentKey.includes(identifier)
+        || currentOrderCode === identifier
+      ));
+      if (!matches) return current;
+      if (current?.blobUrl) URL.revokeObjectURL(current.blobUrl);
+      return null;
+    });
+  }, []);
+
   const canChooseResponsibles = isDeveloper(currentUser);
   const canViewHiddenContracts = isDeveloper(currentUser);
   const canManageContractEconomicLedger = !readOnly;
@@ -5966,6 +5998,7 @@ function ServiceOrdersSection({
           if (!savedContract || !transactionResult?.rental) {
             throw new Error('No se pudo completar la aprobacion transaccional del contrato.');
           }
+          invalidateContractDocumentPreviewCache(savedContract);
           setSubmitStatusMessage('Contrato aprobado. Cerrando wizard...');
           setActionFeedback(
             `Contrato ${savedContract.contractCode ?? savedContract.id} aprobado y convertido en orden.`,
@@ -5978,6 +6011,24 @@ function ServiceOrdersSection({
           if (!savedContract) {
             throw new Error('No se pudo guardar el contrato.');
           }
+          invalidateContractDocumentPreviewCache(savedContract);
+          setDocumentsOrder((current) => {
+            if (!current) return current;
+            const sameContract = [
+              current.id,
+              current.contractId,
+              current.contractCode,
+              current.orderCode,
+              current.rentalId,
+            ].some((value) => [
+              savedContract.id,
+              savedContract.contractId,
+              savedContract.contractCode,
+              savedContract.orderCode,
+              savedContract.rentalId,
+            ].map((entry) => String(entry ?? '').trim()).filter(Boolean).includes(String(value ?? '').trim()));
+            return sameContract ? { ...current, ...savedContract } : current;
+          });
 
           if (approveNow) {
             setSubmitStatusMessage('Generando orden de servicio y reservando inventario...');
