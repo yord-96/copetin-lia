@@ -2042,14 +2042,7 @@ export const api = {
     },
     voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
     collectReceivable: async (payload) => {
-      if (shouldUseServerState()) {
-        try {
-          return await callDirectCashOperation('/cash/collect-receivable', payload);
-        } catch (error) {
-          if (!shouldFallbackToBridgeOperation(error)) throw error;
-          console.warn('[copetin-sync] Endpoint directo de cobro no disponible; usando cobro local con sincronizacion.', error);
-        }
-      }
+      if (shouldUseServerState()) return callDirectCashOperation('/cash/collect-receivable', payload);
       return callBridge('cash', 'collectReceivable', true, payload);
     },
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),

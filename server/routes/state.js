@@ -678,6 +678,46 @@ const getEconomicContextIdentifiers = (...records) => {
   return keys;
 };
 
+const entryMatchesAnyEconomicKey = (entry, keys) => {
+  if (!entry || !keys?.size) return false;
+  const entryKeys = getEconomicContextIdentifiers(entry);
+  return [...entryKeys].some((key) => keys.has(key));
+};
+
+const resolveActiveRentalForContract = (rentals, contract, serviceOrder = null, payload = null) => {
+  const activeRentals = (Array.isArray(rentals) ? rentals : []).filter((entry) => !entry?.deletedAt);
+  const exactKeys = getEconomicContextIdentifiers(
+    {
+      id: contract?.rentalId,
+      rentalId: contract?.rentalId,
+      contractId: contract?.id,
+      contractCode: contract?.contractCode,
+      orderCode: contract?.orderCode,
+    },
+    {
+      id: serviceOrder?.rentalId,
+      rentalId: serviceOrder?.rentalId,
+      orderCode: serviceOrder?.orderCode ?? serviceOrder?.codigo,
+      codigo: serviceOrder?.codigo,
+    },
+    {
+      id: payload?.rentalId,
+      rentalId: payload?.rentalId,
+      contractId: payload?.linkedContractId,
+      orderCode: payload?.linkedOrderCode,
+    },
+  );
+  const broadKeys = getEconomicContextIdentifiers(contract, serviceOrder, payload);
+
+  return activeRentals.find((entry) => (
+    String(entry?.id ?? '') && String(entry.id) === String(contract?.rentalId ?? '')
+  )) ?? activeRentals.find((entry) => (
+    String(entry?.id ?? '') && String(entry.id) === String(serviceOrder?.rentalId ?? '')
+  )) ?? activeRentals.find((entry) => entryMatchesAnyEconomicKey(entry, exactKeys))
+    ?? activeRentals.find((entry) => entryMatchesAnyEconomicKey(entry, broadKeys))
+    ?? null;
+};
+
 const economicMovementMatches = (movement, identifiers) => {
   const directValues = [
     movement?.linkedContractId,
@@ -738,16 +778,17 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
     }
 
     const contractIdentifiers = getEconomicContextIdentifiers(contract);
-    const rental = rentals.find((entry) => {
-      const rentalIdentifiers = getEconomicContextIdentifiers(entry);
-      return [...rentalIdentifiers].some((key) => contractIdentifiers.has(key));
+    const preliminaryOrder = serviceOrders.find((entry) => {
+      const orderIdentifiers = getEconomicContextIdentifiers(entry);
+      return [...orderIdentifiers].some((key) => contractIdentifiers.has(key));
     }) ?? null;
+    const rental = resolveActiveRentalForContract(rentals, contract, preliminaryOrder);
 
     const identifiers = getEconomicContextIdentifiers(contract, rental);
     const serviceOrder = serviceOrders.find((entry) => {
       const orderIdentifiers = getEconomicContextIdentifiers(entry);
       return [...orderIdentifiers].some((key) => identifiers.has(key));
-    }) ?? null;
+    }) ?? preliminaryOrder;
 
     getEconomicContextIdentifiers(serviceOrder).forEach((key) => identifiers.add(key));
 
@@ -862,7 +903,24 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         return state;
       }
 
-      const rental = state.rentals.find((entry) => String(entry?.id) === rentalId && !entry?.deletedAt);
+      const linkedContract = state.contracts.find((contract) =>
+        String(contract?.id ?? '') === String(payload.linkedContractId ?? '')
+        || String(contract?.rentalId ?? '') === rentalId
+        || String(contract?.orderCode ?? '') === String(payload.linkedOrderCode ?? '')
+        || String(contract?.contractCode ?? '') === String(payload.linkedContractCode ?? payload.contractCode ?? ''),
+      ) ?? null;
+      const linkedOrder = state.serviceOrders.find((order) =>
+        String(order?.rentalId ?? '') === rentalId
+        || String(order?.id ?? '') === rentalId
+        || String(order?.codigo ?? '') === String(payload.linkedOrderCode ?? '')
+        || String(order?.orderCode ?? '') === String(payload.linkedOrderCode ?? '')
+        || (linkedContract && (
+          String(order?.rentalId ?? '') === String(linkedContract.rentalId ?? '')
+          || String(order?.codigo ?? '') === String(linkedContract.orderCode ?? '')
+          || String(order?.orderCode ?? '') === String(linkedContract.orderCode ?? '')
+        )),
+      ) ?? null;
+      const rental = resolveActiveRentalForContract(state.rentals, linkedContract, linkedOrder, payload);
       if (!rental) { const error = new Error('No se encontro la orden seleccionada.'); error.statusCode = 404; throw error; }
       const isReturned = rental.status === 'returned';
       const settlement = rental.returnSettlement ?? {};
@@ -917,7 +975,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         }
       });
 
-      const linkedContract = state.contracts.find((contract) =>
+      const matchedContract = linkedContract ?? state.contracts.find((contract) =>
         String(contract?.id ?? '') === String(payload.linkedContractId ?? '')
         || String(contract?.rentalId ?? '') === rental.id
         || (contract?.orderCode && contract.orderCode === rental.orderCode)
@@ -930,7 +988,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         description: String(payload.receiptDetail ?? '').trim().split('\n').filter(Boolean).slice(0,2).join(' | ') || String(payload.note ?? '').trim() || `Cobro contrato: ${rental.customerName ?? ''}`,
         sourceType: isReturned ? 'return' : 'rental', sourceId: rental.id, cashBoxType: 'BIG_CASH',
         category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
-        linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? linkedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
+        linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? matchedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
         transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note });
       state.cashMovements.push(movement);
       responseData = { rental: structuredClone(rental), movement: structuredClone(movement), movements: [structuredClone(movement)] };
