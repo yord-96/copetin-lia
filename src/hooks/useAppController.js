@@ -731,22 +731,6 @@ export const useAppController = () => {
       setRentals((current) => current.map((rental) => (
         rental.id === returned.id ? returned : rental
       )));
-      window.setTimeout(() => {
-        void Promise.all([
-          api.inventory.list(),
-          api.inventory.listRecoveries(),
-        ]).then(([itemsData, recoveriesData]) => {
-          setItems(itemsData);
-          setStockRecoveries(recoveriesData);
-        }).catch((refreshError) => {
-          console.warn('[copetin] No se pudo refrescar inventario despues de devolucion.', refreshError);
-        });
-        void api.inventory.listMovements()
-          .then(setInventoryMovements)
-          .catch((refreshError) => {
-            console.warn('[copetin] No se pudo refrescar movimientos despues de devolucion.', refreshError);
-          });
-      }, 250);
       return returned;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo recibir la devolucion en inventario.');

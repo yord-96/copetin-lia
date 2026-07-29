@@ -817,6 +817,29 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
 
 const directMoney = (value) => Number(Math.max(0, Number(value ?? 0)).toFixed(2));
 const directId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
+const directNormalizeText = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+const directInventoryLineKey = (line, index = 0) => String(
+  line?.lineKey
+  ?? line?.returnLineKey
+  ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
+).trim();
+const directCategoryRequiresCleaning = (category) => {
+  const normalized = directNormalizeText(category);
+  return normalized.includes('manteleria') || normalized.includes('mantel');
+};
+const directInteger = (value, fieldName) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    const error = new Error(`El campo "${fieldName}" debe ser numerico.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return Math.trunc(parsed);
+};
 const directPaymentMethod = (value) => {
   const normalized = String(value ?? '').trim().toLowerCase();
   return ['efectivo', 'qr', 'transferencia'].includes(normalized) ? normalized : 'efectivo';
@@ -873,12 +896,405 @@ const buildDirectMovement = (state, payload = {}) => ({
   clientOperationId: String(payload.clientOperationId ?? '').trim() || null,
   createdAt: new Date().toISOString(),
 });
+
+const addDirectReturnCashMovements = (state, rental) => {
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  const activeSession = (Array.isArray(state.cashSessions) ? state.cashSessions : [])
+    .find((session) => session.status === 'open');
+  const sessionId = activeSession?.id ?? null;
+  const customerName = String(rental.customerName ?? 'Cliente');
+  const settlement = rental?.returnSettlement ?? {};
+  const penaltiesBs = directMoney(settlement?.penaltiesBs ?? rental?.penaltiesBs);
+  const internalPenaltiesBs = directMoney(settlement?.internalPenaltiesBs ?? rental?.internalPenaltiesBs);
+  const outstandingRentalBs = directMoney(settlement?.outstandingRentalBs);
+  const pendingCollectionBs = directMoney(settlement?.pendingCollectionBs);
+  const refundBs = directMoney(settlement?.refundBs ?? rental?.refundBs);
+
+  state.cashMovements.push(buildDirectMovement(state, {
+    sessionId,
+    type: 'liquidacion_devolucion',
+    amountBs: 0,
+    description: `Liquidacion devolucion (${customerName}) | Penalidad cliente: Bs ${penaltiesBs.toFixed(2)} | Perdida interna: Bs ${internalPenaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
+    sourceType: 'return',
+    sourceId: rental.id,
+    cashBoxType: 'BIG_CASH',
+  }));
+
+  if (pendingCollectionBs > 0) {
+    state.cashMovements.push(buildDirectMovement(state, {
+      sessionId,
+      type: 'saldo_pendiente_cobro',
+      amountBs: 0,
+      description: `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`,
+      sourceType: 'return',
+      sourceId: rental.id,
+      cashBoxType: 'BIG_CASH',
+    }));
+  }
+
+  if (internalPenaltiesBs > 0) {
+    state.cashMovements.push(buildDirectMovement(state, {
+      sessionId,
+      type: 'perdida_interna_devolucion',
+      amountBs: 0,
+      description: `Perdida interna por devolucion (${customerName}): Bs ${internalPenaltiesBs.toFixed(2)}`,
+      sourceType: 'return_internal_loss',
+      sourceId: rental.id,
+      cashBoxType: 'BIG_CASH',
+    }));
+  }
+};
+
+const revertDirectReturnEffects = (state, rental) => {
+  const previousReport = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
+  const now = new Date().toISOString();
+  previousReport.forEach((line) => {
+    const returnedToAvailableQty = Math.max(0, Math.trunc(Number(line?.returnedToAvailableQty ?? 0)));
+    if (returnedToAvailableQty <= 0) return;
+    const item = (Array.isArray(state.items) ? state.items : [])
+      .find((entry) => String(entry?.id ?? '') === String(line?.itemId ?? ''));
+    if (!item) return;
+    item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - returnedToAvailableQty);
+    item.updatedAt = now;
+  });
+  state.stockRecoveries = (Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [])
+    .filter((entry) => String(entry?.sourceRentalId ?? '') !== String(rental.id));
+  const automaticTypes = new Set(['liquidacion_devolucion', 'saldo_pendiente_cobro', 'perdida_interna_devolucion']);
+  state.cashMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !(
+      String(movement?.sourceId ?? '') === String(rental.id)
+      && automaticTypes.has(String(movement?.type ?? ''))
+      && Number(movement?.amountBs ?? 0) === 0
+    ));
+};
+
 const findDirectOperation = (state, clientOperationId) => {
   const operationId = String(clientOperationId ?? '').trim();
   if (!operationId) return null;
   return (Array.isArray(state.cashMovements) ? state.cashMovements : [])
     .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
 };
+
+router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rentalId = String(payload.rentalId ?? '').trim();
+    const lines = Array.isArray(payload.returnedItems) ? payload.returnedItems : [];
+    const isPartialReturn = Boolean(payload.partialReturn) || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client';
+
+    if (!rentalId) return res.status(400).json({ error: 'Debe seleccionar un alquiler para registrar la devolucion.' });
+    if (!lines.length) return res.status(400).json({ error: 'Debe enviar el detalle de devolucion por item.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.items = Array.isArray(state.items) ? state.items : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.deliveries = Array.isArray(state.deliveries) ? state.deliveries : [];
+      state.stockRecoveries = Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [];
+      state.cashSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+
+      const rental = state.rentals.find((entry) => String(entry?.id ?? '') === rentalId && !entry?.deletedAt);
+      if (!rental) { const error = new Error('No se encontro el alquiler seleccionado.'); error.statusCode = 404; throw error; }
+      if (rental.status === 'cancelled') { const error = new Error('La orden esta anulada y no puede registrarse como devolucion.'); error.statusCode = 409; throw error; }
+      if (rental.status === 'returned' && !isPartialReturn) revertDirectReturnEffects(state, rental);
+
+      const now = new Date().toISOString();
+      const settings = state.settings ?? {};
+      const missingMultiplier = Number(settings.missingMultiplier ?? 2);
+      const damageMultiplier = Number(settings.damageMultiplier ?? 1.2);
+      const previousPartialItems = Array.isArray(rental.partialReturnReport?.items)
+        ? rental.partialReturnReport.items
+        : [];
+      const normalizeReturnChargeOwner = (value) => {
+        const normalized = directNormalizeText(value).replace(/\s+/g, '_');
+        return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
+      };
+      let penaltiesBs = 0;
+      let internalPenaltiesBs = 0;
+      previousPartialItems.forEach((line) => {
+        const chargeOwner = normalizeReturnChargeOwner(line?.chargeOwner);
+        const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+        const damagedUnitChargeBs = Math.max(0, Number(line?.damagedUnitChargeBs ?? 0));
+        const damagedFeeBs = directMoney(damagedQty * damagedUnitChargeBs);
+        if (chargeOwner === 'cliente') penaltiesBs = directMoney(penaltiesBs + damagedFeeBs);
+        else internalPenaltiesBs = directMoney(internalPenaltiesBs + damagedFeeBs);
+      });
+      const getPreviouslyProcessedQty = (rentalLine, rentalLineKey) => previousPartialItems
+        .filter((entry) => (
+          String(entry?.lineKey ?? '') === String(rentalLineKey)
+          || (!entry?.lineKey && String(entry?.itemId ?? '') === String(rentalLine.itemId ?? ''))
+        ))
+        .reduce((sum, entry) => sum
+          + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+          + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+
+      const consumedReturnLineIndexes = new Set();
+      const returnReport = (Array.isArray(rental.items) ? rental.items : []).map((rentalLine, index) => {
+        const rentalLineKey = directInventoryLineKey(rentalLine, index);
+        const normalizedRentalItemId = String(rentalLine?.itemId ?? '').trim();
+        const normalizedRentalItemName = directNormalizeText(rentalLine?.itemName ?? rentalLine?.name ?? '');
+        const normalizedRentalComboLineKey = String(rentalLine?.comboLineKey ?? '').trim();
+        const findAvailableLineIndex = (predicate) => lines.findIndex(
+          (entry, entryIndex) => !consumedReturnLineIndexes.has(entryIndex) && predicate(entry),
+        );
+
+        let incomingLineIndex = findAvailableLineIndex((entry) => Number(entry?.sourceLineIndex) === index);
+        if (incomingLineIndex < 0) incomingLineIndex = findAvailableLineIndex((entry) => String(entry?.lineKey ?? entry?.returnLineKey ?? '') === rentalLineKey);
+        if (incomingLineIndex < 0 && normalizedRentalComboLineKey) {
+          incomingLineIndex = findAvailableLineIndex((entry) => (
+            String(entry?.itemId ?? '').trim() === normalizedRentalItemId
+            && String(entry?.comboLineKey ?? '').trim() === normalizedRentalComboLineKey
+            && Number(entry?.comboRuleIndex ?? -1) === Number(rentalLine?.comboRuleIndex ?? -1)
+          ));
+        }
+        if (incomingLineIndex < 0) {
+          incomingLineIndex = findAvailableLineIndex((entry) => (
+            String(entry?.itemId ?? '').trim() === normalizedRentalItemId
+            && directNormalizeText(entry?.itemName ?? entry?.name ?? '') === normalizedRentalItemName
+          ));
+        }
+        if (incomingLineIndex < 0) incomingLineIndex = findAvailableLineIndex((entry) => String(entry?.itemId ?? '').trim() === normalizedRentalItemId);
+
+        const incomingLine = incomingLineIndex >= 0 ? lines[incomingLineIndex] : null;
+        if (!incomingLine) { const error = new Error(`Falta detalle de devolucion para "${rentalLine.itemName}".`); error.statusCode = 400; throw error; }
+        consumedReturnLineIndexes.add(incomingLineIndex);
+
+        const returnedQty = Math.max(0, directInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
+        const damagedQty = Math.max(0, directInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));
+        const missingQty = Math.max(0, directInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
+        const chargeOwner = normalizeReturnChargeOwner(incomingLine.chargeOwner);
+        const damageNote = String(incomingLine.damageNote ?? '').trim();
+        const originalExpectedQty = Math.max(0, Math.trunc(Number(rentalLine.quantity ?? 0)));
+        const previousProcessedQty = getPreviouslyProcessedQty(rentalLine, rentalLineKey);
+        const expectedQty = Math.max(0, originalExpectedQty - previousProcessedQty);
+        if (returnedQty + damagedQty + missingQty !== expectedQty) {
+          const error = new Error(`La suma de devuelto + daniado + faltante para "${rentalLine.itemName}" debe ser ${expectedQty}.`);
+          error.statusCode = 400;
+          throw error;
+        }
+        if ((damagedQty > 0 || missingQty > 0) && !damageNote) {
+          const error = new Error(`Debes registrar la observacion para "${rentalLine.itemName}".`);
+          error.statusCode = 400;
+          throw error;
+        }
+
+        const item = state.items.find((entry) => String(entry.id) === String(rentalLine.itemId));
+        const configuredDamagedUnitChargeBs = Number.isFinite(Number(item?.damagedUnitChargeBs))
+          ? Math.max(0, Number(item.damagedUnitChargeBs))
+          : Number.isFinite(Number(rentalLine.damagedUnitChargeBs))
+            ? Math.max(0, Number(rentalLine.damagedUnitChargeBs))
+            : directMoney(Number(rentalLine.rentalPriceBs ?? 0) * damageMultiplier);
+        const configuredMissingUnitChargeBs = Number.isFinite(Number(item?.missingUnitChargeBs))
+          ? Math.max(0, Number(item.missingUnitChargeBs))
+          : Number.isFinite(Number(rentalLine.missingUnitChargeBs))
+            ? Math.max(0, Number(rentalLine.missingUnitChargeBs))
+            : directMoney(Number(rentalLine.rentalPriceBs ?? 0) * missingMultiplier);
+        const damagedUnitChargeBs = damagedQty > 0 && Number.isFinite(Number(incomingLine.damagedUnitChargeBs))
+          ? Math.max(0, Number(incomingLine.damagedUnitChargeBs))
+          : damagedQty > 0 ? configuredDamagedUnitChargeBs : 0;
+        const missingUnitChargeBs = missingQty > 0 && Number.isFinite(Number(incomingLine.missingUnitChargeBs))
+          ? Math.max(0, Number(incomingLine.missingUnitChargeBs))
+          : missingQty > 0 ? configuredMissingUnitChargeBs : 0;
+        const damagedFeeBs = directMoney(damagedQty * damagedUnitChargeBs);
+        const missingFeeBs = directMoney(missingQty * missingUnitChargeBs);
+        const linePenaltyBs = directMoney(damagedFeeBs + missingFeeBs);
+        if (chargeOwner === 'cliente') penaltiesBs = directMoney(penaltiesBs + linePenaltyBs);
+        else internalPenaltiesBs = directMoney(internalPenaltiesBs + linePenaltyBs);
+
+        let internalExpectedQty = expectedQty;
+        let returnedToAvailableQty = returnedQty;
+        let movedToCleaningQty = 0;
+        if (item) {
+          internalExpectedQty = Math.max(0, Math.min(expectedQty, Math.trunc(Number(rentalLine.internalReservedQty ?? expectedQty))));
+          const internalDamagedQty = Math.min(damagedQty, internalExpectedQty);
+          const internalMissingQty = Math.min(missingQty, Math.max(0, internalExpectedQty - internalDamagedQty));
+          const internalGoodQty = Math.min(returnedQty, Math.max(0, internalExpectedQty - internalDamagedQty - internalMissingQty));
+          const needsCleaningOnReturn = directCategoryRequiresCleaning(item.category) || Boolean(item.needsCleaningOnReturn);
+          movedToCleaningQty = needsCleaningOnReturn ? internalGoodQty : 0;
+          returnedToAvailableQty = internalGoodQty - movedToCleaningQty;
+          item.availableStock = Number(item.availableStock ?? 0) + returnedToAvailableQty;
+          item.updatedAt = now;
+          if (movedToCleaningQty > 0) {
+            state.stockRecoveries.push({
+              id: directId('reco'),
+              itemId: item.id,
+              itemName: item.name,
+              category: item.category,
+              imageUrl: item.imageUrl ?? null,
+              imageDataUrl: item.imageDataUrl ?? null,
+              sourceRentalId: rental.id,
+              sourceCustomerName: rental.customerName,
+              stage: 'lavado',
+              quantity: movedToCleaningQty,
+              note: 'Devuelto y enviado a lavado.',
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+          if (internalDamagedQty > 0) {
+            state.stockRecoveries.push({
+              id: directId('reco'),
+              itemId: item.id,
+              itemName: item.name,
+              category: item.category,
+              imageUrl: item.imageUrl ?? null,
+              imageDataUrl: item.imageDataUrl ?? null,
+              sourceRentalId: rental.id,
+              sourceCustomerName: rental.customerName,
+              stage: 'reparacion',
+              quantity: internalDamagedQty,
+              note: damageNote || 'Dano reportado en devolucion.',
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+
+        return {
+          lineKey: rentalLineKey,
+          itemId: rentalLine.itemId,
+          itemName: rentalLine.itemName,
+          expectedQty,
+          originalExpectedQty,
+          previousProcessedQty,
+          internalExpectedQty,
+          supplierBackedQty: Math.max(0, expectedQty - internalExpectedQty),
+          returnedQty,
+          returnedToAvailableQty,
+          movedToCleaningQty,
+          damagedQty,
+          missingQty,
+          damageNote,
+          chargeOwner,
+          damagedUnitChargeBs,
+          missingUnitChargeBs,
+          damagedFeeBs,
+          missingFeeBs,
+          penaltyBs: linePenaltyBs,
+        };
+      });
+
+      if (isPartialReturn) {
+        const pendingItems = returnReport
+          .filter((line) => Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0)
+          .map((line) => ({
+            lineKey: line.lineKey,
+            itemId: line.itemId,
+            itemName: line.itemName,
+            expectedQty: line.expectedQty,
+            pendingQty: Math.max(0, Math.trunc(Number(line.missingQty ?? 0))),
+            note: String(line.damageNote ?? '').trim(),
+          }));
+        if (!pendingItems.length) { const error = new Error('Para registrar material con cliente debe existir al menos una cantidad pendiente.'); error.statusCode = 400; throw error; }
+        rental.partialReturnReport = {
+          updatedAt: now,
+          updatedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+          items: [
+            ...previousPartialItems,
+            ...returnReport.filter((line) => (
+              Math.max(0, Math.trunc(Number(line.returnedQty ?? 0))) > 0
+              || Math.max(0, Math.trunc(Number(line.damagedQty ?? 0))) > 0
+              || Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0
+            )).map((line) => ({ ...line, partialRegisteredAt: now })),
+          ],
+        };
+        rental.operational = {
+          ...(rental.operational ?? {}),
+          inventoryStatus: 'salio',
+          returnReview: {
+            status: 'left_with_client',
+            note: String(payload?.returnReview?.note ?? '').trim(),
+            reviewedAt: now,
+            reviewedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+            reviewedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+          },
+          clientPendingPickup: {
+            active: true,
+            note: String(payload?.clientPendingPickup?.note ?? payload?.returnReview?.note ?? '').trim(),
+            items: pendingItems,
+            registeredAt: now,
+            registeredByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+            registeredByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+          },
+        };
+        rental.updatedAt = now;
+        responseData = { rental: structuredClone(rental) };
+        return state;
+      }
+
+      const totalBs = directMoney(rental?.totals?.totalBs);
+      const alreadyPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+      const outstandingRentalBs = directMoney(Math.max(0, totalBs - alreadyPaidBs));
+      const totalDiscountAgainstDepositBs = directMoney(penaltiesBs + outstandingRentalBs);
+      const depositBs = directMoney(rental.depositBs);
+      const refundBs = directMoney(Math.max(0, depositBs - totalDiscountAgainstDepositBs));
+      const pendingCollectionBs = directMoney(Math.max(0, totalDiscountAgainstDepositBs - depositBs));
+      const discountCoveredByDepositBs = directMoney(Math.min(depositBs, totalDiscountAgainstDepositBs));
+
+      rental.status = 'returned';
+      rental.returnedAt = now;
+      rental.returnReport = [
+        ...previousPartialItems.filter((line) => (
+          Math.max(0, Math.trunc(Number(line?.returnedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0))) > 0
+        )),
+        ...returnReport,
+      ];
+      rental.partialReturnReport = null;
+      rental.operational = {
+        ...(rental.operational ?? {}),
+        inventoryStatus: 'devuelto',
+        inventoryReturnedAt: now,
+        inventoryReturnedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+        inventoryReturnedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+        returnReview: {
+          status: String(payload?.returnReview?.status ?? 'complete').trim() || 'complete',
+          note: String(payload?.returnReview?.note ?? '').trim(),
+          reviewedAt: now,
+          reviewedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+          reviewedByRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario',
+        },
+        clientPendingPickup: null,
+      };
+      rental.penaltiesBs = penaltiesBs;
+      rental.internalPenaltiesBs = internalPenaltiesBs;
+      rental.refundBs = refundBs;
+      rental.payment = {
+        ...(rental.payment ?? {}),
+        status: pendingCollectionBs > 0 ? 'saldo_pendiente' : 'liquidado',
+        paidAtRentalBs: alreadyPaidBs,
+        pendingPaymentBs: pendingCollectionBs,
+      };
+      rental.returnSettlement = {
+        outstandingRentalBs,
+        penaltiesBs,
+        internalPenaltiesBs,
+        totalDiscountAgainstDepositBs,
+        discountCoveredByDepositBs,
+        pendingCollectionBs,
+        refundBs,
+      };
+      rental.updatedAt = now;
+
+      state.deliveries.forEach((delivery) => {
+        if ((delivery.rentalId && delivery.rentalId === rental.id) || (delivery.orderCode && rental.orderCode && delivery.orderCode === rental.orderCode)) {
+          delivery.status = 'completada';
+          delivery.progress = 100;
+          delivery.updatedAt = now;
+        }
+      });
+      addDirectReturnCashMovements(state, rental);
+      responseData = { rental: structuredClone(rental) };
+      return state;
+    });
+
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
 
 router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
   try {

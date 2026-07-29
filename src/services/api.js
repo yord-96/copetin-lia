@@ -1606,6 +1606,41 @@ const callDirectCashOperation = async (path, payload = {}) => {
 
 const shouldFallbackToBridgeOperation = (error) => error?.status === 404 || error?.status === 405;
 
+const callDirectRentalReturnOperation = async (payload = {}) => {
+  if (!shouldUseServerState()) return null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(getServerStateUrl('/rentals/register-return'), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo registrar la recepcion.');
+    const result = await response.json();
+    const rental = result?.rental ?? null;
+    if (result?.revision) rememberServerRevision(result.revision);
+    if (rental?.id) {
+      const localSnapshot = await exportLocalCollections(['rentals']);
+      const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
+      const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
+        ? currentRentals.map((entry) => (String(entry?.id ?? '') === String(rental.id) ? rental : entry))
+        : [rental, ...currentRentals];
+      await mergeLocalState({ rentals: nextRentals });
+      rememberFullRecordCache(fullRentalCache, rental, [rental.id, rental.orderCode, rental.contractCode]);
+    }
+    announceDataChange({ domain: 'rentals', method: 'registerReturn', collections: RENTAL_RETURN_PATCH_COLLECTIONS });
+    return rental ?? result;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('El servidor tardo demasiado en cerrar la recepcion. No la repitas: vuelve a abrir movimientos para verificar el estado.');
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 
 const fetchContractEconomicContext = async (identifier) => {
   const requestedId = String(identifier ?? '').trim();
@@ -2018,7 +2053,10 @@ export const api = {
     updateOperational: (payload) => callBridge('rentals', 'updateOperational', true, payload),
     cancel: (payload) => callBridge('rentals', 'cancel', true, payload),
     remove: (payload) => callBridge('rentals', 'remove', true, payload),
-    registerReturn: (payload) => callBridge('rentals', 'registerReturn', true, payload),
+    registerReturn: async (payload) => {
+      if (shouldUseServerState()) return callDirectRentalReturnOperation(payload);
+      return callBridge('rentals', 'registerReturn', true, payload);
+    },
   },
   cash: {
     getSummary: () => callBridge('cash', 'getSummary', false),
