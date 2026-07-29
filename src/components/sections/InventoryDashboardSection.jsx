@@ -1990,13 +1990,17 @@ function InventoryDashboardSection({
     const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
     const rentalsForTrace = [...activeRentals, ...cancelledRentals];
     const rentalByOrderCode = new Map(rentalsForTrace.map((rental) => [rental.orderCode ?? rental.id, rental]));
+    const sortedInventoryMovements = inventoryMovements
+      .slice()
+      .sort((a, b) => new Date(b.createdAt ?? b.operationDate ?? 0) - new Date(a.createdAt ?? a.operationDate ?? 0));
     const reservationMovementKeys = new Set(
-      inventoryMovements
+      sortedInventoryMovements
         .filter((movement) => movement.type === 'reserva')
         .map((movement) => `${movement.reference ?? ''}::${movement.itemId ?? ''}`),
     );
+    const visibleInventoryMovements = sortedInventoryMovements.slice(0, INVENTORY_MOVEMENT_RENDER_LIMIT);
 
-    const persistedRows = inventoryMovements.map((movement) => {
+    const persistedRows = visibleInventoryMovements.map((movement) => {
       const itemRow = itemById.get(movement.itemId);
       const linkedRental = rentalByOrderCode.get(movement.reference ?? '');
       const linkedContract = linkedRental ? contractById.get(String(linkedRental.contractId ?? '')) : null;

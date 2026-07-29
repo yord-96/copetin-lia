@@ -72,11 +72,8 @@ const RENTAL_RETURN_PATCH_COLLECTIONS = Object.freeze([
   'items',
   'rentals',
   'deliveries',
-  'inventoryMovements',
   'stockRecoveries',
   'cashMovements',
-  'cashDebts',
-  'cashSessions',
 ]);
 const INVENTORY_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
   'items',
