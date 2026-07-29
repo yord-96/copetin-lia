@@ -2507,10 +2507,19 @@ function ServiceOrdersSection({
     const outstandingRentalBs = toMoneyNumber(settlement.outstandingRentalBs);
     const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
     const discountBs = toMoneyNumber(contract?.totals?.discountBs ?? rental?.totals?.discountBs);
+    const itemDiscountsBs = toMoneyNumber(contract?.totals?.itemDiscountsBs ?? rental?.totals?.itemDiscountsBs);
     const deliveryFeeBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
     const servicesBs = (Array.isArray(contract?.services) ? contract.services : Array.isArray(rental?.services) ? rental.services : [])
       .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
     const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - deliveryFeeBs).toFixed(2)));
+    const itemsGrossSubtotalBs = Math.max(
+      rentalTotalBs + itemDiscountsBs,
+      toMoneyNumber(contract?.totals?.itemsGrossSubtotalBs ?? rental?.totals?.itemsGrossSubtotalBs),
+    );
+    const itemsNetSubtotalBs = Math.max(
+      rentalTotalBs,
+      toMoneyNumber(contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs),
+    );
     const prepaidUsedBs = toMoneyNumber(contract?.payment?.prepaidUsedBs ?? rental?.payment?.prepaidUsedBs);
 
     const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
@@ -2869,6 +2878,9 @@ function ServiceOrdersSection({
       returnIssues,
       totalBs,
       rentalTotalBs,
+      itemsGrossSubtotalBs,
+      itemDiscountsBs,
+      itemsNetSubtotalBs,
       servicesBs,
       totalManagedBs,
       paidBs: effectivePaidBs,
@@ -3945,6 +3957,17 @@ function ServiceOrdersSection({
         itemText: Array.from(row.itemNames).slice(0, 2).join(', '),
       }));
   }, [availabilityByItemId]);
+
+  const grossItemsSubtotalBs = useMemo(
+    () => selectedItems.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+      + supplierCoverageTotals.manualSaleBs,
+    [selectedItems, supplierCoverageTotals.manualSaleBs],
+  );
+
+  const itemDiscountsBs = useMemo(
+    () => selectedItems.reduce((sum, line) => sum + Number(line.lineDiscountBs ?? line.discountBs ?? 0), 0),
+    [selectedItems],
+  );
 
   const baseItemsSubtotalBs = useMemo(
     () => selectedItems.reduce((sum, line) => sum + line.lineTotalBs, 0) + supplierCoverageTotals.manualSaleBs,
@@ -5843,6 +5866,9 @@ function ServiceOrdersSection({
       discountMode: generalDiscountMode,
       discountBs: generalDiscountBs,
       discountPercent: generalDiscountPercent,
+      itemDiscountsBs,
+      itemsGrossSubtotalBs: grossItemsSubtotalBs,
+      itemsNetSubtotalBs: baseItemsSubtotalBs,
       guaranteeBs,
       guaranteeStatus: draft.guaranteeStatus === 'validado' ? 'validado' : 'no_validado',
       guaranteePaymentMethod: draft.guaranteePaymentMethod || 'efectivo',
@@ -8942,9 +8968,16 @@ function ServiceOrdersSection({
               <div className="contract-economics-kpis">
                 <article>
                   <span>Alquiler total</span>
-                  <strong>{formatBs(contractEconomicsData.rentalTotalBs)}</strong>
-                  <small>Productos y ajustes</small>
+                  <strong>{formatBs(contractEconomicsData.itemsNetSubtotalBs)}</strong>
+                  <small>Items netos y ajustes</small>
                 </article>
+                {contractEconomicsData.itemDiscountsBs > 0 ? (
+                  <article>
+                    <span>Descuentos items</span>
+                    <strong>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong>
+                    <small>Sobre {formatBs(contractEconomicsData.itemsGrossSubtotalBs)}</small>
+                  </article>
+                ) : null}
                 <article>
                   <span>Garantia</span>
                   <strong>{formatBs(contractEconomicsData.guaranteeDeclaredBs)}</strong>
@@ -8997,6 +9030,13 @@ function ServiceOrdersSection({
                     <strong style={{ display: 'block', marginTop: '4px', color: '#0b2d63', fontSize: '18px' }}>{formatBs(Math.min(contractEconomicsData.rentalReceivedBs, contractEconomicsData.ledgerChargeTargetBs))}</strong>
                     <span style={{ color: '#667085', fontSize: '12px' }}>Falta: {formatBs(contractEconomicsData.managedDebtBs)}</span>
                   </article>
+                  {contractEconomicsData.itemDiscountsBs > 0 ? (
+                    <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
+                      <small style={{ color: '#667085' }}>Descuento aplicado a items</small>
+                      <strong style={{ display: 'block', marginTop: '4px', color: '#c2410c', fontSize: '18px' }}>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong>
+                      <span style={{ color: '#667085', fontSize: '12px' }}>No afecta servicio ni transporte</span>
+                    </article>
+                  ) : null}
                   <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
                     <small style={{ color: '#667085' }}>Excedente disponible</small>
                     <strong style={{ display: 'block', marginTop: '4px', color: '#7c3aed', fontSize: '18px' }}>{formatBs(contractEconomicsData.excessPaymentBs)}</strong>
@@ -9501,6 +9541,12 @@ function ServiceOrdersSection({
                   <div className="contract-economics-lines">
                     <div><span>Ingresos relacionados</span><strong>{formatBs(contractEconomicsData.incomeBs)}</strong></div>
                     <div><span>Egresos / devoluciones</span><strong>{formatBs(contractEconomicsData.expenseBs)}</strong></div>
+                    {contractEconomicsData.itemDiscountsBs > 0 ? (
+                      <>
+                        <div><span>Items sin descuento</span><strong>{formatBs(contractEconomicsData.itemsGrossSubtotalBs)}</strong></div>
+                        <div><span>Descuento items</span><strong>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong></div>
+                      </>
+                    ) : null}
                     <div><span>Descuento comercial</span><strong>{formatBs(contractEconomicsData.discountBs)}</strong></div>
                     <div><span>Transporte</span><strong>{formatBs(contractEconomicsData.deliveryFeeBs)}</strong></div>
                     {contractEconomicsData.prepaidUsedBs > 0 ? (
@@ -12750,6 +12796,20 @@ function ServiceOrdersSection({
                         </div>
                       ) : null}
                       <div className="orders-money-divider" />
+                      <div className="orders-money-row">
+                        <span>Items</span>
+                        <strong>{formatBs(grossItemsSubtotalBs)}</strong>
+                      </div>
+                      {itemDiscountsBs > 0 ? (
+                        <div className="orders-money-row muted">
+                          <span>Descuento items</span>
+                          <strong>- {formatBs(itemDiscountsBs)}</strong>
+                        </div>
+                      ) : null}
+                      <div className="orders-money-row muted">
+                        <span>Subtotal items</span>
+                        <strong>{formatBs(baseItemsSubtotalBs)}</strong>
+                      </div>
                       {servicesSubtotalBs > 0 ? (
                         <div className="orders-money-row muted">
                           <span>Servicios</span>
@@ -12889,6 +12949,11 @@ function ServiceOrdersSection({
                                     {detailParts.map((part) => `${part.label}: ${part.value}`).join(' | ')}
                                   </small>
                                 ) : null}
+                                {Number(line.lineDiscountBs ?? line.discountBs ?? 0) > 0 ? (
+                                  <small className="orders-side-line-details">
+                                    Descuento item: - {formatBs(Number(line.lineDiscountBs ?? line.discountBs ?? 0))}
+                                  </small>
+                                ) : null}
                                 {shortageLine ? (
                                   <small className="orders-side-line-shortage">
                                     Falta proveedor para {shortageLine.uncoveredQty} u.
@@ -12976,6 +13041,20 @@ function ServiceOrdersSection({
                     </div>
                   ) : null}
                   <div className="orders-money-divider" />
+                  <div className="orders-money-row">
+                    <span>Items</span>
+                    <strong>{formatBs(grossItemsSubtotalBs)}</strong>
+                  </div>
+                  {itemDiscountsBs > 0 ? (
+                    <div className="orders-money-row muted">
+                      <span>Descuento items</span>
+                      <strong>- {formatBs(itemDiscountsBs)}</strong>
+                    </div>
+                  ) : null}
+                  <div className="orders-money-row muted">
+                    <span>Subtotal items</span>
+                    <strong>{formatBs(baseItemsSubtotalBs)}</strong>
+                  </div>
                   {servicesSubtotalBs > 0 ? (
                     <div className="orders-money-row muted">
                       <span>Servicios</span>

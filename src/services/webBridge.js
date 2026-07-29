@@ -2203,6 +2203,16 @@ const normalizeState = (state) => {
         (sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
         0,
       );
+      const computedItemsGrossSubtotalBs = items.reduce((sum, line) => {
+        const fallbackGross = Number(line.lineTotalBs ?? 0) + Number(line.discountBs ?? 0);
+        const unitGross = Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0);
+        const storedGross = Number(line.grossLineTotalBs ?? 0);
+        return sum + Math.max(0, storedGross || fallbackGross || unitGross);
+      }, 0);
+      const computedItemDiscountsBs = items.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
+      const itemsGrossSubtotalBs = Number(quote?.totals?.itemsGrossSubtotalBs ?? computedItemsGrossSubtotalBs);
+      const itemDiscountsBs = Number(quote?.totals?.itemDiscountsBs ?? computedItemDiscountsBs);
+      const itemsNetSubtotalBs = Number(quote?.totals?.itemsNetSubtotalBs ?? quote?.totals?.itemsSubtotalBs ?? itemsBaseSubtotalBs);
       const servicesSubtotalBs = services.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
       const pricingPlan = calculateDurationPricing({ pricingPlan: quote?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
       const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -2260,6 +2270,11 @@ const normalizeState = (state) => {
         billingMode: ['con_factura', 'sin_factura'].includes(quote?.billingMode) ? quote.billingMode : 'sin_factura',
         status: String(quote?.status ?? 'borrador').trim() || 'borrador',
         totals: {
+          itemsGrossSubtotalBs: Number(Math.max(0, itemsGrossSubtotalBs).toFixed(2)),
+          itemDiscountsBs: Number(Math.max(0, itemDiscountsBs).toFixed(2)),
+          itemsNetSubtotalBs: Number(Math.max(0, itemsNetSubtotalBs).toFixed(2)),
+          itemsSubtotalBs: Number(Math.max(0, itemsNetSubtotalBs).toFixed(2)),
+          servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
@@ -2352,6 +2367,16 @@ const normalizeState = (state) => {
         (sum, line) => sum + Number(line.lineTotalBs ?? Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0)),
         0,
       );
+      const computedItemsGrossSubtotalBs = items.reduce((sum, line) => {
+        const fallbackGross = Number(line.lineTotalBs ?? 0) + Number(line.discountBs ?? 0);
+        const unitGross = Number(line.quantity ?? 0) * Number(line.unitPriceBs ?? 0);
+        const storedGross = Number(line.grossLineTotalBs ?? 0);
+        return sum + Math.max(0, storedGross || fallbackGross || unitGross);
+      }, 0);
+      const computedItemDiscountsBs = items.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
+      const itemsGrossSubtotalBs = Number(contract?.totals?.itemsGrossSubtotalBs ?? computedItemsGrossSubtotalBs);
+      const itemDiscountsBs = Number(contract?.totals?.itemDiscountsBs ?? computedItemDiscountsBs);
+      const itemsNetSubtotalBs = Number(contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? itemsBaseSubtotalBs);
       const servicesSubtotalBs = services.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
       const pricingPlan = calculateDurationPricing({ pricingPlan: contract?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs });
       const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
@@ -2534,6 +2559,11 @@ const normalizeState = (state) => {
         billingMode: ['con_factura', 'sin_factura'].includes(contract?.billingMode) ? contract.billingMode : 'sin_factura',
         status: String(contract?.status ?? 'borrador').trim() || 'borrador',
         totals: {
+          itemsGrossSubtotalBs: Number(Math.max(0, itemsGrossSubtotalBs).toFixed(2)),
+          itemDiscountsBs: Number(Math.max(0, itemDiscountsBs).toFixed(2)),
+          itemsNetSubtotalBs: Number(Math.max(0, itemsNetSubtotalBs).toFixed(2)),
+          itemsSubtotalBs: Number(Math.max(0, itemsNetSubtotalBs).toFixed(2)),
+          servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           durationDiscountBs: Number(pricingPlan.durationDiscountBs.toFixed(2)),
@@ -7913,6 +7943,18 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
           ?? Number(subtotalBs ?? 0) - servicesSubtotalBs,
       ),
   );
+  const itemDiscountsBs = Math.max(
+    0,
+    Number(
+      contract?.totals?.itemDiscountsBs
+        ?? rental?.totals?.itemDiscountsBs
+        ?? documentItems.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0),
+    ),
+  );
+  const documentItemsGrossSubtotalBs = Math.max(
+    documentItemsSubtotalBs + itemDiscountsBs,
+    Number(contract?.totals?.itemsGrossSubtotalBs ?? rental?.totals?.itemsGrossSubtotalBs ?? 0),
+  );
   const computedContractTotalBs = Number(Math.max(
     0,
     documentItemsSubtotalBs + servicesSubtotalBs - Number(discountBs ?? 0) + deliveryFeeBs,
@@ -8037,7 +8079,9 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
             ${dailyScheduleFinancialItemsHtml}
-            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>
+            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsGrossSubtotalBs)}</strong></div>
+            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento items</span><strong>- ${formatBs(itemDiscountsBs)}</strong></div>` : ''}
+            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Items neto</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>` : ''}
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
@@ -13637,6 +13681,9 @@ const createWebBridge = () => ({
           payload?.supplierFulfillmentPlan,
           normalizedItems,
         );
+        const itemsGrossSubtotalBs = normalizedItems.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(normalizedSupplierFulfillmentPlan);
+        const itemDiscountsBs = normalizedItems.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
         const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(normalizedSupplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
@@ -13690,6 +13737,11 @@ const createWebBridge = () => ({
           status,
           pricingPlan,
           totals: {
+            itemsGrossSubtotalBs: Number(itemsGrossSubtotalBs.toFixed(2)),
+            itemDiscountsBs: Number(itemDiscountsBs.toFixed(2)),
+            itemsNetSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+            itemsSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+            servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
             baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
             subtotalBs: Number(subtotalBs.toFixed(2)),
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
@@ -13868,6 +13920,9 @@ const createWebBridge = () => ({
           quote.pricingPlan = payload.pricingPlan;
         }
 
+        const itemsGrossSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(quote.supplierFulfillmentPlan);
+        const itemDiscountsBs = quote.items.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
         const itemsBaseSubtotalBs = quote.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(quote.supplierFulfillmentPlan);
         const servicesSubtotalBs = (quote.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
@@ -13913,6 +13968,11 @@ const createWebBridge = () => ({
         quote.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
         quote.deliveryFeeReason = deliveryCharge.deliveryFeeReason;
         quote.totals = {
+          itemsGrossSubtotalBs: Number(itemsGrossSubtotalBs.toFixed(2)),
+          itemDiscountsBs: Number(itemDiscountsBs.toFixed(2)),
+          itemsNetSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+          itemsSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+          servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
@@ -14092,6 +14152,9 @@ const createWebBridge = () => ({
           };
         });
 
+        const itemsGrossSubtotalBs = normalizedItems.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
+        const itemDiscountsBs = normalizedItems.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
         const itemsBaseSubtotalBs = normalizedItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(payload?.supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
@@ -14145,6 +14208,11 @@ const createWebBridge = () => ({
           status,
           pricingPlan,
           totals: {
+            itemsGrossSubtotalBs: Number(itemsGrossSubtotalBs.toFixed(2)),
+            itemDiscountsBs: Number(itemDiscountsBs.toFixed(2)),
+            itemsNetSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+            itemsSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+            servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
             baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
             subtotalBs: Number(subtotalBs.toFixed(2)),
             theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
@@ -14413,6 +14481,9 @@ const createWebBridge = () => ({
           contract.items ?? [],
         );
 
+        const itemsGrossSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);
+        const itemDiscountsBs = contract.items.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
         const itemsBaseSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);
         const servicesSubtotalBs = (contract.services ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0);
@@ -14483,6 +14554,11 @@ const createWebBridge = () => ({
         contract.deliveryFeeBs = Number(deliveryCharge.deliveryFeeBs.toFixed(2));
         contract.deliveryFeeReason = deliveryCharge.deliveryFeeReason;
         contract.totals = {
+          itemsGrossSubtotalBs: Number(itemsGrossSubtotalBs.toFixed(2)),
+          itemDiscountsBs: Number(itemDiscountsBs.toFixed(2)),
+          itemsNetSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+          itemsSubtotalBs: Number(itemsBaseSubtotalBs.toFixed(2)),
+          servicesSubtotalBs: Number(servicesSubtotalBs.toFixed(2)),
           baseSubtotalBs: Number(baseSubtotalBs.toFixed(2)),
           subtotalBs: Number(subtotalBs.toFixed(2)),
           theoreticalSubtotalBs: Number(pricingPlan.theoreticalSubtotalBs.toFixed(2)),
@@ -15516,6 +15592,9 @@ const createWebBridge = () => ({
           throw new Error('La fecha y hora maxima de devolucion deben ser posteriores al momento actual.');
         }
 
+        const itemsGrossSubtotalBs = rentalItems.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
+          + getManualSupplierSaleTotalBs(supplierFulfillmentPlan);
+        const itemDiscountsBs = rentalItems.reduce((sum, line) => sum + Number(line.discountBs ?? 0), 0);
         const itemsSubtotalBs = rentalItems.reduce((sum, line) => sum + line.lineTotalBs, 0)
           + getManualSupplierSaleTotalBs(supplierFulfillmentPlan);
         const servicesSubtotalBs = requestedServices.reduce((sum, line) => sum + line.lineTotalBs, 0);
@@ -15619,6 +15698,9 @@ const createWebBridge = () => ({
           services: requestedServices,
           pricingPlan,
           totals: {
+            itemsGrossSubtotalBs: toPositiveRoundedNumber(quotedTotals?.itemsGrossSubtotalBs ?? itemsGrossSubtotalBs),
+            itemDiscountsBs: toPositiveRoundedNumber(quotedTotals?.itemDiscountsBs ?? itemDiscountsBs),
+            itemsNetSubtotalBs: toPositiveRoundedNumber(quotedTotals?.itemsNetSubtotalBs ?? itemsSubtotalBs),
             itemsSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs),
             servicesSubtotalBs: toPositiveRoundedNumber(servicesSubtotalBs),
             baseSubtotalBs: toPositiveRoundedNumber(itemsSubtotalBs + servicesSubtotalBs),
