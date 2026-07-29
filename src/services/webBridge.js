@@ -9299,12 +9299,15 @@ const restoreRentalReservedStock = (state, rental, now) => {
 const cleanupRentalOperationalResidues = (state, rental, contract, now, options = {}) => {
   const { skipReturned = false } = options;
   if (!rental || rental.deletedAt || rental.status === 'cancelled') return false;
-  if (rental.status === 'returned') {
-    if (skipReturned) return false;
-    throw new Error('No se puede eliminar completamente porque la orden ya fue devuelta/cerrada.');
-  }
 
-  restoreRentalReservedStock(state, rental, now);
+  const wasReturned = rental.status === 'returned' || Boolean(rental.returnedAt);
+  if (wasReturned && skipReturned) return false;
+
+  // Una orden devuelta ya restituyó el stock al registrar la devolución.
+  // Solo las órdenes todavía activas necesitan devolver la reserva al inventario.
+  if (!wasReturned) {
+    restoreRentalReservedStock(state, rental, now);
+  }
 
   const linkedDeliveryIds = new Set();
   state.deliveries.forEach((delivery) => {
@@ -9328,39 +9331,20 @@ const cleanupRentalOperationalResidues = (state, rental, contract, now, options 
   state.inventoryMovements = (state.inventoryMovements ?? [])
     .filter((movement) => !isInventoryMovementLinkedToRental(movement, rental, contract));
 
-  state.cashMovements.forEach((movement) => {
-    const linkedToRental = String(movement.sourceType ?? '') === 'rental' && String(movement.sourceId ?? '') === String(rental.id);
-    const linkedByOrder = rental.orderCode && String(movement.linkedOrderCode ?? '') === String(rental.orderCode);
-    if (linkedToRental || linkedByOrder) {
-      movement.voidedAt = movement.voidedAt ?? now;
-      movement.voidedBy = movement.voidedBy || 'Sistema';
-      movement.updatedAt = now;
-      movement.notes = [movement.notes, `Anulado por eliminacion del contrato ${contract?.contractCode ?? rental.contractCode ?? ''}.`]
-        .filter(Boolean)
-        .join(' | ');
-    }
-  });
-
-  state.generatedReports.forEach((report) => {
-    if (String(report.sourceId ?? '') === String(rental.id)) {
-      report.deletedAt = now;
-      report.updatedAt = now;
-    }
-  });
-
-  state.supplierLoans.forEach((loan) => {
-    const linkedToContract = String(loan.sourceContractId ?? '') === String(contract?.id ?? '');
-    const linkedToRental = String(loan.sourceRentalId ?? '') === String(rental.id);
-    const linkedByOrder = rental.orderCode && String(loan.sourceOrderCode ?? '') === String(rental.orderCode);
-    if ((linkedToContract || linkedToRental || linkedByOrder) && loan.autoCreated) {
-      loan.deletedAt = now;
-      loan.updatedAt = now;
-      loan.status = 'anulado';
-    }
-  });
+  // Los movimientos económicos, recibos, reportes emitidos y subalquileres
+  // se conservan como historial. La eliminación operativa solo quita reservas,
+  // estados de inventario/transporte y movimientos Listo/Enviado/Devuelto.
 
   rental.deletedAt = now;
   rental.status = 'cancelled';
+  rental.cancelledAt = rental.cancelledAt ?? now;
+  rental.operational = {
+    ...(rental.operational ?? {}),
+    inventoryStatus: 'anulado',
+    transportStatus: rental.logisticsMode === 'recojo' ? 'no_aplica' : 'anulado',
+    inventoryNote: '',
+    transportNote: '',
+  };
   rental.updatedAt = now;
   return true;
 };

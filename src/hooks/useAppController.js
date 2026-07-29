@@ -1322,34 +1322,40 @@ export const useAppController = () => {
         updatedByRole: trace.userRole,
       });
 
-      const [
-        contractsData,
-        hiddenContractsData,
-        rentalsData,
-        deliveriesData,
-        transportRoutesData,
-        inventoryData,
-        dashboardData,
-        settingsData,
-      ] = await Promise.all([
+      // La mutación ya actualizó el estado local del bridge. Refrescamos solo
+      // las colecciones operativas indispensables y cerramos el modal sin
+      // volver a cargar toda la aplicación.
+      const [contractsData, hiddenContractsData, rentalsData, inventoryData] = await Promise.all([
         api.contracts.list(),
         api.contracts.listHidden(),
         api.rentals.list(),
-        api.transport.listDeliveries(),
-        api.transport.listRoutes(),
         api.inventory.list(),
-        api.dashboard.get(),
-        api.settings.get(),
       ]);
 
       setContracts(contractsData);
       setHiddenContracts(hiddenContractsData);
       setRentals(rentalsData);
-      setDeliveries(deliveriesData);
-      setTransportRoutes(transportRoutesData);
       setItems(inventoryData);
-      setDashboard(dashboardData);
-      setSettingsBundle(settingsData);
+
+      // Datos secundarios en segundo plano: no deben bloquear la eliminación.
+      Promise.all([
+        api.transport.listDeliveries(),
+        api.transport.listRoutes(),
+        api.dashboard.get(),
+        api.settings.get(),
+      ]).then(([deliveriesData, transportRoutesData, dashboardData, settingsData]) => {
+        setDeliveries(deliveriesData);
+        setTransportRoutes(transportRoutesData);
+        setDashboard(dashboardData);
+        setSettingsBundle(settingsData);
+      }).catch(() => {});
+
+      if (deferredGroupsLoadedRef.current.has('inventory-movements')) {
+        api.inventory.listMovements()
+          .then(setInventoryMovements)
+          .catch(() => {});
+      }
+
       return removed;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar el contrato.');

@@ -43,9 +43,6 @@ const CONTRACT_REMOVE_PATCH_COLLECTIONS = Object.freeze([
   'deliveries',
   'transportRoutes',
   'inventoryMovements',
-  'cashMovements',
-  'generatedReports',
-  'supplierLoans',
   'systemAuditLog',
 ]);
 const CASH_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
@@ -1477,6 +1474,13 @@ const getTargetedMutationCollections = (domain, method) => {
 // Las colecciones del patch pueden ser más amplias, por ejemplo para agregar
 // una entrada de auditoría sin descargar previamente todo el historial.
 const getMutationPreflightCollections = (domain, method, targetedCollections) => {
+  if (domain === 'contracts' && method === 'remove') {
+    return [
+      'contracts',
+      'rentals',
+      'inventoryMovements',
+    ];
+  }
   if (domain === 'inventory' && ['create', 'update', 'remove'].includes(method)) {
     return ['items'];
   }
