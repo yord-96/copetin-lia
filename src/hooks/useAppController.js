@@ -2328,14 +2328,14 @@ export const useAppController = () => {
 
     setError('');
     try {
-      return await api.system.exportDatabase({ code: cleanCode, observations });
+      return await api.system.exportDatabase({ code: cleanCode, observations, userId: currentUser?.id });
     } catch (requestError) {
       setError(requestError.message || 'No se pudo exportar la base de datos.');
       throw requestError;
     }
   };
 
-  const handleImportSystemDatabase = async ({ code, backup, confirmation, observations }) => {
+  const handleImportSystemDatabase = async ({ code, backup, file, confirmation, observations }) => {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) {
       setError('Debes ingresar la contrasena de seguridad.');
@@ -2344,7 +2344,14 @@ export const useAppController = () => {
 
     setError('');
     try {
-      const result = await api.system.importDatabase({ code: cleanCode, backup, confirmation, observations });
+      const result = await api.system.importDatabase({
+        code: cleanCode,
+        backup,
+        file,
+        confirmation,
+        observations,
+        userId: currentUser?.id,
+      });
       await loadData();
       return result;
     } catch (requestError) {

@@ -26,6 +26,103 @@ const sendJson = (res, statusCode, payload) => {
   res.end(JSON.stringify(payload))
 }
 
+const normalizeRoleId = (role) => {
+  const normalized = String(role ?? '').trim().toLowerCase()
+  if (normalized === 'developer' || normalized === 'dev' || normalized.includes('desarrollador')) return 'developer'
+  if (normalized === 'super_admin' || normalized === 'superadmin' || normalized.includes('super')) return 'super_admin'
+  return normalized
+}
+
+const getUserRoleIds = (user) => {
+  const roles = Array.isArray(user?.roleIds) ? user.roleIds : [user?.roleId ?? user?.role]
+  return [...new Set(roles.map(normalizeRoleId).filter(Boolean))]
+}
+
+const isDeveloperUser = (user) => getUserRoleIds(user).includes('developer')
+
+const databaseBackupCollections = [
+  'categories',
+  'clients',
+  'users',
+  'items',
+  'inventoryCombos',
+  'quotes',
+  'contracts',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+  'personnelEmployees',
+  'personnelAttendance',
+  'personnelIncidents',
+  'rentals',
+  'deliveries',
+  'transportRoutes',
+  'vehicles',
+  'drivers',
+  'calendarEvents',
+  'calendarBoardNotes',
+  'generatedReports',
+  'cashSessions',
+  'cashMovements',
+  'cashDebts',
+  'attendanceRecords',
+  'resetLogs',
+  'inventoryMovements',
+  'stockRecoveries',
+  'systemAuditLog',
+  'userPresence',
+]
+
+const countBackupRows = (state) =>
+  databaseBackupCollections.reduce((summary, key) => {
+    const count = Array.isArray(state?.[key]) ? state[key].filter((entry) => !entry?.deletedAt).length : 0
+    return { ...summary, [key]: count, total: summary.total + count }
+  }, { total: 0 })
+
+const extractBackupState = (payload) => {
+  const candidate = payload?.state ?? payload?.database ?? payload?.backup ?? payload
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    const error = new Error('El archivo importado no contiene una base de datos valida.')
+    error.statusCode = 400
+    throw error
+  }
+  return candidate
+}
+
+const readRawBody = (req) =>
+  new Promise((resolve, reject) => {
+    const chunks = []
+    let receivedBytes = 0
+    req.on('data', (chunk) => {
+      receivedBytes += chunk.length
+      if (receivedBytes > maxSharedDbPayloadBytes) {
+        const error = new Error('La base supera el limite local permitido de 64 MB.')
+        error.statusCode = 413
+        reject(error)
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+
+const assertDeveloperDatabaseAccess = (state, { code, userId, resetSecurityCode }) => {
+  if (!resetSecurityCode || String(code ?? '').trim() !== resetSecurityCode) {
+    const error = new Error('Contrasena de seguridad incorrecta.')
+    error.statusCode = 403
+    throw error
+  }
+  const currentUser = (Array.isArray(state?.users) ? state.users : [])
+    .find((user) => String(user?.id ?? '').trim() === String(userId ?? '').trim() && !user?.deletedAt)
+  if (!currentUser || !isDeveloperUser(currentUser) || currentUser.status !== 'active') {
+    const error = new Error('Solo el rol developer puede respaldar o importar la base.')
+    error.statusCode = 403
+    throw error
+  }
+  return currentUser
+}
+
 const readBody = (req) =>
   new Promise((resolve, reject) => {
     const chunks = []
@@ -322,6 +419,10 @@ const sharedDemoDbPlugin = (env) => {
   const attendanceUploadDirectory = path.resolve(env.ATTENDANCE_UPLOAD_DIR || defaultAttendanceUploadDirectory)
   const maxProductImageBytes = Number(env.PRODUCT_IMAGE_MAX_BYTES || 8 * 1024 * 1024)
   const maxAttendancePhotoBytes = Number(env.ATTENDANCE_PHOTO_MAX_BYTES || 1024 * 1024)
+  const configuredResetSecurityCode = String(env.RESET_SECURITY_CODE ?? '').trim()
+  const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurityCode !== 'cambia-este-codigo'
+    ? configuredResetSecurityCode
+    : '1703'
   fs.mkdirSync(productUploadDirectory, { recursive: true })
   fs.mkdirSync(attendanceUploadDirectory, { recursive: true })
 
@@ -492,6 +593,142 @@ const sharedDemoDbPlugin = (env) => {
     server.middlewares.use('/__copetin_db', async (req, res) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost')
+        const normalizedPath = url.pathname.replace(/^\/__copetin_db/, '') || '/'
+        if (req.method === 'POST' && normalizedPath === '/database/export') {
+          if (!fs.existsSync(sharedDbPath)) {
+            sendJson(res, 404, { error: 'La base de datos aun no esta inicializada.' })
+            return
+          }
+
+          const body = await readBody(req)
+          const payload = JSON.parse(body || '{}')
+          const state = JSON.parse(fs.readFileSync(sharedDbPath, 'utf8'))
+          const currentUser = assertDeveloperDatabaseAccess(state, {
+            code: payload.code,
+            userId: payload.userId,
+            resetSecurityCode,
+          })
+          const exportedAt = new Date().toISOString()
+          const summary = countBackupRows(state)
+          const backup = {
+            app: 'el-copetin',
+            kind: 'database-backup',
+            schemaVersion: state?.schemaVersion ?? 3,
+            exportedAt,
+            exportedBy: {
+              id: currentUser.id,
+              name: currentUser.fullName ?? currentUser.username ?? 'Developer',
+              role: 'Developer',
+            },
+            action: 'export',
+            summary,
+            state,
+          }
+          state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : []
+          state.resetLogs.unshift({
+            id: `rst-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+            userId: currentUser.id,
+            userName: currentUser.fullName,
+            userRole: 'Developer',
+            action: 'database_export',
+            modules: ['database_backup'],
+            summary: { ...summary, exportedCollections: databaseBackupCollections.length },
+            result: 'success',
+            errors: [],
+            observations: String(payload.observations ?? 'Descarga completa de base de datos.').trim(),
+            ip: '',
+            createdAt: new Date().toISOString(),
+          })
+          fs.writeFileSync(sharedDbPath, JSON.stringify(state, null, 2), 'utf8')
+          const revision = getSharedDbRevision()
+
+          const filename = `copetin-base-datos-${exportedAt.replace(/[:.]/g, '-')}.json`
+          const responseBody = JSON.stringify(backup, null, 2)
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+          res.setHeader('Content-Length', String(Buffer.byteLength(responseBody)))
+          res.setHeader('X-Copetin-Exported-At', exportedAt)
+          res.setHeader('X-Copetin-Summary-Total', String(summary.total ?? 0))
+          res.setHeader('X-Copetin-Revision', String(revision ?? ''))
+          res.end(responseBody)
+          return
+        }
+
+        if (req.method === 'POST' && normalizedPath === '/database/import') {
+          if (!fs.existsSync(sharedDbPath)) {
+            sendJson(res, 404, { error: 'La base de datos aun no esta inicializada.' })
+            return
+          }
+          if (String(req.headers['x-copetin-confirmation'] ?? '').trim().toUpperCase() !== 'IMPORTAR') {
+            sendJson(res, 400, { error: 'Debes escribir IMPORTAR para reemplazar la base.' })
+            return
+          }
+
+          const currentState = JSON.parse(fs.readFileSync(sharedDbPath, 'utf8'))
+          const currentUser = assertDeveloperDatabaseAccess(currentState, {
+            code: req.headers['x-copetin-reset-code'],
+            userId: req.headers['x-copetin-user-id'],
+            resetSecurityCode,
+          })
+          const rawBody = await readRawBody(req)
+          const importedState = extractBackupState(JSON.parse(rawBody))
+          const importedDevelopers = (Array.isArray(importedState.users) ? importedState.users : [])
+            .filter((user) => !user.deletedAt && user.status === 'active' && isDeveloperUser(user))
+          if (!importedDevelopers.length) {
+            sendJson(res, 400, { error: 'La base importada no tiene ningun usuario developer activo.' })
+            return
+          }
+
+          const nextState = { ...importedState }
+          nextState.users = Array.isArray(nextState.users) ? nextState.users : []
+          if (!nextState.users.some((user) => user.id === currentUser.id && isDeveloperUser(user))) {
+            nextState.users.push({
+              ...currentUser,
+              status: 'active',
+              deletedAt: null,
+              isCurrentUser: true,
+              updatedAt: new Date().toISOString(),
+            })
+          }
+          nextState.users = nextState.users.map((user) => ({ ...user, isCurrentUser: user.id === currentUser.id }))
+          const importLog = {
+            id: `rst-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+            userId: currentUser.id,
+            userName: currentUser.fullName,
+            userRole: 'Developer',
+            action: 'database_import',
+            modules: ['database_backup'],
+            summary: { ...countBackupRows(nextState), importedCollections: databaseBackupCollections.length },
+            result: 'success',
+            errors: [],
+            observations: decodeURIComponent(String(req.headers['x-copetin-observations'] ?? '')).trim() || 'Importacion completa de base de datos.',
+            ip: '',
+            createdAt: new Date().toISOString(),
+          }
+          const preservedLogs = [
+            ...(Array.isArray(nextState.resetLogs) ? nextState.resetLogs : []),
+            ...(Array.isArray(currentState.resetLogs) ? currentState.resetLogs : []),
+          ]
+          const seenLogIds = new Set()
+          const uniqueLogs = preservedLogs.filter((log) => {
+            const id = String(log?.id ?? '').trim()
+            if (id && seenLogIds.has(id)) return false
+            if (id) seenLogIds.add(id)
+            return true
+          })
+          nextState.resetLogs = [importLog, ...uniqueLogs].slice(0, 500)
+          fs.writeFileSync(sharedDbPath, JSON.stringify(nextState, null, 2), 'utf8')
+          sendJson(res, 200, {
+            ok: true,
+            log: importLog,
+            summary: importLog.summary,
+            message: 'Base de datos importada correctamente.',
+            revision: getSharedDbRevision(),
+          })
+          return
+        }
+
         if (req.method === 'GET') {
           if (url.searchParams.get('meta') === '1') {
             sendJson(res, 200, {
@@ -512,7 +749,6 @@ const sharedDemoDbPlugin = (env) => {
           return
         }
 
-        const normalizedPath = url.pathname.replace(/^\/__copetin_db/, '') || '/'
         const economicLedgerMatch = normalizedPath.match(/^\/contracts\/([^/]+)\/economic-ledger$/)
         if (req.method === 'PUT' && economicLedgerMatch) {
           const body = await readBody(req)

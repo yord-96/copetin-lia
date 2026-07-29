@@ -1614,6 +1614,98 @@ const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   return result?.contract ?? null;
 };
 
+const getFilenameFromDisposition = (disposition) => {
+  const value = String(disposition ?? '');
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) return decodeURIComponent(utf8Match[1]);
+  const match = value.match(/filename="?([^";]+)"?/i);
+  return match?.[1] ? match[1] : '';
+};
+
+const exportDatabaseDirect = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    throw new Error('La descarga de bases grandes requiere abrir la app desde el servidor, no desde un archivo local.');
+  }
+
+  await callBridge('system', 'verifyResetAccess', false, { code: payload?.code });
+  const response = await fetch(getServerStateUrl('/database/export'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      code: payload?.code,
+      userId: payload?.userId,
+      observations: payload?.observations,
+    }),
+  });
+
+  if (response.status === 404 || response.status === 405) {
+    throw new Error('El backend aun no tiene activa la descarga directa. Reinicia el servidor local/API y vuelve a intentar.');
+  }
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo descargar la base de datos.');
+  }
+
+  const blob = await response.blob();
+  const revision = response.headers.get('X-Copetin-Revision');
+  if (revision) {
+    rememberServerRevision(revision);
+    localServerCommitSerial += 1;
+  }
+  const exportedAt = response.headers.get('X-Copetin-Exported-At') || new Date().toISOString();
+  const filename = getFilenameFromDisposition(response.headers.get('Content-Disposition'))
+    || `copetin-base-datos-${String(exportedAt).replace(/[:.]/g, '-')}.json`;
+  return {
+    ok: true,
+    blob,
+    filename,
+    exportedAt,
+    summary: {
+      total: Number(response.headers.get('X-Copetin-Summary-Total') ?? 0) || 0,
+    },
+  };
+};
+
+const importDatabaseDirect = async (payload = {}) => {
+  if (!payload?.file) {
+    return callBridge('system', 'importDatabase', true, payload);
+  }
+  if (!shouldUseServerState()) {
+    throw new Error('La importacion de archivos grandes requiere abrir la app desde el servidor, no desde un archivo local.');
+  }
+
+  await callBridge('system', 'verifyResetAccess', false, { code: payload?.code });
+  const response = await fetch(getServerStateUrl('/database/import'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({
+      'Content-Type': 'application/octet-stream',
+      'X-Copetin-Reset-Code': String(payload?.code ?? ''),
+      'X-Copetin-User-Id': String(payload?.userId ?? ''),
+      'X-Copetin-Confirmation': String(payload?.confirmation ?? ''),
+      'X-Copetin-Observations': encodeURIComponent(String(payload?.observations ?? '')),
+    }),
+    body: payload.file,
+  });
+
+  if (response.status === 404 || response.status === 405) {
+    throw new Error('El backend aun no tiene activa la importacion directa. Reinicia el servidor local/API y vuelve a intentar.');
+  }
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo importar la base de datos.');
+  }
+
+  const result = await response.json();
+  if (result?.revision) {
+    rememberServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+  markServerStateStale('database-import');
+  await syncServerState({ force: true, required: true, reason: 'database-import' });
+  announceDataChange({ domain: 'system', method: 'importDatabase' });
+  return result;
+};
+
 export const runtimeInfo =
   {
     ...getWebRuntimeInfo(),
@@ -1868,8 +1960,8 @@ export const api = {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),
     analyzeReset: (payload) => callBridge('system', 'analyzeReset', false, payload),
     executeReset: (payload) => callBridge('system', 'executeReset', true, payload),
-    exportDatabase: (payload) => callBridge('system', 'exportDatabase', true, payload),
-    importDatabase: (payload) => callBridge('system', 'importDatabase', true, payload),
+    exportDatabase: (payload) => exportDatabaseDirect(payload),
+    importDatabase: (payload) => importDatabaseDirect(payload),
     listResetLogs: () => callBridge('system', 'listResetLogs', false),
     reset: (payload) => callBridge('system', 'reset', true, payload),
   },

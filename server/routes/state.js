@@ -9,6 +9,10 @@ import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../stor
 const router = Router();
 const gzipAsync = promisify(gzip);
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
+const configuredResetSecurityCode = String(process.env.RESET_SECURITY_CODE ?? '').trim();
+const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurityCode !== 'cambia-este-codigo'
+  ? configuredResetSecurityCode
+  : '1703';
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
@@ -126,6 +130,10 @@ const patchableCollections = new Set([
   'stockRecoveries',
   'systemAuditLog',
 ]);
+const databaseBackupCollections = [
+  ...patchableCollections,
+  'userPresence',
+];
 
 const makeEconomicLedgerId = () => `eco-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
@@ -264,7 +272,255 @@ const sendJsonPayload = async (req, res, payload) => {
   res.send(body);
 };
 
+const normalizeRoleId = (role) => {
+  const normalized = String(role ?? '').trim().toLowerCase();
+  if (normalized === 'developer' || normalized === 'dev' || normalized.includes('desarrollador')) return 'developer';
+  if (normalized === 'super_admin' || normalized === 'superadmin' || normalized.includes('super')) return 'super_admin';
+  return normalized;
+};
+
+const getUserRoleIds = (user) => {
+  const roles = Array.isArray(user?.roleIds)
+    ? user.roleIds
+    : [user?.roleId ?? user?.role];
+  return [...new Set(roles.map(normalizeRoleId).filter(Boolean))];
+};
+
+const isDeveloperUser = (user) => getUserRoleIds(user).includes('developer');
+
+const getUserDisplayRole = (user) => (
+  getUserRoleIds(user).includes('developer') ? 'Developer' : String(user?.role ?? user?.roleId ?? 'Usuario')
+);
+
+const assertDeveloperDatabaseAccess = (state, { code, userId } = {}) => {
+  const cleanCode = String(code ?? '').trim();
+  if (!resetSecurityCode || cleanCode !== resetSecurityCode) {
+    const error = new Error('Contrasena de seguridad incorrecta.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requestedUserId = String(userId ?? '').trim();
+  const currentUser = (Array.isArray(state?.users) ? state.users : [])
+    .find((user) => String(user?.id ?? '').trim() === requestedUserId && !user?.deletedAt);
+  if (!currentUser || !isDeveloperUser(currentUser)) {
+    const error = new Error('Solo el rol developer puede respaldar o importar la base.');
+    error.statusCode = 403;
+    throw error;
+  }
+  if (currentUser.status !== 'active') {
+    const error = new Error('El usuario developer no esta activo.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return currentUser;
+};
+
+const countBackupRows = (state) =>
+  databaseBackupCollections.reduce((summary, key) => {
+    const count = Array.isArray(state?.[key]) ? state[key].filter((entry) => !entry?.deletedAt).length : 0;
+    return {
+      ...summary,
+      [key]: count,
+      total: summary.total + count,
+    };
+  }, { total: 0 });
+
+const buildDatabaseBackup = ({ state, currentUser, action = 'export' }) => ({
+  app: 'el-copetin',
+  kind: 'database-backup',
+  schemaVersion: state?.schemaVersion ?? 3,
+  exportedAt: new Date().toISOString(),
+  exportedBy: {
+    id: currentUser?.id ?? null,
+    name: currentUser?.fullName ?? currentUser?.username ?? 'Developer',
+    role: getUserDisplayRole(currentUser),
+  },
+  action,
+  summary: countBackupRows(state),
+  state,
+});
+
+const extractBackupState = (payload) => {
+  const candidate = payload?.state ?? payload?.database ?? payload?.backup ?? payload;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    const error = new Error('El archivo importado no contiene una base de datos valida.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return candidate;
+};
+
+const readRawRequestBody = async (req, maxBytes = MAX_CHUNKED_STATE_BYTES) => {
+  const chunks = [];
+  let receivedBytes = 0;
+  for await (const chunk of req) {
+    receivedBytes += chunk.length;
+    if (receivedBytes > maxBytes) {
+      const error = new Error('La base supera el limite permitido para importacion.');
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+};
+
 router.use('/__copetin_db', requireInternalKey);
+
+router.post('/__copetin_db/database/export', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    if (!snapshot.initialized || !snapshot.state) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    const currentUser = assertDeveloperDatabaseAccess(snapshot.state, {
+      code: req.body?.code,
+      userId: req.body?.userId,
+    });
+    const backup = buildDatabaseBackup({ state: snapshot.state, currentUser, action: 'export' });
+    const exportedAt = backup.exportedAt;
+    const filename = `copetin-base-datos-${exportedAt.replace(/[:.]/g, '-')}.json`;
+    const body = JSON.stringify(backup, null, 2);
+    const auditResult = await updateStateSnapshot((state) => {
+      state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
+      state.resetLogs.unshift({
+        id: `rst-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        userRole: getUserDisplayRole(currentUser),
+        action: 'database_export',
+        modules: ['database_backup'],
+        summary: {
+          ...countBackupRows(state),
+          exportedCollections: databaseBackupCollections.length,
+        },
+        result: 'success',
+        errors: [],
+        observations: String(req.body?.observations ?? 'Descarga completa de base de datos.').trim(),
+        ip: req.ip,
+        createdAt: new Date().toISOString(),
+      });
+      return state;
+    });
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(Buffer.byteLength(body)));
+    res.setHeader('X-Copetin-Exported-At', exportedAt);
+    res.setHeader('X-Copetin-Summary-Total', String(backup.summary.total ?? 0));
+    res.setHeader('X-Copetin-Revision', String(auditResult?.revision ?? snapshot.revision ?? ''));
+    res.send(body);
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/database/import', async (req, res, next) => {
+  try {
+    const confirmation = String(req.get('X-Copetin-Confirmation') ?? '').trim().toUpperCase();
+    if (confirmation !== 'IMPORTAR') {
+      res.status(400).json({ error: 'Debes escribir IMPORTAR para reemplazar la base.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    if (!snapshot.initialized || !snapshot.state) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    const currentUser = assertDeveloperDatabaseAccess(snapshot.state, {
+      code: req.get('X-Copetin-Reset-Code'),
+      userId: req.get('X-Copetin-User-Id'),
+    });
+    const rawBody = await readRawRequestBody(req);
+    const importedState = extractBackupState(JSON.parse(rawBody));
+    const importedDevelopers = (Array.isArray(importedState.users) ? importedState.users : [])
+      .filter((user) => !user.deletedAt && user.status === 'active' && isDeveloperUser(user));
+    if (importedDevelopers.length === 0) {
+      res.status(400).json({ error: 'La base importada no tiene ningun usuario developer activo.' });
+      return;
+    }
+
+    const nextState = { ...importedState };
+    const hasCurrentDeveloper = (Array.isArray(nextState.users) ? nextState.users : [])
+      .some((user) => user.id === currentUser.id && isDeveloperUser(user));
+    nextState.users = Array.isArray(nextState.users) ? nextState.users : [];
+    if (!hasCurrentDeveloper) {
+      nextState.users.push({
+        ...currentUser,
+        status: 'active',
+        deletedAt: null,
+        isCurrentUser: true,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    nextState.users = nextState.users.map((user) => ({
+      ...user,
+      isCurrentUser: user.id === currentUser.id,
+    }));
+
+    const preservedLogs = [
+      ...(Array.isArray(nextState.resetLogs) ? nextState.resetLogs : []),
+      ...(Array.isArray(snapshot.state.resetLogs) ? snapshot.state.resetLogs : []),
+    ];
+    const uniqueLogs = [];
+    const seenLogIds = new Set();
+    preservedLogs.forEach((log) => {
+      const id = String(log?.id ?? '').trim();
+      if (id && seenLogIds.has(id)) return;
+      if (id) seenLogIds.add(id);
+      uniqueLogs.push(log);
+    });
+
+    const importLog = {
+      id: `rst-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: getUserDisplayRole(currentUser),
+      action: 'database_import',
+      modules: ['database_backup'],
+      summary: {
+        ...countBackupRows(nextState),
+        importedCollections: databaseBackupCollections.length,
+      },
+      result: 'success',
+      errors: [],
+      observations: decodeURIComponent(String(req.get('X-Copetin-Observations') ?? '')).trim() || 'Importacion completa de base de datos.',
+      ip: req.ip,
+      createdAt: new Date().toISOString(),
+    };
+    nextState.resetLogs = [importLog, ...uniqueLogs].slice(0, 500);
+
+    const result = await replaceStateSnapshot(nextState, snapshot.revision);
+    res.json({
+      ok: true,
+      log: importLog,
+      summary: importLog.summary,
+      message: 'Base de datos importada correctamente.',
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
 
 router.get('/__copetin_db/presence', async (req, res, next) => {
   try {
@@ -661,6 +917,12 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         }
       });
 
+      const linkedContract = state.contracts.find((contract) =>
+        String(contract?.id ?? '') === String(payload.linkedContractId ?? '')
+        || String(contract?.rentalId ?? '') === rental.id
+        || (contract?.orderCode && contract.orderCode === rental.orderCode)
+        || (contract?.contractCode && contract.contractCode === rental.contractCode),
+      ) ?? null;
       const target = String(payload.collectionTarget ?? 'balance');
       const mixed = breakdown.length > 1 || target === 'mixed';
       const type = mixed ? 'ingreso_cobro_mixto_contrato' : target === 'transport' ? 'ingreso_transporte_cliente' : target === 'damage' ? 'ingreso_danos_faltantes' : isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
@@ -668,7 +930,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         description: String(payload.receiptDetail ?? '').trim().split('\n').filter(Boolean).slice(0,2).join(' | ') || String(payload.note ?? '').trim() || `Cobro contrato: ${rental.customerName ?? ''}`,
         sourceType: isReturned ? 'return' : 'rental', sourceId: rental.id, cashBoxType: 'BIG_CASH',
         category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
-        linkedRentalId: rental.id, linkedContractId: rental.contractId, linkedOrderCode: rental.orderCode,
+        linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? linkedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
         transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note });
       state.cashMovements.push(movement);
       responseData = { rental: structuredClone(rental), movement: structuredClone(movement), movements: [structuredClone(movement)] };

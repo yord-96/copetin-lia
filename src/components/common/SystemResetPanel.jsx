@@ -13,23 +13,12 @@ const RISK_LABELS = {
   critico: 'Critico',
 };
 
-function readJsonFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        resolve(JSON.parse(String(reader.result ?? '{}')));
-      } catch {
-        reject(new Error('El archivo seleccionado no es un JSON valido.'));
-      }
-    };
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
-    reader.readAsText(file);
-  });
-}
-
 function downloadJson(payload, filename) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, filename);
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -137,8 +126,12 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
     setLoadingAction('export');
     try {
       const response = await onExportDatabase?.({ code, observations });
-      const exportedAt = String(response?.exportedAt ?? new Date().toISOString()).replace(/[:.]/g, '-');
-      downloadJson(response, `copetin-base-datos-${exportedAt}.json`);
+      if (response?.blob) {
+        downloadBlob(response.blob, response.filename);
+      } else {
+        const exportedAt = String(response?.exportedAt ?? new Date().toISOString()).replace(/[:.]/g, '-');
+        downloadJson(response, `copetin-base-datos-${exportedAt}.json`);
+      }
       setDbTransferResult({
         tone: 'success',
         title: 'Base descargada',
@@ -160,10 +153,9 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
     }
     setLoadingAction('import');
     try {
-      const backup = await readJsonFile(importFile);
       const response = await onImportDatabase?.({
         code,
-        backup,
+        file: importFile,
         confirmation: importConfirmation,
         observations,
       });

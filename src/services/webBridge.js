@@ -17905,7 +17905,18 @@ const createWebBridge = () => ({
       }
 
       const state = readState();
-      const movement = state.cashMovements.find((entry) => entry.id === movementId);
+      const payloadMovement = payload?.movement && typeof payload.movement === 'object'
+        ? payload.movement
+        : null;
+      let receiptState = state;
+      let movement = state.cashMovements.find((entry) => entry.id === movementId);
+      if (!movement && payloadMovement && String(payloadMovement.id ?? '').trim() === movementId) {
+        movement = payloadMovement;
+        receiptState = {
+          ...state,
+          cashMovements: [...(Array.isArray(state.cashMovements) ? state.cashMovements : []), payloadMovement],
+        };
+      }
       if (!movement) {
         throw new Error('No se encontro el movimiento de caja para imprimir.');
       }
@@ -17918,8 +17929,8 @@ const createWebBridge = () => ({
 
       return {
         ok: true,
-        title: `Recibo ${getCashReceiptCode(state, movement)}`,
-        html: buildCashReceiptHtml({ state, movement, printedByName }),
+        title: `Recibo ${getCashReceiptCode(receiptState, movement)}`,
+        html: buildCashReceiptHtml({ state: receiptState, movement, printedByName }),
       };
     },
     printContract: async (payload) => {
