@@ -1604,6 +1604,8 @@ const callDirectCashOperation = async (path, payload = {}) => {
   } finally { clearTimeout(timeoutId); }
 };
 
+const shouldFallbackToBridgeOperation = (error) => error?.status === 404 || error?.status === 405;
+
 
 const fetchContractEconomicContext = async (identifier) => {
   const requestedId = String(identifier ?? '').trim();
@@ -2028,14 +2030,26 @@ export const api = {
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
     createManualMovement: async (payload) => {
       if (shouldUseServerState() && (payload?.linkedContractId || String(payload?.accountingTag ?? '').includes('guarantee') || String(payload?.category ?? '').includes('garantia'))) {
-        const result = await callDirectCashOperation('/cash/manual-economic-movement', payload);
-        return result?.movement ?? result;
+        try {
+          const result = await callDirectCashOperation('/cash/manual-economic-movement', payload);
+          return result?.movement ?? result;
+        } catch (error) {
+          if (!shouldFallbackToBridgeOperation(error)) throw error;
+          console.warn('[copetin-sync] Endpoint directo de movimiento economico no disponible; usando guardado local.', error);
+        }
       }
       return callBridge('cash', 'createManualMovement', true, payload);
     },
     voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
     collectReceivable: async (payload) => {
-      if (shouldUseServerState()) return callDirectCashOperation('/cash/collect-receivable', payload);
+      if (shouldUseServerState()) {
+        try {
+          return await callDirectCashOperation('/cash/collect-receivable', payload);
+        } catch (error) {
+          if (!shouldFallbackToBridgeOperation(error)) throw error;
+          console.warn('[copetin-sync] Endpoint directo de cobro no disponible; usando cobro local con sincronizacion.', error);
+        }
+      }
       return callBridge('cash', 'collectReceivable', true, payload);
     },
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
