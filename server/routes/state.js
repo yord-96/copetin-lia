@@ -88,7 +88,17 @@ const summarizeRental = (rental = {}) => ({
   items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeItemLine),
   inventoryAvailabilityAssumptions: null,
   returnReport: null,
-  returnSettlement: null,
+  // La tabla de contratos necesita el saldo económico final sin descargar
+  // todo el informe de devolución. Conservamos únicamente el resumen mínimo.
+  returnSettlement: rental?.returnSettlement
+    ? {
+        pendingCollectionBs: rental.returnSettlement.pendingCollectionBs ?? null,
+        penaltiesBs: rental.returnSettlement.penaltiesBs ?? 0,
+        paidBs: rental.returnSettlement.paidBs ?? null,
+        accountingStatus: rental.returnSettlement.accountingStatus ?? '',
+        settledAt: rental.returnSettlement.settledAt ?? null,
+      }
+    : null,
   _summaryOnly: true,
 });
 
@@ -726,99 +736,24 @@ const resolveActiveRentalForContract = (rentals, contract, serviceOrder = null, 
     ?? null;
 };
 
-const economicMovementMatches = (movement, context = {}) => {
-  if (!movement) return false;
-
-  const contract = context?.contract ?? null;
-  const rental = context?.rental ?? null;
-  const serviceOrder = context?.serviceOrder ?? null;
-
-  const contractId = normalizeEconomicContextKey(contract?.id);
-  const rentalId = normalizeEconomicContextKey(rental?.id ?? contract?.rentalId);
-  const orderCode = normalizeEconomicContextKey(
-    rental?.orderCode
-    ?? serviceOrder?.orderCode
-    ?? serviceOrder?.codigo
-    ?? contract?.orderCode,
-  );
-  const contractCode = normalizeEconomicContextKey(
-    contract?.contractCode
-    ?? rental?.contractCode,
-  );
-
-  const movementContractId = normalizeEconomicContextKey(
-    movement?.linkedContractId ?? movement?.contractId,
-  );
-  const movementRentalId = normalizeEconomicContextKey(
-    movement?.linkedRentalId ?? movement?.rentalId,
-  );
-  const movementOrderCode = normalizeEconomicContextKey(
-    movement?.linkedOrderCode ?? movement?.orderCode,
-  );
-  const movementSourceId = normalizeEconomicContextKey(movement?.sourceId);
-  const movementSourceType = normalizeEconomicContextKey(movement?.sourceType);
-  const movementContractCode = normalizeEconomicContextKey(
-    movement?.contractCode ?? movement?.reference,
-  );
-
-  // Los vínculos por ID son autoritativos. Si un recibo tiene el ID de otro
-  // contrato u otra orden, nunca puede heredarse solo porque se reutilizó el
-  // mismo número de contrato.
-  if (movementContractId) {
-    return Boolean(contractId && movementContractId === contractId);
-  }
-  if (movementRentalId) {
-    return Boolean(rentalId && movementRentalId === rentalId);
-  }
-  if (movementSourceId && movementSourceType.includes('contract')) {
-    return Boolean(contractId && movementSourceId === contractId);
-  }
-  if (
-    movementSourceId
-    && (
-      movementSourceType.includes('rental')
-      || movementSourceType.includes('return')
-    )
-  ) {
-    return Boolean(rentalId && movementSourceId === rentalId);
+const economicMovementMatches = (movement, identifiers) => {
+  const directValues = [
+    movement?.linkedContractId,
+    movement?.linkedRentalId,
+    movement?.linkedOrderCode,
+    movement?.contractId,
+    movement?.rentalId,
+    movement?.orderCode,
+    movement?.contractCode,
+    movement?.sourceId,
+    movement?.reference,
+  ];
+  if (directValues.some((value) => identifiers.has(normalizeEconomicContextKey(value)))) {
+    return true;
   }
 
-  // El código de orden es único y se admite para registros antiguos sin IDs.
-  if (movementOrderCode) {
-    return Boolean(orderCode && movementOrderCode === orderCode);
-  }
-
-  // El número de contrato puede reutilizarse. Solo se usa para registros
-  // históricos sin IDs y nunca para movimientos anteriores al contrato actual.
-  const contractCreatedAtMs = new Date(
-    contract?.approvedAt
-    ?? contract?.contractDate
-    ?? contract?.createdAt
-    ?? 0,
-  ).getTime();
-  const movementCreatedAtMs = new Date(movement?.createdAt ?? 0).getTime();
-  if (
-    Number.isFinite(contractCreatedAtMs)
-    && contractCreatedAtMs > 0
-    && Number.isFinite(movementCreatedAtMs)
-    && movementCreatedAtMs > 0
-    && movementCreatedAtMs + 1000 < contractCreatedAtMs
-  ) {
-    return false;
-  }
-
-  if (movementContractCode) {
-    return Boolean(contractCode && movementContractCode === contractCode);
-  }
-  if (movementSourceId) {
-    return Boolean(
-      (orderCode && movementSourceId === orderCode)
-      || (contractCode && movementSourceId === contractCode)
-    );
-  }
-
-  // Último respaldo para datos realmente antiguos: texto libre, únicamente
-  // con códigos del contrato actual y respetando la fecha de creación.
+  // Compatibilidad con movimientos históricos que guardaron la referencia
+  // únicamente dentro de la descripción o las notas.
   const looseText = normalizeEconomicContextKey([
     movement?.description,
     movement?.notes,
@@ -828,9 +763,7 @@ const economicMovementMatches = (movement, context = {}) => {
   ].filter(Boolean).join(' '));
   if (!looseText) return false;
 
-  return [orderCode, contractCode]
-    .filter((key) => key && key.length >= 3)
-    .some((key) => looseText.includes(key));
+  return [...identifiers].some((key) => key.length >= 3 && looseText.includes(key));
 };
 
 router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next) => {
@@ -878,11 +811,7 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
     getEconomicContextIdentifiers(serviceOrder).forEach((key) => identifiers.add(key));
 
     const movements = cashMovements
-      .filter((movement) => economicMovementMatches(movement, {
-        contract,
-        rental,
-        serviceOrder,
-      }))
+      .filter((movement) => economicMovementMatches(movement, identifiers))
       .sort((left, right) =>
         new Date(right?.createdAt ?? 0).getTime() - new Date(left?.createdAt ?? 0).getTime()
       );
