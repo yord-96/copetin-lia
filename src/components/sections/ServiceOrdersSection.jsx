@@ -420,12 +420,16 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
     cashRegisteredAt: entry?.cashRegisteredAt ?? null,
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
+    deletedAt: entry?.deletedAt ?? null,
+    deletedById: entry?.deletedById ?? null,
+    deletedByName: String(entry?.deletedByName ?? '').trim(),
+    deletionReason: String(entry?.deletionReason ?? '').trim(),
   };
 };
 
 const getEconomicInternalNotes = (contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
   .map(normalizeEconomicLedgerEntry)
-  .filter((entry) => entry.type === 'note' && entry.note)
+  .filter((entry) => !entry.deletedAt && entry.type === 'note' && entry.note)
   .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime());
 
 const getCatalogSearchScore = (searchValue, fields = []) => {
@@ -2577,7 +2581,8 @@ function ServiceOrdersSection({
       && (movement?.receipt || movement?.receiptCode || Math.abs(getCashMovementAmount(movement)) > 0),
     );
     const storedEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-      .map(normalizeEconomicLedgerEntry);
+      .map(normalizeEconomicLedgerEntry)
+      .filter((entry) => !entry.deletedAt);
     const initialPaymentBs = Math.max(
       0,
       toMoneyNumber(contract?.payment?.paidAtApprovalBs),
@@ -6972,26 +6977,55 @@ function ServiceOrdersSection({
     setIsSavingContractEconomicsLedger(true);
 
     try {
+      const currentLedger = (contractEconomicsData.economicLedger ?? [])
+        .map(normalizeEconomicLedgerEntry)
+        .filter((entry) => !entry.deletedAt);
+      const normalizedNextLedger = (Array.isArray(nextLedger) ? nextLedger : [])
+        .map(normalizeEconomicLedgerEntry)
+        .filter((entry) => !entry.deletedAt);
+      const currentById = new Map(currentLedger.map((entry) => [String(entry.id), entry]));
+      const nextById = new Map(normalizedNextLedger.map((entry) => [String(entry.id), entry]));
+      const mutations = [];
+
+      normalizedNextLedger.forEach((entry) => {
+        const currentEntry = currentById.get(String(entry.id));
+        if (!currentEntry || JSON.stringify(currentEntry) !== JSON.stringify(entry)) {
+          mutations.push({ type: 'upsert', entry });
+        }
+      });
+      currentLedger.forEach((entry) => {
+        if (!nextById.has(String(entry.id))) {
+          mutations.push({
+            type: 'void',
+            entryId: entry.id,
+            reason: options.deletionReason || 'Linea anulada desde el cuaderno economico.',
+          });
+        }
+      });
+
+      if (!mutations.length) {
+        return contractEconomicsData.contract;
+      }
+
       const payload = {
         id: contractEconomicsData.contract.id,
         contractId: contractEconomicsData.contract.id,
         contractCode: contractEconomicsData.contract.contractCode,
-        economicLedger: nextLedger,
+        mutations,
       };
 
-      console.info(
-        '[economic-ledger] Enviando guardado directo',
-        payload,
-      );
+      console.info('[economic-ledger] Enviando mutacion atomica', {
+        contractId: payload.contractId,
+        mutationCount: mutations.length,
+        mutationTypes: mutations.map((mutation) => mutation.type),
+      });
 
       const updated = onUpdateEconomicLedger
         ? await onUpdateEconomicLedger(payload)
         : await api.contracts.updateEconomicLedger(payload);
 
       if (!updated) {
-        throw new Error(
-          'El servidor respondio sin devolver el contrato actualizado.',
-        );
+        throw new Error('El servidor respondio sin devolver el contrato actualizado.');
       }
 
       setContractEconomicsTarget(updated);
@@ -7004,11 +7038,7 @@ function ServiceOrdersSection({
       );
       return updated;
     } catch (error) {
-      console.error(
-        '[economic-ledger] Error al guardar',
-        error,
-      );
-
+      console.error('[economic-ledger] Error al guardar', error);
       setContractEconomicsError(
         error.message
         || 'No se pudo guardar el seguimiento economico del contrato.',
@@ -7175,7 +7205,8 @@ function ServiceOrdersSection({
       .filter((row) => row.id !== entry.id);
     const updated = await saveContractEconomicLedgerRows(
       nextLedger,
-      'Linea eliminada del cuaderno economico.',
+      'Linea anulada del cuaderno economico.',
+      { deletionReason: `Anulada manualmente: ${entry.note || entry.type || 'sin detalle'}` },
     );
     if (updated && contractEconomicsLedgerEditingId === entry.id) {
       resetContractEconomicLedgerForm();

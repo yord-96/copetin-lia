@@ -1734,15 +1734,28 @@ const updateContractEconomicLedgerOnServer = async (payload = {}) => {
     throw new Error('Debes indicar el contrato para guardar el cuaderno economico.');
   }
 
-  const response = await fetch(
-    getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-ledger`),
-    {
-      method: 'PUT',
-      cache: 'no-store',
-      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-    },
-  );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let response;
+  try {
+    response = await fetch(
+      getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-ledger`),
+      {
+        method: 'PUT',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      },
+    );
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en guardar el cuaderno economico. Vuelve a abrirlo antes de repetir la operacion.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     throw await createServerStateError(response, 'No se pudo guardar el cuaderno economico del contrato.');

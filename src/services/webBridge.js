@@ -2441,6 +2441,10 @@ const normalizeState = (state) => {
             ).trim() || 'Sistema',
             editedAt: entry?.editedAt ?? null,
             editedByName: String(entry?.editedByName ?? '').trim(),
+            deletedAt: entry?.deletedAt ?? null,
+            deletedById: entry?.deletedById ?? null,
+            deletedByName: String(entry?.deletedByName ?? '').trim(),
+            deletionReason: String(entry?.deletionReason ?? '').trim(),
           };
         })
         : [];
@@ -14752,8 +14756,7 @@ const createWebBridge = () => ({
         const beforeContract = deepClone(contract);
         const now = new Date().toISOString();
         const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
-        const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
-        contract.economicLedger = rows.map((entry) => {
+        const normalizeEntry = (entry) => {
           const type = String(entry?.type ?? '').trim();
           const normalizedType = allowedEconomicLedgerTypes.has(type) ? type : 'note';
           const paymentMethod = normalizedType === 'note'
@@ -14773,12 +14776,52 @@ const createWebBridge = () => ({
             cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
             cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
             isCashRegistered: Boolean(entry?.isCashRegistered),
+            reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
             createdAt: entry?.createdAt ?? now,
             createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
             editedAt: entry?.editedAt ?? null,
             editedByName: String(entry?.editedByName ?? '').trim(),
+            deletedAt: entry?.deletedAt ?? null,
+            deletedById: entry?.deletedById ?? null,
+            deletedByName: String(entry?.deletedByName ?? '').trim(),
+            deletionReason: String(entry?.deletionReason ?? '').trim(),
           };
-        });
+        };
+        const existingRows = Array.isArray(contract.economicLedger) ? contract.economicLedger.map(normalizeEntry) : [];
+        const rowsById = new Map(existingRows.map((entry) => [String(entry.id), entry]));
+        const mutations = Array.isArray(payload?.mutations) ? payload.mutations : [];
+        if (mutations.length) {
+          mutations.forEach((mutation) => {
+            const mutationType = String(mutation?.type ?? '').trim().toLowerCase();
+            if (mutationType === 'upsert') {
+              const entry = normalizeEntry(mutation?.entry ?? {});
+              const previous = rowsById.get(String(entry.id));
+              rowsById.set(String(entry.id), {
+                ...(previous ?? {}),
+                ...entry,
+                deletedAt: null,
+                deletedById: null,
+                deletedByName: '',
+                deletionReason: '',
+              });
+            } else if (mutationType === 'void') {
+              const entryId = String(mutation?.entryId ?? '').trim();
+              const previous = rowsById.get(entryId);
+              if (previous) {
+                rowsById.set(entryId, {
+                  ...previous,
+                  deletedAt: now,
+                  deletedById: payload?.updatedById ?? payload?.userId ?? null,
+                  deletedByName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+                  deletionReason: String(mutation?.reason ?? 'Linea anulada.').trim() || 'Linea anulada.',
+                });
+              }
+            }
+          });
+          contract.economicLedger = [...rowsById.values()];
+        } else if (payload.economicLedger !== undefined) {
+          contract.economicLedger = (Array.isArray(payload.economicLedger) ? payload.economicLedger : []).map(normalizeEntry);
+        }
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';

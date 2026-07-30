@@ -169,6 +169,14 @@ const normalizeEconomicLedgerRows = (rows) => {
       createdByName: String(entry?.createdByName ?? entry?.userName ?? 'Sistema').trim() || 'Sistema',
       editedAt: String(entry?.editedAt ?? '').trim() || null,
       editedByName: String(entry?.editedByName ?? '').trim(),
+      cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
+      cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+      isCashRegistered: Boolean(entry?.isCashRegistered),
+      reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
+      deletedAt: String(entry?.deletedAt ?? '').trim() || null,
+      deletedById: entry?.deletedById ?? null,
+      deletedByName: String(entry?.deletedByName ?? '').trim(),
+      deletionReason: String(entry?.deletionReason ?? '').trim(),
     };
   });
 };
@@ -1446,8 +1454,9 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
       return;
     }
 
-    const ledger = normalizeEconomicLedgerRows(req.body.economicLedger);
     const now = new Date().toISOString();
+    const requestedMutations = Array.isArray(req.body.mutations) ? req.body.mutations : [];
+    let savedLedger = [];
     let updatedContract = null;
     const result = await updateStateSnapshot((state) => {
       const contracts = Array.isArray(state.contracts) ? state.contracts : [];
@@ -1463,9 +1472,52 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
         throw error;
       }
 
+      const existingContract = contracts[contractIndex];
+      const existingLedger = normalizeEconomicLedgerRows(existingContract?.economicLedger);
+      const ledgerById = new Map(existingLedger.map((entry) => [String(entry.id), entry]));
+
+      if (requestedMutations.length > 0) {
+        requestedMutations.forEach((mutation) => {
+          const mutationType = String(mutation?.type ?? '').trim().toLowerCase();
+          if (mutationType === 'upsert') {
+            const normalizedEntry = normalizeEconomicLedgerRows([mutation?.entry])[0];
+            if (!normalizedEntry?.id) return;
+            const previous = ledgerById.get(String(normalizedEntry.id));
+            ledgerById.set(String(normalizedEntry.id), {
+              ...(previous ?? {}),
+              ...normalizedEntry,
+              deletedAt: null,
+              deletedById: null,
+              deletedByName: '',
+              deletionReason: '',
+              editedAt: previous ? (normalizedEntry.editedAt || now) : normalizedEntry.editedAt,
+            });
+            return;
+          }
+          if (mutationType === 'void') {
+            const entryId = String(mutation?.entryId ?? '').trim();
+            if (!entryId || !ledgerById.has(entryId)) return;
+            const previous = ledgerById.get(entryId);
+            ledgerById.set(entryId, {
+              ...previous,
+              deletedAt: now,
+              deletedById: req.body.updatedById ?? req.body.userId ?? null,
+              deletedByName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
+              deletionReason: String(mutation?.reason ?? 'Linea anulada.').trim() || 'Linea anulada.',
+            });
+          }
+        });
+        savedLedger = [...ledgerById.values()];
+      } else if (Object.prototype.hasOwnProperty.call(req.body, 'economicLedger')) {
+        // Compatibilidad con clientes anteriores. Nunca se usa para el flujo nuevo.
+        savedLedger = normalizeEconomicLedgerRows(req.body.economicLedger);
+      } else {
+        savedLedger = existingLedger;
+      }
+
       updatedContract = {
-        ...contracts[contractIndex],
-        economicLedger: ledger,
+        ...existingContract,
+        economicLedger: savedLedger,
         economicLedgerUpdatedAt: now,
         economicLedgerUpdatedById: req.body.updatedById ?? req.body.userId ?? null,
         economicLedgerUpdatedByName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
@@ -1490,8 +1542,9 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
     console.info('[state-route] Cuaderno economico de contrato guardado.', {
       contractId: updatedContract?.id,
       contractCode: updatedContract?.contractCode,
-      rows: ledger.length,
-      firstAmountBs: ledger[0]?.amountBs ?? null,
+      rows: savedLedger.filter((entry) => !entry.deletedAt).length,
+      archivedRows: savedLedger.filter((entry) => entry.deletedAt).length,
+      firstAmountBs: savedLedger.find((entry) => !entry.deletedAt)?.amountBs ?? null,
       revision: result?.revision,
       ip: req.ip,
     });
