@@ -2103,9 +2103,28 @@ function ServiceOrdersSection({
         0,
         Number((rowChargeTargetBs - paidOnAccountBs).toFixed(2)),
       );
-      const dueBs = hasEconomicLedger
-        ? economicDueBs
-        : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
+      const rentalAccountingStatus = normalizeText(
+        linkedRental?.accountingStatus
+        ?? linkedRental?.payment?.status
+        ?? contract?.accountingStatus
+        ?? contract?.paymentStatus,
+      );
+      const authoritativePendingBs = toMoneyNumber(
+        linkedRental?.returnSettlement?.pendingCollectionBs
+        ?? linkedRental?.payment?.pendingPaymentBs
+        ?? linkedRental?.totals?.pendingPaymentBs,
+      );
+      const isEconomicallyPaid = [
+        'cobrado_finalizado',
+        'cobrado',
+        'cancelado',
+        'liquidado',
+      ].includes(rentalAccountingStatus) && authoritativePendingBs <= 0.009;
+      const dueBs = isEconomicallyPaid
+        ? 0
+        : hasEconomicLedger
+          ? economicDueBs
+          : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -2867,6 +2886,8 @@ function ServiceOrdersSection({
       transportBs: Math.max(0, Number((collectionTargetTotals.transportBs - collectionByTarget.transportBs).toFixed(2))),
       damageBs: Math.max(0, Number((collectionTargetTotals.damageBs - collectionByTarget.damageBs).toFixed(2))),
     };
+    const damagePendingBs = collectionTargetPending.damageBs;
+    const damagesSettled = penaltiesBs > 0 && damagePendingBs <= 0.009;
     const ledgerAppliedToRentalBs = Math.min(rentalReceivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - rentalReceivedBs).toFixed(2)));
     const excessPaymentBs = Math.max(
@@ -2927,6 +2948,8 @@ function ServiceOrdersSection({
       collectionByTarget,
       collectionTargetTotals,
       collectionTargetPending,
+      damagePendingBs,
+      damagesSettled,
       balanceBs: effectiveBalanceBs,
       cashRegisteredBs,
       cashToRegisterBs,
@@ -9671,7 +9694,10 @@ function ServiceOrdersSection({
                     <span>{contractEconomicsData.returnIssues.length} novedad(es)</span>
                   </header>
                   <div className="contract-economics-lines">
-                    <div><span>Danos / faltantes</span><strong>{formatBs(contractEconomicsData.penaltiesBs)}</strong></div>
+                    <div>
+                      <span>Danos / faltantes</span>
+                      <strong>{contractEconomicsData.damagesSettled ? 'Cancelado' : formatBs(contractEconomicsData.damagePendingBs)}</strong>
+                    </div>
                     <div><span>Saldo alquiler actual</span><strong>{formatBs(contractEconomicsData.managedDebtBs)}</strong></div>
                     <div><span>Garantia a devolver</span><strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong></div>
                     <div><span>Garantia pagada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
@@ -9742,10 +9768,22 @@ function ServiceOrdersSection({
                 {contractEconomicsData.returnIssues.length > 0 ? (
                   <div className="contract-economics-issues">
                     {contractEconomicsData.returnIssues.map((issue) => (
-                      <div key={issue.id}>
+                      <div
+                        key={issue.id}
+                        className={contractEconomicsData.damagesSettled ? 'is-cancelled' : ''}
+                        style={contractEconomicsData.damagesSettled ? {
+                          background: '#ecfdf3',
+                          borderColor: '#86efac',
+                          color: '#166534',
+                        } : undefined}
+                      >
                         <strong>{issue.itemName}</strong>
                         <span>Danado: {issue.damagedQty} | Faltante: {issue.missingQty}</span>
-                        <span>Cargo: {formatBs(issue.penaltyBs)} | Origen: {issue.owner}</span>
+                        <span>
+                          {contractEconomicsData.damagesSettled
+                            ? `CANCELADO | Cargo cobrado: ${formatBs(issue.penaltyBs)}`
+                            : `Cargo: ${formatBs(issue.penaltyBs)} | Origen: ${issue.owner}`}
+                        </span>
                         {issue.note ? <small>{issue.note}</small> : null}
                       </div>
                     ))}
