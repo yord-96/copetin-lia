@@ -833,6 +833,170 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
 });
 
 
+
+const normalizeStrictEconomicKey = (value) => String(value ?? '').trim().toLowerCase();
+
+const getStrictEconomicLinkKeys = (contract, rental = null, serviceOrder = null) => ({
+  contractId: normalizeStrictEconomicKey(contract?.id),
+  rentalIds: new Set([
+    rental?.id,
+    contract?.rentalId,
+    serviceOrder?.rentalId,
+  ].map(normalizeStrictEconomicKey).filter(Boolean)),
+  orderCodes: new Set([
+    rental?.orderCode,
+    contract?.orderCode,
+    serviceOrder?.orderCode,
+  ].map(normalizeStrictEconomicKey).filter(Boolean)),
+  contractCodes: new Set([
+    contract?.contractCode,
+    contract?.number,
+  ].map(normalizeStrictEconomicKey).filter(Boolean)),
+  createdAtMs: new Date(contract?.createdAt ?? contract?.approvedAt ?? 0).getTime() || 0,
+});
+
+const strictEconomicRecordMatches = (record, keys) => {
+  if (!record) return false;
+  const linkedContractId = normalizeStrictEconomicKey(record?.linkedContractId ?? record?.contractId);
+  const linkedRentalId = normalizeStrictEconomicKey(record?.linkedRentalId ?? record?.rentalId);
+  const linkedOrderCode = normalizeStrictEconomicKey(record?.linkedOrderCode ?? record?.orderCode);
+  const sourceId = normalizeStrictEconomicKey(record?.sourceId);
+
+  if (keys.contractId && linkedContractId === keys.contractId) return true;
+  if (linkedRentalId && keys.rentalIds.has(linkedRentalId)) return true;
+  if (sourceId && (sourceId === keys.contractId || keys.rentalIds.has(sourceId))) return true;
+
+  // Compatibilidad limitada para registros antiguos sin IDs. Nunca se usa el
+  // número visible si el registro ya apunta a otro contrato/alquiler.
+  const hasStrongForeignLink = Boolean(linkedContractId || linkedRentalId || sourceId);
+  if (hasStrongForeignLink) return false;
+  if (!linkedOrderCode || !keys.orderCodes.has(linkedOrderCode)) return false;
+
+  const recordCreatedAtMs = new Date(record?.createdAt ?? record?.generatedAt ?? 0).getTime() || 0;
+  return !keys.createdAtMs || !recordCreatedAtMs || recordCreatedAtMs >= keys.createdAtMs;
+};
+
+const getContractCurrentEconomicSeed = (contract, rental) => {
+  const initialPaymentBs = directMoney(
+    contract?.payment?.paidAtApprovalBs
+    ?? contract?.paidAtApprovalBs
+    ?? rental?.payment?.paidAtRentalBs
+    ?? rental?.totals?.paidAtRentalBs
+    ?? 0,
+  );
+  const guaranteeDeclaredBs = directMoney(
+    contract?.totals?.guaranteeBs
+    ?? contract?.guarantee?.amountBs
+    ?? rental?.guaranteeDeclaredBs
+    ?? rental?.guarantee?.amountBs
+    ?? rental?.depositBs
+    ?? 0,
+  );
+  const guaranteeStatus = String(
+    contract?.guarantee?.status
+    ?? contract?.payment?.guaranteeStatus
+    ?? rental?.guarantee?.status
+    ?? rental?.payment?.guaranteeStatus
+    ?? '',
+  ).trim().toLowerCase();
+  const guaranteePaidBs = guaranteeStatus === 'validado'
+    ? directMoney(rental?.depositBs ?? contract?.guarantee?.validatedBs ?? guaranteeDeclaredBs)
+    : 0;
+  const paymentMethod = directPaymentMethod(
+    contract?.payment?.method
+    ?? contract?.paymentMethod
+    ?? rental?.payment?.method
+    ?? 'efectivo',
+  );
+  const paymentAccount = directPaymentAccount(
+    paymentMethod,
+    contract?.payment?.account
+    ?? contract?.paymentAccount
+    ?? rental?.payment?.account
+    ?? '',
+  );
+  const guaranteeMethod = directPaymentMethod(
+    contract?.guarantee?.method
+    ?? contract?.payment?.guaranteeMethod
+    ?? rental?.guarantee?.method
+    ?? rental?.payment?.guaranteeMethod
+    ?? paymentMethod,
+  );
+  const guaranteeAccount = directPaymentAccount(
+    guaranteeMethod,
+    contract?.guarantee?.account
+    ?? contract?.payment?.guaranteeAccount
+    ?? rental?.guarantee?.account
+    ?? rental?.payment?.guaranteeAccount
+    ?? '',
+  );
+  return {
+    initialPaymentBs,
+    guaranteeDeclaredBs,
+    guaranteePaidBs,
+    guaranteeStatus,
+    paymentMethod,
+    paymentAccount,
+    guaranteeMethod,
+    guaranteeAccount,
+  };
+};
+
+const getRentalChargeTargetBs = (contract, rental) => directMoney(
+  rental?.totals?.totalBs
+  ?? contract?.totals?.totalBs
+  ?? contract?.totalBs
+  ?? 0,
+);
+
+const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
+  const rows = [];
+  if (seed.initialPaymentBs > 0) {
+    rows.push({
+      id: makeEconomicLedgerId(),
+      type: 'deposit',
+      amountBs: seed.initialPaymentBs,
+      paymentMethod: seed.paymentMethod,
+      paymentAccount: seed.paymentAccount,
+      note: 'Pago inicial conservado por Reset economico.',
+      createdAt: now,
+      createdById: userId ?? null,
+      createdByName: userName,
+      cashMovementId: null,
+      cashReceiptCode: '',
+      isCashRegistered: true,
+      reclassifiedFromPayment: false,
+      deletedAt: null,
+      deletedById: null,
+      deletedByName: '',
+      deletionReason: '',
+    });
+  }
+  if (seed.guaranteePaidBs > 0) {
+    rows.push({
+      id: makeEconomicLedgerId(),
+      type: 'guarantee',
+      amountBs: seed.guaranteePaidBs,
+      paymentMethod: seed.guaranteeMethod,
+      paymentAccount: seed.guaranteeAccount,
+      note: 'Garantia vigente conservada por Reset economico.',
+      createdAt: now,
+      createdById: userId ?? null,
+      createdByName: userName,
+      cashMovementId: null,
+      cashReceiptCode: '',
+      isCashRegistered: true,
+      reclassifiedFromPayment: false,
+      deletedAt: null,
+      deletedById: null,
+      deletedByName: '',
+      deletionReason: '',
+    });
+  }
+  return rows;
+};
+
+
 const directMoney = (value) => Number(Math.max(0, Number(value ?? 0)).toFixed(2));
 const directId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
 const directNormalizeText = (value) =>
@@ -1450,6 +1614,306 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
     res.json({ ok: true, movement, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
   } catch (error) { next(error); }
 });
+
+
+router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next) => {
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    const confirmation = String(req.body?.confirmation ?? '').trim().toUpperCase();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+    if (confirmation !== 'RESET') {
+      res.status(400).json({ error: 'Debes escribir RESET para confirmar la limpieza economica.' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const userId = req.body?.updatedById ?? req.body?.userId ?? null;
+    const userName = String(req.body?.updatedByName ?? req.body?.userName ?? 'Sistema').trim() || 'Sistema';
+    let responseData = null;
+
+    const result = await updateStateSnapshot((state) => {
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.cashDebts = Array.isArray(state.cashDebts) ? state.cashDebts : [];
+      state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+
+      const requestedKey = normalizeStrictEconomicKey(requestedId);
+      const contract = state.contracts.find((entry) => [
+        entry?.id,
+        entry?.contractCode,
+        entry?.number,
+        entry?.orderCode,
+        entry?.rentalId,
+      ].some((value) => normalizeStrictEconomicKey(value) === requestedKey));
+
+      if (!contract) {
+        const error = new Error('Contrato no encontrado para ejecutar el Reset economico.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const serviceOrder = state.serviceOrders.find((entry) =>
+        normalizeStrictEconomicKey(entry?.contractId) === normalizeStrictEconomicKey(contract?.id)
+        || normalizeStrictEconomicKey(entry?.rentalId) === normalizeStrictEconomicKey(contract?.rentalId)
+        || (
+          contract?.orderCode
+          && normalizeStrictEconomicKey(entry?.orderCode) === normalizeStrictEconomicKey(contract?.orderCode)
+        )
+      ) ?? null;
+      const rental = resolveActiveRentalForContract(state.rentals, contract, serviceOrder);
+      const keys = getStrictEconomicLinkKeys(contract, rental, serviceOrder);
+      const seed = getContractCurrentEconomicSeed(contract, rental);
+
+      const removedMovementIds = new Set(
+        state.cashMovements
+          .filter((movement) => strictEconomicRecordMatches(movement, keys))
+          .map((movement) => normalizeStrictEconomicKey(movement?.id))
+          .filter(Boolean),
+      );
+
+      const beforeCounts = {
+        cashMovements: state.cashMovements.length,
+        cashDebts: state.cashDebts.length,
+        generatedReports: state.generatedReports.length,
+        ledgerRows: Array.isArray(contract.economicLedger) ? contract.economicLedger.length : 0,
+      };
+
+      state.cashMovements = state.cashMovements.filter((movement) => !strictEconomicRecordMatches(movement, keys));
+      state.cashDebts = state.cashDebts.filter((debt) => !strictEconomicRecordMatches(debt, keys));
+      state.generatedReports = state.generatedReports.filter((report) => {
+        const reportMovementId = normalizeStrictEconomicKey(
+          report?.cashMovementId
+          ?? report?.movementId
+          ?? report?.sourceMovementId,
+        );
+        if (reportMovementId && removedMovementIds.has(reportMovementId)) return false;
+        if (!strictEconomicRecordMatches(report, keys)) return true;
+        const typeText = String([
+          report?.type,
+          report?.documentType,
+          report?.category,
+          report?.title,
+          report?.name,
+        ].filter(Boolean).join(' ')).toLowerCase();
+        return !/(recibo|caja|econom|cobro|pago|garant|devolucion)/.test(typeText);
+      });
+
+      const chargeTargetBs = getRentalChargeTargetBs(contract, rental);
+      const penaltiesBs = directMoney(rental?.returnSettlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
+      const outstandingRentalBs = directMoney(Math.max(0, chargeTargetBs - seed.initialPaymentBs));
+      const pendingCollectionBs = directMoney(outstandingRentalBs + penaltiesBs);
+      const paymentStatus = pendingCollectionBs <= 0.009
+        ? 'liquidado'
+        : seed.initialPaymentBs > 0
+          ? 'a_cuenta'
+          : 'sin_pago';
+
+      const ledger = buildResetEconomicLedger({ seed, now, userId, userName });
+      contract.economicLedger = ledger;
+      contract.economicLedgerUpdatedAt = now;
+      contract.economicLedgerUpdatedById = userId;
+      contract.economicLedgerUpdatedByName = userName;
+      contract.paidAtApprovalBs = seed.initialPaymentBs;
+      contract.pendingPaymentBs = outstandingRentalBs;
+      contract.paymentStatus = paymentStatus;
+      contract.accountingStatus = pendingCollectionBs <= 0.009 ? 'cobrado_finalizado' : paymentStatus;
+      contract.payment = {
+        ...(contract.payment ?? {}),
+        paidAtApprovalBs: seed.initialPaymentBs,
+        pendingBs: outstandingRentalBs,
+        pendingPaymentBs: outstandingRentalBs,
+        status: paymentStatus,
+        mode: paymentStatus,
+        guaranteeStatus: seed.guaranteeStatus || contract?.payment?.guaranteeStatus || 'no_validado',
+      };
+      contract.totals = {
+        ...(contract.totals ?? {}),
+        paidAtApprovalBs: seed.initialPaymentBs,
+        pendingPaymentBs: outstandingRentalBs,
+      };
+      contract.updatedAt = now;
+
+      if (rental) {
+        rental.payment = {
+          ...(rental.payment ?? {}),
+          paidAtRentalBs: seed.initialPaymentBs,
+          paidAtApprovalBs: seed.initialPaymentBs,
+          pendingPaymentBs: outstandingRentalBs,
+          status: paymentStatus,
+          mode: paymentStatus,
+          guaranteeStatus: seed.guaranteeStatus || rental?.payment?.guaranteeStatus || 'no_validado',
+        };
+        rental.totals = {
+          ...(rental.totals ?? {}),
+          paidAtRentalBs: seed.initialPaymentBs,
+          paidAtApprovalBs: seed.initialPaymentBs,
+          pendingPaymentBs: outstandingRentalBs,
+        };
+        rental.depositBs = seed.guaranteePaidBs;
+        rental.guaranteeDeclaredBs = seed.guaranteeDeclaredBs;
+        rental.guarantee = {
+          ...(rental.guarantee ?? {}),
+          amountBs: seed.guaranteeDeclaredBs,
+          validatedBs: seed.guaranteePaidBs,
+          status: seed.guaranteeStatus || 'no_validado',
+          method: seed.guaranteeMethod,
+          account: seed.guaranteeAccount,
+        };
+        if (rental.returnSettlement || rental.returnedAt || rental.status === 'returned') {
+          rental.returnSettlement = {
+            ...(rental.returnSettlement ?? {}),
+            outstandingRentalBs,
+            penaltiesBs,
+            pendingCollectionBs,
+            paidBs: seed.initialPaymentBs,
+            refundBs: 0,
+            accountingStatus: pendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente',
+            settledAt: null,
+          };
+        }
+        rental.accountingStatus = pendingCollectionBs <= 0.009 ? 'cobrado_finalizado' : paymentStatus;
+        rental.updatedAt = now;
+      }
+
+      const activeSession = state.cashSessions?.find((session) => session.status === 'open');
+      const sessionId = activeSession?.id ?? null;
+      const linkedRentalId = rental?.id ?? contract?.rentalId ?? '';
+      const linkedOrderCode = rental?.orderCode ?? contract?.orderCode ?? '';
+      const customerName = String(contract?.customerName ?? rental?.customerName ?? 'Cliente').trim() || 'Cliente';
+      const newMovements = [];
+
+      if (seed.initialPaymentBs > 0) {
+        const movement = buildDirectMovement(state, {
+          sessionId,
+          type: 'ingreso',
+          amountBs: seed.initialPaymentBs,
+          description: `Pago inicial contrato ${contract.contractCode || contract.id} - ${customerName}`,
+          sourceType: 'contract_economic_reset',
+          sourceId: contract.id,
+          cashBoxType: 'BIG_CASH',
+          category: 'adelanto',
+          paymentMethod: seed.paymentMethod,
+          paymentAccount: seed.paymentAccount,
+          responsible: userName,
+          notes: 'Registro limpio recreado por Reset economico.',
+          linkedRentalId,
+          linkedContractId: contract.id,
+          linkedOrderCode,
+          accountingTag: 'initial_rental_payment',
+          collectionTarget: 'rental',
+          collectionTargets: ['rental'],
+          collectionBreakdown: [{ target: 'rental', amountBs: seed.initialPaymentBs }],
+          receiptDetail: `Pago inicial vigente del contrato ${contract.contractCode || contract.id}`,
+        });
+        state.cashMovements.push(movement);
+        newMovements.push(movement);
+      }
+
+      if (seed.guaranteePaidBs > 0) {
+        const movement = buildDirectMovement(state, {
+          sessionId,
+          type: 'ingreso',
+          amountBs: seed.guaranteePaidBs,
+          description: `Garantia contrato ${contract.contractCode || contract.id} - ${customerName}`,
+          sourceType: 'contract_economic_reset',
+          sourceId: contract.id,
+          cashBoxType: 'BIG_CASH',
+          category: 'garantia',
+          paymentMethod: seed.guaranteeMethod,
+          paymentAccount: seed.guaranteeAccount,
+          responsible: userName,
+          notes: 'Garantia vigente recreada por Reset economico.',
+          linkedRentalId,
+          linkedContractId: contract.id,
+          linkedOrderCode,
+          accountingTag: 'contract_guarantee',
+          collectionTarget: 'guarantee',
+          collectionTargets: ['guarantee'],
+          collectionBreakdown: [{ target: 'guarantee', amountBs: seed.guaranteePaidBs }],
+          receiptDetail: `Garantia vigente del contrato ${contract.contractCode || contract.id}`,
+        });
+        state.cashMovements.push(movement);
+        newMovements.push(movement);
+      }
+
+      ledger.forEach((entry, index) => {
+        const movement = newMovements[index];
+        if (!movement) return;
+        entry.cashMovementId = movement.id;
+        entry.cashReceiptCode = movement.receiptCode;
+      });
+
+      state.systemAuditLog.unshift({
+        id: directId('audit'),
+        type: 'contract_economic_reset',
+        action: 'reset_economico',
+        entityType: 'contract',
+        entityId: contract.id,
+        entityCode: contract.contractCode ?? '',
+        detail: `Reset economico: se eliminaron ${beforeCounts.cashMovements - state.cashMovements.length + newMovements.length} movimiento(s) previos y se recrearon ${newMovements.length}.`,
+        userId,
+        userName,
+        createdAt: now,
+      });
+
+      const contextMovements = state.cashMovements
+        .filter((movement) => strictEconomicRecordMatches(movement, keys))
+        .sort((left, right) => new Date(right?.createdAt ?? 0) - new Date(left?.createdAt ?? 0));
+
+      responseData = {
+        contract: structuredClone(contract),
+        rental: rental ? structuredClone(rental) : null,
+        serviceOrder: serviceOrder ? structuredClone(serviceOrder) : null,
+        cashMovements: structuredClone(contextMovements),
+        resetSummary: {
+          removedCashMovements: beforeCounts.cashMovements - (state.cashMovements.length - newMovements.length),
+          removedCashDebts: beforeCounts.cashDebts - state.cashDebts.length,
+          removedReports: beforeCounts.generatedReports - state.generatedReports.length,
+          removedLedgerRows: beforeCounts.ledgerRows,
+          recreatedMovements: newMovements.length,
+          initialPaymentBs: seed.initialPaymentBs,
+          guaranteePaidBs: seed.guaranteePaidBs,
+          pendingCollectionBs,
+        },
+      };
+      return state;
+    });
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    console.info('[state-route] Reset economico ejecutado.', {
+      contractId: responseData?.contract?.id,
+      contractCode: responseData?.contract?.contractCode,
+      ...responseData?.resetSummary,
+      ip: req.ip,
+    });
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      ...responseData,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
   try {

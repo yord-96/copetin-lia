@@ -1386,6 +1386,8 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
+  const [isResettingContractEconomics, setIsResettingContractEconomics] = useState(false);
+  const [economicResetPendingByContract, setEconomicResetPendingByContract] = useState({});
   const [recentEconomicCashMovements, setRecentEconomicCashMovements] = useState([]);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
@@ -2109,8 +2111,13 @@ function ServiceOrdersSection({
         ?? contract?.accountingStatus
         ?? contract?.paymentStatus,
       );
+      const resetOverrideKey = String(contract?.id ?? contract?.contractCode ?? '').trim();
+      const resetPendingOverride = resetOverrideKey
+        ? economicResetPendingByContract[resetOverrideKey]
+        : undefined;
       const rawAuthoritativePendingBs =
-        linkedRental?.returnSettlement?.pendingCollectionBs
+        resetPendingOverride
+        ?? linkedRental?.returnSettlement?.pendingCollectionBs
         ?? linkedRental?.payment?.pendingPaymentBs
         ?? linkedRental?.totals?.pendingPaymentBs;
       const hasAuthoritativePending = rawAuthoritativePendingBs !== undefined
@@ -2185,7 +2192,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [activeRentalByReference, collectionMovementIndex, formatBs, orderByContractId, returnedGuaranteeReferences]);
+  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeReferences]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
@@ -6693,6 +6700,7 @@ function ServiceOrdersSection({
     setContractEconomicsError('');
     setIsSavingContractEconomicsCollection(false);
     setIsSavingContractEconomicsLedger(false);
+    setIsResettingContractEconomics(false);
   };
 
   const handleContractEconomicsBackdropClick = (event) => {
@@ -7080,6 +7088,77 @@ function ServiceOrdersSection({
       return null;
     } finally {
       setIsSavingContractEconomicsLedger(false);
+    }
+  };
+
+
+  const handleResetContractEconomics = async () => {
+    if (!contractEconomicsData || readOnly || isResettingContractEconomics) return;
+    const contractCode = contractEconomicsData.contract?.contractCode
+      || contractEconomicsData.contract?.id
+      || '';
+    const confirmation = window.prompt(
+      [
+        `RESET ECONOMICO DEL CONTRATO ${contractCode}`,
+        '',
+        'Se eliminaran solamente recibos, cobros, devoluciones de garantia, deudas y lineas de la Hoja Flexible.',
+        'Se conservaran Listo, Enviado, Devuelto, inventario, transporte, daños/faltantes y Lavado/Reparacion.',
+        '',
+        'Escribe RESET para continuar.',
+      ].join('\n'),
+      '',
+    );
+    if (String(confirmation ?? '').trim().toUpperCase() !== 'RESET') return;
+
+    setContractEconomicsError('');
+    setIsResettingContractEconomics(true);
+    try {
+      const userName = String(
+        currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+      ).trim() || 'Sistema';
+      const result = await api.contracts.resetEconomics({
+        id: contractEconomicsData.contract?.id ?? contractCode,
+        confirmation: 'RESET',
+        updatedById: currentUser?.id ?? null,
+        updatedByName: userName,
+        updatedByRole: currentUser ? getUserDisplayRole(currentUser) : 'Sistema',
+      });
+
+      setContractEconomicsTarget(result?.contract ?? contractEconomicsData.contract);
+      setContractEconomicsFullRental(result?.rental ?? null);
+      setContractEconomicsContextMovements(
+        Array.isArray(result?.cashMovements) ? result.cashMovements : [],
+      );
+      setRecentEconomicCashMovements([]);
+      resetContractEconomicsCollectionDraft();
+      resetContractEconomicLedgerForm();
+
+      const overrideKey = String(
+        result?.contract?.id
+        ?? result?.contract?.contractCode
+        ?? contractEconomicsData.contract?.id
+        ?? contractCode,
+      ).trim();
+      if (overrideKey) {
+        setEconomicResetPendingByContract((current) => ({
+          ...current,
+          [overrideKey]: toMoneyNumber(result?.resetSummary?.pendingCollectionBs),
+        }));
+      }
+
+      setActionFeedback(
+        `Reset economico completado. Se conservaron pago inicial ${formatBs(result?.resetSummary?.initialPaymentBs ?? 0)} y garantia ${formatBs(result?.resetSummary?.guaranteePaidBs ?? 0)}.`,
+      );
+    } catch (error) {
+      setContractEconomicsError(
+        error.message || 'No se pudo ejecutar el Reset economico.',
+      );
+    } finally {
+      setIsResettingContractEconomics(false);
     }
   };
 
@@ -9098,9 +9177,24 @@ function ServiceOrdersSection({
                   {contractEconomicsData.contract?.orderCode || contractEconomicsData.linkedOrder?.orderCode || 'Sin orden vinculada'}
                 </p>
               </div>
-              <button type="button" className="orders-modal-close" onClick={closeContractEconomics}>
-                x
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {canManageContractEconomicLedger ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={handleResetContractEconomics}
+                    disabled={readOnly || isResettingContractEconomics || isLoadingContractEconomics}
+                    title="Limpia solamente el sector economico. No modifica movimientos operativos."
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <RefreshCw size={15} aria-hidden="true" />
+                    {isResettingContractEconomics ? 'Limpiando...' : 'Reset economico'}
+                  </button>
+                ) : null}
+                <button type="button" className="orders-modal-close" onClick={closeContractEconomics}>
+                  x
+                </button>
+              </div>
             </header>
 
             <div className="contract-economics-body">

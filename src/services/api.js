@@ -1728,6 +1728,61 @@ const fetchContractEconomicContext = async (identifier) => {
   }
 };
 
+
+const resetContractEconomicsOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    throw new Error('El Reset economico requiere abrir la aplicacion desde el servidor.');
+  }
+
+  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
+  if (!requestedId) {
+    throw new Error('Debes indicar el contrato para ejecutar el Reset economico.');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  let response;
+  try {
+    response = await fetch(
+      getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-reset`),
+      {
+        method: 'POST',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      },
+    );
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en ejecutar el Reset economico. No lo repitas: vuelve a abrir el contrato para verificar.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo ejecutar el Reset economico del contrato.');
+  }
+
+  const result = await response.json();
+  if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  forgetFullRecordCache(fullContractCache, [requestedId, result?.contract?.id, result?.contract?.contractCode]);
+  forgetFullRecordCache(fullRentalCache, [result?.rental?.id, result?.rental?.orderCode]);
+  markServerStateStale('contracts.resetEconomics:direct');
+  announceDataChange({
+    domain: 'contracts',
+    method: 'resetEconomics',
+    collections: ['contracts', 'rentals', 'cashMovements', 'cashDebts', 'generatedReports'],
+  });
+  return result;
+};
+
+
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return null;
@@ -1949,6 +2004,7 @@ export const api = {
       forgetFullRecordCache(fullContractCache, updated);
       return updated;
     },
+    resetEconomics: (payload) => resetContractEconomicsOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
     restore: (payload) => callBridge('contracts', 'restore', true, payload),
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
