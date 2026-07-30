@@ -2109,22 +2109,33 @@ function ServiceOrdersSection({
         ?? contract?.accountingStatus
         ?? contract?.paymentStatus,
       );
-      const authoritativePendingBs = toMoneyNumber(
+      const rawAuthoritativePendingBs =
         linkedRental?.returnSettlement?.pendingCollectionBs
         ?? linkedRental?.payment?.pendingPaymentBs
-        ?? linkedRental?.totals?.pendingPaymentBs,
-      );
-      const isEconomicallyPaid = [
+        ?? linkedRental?.totals?.pendingPaymentBs;
+      const hasAuthoritativePending = rawAuthoritativePendingBs !== undefined
+        && rawAuthoritativePendingBs !== null
+        && rawAuthoritativePendingBs !== '';
+      const authoritativePendingBs = hasAuthoritativePending
+        ? toMoneyNumber(rawAuthoritativePendingBs)
+        : null;
+      const settledByStatus = [
         'cobrado_finalizado',
         'cobrado',
         'cancelado',
         'liquidado',
-      ].includes(rentalAccountingStatus) && authoritativePendingBs <= 0.009;
+      ].includes(rentalAccountingStatus);
+      const settledByAuthoritativeBalance = hasAuthoritativePending
+        && authoritativePendingBs <= 0.009;
+      const isEconomicallyPaid = settledByAuthoritativeBalance
+        || (settledByStatus && (authoritativePendingBs ?? economicDueBs) <= 0.009);
       const dueBs = isEconomicallyPaid
         ? 0
-        : hasEconomicLedger
-          ? economicDueBs
-          : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
+        : hasAuthoritativePending
+          ? authoritativePendingBs
+          : hasEconomicLedger
+            ? economicDueBs
+            : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
