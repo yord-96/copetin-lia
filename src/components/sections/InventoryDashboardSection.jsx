@@ -2940,14 +2940,17 @@ function InventoryDashboardSection({
         aboveUnitPriceBs: String(row.pricingCondition?.aboveUnitPriceBs ?? 0),
       },
       notes: row.notes ?? '',
-      ingredients: dedupeComboIngredientLines(row.ingredients).map((line) => ({
-        itemId: line.itemId,
-        quantity: String(line.quantity),
-        selectionMode: line.selectionMode ?? 'item',
-        optionItemIds: line.optionItemIds ?? [line.itemId],
-        category: line.categoryRule ?? '',
-        slotLabel: line.slotLabel ?? line.itemName ?? '',
-      })),
+      ingredients: dedupeComboIngredientLines(row.ingredients)
+        .filter((line) => inventoryRows.some((item) => item.id === line.itemId))
+        .map((line) => ({
+          itemId: line.itemId,
+          quantity: String(line.quantity),
+          selectionMode: line.selectionMode ?? 'item',
+          optionItemIds: (line.optionItemIds ?? [line.itemId])
+            .filter((itemId) => inventoryRows.some((item) => item.id === itemId)),
+          category: line.categoryRule ?? '',
+          slotLabel: line.slotLabel ?? line.itemName ?? '',
+        })),
       imageUrl: row.imageUrl ?? null,
       imageDataUrl: row.imageDataUrl ?? null,
       imageFile: null,
@@ -3304,7 +3307,13 @@ function InventoryDashboardSection({
     if (isSavingCombo) return;
     setComboError('');
 
-    const normalizedIngredients = dedupeComboIngredientLines(comboForm.ingredients);
+    const activeItemIds = new Set(inventoryRows.map((item) => item.id));
+    const normalizedIngredients = dedupeComboIngredientLines(comboForm.ingredients)
+      .filter((line) => activeItemIds.has(line.itemId))
+      .map((line) => ({
+        ...line,
+        optionItemIds: (line.optionItemIds ?? [line.itemId]).filter((itemId) => activeItemIds.has(itemId)),
+      }));
     const payload = {
       id: comboForm.id,
       name: String(comboForm.name ?? '').trim(),

@@ -136,7 +136,12 @@ const toBusinessUppercase = (value) =>
   String(value ?? '').trim().toLocaleUpperCase('es-BO');
 
 const normalizeComboRule = (line, inventoryItems = []) => {
-  const itemById = new Map(inventoryItems.map((item) => [String(item.id), item]));
+  // Un producto eliminado no puede seguir formando parte de un combo. Antes se
+  // conservaba como ingrediente fantasma: aparecía en contratos, pero no en el
+  // editor porque el catálogo visible ya lo había filtrado.
+  const activeInventoryItems = (Array.isArray(inventoryItems) ? inventoryItems : [])
+    .filter((item) => item && !item.deletedAt && String(item.status ?? 'active') !== 'deleted');
+  const itemById = new Map(activeInventoryItems.map((item) => [String(item.id), item]));
   const requestedMode = String(line?.selectionMode ?? '').trim();
   const selectionMode = ['item', 'options', 'category'].includes(requestedMode) ? requestedMode : 'item';
   const category = toBusinessUppercase(line?.category ?? '');
@@ -144,7 +149,7 @@ const normalizeComboRule = (line, inventoryItems = []) => {
     ? line.optionItemIds.map((id) => String(id ?? '').trim()).filter(Boolean)
     : [];
   const categoryOptionIds = selectionMode === 'category'
-    ? inventoryItems
+    ? activeInventoryItems
       .filter((item) => normalizeText(item.category) === normalizeText(category))
       .map((item) => String(item.id))
     : [];

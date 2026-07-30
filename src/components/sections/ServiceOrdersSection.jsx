@@ -4539,7 +4539,11 @@ function ServiceOrdersSection({
 
   const openSupplierCoverageModal = (line, availableStock, options = {}) => {
     const manualMode = Boolean(options.manual);
-    const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+    const requestedForItem = Math.max(0, Number(
+      options.requestedForItem
+      ?? selectedDemandByItemId.get(line.itemId)
+      ?? line.quantity,
+    ));
     const shortageQty = Math.max(0, Math.trunc(Number(requestedForItem)) - Math.max(0, Number(availableStock ?? 0)));
     const coverageKey = getSupplierCoverageKey(line);
     const currentCoverages = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId]);
@@ -4912,7 +4916,7 @@ function ServiceOrdersSection({
   const buildComboAllocations = (combo, selections, comboQuantity) => {
     const ingredients = getComboRules(combo);
     const allocations = [];
-    let shortageMessage = '';
+    const shortages = [];
     const quantityMap = getComboSelectionQuantityMap(selections);
 
     ingredients.forEach((rule, index) => {
@@ -4922,34 +4926,41 @@ function ServiceOrdersSection({
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
       let remaining = requiredPerCombo * comboQuantity;
 
-      if (selectedOptions.length === 0) {
-        return;
-      }
+      if (selectedOptions.length === 0) return;
 
       selectedOptions.forEach((item) => {
         if (remaining <= 0) return;
         const available = getComboOptionAvailable(item);
         const manualQuantity = Math.max(0, Math.trunc(Number(quantityMap[`${index}:${item.id}`] ?? 0)));
-        const quantity = Math.min(remaining, manualQuantity, available);
+        const quantity = Math.min(remaining, manualQuantity);
         if (quantity <= 0) return;
+        const shortageQty = Math.max(0, quantity - available);
         allocations.push({
           rule,
           ruleIndex: index,
           item,
           quantity,
+          available,
+          shortageQty,
           requiredPerCombo,
           slotLabel: rule.slotLabel ?? rule.itemName ?? `Componente ${index + 1}`,
           options,
         });
+        if (shortageQty > 0) {
+          shortages.push({
+            item,
+            rule,
+            ruleIndex: index,
+            requestedQty: quantity,
+            available,
+            shortageQty,
+          });
+        }
         remaining -= quantity;
       });
-
-      if (selectedOptions.length > 0 && remaining > 0 && !shortageMessage) {
-        shortageMessage = `No hay suficientes unidades para "${rule.slotLabel || rule.itemName || `Componente ${index + 1}`}". Faltan ${remaining}.`;
-      }
     });
 
-    return { allocations, shortageMessage };
+    return { allocations, shortages };
   };
 
   const getComboUnitPriceForQuantity = (combo, quantity) => {
@@ -4973,20 +4984,7 @@ function ServiceOrdersSection({
     const comboLineKey = existingComboLineKey || `combo-${combo.id}-${Date.now()}`;
     const ingredients = getComboRules(combo);
     const requestedComboQuantity = Math.max(1, Math.trunc(Number(selections.__comboQuantity ?? 1)));
-    const maxQuantity = getComboMaxQuantity(combo, selections);
-    if (maxQuantity <= 0) {
-      setFormError('Selecciona opciones disponibles para poder armar este combo.');
-      return false;
-    }
-    if (requestedComboQuantity > maxQuantity) {
-      setFormError(`Solo puedes armar ${maxQuantity} combo(s) con las opciones seleccionadas.`);
-      return false;
-    }
-    const { allocations, shortageMessage } = buildComboAllocations(combo, selections, requestedComboQuantity);
-    if (shortageMessage) {
-      setFormError(shortageMessage);
-      return false;
-    }
+    const { allocations, shortages } = buildComboAllocations(combo, selections, requestedComboQuantity);
     if (ingredients.length > 0 && allocations.length === 0) {
       setFormError('Selecciona al menos una opcion disponible para el combo.');
       return false;
@@ -5042,6 +5040,28 @@ function ServiceOrdersSection({
       };
     });
     setFormError('');
+    if (shortages.length > 0) {
+      const totalShortage = shortages.reduce((sum, entry) => sum + entry.shortageQty, 0);
+      setActionFeedback(
+        `El stock propio no cubre ${totalShortage} unidad(es) del combo. Te recomendamos asignar proveedor para completar la solicitud.`,
+      );
+      const firstShortage = shortages[0];
+      const firstAllocationIndex = allocations.findIndex((entry) => (
+        entry.ruleIndex === firstShortage.ruleIndex && entry.item.id === firstShortage.item.id
+      ));
+      const shortageLine = {
+        lineKey: `${comboLineKey}-${firstShortage.item.id}-${firstShortage.ruleIndex}-${Math.max(0, firstAllocationIndex)}`,
+        itemId: firstShortage.item.id,
+        quantity: firstShortage.requestedQty,
+        unitPriceBs: Number(combo?.rentalPriceBs ?? 0),
+        item: firstShortage.item,
+      };
+      window.setTimeout(() => {
+        openSupplierCoverageModal(shortageLine, firstShortage.available, {
+          requestedForItem: firstShortage.requestedQty,
+        });
+      }, 0);
+    }
     return true;
   };
 
@@ -5071,6 +5091,7 @@ function ServiceOrdersSection({
       existingComboLineKey,
       selections,
       search: {},
+      expandedGroups: {},
       quantity: String(existingComboLineKey ? existingQuantity : 1),
     });
   };
@@ -10737,38 +10758,68 @@ function ServiceOrdersSection({
                 const componentStatusText = selectedIds.length === 0
                   ? 'No incluido'
                   : `${selectedUnits} marc. / ${neededUnits} sug.`;
+                const isExpanded = Boolean(comboConfigurator.expandedGroups?.[index]);
+                const selectedNames = selectedIds
+                  .map((itemId) => allOptions.find((item) => item.id === itemId)?.name)
+                  .filter(Boolean);
                 return (
-                  <article key={`${rule.slotLabel ?? rule.itemName}-${index}`} className="orders-combo-option-group">
+                  <article
+                    key={`${rule.slotLabel ?? rule.itemName}-${index}`}
+                    className={`orders-combo-option-group ${isExpanded ? 'expanded' : 'collapsed'}`}
+                  >
                     <header>
-                      <div>
-                        <strong>{rule.slotLabel || rule.itemName || `Componente ${index + 1}`}</strong>
-                        <span>{requiredPerCombo} por combo · {allOptions.length} opciones · {selectedIds.length} seleccionadas · {selectedUnits} unidades marcadas</span>
-                      </div>
-                      <div className="orders-combo-group-summary">
-                        <span className={componentStatusClass}>
-                          {componentStatusText}
+                      <button
+                        type="button"
+                        className="orders-combo-group-toggle"
+                        onClick={() => setComboConfigurator((current) => ({
+                          ...current,
+                          expandedGroups: {
+                            ...(current?.expandedGroups ?? {}),
+                            [index]: !current?.expandedGroups?.[index],
+                          },
+                        }))}
+                        aria-expanded={isExpanded}
+                        aria-controls={`combo-component-options-${index}`}
+                      >
+                        <span className="orders-combo-group-copy">
+                          <strong>{rule.slotLabel || rule.itemName || `Componente ${index + 1}`}</strong>
+                          <span>{requiredPerCombo} por combo · {allOptions.length} opciones · {selectedIds.length} seleccionadas · {selectedUnits} unidades marcadas</span>
+                          {!isExpanded && selectedNames.length > 0 ? (
+                            <small>{selectedNames.slice(0, 2).join(' · ')}{selectedNames.length > 2 ? ` · +${selectedNames.length - 2} mas` : ''}</small>
+                          ) : null}
                         </span>
-                        <small>{rule.selectionMode === 'category' ? rule.category : 'Productos elegidos'}</small>
-                      </div>
+                        <span className="orders-combo-group-summary">
+                          <span className={componentStatusClass}>
+                            {componentStatusText}
+                          </span>
+                          <small>{rule.selectionMode === 'category' ? rule.category : 'Productos elegidos'}</small>
+                        </span>
+                        <ChevronRight className="orders-combo-group-chevron" aria-hidden="true" />
+                      </button>
                     </header>
-                    {allOptions.length > 4 ? (
-                      <label className="orders-icon-field">
-                        <span>
-                          <i aria-hidden="true"><Search /></i>
-                          <input
-                            type="search"
-                            placeholder={`Buscar ${rule.slotLabel || 'opcion'}...`}
-                            value={comboConfigurator.search[index] ?? ''}
-                            onChange={(event) => setComboConfigurator((current) => ({
-                              ...current,
-                              search: { ...current.search, [index]: event.target.value },
-                            }))}
-                          />
-                        </span>
-                      </label>
-                    ) : null}
-                    <div className="orders-combo-option-grid">
-                      {visibleOptions.map((item) => {
+                    <div
+                      id={`combo-component-options-${index}`}
+                      className="orders-combo-group-content"
+                      hidden={!isExpanded}
+                    >
+                      {allOptions.length > 4 ? (
+                        <label className="orders-icon-field">
+                          <span>
+                            <i aria-hidden="true"><Search /></i>
+                            <input
+                              type="search"
+                              placeholder={`Buscar ${rule.slotLabel || 'opcion'}...`}
+                              value={comboConfigurator.search[index] ?? ''}
+                              onChange={(event) => setComboConfigurator((current) => ({
+                                ...current,
+                                search: { ...current.search, [index]: event.target.value },
+                              }))}
+                            />
+                          </span>
+                        </label>
+                      ) : null}
+                      <div className="orders-combo-option-grid">
+                        {visibleOptions.map((item) => {
                         const selected = selectedIds.includes(item.id);
                         const optionAvailable = getComboOptionAvailable(item);
                         const quantityKey = `${index}:${item.id}`;
@@ -10812,7 +10863,8 @@ function ServiceOrdersSection({
                             ) : null}
                           </article>
                         );
-                      })}
+                        })}
+                      </div>
                     </div>
                   </article>
                 );
