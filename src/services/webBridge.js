@@ -4366,44 +4366,96 @@ const isGuaranteeCashMovement = (movement) => {
 
 const getContractCashReferenceKeys = (state, contract) => {
   const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const contractId = normalizeText(contract?.id);
+  const explicitRentalId = normalizeText(contract?.rentalId);
+  const explicitOrderCode = normalizeText(contract?.orderCode);
+  const contractCode = normalizeText(contract?.contractCode);
+
+  // Un código de contrato puede reutilizarse después de eliminar/ocultar un
+  // contrato. Por eso la relación principal siempre debe resolverse por IDs
+  // inmutables, y solo usar códigos como compatibilidad para datos antiguos.
   const linkedRental = rentals.find((rental) => (
     !rental?.deletedAt
     && (
-      String(rental?.id ?? '') === String(contract?.rentalId ?? '')
-      || String(rental?.contractId ?? '') === String(contract?.id ?? '')
-      || normalizeText(rental?.contractCode) === normalizeText(contract?.contractCode)
-      || normalizeText(rental?.orderCode) === normalizeText(contract?.orderCode)
+      (explicitRentalId && normalizeText(rental?.id) === explicitRentalId)
+      || (contractId && normalizeText(rental?.contractId) === contractId)
+    )
+  )) ?? rentals.find((rental) => (
+    !rental?.deletedAt
+    && !rental?.contractId
+    && (
+      (explicitOrderCode && normalizeText(rental?.orderCode) === explicitOrderCode)
+      || (contractCode && normalizeText(rental?.contractCode) === contractCode)
     )
   ));
-  return [
-    contract?.id,
-    contract?.rentalId,
-    contract?.contractCode,
-    contract?.orderCode,
-    linkedRental?.id,
-    linkedRental?.contractId,
-    linkedRental?.contractCode,
-    linkedRental?.orderCode,
-  ].map(normalizeText).filter(Boolean);
+
+  return {
+    contractId,
+    rentalId: normalizeText(linkedRental?.id ?? contract?.rentalId),
+    orderCode: normalizeText(linkedRental?.orderCode ?? contract?.orderCode),
+    contractCode: normalizeText(linkedRental?.contractCode ?? contract?.contractCode),
+    createdAtMs: new Date(
+      contract?.approvedAt
+      ?? contract?.contractDate
+      ?? contract?.createdAt
+      ?? 0,
+    ).getTime(),
+  };
 };
 
-const cashMovementMatchesContract = (movement, referenceKeys) => {
-  if (!referenceKeys.length) return false;
-  const exactValues = [
-    movement?.linkedContractId,
-    movement?.linkedRentalId,
-    movement?.linkedOrderCode,
-    movement?.contractId,
-    movement?.rentalId,
-    movement?.orderCode,
-    movement?.contractCode,
-    movement?.sourceId,
-    movement?.reference,
-  ].map(normalizeText).filter(Boolean);
-  if (exactValues.some((value) => referenceKeys.includes(value))) return true;
+const cashMovementMatchesContract = (movement, references) => {
+  if (!references || typeof references !== 'object') return false;
+
+  const movementContractId = normalizeText(movement?.linkedContractId ?? movement?.contractId);
+  const movementRentalId = normalizeText(movement?.linkedRentalId ?? movement?.rentalId);
+  const movementOrderCode = normalizeText(movement?.linkedOrderCode ?? movement?.orderCode);
+  const movementContractCode = normalizeText(movement?.contractCode ?? movement?.reference);
+  const movementSourceId = normalizeText(movement?.sourceId);
+  const movementSourceType = normalizeText(movement?.sourceType);
+
+  // Si el movimiento tiene un vínculo moderno, una discrepancia de ID es
+  // definitiva. Nunca debe caer al código reutilizable ni al texto libre.
+  if (movementContractId) {
+    return Boolean(references.contractId && movementContractId === references.contractId);
+  }
+  if (movementRentalId) {
+    return Boolean(references.rentalId && movementRentalId === references.rentalId);
+  }
+  if (movementSourceId && movementSourceType.includes('contract')) {
+    return Boolean(references.contractId && movementSourceId === references.contractId);
+  }
+  if (movementSourceId && movementSourceType.includes('rental')) {
+    return Boolean(references.rentalId && movementSourceId === references.rentalId);
+  }
+
+  // Los códigos se admiten solo para movimientos históricos sin IDs. Además,
+  // un movimiento anterior a la creación del contrato actual no puede
+  // pertenecerle, aunque ambos compartan el mismo número de contrato.
+  const movementCreatedAtMs = new Date(movement?.createdAt ?? 0).getTime();
+  if (
+    Number.isFinite(references.createdAtMs)
+    && references.createdAtMs > 0
+    && Number.isFinite(movementCreatedAtMs)
+    && movementCreatedAtMs > 0
+    && movementCreatedAtMs + 1000 < references.createdAtMs
+  ) {
+    return false;
+  }
+
+  if (movementOrderCode && references.orderCode && movementOrderCode === references.orderCode) {
+    return true;
+  }
+  if (movementContractCode && references.contractCode && movementContractCode === references.contractCode) {
+    return true;
+  }
+  if (movementSourceId && [references.orderCode, references.contractCode].includes(movementSourceId)) {
+    return true;
+  }
+
+  const legacyKeys = [references.orderCode, references.contractCode].filter(Boolean);
   return [movement?.notes, movement?.description]
     .map(normalizeText)
-    .some((text) => text && referenceKeys.some((key) => text.includes(key)));
+    .some((value) => value && legacyKeys.some((key) => value.includes(key)));
 };
 
 const isContractCollectionCashMovement = (movement) => {
@@ -9382,30 +9434,6 @@ const cleanupRentalOperationalResidues = (state, rental, contract, now, options 
   state.inventoryMovements = (state.inventoryMovements ?? [])
     .filter((movement) => !isInventoryMovementLinkedToRental(movement, rental, contract));
 
-  // Lavado y reparación son consecuencias de esta devolución. Al eliminar el
-  // contrato deben desaparecer y sus unidades volver al disponible exactamente
-  // una vez, porque esos registros mantenían el stock fuera del almacén.
-  const linkedRecoveryIds = new Set();
-  (state.stockRecoveries ?? []).forEach((entry) => {
-    if (String(entry?.sourceRentalId ?? '') !== String(rental.id ?? '')) return;
-    const stage = normalizeText(entry?.stage);
-    if (!['lavado', 'reparacion'].includes(stage)) return;
-    const quantity = Math.max(0, Math.trunc(Number(entry?.quantity ?? 0)));
-    const item = state.items.find((candidate) => String(candidate?.id ?? '') === String(entry?.itemId ?? ''));
-    if (item && quantity > 0) {
-      item.availableStock = Math.min(
-        Math.max(0, Number(item.totalStock ?? item.availableStock ?? 0)),
-        Math.max(0, Number(item.availableStock ?? 0)) + quantity,
-      );
-      item.updatedAt = now;
-    }
-    linkedRecoveryIds.add(String(entry?.id ?? ''));
-  });
-  if (linkedRecoveryIds.size > 0) {
-    state.stockRecoveries = (state.stockRecoveries ?? [])
-      .filter((entry) => !linkedRecoveryIds.has(String(entry?.id ?? '')));
-  }
-
   // Los movimientos económicos, recibos, reportes emitidos y subalquileres
   // se conservan como historial. La eliminación operativa solo quita reservas,
   // estados de inventario/transporte y movimientos Listo/Enviado/Devuelto.
@@ -9463,9 +9491,6 @@ const buildContractDeletionSnapshot = (state, contract, now) => {
     ))),
     inventoryMovements: deepClone((state.inventoryMovements ?? []).filter((movement) => (
       linkedRentals.some((rental) => isInventoryMovementLinkedToRental(movement, rental, contract))
-    ))),
-    stockRecoveries: deepClone((state.stockRecoveries ?? []).filter((entry) => (
-      rentalIds.has(String(entry?.sourceRentalId ?? ''))
     ))),
     cashMovements: deepClone((state.cashMovements ?? []).filter((movement) => {
       const sourceId = String(movement?.sourceId ?? '');
@@ -9575,7 +9600,6 @@ const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
   if (!Array.isArray(state.deliveries)) state.deliveries = [];
   if (!Array.isArray(state.transportRoutes)) state.transportRoutes = [];
   if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
-  if (!Array.isArray(state.stockRecoveries)) state.stockRecoveries = [];
   if (!Array.isArray(state.cashMovements)) state.cashMovements = [];
   if (!Array.isArray(state.generatedReports)) state.generatedReports = [];
   if (!Array.isArray(state.supplierLoans)) state.supplierLoans = [];
@@ -14947,7 +14971,6 @@ const createWebBridge = () => ({
           upsertSnapshotRecords(state.deliveries, snapshot.deliveries);
           upsertSnapshotRecords(state.transportRoutes, snapshot.transportRoutes);
           upsertSnapshotRecords(state.inventoryMovements, snapshot.inventoryMovements);
-          upsertSnapshotRecords(state.stockRecoveries, snapshot.stockRecoveries);
           upsertSnapshotRecords(state.cashMovements, snapshot.cashMovements);
           upsertSnapshotRecords(state.generatedReports, snapshot.generatedReports);
           upsertSnapshotRecords(state.supplierLoans, snapshot.supplierLoans);
@@ -16658,7 +16681,7 @@ const createWebBridge = () => ({
         }
 
         const totalBs = Number(rental?.totals?.totalBs ?? 0);
-        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
+        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
         const outstandingRentalBs = Number(Math.max(0, totalBs - alreadyPaidBs).toFixed(2));
         const totalDiscountAgainstDepositBs = Number((penaltiesBs + outstandingRentalBs).toFixed(2));
         const refundBs = Number(Math.max(0, rental.depositBs - totalDiscountAgainstDepositBs).toFixed(2));
