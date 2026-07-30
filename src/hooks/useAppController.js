@@ -1377,6 +1377,11 @@ export const useAppController = () => {
           .then(setInventoryMovements)
           .catch(() => {});
       }
+      if (deferredGroupsLoadedRef.current.has('inventory-recoveries')) {
+        api.inventory.listRecoveries()
+          .then(setStockRecoveries)
+          .catch(() => {});
+      }
 
       return removed;
     } catch (requestError) {

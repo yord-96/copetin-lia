@@ -9382,6 +9382,30 @@ const cleanupRentalOperationalResidues = (state, rental, contract, now, options 
   state.inventoryMovements = (state.inventoryMovements ?? [])
     .filter((movement) => !isInventoryMovementLinkedToRental(movement, rental, contract));
 
+  // Lavado y reparación son consecuencias de esta devolución. Al eliminar el
+  // contrato deben desaparecer y sus unidades volver al disponible exactamente
+  // una vez, porque esos registros mantenían el stock fuera del almacén.
+  const linkedRecoveryIds = new Set();
+  (state.stockRecoveries ?? []).forEach((entry) => {
+    if (String(entry?.sourceRentalId ?? '') !== String(rental.id ?? '')) return;
+    const stage = normalizeText(entry?.stage);
+    if (!['lavado', 'reparacion'].includes(stage)) return;
+    const quantity = Math.max(0, Math.trunc(Number(entry?.quantity ?? 0)));
+    const item = state.items.find((candidate) => String(candidate?.id ?? '') === String(entry?.itemId ?? ''));
+    if (item && quantity > 0) {
+      item.availableStock = Math.min(
+        Math.max(0, Number(item.totalStock ?? item.availableStock ?? 0)),
+        Math.max(0, Number(item.availableStock ?? 0)) + quantity,
+      );
+      item.updatedAt = now;
+    }
+    linkedRecoveryIds.add(String(entry?.id ?? ''));
+  });
+  if (linkedRecoveryIds.size > 0) {
+    state.stockRecoveries = (state.stockRecoveries ?? [])
+      .filter((entry) => !linkedRecoveryIds.has(String(entry?.id ?? '')));
+  }
+
   // Los movimientos económicos, recibos, reportes emitidos y subalquileres
   // se conservan como historial. La eliminación operativa solo quita reservas,
   // estados de inventario/transporte y movimientos Listo/Enviado/Devuelto.
@@ -9439,6 +9463,9 @@ const buildContractDeletionSnapshot = (state, contract, now) => {
     ))),
     inventoryMovements: deepClone((state.inventoryMovements ?? []).filter((movement) => (
       linkedRentals.some((rental) => isInventoryMovementLinkedToRental(movement, rental, contract))
+    ))),
+    stockRecoveries: deepClone((state.stockRecoveries ?? []).filter((entry) => (
+      rentalIds.has(String(entry?.sourceRentalId ?? ''))
     ))),
     cashMovements: deepClone((state.cashMovements ?? []).filter((movement) => {
       const sourceId = String(movement?.sourceId ?? '');
@@ -9548,6 +9575,7 @@ const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
   if (!Array.isArray(state.deliveries)) state.deliveries = [];
   if (!Array.isArray(state.transportRoutes)) state.transportRoutes = [];
   if (!Array.isArray(state.inventoryMovements)) state.inventoryMovements = [];
+  if (!Array.isArray(state.stockRecoveries)) state.stockRecoveries = [];
   if (!Array.isArray(state.cashMovements)) state.cashMovements = [];
   if (!Array.isArray(state.generatedReports)) state.generatedReports = [];
   if (!Array.isArray(state.supplierLoans)) state.supplierLoans = [];
@@ -14919,6 +14947,7 @@ const createWebBridge = () => ({
           upsertSnapshotRecords(state.deliveries, snapshot.deliveries);
           upsertSnapshotRecords(state.transportRoutes, snapshot.transportRoutes);
           upsertSnapshotRecords(state.inventoryMovements, snapshot.inventoryMovements);
+          upsertSnapshotRecords(state.stockRecoveries, snapshot.stockRecoveries);
           upsertSnapshotRecords(state.cashMovements, snapshot.cashMovements);
           upsertSnapshotRecords(state.generatedReports, snapshot.generatedReports);
           upsertSnapshotRecords(state.supplierLoans, snapshot.supplierLoans);
@@ -16629,7 +16658,7 @@ const createWebBridge = () => ({
         }
 
         const totalBs = Number(rental?.totals?.totalBs ?? 0);
-        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
         const outstandingRentalBs = Number(Math.max(0, totalBs - alreadyPaidBs).toFixed(2));
         const totalDiscountAgainstDepositBs = Number((penaltiesBs + outstandingRentalBs).toFixed(2));
         const refundBs = Number(Math.max(0, rental.depositBs - totalDiscountAgainstDepositBs).toFixed(2));

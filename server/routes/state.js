@@ -1232,7 +1232,7 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
       }
 
       const totalBs = directMoney(rental?.totals?.totalBs);
-      const alreadyPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+      const alreadyPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
       const outstandingRentalBs = directMoney(Math.max(0, totalBs - alreadyPaidBs));
       const totalDiscountAgainstDepositBs = directMoney(penaltiesBs + outstandingRentalBs);
       const depositBs = directMoney(rental.depositBs);
