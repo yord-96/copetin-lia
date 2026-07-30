@@ -2406,7 +2406,7 @@ const normalizeState = (state) => {
       const prepaidAppliedBs = Number(contract?.payment?.prepaidAppliedBs ?? contract?.totals?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? 0);
       const responsibles = normalizeRecordResponsibles(contract);
       const primaryResponsible = responsibles[0] ?? null;
-      const normalizedEconomicLedger = Array.isArray(contract?.economicLedger)
+      let normalizedEconomicLedger = Array.isArray(contract?.economicLedger)
         ? contract.economicLedger.map((entry, index) => {
           const type = ['deposit', 'guarantee', 'charge', 'refund', 'note'].includes(
             String(entry?.type ?? '').trim(),
@@ -2448,6 +2448,44 @@ const normalizeState = (state) => {
           };
         })
         : [];
+
+      // Si una respuesta de Reset se combina con detalles locales legacy, se
+      // conservan las lineas recreadas por el Reset y se descartan solamente
+      // las lineas automaticas anteriores del mismo concepto.
+      const hasResetInitialPaymentLine = normalizedEconomicLedger.some((entry) => {
+        if (entry.type !== 'deposit') return false;
+        const note = normalizeText(entry?.note);
+        return note.includes('pago inicial')
+          && note.includes('conservad')
+          && note.includes('reset economico');
+      });
+      const hasResetGuaranteeLine = normalizedEconomicLedger.some((entry) => {
+        if (entry.type !== 'guarantee') return false;
+        const note = normalizeText(entry?.note);
+        return note.includes('garantia')
+          && note.includes('conservad')
+          && note.includes('reset economico');
+      });
+      if (hasResetInitialPaymentLine || hasResetGuaranteeLine) {
+        normalizedEconomicLedger = normalizedEconomicLedger.filter((entry) => {
+          const entryId = normalizeText(entry?.id);
+          const entryNote = normalizeText(entry?.note);
+          if (hasResetInitialPaymentLine && entry.type === 'deposit') {
+            const isLegacyInitialPayment = entryId.includes('initial-payment')
+              || entryNote === 'pago inicial registrado al crear el contrato.'
+              || entryNote === 'pago inicial registrado al crear el contrato';
+            if (isLegacyInitialPayment) return false;
+          }
+          if (hasResetGuaranteeLine && entry.type === 'guarantee') {
+            const isLegacyValidatedGuarantee = entryId.includes('validated-guarantee')
+              || entryId.includes('garantia-validada')
+              || entryNote === 'garantia pagada registrada al crear el contrato.'
+              || entryNote === 'garantia pagada registrada al crear el contrato';
+            if (isLegacyValidatedGuarantee) return false;
+          }
+          return true;
+        });
+      }
       const initialPaymentMethod = normalizePaymentMethod(
         contract?.payment?.initialPaymentMethod ?? contract?.payment?.paymentMethod,
       );
@@ -2459,6 +2497,13 @@ const normalizeState = (state) => {
       const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
         ? normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount)
         : '';
+      const hasEconomicResetLedger = Boolean(contract?.economicResetAt)
+        || Number(contract?.economicResetVersion ?? 0) >= 1
+        || normalizedEconomicLedger.some((entry) => {
+          const entryNote = normalizeText(entry?.note);
+          return entryNote.includes('reset economico')
+            || (entryNote.includes('conservad') && entryNote.includes('reset'));
+        });
       const hasInitialPaymentEntry = paidAtApprovalBs > 0 && normalizedEconomicLedger.some((entry) => {
         if (entry.type !== 'deposit') return false;
         const sameAmount = Math.abs(Number(entry.amountBs ?? 0) - paidAtApprovalBs) < 0.01;
@@ -2484,7 +2529,7 @@ const normalizeState = (state) => {
           || entryNote.includes('ingreso garantia')
         );
       });
-      if (paidAtApprovalBs > 0 && !hasInitialPaymentEntry) {
+      if (paidAtApprovalBs > 0 && !hasEconomicResetLedger && !hasInitialPaymentEntry) {
         normalizedEconomicLedger.unshift({
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
           type: 'deposit',
@@ -2508,7 +2553,7 @@ const normalizeState = (state) => {
           editedByName: '',
         });
       }
-      if (guaranteeStatus === 'validado' && guaranteeBs > 0 && !hasValidatedGuaranteeEntry) {
+      if (guaranteeStatus === 'validado' && guaranteeBs > 0 && !hasEconomicResetLedger && !hasValidatedGuaranteeEntry) {
         normalizedEconomicLedger.unshift({
           id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
           type: 'guarantee',
@@ -2611,6 +2656,8 @@ const normalizeState = (state) => {
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
         economicLedger: normalizedEconomicLedger,
         economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
+        economicResetAt: contract?.economicResetAt ?? null,
+        economicResetVersion: Number(contract?.economicResetVersion ?? 0),
         economicLedgerUpdatedById: contract?.economicLedgerUpdatedById ?? null,
         economicLedgerUpdatedByName: String(
           contract?.economicLedgerUpdatedByName ?? '',

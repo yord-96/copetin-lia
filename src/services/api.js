@@ -1771,8 +1771,43 @@ const resetContractEconomicsOnServer = async (payload = {}) => {
     lastSharedRevision = result.revision;
     setCachedServerRevision(result.revision);
   }
-  forgetFullRecordCache(fullContractCache, [requestedId, result?.contract?.id, result?.contract?.contractCode]);
-  forgetFullRecordCache(fullRentalCache, [result?.rental?.id, result?.rental?.orderCode]);
+  // El endpoint devuelve el contrato completo con el economicLedger ya reemplazado.
+  // Debemos guardarlo inmediatamente en la base local antes de disparar la
+  // sincronizacion resumida. De lo contrario preserveLocalDetailsInSummaries
+  // conserva el economicLedger anterior y vuelve a mezclar las lineas eliminadas.
+  if (result?.contract?.id) {
+    const localSnapshot = await exportLocalCollections(['contracts']);
+    const currentContracts = Array.isArray(localSnapshot?.contracts) ? localSnapshot.contracts : [];
+    const nextContracts = currentContracts.some((entry) => String(entry?.id ?? '') === String(result.contract.id))
+      ? currentContracts.map((entry) => (
+        String(entry?.id ?? '') === String(result.contract.id) ? result.contract : entry
+      ))
+      : [result.contract, ...currentContracts];
+    await mergeLocalState({ contracts: nextContracts });
+    rememberFullRecordCache(
+      fullContractCache,
+      result.contract,
+      [requestedId, result.contract.id, result.contract.contractCode],
+    );
+  }
+
+  if (result?.rental?.id) {
+    const localSnapshot = await exportLocalCollections(['rentals']);
+    const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
+    const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(result.rental.id))
+      ? currentRentals.map((entry) => (
+        String(entry?.id ?? '') === String(result.rental.id) ? result.rental : entry
+      ))
+      : [result.rental, ...currentRentals];
+    await mergeLocalState({ rentals: nextRentals });
+    rememberFullRecordCache(
+      fullRentalCache,
+      result.rental,
+      [result.rental.id, result.rental.orderCode, result.rental.contractCode],
+    );
+  }
+
+  forgetFullRecordCache(fullContractCache, [requestedId]);
   markServerStateStale('contracts.resetEconomics:direct');
   announceDataChange({
     domain: 'contracts',

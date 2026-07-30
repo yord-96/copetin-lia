@@ -1719,6 +1719,10 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       contract.economicLedgerUpdatedAt = now;
       contract.economicLedgerUpdatedById = userId;
       contract.economicLedgerUpdatedByName = userName;
+      // Marcador persistente: permite distinguir el ledger reconstruido por el Reset
+      // de las lineas automaticas historicas en cliente y normalizadores.
+      contract.economicResetAt = now;
+      contract.economicResetVersion = 1;
       contract.paidAtApprovalBs = seed.initialPaymentBs;
       contract.pendingPaymentBs = outstandingRentalBs;
       contract.paymentStatus = paymentStatus;

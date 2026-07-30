@@ -1286,7 +1286,7 @@ function ServiceOrdersSection({
   onCreateQuote,
   onUpdateQuote,
   onRemoveQuote,
-  onApproveQuote,
+  onApproveQuote: _onApproveQuote,
   onUpdateOrderOperational,
   onCancelOrderContract,
   onCreateContract,
@@ -1388,6 +1388,8 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
   const [isResettingContractEconomics, setIsResettingContractEconomics] = useState(false);
   const [economicResetPendingByContract, setEconomicResetPendingByContract] = useState({});
+  const [economicResetLedgerByContract, setEconomicResetLedgerByContract] = useState({});
+  const [activeEconomicResetLedger, setActiveEconomicResetLedger] = useState(null);
   const [recentEconomicCashMovements, setRecentEconomicCashMovements] = useState([]);
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
@@ -2349,6 +2351,8 @@ function ServiceOrdersSection({
           ...matchedContract,
           ...(target?.economicLedger !== undefined ? { economicLedger: target.economicLedger } : {}),
           ...(target?.economicLedgerUpdatedAt !== undefined ? { economicLedgerUpdatedAt: target.economicLedgerUpdatedAt } : {}),
+          ...(target?.economicResetAt !== undefined ? { economicResetAt: target.economicResetAt } : {}),
+          ...(target?.economicResetVersion !== undefined ? { economicResetVersion: target.economicResetVersion } : {}),
           ...(target?.economicLedgerUpdatedByName !== undefined ? { economicLedgerUpdatedByName: target.economicLedgerUpdatedByName } : {}),
         }
         : target);
@@ -2617,9 +2621,64 @@ function ServiceOrdersSection({
       movement?.id
       && (movement?.receipt || movement?.receiptCode || Math.abs(getCashMovementAmount(movement)) > 0),
     );
-    const storedEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+    const resetLedgerKey = String(
+      contract?.id
+      ?? contract?.contractCode
+      ?? rental?.contractId
+      ?? '',
+    ).trim();
+    const resetLedgerOverride = resetLedgerKey
+      ? economicResetLedgerByContract[resetLedgerKey]
+      : undefined;
+    const rawStoredEconomicLedger = (
+      Array.isArray(activeEconomicResetLedger)
+        ? activeEconomicResetLedger
+        : Array.isArray(resetLedgerOverride)
+          ? resetLedgerOverride
+        : Array.isArray(contract?.economicLedger)
+          ? contract.economicLedger
+          : []
+    )
       .map(normalizeEconomicLedgerEntry)
       .filter((entry) => !entry.deletedAt);
+
+    // El Reset economico recrea una sola linea vigente para el pago inicial y
+    // otra para la garantia. Algunas sincronizaciones antiguas pueden mezclar
+    // esas lineas nuevas con las lineas automaticas legacy del contrato.
+    // Cuando existe la linea conservada por Reset, se elimina solamente su
+    // equivalente automatico anterior; las demas lineas del cuaderno quedan intactas.
+    const hasResetInitialPaymentLine = rawStoredEconomicLedger.some((entry) => {
+      if (entry.type !== 'deposit') return false;
+      const note = normalizeText(entry?.note);
+      return note.includes('pago inicial')
+        && note.includes('conservad')
+        && note.includes('reset economico');
+    });
+    const hasResetGuaranteeLine = rawStoredEconomicLedger.some((entry) => {
+      if (entry.type !== 'guarantee') return false;
+      const note = normalizeText(entry?.note);
+      return note.includes('garantia')
+        && note.includes('conservad')
+        && note.includes('reset economico');
+    });
+    const storedEconomicLedger = rawStoredEconomicLedger.filter((entry) => {
+      const entryId = normalizeText(entry?.id);
+      const entryNote = normalizeText(entry?.note);
+      if (hasResetInitialPaymentLine && entry.type === 'deposit') {
+        const isLegacyInitialPayment = entryId.includes('initial-payment')
+          || entryNote === 'pago inicial registrado al crear el contrato.'
+          || entryNote === 'pago inicial registrado al crear el contrato';
+        if (isLegacyInitialPayment) return false;
+      }
+      if (hasResetGuaranteeLine && entry.type === 'guarantee') {
+        const isLegacyValidatedGuarantee = entryId.includes('validated-guarantee')
+          || entryId.includes('garantia-validada')
+          || entryNote === 'garantia pagada registrada al crear el contrato.'
+          || entryNote === 'garantia pagada registrada al crear el contrato';
+        if (isLegacyValidatedGuarantee) return false;
+      }
+      return true;
+    });
     const initialPaymentBs = Math.max(
       0,
       toMoneyNumber(contract?.payment?.paidAtApprovalBs),
@@ -2654,6 +2713,14 @@ function ServiceOrdersSection({
         ?? '',
       )
       : '';
+    const hasEconomicResetLedger = Array.isArray(resetLedgerOverride)
+      || Boolean(contract?.economicResetAt)
+      || Number(contract?.economicResetVersion ?? 0) >= 1
+      || storedEconomicLedger.some((entry) => {
+        const entryNote = normalizeText(entry?.note);
+        return entryNote.includes('reset economico')
+          || (entryNote.includes('conservad') && entryNote.includes('reset'));
+      });
     const hasInitialPaymentEntry = initialPaymentBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'deposit') return false;
       const entryId = normalizeText(entry.id);
@@ -2684,8 +2751,8 @@ function ServiceOrdersSection({
         || entryNote.includes('garantia separada')
       );
     });
-    const economicLedgerBase = [
-      ...(initialPaymentBs > 0 && !hasInitialPaymentEntry
+    const economicLedgerBaseUnfiltered = [
+      ...(initialPaymentBs > 0 && !hasEconomicResetLedger && !hasInitialPaymentEntry
         ? [{
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'deposit',
@@ -2708,7 +2775,7 @@ function ServiceOrdersSection({
           editedByName: '',
         }]
         : []),
-      ...(guaranteeValidatedBs > 0 && !hasValidatedGuaranteeEntry
+      ...(guaranteeValidatedBs > 0 && !hasEconomicResetLedger && !hasValidatedGuaranteeEntry
         ? [{
           id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'guarantee',
@@ -2733,6 +2800,40 @@ function ServiceOrdersSection({
         : []),
       ...storedEconomicLedger,
     ].sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
+
+    // Ultima barrera contra la duplicacion posterior al Reset economico.
+    // La lista puede recibir una linea automatica antigua y otra recreada por
+    // el Reset desde fuentes distintas. Solo se elimina la automatica legacy
+    // cuando existe una linea de Reset del mismo tipo y exactamente el mismo monto.
+    const resetReplacementKeys = new Set(
+      economicLedgerBaseUnfiltered
+        .filter((entry) => {
+          const note = normalizeText(entry?.note);
+          return note.includes('reset economico') && note.includes('conservad');
+        })
+        .map((entry) => `${entry.type}:${toMoneyNumber(entry.amountBs).toFixed(2)}`),
+    );
+    const economicLedgerBase = economicLedgerBaseUnfiltered.filter((entry) => {
+      const replacementKey = `${entry.type}:${toMoneyNumber(entry.amountBs).toFixed(2)}`;
+      if (!resetReplacementKeys.has(replacementKey)) return true;
+
+      const note = normalizeText(entry?.note);
+      if (note.includes('reset economico') && note.includes('conservad')) return true;
+
+      const entryId = normalizeText(entry?.id);
+      const isLegacyInitialPayment = entry.type === 'deposit' && (
+        entryId.includes('initial-payment')
+        || note === 'pago inicial registrado al crear el contrato.'
+        || note === 'pago inicial registrado al crear el contrato'
+      );
+      const isLegacyValidatedGuarantee = entry.type === 'guarantee' && (
+        entryId.includes('validated-guarantee')
+        || entryId.includes('garantia-validada')
+        || note === 'garantia pagada registrada al crear el contrato.'
+        || note === 'garantia pagada registrada al crear el contrato'
+      );
+      return !isLegacyInitialPayment && !isLegacyValidatedGuarantee;
+    });
 
     // Marca cada deposito del cuaderno que tiene un ingreso real en Caja Grande.
     // La asignacion es uno-a-uno para que un mismo recibo no pinte varias lineas.
@@ -3025,7 +3126,7 @@ function ServiceOrdersSection({
           ? 'Liquidacion con cargos'
           : 'Sin saldo pendiente',
     };
-  }, [effectiveCashMovements, contractEconomicsFullRental, contractEconomicsTarget, contracts, formatBs, orderRowsWithMeta, rentals]);
+  }, [activeEconomicResetLedger, effectiveCashMovements, contractEconomicsFullRental, contractEconomicsTarget, contracts, economicResetLedgerByContract, formatBs, orderRowsWithMeta, rentals]);
 
   const contractEconomicsCollectionOptions = useMemo(() => {
     if (!contractEconomicsData) return [];
@@ -6044,6 +6145,37 @@ function ServiceOrdersSection({
     };
   };
 
+  const buildContractPayloadFromQuote = (quote) => ({
+    ...quote,
+    id: undefined,
+    quoteCode: undefined,
+    quoteId: quote?.id ?? null,
+    status: 'borrador',
+    validUntil: null,
+    contractDate: quote?.contractDate ?? new Date().toISOString(),
+    discountMode: quote?.totals?.discountMode ?? quote?.discountMode ?? 'percent',
+    discountBs: quote?.totals?.discountBs ?? quote?.discountBs ?? 0,
+    discountPercent: quote?.totals?.discountPercent ?? quote?.discountPercent ?? 0,
+    guaranteeBs: quote?.totals?.guaranteeBs ?? quote?.guarantee?.amountBs ?? 0,
+    guaranteeStatus: quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? 'no_validado',
+    guaranteePaymentMethod: quote?.guarantee?.paymentMethod
+      ?? quote?.payment?.guaranteePaymentMethod
+      ?? 'efectivo',
+    guaranteePaymentAccount: quote?.guarantee?.paymentAccount
+      ?? quote?.payment?.guaranteePaymentAccount
+      ?? '',
+    paidAtApprovalBs: quote?.payment?.paidAtApprovalBs ?? 0,
+    prepaidAppliedBs: quote?.payment?.prepaidAppliedBs ?? quote?.prepaidAppliedBs ?? 0,
+    initialPaymentMethod: quote?.payment?.initialPaymentMethod ?? 'efectivo',
+    initialPaymentAccount: quote?.payment?.initialPaymentAccount ?? '',
+    deliveryFeeBs: quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0,
+    items: Array.isArray(quote?.items) ? quote.items : [],
+    services: Array.isArray(quote?.services) ? quote.services : [],
+    supplierFulfillmentPlan: Array.isArray(quote?.supplierFulfillmentPlan)
+      ? quote.supplierFulfillmentPlan
+      : [],
+  });
+
   const handleSaveQuote = async ({ approveNow }) => {
     if (!beginSubmit()) return;
     setFormError('');
@@ -6116,8 +6248,18 @@ function ServiceOrdersSection({
           })
           : await onCreateQuote(payload);
         if (approveNow) {
-          setSubmitStatusMessage('Generando contrato desde la cotizacion...');
-          const contract = await onApproveQuote?.({ quoteId: savedQuote.id });
+          if (!onCreateAndApproveContract) {
+            throw new Error('La aprobacion transaccional de cotizaciones no esta disponible.');
+          }
+          setSubmitStatusMessage('Creando contrato, orden e inventario desde la cotizacion...');
+          const transactionResult = await onCreateAndApproveContract(
+            buildContractPayloadFromQuote(savedQuote),
+          );
+          const contract = transactionResult?.contract ?? null;
+          if (!contract || !transactionResult?.rental) {
+            throw new Error('No se pudo completar la aprobacion transaccional de la cotizacion.');
+          }
+          invalidateContractDocumentPreviewCache(contract);
           setActiveView('contracts');
           setActionFeedback(
             contract?.contractCode
@@ -6151,7 +6293,18 @@ function ServiceOrdersSection({
     const quote = quoteApprovalPreview;
     setFormError('');
     try {
-      const contract = await onApproveQuote?.({ quoteId: quote.id });
+      if (!onCreateAndApproveContract) {
+        throw new Error('La aprobacion transaccional de cotizaciones no esta disponible.');
+      }
+      setSubmitStatusMessage('Creando contrato, orden e inventario desde la cotizacion...');
+      const transactionResult = await onCreateAndApproveContract(
+        buildContractPayloadFromQuote(quote),
+      );
+      const contract = transactionResult?.contract ?? null;
+      if (!contract || !transactionResult?.rental) {
+        throw new Error('No se pudo completar la aprobacion transaccional de la cotizacion.');
+      }
+      invalidateContractDocumentPreviewCache(contract);
       setActiveView('contracts');
       setQuoteApprovalPreview(null);
       setActionFeedback(
@@ -6670,6 +6823,7 @@ function ServiceOrdersSection({
     setContractEconomicsError('');
     resetContractEconomicsCollectionDraft();
     setMenuState(null);
+    setActiveEconomicResetLedger(null);
     setContractEconomicsTarget(contractRow);
     setContractEconomicsFullRental(null);
     setContractEconomicsContextMovements([]);
@@ -6693,6 +6847,7 @@ function ServiceOrdersSection({
   };
 
   const closeContractEconomics = () => {
+    setActiveEconomicResetLedger(null);
     setContractEconomicsTarget(null);
     setContractEconomicsFullRental(null);
     setContractEconomicsContextMovements([]);
@@ -7128,7 +7283,19 @@ function ServiceOrdersSection({
         updatedByRole: currentUser ? getUserDisplayRole(currentUser) : 'Sistema',
       });
 
-      setContractEconomicsTarget(result?.contract ?? contractEconomicsData.contract);
+      const returnedResetLedger = Array.isArray(result?.contract?.economicLedger)
+        ? result.contract.economicLedger
+        : [];
+      const resetLedger = returnedResetLedger.filter((entry) => {
+        const note = normalizeText(entry?.note);
+        return note.includes('reset economico') && note.includes('conservad');
+      });
+      const effectiveResetLedger = resetLedger.length > 0 ? resetLedger : returnedResetLedger;
+      const resetContract = result?.contract
+        ? { ...result.contract, economicLedger: effectiveResetLedger }
+        : { ...contractEconomicsData.contract, economicLedger: effectiveResetLedger };
+      setActiveEconomicResetLedger(effectiveResetLedger);
+      setContractEconomicsTarget(resetContract);
       setContractEconomicsFullRental(result?.rental ?? null);
       setContractEconomicsContextMovements(
         Array.isArray(result?.cashMovements) ? result.cashMovements : [],
@@ -7147,6 +7314,10 @@ function ServiceOrdersSection({
         setEconomicResetPendingByContract((current) => ({
           ...current,
           [overrideKey]: toMoneyNumber(result?.resetSummary?.pendingCollectionBs),
+        }));
+        setEconomicResetLedgerByContract((current) => ({
+          ...current,
+          [overrideKey]: effectiveResetLedger,
         }));
       }
 
