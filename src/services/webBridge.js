@@ -9399,6 +9399,74 @@ const restoreRentalReservedStock = (state, rental, now) => {
   });
 };
 
+const cleanupContractEconomicResidues = (state, contract, linkedRentals, now) => {
+  const rentals = Array.isArray(linkedRentals) ? linkedRentals : [];
+  const references = getContractCashReferenceKeys(state, contract);
+  const rentalIds = new Set(rentals.map((rental) => normalizeText(rental?.id)).filter(Boolean));
+  const orderCodes = new Set(rentals.map((rental) => normalizeText(rental?.orderCode)).filter(Boolean));
+  const contractId = normalizeText(contract?.id);
+
+  const matchesLinkedRecord = (record) => {
+    if (!record) return false;
+    if (cashMovementMatchesContract(record, references)) return true;
+
+    const recordContractId = normalizeText(record?.linkedContractId ?? record?.contractId);
+    const recordRentalId = normalizeText(record?.linkedRentalId ?? record?.rentalId);
+    const recordOrderCode = normalizeText(record?.linkedOrderCode ?? record?.orderCode);
+    const sourceId = normalizeText(record?.sourceId);
+
+    return Boolean(
+      (contractId && recordContractId === contractId)
+      || (recordRentalId && rentalIds.has(recordRentalId))
+      || (recordOrderCode && orderCodes.has(recordOrderCode))
+      || (sourceId && (sourceId === contractId || rentalIds.has(sourceId)))
+    );
+  };
+
+  state.cashMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !matchesLinkedRecord(movement));
+
+  state.cashDebts = (Array.isArray(state.cashDebts) ? state.cashDebts : [])
+    .filter((debt) => !matchesLinkedRecord(debt));
+
+  state.generatedReports = (Array.isArray(state.generatedReports) ? state.generatedReports : [])
+    .filter((report) => {
+      if (matchesLinkedRecord(report)) return false;
+      const sourceId = normalizeText(report?.sourceId);
+      return !(sourceId && (sourceId === contractId || rentalIds.has(sourceId)));
+    });
+
+  // El contrato oculto no debe conservar saldos, recibos ni líneas económicas
+  // activas. La copia completa permanece únicamente dentro del snapshot para
+  // una restauración explícita.
+  contract.economicLedger = [];
+  contract.economicLedgerUpdatedAt = now;
+  contract.economicLedgerUpdatedById = null;
+  contract.economicLedgerUpdatedByName = '';
+  contract.paymentStatus = 'sin_pago';
+  contract.accountingStatus = 'sin_movimientos';
+  contract.paidAtApprovalBs = 0;
+  contract.pendingPaymentBs = 0;
+  if (contract.payment && typeof contract.payment === 'object') {
+    contract.payment = {
+      ...contract.payment,
+      paidAtRentalBs: 0,
+      paidAtApprovalBs: 0,
+      pendingPaymentBs: 0,
+      status: 'sin_pago',
+      mode: 'sin_pago',
+    };
+  }
+  if (contract.totals && typeof contract.totals === 'object') {
+    contract.totals = {
+      ...contract.totals,
+      paidAtRentalBs: 0,
+      paidAtApprovalBs: 0,
+      pendingPaymentBs: 0,
+    };
+  }
+};
+
 const cleanupRentalOperationalResidues = (state, rental, contract, now, options = {}) => {
   const { skipReturned = false } = options;
   if (!rental || rental.deletedAt || rental.status === 'cancelled') return false;
@@ -9434,9 +9502,8 @@ const cleanupRentalOperationalResidues = (state, rental, contract, now, options 
   state.inventoryMovements = (state.inventoryMovements ?? [])
     .filter((movement) => !isInventoryMovementLinkedToRental(movement, rental, contract));
 
-  // Los movimientos económicos, recibos, reportes emitidos y subalquileres
-  // se conservan como historial. La eliminación operativa solo quita reservas,
-  // estados de inventario/transporte y movimientos Listo/Enviado/Devuelto.
+  // Los residuos económicos se limpian una sola vez a nivel de contrato,
+  // después de procesar todas sus órdenes relacionadas.
 
   rental.deletedAt = now;
   rental.status = 'cancelled';
@@ -9492,13 +9559,15 @@ const buildContractDeletionSnapshot = (state, contract, now) => {
     inventoryMovements: deepClone((state.inventoryMovements ?? []).filter((movement) => (
       linkedRentals.some((rental) => isInventoryMovementLinkedToRental(movement, rental, contract))
     ))),
-    cashMovements: deepClone((state.cashMovements ?? []).filter((movement) => {
-      const sourceId = String(movement?.sourceId ?? '');
-      const orderCode = String(movement?.linkedOrderCode ?? '');
-      return rentalIds.has(sourceId) || orderCodes.has(orderCode);
-    })),
+    cashMovements: deepClone((state.cashMovements ?? []).filter((movement) => (
+      cashMovementMatchesContract(movement, getContractCashReferenceKeys(state, contract))
+    ))),
+    cashDebts: deepClone((state.cashDebts ?? []).filter((debt) => (
+      cashMovementMatchesContract(debt, getContractCashReferenceKeys(state, contract))
+    ))),
     generatedReports: deepClone((state.generatedReports ?? []).filter((report) => (
-      rentalIds.has(String(report?.sourceId ?? ''))
+      cashMovementMatchesContract(report, getContractCashReferenceKeys(state, contract))
+      || rentalIds.has(String(report?.sourceId ?? ''))
       || String(report?.sourceId ?? '') === String(contract.id ?? '')
     ))),
     supplierLoans: deepClone((state.supplierLoans ?? []).filter((loan) => (
@@ -14913,7 +14982,10 @@ const createWebBridge = () => ({
         if (!contract) throw new Error('Contrato no encontrado.');
         const now = new Date().toISOString();
         contract.deletionSnapshot = buildContractDeletionSnapshot(state, contract, now);
+        const linkedRentalsBeforeDeletion = (state.rentals ?? [])
+          .filter((rental) => rentalMatchesContract(rental, contract));
         cleanupContractDeletionEffects(state, contract, now);
+        cleanupContractEconomicResidues(state, contract, linkedRentalsBeforeDeletion, now);
         contract.deletedAt = now;
         contract.deletedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.deletedByName = getAuditUserName(payload);
@@ -14972,6 +15044,7 @@ const createWebBridge = () => ({
           upsertSnapshotRecords(state.transportRoutes, snapshot.transportRoutes);
           upsertSnapshotRecords(state.inventoryMovements, snapshot.inventoryMovements);
           upsertSnapshotRecords(state.cashMovements, snapshot.cashMovements);
+          upsertSnapshotRecords(state.cashDebts, snapshot.cashDebts);
           upsertSnapshotRecords(state.generatedReports, snapshot.generatedReports);
           upsertSnapshotRecords(state.supplierLoans, snapshot.supplierLoans);
           if (snapshot.quote?.id) upsertSnapshotRecords(state.quotes, [snapshot.quote]);

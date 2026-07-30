@@ -44,6 +44,9 @@ const CONTRACT_REMOVE_PATCH_COLLECTIONS = Object.freeze([
   'transportRoutes',
   'inventoryMovements',
   'stockRecoveries',
+  'cashMovements',
+  'cashDebts',
+  'generatedReports',
   'systemAuditLog',
 ]);
 const CASH_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([

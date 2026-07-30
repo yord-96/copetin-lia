@@ -1382,6 +1382,15 @@ export const useAppController = () => {
           .then(setStockRecoveries)
           .catch(() => {});
       }
+      if (deferredGroupsLoadedRef.current.has('accounting-operations')) {
+        Promise.all([
+          api.cash.listMovements(),
+          api.cash.listDebts(),
+        ]).then(([movementsData, debtsData]) => {
+          setCashMovements(movementsData);
+          setCashDebts(debtsData);
+        }).catch(() => {});
+      }
 
       return removed;
     } catch (requestError) {
