@@ -677,100 +677,78 @@ router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
 const normalizeEconomicContextKey = (value) =>
   String(value ?? '').trim().toLocaleLowerCase('es-BO');
 
-const getEconomicContextIdentifiers = (...records) => {
-  const keys = new Set();
-  records.filter(Boolean).forEach((record) => {
-    [
-      record?.id,
-      record?.contractId,
-      record?.rentalId,
-      record?.contractCode,
-      record?.orderCode,
-      record?.number,
-      record?.codigo,
-    ].forEach((value) => {
-      const key = normalizeEconomicContextKey(value);
-      if (key) keys.add(key);
-    });
-  });
-  return keys;
-};
-
-const entryMatchesAnyEconomicKey = (entry, keys) => {
-  if (!entry || !keys?.size) return false;
-  const entryKeys = getEconomicContextIdentifiers(entry);
-  return [...entryKeys].some((key) => keys.has(key));
-};
-
 const resolveActiveRentalForContract = (rentals, contract, serviceOrder = null, payload = null) => {
   const activeRentals = (Array.isArray(rentals) ? rentals : []).filter((entry) => !entry?.deletedAt);
-  const exactKeys = getEconomicContextIdentifiers(
-    {
-      id: contract?.rentalId,
-      rentalId: contract?.rentalId,
-      contractId: contract?.id,
-      contractCode: contract?.contractCode,
-      orderCode: contract?.orderCode,
-    },
-    {
-      id: serviceOrder?.rentalId,
-      rentalId: serviceOrder?.rentalId,
-      orderCode: serviceOrder?.orderCode ?? serviceOrder?.codigo,
-      codigo: serviceOrder?.codigo,
-    },
-    {
-      id: payload?.rentalId,
-      rentalId: payload?.rentalId,
-      contractId: payload?.linkedContractId,
-      orderCode: payload?.linkedOrderCode,
-    },
-  );
-  const broadKeys = getEconomicContextIdentifiers(contract, serviceOrder, payload);
+  const normalize = normalizeEconomicContextKey;
+  const contractId = normalize(contract?.id);
+  const contractRentalId = normalize(contract?.rentalId);
+  const payloadRentalId = normalize(payload?.rentalId);
+  const orderRentalId = normalize(serviceOrder?.rentalId);
+  const contractCode = normalize(contract?.contractCode ?? contract?.number);
+  const orderCode = normalize(contract?.orderCode ?? serviceOrder?.orderCode ?? serviceOrder?.codigo);
 
-  return activeRentals.find((entry) => (
-    String(entry?.id ?? '') && String(entry.id) === String(contract?.rentalId ?? '')
-  )) ?? activeRentals.find((entry) => (
-    String(entry?.id ?? '') && String(entry.id) === String(serviceOrder?.rentalId ?? '')
-  )) ?? activeRentals.find((entry) => entryMatchesAnyEconomicKey(entry, exactKeys))
-    ?? activeRentals.find((entry) => entryMatchesAnyEconomicKey(entry, broadKeys))
-    ?? null;
-};
-
-const economicMovementMatches = (movement, identifiers) => {
-  const directValues = [
-    movement?.linkedContractId,
-    movement?.linkedRentalId,
-    movement?.linkedOrderCode,
-    movement?.contractId,
-    movement?.rentalId,
-    movement?.orderCode,
-    movement?.contractCode,
-    movement?.sourceId,
-    movement?.reference,
-  ];
-  if (directValues.some((value) => identifiers.has(normalizeEconomicContextKey(value)))) {
-    return true;
+  // Prioridad absoluta a IDs estructurados. Un orderCode puede reutilizarse al
+  // eliminar y reconstruir un contrato, por lo que nunca debe ganar sobre IDs.
+  if (contractRentalId) {
+    const exact = activeRentals.find((entry) => normalize(entry?.id) === contractRentalId);
+    if (exact) return exact;
+  }
+  if (payloadRentalId) {
+    const exact = activeRentals.find((entry) => normalize(entry?.id) === payloadRentalId);
+    if (exact) return exact;
+  }
+  if (contractId) {
+    const exact = activeRentals.find((entry) => normalize(entry?.contractId) === contractId);
+    if (exact) return exact;
+  }
+  if (orderRentalId) {
+    const exact = activeRentals.find((entry) => normalize(entry?.id) === orderRentalId);
+    if (exact && (!normalize(exact?.contractId) || normalize(exact?.contractId) === contractId)) return exact;
   }
 
-  // Si el movimiento ya tiene una referencia estructurada hacia otro contrato,
-  // alquiler u orden, nunca debe vincularse por compartir el numero visible
-  // dentro de la descripcion. Esto evita mezclar contratos activos y eliminados
-  // que conservan el mismo contractCode.
-  const hasStructuredReference = directValues.some((value) => normalizeEconomicContextKey(value));
-  if (hasStructuredReference) return false;
+  // Compatibilidad histórica: solo registros sin vínculo fuerte a otro contrato.
+  if (contractCode) {
+    const byContractCode = activeRentals.find((entry) => {
+      const entryContractId = normalize(entry?.contractId);
+      return normalize(entry?.contractCode ?? entry?.number) === contractCode
+        && (!entryContractId || entryContractId === contractId);
+    });
+    if (byContractCode) return byContractCode;
+  }
+  if (orderCode) {
+    return activeRentals.find((entry) => {
+      const entryContractId = normalize(entry?.contractId);
+      return normalize(entry?.orderCode) === orderCode
+        && (!entryContractId || entryContractId === contractId);
+    }) ?? null;
+  }
+  return null;
+};
 
-  // Compatibilidad solo para movimientos historicos realmente sueltos, que
-  // guardaron la referencia únicamente dentro de la descripción o las notas.
-  const looseText = normalizeEconomicContextKey([
-    movement?.description,
-    movement?.notes,
-    movement?.note,
-    movement?.detail,
-    movement?.receiptDetail,
-  ].filter(Boolean).join(' '));
-  if (!looseText) return false;
+const resolveServiceOrderForContract = (serviceOrders, contract, rental = null) => {
+  const orders = Array.isArray(serviceOrders) ? serviceOrders : [];
+  const normalize = normalizeEconomicContextKey;
+  const contractId = normalize(contract?.id);
+  const rentalId = normalize(rental?.id ?? contract?.rentalId);
+  const orderCode = normalize(contract?.orderCode ?? rental?.orderCode);
 
-  return [...identifiers].some((key) => key.length >= 3 && looseText.includes(key));
+  if (contractId) {
+    const exact = orders.find((entry) => normalize(entry?.contractId) === contractId);
+    if (exact) return exact;
+  }
+  if (rentalId) {
+    const exact = orders.find((entry) => normalize(entry?.rentalId) === rentalId);
+    if (exact) return exact;
+  }
+  if (!orderCode) return null;
+
+  // El código de orden es únicamente un respaldo para datos antiguos sin IDs.
+  return orders.find((entry) => {
+    const entryContractId = normalize(entry?.contractId);
+    const entryRentalId = normalize(entry?.rentalId);
+    const entryOrderCode = normalize(entry?.orderCode ?? entry?.codigo);
+    return entryOrderCode === orderCode && !entryContractId && !entryRentalId;
+  }) ?? null;
 };
 
 router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next) => {
@@ -805,23 +783,14 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
       return;
     }
 
-    const contractIdentifiers = getEconomicContextIdentifiers(contract);
-    const preliminaryOrder = serviceOrders.find((entry) => {
-      const orderIdentifiers = getEconomicContextIdentifiers(entry);
-      return [...orderIdentifiers].some((key) => contractIdentifiers.has(key));
-    }) ?? null;
+    const preliminaryOrder = resolveServiceOrderForContract(serviceOrders, contract);
     const rental = resolveActiveRentalForContract(rentals, contract, preliminaryOrder);
-
-    const identifiers = getEconomicContextIdentifiers(contract, rental);
-    const serviceOrder = serviceOrders.find((entry) => {
-      const orderIdentifiers = getEconomicContextIdentifiers(entry);
-      return [...orderIdentifiers].some((key) => identifiers.has(key));
-    }) ?? preliminaryOrder;
-
-    getEconomicContextIdentifiers(serviceOrder).forEach((key) => identifiers.add(key));
+    const serviceOrder = resolveServiceOrderForContract(serviceOrders, contract, rental)
+      ?? preliminaryOrder;
+    const strictKeys = getStrictEconomicLinkKeys(contract, rental, serviceOrder);
 
     const movements = cashMovements
-      .filter((movement) => economicMovementMatches(movement, identifiers))
+      .filter((movement) => strictEconomicRecordMatches(movement, strictKeys))
       .sort((left, right) =>
         new Date(right?.createdAt ?? 0).getTime() - new Date(left?.createdAt ?? 0).getTime()
       );
@@ -872,14 +841,14 @@ const strictEconomicRecordMatches = (record, keys) => {
   const linkedOrderCode = normalizeStrictEconomicKey(record?.linkedOrderCode ?? record?.orderCode);
   const sourceId = normalizeStrictEconomicKey(record?.sourceId);
 
-  if (keys.contractId && linkedContractId === keys.contractId) return true;
-  if (linkedRentalId && keys.rentalIds.has(linkedRentalId)) return true;
-  if (sourceId && (sourceId === keys.contractId || keys.rentalIds.has(sourceId))) return true;
+  // Jerarquía excluyente: cuando existe linkedContractId, ese dato manda.
+  // No se permite que un orderCode o rentalId compartido rescate un movimiento
+  // que ya declara pertenecer a otro contrato.
+  if (linkedContractId) return Boolean(keys.contractId && linkedContractId === keys.contractId);
+  if (linkedRentalId) return keys.rentalIds.has(linkedRentalId);
+  if (sourceId) return sourceId === keys.contractId || keys.rentalIds.has(sourceId);
 
-  // Compatibilidad limitada para registros antiguos sin IDs. Nunca se usa el
-  // número visible si el registro ya apunta a otro contrato/alquiler.
-  const hasStrongForeignLink = Boolean(linkedContractId || linkedRentalId || sourceId);
-  if (hasStrongForeignLink) return false;
+  // Compatibilidad limitada para registros antiguos realmente sin IDs.
   if (!linkedOrderCode || !keys.orderCodes.has(linkedOrderCode)) return false;
 
   const recordCreatedAtMs = new Date(record?.createdAt ?? record?.generatedAt ?? 0).getTime() || 0;
@@ -1671,15 +1640,10 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
         throw error;
       }
 
-      const serviceOrder = state.serviceOrders.find((entry) =>
-        normalizeStrictEconomicKey(entry?.contractId) === normalizeStrictEconomicKey(contract?.id)
-        || normalizeStrictEconomicKey(entry?.rentalId) === normalizeStrictEconomicKey(contract?.rentalId)
-        || (
-          contract?.orderCode
-          && normalizeStrictEconomicKey(entry?.orderCode) === normalizeStrictEconomicKey(contract?.orderCode)
-        )
-      ) ?? null;
-      const rental = resolveActiveRentalForContract(state.rentals, contract, serviceOrder);
+      const preliminaryOrder = resolveServiceOrderForContract(state.serviceOrders, contract);
+      const rental = resolveActiveRentalForContract(state.rentals, contract, preliminaryOrder);
+      const serviceOrder = resolveServiceOrderForContract(state.serviceOrders, contract, rental)
+        ?? preliminaryOrder;
       const keys = getStrictEconomicLinkKeys(contract, rental, serviceOrder);
       const seed = getContractCurrentEconomicSeed(contract, rental);
 
