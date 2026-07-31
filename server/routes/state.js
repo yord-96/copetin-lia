@@ -1682,7 +1682,17 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       });
 
       const chargeTargetBs = getRentalChargeTargetBs(contract, rental);
-      const penaltiesBs = directMoney(rental?.returnSettlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
+      // Los daños/faltantes físicos se conservan, pero el Reset económico debe
+      // quitar cualquier marca de cobro, aplicación a garantía o liquidación.
+      const returnReportRows = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
+      const reportPenaltiesBs = directMoney(returnReportRows.reduce((sum, line) => (
+        sum + directMoney(line?.penaltyBs ?? (
+          directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)
+        ))
+      ), 0));
+      const penaltiesBs = reportPenaltiesBs > 0
+        ? reportPenaltiesBs
+        : directMoney(rental?.returnSettlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
       const outstandingRentalBs = directMoney(Math.max(0, chargeTargetBs - seed.initialPaymentBs));
       const pendingCollectionBs = directMoney(outstandingRentalBs + penaltiesBs);
       const paymentStatus = pendingCollectionBs <= 0.009
@@ -1726,6 +1736,9 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           paidAtRentalBs: seed.initialPaymentBs,
           paidAtApprovalBs: seed.initialPaymentBs,
           pendingPaymentBs: outstandingRentalBs,
+          damageCollectedBs: 0,
+          penaltiesCollectedBs: 0,
+          returnChargesCollectedBs: 0,
           status: paymentStatus,
           mode: paymentStatus,
           guaranteeStatus: seed.guaranteeStatus || rental?.payment?.guaranteeStatus || 'no_validado',
@@ -1735,6 +1748,9 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           paidAtRentalBs: seed.initialPaymentBs,
           paidAtApprovalBs: seed.initialPaymentBs,
           pendingPaymentBs: outstandingRentalBs,
+          damageCollectedBs: 0,
+          penaltiesCollectedBs: 0,
+          returnChargesCollectedBs: 0,
         };
         rental.depositBs = seed.guaranteePaidBs;
         rental.guaranteeDeclaredBs = seed.guaranteeDeclaredBs;
@@ -1753,10 +1769,40 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
             penaltiesBs,
             pendingCollectionBs,
             paidBs: seed.initialPaymentBs,
-            refundBs: 0,
+            damageCollectedBs: 0,
+            penaltiesCollectedBs: 0,
+            collectedAfterReturnBs: 0,
+            discountCoveredByDepositBs: 0,
+            totalDiscountAgainstDepositBs: 0,
+            refundBs: seed.guaranteePaidBs,
             accountingStatus: pendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente',
             settledAt: null,
+            collectedAt: null,
+            collectedBy: null,
+            economicResetAt: now,
           };
+
+          // Mantener intacto qué producto se dañó/faltó, cantidades, notas y
+          // montos calculados; limpiar solamente su estado económico.
+          rental.returnReport = returnReportRows.map((line) => ({
+            ...line,
+            chargedBs: 0,
+            paidBs: 0,
+            collectedBs: 0,
+            appliedToGuaranteeBs: 0,
+            guaranteeAppliedBs: 0,
+            isPaid: false,
+            isCollected: false,
+            chargeStatus: 'pending',
+            paymentStatus: 'pending',
+            accountingStatus: 'pending',
+            cashMovementId: null,
+            receiptCode: '',
+            paidAt: null,
+            collectedAt: null,
+            settledAt: null,
+            economicResetAt: now,
+          }));
         }
         rental.accountingStatus = pendingCollectionBs <= 0.009 ? 'cobrado_finalizado' : paymentStatus;
         rental.updatedAt = now;

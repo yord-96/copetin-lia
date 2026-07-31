@@ -2567,12 +2567,17 @@ function ServiceOrdersSection({
         if (remainder > 0) next.rentalBs = Number((next.rentalBs + remainder).toFixed(2));
         return next;
       }
-      next.rentalBs = Number((next.rentalBs + amount).toFixed(2));
+      // Los cobros generales o pagos iniciales antiguos no siempre guardan un
+      // desglose por concepto. No los imputamos directamente a items porque el
+      // total del contrato puede incluir transporte. Se distribuyen después
+      // contra los importes reales del contrato, sin crear recibos adicionales.
+      next.unclassifiedBs = Number((next.unclassifiedBs + amount).toFixed(2));
       return next;
     }, {
       rentalBs: 0,
       transportBs: 0,
       damageBs: 0,
+      unclassifiedBs: 0,
     });
 
     const totalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
@@ -3005,7 +3010,7 @@ function ServiceOrdersSection({
     const ledgerUnregisteredTotalBs = Number((ledgerUnregisteredRentalBs + ledgerUnregisteredGuaranteeBs).toFixed(2));
     const effectiveGuaranteeDeclaredBs = Math.max(guaranteeDeclaredBs, ledgerTotals.guaranteeBs);
     const effectiveGuaranteeValidatedBs = Math.max(guaranteeValidatedBs, ledgerConfirmedGuaranteeBs);
-    const effectiveChargesBs = Math.max(ledgerTotals.chargesBs, penaltiesBs);
+    const effectiveChargesBs = Math.max(0, penaltiesBs);
     const guaranteeReserveBs = Math.max(ledgerConfirmedGuaranteeBs, effectiveGuaranteeValidatedBs);
     const reclassifiedGuaranteeBs = economicLedger.reduce((sum, entry) => (
       entry.type === 'guarantee' && entry.reclassifiedFromPayment
@@ -3013,9 +3018,22 @@ function ServiceOrdersSection({
         : sum
     ), 0);
     const ledgerRecordedRentalBs = Math.max(0, Number((ledgerConfirmedRentalBs - reclassifiedGuaranteeBs).toFixed(2)));
-    const guaranteeAppliedToChargesBs = Math.min(guaranteeReserveBs, effectiveChargesBs);
-    const uncoveredChargesBs = Math.max(0, Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)));
-    const ledgerChargeTargetBs = Number((totalBs + uncoveredChargesBs).toFixed(2));
+    // La garantia retenida no cancela automaticamente los daños.
+    // Solo se considera aplicada cuando existe una linea explicita de cargo
+    // creada desde "Aplicar daños a garantia". Despues de un Reset economico,
+    // esa linea ya no existe y los daños deben volver a mostrarse pendientes.
+    const guaranteeAppliedToChargesBs = Math.min(
+      guaranteeReserveBs,
+      Math.max(0, ledgerTotals.chargesBs),
+    );
+    const uncoveredChargesBs = Math.max(
+      0,
+      Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)),
+    );
+    // El total comercial del contrato no debe sumar nuevamente los daños.
+    // Los daños se controlan como obligación separada para evitar que un contrato
+    // totalmente pagado aparezca con saldo de alquiler.
+    const ledgerChargeTargetBs = Number(totalBs.toFixed(2));
     const rentalReceivedBs = Math.min(
       ledgerChargeTargetBs,
       Math.max(
@@ -3029,10 +3047,60 @@ function ServiceOrdersSection({
       transportBs: Math.max(0, Number(deliveryFeeBs.toFixed(2))),
       damageBs: uncoveredChargesBs,
     };
+    // Un pago general cubre el total comercial completo. Cuando no existe un
+    // desglose explícito, se aplica primero a items/alquiler, luego a transporte
+    // y finalmente a daños. Así, un pago completo que ya incluye el transporte
+    // no vuelve a mostrarlo como pendiente en "Cobro separado con recibo".
+    const explicitlyClassifiedCollectionBs = Number((
+      toMoneyNumber(collectionByTarget.rentalBs)
+      + toMoneyNumber(collectionByTarget.transportBs)
+      + toMoneyNumber(collectionByTarget.damageBs)
+    ).toFixed(2));
+    // Los pagos iniciales y cobros generales históricos normalmente no tienen
+    // desglose. El importe confirmado debe distribuirse entre items y transporte
+    // antes de ofrecer esos conceptos para un nuevo cobro.
+    const rentalCollectionOverflowBs = Math.max(
+      0,
+      Number((toMoneyNumber(collectionByTarget.rentalBs) - collectionTargetTotals.rentalBs).toFixed(2)),
+    );
+    const transportCollectionOverflowBs = Math.max(
+      0,
+      Number((toMoneyNumber(collectionByTarget.transportBs) - collectionTargetTotals.transportBs).toFixed(2)),
+    );
+    let unclassifiedCollectionBs = Math.max(
+      0,
+      toMoneyNumber(collectionByTarget.unclassifiedBs),
+      Number((rentalReceivedBs - explicitlyClassifiedCollectionBs).toFixed(2)),
+    );
+    // Algunos recibos históricos registraron el pago completo como "items".
+    // El excedente sobre el subtotal de items debe cubrir transporte, no perderse
+    // ni convertirse en un nuevo saldo por cobrar.
+    unclassifiedCollectionBs = Number((
+      unclassifiedCollectionBs
+      + rentalCollectionOverflowBs
+      + transportCollectionOverflowBs
+    ).toFixed(2));
+    const effectiveCollectionByTarget = {
+      rentalBs: Math.min(collectionTargetTotals.rentalBs, collectionByTarget.rentalBs),
+      transportBs: Math.min(collectionTargetTotals.transportBs, collectionByTarget.transportBs),
+      damageBs: Math.min(collectionTargetTotals.damageBs, collectionByTarget.damageBs),
+    };
+    const allocateUnclassifiedCollection = (key, totalKey) => {
+      const pendingBs = Math.max(0, Number((collectionTargetTotals[totalKey] - effectiveCollectionByTarget[key]).toFixed(2)));
+      const appliedBs = Math.min(pendingBs, unclassifiedCollectionBs);
+      effectiveCollectionByTarget[key] = Number((effectiveCollectionByTarget[key] + appliedBs).toFixed(2));
+      unclassifiedCollectionBs = Math.max(0, Number((unclassifiedCollectionBs - appliedBs).toFixed(2)));
+    };
+    allocateUnclassifiedCollection('rentalBs', 'rentalBs');
+    allocateUnclassifiedCollection('transportBs', 'transportBs');
+    // Un pago comercial general nunca cancela daños automáticamente.
+    // Los daños requieren un cobro dirigido a daños o una aplicación explícita
+    // de garantía mediante el único botón disponible en el estado superior.
+
     const collectionTargetPending = {
-      rentalBs: Math.max(0, Number((collectionTargetTotals.rentalBs - collectionByTarget.rentalBs).toFixed(2))),
-      transportBs: Math.max(0, Number((collectionTargetTotals.transportBs - collectionByTarget.transportBs).toFixed(2))),
-      damageBs: Math.max(0, Number((collectionTargetTotals.damageBs - collectionByTarget.damageBs).toFixed(2))),
+      rentalBs: Math.max(0, Number((collectionTargetTotals.rentalBs - effectiveCollectionByTarget.rentalBs).toFixed(2))),
+      transportBs: Math.max(0, Number((collectionTargetTotals.transportBs - effectiveCollectionByTarget.transportBs).toFixed(2))),
+      damageBs: Math.max(0, Number((collectionTargetTotals.damageBs - effectiveCollectionByTarget.damageBs).toFixed(2))),
     };
     const damagePendingBs = collectionTargetPending.damageBs;
     const damagesSettled = penaltiesBs > 0 && damagePendingBs <= 0.009;
@@ -3063,7 +3131,12 @@ function ServiceOrdersSection({
     );
     const ledgerCashRegisteredBs = Number((ledgerConfirmedRentalBs + ledgerConfirmedGuaranteeBs).toFixed(2));
     const cashRegisteredBs = Math.max(incomeBs, ledgerCashRegisteredBs);
-    const cashToRegisterBs = Math.max(0, Number((ledgerChargeTargetBs - collectionRegisteredBs).toFixed(2)));
+    // El cobro general pendiente combina únicamente el saldo comercial real
+    // y los daños todavía no cobrados. Nunca vuelve a incluir pagos ya recibidos.
+    const cashToRegisterBs = Math.max(
+      0,
+      Number((ledgerDebtBs + damagePendingBs).toFixed(2)),
+    );
     const cashCollectionSuggestedBs = cashToRegisterBs;
     const managedDebtBs = usesLedgerBalance
       ? ledgerDebtBs
@@ -7748,6 +7821,7 @@ function ServiceOrdersSection({
         paymentMethod,
         paymentAccount,
         note: contractEconomicsGuaranteeRefundDraft.note
+          || contractEconomicsGuaranteeRefundDraft.receipt
           || `Devolucion de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
         createdAt: new Date().toISOString(),
         createdByName,
@@ -9476,9 +9550,9 @@ function ServiceOrdersSection({
 
               <div className="contract-economics-balance-strip">
                 <article>
-                  <span>A cuenta</span>
+                  <span>{contractEconomicsData.managedDebtBs > 0 ? 'A cuenta' : 'Pagado'}</span>
                   <strong>{formatBs(contractEconomicsData.paidOnAccountBs)}</strong>
-                  <small>Total recibido o abonado</small>
+                  <small>{contractEconomicsData.managedDebtBs > 0 ? 'Total recibido o abonado' : 'Cobrado con recibo'}</small>
                 </article>
                 <article className={contractEconomicsData.managedDebtBs > 0 ? 'is-due' : 'is-paid'}>
                   <span>{contractEconomicsData.managedDebtBs > 0 ? 'Debe' : 'Pagado'}</span>
@@ -9487,56 +9561,87 @@ function ServiceOrdersSection({
                 </article>
               </div>
 
-              <section style={{ marginBottom: '14px', border: '1px solid #eaded4', borderRadius: '14px', background: '#fffaf5', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <section
+                className="contract-economics-panel"
+                style={{
+                  marginBottom: '14px',
+                  borderColor: contractEconomicsData.managedDebtBs > 0 ? '#fdba74' : '#86efac',
+                  background: contractEconomicsData.managedDebtBs > 0 ? '#fff7ed' : '#f0fdf4',
+                }}
+              >
+                <header>
                   <div>
-                    <span style={{ color: '#e65300', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase' }}>Asistente economico</span>
-                    <h4 style={{ margin: '4px 0 6px', color: '#0b2d63' }}>Que corresponde hacer ahora</h4>
-                    <p style={{ margin: 0, color: '#667085' }}>El sistema separa alquiler, garantia, danos y devoluciones sin contar dos veces el mismo dinero.</p>
+                    <span style={{ color: '#e65300', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase' }}>
+                      1. Estado economico actual
+                    </span>
+                    <h4 style={{ marginTop: '4px' }}>
+                      {contractEconomicsData.managedDebtBs > 0
+                        ? `Saldo pendiente ${formatBs(contractEconomicsData.managedDebtBs)}`
+                        : contractEconomicsData.damagePendingBs > 0
+                          ? `Alquiler pagado | Danos pendientes ${formatBs(contractEconomicsData.damagePendingBs)}`
+                          : contractEconomicsData.guaranteeRefundAvailableBs > 0
+                            ? `Alquiler pagado | Garantia por devolver ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}`
+                            : 'Contrato economicamente al dia'}
+                    </h4>
+                    <p>
+                      Vista resumida del estado con el que ingreso el contrato. Los datos historicos, recibos y movimientos anteriores se conservan sin transformarlos.
+                    </p>
                   </div>
-                  <span style={{ borderRadius: '999px', padding: '7px 12px', background: contractEconomicsData.managedDebtBs > 0 ? '#fff1e8' : '#ecfdf3', color: contractEconomicsData.managedDebtBs > 0 ? '#c2410c' : '#15803d', fontWeight: 800 }}>
-                    {contractEconomicsData.managedDebtBs > 0 ? `Pendiente ${formatBs(contractEconomicsData.managedDebtBs)}` : 'Alquiler cobrado'}
+                  <span className={`orders-contract-close-pill ${contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.damagePendingBs > 0 ? 'is-pending' : 'is-ready'}`}>
+                    {contractEconomicsData.managedDebtBs > 0
+                      ? 'Pendiente de cobro'
+                      : contractEconomicsData.damagePendingBs > 0
+                        ? 'Danos pendientes'
+                        : contractEconomicsData.guaranteeRefundAvailableBs > 0
+                          ? 'Garantia pendiente'
+                          : 'Sin pendientes'}
                   </span>
+                </header>
+
+                <div className="contract-economics-kpis" style={{ marginTop: '12px' }}>
+                  <article>
+                    <span>Total contrato</span>
+                    <strong>{formatBs(contractEconomicsData.totalBs)}</strong>
+                    <small>Items, servicios y transporte</small>
+                  </article>
+                  <article>
+                    <span>Total cobrado</span>
+                    <strong>{formatBs(contractEconomicsData.rentalReceivedBs)}</strong>
+                    <small>Ingresos confirmados del contrato</small>
+                  </article>
+                  <article className={contractEconomicsData.managedDebtBs > 0 ? 'is-due' : 'is-paid'}>
+                    <span>Saldo alquiler</span>
+                    <strong>{contractEconomicsData.managedDebtBs > 0 ? formatBs(contractEconomicsData.managedDebtBs) : 'Pagado'}</strong>
+                    <small>{contractEconomicsData.managedDebtBs > 0 ? 'Pendiente de cobro' : 'Sin saldo pendiente'}</small>
+                  </article>
+                  <article>
+                    <span>Garantia disponible</span>
+                    <strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
+                    <small>{contractEconomicsData.guaranteeStatus}</small>
+                  </article>
+                  <article className={contractEconomicsData.damagePendingBs > 0 ? 'is-due' : 'is-paid'}>
+                    <span>Danos / faltantes</span>
+                    <strong>{contractEconomicsData.damagePendingBs > 0 ? formatBs(contractEconomicsData.damagePendingBs) : 'Sin pendiente'}</strong>
+                    <small>{contractEconomicsData.returnIssues.length} observacion(es)</small>
+                  </article>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px', marginTop: '14px' }}>
-                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
-                    <small style={{ color: '#667085' }}>Alquiler cobrado con recibo</small>
-                    <strong style={{ display: 'block', marginTop: '4px', color: '#0b2d63', fontSize: '18px' }}>{formatBs(Math.min(contractEconomicsData.rentalReceivedBs, contractEconomicsData.ledgerChargeTargetBs))}</strong>
-                    <span style={{ color: '#667085', fontSize: '12px' }}>Falta: {formatBs(contractEconomicsData.managedDebtBs)}</span>
-                  </article>
-                  {contractEconomicsData.itemDiscountsBs > 0 ? (
-                    <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
-                      <small style={{ color: '#667085' }}>Descuento aplicado a items</small>
-                      <strong style={{ display: 'block', marginTop: '4px', color: '#c2410c', fontSize: '18px' }}>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong>
-                      <span style={{ color: '#667085', fontSize: '12px' }}>No afecta servicio ni transporte</span>
-                    </article>
-                  ) : null}
-                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
-                    <small style={{ color: '#667085' }}>Excedente disponible</small>
-                    <strong style={{ display: 'block', marginTop: '4px', color: '#7c3aed', fontSize: '18px' }}>{formatBs(contractEconomicsData.excessPaymentBs)}</strong>
-                    <span style={{ color: '#667085', fontSize: '12px' }}>Puede separarse como garantia</span>
-                  </article>
-                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
-                    <small style={{ color: '#667085' }}>Garantia en caja</small>
-                    <strong style={{ display: 'block', marginTop: '4px', color: '#7c3aed', fontSize: '18px' }}>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
-                    <span style={{ color: '#667085', fontSize: '12px' }}>{contractEconomicsData.guaranteeStatus}</span>
-                  </article>
-                  <article style={{ border: '1px solid #e5ddd6', borderRadius: '12px', background: '#fff', padding: '12px' }}>
-                    <small style={{ color: '#667085' }}>Danos cubiertos por garantia</small>
-                    <strong style={{ display: 'block', marginTop: '4px', color: '#c2410c', fontSize: '18px' }}>{formatBs(contractEconomicsData.guaranteeAppliedToChargesBs)}</strong>
-                    <span style={{ color: '#667085', fontSize: '12px' }}>Sin cobrar dos veces al cliente</span>
-                  </article>
-                </div>
-                {canManageContractEconomicLedger && (contractEconomicsData.excessPaymentBs > 0 || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs || contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs) ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '14px' }}>
+
+                {canManageContractEconomicLedger && (
+                  contractEconomicsData.excessPaymentBs > 0
+                  || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs
+                  || contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs
+                ) ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
                     {(contractEconomicsData.excessPaymentBs > 0 || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs) ? (
-                      <button type="button" className="primary-button" onClick={handleSeparateEconomicGuarantee} disabled={readOnly || isSavingContractEconomicsLedger}>
-                        {contractEconomicsData.excessPaymentBs > 0 ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)} como garantia` : `Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
-                      </button>
-                    ) : null}
-                    {contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs && contractEconomicsData.guaranteeRefundAvailableBs > 0 ? (
-                      <button type="button" className="ghost-button" onClick={handleApplyEconomicCharge} disabled={readOnly || isSavingContractEconomicsLedger}>
-                        Aplicar danos a garantia {formatBs(Math.min(contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs, contractEconomicsData.guaranteeRefundAvailableBs))}
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={handleSeparateEconomicGuarantee}
+                        disabled={readOnly || isSavingContractEconomicsLedger}
+                      >
+                        {contractEconomicsData.excessPaymentBs > 0
+                          ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)} como garantia`
+                          : `Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
                       </button>
                     ) : null}
                   </div>
@@ -9544,169 +9649,347 @@ function ServiceOrdersSection({
               </section>
 
               <div className="contract-economics-story-layout">
+                <div style={{ gridColumn: '1 / -1', marginBottom: '-4px' }}>
+                  <span style={{ color: '#e65300', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase' }}>
+                    Movimientos y respaldo
+                  </span>
+                  <p style={{ margin: '4px 0 0', color: '#667085' }}>
+                    Registra cobros o devoluciones, documenta el historial y consulta los recibos existentes sin alterar contratos anteriores.
+                  </p>
+                </div>
                 <section className="contract-economics-flow-card">
-                  <form className="contract-economics-collect compact split-collection" onSubmit={handleSubmitContractEconomicCollection}>
-                    <div className="contract-economics-collection-intro">
-                      <h4>Cobro separado con recibo</h4>
-                      <p>
-                        {selectedContractEconomicsCollectionAmountBs > 0
-                          ? `${selectedContractEconomicsCollectionLabel}: pendiente ${formatBs(selectedContractEconomicsCollectionAmountBs)}. Genera recibo propio e ingreso real en Caja Grande.`
-                          : `Caja registrada: ${formatBs(contractEconomicsData.cashRegisteredBs)}. Usa el cuaderno solo para separar garantia, cargos y devoluciones.`}
-                      </p>
-                    </div>
-                    <div className="contract-economics-collection-targets" role="group" aria-label="Concepto a cobrar">
-                      {contractEconomicsCollectionOptions.map((option) => (
-                        <button
-                          key={option.key}
-                          type="button"
-                          className={selectedContractEconomicsCollectionTargets.includes(option.key) ? 'active' : ''}
-                          onClick={() => setContractEconomicsCollectionDraft((current) => ({
-                            ...current,
-                            target: option.key === 'balance' ? 'balance' : option.key,
-                            targets: (() => {
-                              const currentTargets = normalizeEconomicCollectionTargets(current.targets ?? current.target);
-                              if (option.key === 'balance') return ['balance'];
-                              const withoutBalance = currentTargets.filter((target) => target !== 'balance');
-                              if (withoutBalance.length === 1 && withoutBalance[0] === 'rental' && option.key !== 'rental') {
-                                return [option.key];
-                              }
-                              const nextTargets = withoutBalance.includes(option.key)
-                                ? withoutBalance.filter((target) => target !== option.key)
-                                : [...withoutBalance, option.key];
-                              return normalizeEconomicCollectionTargets(nextTargets);
-                            })(),
-                            amountBs: '',
-                            note: current.note,
-                          }))}
-                          disabled={readOnly || isSavingContractEconomicsCollection || option.amountBs <= 0}
-                          title={option.detail}
-                        >
-                          <span>{option.shortLabel}</span>
-                          <strong>{formatBs(option.amountBs)}</strong>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="contract-economics-collection-fields">
-                      <label>
-                        Monto
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={contractEconomicsCollectionDraft.amountBs}
-                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                          placeholder={selectedContractEconomicsCollectionAmountBs > 0 ? String(selectedContractEconomicsCollectionAmountBs.toFixed(2)) : '0.00'}
-                          disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
-                        />
-                      </label>
-                      <label>
-                        Metodo
-                        <select
-                          value={contractEconomicsCollectionDraft.paymentMethod}
-                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                          disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
-                        >
-                          <option value="efectivo">Efectivo</option>
-                          <option value="qr">QR</option>
-                          <option value="transferencia">Transferencia</option>
-                        </select>
-                      </label>
-                      {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
-                        <label>
-                          Cuenta QR
-                          <select
-                            value={contractEconomicsCollectionDraft.paymentAccount}
-                            onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                  <div
+                    style={{
+                      border: '1px solid #d9e2f2',
+                      borderRadius: '14px',
+                      background: '#ffffff',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <header
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        gap: '16px',
+                        padding: '10px 12px',
+                        borderBottom: '1px solid #e5eaf2',
+                        background: '#f8faff',
+                      }}
+                    >
+                      <div>
+                        <span style={{ color: '#e65300', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
+                          2. Centro de movimientos y recibos
+                        </span>
+                        <h4 style={{ margin: '2px 0', fontSize: '15px' }}>Cobrar, aplicar garantia o devolver dinero</h4>
+                        <p style={{ margin: 0, color: '#667085' }}>
+                          Todas las operaciones economicas del contrato se realizan desde este unico sector.
+                        </p>
+                      </div>
+                      <span
+                        style={{
+                          border: '1px solid #fed7aa',
+                          borderRadius: '999px',
+                          background: '#fff7ed',
+                          color: '#c2410c',
+                          padding: '4px 8px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Genera movimiento y recibo
+                      </span>
+                    </header>
+
+                    <div style={{ padding: '10px 12px', display: 'grid', gap: '10px' }}>
+                      <form
+                        className="contract-economics-collect compact split-collection"
+                        onSubmit={handleSubmitContractEconomicCollection}
+                        style={{ margin: 0 }}
+                      >
+                        <div className="contract-economics-collection-intro">
+                          <h4 style={{ marginBottom: '2px', fontSize: '14px' }}>A. Registrar cobro</h4>
+                          <p>
+                            {selectedContractEconomicsCollectionAmountBs > 0
+                              ? `${selectedContractEconomicsCollectionLabel}: pendiente ${formatBs(selectedContractEconomicsCollectionAmountBs)}. Selecciona el concepto y genera el recibo correspondiente.`
+                              : `No hay saldo nuevo para cobrar. Los recibos existentes se encuentran en "Pagos, movimientos y recibos".`}
+                          </p>
+                        </div>
+                        <div className="contract-economics-collection-targets" role="group" aria-label="Concepto a cobrar">
+                          {contractEconomicsCollectionOptions.map((option) => (
+                            <button
+                              key={option.key}
+                              type="button"
+                              className={selectedContractEconomicsCollectionTargets.includes(option.key) ? 'active' : ''}
+                              onClick={() => setContractEconomicsCollectionDraft((current) => ({
+                                ...current,
+                                target: option.key === 'balance' ? 'balance' : option.key,
+                                targets: (() => {
+                                  const currentTargets = normalizeEconomicCollectionTargets(current.targets ?? current.target);
+                                  if (option.key === 'balance') return ['balance'];
+                                  const withoutBalance = currentTargets.filter((target) => target !== 'balance');
+                                  if (withoutBalance.length === 1 && withoutBalance[0] === 'rental' && option.key !== 'rental') {
+                                    return [option.key];
+                                  }
+                                  const nextTargets = withoutBalance.includes(option.key)
+                                    ? withoutBalance.filter((target) => target !== option.key)
+                                    : [...withoutBalance, option.key];
+                                  return normalizeEconomicCollectionTargets(nextTargets);
+                                })(),
+                                amountBs: '',
+                                note: current.note,
+                              }))}
+                              disabled={readOnly || isSavingContractEconomicsCollection || option.amountBs <= 0}
+                              title={option.detail}
+                            >
+                              <span>{option.shortLabel}</span>
+                              <strong>{formatBs(option.amountBs)}</strong>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="contract-economics-collection-fields">
+                          <label>
+                            Monto
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={contractEconomicsCollectionDraft.amountBs}
+                              onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                              placeholder={selectedContractEconomicsCollectionAmountBs > 0 ? String(selectedContractEconomicsCollectionAmountBs.toFixed(2)) : '0.00'}
+                              disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
+                            />
+                          </label>
+                          <label>
+                            Metodo
+                            <select
+                              value={contractEconomicsCollectionDraft.paymentMethod}
+                              onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
+                              disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
+                            >
+                              <option value="efectivo">Efectivo</option>
+                              <option value="qr">QR</option>
+                              <option value="transferencia">Transferencia</option>
+                            </select>
+                          </label>
+                          {contractEconomicsCollectionDraft.paymentMethod === 'qr' ? (
+                            <label>
+                              Cuenta QR
+                              <select
+                                value={contractEconomicsCollectionDraft.paymentAccount}
+                                onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                                disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
+                              >
+                                <option value="">Seleccionar</option>
+                                {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                              </select>
+                            </label>
+                          ) : null}
+                          <label className="receipt-field">
+                            Comprobante / nota
+                            <input
+                              value={contractEconomicsCollectionDraft.receipt}
+                              onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
+                              placeholder="Referencia opcional"
+                              disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
+                            />
+                          </label>
+                          <button
+                            type="submit"
+                            className="primary-button"
                             disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
                           >
-                            <option value="">Seleccionar</option>
-                            {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
-                          </select>
-                        </label>
-                      ) : null}
-                      <label className="receipt-field">
-                        Comprobante / nota
-                        <input
-                          value={contractEconomicsCollectionDraft.receipt}
-                          onChange={(event) => setContractEconomicsCollectionDraft((current) => ({ ...current, receipt: event.target.value }))}
-                          placeholder="Referencia opcional"
-                          disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
-                        />
-                      </label>
-                      <button
-                        type="submit"
-                        className="primary-button"
-                        disabled={readOnly || selectedContractEconomicsCollectionAmountBs <= 0 || isSavingContractEconomicsCollection}
-                      >
-                        {isSavingContractEconomicsCollection ? 'Registrando...' : `Cobrar ${selectedContractEconomicsCollectionButtonLabel}`}
-                      </button>
-                    </div>
-                  </form>
+                            {isSavingContractEconomicsCollection ? 'Registrando...' : `Cobrar ${selectedContractEconomicsCollectionButtonLabel}`}
+                          </button>
+                        </div>
+                      </form>
 
-                  <form className="contract-economics-collect compact guarantee-refund" onSubmit={handleSubmitContractEconomicGuaranteeRefund}>
-                    <div>
-                      <h4>Devolver garantia desde Caja Grande con recibo</h4>
-                      <p>
-                        {contractEconomicsData.guaranteeRefundAvailableBs > 0
-                          ? `Disponible para devolver: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}. Este registro genera un egreso de Caja Grande y su recibo.`
-                          : 'No existe una garantia disponible para devolver.'}
-                      </p>
-                    </div>
-                    <label>
-                      Monto
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={contractEconomicsGuaranteeRefundDraft.amountBs}
-                        onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                        placeholder={String(contractEconomicsData.guaranteeRefundAvailableBs.toFixed(2))}
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
-                      />
-                    </label>
-                    <label>
-                      Metodo
-                      <select
-                        value={contractEconomicsGuaranteeRefundDraft.paymentMethod}
-                        onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                          gap: '10px',
+                          alignItems: 'stretch',
+                        }}
                       >
-                        <option value="efectivo">Efectivo</option>
-                        <option value="qr">QR</option>
-                        <option value="transferencia">Transferencia</option>
-                      </select>
-                    </label>
-                    {contractEconomicsGuaranteeRefundDraft.paymentMethod === 'qr' ? (
-                      <label>
-                        Cuenta QR
-                        <select
-                          value={contractEconomicsGuaranteeRefundDraft.paymentAccount}
-                          onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                          disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                        <section
+                          style={{
+                            border: '1px solid #fed7aa',
+                            borderRadius: '12px',
+                            background: '#fffaf5',
+                            padding: '10px',
+                            display: 'grid',
+                            gridTemplateRows: 'auto 1fr auto',
+                            gap: '6px',
+                            minWidth: 0,
+                          }}
                         >
-                          <option value="">Seleccionar</option>
-                          {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
-                        </select>
-                      </label>
-                    ) : null}
-                    <label>
-                      Comprobante / nota
-                      <input
-                        value={contractEconomicsGuaranteeRefundDraft.receipt}
-                        onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, receipt: event.target.value }))}
-                        placeholder="Referencia opcional"
-                        disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
-                      />
-                    </label>
-                    <button
-                      type="submit"
-                      className="primary-button"
-                      disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
-                    >
-                      {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
-                    </button>
-                  </form>
+                          <span style={{ color: '#c2410c', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
+                            B. Aplicar daños
+                          </span>
+                          <div>
+                            <h4 style={{ margin: '0 0 3px', fontSize: '14px' }}>Usar garantia retenida</h4>
+                            <p style={{ margin: 0, color: '#667085', lineHeight: 1.45 }}>
+                              Descuenta los daños pendientes de la garantia. No registra un nuevo ingreso en Caja Grande.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={handleApplyEconomicCharge}
+                            disabled={
+                              readOnly
+                              || isSavingContractEconomicsLedger
+                              || contractEconomicsData.guaranteeRefundAvailableBs <= 0
+                              || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0
+                            }
+                            style={{ width: '100%' }}
+                          >
+                            Aplicar a garantia {formatBs(Math.min(
+                              Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs),
+                              contractEconomicsData.guaranteeRefundAvailableBs,
+                            ))}
+                          </button>
+                        </section>
+
+                        <section
+                          style={{
+                            border: '1px solid #ddd6fe',
+                            borderRadius: '12px',
+                            background: '#faf8ff',
+                            padding: '10px',
+                            display: 'grid',
+                            gridTemplateRows: 'auto 1fr auto',
+                            gap: '6px',
+                            minWidth: 0,
+                          }}
+                        >
+                          <span style={{ color: '#6d28d9', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
+                            C. Separar garantia
+                          </span>
+                          <div>
+                            <h4 style={{ margin: '0 0 3px', fontSize: '14px' }}>Apartar garantia o excedente</h4>
+                            <p style={{ margin: 0, color: '#667085', lineHeight: 1.45 }}>
+                              Separa dinero ya cobrado como garantia. No genera un cobro adicional ni un nuevo ingreso.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={handleSeparateEconomicGuarantee}
+                            disabled={
+                              readOnly
+                              || isSavingContractEconomicsLedger
+                              || (
+                                contractEconomicsData.excessPaymentBs <= 0
+                                && Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0
+                              )
+                            }
+                            style={{ width: '100%' }}
+                          >
+                            {contractEconomicsData.excessPaymentBs > 0
+                              ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)}`
+                              : `Separar garantia ${formatBs(Math.max(
+                                0,
+                                contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs,
+                              ))}`}
+                          </button>
+                        </section>
+
+                        <form
+                          className="contract-economics-collect compact guarantee-refund"
+                          onSubmit={handleSubmitContractEconomicGuaranteeRefund}
+                          style={{
+                            margin: 0,
+                            gridColumn: '1 / -1',
+                            border: '1px solid #bbf7d0',
+                            borderRadius: '12px',
+                            background: '#f7fff9',
+                            padding: '10px',
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(210px, 1.15fr) minmax(105px, 0.45fr) minmax(130px, 0.55fr) minmax(170px, 0.8fr) minmax(145px, 0.55fr)',
+                            gap: '8px',
+                            alignItems: 'end',
+                          }}
+                        >
+                          <div style={{ alignSelf: 'center', minWidth: 0 }}>
+                            <span style={{ color: '#15803d', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
+                              D. Devolver dinero
+                            </span>
+                            <h4 style={{ margin: '2px 0', fontSize: '14px' }}>Garantia o excedente con recibo</h4>
+                            <p style={{ margin: 0, color: '#667085', lineHeight: 1.4 }}>
+                              {contractEconomicsData.guaranteeRefundAvailableBs > 0
+                                ? `Disponible: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}. Genera un egreso de Caja Grande.`
+                                : 'No existe una garantia disponible para devolver.'}
+                            </p>
+                          </div>
+                          <label>
+                            Monto
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={contractEconomicsGuaranteeRefundDraft.amountBs}
+                              onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                              placeholder={String(contractEconomicsData.guaranteeRefundAvailableBs.toFixed(2))}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                            />
+                          </label>
+                          <label>
+                            Metodo
+                            <select
+                              value={contractEconomicsGuaranteeRefundDraft.paymentMethod}
+                              onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({
+                                ...current,
+                                paymentMethod: event.target.value,
+                                paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '',
+                              }))}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                            >
+                              <option value="efectivo">Efectivo</option>
+                              <option value="qr">QR</option>
+                              <option value="transferencia">Transferencia</option>
+                            </select>
+                          </label>
+                          <label>
+                            Comprobante / nota
+                            <input
+                              value={contractEconomicsGuaranteeRefundDraft.receipt}
+                              onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, receipt: event.target.value }))}
+                              placeholder="Referencia opcional"
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                            />
+                          </label>
+                          {contractEconomicsGuaranteeRefundDraft.paymentMethod === 'qr' ? (
+                            <label>
+                              Cuenta QR
+                              <select
+                                value={contractEconomicsGuaranteeRefundDraft.paymentAccount}
+                                onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                                disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                              >
+                                <option value="">Seleccionar</option>
+                                {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                              </select>
+                            </label>
+                          ) : (
+                            <span aria-hidden="true" />
+                          )}
+                          <button
+                            type="submit"
+                            className="primary-button"
+                            disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                            style={{ width: '100%' }}
+                          >
+                            {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
                 </section>
+
 
                 <aside className="contract-economics-money-story">
                   <h4>Que paso con el dinero</h4>
@@ -9744,8 +10027,8 @@ function ServiceOrdersSection({
               <section className="contract-economics-notebook">
                 <header className="contract-economics-notebook-head">
                   <div>
-                    <span>Hoja flexible</span>
-                    <h4>Cuaderno economico del contrato</h4>
+                    <span>3. Hoja Flexible</span>
+                    <h4>Historial economico y respaldo del contrato</h4>
                     <p>Registra como realmente se movio el dinero: abonos, garantia separada, cargos, devoluciones y notas.</p>
                   </div>
                   <div className="contract-economics-notebook-summary">
@@ -9777,25 +10060,6 @@ function ServiceOrdersSection({
                   </div>
                   <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
                 </header>
-
-                {canManageContractEconomicLedger ? (
-                  <div className="contract-economics-quick-actions">
-                    <button
-                      type="button"
-                      onClick={handleSeparateEconomicGuarantee}
-                      disabled={readOnly || isSavingContractEconomicsLedger || (contractEconomicsData.excessPaymentBs <= 0 && Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0)}
-                    >
-                      {contractEconomicsData.excessPaymentBs > 0 ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)}` : `Separar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleApplyEconomicCharge}
-                      disabled={readOnly || isSavingContractEconomicsLedger || contractEconomicsData.guaranteeRefundAvailableBs <= 0 || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0}
-                    >
-                      Aplicar dano {formatBs(Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs))}
-                    </button>
-                  </div>
-                ) : null}
 
                 <div className="contract-economics-ledger-sheet">
                   <div className="contract-economics-ledger-head">
@@ -10007,49 +10271,11 @@ function ServiceOrdersSection({
               </section>
 
               <div className="contract-economics-grid">
-                <article className="contract-economics-card">
-                  <header>
-                    <h4>Resumen de caja</h4>
-                    <span>{contractEconomicsData.movements.length} movimiento(s)</span>
-                  </header>
-                  <div className="contract-economics-lines">
-                    <div><span>Ingresos relacionados</span><strong>{formatBs(contractEconomicsData.incomeBs)}</strong></div>
-                    <div><span>Egresos / devoluciones</span><strong>{formatBs(contractEconomicsData.expenseBs)}</strong></div>
-                    {contractEconomicsData.itemDiscountsBs > 0 ? (
-                      <>
-                        <div><span>Items sin descuento</span><strong>{formatBs(contractEconomicsData.itemsGrossSubtotalBs)}</strong></div>
-                        <div><span>Descuento items</span><strong>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong></div>
-                      </>
-                    ) : null}
-                    <div><span>Descuento comercial</span><strong>{formatBs(contractEconomicsData.discountBs)}</strong></div>
-                    <div><span>Transporte</span><strong>{formatBs(contractEconomicsData.deliveryFeeBs)}</strong></div>
-                    {contractEconomicsData.prepaidUsedBs > 0 ? (
-                      <div><span>Prepago aplicado</span><strong>{formatBs(contractEconomicsData.prepaidUsedBs)}</strong></div>
-                    ) : null}
-                  </div>
-                </article>
-
-                <article className="contract-economics-card">
-                  <header>
-                    <h4>Liquidacion y cargos</h4>
-                    <span>{contractEconomicsData.returnIssues.length} novedad(es)</span>
-                  </header>
-                  <div className="contract-economics-lines">
-                    <div>
-                      <span>Danos / faltantes</span>
-                      <strong>{contractEconomicsData.damagesSettled ? 'Cancelado' : formatBs(contractEconomicsData.damagePendingBs)}</strong>
-                    </div>
-                    <div><span>Saldo alquiler actual</span><strong>{formatBs(contractEconomicsData.managedDebtBs)}</strong></div>
-                    <div><span>Garantia a devolver</span><strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong></div>
-                    <div><span>Garantia pagada</span><strong>{formatBs(contractEconomicsData.guaranteeValidatedBs)}</strong></div>
-                  </div>
-                </article>
-
-                <article className="contract-economics-panel contract-economics-movements-card">
+                <article className="contract-economics-panel contract-economics-movements-card" style={{ gridColumn: '1 / -1' }}>
                   <header>
                     <div>
                       <h4>Pagos y movimientos</h4>
-                      <p>Entradas, salidas, cobros y devoluciones vinculadas al contrato.</p>
+                      <p>4. Recibos y movimientos confirmados. Desde aqui puedes abrir e imprimir los comprobantes existentes.</p>
                     </div>
                   </header>
                   <div className="contract-economics-table">
@@ -10102,7 +10328,7 @@ function ServiceOrdersSection({
               <article className="contract-economics-panel">
                 <header>
                   <div>
-                    <h4>Danos, faltantes y observaciones de retorno</h4>
+                    <h4>5. Danos, faltantes y observaciones de retorno</h4>
                     <p>Informacion tomada de la recepcion y liquidacion del alquiler.</p>
                   </div>
                 </header>
@@ -12824,8 +13050,10 @@ function ServiceOrdersSection({
                             <label className="orders-line-field">
                               <span>Precio</span>
                               <input
-                                type="text"
+                                type="number"
                                 inputMode="decimal"
+                                min="0"
+                                step="0.01"
                                 value={line.unitPriceInput}
                                 onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
