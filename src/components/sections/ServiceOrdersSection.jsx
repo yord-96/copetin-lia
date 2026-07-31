@@ -2120,9 +2120,11 @@ function ServiceOrdersSection({
       const rowPenaltiesBs = toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs);
       const rowGuaranteeReserveBs = Math.max(guaranteeBs, rowLedgerTotals.guaranteeBs);
       const rowChargesBs = Math.max(rowLedgerTotals.chargesBs, rowPenaltiesBs);
-      const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowChargesBs);
-      const rowUncoveredChargesBs = Math.max(0, Number((rowChargesBs - rowGuaranteeAppliedBs).toFixed(2)));
-      const rowChargeTargetBs = Number((totalBs + rowUncoveredChargesBs).toFixed(2));
+      const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowLedgerTotals.chargesBs);
+      // La columna "Debe" del listado de contratos representa únicamente el
+      // saldo comercial del contrato. Los daños/faltantes se consultan y cobran
+      // por separado dentro del sector económico.
+      const rowChargeTargetBs = Number(totalBs.toFixed(2));
       const ledgerReceivedForRentalBs = Math.min(
         rowChargeTargetBs,
         Math.max(0, Number(rowLedgerConfirmedRentalBs.toFixed(2))),
@@ -2165,15 +2167,15 @@ function ServiceOrdersSection({
       ].includes(rentalAccountingStatus);
       const settledByAuthoritativeBalance = hasAuthoritativePending
         && authoritativePendingBs <= 0.009;
-      const isEconomicallyPaid = settledByAuthoritativeBalance
-        || (settledByStatus && (authoritativePendingBs ?? economicDueBs) <= 0.009);
+      const settledByCommercialPayment = paidOnAccountBs + 0.009 >= totalBs;
+      const isEconomicallyPaid = settledByCommercialPayment
+        || settledByAuthoritativeBalance
+        || (settledByStatus && economicDueBs <= 0.009);
       const dueBs = isEconomicallyPaid
         ? 0
-        : hasAuthoritativePending
-          ? authoritativePendingBs
-          : hasEconomicLedger
-            ? economicDueBs
-            : Math.max(0, Number((managedTotalBs - paidOnAccountBs).toFixed(2)));
+        : hasEconomicLedger
+          ? economicDueBs
+          : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
