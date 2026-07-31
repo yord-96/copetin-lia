@@ -1333,38 +1333,16 @@ const buildRepairDueAt = (dateKey, timeKey) => {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 };
 
-const findActiveRentalForContract = (state, contract) => {
-  const activeRentals = (Array.isArray(state?.rentals) ? state.rentals : [])
-    .filter((entry) => !entry?.deletedAt && entry?.status !== 'cancelled');
-
-  const exactRental = activeRentals.find((entry) =>
-    contract?.rentalId && String(entry?.id ?? '') === String(contract.rentalId)
-  );
-  if (exactRental) return exactRental;
-
-  const exactContract = activeRentals.find((entry) =>
-    String(entry?.contractId ?? '') === String(contract?.id ?? '')
-  );
-  if (exactContract) return exactContract;
-
-  const exactOrder = activeRentals.find((entry) =>
-    contract?.orderCode
-    && String(entry?.orderCode ?? '') === String(contract.orderCode)
-    && (
-      !entry?.contractId
-      || String(entry.contractId) === String(contract?.id ?? '')
-    )
-  );
-  if (exactOrder) return exactOrder;
-
-  // Compatibilidad para órdenes históricas sin contractId. Nunca se enlaza
-  // solo por contractCode cuando la orden ya pertenece a otro contrato.
-  return activeRentals.find((entry) =>
-    !String(entry?.contractId ?? '').trim()
-    && contract?.contractCode
-    && String(entry?.contractCode ?? '') === String(contract.contractCode)
-  ) ?? null;
-};
+const findActiveRentalForContract = (state, contract) => state.rentals.find((entry) => (
+  !entry.deletedAt
+  && entry.status !== 'cancelled'
+  && (
+    String(entry.contractId ?? '') === String(contract.id)
+    || String(entry.contractCode ?? '') === String(contract.contractCode)
+    || (contract.rentalId && String(entry.id ?? '') === String(contract.rentalId))
+    || (contract.orderCode && String(entry.orderCode ?? '') === String(contract.orderCode))
+  )
+)) ?? null;
 
 const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
@@ -1506,18 +1484,13 @@ const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
 };
 
 const reserveRepairRentalInventory = (state, contract, rental, now) => {
-  const linkedMovementCount = state.inventoryMovements.filter((movement) => {
-    const movementContractId = String(movement?.contractId ?? '').trim();
-    const movementRentalId = String(movement?.rentalId ?? '').trim();
-    const movementOrderCode = String(movement?.orderCode ?? movement?.reference ?? '').trim();
-
-    if (movementContractId) return movementContractId === String(contract.id);
-    if (movementRentalId) return movementRentalId === String(rental.id);
-    if (movementOrderCode) return movementOrderCode === String(rental.orderCode);
-
-    // Compatibilidad solo para movimientos históricos sin vínculos fuertes.
-    return String(movement?.contractCode ?? '') === String(contract.contractCode);
-  }).length;
+  const linkedMovementCount = state.inventoryMovements.filter((movement) => (
+    String(movement.contractCode ?? '') === String(contract.contractCode)
+    || String(movement.contractId ?? '') === String(contract.id)
+    || String(movement.rentalId ?? '') === String(rental.id)
+    || String(movement.reference ?? '') === String(rental.orderCode)
+    || String(movement.orderCode ?? '') === String(rental.orderCode)
+  )).length;
 
   if (linkedMovementCount > 0) return 0;
 
@@ -1614,13 +1587,11 @@ const repairApprovedContractsMissingRentals = (state, now) => {
     .filter((contract) => (
       !contract.deletedAt
       && contract.status === 'aprobado'
-      && Array.isArray(contract.items)
-      && contract.items.length > 0
+      && String(contract.orderCode ?? '').trim()
       && !findActiveRentalForContract(state, contract)
     ))
     .forEach((contract) => {
-      const orderCode = String(contract.orderCode ?? '').trim()
-        || consumeRepairDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
+      const orderCode = String(contract.orderCode).trim();
       const rental = buildRepairRentalFromContract(state, contract, now, orderCode);
       state.rentals.push(rental);
       contract.rentalId = rental.id;
@@ -15636,7 +15607,7 @@ const createWebBridge = () => ({
         : 'sin_pago';
       const requestedItems = Array.isArray(payload?.items) ? payload.items : [];
       const requestedServices = normalizeContractServices(payload?.services);
-      const supplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan);
+      const requestedSupplierFulfillmentPlan = normalizeSupplierFulfillmentPlan(payload?.supplierFulfillmentPlan);
 
       if (!customerName) {
         throw new Error('Debe registrar el nombre del cliente.');
@@ -15705,6 +15676,13 @@ const createWebBridge = () => ({
         const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
+        const historicalReconstruction = Boolean(payload?.historicalReconstruction)
+          && Boolean(contractId)
+          && Boolean(dueDate)
+          && dueDate < now.toISOString().slice(0, 10);
+        const supplierFulfillmentPlan = historicalReconstruction
+          ? []
+          : requestedSupplierFulfillmentPlan;
         const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
         const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
         const clientId = resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone, customerCi);
@@ -15749,18 +15727,20 @@ const createWebBridge = () => ({
           pickupDate: dueDate,
           pickupWindowEnd: payload?.pickupWindowEnd || dueTime,
         });
-        const projectedIssues = validateProjectedInventoryRequest({
-          items: state.items,
-          rentals: state.rentals,
-          contracts: state.contracts,
-          period: availabilityPeriod,
-          requestedItems: adjustedRequestedItems,
-          exclude: {
-            contractId,
-            contractCode: requestedContractCode,
-            recordId: contractId,
-          },
-        });
+        const projectedIssues = historicalReconstruction
+          ? []
+          : validateProjectedInventoryRequest({
+            items: state.items,
+            rentals: state.rentals,
+            contracts: state.contracts,
+            period: availabilityPeriod,
+            requestedItems: adjustedRequestedItems,
+            exclude: {
+              contractId,
+              contractCode: requestedContractCode,
+              recordId: contractId,
+            },
+          });
         if (projectedIssues.length) {
           const issue = projectedIssues[0];
           const conflictText = (issue.hardConflicts ?? [])
@@ -15771,18 +15751,22 @@ const createWebBridge = () => ({
             `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Coordina proveedor o cambia fechas.`,
           );
         }
-        const availabilityAtApproval = getProjectedInventoryAvailability({
-          items: state.items,
-          rentals: state.rentals,
-          contracts: state.contracts,
-          period: availabilityPeriod,
-          exclude: {
-            contractId,
-            contractCode: requestedContractCode,
-            recordId: contractId,
-          },
-        });
-        const inventoryAvailabilityAssumptions = operationalRequestedItems
+        const availabilityAtApproval = historicalReconstruction
+          ? new Map()
+          : getProjectedInventoryAvailability({
+            items: state.items,
+            rentals: state.rentals,
+            contracts: state.contracts,
+            period: availabilityPeriod,
+            exclude: {
+              contractId,
+              contractCode: requestedContractCode,
+              recordId: contractId,
+            },
+          });
+        const inventoryAvailabilityAssumptions = historicalReconstruction
+          ? []
+          : operationalRequestedItems
           .map((line) => {
             const requestedQty = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
             const supplierStats = getSupplierSupportStatsForLine(line, supplierSupportMaps);
@@ -15822,12 +15806,16 @@ const createWebBridge = () => ({
             throw new Error(`La cantidad de "${item.name}" debe ser mayor a 0.`);
           }
           const supplierStats = getSupplierSupportStatsForLine(line, supplierSupportMaps);
-          const supplierBackedQty = supplierStats.manualQty > 0
-            ? supplierStats.totalQty
-            : Math.min(quantity, supplierStats.totalQty);
-          const internalReservationQty = lineControlsStock(line, item)
-            ? Math.max(0, quantity - Math.min(quantity, supplierStats.subtractiveQty))
-            : 0;
+          const supplierBackedQty = historicalReconstruction
+            ? 0
+            : supplierStats.manualQty > 0
+              ? supplierStats.totalQty
+              : Math.min(quantity, supplierStats.totalQty);
+          const internalReservationQty = historicalReconstruction
+            ? 0
+            : lineControlsStock(line, item)
+              ? Math.max(0, quantity - Math.min(quantity, supplierStats.subtractiveQty))
+              : 0;
           const lineType = String(line?.lineType ?? '').trim();
           const isCourtesyLine = lineType === 'courtesy';
           const rentalPriceBs = isCourtesyLine ? 0 : Math.max(0, toPositiveRoundedNumber(line.rentalPriceBs ?? line.unitPriceBs ?? item.rentalPriceBs ?? 0));
@@ -16065,22 +16053,25 @@ const createWebBridge = () => ({
           logisticsMode,
           supplierFulfillmentPlan,
           inventoryAvailabilityAssumptions,
-          status: 'active',
+          historicalReconstruction,
+          status: historicalReconstruction ? 'returned' : 'active',
           createdById: userId,
           createdByName: userName,
           createdByRole: userRole,
           operational: {
-            inventoryStatus: 'pendiente',
-            transportStatus: payload?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
+            inventoryStatus: historicalReconstruction ? 'devuelto' : 'pendiente',
+            transportStatus: historicalReconstruction
+              ? 'no_aplica'
+              : payload?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
             inventoryNote: '',
             transportNote: '',
-            inventorySentAt: null,
-            inventoryDispatchedAt: null,
+            inventorySentAt: historicalReconstruction ? now.toISOString() : null,
+            inventoryDispatchedAt: historicalReconstruction ? now.toISOString() : null,
             inventoryDispatchedByName: null,
             inventoryDispatchedByRole: null,
             transportSentAt: null,
-            inventoryConfirmedAt: null,
-            transportConfirmedAt: null,
+            inventoryConfirmedAt: historicalReconstruction ? now.toISOString() : null,
+            transportConfirmedAt: historicalReconstruction ? now.toISOString() : null,
             inventoryConfirmedByName: null,
             inventoryConfirmedByRole: null,
             transportConfirmedByName: null,
@@ -16111,8 +16102,10 @@ const createWebBridge = () => ({
           });
           prepaidClient.updatedAt = now.toISOString();
         }
-        state.inventoryMovements.push(...reservationMovements);
-        if (createdRental.logisticsMode !== 'recojo') {
+        if (!historicalReconstruction) {
+          state.inventoryMovements.push(...reservationMovements);
+        }
+        if (!historicalReconstruction && createdRental.logisticsMode !== 'recojo') {
           createDeliveryFromRental(state, createdRental);
         }
         addRentalCashMovements(state, createdRental);

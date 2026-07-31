@@ -120,6 +120,10 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         throw new Error('No se pudo crear el contrato completo.');
       }
 
+      const historicalReconstruction = Boolean(
+        createdContract?.historicalReconstruction
+          ?? contractPayload?.historicalReconstruction,
+      );
       const approvalItems = normalizeApprovalItems(createdContract.items);
       const approvalServices = normalizeApprovalServices(createdContract.services);
       const totalBs = toMoney(createdContract?.totals?.totalBs);
@@ -204,9 +208,12 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         deliveryFeeReason: createdContract.deliveryFeeReason
           ?? (toMoney(createdContract?.totals?.deliveryFeeBs) > 0 ? 'quantity' : 'covered'),
         pricingPlan: createdContract.pricingPlan ?? null,
-        supplierFulfillmentPlan: Array.isArray(createdContract.supplierFulfillmentPlan)
-          ? createdContract.supplierFulfillmentPlan
-          : [],
+        historicalReconstruction,
+        supplierFulfillmentPlan: historicalReconstruction
+          ? []
+          : Array.isArray(createdContract.supplierFulfillmentPlan)
+            ? createdContract.supplierFulfillmentPlan
+            : [],
         quotedTotals: createdContract.totals ?? null,
         eventType: createdContract.eventType,
         eventAddress: createdContract.address,
@@ -233,9 +240,12 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         pricingPlan: createdContract.pricingPlan ?? null,
         items: approvalItems,
         services: approvalServices,
-        supplierFulfillmentPlan: Array.isArray(createdContract.supplierFulfillmentPlan)
-          ? createdContract.supplierFulfillmentPlan
-          : [],
+        historicalReconstruction,
+        supplierFulfillmentPlan: historicalReconstruction
+          ? []
+          : Array.isArray(createdContract.supplierFulfillmentPlan)
+            ? createdContract.supplierFulfillmentPlan
+            : [],
       });
 
       mark('contractApprove');
@@ -256,7 +266,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
 
       mark('quoteUpdate');
 
-      if ((createdContract.logisticsMode ?? 'envio') !== 'recojo') {
+      if (!historicalReconstruction && (createdContract.logisticsMode ?? 'envio') !== 'recojo') {
         const stateAfterRental = await bridge.__storage.exportState();
         const linkedDeliveries = (stateAfterRental.deliveries ?? []).filter(
           (entry) => entry.rentalId === createdRental.id,
@@ -295,9 +305,11 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
 
       mark('transport');
 
-      const supplierPlan = Array.isArray(createdContract.supplierFulfillmentPlan)
-        ? createdContract.supplierFulfillmentPlan
-        : [];
+      const supplierPlan = historicalReconstruction
+        ? []
+        : Array.isArray(createdContract.supplierFulfillmentPlan)
+          ? createdContract.supplierFulfillmentPlan
+          : [];
       const groupedBySupplier = new Map();
       supplierPlan.forEach((line) => {
         const supplierId = String(line?.supplierId ?? '').trim();

@@ -3885,14 +3885,35 @@ function ServiceOrdersSection({
     );
   }, [originalContractDemandByItemId]);
 
+  const isHistoricalReconstruction = useMemo(() => {
+    if (!canChooseResponsibles || draft.entityType !== 'contract' || draft.recordId) return false;
+    if (draft.documentCodeMode !== 'manual') return false;
+    // En una reconstruccion manual manda la fecha historica del evento.
+    // pickupDate y deliveryDate nacen con valores futuros en el borrador nuevo y
+    // no deben reactivar la validacion de stock/proveedor de una operacion pasada.
+    const historicalEventDate = getDateKey(draft.eventDate || draft.contractDate);
+    const todayKey = getDateKey(new Date());
+    return Boolean(historicalEventDate && todayKey && historicalEventDate < todayKey);
+  }, [
+    canChooseResponsibles,
+    draft.contractDate,
+    draft.documentCodeMode,
+    draft.entityType,
+    draft.eventDate,
+    draft.recordId,
+  ]);
+
   const stockIssues = useMemo(
-    () => selectedItems.filter((line) => {
-      if (isDetachedFromInventory(line)) return false;
-      const available = getEditableAvailableStock(line);
-      const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
-      return requestedForItem > available;
-    }),
-    [getEditableAvailableStock, selectedDemandByItemId, selectedItems],
+    () => {
+      if (isHistoricalReconstruction) return [];
+      return selectedItems.filter((line) => {
+        if (isDetachedFromInventory(line)) return false;
+        const available = getEditableAvailableStock(line);
+        const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+        return requestedForItem > available;
+      });
+    },
+    [getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems],
   );
 
   const supplierOffersByItemId = useMemo(() => {
@@ -3956,6 +3977,11 @@ function ServiceOrdersSection({
       supplierCoverageHydrationKeyRef.current = '';
       return;
     }
+    if (isHistoricalReconstruction) {
+      supplierCoverageHydrationKeyRef.current = '';
+      setSupplierFulfillmentDraftByItem({});
+      return;
+    }
     const sourcePlan = Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [];
     const hydrationKey = `${draft.recordId || 'new'}|${sourcePlan
       .map((line) => [
@@ -3989,10 +4015,14 @@ function ServiceOrdersSection({
       fromRecord[coverageKey] = { coverages: current };
     });
     setSupplierFulfillmentDraftByItem(fromRecord);
-  }, [draft.recordId, draft.supplierFulfillmentPlan, modalOpen]);
+  }, [draft.recordId, draft.supplierFulfillmentPlan, isHistoricalReconstruction, modalOpen]);
 
   useEffect(() => {
     if (!modalOpen) return;
+    if (isHistoricalReconstruction) {
+      setSupplierFulfillmentDraftByItem({});
+      return;
+    }
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
       const validCoverageKeys = new Set(selectedItems.flatMap((line) => [
@@ -4052,10 +4082,11 @@ function ServiceOrdersSection({
 
       return next;
     });
-  }, [getEditableAvailableStock, modalOpen, selectedItems, supplierOffersByItemId]);
+  }, [getEditableAvailableStock, isHistoricalReconstruction, modalOpen, selectedItems, supplierOffersByItemId]);
 
   const supplierCoverageRows = useMemo(
     () => {
+      if (isHistoricalReconstruction) return [];
       const processedLineKeys = new Set();
       return selectedItems
         .map((line) => {
@@ -4094,7 +4125,7 @@ function ServiceOrdersSection({
       })
         .filter(Boolean);
     },
-    [getEditableAvailableStock, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
+    [getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
 
   const uncoveredStockIssues = useMemo(
@@ -4702,6 +4733,7 @@ function ServiceOrdersSection({
   };
 
   const openSupplierCoverageModal = (line, availableStock, options = {}) => {
+    if (isHistoricalReconstruction) return;
     const manualMode = Boolean(options.manual);
     const requestedForItem = Math.max(0, Number(
       options.requestedForItem
@@ -5890,7 +5922,7 @@ function ServiceOrdersSection({
     }
     if (stepIndex === 2) {
       if (!selectedItems.length && !selectedServices.length) return 'Agrega al menos un item o servicio para continuar.';
-      if (uncoveredStockIssues.length) {
+      if (!isHistoricalReconstruction && uncoveredStockIssues.length) {
         const issue = uncoveredStockIssues[0];
         return getUncoveredStockIssueMessage(issue);
       }
@@ -6005,7 +6037,7 @@ function ServiceOrdersSection({
       throw new Error('La ventana de recojo debe terminar despues de la hora de inicio.');
     }
     if (!selectedItems.length && !selectedServices.length) throw new Error('Debes agregar al menos un item o servicio.');
-    if (uncoveredStockIssues.length) {
+    if (!isHistoricalReconstruction && uncoveredStockIssues.length) {
       const issue = uncoveredStockIssues[0];
       throw new Error(getUncoveredStockIssueMessage(issue));
     }
@@ -6022,7 +6054,9 @@ function ServiceOrdersSection({
       throw new Error('Selecciona la cuenta QR donde ingreso el pago inicial.');
     }
 
-    const supplierFulfillmentPlan = supplierCoverageRows
+    const supplierFulfillmentPlan = isHistoricalReconstruction
+      ? []
+      : supplierCoverageRows
       .flatMap((line) => line.coverages.map((coverage) => ({
         lineKey: line.lineKey ?? coverage.lineKey ?? null,
         itemId: line.itemId,
@@ -6050,6 +6084,7 @@ function ServiceOrdersSection({
       documentCodeMode: draft.documentCodeMode,
       manualDocumentCode: draft.manualDocumentCode.trim(),
       contractDate: draft.contractDate || null,
+      historicalReconstruction: isHistoricalReconstruction,
       clientId: draft.clientId || null,
       customerName: draft.customerName.trim(),
       customerCi: draft.customerCi.trim(),
@@ -7240,30 +7275,6 @@ function ServiceOrdersSection({
 
       if (!updated) {
         throw new Error('El servidor respondio sin devolver el contrato actualizado.');
-      }
-
-      const ledgerDateByCashMovementId = new Map(
-        normalizedNextLedger
-          .filter((entry) => String(entry?.cashMovementId ?? '').trim() && entry?.createdAt)
-          .map((entry) => [String(entry.cashMovementId).trim(), entry.createdAt]),
-      );
-      if (ledgerDateByCashMovementId.size > 0) {
-        setContractEconomicsContextMovements((current) =>
-          (Array.isArray(current) ? current : []).map((movement) => {
-            const nextCreatedAt = ledgerDateByCashMovementId.get(String(movement?.id ?? '').trim());
-            return nextCreatedAt
-              ? { ...movement, createdAt: nextCreatedAt, updatedAt: new Date().toISOString() }
-              : movement;
-          }),
-        );
-        setRecentEconomicCashMovements((current) =>
-          (Array.isArray(current) ? current : []).map((movement) => {
-            const nextCreatedAt = ledgerDateByCashMovementId.get(String(movement?.id ?? '').trim());
-            return nextCreatedAt
-              ? { ...movement, createdAt: nextCreatedAt, updatedAt: new Date().toISOString() }
-              : movement;
-          }),
-        );
       }
 
       setContractEconomicsTarget(updated);
@@ -12552,7 +12563,9 @@ function ServiceOrdersSection({
                           const comboGroupUnits = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
                           const availableStock = getEditableAvailableStock(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
-                          const shortageForItem = Math.max(0, requestedForItem - availableStock);
+                          const shortageForItem = isHistoricalReconstruction
+                            ? 0
+                            : Math.max(0, requestedForItem - availableStock);
                           const supplierCoverageKey = getSupplierCoverageKey(line);
                           const supplierCoverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[supplierCoverageKey] ?? supplierFulfillmentDraftByItem[line.itemId])
                             .filter((coverage) => coverage.supplierId && coverage.supplierName && coverage.neededQty > 0);
@@ -12563,8 +12576,8 @@ function ServiceOrdersSection({
                             supplierPlannedQty,
                           );
                           const uncoveredForItem = Math.max(0, effectiveShortageForItem - supplierCoveredQty);
-                          const hasStockShortage = !isProvisionalItem && effectiveShortageForItem > 0;
-                          const hasUncoveredShortage = !isProvisionalItem && uncoveredForItem > 0;
+                          const hasStockShortage = !isHistoricalReconstruction && !isProvisionalItem && effectiveShortageForItem > 0;
+                          const hasUncoveredShortage = !isHistoricalReconstruction && !isProvisionalItem && uncoveredForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
@@ -12651,7 +12664,7 @@ function ServiceOrdersSection({
                                     ))}
                                   </select>
                                 ) : null}
-                                {!isProvisionalItem ? (
+                                {!isHistoricalReconstruction && !isProvisionalItem ? (
                                   <button
                                     type="button"
                                     className={`orders-line-provider-link${supplierCoverageLines.length > 0 ? ' has-provider' : ''}`}
