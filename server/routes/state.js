@@ -752,8 +752,15 @@ const economicMovementMatches = (movement, identifiers) => {
     return true;
   }
 
-  // Compatibilidad con movimientos históricos que guardaron la referencia
-  // únicamente dentro de la descripción o las notas.
+  // Si el movimiento ya tiene una referencia estructurada hacia otro contrato,
+  // alquiler u orden, nunca debe vincularse por compartir el numero visible
+  // dentro de la descripcion. Esto evita mezclar contratos activos y eliminados
+  // que conservan el mismo contractCode.
+  const hasStructuredReference = directValues.some((value) => normalizeEconomicContextKey(value));
+  if (hasStructuredReference) return false;
+
+  // Compatibilidad solo para movimientos historicos realmente sueltos, que
+  // guardaron la referencia únicamente dentro de la descripción o las notas.
   const looseText = normalizeEconomicContextKey([
     movement?.description,
     movement?.notes,
@@ -782,13 +789,16 @@ router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next
     const cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
 
     const requestedKey = normalizeEconomicContextKey(requestedId);
-    const contract = contracts.find((entry) => [
+    const matchingContracts = contracts.filter((entry) => [
       entry?.id,
       entry?.contractCode,
       entry?.number,
       entry?.orderCode,
       entry?.rentalId,
-    ].some((value) => normalizeEconomicContextKey(value) === requestedKey)) ?? null;
+    ].some((value) => normalizeEconomicContextKey(value) === requestedKey));
+    const contract = matchingContracts.find((entry) => !entry?.deletedAt)
+      ?? matchingContracts[0]
+      ?? null;
 
     if (!contract) {
       res.status(404).json({ error: 'Contrato no encontrado.' });
@@ -1644,13 +1654,16 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
 
       const requestedKey = normalizeStrictEconomicKey(requestedId);
-      const contract = state.contracts.find((entry) => [
+      const matchingContracts = state.contracts.filter((entry) => [
         entry?.id,
         entry?.contractCode,
         entry?.number,
         entry?.orderCode,
         entry?.rentalId,
       ].some((value) => normalizeStrictEconomicKey(value) === requestedKey));
+      const contract = matchingContracts.find((entry) => !entry?.deletedAt)
+        ?? matchingContracts[0]
+        ?? null;
 
       if (!contract) {
         const error = new Error('Contrato no encontrado para ejecutar el Reset economico.');
@@ -1938,11 +1951,25 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
     let updatedContract = null;
     const result = await updateStateSnapshot((state) => {
       const contracts = Array.isArray(state.contracts) ? state.contracts : [];
-      const contractIndex = contracts.findIndex((contract) =>
+      const exactIdIndex = contracts.findIndex((contract) =>
         String(contract?.id ?? '') === requestedId
-        || String(contract?.contractCode ?? '') === requestedId
+      );
+      const activeCodeIndex = contracts.findIndex((contract) =>
+        !contract?.deletedAt
+        && (
+          String(contract?.contractCode ?? '') === requestedId
+          || String(contract?.number ?? '') === requestedId
+        )
+      );
+      const fallbackCodeIndex = contracts.findIndex((contract) =>
+        String(contract?.contractCode ?? '') === requestedId
         || String(contract?.number ?? '') === requestedId
       );
+      const contractIndex = exactIdIndex >= 0
+        ? exactIdIndex
+        : activeCodeIndex >= 0
+          ? activeCodeIndex
+          : fallbackCodeIndex;
 
       if (contractIndex < 0) {
         const error = new Error('Contrato no encontrado para guardar el cuaderno economico.');
@@ -1961,7 +1988,7 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
             const normalizedEntry = normalizeEconomicLedgerRows([mutation?.entry])[0];
             if (!normalizedEntry?.id) return;
             const previous = ledgerById.get(String(normalizedEntry.id));
-            ledgerById.set(String(normalizedEntry.id), {
+            const mergedEntry = {
               ...(previous ?? {}),
               ...normalizedEntry,
               deletedAt: null,
@@ -1969,7 +1996,47 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
               deletedByName: '',
               deletionReason: '',
               editedAt: previous ? (normalizedEntry.editedAt || now) : normalizedEntry.editedAt,
-            });
+            };
+            ledgerById.set(String(normalizedEntry.id), mergedEntry);
+
+            // Una linea del cuaderno con recibo representa el mismo movimiento
+            // de Caja Grande. Al editar su fecha, ambas vistas y el PDF del
+            // recibo deben leer exactamente la misma marca de tiempo.
+            const linkedCashMovementId = String(
+              mergedEntry.cashMovementId
+              ?? previous?.cashMovementId
+              ?? '',
+            ).trim();
+            if (linkedCashMovementId && mergedEntry.createdAt) {
+              state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+              const linkedMovement = state.cashMovements.find((movement) =>
+                String(movement?.id ?? '') === linkedCashMovementId
+              );
+              if (linkedMovement) {
+                linkedMovement.createdAt = mergedEntry.createdAt;
+                linkedMovement.updatedAt = now;
+                linkedMovement.editedAt = now;
+                linkedMovement.editedById = req.body.updatedById ?? req.body.userId ?? null;
+                linkedMovement.editedByName = String(
+                  req.body.updatedByName
+                  ?? req.body.userName
+                  ?? 'Sistema',
+                ).trim() || 'Sistema';
+
+                state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
+                state.generatedReports.forEach((report) => {
+                  const reportMovementId = String(
+                    report?.cashMovementId
+                    ?? (report?.sourceType === 'cashMovement' ? report?.sourceId : '')
+                    ?? '',
+                  ).trim();
+                  if (reportMovementId !== linkedCashMovementId) return;
+                  report.generatedAt = mergedEntry.createdAt;
+                  report.createdAt = mergedEntry.createdAt;
+                  report.updatedAt = now;
+                });
+              }
+            }
             return;
           }
           if (mutationType === 'void') {

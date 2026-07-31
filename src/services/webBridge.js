@@ -1333,16 +1333,38 @@ const buildRepairDueAt = (dateKey, timeKey) => {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 };
 
-const findActiveRentalForContract = (state, contract) => state.rentals.find((entry) => (
-  !entry.deletedAt
-  && entry.status !== 'cancelled'
-  && (
-    String(entry.contractId ?? '') === String(contract.id)
-    || String(entry.contractCode ?? '') === String(contract.contractCode)
-    || (contract.rentalId && String(entry.id ?? '') === String(contract.rentalId))
-    || (contract.orderCode && String(entry.orderCode ?? '') === String(contract.orderCode))
-  )
-)) ?? null;
+const findActiveRentalForContract = (state, contract) => {
+  const activeRentals = (Array.isArray(state?.rentals) ? state.rentals : [])
+    .filter((entry) => !entry?.deletedAt && entry?.status !== 'cancelled');
+
+  const exactRental = activeRentals.find((entry) =>
+    contract?.rentalId && String(entry?.id ?? '') === String(contract.rentalId)
+  );
+  if (exactRental) return exactRental;
+
+  const exactContract = activeRentals.find((entry) =>
+    String(entry?.contractId ?? '') === String(contract?.id ?? '')
+  );
+  if (exactContract) return exactContract;
+
+  const exactOrder = activeRentals.find((entry) =>
+    contract?.orderCode
+    && String(entry?.orderCode ?? '') === String(contract.orderCode)
+    && (
+      !entry?.contractId
+      || String(entry.contractId) === String(contract?.id ?? '')
+    )
+  );
+  if (exactOrder) return exactOrder;
+
+  // Compatibilidad para órdenes históricas sin contractId. Nunca se enlaza
+  // solo por contractCode cuando la orden ya pertenece a otro contrato.
+  return activeRentals.find((entry) =>
+    !String(entry?.contractId ?? '').trim()
+    && contract?.contractCode
+    && String(entry?.contractCode ?? '') === String(contract.contractCode)
+  ) ?? null;
+};
 
 const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
@@ -1484,13 +1506,18 @@ const buildRepairRentalFromContract = (state, contract, now, orderCode) => {
 };
 
 const reserveRepairRentalInventory = (state, contract, rental, now) => {
-  const linkedMovementCount = state.inventoryMovements.filter((movement) => (
-    String(movement.contractCode ?? '') === String(contract.contractCode)
-    || String(movement.contractId ?? '') === String(contract.id)
-    || String(movement.rentalId ?? '') === String(rental.id)
-    || String(movement.reference ?? '') === String(rental.orderCode)
-    || String(movement.orderCode ?? '') === String(rental.orderCode)
-  )).length;
+  const linkedMovementCount = state.inventoryMovements.filter((movement) => {
+    const movementContractId = String(movement?.contractId ?? '').trim();
+    const movementRentalId = String(movement?.rentalId ?? '').trim();
+    const movementOrderCode = String(movement?.orderCode ?? movement?.reference ?? '').trim();
+
+    if (movementContractId) return movementContractId === String(contract.id);
+    if (movementRentalId) return movementRentalId === String(rental.id);
+    if (movementOrderCode) return movementOrderCode === String(rental.orderCode);
+
+    // Compatibilidad solo para movimientos históricos sin vínculos fuertes.
+    return String(movement?.contractCode ?? '') === String(contract.contractCode);
+  }).length;
 
   if (linkedMovementCount > 0) return 0;
 
@@ -1587,11 +1614,13 @@ const repairApprovedContractsMissingRentals = (state, now) => {
     .filter((contract) => (
       !contract.deletedAt
       && contract.status === 'aprobado'
-      && String(contract.orderCode ?? '').trim()
+      && Array.isArray(contract.items)
+      && contract.items.length > 0
       && !findActiveRentalForContract(state, contract)
     ))
     .forEach((contract) => {
-      const orderCode = String(contract.orderCode).trim();
+      const orderCode = String(contract.orderCode ?? '').trim()
+        || consumeRepairDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
       const rental = buildRepairRentalFromContract(state, contract, now, orderCode);
       state.rentals.push(rental);
       contract.rentalId = rental.id;

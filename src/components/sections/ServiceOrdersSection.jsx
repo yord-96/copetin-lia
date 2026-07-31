@@ -1991,8 +1991,25 @@ function ServiceOrdersSection({
         movementsByReference.get(key).push(indexedMovement);
       });
 
+      const hasStructuredReference = [
+        movement?.linkedContractId,
+        movement?.linkedRentalId,
+        movement?.linkedOrderCode,
+        movement?.contractId,
+        movement?.rentalId,
+        movement?.orderCode,
+        movement?.contractCode,
+        movement?.sourceId,
+        movement?.reference,
+      ].some((value) => normalizeText(value));
+
+      // Solo los movimientos historicos realmente sueltos pueden asociarse por
+      // texto. Un movimiento vinculado a un contrato eliminado con el mismo
+      // numero visible no debe contaminar el contrato activo.
       const notes = [movement?.notes, movement?.description].map(normalizeText).filter(Boolean).join(' ');
-      if (notes) looseTextMovements.push({ ...indexedMovement, notes });
+      if (notes && !hasStructuredReference) {
+        looseTextMovements.push({ ...indexedMovement, notes });
+      }
     });
 
     return { movementsByReference, looseTextMovements };
@@ -7223,6 +7240,30 @@ function ServiceOrdersSection({
 
       if (!updated) {
         throw new Error('El servidor respondio sin devolver el contrato actualizado.');
+      }
+
+      const ledgerDateByCashMovementId = new Map(
+        normalizedNextLedger
+          .filter((entry) => String(entry?.cashMovementId ?? '').trim() && entry?.createdAt)
+          .map((entry) => [String(entry.cashMovementId).trim(), entry.createdAt]),
+      );
+      if (ledgerDateByCashMovementId.size > 0) {
+        setContractEconomicsContextMovements((current) =>
+          (Array.isArray(current) ? current : []).map((movement) => {
+            const nextCreatedAt = ledgerDateByCashMovementId.get(String(movement?.id ?? '').trim());
+            return nextCreatedAt
+              ? { ...movement, createdAt: nextCreatedAt, updatedAt: new Date().toISOString() }
+              : movement;
+          }),
+        );
+        setRecentEconomicCashMovements((current) =>
+          (Array.isArray(current) ? current : []).map((movement) => {
+            const nextCreatedAt = ledgerDateByCashMovementId.get(String(movement?.id ?? '').trim());
+            return nextCreatedAt
+              ? { ...movement, createdAt: nextCreatedAt, updatedAt: new Date().toISOString() }
+              : movement;
+          }),
+        );
       }
 
       setContractEconomicsTarget(updated);
