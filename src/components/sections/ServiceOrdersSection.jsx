@@ -354,6 +354,18 @@ const valuesMatch = (left, right) => {
   return Boolean(a && b && a === b);
 };
 
+const findByPriority = (rows, priorities = []) => {
+  const source = Array.isArray(rows) ? rows : [];
+  for (const priority of priorities) {
+    const field = String(priority?.field ?? '').trim();
+    const value = priority?.value;
+    if (!field || !String(value ?? '').trim()) continue;
+    const match = source.find((row) => valuesMatch(row?.[field], value));
+    if (match) return match;
+  }
+  return null;
+};
+
 const ECONOMIC_LEDGER_TYPE_META = {
   deposit: { label: 'Deposito / pago', tone: 'blue' },
   guarantee: { label: 'Apartar garantia', tone: 'violet' },
@@ -3257,12 +3269,12 @@ function ServiceOrdersSection({
   const selectedDocumentsContract = useMemo(() => {
     const activeDocumentsOrder = deferredDocumentsOrder;
     if (!activeDocumentsOrder) return null;
-    return contracts.find((contract) =>
-      (activeDocumentsOrder.contractId && String(contract.id) === String(activeDocumentsOrder.contractId))
-      || (activeDocumentsOrder.contractCode && String(contract.contractCode) === String(activeDocumentsOrder.contractCode))
-      || (activeDocumentsOrder.rentalId && String(contract.rentalId) === String(activeDocumentsOrder.rentalId))
-      || (activeDocumentsOrder.orderCode && String(contract.orderCode) === String(activeDocumentsOrder.orderCode)),
-    ) ?? null;
+    return findByPriority(contracts, [
+      { field: 'id', value: activeDocumentsOrder.contractId },
+      { field: 'rentalId', value: activeDocumentsOrder.rentalId },
+      { field: 'contractCode', value: activeDocumentsOrder.contractCode },
+      { field: 'orderCode', value: activeDocumentsOrder.orderCode },
+    ]);
   }, [contracts, deferredDocumentsOrder]);
 
   const selectedDocumentsChangeRows = useMemo(() => {
@@ -3286,16 +3298,16 @@ function ServiceOrdersSection({
     const activeDocumentsOrder = deferredDocumentsOrder;
     if (!activeDocumentsOrder && !selectedDocumentsContract) return null;
     const candidates = [...contractRows, ...hiddenContractRows];
-    return candidates.find((contract) =>
-      (selectedDocumentsContract?.id && valuesMatch(contract.id, selectedDocumentsContract.id))
-      || (selectedDocumentsContract?.contractCode && valuesMatch(contract.contractCode, selectedDocumentsContract.contractCode))
-      || (selectedDocumentsContract?.orderCode && valuesMatch(contract.orderCode, selectedDocumentsContract.orderCode))
-      || (selectedDocumentsContract?.rentalId && valuesMatch(contract.rentalId, selectedDocumentsContract.rentalId))
-      || (activeDocumentsOrder?.contractId && valuesMatch(contract.id, activeDocumentsOrder.contractId))
-      || (activeDocumentsOrder?.contractCode && valuesMatch(contract.contractCode, activeDocumentsOrder.contractCode))
-      || (activeDocumentsOrder?.orderCode && valuesMatch(contract.orderCode, activeDocumentsOrder.orderCode))
-      || (activeDocumentsOrder?.rentalId && valuesMatch(contract.rentalId, activeDocumentsOrder.rentalId))
-    ) ?? selectedDocumentsContract ?? null;
+    return findByPriority(candidates, [
+      { field: 'id', value: selectedDocumentsContract?.id },
+      { field: 'rentalId', value: selectedDocumentsContract?.rentalId },
+      { field: 'contractCode', value: selectedDocumentsContract?.contractCode },
+      { field: 'id', value: activeDocumentsOrder?.contractId },
+      { field: 'rentalId', value: activeDocumentsOrder?.rentalId },
+      { field: 'contractCode', value: activeDocumentsOrder?.contractCode },
+      { field: 'orderCode', value: selectedDocumentsContract?.orderCode },
+      { field: 'orderCode', value: activeDocumentsOrder?.orderCode },
+    ]) ?? selectedDocumentsContract ?? null;
   }, [contractRows, deferredDocumentsOrder, hiddenContractRows, selectedDocumentsContract]);
 
   const selectedDocumentsClosureSummary = useMemo(() => {
@@ -6580,12 +6592,12 @@ function ServiceOrdersSection({
       setContractActionStatus('');
       return;
     }
-    const linkedOrder = orderRowsWithMeta.find((row) =>
-      (fullContract?.id && String(row.contractId ?? '') === String(fullContract.id))
-      || (fullContract?.rentalId && String(row.rentalId ?? '') === String(fullContract.rentalId))
-      || (fullContract?.orderCode && String(row.orderCode ?? '') === String(fullContract.orderCode))
-      || (fullContract?.contractCode && String(row.contractCode ?? '') === String(fullContract.contractCode)),
-    );
+    const linkedOrder = findByPriority(orderRowsWithMeta, [
+      { field: 'contractId', value: fullContract?.id },
+      { field: 'rentalId', value: fullContract?.rentalId },
+      { field: 'contractCode', value: fullContract?.contractCode },
+      { field: 'orderCode', value: fullContract?.orderCode },
+    ]);
     let linkedFullRental = null;
     const linkedRentalIdentifier = fullContract?.rentalId
       ?? linkedOrder?.rentalId
@@ -6679,11 +6691,12 @@ function ServiceOrdersSection({
   };
 
   const handleCancelContractClick = (contractRow) => {
-    const linkedOrder = orderRowsWithMeta.find(
-      (row) =>
-        (contractRow.rentalId && row.rentalId === contractRow.rentalId)
-        || (contractRow.orderCode && row.orderCode === contractRow.orderCode),
-    );
+    const linkedOrder = findByPriority(orderRowsWithMeta, [
+      { field: 'contractId', value: contractRow?.id },
+      { field: 'rentalId', value: contractRow?.rentalId },
+      { field: 'contractCode', value: contractRow?.contractCode },
+      { field: 'orderCode', value: contractRow?.orderCode },
+    ]);
 
     setOrderToCancel({
       id: linkedOrder?.id ?? `contract-${contractRow.id}`,
@@ -6854,12 +6867,12 @@ function ServiceOrdersSection({
       );
     }
 
-    const linkedOrder = orderRowsWithMeta.find((row) =>
-      valuesMatch(row.contractId, fullContract?.id)
-      || valuesMatch(row.contractCode, fullContract?.contractCode)
-      || valuesMatch(row.orderCode, fullContract?.orderCode)
-      || valuesMatch(row.rentalId, fullContract?.rentalId),
-    ) ?? null;
+    const linkedOrder = findByPriority(orderRowsWithMeta, [
+      { field: 'contractId', value: fullContract?.id },
+      { field: 'rentalId', value: fullContract?.rentalId },
+      { field: 'contractCode', value: fullContract?.contractCode },
+      { field: 'orderCode', value: fullContract?.orderCode },
+    ]);
     const rentalIdentifier = fullContract?.rentalId
       ?? linkedOrder?.rentalId
       ?? fullContract?.orderCode

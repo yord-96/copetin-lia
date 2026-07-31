@@ -1611,6 +1611,138 @@ const repairApprovedContractsMissingRentals = (state, now) => {
   return repairCount;
 };
 
+
+const repairDuplicateActiveRentalOrderCodes = (state, now) => {
+  const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : [];
+  const activeRentals = rentals.filter((rental) => rental && !rental.deletedAt && rental.status !== 'cancelled' && String(rental?.orderCode ?? '').trim());
+  const grouped = new Map();
+
+  activeRentals.forEach((rental) => {
+    const code = String(rental.orderCode).trim();
+    if (!grouped.has(code)) grouped.set(code, []);
+    grouped.get(code).push(rental);
+  });
+
+  const numbering = state.settings?.numbering ?? (state.settings.numbering = {});
+  const prefix = String(numbering.serviceOrderPrefix ?? 'OS-');
+  let next = Math.max(1, Math.trunc(Number(numbering.serviceOrderNext ?? 1)));
+  const usedCodes = new Set(
+    rentals
+      .filter((rental) => rental && !rental.deletedAt)
+      .map((rental) => String(rental.orderCode ?? '').trim())
+      .filter(Boolean),
+  );
+
+  const consumeRepairOrderCode = () => {
+    let attempts = 0;
+    while (attempts < 100000) {
+      const formattedNumber = String(Math.max(1, next)).padStart(5, '0');
+      const candidate = prefix ? `${prefix}${formattedNumber}` : String(next);
+      next += 1;
+      attempts += 1;
+      if (!usedCodes.has(candidate)) {
+        usedCodes.add(candidate);
+        numbering.serviceOrderNext = next;
+        return candidate;
+      }
+    }
+    throw new Error('No se pudo reparar la numeracion duplicada de ordenes.');
+  };
+
+  let repaired = 0;
+  grouped.forEach((duplicates, duplicatedCode) => {
+    if (duplicates.length < 2) return;
+
+    const ordered = duplicates.slice().sort((left, right) => {
+      const leftLinked = contracts.some((contract) => (
+        !contract.deletedAt
+        && (
+          String(contract.rentalId ?? '') === String(left.id ?? '')
+          || String(contract.id ?? '') === String(left.contractId ?? '')
+        )
+      ));
+      const rightLinked = contracts.some((contract) => (
+        !contract.deletedAt
+        && (
+          String(contract.rentalId ?? '') === String(right.id ?? '')
+          || String(contract.id ?? '') === String(right.contractId ?? '')
+        )
+      ));
+      if (leftLinked !== rightLinked) return leftLinked ? -1 : 1;
+      return new Date(left.createdAt ?? left.rentalAt ?? 0) - new Date(right.createdAt ?? right.rentalAt ?? 0);
+    });
+
+    ordered.slice(1).forEach((rental) => {
+      const replacementCode = consumeRepairOrderCode();
+      const rentalId = String(rental.id ?? '');
+      const contractId = String(rental.contractId ?? '');
+      rental.orderCode = replacementCode;
+      rental.updatedAt = now;
+
+      contracts.forEach((contract) => {
+        if (contract.deletedAt) return;
+        const isLinked = (
+          (rentalId && String(contract.rentalId ?? '') === rentalId)
+          || (contractId && String(contract.id ?? '') === contractId)
+        );
+        if (!isLinked) return;
+        contract.orderCode = replacementCode;
+        contract.rentalId = rental.id;
+        contract.updatedAt = now;
+      });
+
+      const updateLinkedRows = (rows, rentalKey = 'rentalId', contractKey = 'contractId') => {
+        (Array.isArray(rows) ? rows : []).forEach((entry) => {
+          const isLinked = (
+            (rentalId && String(entry?.[rentalKey] ?? '') === rentalId)
+            || (contractId && String(entry?.[contractKey] ?? '') === contractId)
+          );
+          if (!isLinked) return;
+          if (String(entry.orderCode ?? '').trim() === duplicatedCode || !String(entry.orderCode ?? '').trim()) {
+            entry.orderCode = replacementCode;
+          }
+          entry.updatedAt = entry.updatedAt ?? now;
+        });
+      };
+
+      updateLinkedRows(state.deliveries);
+      updateLinkedRows(state.inventoryMovements);
+      updateLinkedRows(state.cashMovements);
+      updateLinkedRows(state.stockRecoveries);
+
+      (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).forEach((entry) => {
+        const isLinked = (
+          (rentalId && String(entry?.sourceRentalId ?? '') === rentalId)
+          || (contractId && String(entry?.sourceContractId ?? '') === contractId)
+        );
+        if (!isLinked) return;
+        entry.sourceOrderCode = replacementCode;
+        entry.updatedAt = entry.updatedAt ?? now;
+      });
+
+      (Array.isArray(state.generatedReports) ? state.generatedReports : []).forEach((report) => {
+        if (String(report?.sourceId ?? '') !== rentalId) return;
+        report.name = String(report.name ?? '').replaceAll(duplicatedCode, replacementCode);
+        report.updatedAt = report.updatedAt ?? now;
+      });
+
+      repaired += 1;
+    });
+  });
+
+  if (repaired > 0) {
+    state.settings.maintenance = state.settings.maintenance ?? {};
+    state.settings.maintenance.duplicateServiceOrderRepairRevision = 1;
+    state.settings.maintenance.duplicateServiceOrderRepairAt = now;
+    state.settings.maintenance.duplicateServiceOrderRepairCount = Number(
+      state.settings.maintenance.duplicateServiceOrderRepairCount ?? 0,
+    ) + repaired;
+  }
+
+  return repaired;
+};
+
 const normalizeState = (state) => {
   const source = deepClone(state ?? {});
   const now = new Date().toISOString();
@@ -3382,6 +3514,8 @@ const normalizeState = (state) => {
       updatedAt: presence?.updatedAt ?? presence?.lastSeenAt ?? now,
     })).filter((presence) => presence.userId && presence.sessionId)
     : [];
+
+  repairDuplicateActiveRentalOrderCodes(source, now);
 
   const activeReservedByItem = new Map();
   const todayKey = toDateKey(new Date());
@@ -15686,7 +15820,7 @@ const createWebBridge = () => ({
         const customerCi = String(payload?.customerCi ?? payload?.nitCi ?? '').trim();
         const customerReferencePhone = String(payload?.customerReferencePhone ?? '').trim();
         const clientId = resolveClientFromName(state, customerName, customerPhone, payload?.address, payload?.city, customerReferencePhone, customerCi);
-        const orderCode = consumeDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 5);
+        const orderCode = consumeUniqueCommercialDocumentCode(state, 'serviceOrderPrefix', 'serviceOrderNext', 'rentals', 'orderCode', 5);
         const reservationMovements = [];
         const userId = payload?.userId ?? payload?.createdById ?? null;
         const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
