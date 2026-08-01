@@ -2089,9 +2089,12 @@ function ServiceOrdersSection({
         ))
         : null;
       const linkedOrder = orderByContractId.get(String(contract.id)) ?? null;
-      const isReturned = normalizeText(linkedOrder?.rentalStatus).includes('returned')
-        || normalizeText(linkedOrder?.inventoryStatus).includes('devuelto');
-      const isSent = ['salio', 'devuelto'].includes(normalizeText(linkedOrder?.inventoryStatus));
+      // El color operativo del contrato debe reflejar exclusivamente el estado
+      // vigente en Movimientos. El estado general del alquiler puede quedar
+      // historicamente desincronizado y no confirma por si solo una devolucion.
+      const inventoryStatus = normalizeText(linkedOrder?.inventoryStatus);
+      const isSent = inventoryStatus === 'salio';
+      const isReturned = inventoryStatus === 'devuelto';
       const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
         .map(normalizeEconomicLedgerEntry);
       const economicInternalNotes = getEconomicInternalNotes({ economicLedger });
