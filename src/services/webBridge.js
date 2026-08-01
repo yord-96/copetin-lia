@@ -16188,24 +16188,25 @@ const createWebBridge = () => ({
           supplierFulfillmentPlan,
           inventoryAvailabilityAssumptions,
           historicalReconstruction,
-          status: historicalReconstruction ? 'returned' : 'active',
+          // Una fecha pasada no confirma ninguna operacion fisica.
+          // El contrato historico queda activo y pendiente hasta que una persona
+          // marque expresamente Listo, Salio y Volvio desde Inventario.
+          status: 'active',
           createdById: userId,
           createdByName: userName,
           createdByRole: userRole,
           operational: {
-            inventoryStatus: historicalReconstruction ? 'devuelto' : 'pendiente',
-            transportStatus: historicalReconstruction
-              ? 'no_aplica'
-              : payload?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
+            inventoryStatus: 'pendiente',
+            transportStatus: payload?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
             inventoryNote: '',
             transportNote: '',
-            inventorySentAt: historicalReconstruction ? now.toISOString() : null,
-            inventoryDispatchedAt: historicalReconstruction ? now.toISOString() : null,
+            inventorySentAt: null,
+            inventoryDispatchedAt: null,
             inventoryDispatchedByName: null,
             inventoryDispatchedByRole: null,
             transportSentAt: null,
-            inventoryConfirmedAt: historicalReconstruction ? now.toISOString() : null,
-            transportConfirmedAt: historicalReconstruction ? now.toISOString() : null,
+            inventoryConfirmedAt: null,
+            transportConfirmedAt: null,
             inventoryConfirmedByName: null,
             inventoryConfirmedByRole: null,
             transportConfirmedByName: null,

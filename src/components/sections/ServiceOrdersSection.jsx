@@ -513,6 +513,37 @@ function WhatsAppGlyph() {
   );
 }
 
+const hasExplicitOperationalConfirmation = (rental) => {
+  const operational = rental?.operational ?? {};
+  return Boolean(
+    operational.inventoryConfirmedByName
+    || operational.inventoryDispatchedByName
+    || operational.inventoryReturnedByName
+    || operational.dispatchReview?.reviewedByName
+    || operational.returnReview?.reviewedByName
+    || rental?.returnedByName
+  );
+};
+
+const getEffectiveRentalOperationalState = (rental) => {
+  const isUnconfirmedHistorical = Boolean(
+    rental?.historicalReconstruction
+    && !hasExplicitOperationalConfirmation(rental)
+  );
+  if (!isUnconfirmedHistorical) {
+    return {
+      rentalStatus: rental?.status ?? '',
+      inventoryStatus: rental?.operational?.inventoryStatus ?? 'pendiente',
+      transportStatus: rental?.operational?.transportStatus ?? 'pendiente',
+    };
+  }
+  return {
+    rentalStatus: rental?.status === 'cancelled' ? 'cancelled' : 'active',
+    inventoryStatus: 'pendiente',
+    transportStatus: rental?.logisticsMode === 'recojo' ? 'no_aplica' : 'pendiente',
+  };
+};
+
 const toOrderStatus = (rental, delivery) => {
   if (rental.status === 'cancelled') {
     return 'cancelled';
@@ -1758,8 +1789,12 @@ function ServiceOrdersSection({
       const contractStatus = linkedContract?.status ?? 'sin_contrato';
       const contractMeta = CONTRACT_STATUS_META[contractStatus];
       const operational = rental.operational ?? {};
-      const inventoryStatus = operational.inventoryStatus ?? 'pendiente';
-      const transportStatus = operational.transportStatus ?? 'pendiente';
+      const effectiveOperationalState = getEffectiveRentalOperationalState(rental);
+      const inventoryStatus = effectiveOperationalState.inventoryStatus;
+      const transportStatus = effectiveOperationalState.transportStatus;
+      const effectiveRental = effectiveOperationalState.rentalStatus === rental.status
+        ? rental
+        : { ...rental, status: effectiveOperationalState.rentalStatus };
       const accountingStatus = rental.accountingStatus ?? rental.payment?.status ?? '';
       const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
       const pendingCollectionBs = Number(rental?.returnSettlement?.pendingCollectionBs ?? pendingPaymentBs);
@@ -1767,7 +1802,7 @@ function ServiceOrdersSection({
       return {
         id: rental.id,
         rentalId: rental.id,
-        rentalStatus: rental.status ?? '',
+        rentalStatus: effectiveRental.status ?? '',
         orderCode,
         createdAt: rental.createdAt ?? rental.rentalAt,
         responsibleName: getResponsibleDisplayName(linkedContract ?? rental),
@@ -1783,7 +1818,7 @@ function ServiceOrdersSection({
         deliveryMeta: delivery
           ? `${delivery.address ?? 'Direccion pendiente'} ${delivery.city ?? ''}`.trim()
           : 'Pendiente de ruta',
-        status: toOrderStatus(rental, delivery),
+        status: toOrderStatus(effectiveRental, delivery),
         totalBs: Number(rental?.totals?.totalBs ?? 0),
         refundBs: Number(rental?.refundBs ?? rental?.returnSettlement?.refundBs ?? 0),
         accountingStatus,
@@ -2117,9 +2152,7 @@ function ServiceOrdersSection({
           ? sum + toMoneyNumber(entry.amountBs)
           : sum;
       }, 0);
-      const rowPenaltiesBs = toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs);
       const rowGuaranteeReserveBs = Math.max(guaranteeBs, rowLedgerTotals.guaranteeBs);
-      const rowChargesBs = Math.max(rowLedgerTotals.chargesBs, rowPenaltiesBs);
       const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowLedgerTotals.chargesBs);
       // La columna "Debe" del listado de contratos representa únicamente el
       // saldo comercial del contrato. Los daños/faltantes se consultan y cobran

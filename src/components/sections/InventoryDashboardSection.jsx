@@ -176,6 +176,25 @@ const getDateKeyDiffDays = (fromDateKey, toDateKey) => {
   return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 };
 
+const hasExplicitOperationalConfirmation = (rental) => {
+  const operational = rental?.operational ?? {};
+  return Boolean(
+    operational.inventoryConfirmedByName
+    || operational.inventoryDispatchedByName
+    || operational.inventoryReturnedByName
+    || operational.dispatchReview?.reviewedByName
+    || operational.returnReview?.reviewedByName
+    || rental?.returnedByName
+  );
+};
+
+const getEffectiveInventoryStatus = (rental, operational = rental?.operational ?? {}) => {
+  if (rental?.historicalReconstruction && !hasExplicitOperationalConfirmation(rental)) {
+    return 'pendiente';
+  }
+  return operational?.inventoryStatus ?? 'pendiente';
+};
+
 const getInventoryUsageStatusMeta = (entry, todayKey = getDateKey(new Date())) => {
   const startKey = getDateKey(entry?.deliveryDate);
   const endKey = getDateKey(entry?.pickupDate);
@@ -1698,7 +1717,7 @@ function InventoryDashboardSection({
           ...(rental.operational ?? {}),
           ...(operationalOverrides[String(rental.id)] ?? {}),
         };
-        const inventoryStatus = operational.inventoryStatus ?? 'pendiente';
+        const inventoryStatus = getEffectiveInventoryStatus(rental, operational);
         const inventoryMeta = getInventoryMeta(inventoryStatus);
         const revisionAlert = operational.revisionAlert?.active ? operational.revisionAlert : null;
         const clientPendingPickup = operational.clientPendingPickup?.active ? operational.clientPendingPickup : null;
