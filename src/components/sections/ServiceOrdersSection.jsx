@@ -2190,7 +2190,10 @@ function ServiceOrdersSection({
         resetPendingOverride
         ?? linkedRental?.returnSettlement?.pendingCollectionBs
         ?? linkedRental?.payment?.pendingPaymentBs
-        ?? linkedRental?.totals?.pendingPaymentBs;
+        ?? linkedRental?.totals?.pendingPaymentBs
+        ?? contract?.payment?.pendingPaymentBs
+        ?? contract?.payment?.pendingBs
+        ?? contract?.totals?.pendingPaymentBs;
       const hasAuthoritativePending = rawAuthoritativePendingBs !== undefined
         && rawAuthoritativePendingBs !== null
         && rawAuthoritativePendingBs !== '';
@@ -2213,7 +2216,9 @@ function ServiceOrdersSection({
         ? 0
         : hasEconomicLedger
           ? economicDueBs
-          : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
+          : hasAuthoritativePending
+            ? Math.max(0, Number(authoritativePendingBs.toFixed(2)))
+            : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
