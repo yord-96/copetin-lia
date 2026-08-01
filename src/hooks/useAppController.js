@@ -352,6 +352,19 @@ export const useAppController = () => {
       }
     };
 
+    const refreshOrderRentals = async () => {
+      try {
+        // En Ordenes solo sincronizamos la coleccion que alimenta los colores
+        // operativos. React recibe el arreglo nuevo en una unica actualizacion,
+        // sin recargar la pagina ni reemplazar todo el estado de la aplicacion.
+        await api.sync.refreshCollections(['rentals'], 'orders-operational-change');
+        const rentalsData = await api.rentals.list();
+        if (!disposed) setRentals(rentalsData);
+      } catch (refreshError) {
+        console.warn('[copetin] No se pudo sincronizar el estado operativo de las ordenes.', refreshError);
+      }
+    };
+
     const unsubscribe = api.sync.subscribe((event) => {
       if (disposed) return;
 
@@ -375,12 +388,15 @@ export const useAppController = () => {
       const isBackgroundStateReplacement = event?.source === 'background-sync';
       if (!isRemoteChange && !isBackgroundStateReplacement) return;
 
-      // Órdenes trabaja con los resúmenes ya cargados y obtiene el detalle
-      // individual desde el backend. Un refresco global en esta vista reemplaza
-      // contratos, alquileres y otras colecciones grandes, bloqueando el hilo
-      // principal y dejando los clics en cola. Los cambios hechos desde esta
-      // pestaña ya actualizan React de forma puntual.
+      // Ordenes no necesita una recarga global para reflejar un cambio de
+      // Movimientos. Sincroniza solamente alquileres y actualiza React una vez.
       if (activeTab === 'alquiler') {
+        const changedCollections = Array.isArray(event?.collections) ? event.collections : [];
+        const rentalsChanged = event?.domain === 'rentals' || changedCollections.includes('rentals');
+        if (rentalsChanged) {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(refreshOrderRentals, 100);
+        }
         return;
       }
 

@@ -1977,6 +1977,7 @@ export const api = {
       preferCache: Boolean(options?.background),
     }),
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
+    refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),

@@ -2093,7 +2093,9 @@ function ServiceOrdersSection({
       // vigente en Movimientos. El estado general del alquiler puede quedar
       // historicamente desincronizado y no confirma por si solo una devolucion.
       const inventoryStatus = normalizeText(linkedOrder?.inventoryStatus);
-      const isSent = inventoryStatus === 'salio';
+      // "Devuelto" conserva la evidencia visual de ambas etapas: primero salio
+      // (naranja) y despues volvio (celeste).
+      const isSent = ['salio', 'devuelto'].includes(inventoryStatus);
       const isReturned = inventoryStatus === 'devuelto';
       const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
         .map(normalizeEconomicLedgerEntry);
