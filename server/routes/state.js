@@ -16,11 +16,8 @@ const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurity
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
-const jsonPayloadCache = {
-  key: null,
-  body: null,
-  gzip: null,
-};
+const JSON_PAYLOAD_CACHE_LIMIT = 32;
+const jsonPayloadCache = new Map();
 
 const deferredBootstrapCollections = Object.freeze([
   'inventoryMovements',
@@ -294,22 +291,25 @@ const sendJsonPayload = async (req, res, payload) => {
     ? `collections:${Object.keys(payload.collections).sort().join(',')}`
     : payload?.partial
       ? `bootstrap:${(payload.excludedCollections ?? []).join(',')}`
-      : 'full';
+      : payload?.state
+        ? 'full'
+        : `route:${req.originalUrl}`;
   const cacheKey = `${String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision')}:${payloadScope}`;
-  if (jsonPayloadCache.key !== cacheKey || !jsonPayloadCache.body) {
-    jsonPayloadCache.key = cacheKey;
-    jsonPayloadCache.body = JSON.stringify(payload);
-    jsonPayloadCache.gzip = null;
+  let cacheEntry = jsonPayloadCache.get(cacheKey);
+  if (!cacheEntry) {
+    cacheEntry = { body: JSON.stringify(payload), gzipPromise: null };
+    jsonPayloadCache.set(cacheKey, cacheEntry);
+    if (jsonPayloadCache.size > JSON_PAYLOAD_CACHE_LIMIT) {
+      jsonPayloadCache.delete(jsonPayloadCache.keys().next().value);
+    }
   }
-  const body = jsonPayloadCache.body;
+  const body = cacheEntry.body;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Vary', 'Accept-Encoding');
 
   if (/\bgzip\b/i.test(String(req.get('Accept-Encoding') ?? '')) && body.length > 1024) {
-    if (!jsonPayloadCache.gzip) {
-      jsonPayloadCache.gzip = await gzipAsync(Buffer.from(body), { level: 6 });
-    }
-    const compressed = jsonPayloadCache.gzip;
+    if (!cacheEntry.gzipPromise) cacheEntry.gzipPromise = gzipAsync(Buffer.from(body), { level: 6 });
+    const compressed = await cacheEntry.gzipPromise;
     console.info('[state-route] Estado enviado comprimido.', {
       originalBytes: Buffer.byteLength(body),
       gzipBytes: compressed.length,
@@ -2475,6 +2475,142 @@ router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
       updatedAt: snapshot?.updatedAt ?? null,
       movements,
       total: movements.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const sector = String(req.query.sector ?? 'expenses').trim().toLowerCase();
+    const allowedSectors = new Set(['expenses', 'advances', 'suppliers', 'debts', 'history']);
+    if (!allowedSectors.has(sector)) {
+      res.status(400).json({ error: 'Sector de Caja Chica no valido.' });
+      return;
+    }
+
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const limit = Math.min(80, Math.max(1, Number.parseInt(req.query.limit, 10) || 80));
+    const dateFrom = String(req.query.dateFrom ?? '').trim();
+    const dateTo = String(req.query.dateTo ?? '').trim();
+    const movementFilter = String(req.query.movement ?? 'all').trim().toLowerCase();
+    const categoryFilter = String(req.query.category ?? 'all').trim().toLowerCase();
+    const search = String(req.query.query ?? '').trim().toLowerCase();
+    const normalizeValue = (value) => String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    const dateKey = (value) => {
+      const parsed = new Date(value ?? '');
+      if (Number.isNaN(parsed.getTime())) return '';
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/La_Paz',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(parsed);
+      const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return `${values.year}-${values.month}-${values.day}`;
+    };
+    const isVoided = (movement) => String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado' || Boolean(movement?.voidedAt);
+    const isAdvance = (movement) => {
+      const category = normalizeValue(movement?.category);
+      const tag = normalizeValue(movement?.accountingTag);
+      return category.includes('adelanto') || tag === 'personnel_advance';
+    };
+    const expenseCategory = (movement) => {
+      const text = `${normalizeValue(movement?.category)} ${normalizeValue(movement?.description)}`;
+      if (text.includes('servicio') || text.includes('luz') || text.includes('agua') || text.includes('internet')) return 'services';
+      if (text.includes('aliment') || text.includes('almuerzo') || text.includes('comida') || text.includes('refrigerio')) return 'food';
+      if (text.includes('taxi') || text.includes('pasaje') || text.includes('movilidad') || text.includes('transporte')) return 'mobility';
+      if (text.includes('mante') || text.includes('camion') || text.includes('reparacion')) return 'maintenance';
+      if (text.includes('compra')) return 'purchase';
+      if (isAdvance(movement)) return 'advance';
+      if (text.includes('limpieza') || text.includes('detergente')) return 'cleaning';
+      if (text.includes('interes')) return 'interest';
+      if (text.includes('eess') || text.includes('monica') || text.includes('combustible') || text.includes('gasolina')) return 'fuel';
+      if (text.includes('sueldo') || text.includes('salario')) return 'payroll';
+      if (text.includes('proveedor') || text.includes('supplier')) return 'supplier';
+      if (text.includes('varios') || text.includes('otro')) return 'misc';
+      return 'other';
+    };
+
+    const pettyMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
+    let rows;
+    if (sector === 'suppliers') {
+      rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt);
+    } else if (sector === 'debts') {
+      rows = Array.isArray(state.cashDebts) ? state.cashDebts : [];
+    } else if (sector === 'advances') {
+      rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
+    } else if (sector === 'expenses') {
+      rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+    } else {
+      rows = pettyMovements.filter((movement) => {
+        const amount = Number(movement?.amountBs ?? 0);
+        const type = String(movement?.type ?? '').toLowerCase();
+        return (type === 'apertura' && amount > 0)
+          || (movement?.isInternalTransfer && amount > 0)
+          || (!movement?.isInternalTransfer && amount < 0);
+      });
+    }
+
+    rows = rows
+      .filter((row) => {
+        const rowDate = dateKey(row?.createdAt ?? row?.debtDate ?? row?.requestDate);
+        if (dateFrom && rowDate < dateFrom) return false;
+        if (dateTo && rowDate > dateTo) return false;
+        if (sector === 'history') {
+          const amount = Number(row?.amountBs ?? 0);
+          const reposition = (String(row?.type ?? '').toLowerCase() === 'apertura' || row?.isInternalTransfer) && amount > 0;
+          const expense = !row?.isInternalTransfer && amount < 0;
+          const transport = Number(row?.transportExpenseBs ?? 0) > 0
+            || String(row?.accountingTag ?? '') === 'transport_expense'
+            || ['movilidad', 'transporte'].includes(String(row?.category ?? '').toLowerCase());
+          if (movementFilter === 'reposition' && !reposition) return false;
+          if (movementFilter === 'expense' && (!expense || isVoided(row))) return false;
+          if (movementFilter === 'voided' && !isVoided(row)) return false;
+          if (movementFilter === 'transport' && (!transport || isVoided(row))) return false;
+        }
+        if (['expenses', 'history'].includes(sector) && categoryFilter !== 'all' && expenseCategory(row) !== categoryFilter) return false;
+        if (!search) return true;
+        return [row?.description, row?.receipt, row?.receiptCode, row?.responsible, row?.createdBy, row?.category, row?.notes, row?.personName, row?.supplierName, row?.loanCode]
+          .some((value) => normalizeValue(value).includes(normalizeValue(search)));
+      })
+      .sort((a, b) => new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
+
+    const summary = sector === 'history'
+      ? rows.reduce((result, movement) => {
+        if (isVoided(movement)) {
+          result.voidedCount += 1;
+          return result;
+        }
+        const amount = Number(movement?.amountBs ?? 0);
+        if ((String(movement?.type ?? '').toLowerCase() === 'apertura' || movement?.isInternalTransfer) && amount > 0) result.repositionsBs += amount;
+        if (!movement?.isInternalTransfer && amount < 0) result.expensesBs += Math.abs(amount);
+        result.netBs = Math.round((result.repositionsBs - result.expensesBs) * 100) / 100;
+        return result;
+      }, { repositionsBs: 0, expensesBs: 0, netBs: 0, voidedCount: 0 })
+      : null;
+    const total = rows.length;
+    const pageRows = rows.slice(offset, offset + limit).map((row) => (
+      ['expenses', 'advances', 'history'].includes(sector) ? summarizeAccountingMovement(row) : row
+    ));
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      sector,
+      rows: pageRows,
+      offset,
+      limit,
+      total,
+      hasMore: offset + pageRows.length < total,
+      summary,
     });
   } catch (error) {
     next(error);

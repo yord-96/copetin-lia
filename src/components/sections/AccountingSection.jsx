@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 
 const getInputDate = (baseDate = new Date()) => {
@@ -136,6 +136,8 @@ const PETTY_DEBT_TYPES = {
     className: 'receivable',
   },
 };
+
+const createPettySectorPage = () => ({ rows: [], total: 0, hasMore: false, loading: false, error: '' });
 
 const normalizeCashDebtKind = (value) => {
   const normalized = normalizeText(value).replace(/\s+/g, '_');
@@ -337,11 +339,18 @@ function AccountingSection({
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyWorkspaceTab, setPettyWorkspaceTab] = useState('expenses');
-  const [pettyCashVisibleRows] = useState(5);
   const [isPettyHistoryOpen, setIsPettyHistoryOpen] = useState(false);
   const [pettyHistorySource, setPettyHistorySource] = useState(null);
   const [pettyHistoryLoading, setPettyHistoryLoading] = useState(false);
   const [pettyHistoryError, setPettyHistoryError] = useState('');
+  const [pettyHistoryMeta, setPettyHistoryMeta] = useState({ total: 0, hasMore: false, summary: null });
+  const [pettySectorPages, setPettySectorPages] = useState(() => ({
+    expenses: createPettySectorPage(),
+    advances: createPettySectorPage(),
+    suppliers: createPettySectorPage(),
+    debts: createPettySectorPage(),
+  }));
+  const pettySectorRequestRef = useRef({});
   const [pettyHistoryFilters, setPettyHistoryFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -402,6 +411,91 @@ function AccountingSection({
   const [debtActionMenuId, setDebtActionMenuId] = useState('');
   const [advancePeopleQuery, setAdvancePeopleQuery] = useState('');
   const cashSubmitLockRef = useRef(false);
+
+  const loadPettySector = useCallback(async (sector, { append = false, offset = 0, filters = {} } = {}) => {
+    const requestId = (pettySectorRequestRef.current[sector] ?? 0) + 1;
+    pettySectorRequestRef.current[sector] = requestId;
+    setPettySectorPages((current) => ({
+      ...current,
+      [sector]: { ...current[sector], loading: true, error: '' },
+    }));
+    try {
+      const result = await api.cash.getPettySector({ sector, offset, limit: 80, ...filters });
+      if (pettySectorRequestRef.current[sector] !== requestId) return;
+      setPettySectorPages((current) => ({
+        ...current,
+        [sector]: {
+          rows: append ? [...current[sector].rows, ...(result?.rows ?? [])] : (result?.rows ?? []),
+          total: Number(result?.total ?? 0),
+          hasMore: Boolean(result?.hasMore),
+          loading: false,
+          error: '',
+        },
+      }));
+    } catch (sectorError) {
+      if (pettySectorRequestRef.current[sector] !== requestId) return;
+      setPettySectorPages((current) => ({
+        ...current,
+        [sector]: {
+          ...current[sector],
+          loading: false,
+          error: sectorError?.message || 'No se pudo cargar esta sección.',
+        },
+      }));
+    }
+  }, []);
+
+  const loadPettyHistoryPage = useCallback(async ({ append = false, offset = 0, filters = {} } = {}) => {
+    const requestId = (pettySectorRequestRef.current.history ?? 0) + 1;
+    pettySectorRequestRef.current.history = requestId;
+    setPettyHistoryLoading(true);
+    setPettyHistoryError('');
+    try {
+      const result = await api.cash.getPettySector({ sector: 'history', offset, limit: 80, ...filters });
+      if (pettySectorRequestRef.current.history !== requestId) return;
+      setPettyHistorySource((current) => (
+        append ? [...(Array.isArray(current) ? current : []), ...(result?.rows ?? [])] : (result?.rows ?? [])
+      ));
+      setPettyHistoryMeta({
+        total: Number(result?.total ?? 0),
+        hasMore: Boolean(result?.hasMore),
+        summary: result?.summary ?? null,
+      });
+    } catch (historyError) {
+      if (pettySectorRequestRef.current.history !== requestId) return;
+      if (!append) setPettyHistorySource([]);
+      setPettyHistoryError(historyError?.message || 'No se pudo cargar el historial de Caja Chica.');
+    } finally {
+      if (pettySectorRequestRef.current.history === requestId) setPettyHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeModule !== 'contabilidad_caja_chica') return undefined;
+    const timer = setTimeout(() => {
+      if (pettyWorkspaceTab === 'expenses') {
+        void loadPettySector('expenses', {
+          filters: {
+            dateFrom: selectedDate,
+            dateTo: selectedDate,
+            category: pettyCashTypeFilter,
+            query: pettyCashQuery,
+          },
+        });
+        return;
+      }
+      void loadPettySector(pettyWorkspaceTab);
+    }, pettyWorkspaceTab === 'expenses' && pettyCashQuery ? 250 : 0);
+    return () => clearTimeout(timer);
+  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceTab, selectedDate]);
+
+  useEffect(() => {
+    if (!isPettyHistoryOpen) return undefined;
+    const timer = setTimeout(() => {
+      void loadPettyHistoryPage({ filters: pettyHistoryFilters });
+    }, pettyHistoryFilters.query ? 250 : 0);
+    return () => clearTimeout(timer);
+  }, [isPettyHistoryOpen, loadPettyHistoryPage, pettyHistoryFilters]);
 
   const beginCashSubmit = () => {
     if (cashSubmitLockRef.current) return false;
@@ -561,32 +655,35 @@ function AccountingSection({
     [sortedCashDebts],
   );
 
+  const normalizeSupplierLoanRow = useCallback((loan) => {
+    const totalBs = toNumber(loan?.totals?.totalBs ?? loan?.totalBs);
+    const contract = loan?.sourceContractId ? contractById.get(String(loan.sourceContractId)) : null;
+    const rental = loan?.sourceRentalId ? rentalById.get(String(loan.sourceRentalId)) : null;
+    const reference = contract?.contractCode ?? rental?.contractCode ?? loan?.sourceOrderCode ?? '-';
+    const items = Array.isArray(loan?.items) ? loan.items : [];
+    const statusKey = normalizeText(loan?.status || 'programado');
+    return {
+      ...loan,
+      totalBs,
+      items,
+      reference,
+      itemSummary: items.slice(0, 2).map((item) => `${item.quantity}x ${item.itemName}`).join(' | '),
+      isPaid: ['liquidado', 'pagado', 'cerrado'].includes(statusKey),
+      requestDate: loan?.requestDate || loan?.createdAt,
+    };
+  }, [contractById, rentalById]);
+
   const supplierLoanRows = useMemo(
     () => (supplierBundle?.loans ?? [])
       .filter((loan) => !loan?.deletedAt)
-      .map((loan) => {
-        const totalBs = toNumber(loan?.totals?.totalBs ?? loan?.totalBs);
-        const contract = loan?.sourceContractId ? contractById.get(String(loan.sourceContractId)) : null;
-        const rental = loan?.sourceRentalId ? rentalById.get(String(loan.sourceRentalId)) : null;
-        const reference = contract?.contractCode
-          ?? rental?.contractCode
-          ?? loan?.sourceOrderCode
-          ?? '-';
-        const items = Array.isArray(loan?.items) ? loan.items : [];
-        const statusKey = normalizeText(loan?.status || 'programado');
-        const isPaid = ['liquidado', 'pagado', 'cerrado'].includes(statusKey);
-        return {
-          ...loan,
-          totalBs,
-          items,
-          reference,
-          itemSummary: items.slice(0, 2).map((item) => `${item.quantity}x ${item.itemName}`).join(' | '),
-          isPaid,
-          requestDate: loan?.requestDate || loan?.createdAt,
-        };
-      })
+      .map(normalizeSupplierLoanRow)
       .sort((a, b) => Number(a.isPaid) - Number(b.isPaid) || new Date(b.createdAt ?? b.requestDate ?? 0) - new Date(a.createdAt ?? a.requestDate ?? 0)),
-    [contractById, rentalById, supplierBundle?.loans],
+    [normalizeSupplierLoanRow, supplierBundle?.loans],
+  );
+
+  const pagedSupplierLoanRows = useMemo(
+    () => pettySectorPages.suppliers.rows.map(normalizeSupplierLoanRow),
+    [normalizeSupplierLoanRow, pettySectorPages.suppliers.rows],
   );
 
   const pendingSupplierLoanRows = useMemo(
@@ -932,26 +1029,6 @@ function AccountingSection({
     return { label: raw || 'Varios', className: 'other' };
   }, []);
 
-  const filteredPettyExpenseRows = useMemo(() => {
-    const text = pettyCashQuery.trim().toLowerCase();
-    return dayPettyExpensesRows.filter((movement) => {
-      const category = getPettyExpenseCategory(movement);
-      const matchesType =
-        pettyCashTypeFilter === 'all'
-        || (!isVoidedCashMovement(movement) && category.className === pettyCashTypeFilter);
-      if (!matchesType) return false;
-      if (!text) return true;
-      return [
-        movement.description,
-        movement.receipt,
-        movement.responsible,
-        movement.createdBy,
-        getMovementReference(movement),
-        category.label,
-      ].some((value) => String(value ?? '').toLowerCase().includes(text));
-    });
-  }, [dayPettyExpensesRows, getMovementReference, getPettyExpenseCategory, pettyCashQuery, pettyCashTypeFilter]);
-
   const personnelAdvanceRows = useMemo(
     () => visiblePettyExpenseRows
       .filter((movement) => !isVoidedCashMovement(movement))
@@ -1018,6 +1095,9 @@ function AccountingSection({
     () => Math.abs(sumBy(selectedDayAdvanceRows, (movement) => movement.amountBs)),
     [selectedDayAdvanceRows],
   );
+  const pagedPettyExpenseRows = pettySectorPages.expenses.rows;
+  const pagedPersonnelAdvanceRows = pettySectorPages.advances.rows;
+  const pagedCashDebts = pettySectorPages.debts.rows;
 
   const pettyHistoryRows = useMemo(() => {
     const rows = [];
@@ -1048,49 +1128,9 @@ function AccountingSection({
     return rows.sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
   }, [getMovementReference, getPettyExpenseCategory, pettyHistorySource, sortedMovements]);
 
-  const filteredPettyHistoryRows = useMemo(() => {
-    const text = pettyHistoryFilters.query.trim().toLowerCase();
-    return pettyHistoryRows.filter((movement) => {
-      const dateKey = getDateKey(movement.createdAt);
-      if (pettyHistoryFilters.dateFrom && dateKey < pettyHistoryFilters.dateFrom) return false;
-      if (pettyHistoryFilters.dateTo && dateKey > pettyHistoryFilters.dateTo) return false;
+  const filteredPettyHistoryRows = pettyHistoryRows;
 
-      const isVoided = isVoidedCashMovement(movement);
-      const hasTransportLink = toNumber(movement?.transportExpenseBs) > 0
-        || String(movement?.accountingTag ?? '') === 'transport_expense'
-        || (
-          Boolean(movement?.linkedRentalId || movement?.linkedOrderCode || movement?.linkedContractId)
-          && ['movilidad', 'transporte'].includes(String(movement?.category ?? '').toLowerCase())
-        );
-
-      const matchesMovement =
-        pettyHistoryFilters.movement === 'all'
-        || (pettyHistoryFilters.movement === 'reposition' && movement.historyKind === 'reposition')
-        || (pettyHistoryFilters.movement === 'expense' && movement.historyKind === 'expense' && !isVoided)
-        || (pettyHistoryFilters.movement === 'voided' && isVoided)
-        || (pettyHistoryFilters.movement === 'transport' && hasTransportLink && !isVoided);
-      if (!matchesMovement) return false;
-
-      const matchesCategory =
-        pettyHistoryFilters.category === 'all'
-        || (movement.historyKind === 'expense' && movement.historyCategory.className === pettyHistoryFilters.category);
-      if (!matchesCategory) return false;
-
-      if (!text) return true;
-      return [
-        movement.description,
-        movement.receipt,
-        movement.responsible,
-        movement.createdBy,
-        movement.historyLabel,
-        movement.historyCategory.label,
-        movement.historyReference,
-        movement.voidReason,
-      ].some((value) => String(value ?? '').toLowerCase().includes(text));
-    });
-  }, [pettyHistoryFilters, pettyHistoryRows]);
-
-  const pettyHistorySummary = useMemo(() => {
+  const clientPettyHistorySummary = useMemo(() => {
     const validRows = filteredPettyHistoryRows.filter((movement) => !isVoidedCashMovement(movement));
     const repositionsBs = sumBy(validRows.filter((movement) => movement.historyKind === 'reposition'), (movement) => movement.historyAmountBs);
     const expensesBs = sumBy(validRows.filter((movement) => movement.historyKind === 'expense'), (movement) => movement.historyAmountBs);
@@ -1101,6 +1141,7 @@ function AccountingSection({
       voidedCount: filteredPettyHistoryRows.filter((movement) => isVoidedCashMovement(movement)).length,
     };
   }, [filteredPettyHistoryRows]);
+  const pettyHistorySummary = pettyHistoryMeta.summary ?? clientPettyHistorySummary;
 
   const activeCashSession = useMemo(
     () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
@@ -1516,17 +1557,6 @@ function AccountingSection({
       query: '',
     }));
     setIsPettyHistoryOpen(true);
-    setPettyHistoryLoading(true);
-    setPettyHistoryError('');
-    api.cash.getPettyHistory()
-      .then((result) => {
-        setPettyHistorySource(Array.isArray(result?.movements) ? result.movements : []);
-      })
-      .catch((historyError) => {
-        setPettyHistorySource([]);
-        setPettyHistoryError(historyError?.message || 'No se pudo cargar el historial de Caja Chica.');
-      })
-      .finally(() => setPettyHistoryLoading(false));
   };
 
   const applyPettyHistoryPeriod = (period) => {
@@ -1735,6 +1765,7 @@ function AccountingSection({
     event.preventDefault();
     if (!cashModal) return;
     if (!beginCashSubmit()) return;
+    const completedAction = cashModal;
     setCashActionError('');
     try {
       const amountBs = Math.max(0, toNumber(cashForm.amountBs));
@@ -1941,6 +1972,19 @@ function AccountingSection({
         setCashActionFeedback('Caja Chica cerrada y saldo devuelto a Caja Grande.');
       }
       closeCashAction();
+      const sectorToRefresh = {
+        expense: 'expenses',
+        advance: 'advances',
+        debt: 'debts',
+        payDebt: 'debts',
+        supplierLoan: 'suppliers',
+      }[completedAction];
+      if (sectorToRefresh) {
+        const filters = sectorToRefresh === 'expenses'
+          ? { dateFrom: selectedDate, dateTo: selectedDate, category: pettyCashTypeFilter, query: pettyCashQuery }
+          : {};
+        void loadPettySector(sectorToRefresh, { filters });
+      }
     } catch (error) {
       setCashActionError(error.message || 'No se pudo completar la operacion.');
     } finally {
@@ -1957,6 +2001,7 @@ function AccountingSection({
     try {
       await onDeleteCashDebt?.({ debtId: debt.id, deletedBy: currentUserName });
       setCashActionFeedback('Deuda eliminada correctamente.');
+      void loadPettySector('debts');
     } catch (error) {
       setCashActionError(error.message || 'No se pudo eliminar la deuda.');
     }
@@ -2475,7 +2520,7 @@ function AccountingSection({
                 </tr>
               </thead>
               <tbody>
-                {!pettyHistoryLoading && !pettyHistoryError ? filteredPettyHistoryRows.map((movement) => {
+                {!pettyHistoryError ? filteredPettyHistoryRows.map((movement) => {
                   const isVoided = isVoidedCashMovement(movement);
                   return (
                     <tr key={`petty-history-${movement.id}`} className={isVoided ? 'cash-row-voided' : ''}>
@@ -2513,7 +2558,17 @@ function AccountingSection({
           </div>
 
           <footer>
-            <small>Mostrando {filteredPettyHistoryRows.length} de {pettyHistoryRows.length} movimientos historicos.</small>
+            <small>Mostrando {pettyHistoryRows.length} de {pettyHistoryMeta.total} movimientos históricos.</small>
+            {pettyHistoryMeta.hasMore ? (
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={pettyHistoryLoading}
+                onClick={() => loadPettyHistoryPage({ append: true, offset: pettyHistoryRows.length, filters: pettyHistoryFilters })}
+              >
+                {pettyHistoryLoading ? 'Cargando...' : 'Ver 80 más'}
+              </button>
+            ) : null}
             <button type="button" className="primary-button" onClick={() => setIsPettyHistoryOpen(false)}>Cerrar</button>
           </footer>
         </section>
@@ -3692,10 +3747,10 @@ function AccountingSection({
 
         <nav className="petty-workspace-tabs" aria-label="Secciones de Caja Chica">
           {[
-            ['expenses', 'Gastos', filteredPettyExpenseRows.length],
-            ['advances', 'Adelantos', personnelAdvanceRows.length],
-            ['suppliers', 'Proveedores', pendingSupplierLoanRows.length],
-            ['debts', 'Deudas', pendingCashDebts.length],
+            ['expenses', 'Gastos', pettySectorPages.expenses.total],
+            ['advances', 'Adelantos', pettySectorPages.advances.total],
+            ['suppliers', 'Proveedores', pettySectorPages.suppliers.total],
+            ['debts', 'Deudas', pettySectorPages.debts.total],
           ].map(([id, label, count]) => (
             <button
               key={id}
@@ -3780,7 +3835,7 @@ function AccountingSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPettyExpenseRows.slice(0, pettyCashVisibleRows).map((movement) => {
+                  {pagedPettyExpenseRows.map((movement) => {
                     const category = getPettyExpenseCategory(movement);
                     const isPersonnelAdvanceMovement =
                       normalizeText(movement?.accountingTag) === 'personnel_advance'
@@ -3814,10 +3869,20 @@ function AccountingSection({
                       </tr>
                     );
                   })}
-                  {filteredPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Sin gastos registrados.</p></td></tr> : null}
+                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Sin gastos registrados.</p></td></tr> : null}
+                  {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Cargando gastos...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
+
+            {pettySectorPages.expenses.error ? <p className="status error">{pettySectorPages.expenses.error}</p> : null}
+            {pettySectorPages.expenses.hasMore ? (
+              <button type="button" className="section-link blue" disabled={pettySectorPages.expenses.loading} onClick={() => loadPettySector('expenses', {
+                append: true,
+                offset: pagedPettyExpenseRows.length,
+                filters: { dateFrom: selectedDate, dateTo: selectedDate, category: pettyCashTypeFilter, query: pettyCashQuery },
+              })}>Ver 80 más</button>
+            ) : null}
 
             <button
               type="button"
@@ -3864,7 +3929,7 @@ function AccountingSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {personnelAdvanceRows.slice(0, 8).map((movement) => {
+                  {pagedPersonnelAdvanceRows.map((movement) => {
                     const ci = String(movement.receipt ?? '').replace(/^CI\s*/i, '').trim() || '-';
                     const requestMatch = String(movement.notes ?? '').match(/Fecha de solicitud:\s*([^|]+)/i);
                     return (
@@ -3884,12 +3949,17 @@ function AccountingSection({
                       </tr>
                     );
                   })}
-                  {personnelAdvanceRows.length === 0 ? (
+                  {!pettySectorPages.advances.loading && pagedPersonnelAdvanceRows.length === 0 ? (
                     <tr><td colSpan={6}><p className="status">Sin adelantos registrados todavia.</p></td></tr>
                   ) : null}
+                  {pettySectorPages.advances.loading && pagedPersonnelAdvanceRows.length === 0 ? <tr><td colSpan={6}><p className="status">Cargando adelantos...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
+            {pettySectorPages.advances.error ? <p className="status error">{pettySectorPages.advances.error}</p> : null}
+            {pettySectorPages.advances.hasMore ? (
+              <button type="button" className="section-link blue" disabled={pettySectorPages.advances.loading} onClick={() => loadPettySector('advances', { append: true, offset: pagedPersonnelAdvanceRows.length })}>Ver 80 más</button>
+            ) : null}
           </article>
 
           <article className="bigcash-card petty-supplier-loans-card" hidden={pettyWorkspaceTab !== 'suppliers'}>
@@ -3935,7 +4005,7 @@ function AccountingSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {supplierLoanRows.slice(0, 8).map((loan) => (
+                  {pagedSupplierLoanRows.map((loan) => (
                     <tr key={loan.id}>
                       <td>
                         <strong>{loan.loanCode}</strong>
@@ -3974,12 +4044,17 @@ function AccountingSection({
                       </td>
                     </tr>
                   ))}
-                  {supplierLoanRows.length === 0 ? (
+                  {!pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? (
                     <tr><td colSpan={7}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
                   ) : null}
+                  {pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? <tr><td colSpan={7}><p className="status">Cargando proveedores...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
+            {pettySectorPages.suppliers.error ? <p className="status error">{pettySectorPages.suppliers.error}</p> : null}
+            {pettySectorPages.suppliers.hasMore ? (
+              <button type="button" className="section-link blue" disabled={pettySectorPages.suppliers.loading} onClick={() => loadPettySector('suppliers', { append: true, offset: pagedSupplierLoanRows.length })}>Ver 80 más</button>
+            ) : null}
           </article>
 
           <article className="bigcash-card petty-debts-card" hidden={pettyWorkspaceTab !== 'debts'}>
@@ -4019,7 +4094,7 @@ function AccountingSection({
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedCashDebts.slice(0, 8).map((debt) => {
+                  {pagedCashDebts.map((debt) => {
                     const balance = Number(debt.balanceBs ?? debt.amountBs ?? 0);
                     const isPaid = balance <= 0;
                     const debtKind = normalizeCashDebtKind(debt.debtKind ?? debt.kind ?? debt.category);
@@ -4082,10 +4157,15 @@ function AccountingSection({
                       </tr>
                     );
                   })}
-                  {sortedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Sin deudas registradas.</p></td></tr> : null}
+                  {!pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Sin deudas registradas.</p></td></tr> : null}
+                  {pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Cargando deudas...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
+            {pettySectorPages.debts.error ? <p className="status error">{pettySectorPages.debts.error}</p> : null}
+            {pettySectorPages.debts.hasMore ? (
+              <button type="button" className="section-link blue" disabled={pettySectorPages.debts.loading} onClick={() => loadPettySector('debts', { append: true, offset: pagedCashDebts.length })}>Ver 80 más</button>
+            ) : null}
           </article>
 
           <aside className="petty-side">
