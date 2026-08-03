@@ -8248,7 +8248,16 @@ function ServiceOrdersSection({
   const handlePrintPreview = () => {
     if (documentPreview?.loading || !documentPreview?.blobUrl) return;
     if (documentPreview?.mimeType === 'application/pdf') {
-      window.open(documentPreview.blobUrl, '_blank', 'noopener,noreferrer');
+      const safeBaseName = String(documentPreview?.fileName ?? 'CONTRATO')
+        .replace(/\.pdf$/i, '')
+        .trim() || 'CONTRATO';
+      const anchor = document.createElement('a');
+      anchor.href = documentPreview.blobUrl;
+      anchor.download = `${safeBaseName}.pdf`;
+      anchor.rel = 'noopener';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
       return;
     }
     const frame = document.getElementById('orders-document-preview-frame');
