@@ -476,8 +476,6 @@ function AccountingSection({
       if (pettyWorkspaceTab === 'expenses') {
         void loadPettySector('expenses', {
           filters: {
-            dateFrom: selectedDate,
-            dateTo: selectedDate,
             category: pettyCashTypeFilter,
             query: pettyCashQuery,
           },
@@ -487,7 +485,7 @@ function AccountingSection({
       void loadPettySector(pettyWorkspaceTab);
     }, pettyWorkspaceTab === 'expenses' && pettyCashQuery ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceTab, selectedDate]);
+  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceTab]);
 
   useEffect(() => {
     if (!isPettyHistoryOpen) return undefined;
@@ -1981,7 +1979,7 @@ function AccountingSection({
       }[completedAction];
       if (sectorToRefresh) {
         const filters = sectorToRefresh === 'expenses'
-          ? { dateFrom: selectedDate, dateTo: selectedDate, category: pettyCashTypeFilter, query: pettyCashQuery }
+          ? { category: pettyCashTypeFilter, query: pettyCashQuery }
           : {};
         void loadPettySector(sectorToRefresh, { filters });
       }
@@ -3766,7 +3764,7 @@ function AccountingSection({
         <section className="petty-main-grid">
           <article className="bigcash-card petty-expenses-card" hidden={pettyWorkspaceTab !== 'expenses'}>
             <header className="petty-table-head">
-              <h3>GASTOS DE CAJA CHICA - {formatDate(selectedDate)}</h3>
+              <h3>GASTOS DE CAJA CHICA</h3>
               <div className="petty-action-pair">
                 <button
                   type="button"
@@ -3824,7 +3822,7 @@ function AccountingSection({
               <table className="accounting-table petty-table">
                 <thead>
                   <tr>
-                    <th>Hora</th>
+                    <th>Fecha</th>
                     <th>Concepto</th>
                     <th>Proveedor / Destino</th>
                     <th>Categoría</th>
@@ -3851,7 +3849,10 @@ function AccountingSection({
                       );
                     return (
                       <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
-                        <td>{getLongHourLabel(movement.createdAt)}</td>
+                        <td>
+                          <strong>{formatDate(movement.createdAt)}</strong>
+                          <small>{getLongHourLabel(movement.createdAt)}</small>
+                        </td>
                         <td>
                           <strong>{movement.description}</strong>
                           {hasTransportExpense ? (
@@ -3880,7 +3881,7 @@ function AccountingSection({
               <button type="button" className="section-link blue" disabled={pettySectorPages.expenses.loading} onClick={() => loadPettySector('expenses', {
                 append: true,
                 offset: pagedPettyExpenseRows.length,
-                filters: { dateFrom: selectedDate, dateTo: selectedDate, category: pettyCashTypeFilter, query: pettyCashQuery },
+                filters: { category: pettyCashTypeFilter, query: pettyCashQuery },
               })}>Ver 80 más</button>
             ) : null}
 

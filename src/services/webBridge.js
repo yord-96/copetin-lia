@@ -5242,7 +5242,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .cash-receipt-sheet {
           width: 8.5in;
           height: 5.5in;
-          margin: 0 auto;
+          margin: 0;
           padding: 4.4mm 6mm 3.2mm;
           background:
             linear-gradient(135deg, rgba(255, 247, 237, 0.85), rgba(255, 255, 255, 0) 42%),
@@ -5252,6 +5252,35 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           overflow: hidden;
           display: flex;
           flex-direction: column;
+        }
+        .receipt-print-page {
+          position: relative;
+          width: 8.5in;
+          height: 11in;
+          margin: 0 auto;
+          background: #fff;
+          display: grid;
+          grid-template-rows: 5.5in 5.5in;
+        }
+        .receipt-cut-line {
+          position: absolute;
+          z-index: 3;
+          top: 5.5in;
+          left: 4mm;
+          right: 4mm;
+          border-top: 2px dotted #64748b;
+          text-align: center;
+          pointer-events: none;
+        }
+        .receipt-cut-line span {
+          position: relative;
+          top: -7px;
+          padding: 0 3mm;
+          background: #fff;
+          color: #475569;
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: 0.12em;
         }
         .receipt-top {
           display: grid;
@@ -5338,6 +5367,17 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           font-size: 7.5px;
           text-transform: uppercase;
           letter-spacing: 0.08em;
+        }
+        .receipt-copy-kind {
+          justify-self: end;
+          padding: 0.8mm 2.4mm;
+          border: 1px solid #0f2a5f;
+          border-radius: 999px;
+          color: #0f2a5f;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: 0.1em;
+          line-height: 1;
         }
         .receipt-contact {
           display: grid;
@@ -5452,13 +5492,21 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
             page-break-after: avoid;
             break-after: avoid;
           }
+          .receipt-print-page {
+            width: 8.5in;
+            height: 11in;
+            margin: 0;
+            transform: none;
+            page-break-after: avoid;
+            break-after: avoid;
+          }
           .receipt-preview-actions { display: none !important; }
         }
         @media screen {
-          .cash-receipt-sheet {
+          .receipt-print-page {
             transform: scale(0.96);
             transform-origin: top center;
-            margin-bottom: -5mm;
+            margin-bottom: -11mm;
             box-shadow: 0 10px 36px rgba(17, 24, 39, 0.16);
           }
         }
@@ -5497,7 +5545,8 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         <button type="button" class="primary" onclick="window.print()">Imprimir / guardar PDF</button>
         <button type="button" onclick="window.close()">Cerrar</button>
       </div>
-      <main class="cash-receipt-sheet">
+      <div class="receipt-print-page" id="receipt-print-page">
+      <main class="cash-receipt-sheet" id="receipt-original">
         <section class="receipt-top">
           <div class="receipt-brand">
             <span class="brand-stamp">
@@ -5519,6 +5568,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
             ${contractCode ? `<span class="receipt-contract-code"><small>N&deg; contrato</small>${escapeHtml(contractCode)}</span>` : ''}
           </div>
           <div class="receipt-datebox">
+            <span class="receipt-copy-kind">ORIGINAL</span>
             ${contractCode ? `<span class="contract-chip"><small>Contrato</small>${escapeHtml(contractCode)}</span>` : ''}
             <span><strong>FECHA:</strong> ${escapeHtml(dateLabel)}</span>
             <span><strong>HORA:</strong> ${escapeHtml(timeLabel)}</span>
@@ -5536,12 +5586,11 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
             <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
             <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
             <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(partyName)}</span></p>
-            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(paymentMethodLabel)}</span></p>
           </div>
           <div class="info-col">
             <p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
             <p class="info-line is-important"><strong>${escapeHtml(contextResponsibleLabel)}</strong><b>:</b><span>${escapeHtml(contextResponsibleValue)}</span></p>
-            <p class="info-line"><strong>Concepto</strong><b>:</b><span>${detailHtml}</span></p>
+            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(paymentMethodLabel)}</span></p>
             <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
           </div>
         </section>
@@ -5582,6 +5631,20 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         <p class="receipt-warning">Comprobante interno de ${isOut ? 'egreso' : 'ingreso'}. Conserve este recibo para control de caja.</p>
         <p class="receipt-footer">Documento generado por ${escapeHtml(company.name)}</p>
       </main>
+      <div class="receipt-cut-line" aria-hidden="true"><span>CORTAR POR AQU&Iacute;</span></div>
+      </div>
+      <script>
+        (() => {
+          const page = document.getElementById('receipt-print-page');
+          const original = document.getElementById('receipt-original');
+          if (!page || !original) return;
+          const copy = original.cloneNode(true);
+          copy.id = 'receipt-copy';
+          const copyKind = copy.querySelector('.receipt-copy-kind');
+          if (copyKind) copyKind.textContent = 'COPIA';
+          page.appendChild(copy);
+        })();
+      </script>
     </body>
   </html>`;
 };
