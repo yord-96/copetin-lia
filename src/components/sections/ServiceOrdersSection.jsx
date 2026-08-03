@@ -6947,7 +6947,7 @@ function ServiceOrdersSection({
     }
   };
 
-  const fetchContractPdf = async ({ identifier }) => {
+  const fetchContractPdf = async ({ identifier, fileName }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar el contrato.');
@@ -6974,8 +6974,16 @@ function ServiceOrdersSection({
       throw new Error('El servidor no devolvió un documento PDF válido.');
     }
 
+    const safeFileName = `${String(fileName ?? 'CONTRATO')
+      .replace(/\.pdf$/i, '')
+      .trim() || 'CONTRATO'}.pdf`;
+    const namedPdfFile = new File([pdfBlob], safeFileName, {
+      type: 'application/pdf',
+      lastModified: Date.now(),
+    });
+
     return {
-      blobUrl: URL.createObjectURL(pdfBlob),
+      blobUrl: URL.createObjectURL(namedPdfFile),
       cacheStatus: response.headers.get('X-Document-Cache') ?? '',
       durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
     };
@@ -8128,6 +8136,11 @@ function ServiceOrdersSection({
         if (!preview) {
           const renderedPdf = await fetchContractPdf({
             identifier: contractIdentifier,
+            fileName: buildDocumentFileBase(
+              orderRow.customerName ?? orderRow.client,
+              baseDocumentCode,
+              'contrato',
+            ),
           });
 
           preview = {
@@ -8248,16 +8261,7 @@ function ServiceOrdersSection({
   const handlePrintPreview = () => {
     if (documentPreview?.loading || !documentPreview?.blobUrl) return;
     if (documentPreview?.mimeType === 'application/pdf') {
-      const safeBaseName = String(documentPreview?.fileName ?? 'CONTRATO')
-        .replace(/\.pdf$/i, '')
-        .trim() || 'CONTRATO';
-      const anchor = document.createElement('a');
-      anchor.href = documentPreview.blobUrl;
-      anchor.download = `${safeBaseName}.pdf`;
-      anchor.rel = 'noopener';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
+      window.open(documentPreview.blobUrl, '_blank', 'noopener,noreferrer');
       return;
     }
     const frame = document.getElementById('orders-document-preview-frame');
