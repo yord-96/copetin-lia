@@ -578,6 +578,13 @@ const getInputDate = (baseDate = new Date()) => {
   return cloned.toISOString().slice(0, 10);
 };
 
+const getInputDateTime = (value = new Date()) => {
+  const parsed = new Date(value);
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const local = new Date(safeDate.getTime() - safeDate.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
 const getDateKey = (value) => {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
@@ -1429,6 +1436,18 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
+  const [receiptEditMovement, setReceiptEditMovement] = useState(null);
+  const [receiptEditDraft, setReceiptEditDraft] = useState({
+    receiptCode: '',
+    receiptCustomerName: '',
+    createdAt: '',
+    receiptDetail: '',
+    notes: '',
+    paymentMethod: 'efectivo',
+    paymentAccount: '',
+  });
+  const [receiptEditError, setReceiptEditError] = useState('');
+  const [isSavingReceiptEdit, setIsSavingReceiptEdit] = useState(false);
   const [isResettingContractEconomics, setIsResettingContractEconomics] = useState(false);
   const [economicResetPendingByContract, setEconomicResetPendingByContract] = useState({});
   const [economicResetLedgerByContract, setEconomicResetLedgerByContract] = useState({});
@@ -1464,6 +1483,7 @@ function ServiceOrdersSection({
   const submitLockRef = useRef(false);
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
+  const removedSupplierCoverageIdsRef = useRef(new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
@@ -4746,6 +4766,7 @@ function ServiceOrdersSection({
     setCatalogModalOpen(false);
     setServiceModalOpen(false);
     setServiceDraft(buildEmptyServiceDraft());
+    removedSupplierCoverageIdsRef.current = new Set();
     if (sourceRecord) {
       const mappedDraft = mapRecordToDraft(sourceRecord, entityType);
       setDraft(mappedDraft);
@@ -4841,6 +4862,7 @@ function ServiceOrdersSection({
   };
 
   const removeSupplierCoverageLine = (itemId, coverageId) => {
+    if (coverageId) removedSupplierCoverageIdsRef.current.add(String(coverageId));
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
       Object.keys(next).forEach((coverageKey) => {
@@ -6184,26 +6206,54 @@ function ServiceOrdersSection({
       throw new Error('Selecciona la cuenta QR donde ingreso el pago inicial.');
     }
 
-    const supplierFulfillmentPlan = isHistoricalReconstruction
-      ? []
-      : supplierCoverageRows
-      .flatMap((line) => line.coverages.map((coverage) => ({
-        lineKey: line.lineKey ?? coverage.lineKey ?? null,
-        itemId: line.itemId,
-        itemName: line.itemName,
-        supplierId: coverage.supplierId,
-        supplierName: coverage.supplierName,
-        supplierQuoteId: coverage.supplierQuoteId,
-        supplierQuoteCode: coverage.supplierQuoteCode,
-        neededQty: coverage.neededQty,
-        supplierUnitCostBs: coverage.supplierUnitCostBs,
-        saleUnitPriceBs: line.effectiveSaleUnitPriceBs,
-        baseSaleUnitPriceBs: line.saleUnitPriceBs,
-        saleDiscountPercent: line.saleDiscountPercent,
-        discountApplied: line.saleDiscountPercent > 0,
-        manualCoverage: Boolean(coverage.manualCoverage),
-      })))
-      .filter((line) => line.neededQty > 0 && line.supplierId && line.supplierName);
+    const supplierFulfillmentPlan = (() => {
+      if (isHistoricalReconstruction) return [];
+
+      const removedIds = removedSupplierCoverageIdsRef.current;
+      const retainedLineKeys = new Set(selectedItems.map((line) => String(line.lineKey ?? '').trim()).filter(Boolean));
+      const retainedItemIds = new Set(selectedItems.map((line) => String(line.itemId ?? '').trim()).filter(Boolean));
+      const livePlan = selectedItems.flatMap((line) => {
+        const coverageKey = getSupplierCoverageKey(line);
+        const coverages = normalizeCoverageDraftLines(
+          supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line.itemId],
+        );
+        return coverages.map((coverage) => ({
+          id: coverage.id,
+          lineKey: line.lineKey ?? coverage.lineKey ?? null,
+          itemId: line.itemId,
+          itemName: line.item?.name ?? line.itemName ?? '',
+          supplierId: coverage.supplierId,
+          supplierName: coverage.supplierName,
+          supplierQuoteId: coverage.supplierQuoteId,
+          supplierQuoteCode: coverage.supplierQuoteCode,
+          neededQty: coverage.neededQty,
+          supplierUnitCostBs: coverage.supplierUnitCostBs,
+          saleUnitPriceBs: getSupplierCoverageEffectiveSaleUnitPriceBs(line),
+          baseSaleUnitPriceBs: line.unitPriceBs,
+          saleDiscountPercent: clampPercentValue(line.discountPercent),
+          discountApplied: clampPercentValue(line.discountPercent) > 0,
+          manualCoverage: Boolean(coverage.manualCoverage),
+          createdAt: coverage.createdAt,
+        }));
+      }).filter((line) => (
+        line.neededQty > 0
+        && line.supplierId
+        && line.supplierName
+        && !removedIds.has(String(line.id ?? ''))
+      ));
+
+      const liveIds = new Set(livePlan.map((line) => String(line.id ?? '')).filter(Boolean));
+      const preservedPlan = (Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [])
+        .filter((line) => {
+          const id = String(line?.id ?? '').trim();
+          if ((id && (removedIds.has(id) || liveIds.has(id)))) return false;
+          const lineKey = String(line?.lineKey ?? '').trim();
+          const itemId = String(line?.itemId ?? '').trim();
+          return (lineKey && retainedLineKeys.has(lineKey)) || (itemId && retainedItemIds.has(itemId));
+        });
+
+      return [...livePlan, ...preservedPlan];
+    })();
     const selectedResponsibles = getSelectedResponsibles();
     const primaryResponsible = selectedResponsibles[0] ?? null;
     const contractObservations = draft.observations.trim();
@@ -6788,8 +6838,29 @@ function ServiceOrdersSection({
         lineTotalBs: fallbackLineTotalBs,
       };
     });
+    const contractMetadataByKey = new Map(contractItems.map((line, index) => [lineMatchKey(line, index), line]));
+    const contractMetadataByItem = new Map(contractItems.map((line) => [String(line?.itemId ?? '').trim(), line]).filter(([key]) => key));
+    const contractMetadataByName = new Map(contractItems.map((line) => [normalizeText(line?.itemName ?? line?.name), line]).filter(([key]) => key));
+    const preserveContractLineMetadata = (lines = []) => (Array.isArray(lines) ? lines : []).map((line, index) => {
+      const original = contractMetadataByKey.get(lineMatchKey(line, index))
+        ?? contractMetadataByItem.get(String(line?.itemId ?? '').trim())
+        ?? contractMetadataByName.get(normalizeText(line?.itemName ?? line?.name))
+        ?? null;
+      if (!original) return line;
+      return {
+        ...original,
+        ...line,
+        lineKey: line?.lineKey ?? original?.lineKey,
+        observation: String(line?.observation ?? line?.observations ?? line?.note ?? '').trim()
+          || String(original?.observation ?? original?.observations ?? original?.note ?? '').trim(),
+        quickItem: line?.quickItem ?? original?.quickItem ?? null,
+        comboOptionItemIds: Array.isArray(line?.comboOptionItemIds)
+          ? line.comboOptionItemIds
+          : Array.isArray(original?.comboOptionItemIds) ? original.comboOptionItemIds : [],
+      };
+    });
     const sourceItems = shouldRecoverDailyLines && linkedOrderItems.length > 0
-      ? linkedOrderItems
+      ? preserveContractLineMetadata(linkedOrderItems)
       : contractItems.length > 0
         ? applyLinkedMoneyToContractLines(contractItems)
         : linkedOrderItems;
@@ -7039,6 +7110,9 @@ function ServiceOrdersSection({
     setIsSavingContractEconomicsCollection(false);
     setIsSavingContractEconomicsLedger(false);
     setIsResettingContractEconomics(false);
+    setReceiptEditMovement(null);
+    setReceiptEditError('');
+    setIsSavingReceiptEdit(false);
   };
 
   const handleContractEconomicsBackdropClick = (event) => {
@@ -7157,6 +7231,86 @@ function ServiceOrdersSection({
     } catch (error) {
       if (printWindow && !printWindow.closed) printWindow.close();
       setContractEconomicsError(error.message || 'No se pudo abrir el recibo.');
+    }
+  };
+
+  const openReceiptEditor = (movement) => {
+    if (!movement?.id || isVoidedCashMovement(movement)) return;
+    const customerName = String(
+      movement?.receiptCustomerName
+      ?? movement?.customerName
+      ?? contractEconomicsData?.contract?.customerName
+      ?? contractEconomicsData?.rental?.customerName
+      ?? '',
+    ).trim();
+    setReceiptEditMovement(movement);
+    setReceiptEditDraft({
+      receiptCode: String(movement?.receiptCode ?? movement?.receipt ?? '').trim(),
+      receiptCustomerName: customerName,
+      createdAt: getInputDateTime(movement?.receiptIssuedAt ?? movement?.createdAt),
+      receiptDetail: String(movement?.receiptDetail ?? movement?.description ?? movement?.notes ?? '').trim(),
+      notes: String(movement?.notes ?? '').trim(),
+      paymentMethod: normalizeLedgerPaymentMethod(movement?.paymentMethod),
+      paymentAccount: normalizeLedgerPaymentAccount(movement?.paymentAccount),
+    });
+    setReceiptEditError('');
+  };
+
+  const closeReceiptEditor = () => {
+    if (isSavingReceiptEdit) return;
+    setReceiptEditMovement(null);
+    setReceiptEditError('');
+  };
+
+  const handleSubmitReceiptEdit = async (event) => {
+    event.preventDefault();
+    if (!receiptEditMovement?.id || isSavingReceiptEdit) return;
+    const receiptCode = receiptEditDraft.receiptCode.trim();
+    const receiptCustomerName = receiptEditDraft.receiptCustomerName.trim();
+    const receiptDetail = receiptEditDraft.receiptDetail.trim();
+    if (!receiptCode || !receiptCustomerName || !receiptDetail || !receiptEditDraft.createdAt) {
+      setReceiptEditError('Completa numero de recibo, cliente, fecha y detalle.');
+      return;
+    }
+    if (receiptEditDraft.paymentMethod === 'qr' && !receiptEditDraft.paymentAccount) {
+      setReceiptEditError('Selecciona la cuenta o banco para el pago QR.');
+      return;
+    }
+
+    setIsSavingReceiptEdit(true);
+    setReceiptEditError('');
+    try {
+      const editedByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
+      const result = await api.cash.updateMovementReceipt({
+        movementId: receiptEditMovement.id,
+        receiptCode,
+        receiptCustomerName,
+        receiptIssuedAt: new Date(receiptEditDraft.createdAt).toISOString(),
+        receiptDetail,
+        notes: receiptEditDraft.notes.trim(),
+        paymentMethod: receiptEditDraft.paymentMethod,
+        paymentAccount: receiptEditDraft.paymentMethod === 'qr' ? receiptEditDraft.paymentAccount : '',
+        editedByName,
+      });
+      rememberEconomicCashResult(result);
+      if (result?.movement?.id) {
+        setContractEconomicsContextMovements((current) => current.map((movement) => (
+          String(movement?.id ?? '') === String(result.movement.id) ? result.movement : movement
+        )));
+      }
+      if (result?.contract?.id) {
+        setContractEconomicsTarget((current) => (
+          current && String(current?.id ?? '') === String(result.contract.id)
+            ? { ...current, ...result.contract }
+            : current
+        ));
+      }
+      setActionFeedback(`Recibo ${receiptCode} actualizado sin modificar el monto del movimiento.`);
+      setReceiptEditMovement(null);
+    } catch (error) {
+      setReceiptEditError(error.message || 'No se pudo actualizar el recibo.');
+    } finally {
+      setIsSavingReceiptEdit(false);
     }
   };
 
@@ -10329,6 +10483,7 @@ function ServiceOrdersSection({
                       <span>Estado</span>
                       <span>Detalle</span>
                       <span>Monto</span>
+                      <span>Editar</span>
                       <span>Recibo</span>
                     </div>
                     {contractEconomicsData.movements.length > 0 ? contractEconomicsData.movements.map((movement) => {
@@ -10340,7 +10495,9 @@ function ServiceOrdersSection({
                           key={movement.id ?? `${movement.createdAt}-${movement.description}`}
                         >
                           <span className="contract-economics-table-date">
-                            {movement.createdAt ? (formatDateTime?.(movement.createdAt) ?? formatDate?.(movement.createdAt) ?? movement.createdAt) : '-'}
+                            {movement.receiptIssuedAt || movement.createdAt
+                              ? (formatDateTime?.(movement.receiptIssuedAt ?? movement.createdAt) ?? formatDate?.(movement.receiptIssuedAt ?? movement.createdAt) ?? movement.receiptIssuedAt ?? movement.createdAt)
+                              : '-'}
                           </span>
                           <span className={`contract-economics-movement-badge is-${movementKind}`}>
                             {getEconomicMovementKindLabel(movementKind)}
@@ -10352,6 +10509,22 @@ function ServiceOrdersSection({
                           <strong className={`contract-economics-table-amount is-${movementKind}`}>
                             {formatBs(movementAmount)}
                           </strong>
+                          <span className="contract-economics-table-edit">
+                            {movement.id && !isVoidedCashMovement(movement) && Math.abs(getCashMovementAmount(movement)) > 0 ? (
+                              <button
+                                type="button"
+                                className="contract-economics-receipt-edit-button"
+                                onClick={() => openReceiptEditor(movement)}
+                                disabled={readOnly || isSavingReceiptEdit}
+                                title="Corregir los datos impresos del recibo sin cambiar el monto"
+                              >
+                                <Pencil size={13} aria-hidden="true" />
+                                Editar
+                              </button>
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </span>
                           <span className="contract-economics-table-receipt">
                             {movement.id && !isVoidedCashMovement(movement) && Math.abs(getCashMovementAmount(movement)) > 0 ? (
                               <button type="button" className="section-link blue" onClick={() => handlePrintEconomicReceipt(movement)}>
@@ -10423,6 +10596,123 @@ function ServiceOrdersSection({
               </button>
             </footer>
           </section>
+        </div>
+      ) : null}
+
+      {receiptEditMovement ? (
+        <div className="orders-modal-backdrop receipt-editor-backdrop" onClick={closeReceiptEditor}>
+          <form
+            className="orders-modal receipt-editor-modal"
+            onSubmit={handleSubmitReceiptEdit}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="orders-modal-head">
+              <div>
+                <h3>Editar datos del recibo</h3>
+                <p>Corrige la informacion impresa. El monto y los saldos contables no se modifican.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeReceiptEditor} disabled={isSavingReceiptEdit}>
+                x
+              </button>
+            </header>
+
+            <div className="receipt-editor-body">
+              <label>
+                <span>Numero de recibo</span>
+                <input
+                  value={receiptEditDraft.receiptCode}
+                  onChange={(event) => setReceiptEditDraft((current) => ({ ...current, receiptCode: event.target.value }))}
+                  placeholder="Ej. RC-11071 o numero fisico"
+                  required
+                />
+                <small>Puede coincidir con el numero de un recibo fisico anterior.</small>
+              </label>
+
+              <label>
+                <span>Cliente / receptor</span>
+                <input
+                  value={receiptEditDraft.receiptCustomerName}
+                  onChange={(event) => setReceiptEditDraft((current) => ({ ...current, receiptCustomerName: event.target.value }))}
+                  placeholder="Nombre que aparecera en el recibo"
+                  required
+                />
+              </label>
+
+              <label>
+                <span>Fecha y hora</span>
+                <input
+                  type="datetime-local"
+                  value={receiptEditDraft.createdAt}
+                  onChange={(event) => setReceiptEditDraft((current) => ({ ...current, createdAt: event.target.value }))}
+                  required
+                />
+              </label>
+
+              <label>
+                <span>Metodo de pago</span>
+                <select
+                  value={receiptEditDraft.paymentMethod}
+                  onChange={(event) => setReceiptEditDraft((current) => ({
+                    ...current,
+                    paymentMethod: event.target.value,
+                    paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '',
+                  }))}
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="qr">QR</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
+              </label>
+
+              {receiptEditDraft.paymentMethod === 'qr' ? (
+                <label>
+                  <span>Cuenta QR / banco</span>
+                  <select
+                    value={receiptEditDraft.paymentAccount}
+                    onChange={(event) => setReceiptEditDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                    required
+                  >
+                    <option value="">Seleccionar cuenta</option>
+                    {QR_ACCOUNT_OPTIONS.map((account) => (
+                      <option key={account} value={account}>{account}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <label className="receipt-editor-field-wide">
+                <span>Detalle del recibo</span>
+                <textarea
+                  rows={4}
+                  value={receiptEditDraft.receiptDetail}
+                  onChange={(event) => setReceiptEditDraft((current) => ({ ...current, receiptDetail: event.target.value }))}
+                  placeholder="Describe claramente el concepto del pago o movimiento"
+                  required
+                />
+              </label>
+
+              <label className="receipt-editor-field-wide">
+                <span>Observacion interna</span>
+                <textarea
+                  rows={2}
+                  value={receiptEditDraft.notes}
+                  onChange={(event) => setReceiptEditDraft((current) => ({ ...current, notes: event.target.value }))}
+                  placeholder="Nota opcional"
+                />
+              </label>
+
+              {receiptEditError ? <p className="receipt-editor-error receipt-editor-field-wide">{receiptEditError}</p> : null}
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={closeReceiptEditor} disabled={isSavingReceiptEdit}>
+                Cancelar
+              </button>
+              <button type="submit" className="primary-button" disabled={isSavingReceiptEdit}>
+                {isSavingReceiptEdit ? 'Guardando...' : 'Guardar correccion'}
+              </button>
+            </footer>
+          </form>
         </div>
       ) : null}
 

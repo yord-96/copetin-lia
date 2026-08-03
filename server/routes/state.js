@@ -1635,6 +1635,124 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
   } catch (error) { next(error); }
 });
 
+router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const movementId = String(payload.movementId ?? payload.id ?? '').trim();
+    const receiptCode = String(payload.receiptCode ?? '').trim().slice(0, 80);
+    const receiptDetail = String(payload.receiptDetail ?? payload.description ?? '').trim().slice(0, 2400);
+    const receiptCustomerName = String(payload.receiptCustomerName ?? payload.customerName ?? '').trim().slice(0, 240);
+    const notes = String(payload.notes ?? '').trim().slice(0, 2400);
+    const editorName = String(payload.editedByName ?? payload.userName ?? 'Sistema').trim().slice(0, 180) || 'Sistema';
+    const receiptIssuedAtDate = new Date(payload.receiptIssuedAt ?? payload.createdAt ?? '');
+
+    if (!movementId) return res.status(400).json({ error: 'Debes indicar el movimiento del recibo.' });
+    if (!receiptCode) return res.status(400).json({ error: 'Debes escribir el numero del recibo.' });
+    if (!receiptDetail) return res.status(400).json({ error: 'Debes escribir el detalle del recibo.' });
+    if (!receiptCustomerName) return res.status(400).json({ error: 'Debes escribir el nombre del cliente.' });
+    if (Number.isNaN(receiptIssuedAtDate.getTime())) return res.status(400).json({ error: 'La fecha y hora del recibo no son validas.' });
+
+    let updatedMovement = null;
+    let updatedContract = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      const movement = state.cashMovements.find((entry) => String(entry?.id ?? '') === movementId);
+      if (!movement) {
+        const error = new Error('No se encontro el movimiento asociado al recibo.');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado' || movement?.voidedAt) {
+        const error = new Error('No se puede editar un recibo anulado.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const now = new Date().toISOString();
+      const previousMetadata = {
+        receiptCode: String(movement.receiptCode ?? movement.receipt ?? '').trim(),
+        receiptDetail: String(movement.receiptDetail ?? movement.description ?? '').trim(),
+        receiptCustomerName: String(movement.receiptCustomerName ?? movement.customerName ?? '').trim(),
+        description: String(movement.description ?? '').trim(),
+        notes: String(movement.notes ?? '').trim(),
+        paymentMethod: String(movement.paymentMethod ?? '').trim(),
+        paymentAccount: String(movement.paymentAccount ?? '').trim(),
+        createdAt: movement.createdAt ?? null,
+        receiptIssuedAt: movement.receiptIssuedAt ?? movement.createdAt ?? null,
+        editedAt: now,
+        editedByName: editorName,
+      };
+      if (!movement.receiptOriginalMetadata) movement.receiptOriginalMetadata = structuredClone(previousMetadata);
+      movement.receiptEditHistory = [
+        ...(Array.isArray(movement.receiptEditHistory) ? movement.receiptEditHistory : []),
+        previousMetadata,
+      ].slice(-25);
+      movement.receiptCode = receiptCode;
+      movement.receiptDetail = receiptDetail;
+      movement.description = receiptDetail.split('\n').filter(Boolean).slice(0, 2).join(' | ') || receiptDetail;
+      movement.receiptCustomerName = receiptCustomerName;
+      movement.customerName = receiptCustomerName;
+      movement.notes = notes;
+      movement.receiptIssuedAt = receiptIssuedAtDate.toISOString();
+      movement.paymentMethod = directPaymentMethod(payload.paymentMethod ?? movement.paymentMethod);
+      movement.paymentAccount = directPaymentAccount(movement.paymentMethod, payload.paymentAccount ?? movement.paymentAccount);
+      movement.updatedAt = now;
+      movement.receiptEditedAt = now;
+      movement.receiptEditedByName = editorName;
+
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      state.contracts.forEach((contract) => {
+        let touched = false;
+        contract.economicLedger = (Array.isArray(contract.economicLedger) ? contract.economicLedger : []).map((entry) => {
+          if (String(entry?.cashMovementId ?? '') !== movementId) return entry;
+          touched = true;
+          return {
+            ...entry,
+            cashReceiptCode: receiptCode,
+            receiptIssuedAt: movement.receiptIssuedAt,
+            editedAt: now,
+            editedByName: editorName,
+          };
+        });
+        if (touched) {
+          contract.economicLedgerUpdatedAt = now;
+          contract.economicLedgerUpdatedByName = editorName;
+          contract.updatedAt = now;
+          updatedContract = structuredClone(contract);
+        }
+      });
+
+      state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
+      state.generatedReports.forEach((report) => {
+        const reportMovementId = String(
+          report?.cashMovementId
+          ?? (report?.sourceType === 'cashMovement' ? report?.sourceId : '')
+          ?? '',
+        ).trim();
+        if (reportMovementId !== movementId) return;
+        report.receiptCode = receiptCode;
+        report.receiptIssuedAt = movement.receiptIssuedAt;
+        report.updatedAt = now;
+      });
+
+      updatedMovement = structuredClone(movement);
+      return state;
+    });
+
+    res.json({
+      ok: true,
+      movement: updatedMovement,
+      contract: updatedContract,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 
 router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next) => {
   try {

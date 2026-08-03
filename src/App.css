@@ -11412,7 +11412,7 @@ textarea:focus {
 .contract-economics-table-head,
 .contract-economics-table-row {
   display: grid;
-  grid-template-columns: 9.7rem 6.6rem minmax(0, 1fr) 6.8rem 6.3rem;
+  grid-template-columns: 9.7rem 6.6rem minmax(0, 1fr) 6.8rem 5.4rem 6.3rem;
   gap: 0.62rem;
   align-items: center;
 }
@@ -11458,6 +11458,7 @@ textarea:focus {
 .contract-economics-table-date,
 .contract-economics-table-type,
 .contract-economics-table-detail,
+.contract-economics-table-edit,
 .contract-economics-table-receipt {
   min-width: 0;
 }
@@ -11558,6 +11559,108 @@ textarea:focus {
   text-align: center;
 }
 
+.contract-economics-table-edit {
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.contract-economics-receipt-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-height: 1.9rem;
+  border: 1px solid #bfd5fb;
+  border-radius: 0.5rem;
+  background: #f5f9ff;
+  color: #1d4ed8;
+  padding: 0.32rem 0.52rem;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.contract-economics-receipt-edit-button:hover:not(:disabled) {
+  border-color: #7eacf5;
+  background: #eaf2ff;
+}
+
+.contract-economics-receipt-edit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.receipt-editor-backdrop {
+  z-index: 430;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.receipt-editor-modal {
+  width: min(760px, calc(100vw - 2rem));
+  max-height: min(88vh, 760px);
+}
+
+.receipt-editor-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+  padding: 1.05rem 1.2rem;
+  overflow-y: auto;
+}
+
+.receipt-editor-body label {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.receipt-editor-body input,
+.receipt-editor-body select,
+.receipt-editor-body textarea {
+  width: 100%;
+  border: 1px solid #d7e1ef;
+  border-radius: 0.62rem;
+  background: #ffffff;
+  color: #102345;
+  padding: 0.7rem 0.76rem;
+  font: inherit;
+  font-weight: 700;
+  resize: vertical;
+}
+
+.receipt-editor-body input:focus,
+.receipt-editor-body select:focus,
+.receipt-editor-body textarea:focus {
+  border-color: #4f83e5;
+  outline: 3px solid rgba(79, 131, 229, 0.14);
+}
+
+.receipt-editor-body label small {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.receipt-editor-field-wide {
+  grid-column: 1 / -1;
+}
+
+.receipt-editor-error {
+  margin: 0;
+  border: 1px solid #fecdd3;
+  border-radius: 0.55rem;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.74rem;
+  font-weight: 850;
+}
+
 .contract-economics-empty {
   margin: 0;
   padding: 0.9rem;
@@ -11648,7 +11751,15 @@ textarea:focus {
 
   .contract-economics-table-head,
   .contract-economics-table-row {
-    min-width: 820px;
+    min-width: 920px;
+  }
+
+  .receipt-editor-body {
+    grid-template-columns: 1fr;
+  }
+
+  .receipt-editor-field-wide {
+    grid-column: 1;
   }
 
   .contract-economics-issues div {
@@ -57635,6 +57746,7 @@ body:has(.accounting-bigcash-view) .workspace {
   .contract-economics-table-date,
   .contract-economics-movement-badge,
   .contract-economics-table-detail,
+  .contract-economics-table-edit,
   .contract-economics-table-receipt {
     grid-column: 1 !important;
   }

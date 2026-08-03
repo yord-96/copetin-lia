@@ -1635,7 +1635,12 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
-    announceDataChange({ domain: 'cash', method: path.includes('collect') ? 'collectReceivable' : 'createManualMovement' });
+    const method = path.includes('update-receipt')
+      ? 'updateMovementReceipt'
+      : path.includes('collect')
+        ? 'collectReceivable'
+        : 'createManualMovement';
+    announceDataChange({ domain: 'cash', method });
     return result;
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('El servidor tardo demasiado en confirmar la operacion. No la repitas: vuelve a abrir el contrato para verificar el recibo.');
@@ -2320,6 +2325,10 @@ export const api = {
         }
       }
       return callBridge('cash', 'createManualMovement', true, payload);
+    },
+    updateMovementReceipt: async (payload) => {
+      if (shouldUseServerState()) return callDirectCashOperation('/cash/update-receipt-metadata', payload);
+      return callBridge('cash', 'updateMovementReceipt', true, payload);
     },
     voidAndReplaceMovementReceipt: (payload) => callBridge('cash', 'voidAndReplaceMovementReceipt', true, payload),
     collectReceivable: async (payload) => {

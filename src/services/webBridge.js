@@ -5175,9 +5175,10 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     ? movementResponsible || movementCreator
     : movementCreator || movementResponsible) || 'Administracion';
   const contractCustomer = String(
-    contractContext?.customerName
-    ?? rentalContext?.customerName
+    movement?.receiptCustomerName
     ?? movement?.customerName
+    ?? contractContext?.customerName
+    ?? rentalContext?.customerName
     ?? movement?.clientName
     ?? '',
   ).trim();
@@ -5194,7 +5195,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const totalLabel = isPersonnelAdvance ? 'ADELANTO ENTREGADO' : isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
   const partyLabel = isPersonnelAdvance ? 'TRABAJADOR' : isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
   const cashBoxRoleLabel = isOut ? 'Caja origen' : 'Caja destino';
-  const createdAt = movement.createdAt ? new Date(movement.createdAt) : new Date();
+  const createdAt = movement.receiptIssuedAt || movement.createdAt
+    ? new Date(movement.receiptIssuedAt ?? movement.createdAt)
+    : new Date();
   const dateLabel = formatDate(createdAt);
   const timeLabel = createdAt.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
   const receiptCode = getCashReceiptCode(state, movement);
@@ -17717,6 +17720,75 @@ const createWebBridge = () => ({
       });
 
       return createdMovement;
+    },
+    updateMovementReceipt: async (payload) => {
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      const receiptCode = String(payload?.receiptCode ?? '').trim();
+      const receiptDetail = String(payload?.receiptDetail ?? payload?.description ?? '').trim();
+      const receiptCustomerName = String(payload?.receiptCustomerName ?? payload?.customerName ?? '').trim();
+      const receiptIssuedAt = new Date(payload?.receiptIssuedAt ?? payload?.createdAt ?? '');
+      const editedByName = String(payload?.editedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
+      if (!movementId) throw new Error('Debes indicar el movimiento del recibo.');
+      if (!receiptCode) throw new Error('Debes escribir el numero del recibo.');
+      if (!receiptDetail) throw new Error('Debes escribir el detalle del recibo.');
+      if (!receiptCustomerName) throw new Error('Debes escribir el nombre del cliente.');
+      if (Number.isNaN(receiptIssuedAt.getTime())) throw new Error('La fecha y hora del recibo no son validas.');
+
+      let result = null;
+      transaction((state) => {
+        const movement = state.cashMovements.find((entry) => String(entry?.id ?? '') === movementId);
+        if (!movement) throw new Error('No se encontro el movimiento asociado al recibo.');
+        if (isVoidedCashMovement(movement)) throw new Error('No se puede editar un recibo anulado.');
+        const now = new Date().toISOString();
+        const previousMetadata = {
+          receiptCode: movement.receiptCode ?? movement.receipt ?? '',
+          receiptDetail: movement.receiptDetail ?? movement.description ?? '',
+          receiptCustomerName: movement.receiptCustomerName ?? movement.customerName ?? '',
+          description: movement.description ?? '',
+          notes: movement.notes ?? '',
+          paymentMethod: movement.paymentMethod ?? '',
+          paymentAccount: movement.paymentAccount ?? '',
+          createdAt: movement.createdAt ?? null,
+          receiptIssuedAt: movement.receiptIssuedAt ?? movement.createdAt ?? null,
+          editedAt: now,
+          editedByName,
+        };
+        if (!movement.receiptOriginalMetadata) movement.receiptOriginalMetadata = deepClone(previousMetadata);
+        movement.receiptEditHistory = [...(movement.receiptEditHistory ?? []), previousMetadata].slice(-25);
+        movement.receiptCode = receiptCode;
+        movement.receiptDetail = receiptDetail;
+        movement.description = receiptDetail.split('\n').filter(Boolean).slice(0, 2).join(' | ') || receiptDetail;
+        movement.receiptCustomerName = receiptCustomerName;
+        movement.customerName = receiptCustomerName;
+        movement.notes = String(payload?.notes ?? '').trim();
+        movement.receiptIssuedAt = receiptIssuedAt.toISOString();
+        movement.paymentMethod = normalizePaymentMethod(payload?.paymentMethod ?? movement.paymentMethod);
+        movement.paymentAccount = movement.paymentMethod === 'qr'
+          ? normalizeQrPaymentAccount(payload?.paymentAccount ?? movement.paymentAccount)
+          : '';
+        movement.updatedAt = now;
+        movement.receiptEditedAt = now;
+        movement.receiptEditedByName = editedByName;
+
+        let updatedContract = null;
+        (state.contracts ?? []).forEach((contract) => {
+          let touched = false;
+          contract.economicLedger = (contract.economicLedger ?? []).map((entry) => {
+            if (String(entry?.cashMovementId ?? '') !== movementId) return entry;
+            touched = true;
+            return { ...entry, cashReceiptCode: receiptCode, receiptIssuedAt: movement.receiptIssuedAt, editedAt: now, editedByName };
+          });
+          if (touched) {
+            contract.economicLedgerUpdatedAt = now;
+            contract.economicLedgerUpdatedByName = editedByName;
+            contract.updatedAt = now;
+            updatedContract = deepClone(contract);
+          }
+        });
+        result = { movement: deepClone(movement), contract: updatedContract };
+        return state;
+      });
+      return result;
     },
     voidAndReplaceMovementReceipt: async (payload) => {
       const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
