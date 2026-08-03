@@ -166,6 +166,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       const responsible = Array.isArray(createdContract.responsibles)
         ? createdContract.responsibles.find((entry) => String(entry?.name ?? '').trim())
         : null;
+      const pickupCoordinatesPending = createdContract.pickupTimeMode === 'coordinate';
 
       const createdRental = await bridge.rentals.create({
         ...trace,
@@ -178,12 +179,15 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         customerPhone: createdContract.customerPhone,
         contractDate: createdContract.contractDate ?? createdContract.createdAt,
         rentalDate: createdContract.deliveryDate || createdContract.eventDate,
-        dueDate: createdContract.pickupDate || createdContract.deliveryDate || createdContract.eventDate,
-        dueTime: createdContract.pickupWindowEnd || createdContract.eventTime || '23:59',
+        dueDate: pickupCoordinatesPending
+          ? (createdContract.eventDate || createdContract.deliveryDate)
+          : createdContract.pickupDate || createdContract.deliveryDate || createdContract.eventDate,
+        dueTime: pickupCoordinatesPending ? '23:59' : createdContract.pickupWindowEnd || createdContract.eventTime || '23:59',
         deliveryWindowStart: createdContract.deliveryWindowStart || '00:00',
         deliveryWindowEnd: createdContract.deliveryWindowEnd || createdContract.eventTime || null,
-        pickupWindowStart: createdContract.pickupWindowStart || null,
-        pickupWindowEnd: createdContract.pickupWindowEnd || createdContract.eventTime || '23:59',
+        pickupWindowStart: pickupCoordinatesPending ? null : createdContract.pickupWindowStart || null,
+        pickupWindowEnd: pickupCoordinatesPending ? null : createdContract.pickupWindowEnd || createdContract.eventTime || '23:59',
+        pickupTimeMode: pickupCoordinatesPending ? 'coordinate' : 'fixed',
         depositBs: guaranteeForCashBs,
         guaranteeDeclaredBs: toMoney(createdContract?.totals?.guaranteeBs),
         guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',
@@ -285,7 +289,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
             notes: `Entrega de ${createdRental.orderCode}. ${createdContract.observations ?? ''}`.trim(),
           });
         }
-        if (linkedDeliveries.length < 2) {
+        if (!pickupCoordinatesPending && linkedDeliveries.length < 2) {
           await bridge.transport.createDelivery({
             rentalId: createdRental.id,
             orderCode: createdRental.orderCode,
@@ -337,7 +341,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
           direction: 'from_supplier',
           flowType: 'paid',
           requestDate: createdContract.deliveryDate || createdContract.eventDate || new Date().toISOString().slice(0, 10),
-          returnDate: createdContract.pickupDate || null,
+          returnDate: pickupCoordinatesPending ? null : createdContract.pickupDate || null,
           eventName: `Abastecimiento ${createdRental.orderCode}`,
           notes: `Generado automaticamente desde contrato ${createdContract.contractCode}.`,
           sourceContractId: createdContract.id,

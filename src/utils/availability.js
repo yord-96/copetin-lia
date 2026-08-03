@@ -75,21 +75,34 @@ const getContractMaps = (contracts = []) => {
   return { byRentalId, byOrderCode };
 };
 
-const periodFromRental = (rental, contract) =>
-  buildAvailabilityPeriod({
+const periodFromRental = (rental, contract) => {
+  const pickupCoordinatesPending = contract?.pickupTimeMode === 'coordinate'
+    || (!contract && rental?.pickupTimeMode === 'coordinate');
+  return buildAvailabilityPeriod({
     deliveryDate: contract?.deliveryDate || rental?.rentalDate || rental?.createdAt,
     deliveryWindowStart: contract?.deliveryWindowStart || rental?.deliveryWindowStart || '00:00',
-    pickupDate: contract?.pickupDate || rental?.dueDate || contract?.eventDate || rental?.rentalDate,
-    pickupWindowEnd: contract?.pickupWindowEnd || rental?.pickupWindowEnd || rental?.dueTime || '23:59',
+    pickupDate: pickupCoordinatesPending
+      ? (contract?.eventDate || rental?.rentalDate)
+      : contract?.pickupDate || rental?.dueDate || contract?.eventDate || rental?.rentalDate,
+    pickupWindowEnd: pickupCoordinatesPending
+      ? '23:59'
+      : contract?.pickupWindowEnd || rental?.pickupWindowEnd || rental?.dueTime || '23:59',
   });
+};
 
-const periodFromCommercialRecord = (record) =>
-  buildAvailabilityPeriod({
+const periodFromCommercialRecord = (record) => {
+  const pickupCoordinatesPending = record?.pickupTimeMode === 'coordinate';
+  return buildAvailabilityPeriod({
     deliveryDate: record?.deliveryDate || record?.eventDate,
     deliveryWindowStart: record?.deliveryWindowStart || record?.eventTime || '00:00',
-    pickupDate: record?.pickupDate || record?.validUntil || record?.eventDate,
-    pickupWindowEnd: record?.pickupWindowEnd || record?.eventTime || '23:59',
+    pickupDate: pickupCoordinatesPending
+      ? record?.eventDate
+      : record?.pickupDate || record?.validUntil || record?.eventDate,
+    pickupWindowEnd: pickupCoordinatesPending
+      ? '23:59'
+      : record?.pickupWindowEnd || record?.eventTime || '23:59',
   });
+};
 
 const normalizeLineQuantity = (line) => {
   const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));

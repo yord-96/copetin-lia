@@ -2118,6 +2118,7 @@ export const useAppController = () => {
         ? contract.responsibles.find((responsible) => String(responsible?.name ?? '').trim())
         : null;
       const approvalTrace = getCurrentUserTrace();
+      const pickupCoordinatesPending = contract.pickupTimeMode === 'coordinate';
 
       let createdRental = null;
       let updatedContract = null;
@@ -2132,12 +2133,15 @@ export const useAppController = () => {
           customerName: contract.customerName,
           customerPhone: contract.customerPhone,
           rentalDate: contract.deliveryDate || contract.eventDate,
-          dueDate: contract.pickupDate || contract.deliveryDate || contract.eventDate,
-          dueTime: contract.pickupWindowEnd || contract.eventTime || '23:59',
+          dueDate: pickupCoordinatesPending
+            ? (contract.eventDate || contract.deliveryDate)
+            : contract.pickupDate || contract.deliveryDate || contract.eventDate,
+          dueTime: pickupCoordinatesPending ? '23:59' : contract.pickupWindowEnd || contract.eventTime || '23:59',
           deliveryWindowStart: contract.deliveryWindowStart || '00:00',
           deliveryWindowEnd: contract.deliveryWindowEnd || contract.eventTime || null,
-          pickupWindowStart: contract.pickupWindowStart || null,
-          pickupWindowEnd: contract.pickupWindowEnd || contract.eventTime || '23:59',
+          pickupWindowStart: pickupCoordinatesPending ? null : contract.pickupWindowStart || null,
+          pickupWindowEnd: pickupCoordinatesPending ? null : contract.pickupWindowEnd || contract.eventTime || '23:59',
+          pickupTimeMode: pickupCoordinatesPending ? 'coordinate' : 'fixed',
           depositBs: guaranteeForCashBs,
           guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? 0),
           guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',

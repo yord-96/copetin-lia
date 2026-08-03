@@ -3723,8 +3723,8 @@ function ServiceOrdersSection({
     () => buildAvailabilityPeriod({
       deliveryDate: draft.deliveryDate || draft.eventDate,
       deliveryWindowStart: draft.deliveryWindowStart || draft.eventTime,
-      pickupDate: draft.pickupDate || draft.eventDate,
-      pickupWindowEnd: draft.pickupWindowEnd || draft.eventTime,
+      pickupDate: draft.pickupTimeMode === 'coordinate' ? draft.eventDate : draft.pickupDate || draft.eventDate,
+      pickupWindowEnd: draft.pickupTimeMode === 'coordinate' ? '23:59' : draft.pickupWindowEnd || draft.eventTime,
       eventDate: draft.eventDate,
       eventTime: draft.eventTime,
     }),
@@ -3735,6 +3735,7 @@ function ServiceOrdersSection({
       draft.eventTime,
       draft.pickupDate,
       draft.pickupWindowEnd,
+      draft.pickupTimeMode,
     ],
   );
 
@@ -4557,7 +4558,10 @@ function ServiceOrdersSection({
 
   const mapRecordToDraft = (record, entityType = 'quote') => {
     const deliveryDate = record?.deliveryDate ?? getInputDate(new Date());
-    const pickupDate = record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const pickupCoordinatesPending = record?.pickupTimeMode === 'coordinate';
+    const pickupDate = pickupCoordinatesPending
+      ? ''
+      : record?.pickupDate ?? getInputDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
     let scheduleDays = Array.isArray(record?.pricingPlan?.scheduleDays) && record.pricingPlan.scheduleDays.length > 0
       ? record.pricingPlan.scheduleDays.map((day, index) => normalizeScheduleDay(day, index, deliveryDate))
       : buildScheduleDaysFromRange(deliveryDate, pickupDate);
@@ -4618,8 +4622,8 @@ function ServiceOrdersSection({
     deliveryWindowEnd: record?.deliveryWindowEnd ?? '10:00',
     deliveryTimeMode: record?.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
     pickupDate,
-    pickupWindowStart: record?.pickupWindowStart ?? '20:00',
-    pickupWindowEnd: record?.pickupWindowEnd ?? '22:00',
+    pickupWindowStart: pickupCoordinatesPending ? '' : record?.pickupWindowStart ?? '20:00',
+    pickupWindowEnd: pickupCoordinatesPending ? '' : record?.pickupWindowEnd ?? '22:00',
     pickupTimeMode: record?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
     driverId: record?.driverId ?? '',
     vehicleId: record?.vehicleId ?? '',
@@ -4816,6 +4820,18 @@ function ServiceOrdersSection({
 
   const setDraftField = (field, value) => {
     setDraft((current) => ({ ...current, [field]: value }));
+  };
+
+  const setPickupCoordinatesPending = (coordinatesPending) => {
+    setDraft((current) => ({
+      ...current,
+      pickupTimeMode: coordinatesPending ? 'coordinate' : 'fixed',
+      pickupDate: coordinatesPending
+        ? ''
+        : current.pickupDate || current.eventDate || current.deliveryDate || getInputDate(new Date()),
+      pickupWindowStart: coordinatesPending ? '' : current.pickupWindowStart || '20:00',
+      pickupWindowEnd: coordinatesPending ? '' : current.pickupWindowEnd || '22:00',
+    }));
   };
 
   const setDraftLogisticsMode = (value) => {
@@ -6090,7 +6106,7 @@ function ServiceOrdersSection({
     }
     if (stepIndex === 3) {
       if (!draft.deliveryDate) return 'Selecciona fecha de entrega.';
-      if (!draft.pickupDate) return 'Selecciona fecha de recojo.';
+      if (draft.pickupTimeMode !== 'coordinate' && !draft.pickupDate) return 'Selecciona fecha de recojo.';
       if (draft.deliveryTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
         return 'La ventana de entrega debe terminar despues de la hora de inicio.';
       }
@@ -6186,7 +6202,7 @@ function ServiceOrdersSection({
     if (!draft.eventDate) throw new Error('Debes indicar la fecha del evento.');
     if (!draft.address.trim()) throw new Error('Debes indicar la direccion del evento.');
     if (!draft.deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
-    if (!draft.pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+    if (draft.pickupTimeMode !== 'coordinate' && !draft.pickupDate) throw new Error('Debes indicar la fecha de recojo.');
     if (draft.deliveryTimeMode !== 'coordinate' && !isValidSameDayWindow(draft.deliveryWindowStart, draft.deliveryWindowEnd)) {
       throw new Error('La ventana de entrega debe terminar despues de la hora de inicio.');
     }
@@ -6292,9 +6308,9 @@ function ServiceOrdersSection({
       deliveryWindowStart: draft.deliveryWindowStart,
       deliveryWindowEnd: draft.deliveryWindowEnd,
       deliveryTimeMode: draft.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
-      pickupDate: draft.pickupDate,
-      pickupWindowStart: draft.pickupWindowStart,
-      pickupWindowEnd: draft.pickupWindowEnd,
+      pickupDate: draft.pickupTimeMode === 'coordinate' ? null : draft.pickupDate,
+      pickupWindowStart: draft.pickupTimeMode === 'coordinate' ? null : draft.pickupWindowStart,
+      pickupWindowEnd: draft.pickupTimeMode === 'coordinate' ? null : draft.pickupWindowEnd,
       pickupTimeMode: draft.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
       driverId: draft.driverId || null,
       vehicleId: draft.vehicleId || null,
@@ -13657,8 +13673,8 @@ function ServiceOrdersSection({
                         </header>
                         <div className="orders-logistics-fields">
                           <label>
-                            Fecha *
-                            <input type="date" value={draft.pickupDate} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
+                            Fecha{draft.pickupTimeMode === 'coordinate' ? '' : ' *'}
+                            <input type="date" value={draft.pickupDate} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
                           </label>
                           <label>
                             Inicio
@@ -13673,9 +13689,9 @@ function ServiceOrdersSection({
                           <input
                             type="checkbox"
                             checked={draft.pickupTimeMode === 'coordinate'}
-                            onChange={(event) => setDraftField('pickupTimeMode', event.target.checked ? 'coordinate' : 'fixed')}
+                            onChange={(event) => setPickupCoordinatesPending(event.target.checked)}
                           />
-                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de devolucion con el cliente' : 'Coordinar horario de recojo con el cliente'}</span>
+                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar fecha y horario de devolucion con el cliente' : 'Coordinar fecha y horario de recojo con el cliente'}</span>
                         </label>
                       </section>
                     </div>
