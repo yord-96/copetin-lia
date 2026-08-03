@@ -2249,6 +2249,61 @@ export const api = {
       }
       return payload;
     },
+    getPettySector: async ({ sector, offset = 0, limit = 80, ...filters } = {}) => {
+      if (!shouldUseServerState()) {
+        const normalizedSector = String(sector ?? 'expenses').toLowerCase();
+        let rows = [];
+        if (normalizedSector === 'suppliers') {
+          const bundle = await callBridge('suppliers', 'listBundle', false);
+          rows = Array.isArray(bundle?.loans) ? bundle.loans : [];
+        } else if (normalizedSector === 'debts') {
+          rows = await callBridge('cash', 'listDebts', false);
+        } else {
+          const movements = await callBridge('cash', 'listMovements', false);
+          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
+          const isAdvance = (movement) => String(movement?.category ?? '').toLowerCase().includes('adelanto')
+            || String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance';
+          if (normalizedSector === 'advances') {
+            rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
+          } else if (normalizedSector === 'expenses') {
+            rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+          } else {
+            rows = pettyMovements;
+          }
+        }
+        rows = Array.isArray(rows) ? rows : [];
+        rows.sort((a, b) => new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
+        return {
+          sector: normalizedSector,
+          rows: rows.slice(offset, offset + limit),
+          offset,
+          limit,
+          total: rows.length,
+          hasMore: offset + limit < rows.length,
+        };
+      }
+      const params = new URLSearchParams({
+        sector: String(sector ?? 'expenses'),
+        offset: String(Math.max(0, Number(offset) || 0)),
+        limit: String(Math.min(80, Math.max(1, Number(limit) || 80))),
+      });
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && String(value).trim() !== '') params.set(key, String(value));
+      });
+      const response = await fetch(getServerStateUrl(`/accounting/petty-sector?${params.toString()}`), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo cargar el sector de Caja Chica.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return payload;
+    },
     listMovements: async (payload) => { await ensureServerCollectionsLoaded(['cashMovements'], 'cash-movements'); return callBridge('cash', 'listMovements', false, payload); },
     listDebts: async () => { await ensureServerCollectionsLoaded(['cashDebts'], 'cash-debts'); return callBridge('cash', 'listDebts', false); },
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),
