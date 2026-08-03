@@ -11,7 +11,6 @@ import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
-import AccountingSection from './components/sections/AccountingSection';
 import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
 
 const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
@@ -31,6 +30,7 @@ const loadInventoryDashboardSection = () => import('./components/sections/Invent
 const loadSuppliersSection = () => import('./components/sections/SuppliersSection');
 const loadPersonnelSection = () => import('./components/sections/PersonnelSection');
 const loadLinconWorkspaceSection = () => import('./components/sections/LinconWorkspaceSection');
+const loadAccountingSection = () => import('./components/sections/AccountingSection');
 
 const SummarySection = lazy(loadSummarySection);
 const CategoriesSection = lazy(loadCategoriesSection);
@@ -40,7 +40,7 @@ const CalendarSection = lazy(loadCalendarSection);
 const ClientsSection = lazy(loadClientsSection);
 const UsersSection = lazy(loadUsersSection);
 const ServiceOrdersSection = lazy(loadServiceOrdersSection);
-const EMPTY_SERVICE_ORDER_CASH_MOVEMENTS = Object.freeze([]);
+const AccountingSection = lazy(loadAccountingSection);
 const collectionSignatureCache = new WeakMap();
 
 const getCollectionSignature = (rows, kind) => {
@@ -121,12 +121,14 @@ const PRELOADERS_BY_TAB = Object.freeze({
   usuarios: loadUsersSection,
   inventario: loadInventoryDashboardSection,
   devolucion: loadReturnSection,
+  contabilidad: loadAccountingSection,
 });
 
 const getTabPreloadKey = (tabId) => {
   const target = String(tabId ?? '');
   if (target.startsWith('inventario')) return 'inventario';
   if (target.startsWith('devolucion')) return 'devolucion';
+  if (target.startsWith('contabilidad')) return 'contabilidad';
   return target;
 };
 
@@ -141,6 +143,7 @@ const getTabLabel = (tabId) => {
   if (target === 'items') return 'Clientes';
   if (target === 'recibos') return 'Reportes';
   if (target === 'personal') return 'Personal';
+  if (target === 'contabilidad') return 'Contabilidad';
   return 'vista';
 };
 
@@ -615,8 +618,12 @@ function AdminApp() {
             stockRecoveries={controller.stockRecoveries}
             cashSummary={controller.cashSummary}
             cashSessions={controller.cashSessions}
-            cashMovements={EMPTY_SERVICE_ORDER_CASH_MOVEMENTS}
+            cashMovements={controller.cashMovements}
             cashDebts={controller.cashDebts}
+            cashPaymentChannels={controller.cashPaymentChannels}
+            cashReturnIssues={controller.cashReturnIssues}
+            cashMovementMeta={controller.cashMovementMeta}
+            operationsLoading={controller.accountingOperationsLoading}
             currentUser={controller.currentUser}
             formatBs={formatBs}
             formatDate={formatDate}

@@ -2205,6 +2205,50 @@ export const api = {
   cash: {
     getSummary: () => callBridge('cash', 'getSummary', false),
     listSessions: () => callBridge('cash', 'listSessions', false),
+    getAccountingContext: async () => {
+      if (!shouldUseServerState()) {
+        const [movements, debts] = await Promise.all([
+          callBridge('cash', 'listMovements', false),
+          callBridge('cash', 'listDebts', false),
+        ]);
+        return { movements, debts, paymentChannels: [], totalMovements: movements.length, truncated: false };
+      }
+      const response = await fetch(getServerStateUrl('/accounting-context?limit=750'), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo cargar el resumen de contabilidad.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return payload;
+    },
+    getPettyHistory: async () => {
+      if (!shouldUseServerState()) {
+        const movements = await callBridge('cash', 'listMovements', false);
+        const pettyMovements = movements.filter((movement) => (
+          String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH'
+        ));
+        return { movements: pettyMovements, total: pettyMovements.length };
+      }
+      const response = await fetch(getServerStateUrl('/accounting/petty-history'), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo cargar el historial de Caja Chica.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return payload;
+    },
     listMovements: async (payload) => { await ensureServerCollectionsLoaded(['cashMovements'], 'cash-movements'); return callBridge('cash', 'listMovements', false, payload); },
     listDebts: async () => { await ensureServerCollectionsLoaded(['cashDebts'], 'cash-debts'); return callBridge('cash', 'listDebts', false); },
     openSession: (payload) => callBridge('cash', 'openSession', true, payload),

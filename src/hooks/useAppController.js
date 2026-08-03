@@ -116,6 +116,10 @@ export const useAppController = () => {
   const [cashSessions, setCashSessions] = useState([]);
   const [cashMovements, setCashMovements] = useState([]);
   const [cashDebts, setCashDebts] = useState([]);
+  const [cashPaymentChannels, setCashPaymentChannels] = useState([]);
+  const [cashReturnIssues, setCashReturnIssues] = useState([]);
+  const [cashMovementMeta, setCashMovementMeta] = useState({ total: 0, visible: 0, truncated: false });
+  const [accountingOperationsLoading, setAccountingOperationsLoading] = useState(false);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [userPresence, setUserPresence] = useState([]);
   const [updateNotice, setUpdateNotice] = useState(null);
@@ -266,12 +270,21 @@ export const useAppController = () => {
     } else if (String(activeTab).startsWith('contabilidad')) {
       group = 'accounting-operations';
       loader = async () => {
-        const [cashMovementsData, cashDebtsData] = await Promise.all([
-          api.cash.listMovements(),
-          api.cash.listDebts(),
-        ]);
-        setCashMovements(cashMovementsData);
-        setCashDebts(cashDebtsData);
+        setAccountingOperationsLoading(true);
+        try {
+          const context = await api.cash.getAccountingContext();
+          setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+          setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+          setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+          setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
+          setCashMovementMeta({
+            total: Number(context?.totalMovements ?? context?.movements?.length ?? 0),
+            visible: Number(context?.visibleMovements ?? context?.movements?.length ?? 0),
+            truncated: Boolean(context?.truncated),
+          });
+        } finally {
+          setAccountingOperationsLoading(false);
+        }
       };
     }
 
@@ -1043,7 +1056,17 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.cash.openSession(payload);
-      await loadData();
+      const [summary, sessions, context] = await Promise.all([
+        api.cash.getSummary(),
+        api.cash.listSessions(),
+        api.cash.getAccountingContext(),
+      ]);
+      setCashSummary(summary);
+      setCashSessions(sessions);
+      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo abrir la caja.');
@@ -1055,7 +1078,17 @@ export const useAppController = () => {
     setError('');
     try {
       const closed = await api.cash.closeSession(payload);
-      await loadData();
+      const [summary, sessions, context] = await Promise.all([
+        api.cash.getSummary(),
+        api.cash.listSessions(),
+        api.cash.getAccountingContext(),
+      ]);
+      setCashSummary(summary);
+      setCashSessions(sessions);
+      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
       return closed;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo cerrar la caja.');
@@ -1067,7 +1100,12 @@ export const useAppController = () => {
     setError('');
     try {
       const updated = await api.cash.updateTreasuryAccounts(payload);
-      await loadData();
+      const [summary, sessions] = await Promise.all([
+        api.cash.getSummary(),
+        api.cash.listSessions(),
+      ]);
+      setCashSummary(summary);
+      setCashSessions(sessions);
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la distribucion de caja grande.');
@@ -1079,7 +1117,17 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.cash.createManualMovement(payload);
-      await loadData();
+      const [summary, sessions, context] = await Promise.all([
+        api.cash.getSummary(),
+        api.cash.listSessions(),
+        api.cash.getAccountingContext(),
+      ]);
+      setCashSummary(summary);
+      setCashSessions(sessions);
+      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el movimiento de caja.');
@@ -1094,7 +1142,11 @@ export const useAppController = () => {
         ...payload,
         createdBy: payload?.createdBy || getCurrentUserTrace().createdByName,
       });
-      await loadData();
+      setCashDebts((current) => (
+        current.some((debt) => debt.id === created.id)
+          ? current.map((debt) => (debt.id === created.id ? created : debt))
+          : [created, ...current]
+      ));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar la deuda.');
@@ -1110,7 +1162,19 @@ export const useAppController = () => {
         paidBy: payload?.paidBy || getCurrentUserTrace().createdByName,
         createdBy: payload?.createdBy || getCurrentUserTrace().createdByName,
       });
-      await loadData();
+      if (result?.debt?.id) {
+        setCashDebts((current) => current.map((debt) => (
+          debt.id === result.debt.id ? result.debt : debt
+        )));
+      }
+      if (result?.movement?.id) {
+        setCashMovements((current) => (
+          current.some((movement) => movement.id === result.movement.id)
+            ? current.map((movement) => (movement.id === result.movement.id ? result.movement : movement))
+            : [result.movement, ...current]
+        ));
+      }
+      setCashSummary(await api.cash.getSummary());
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo pagar la deuda.');
@@ -1125,7 +1189,10 @@ export const useAppController = () => {
         ...payload,
         deletedBy: payload?.deletedBy || getCurrentUserTrace().createdByName,
       });
-      await loadData();
+      const deletedId = result?.debt?.id ?? payload?.debtId ?? payload?.id;
+      if (deletedId) {
+        setCashDebts((current) => current.filter((debt) => debt.id !== deletedId));
+      }
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar la deuda.');
@@ -1137,7 +1204,15 @@ export const useAppController = () => {
     setError('');
     try {
       const result = await api.cash.voidAndReplaceMovementReceipt(payload);
-      await loadData();
+      const [summary, context] = await Promise.all([
+        api.cash.getSummary(),
+        api.cash.getAccountingContext(),
+      ]);
+      setCashSummary(summary);
+      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo anular y reemplazar el recibo.');
@@ -2512,6 +2587,10 @@ export const useAppController = () => {
     cashSessions,
     cashMovements,
     cashDebts,
+    cashPaymentChannels,
+    cashReturnIssues,
+    cashMovementMeta,
+    accountingOperationsLoading,
     attendanceRecords,
     userPresence,
     updateNotice,

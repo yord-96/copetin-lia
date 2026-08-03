@@ -88,6 +88,23 @@ const summarizeRental = (rental = {}) => ({
   items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeItemLine),
   inventoryAvailabilityAssumptions: null,
   returnReport: null,
+  returnIssueSummary: (Array.isArray(rental.returnReport) ? rental.returnReport : [])
+    .filter((line) => (
+      Number(line?.damagedQty ?? 0) > 0
+      || Number(line?.missingQty ?? 0) > 0
+      || Number(line?.penaltyBs ?? 0) > 0
+    ))
+    .map((line) => ({
+      itemId: line?.itemId ?? '',
+      itemName: line?.itemName ?? line?.name ?? 'Item',
+      damagedQty: Number(line?.damagedQty ?? 0),
+      missingQty: Number(line?.missingQty ?? 0),
+      damagedUnitChargeBs: Number(line?.damagedUnitChargeBs ?? 0),
+      missingUnitChargeBs: Number(line?.missingUnitChargeBs ?? 0),
+      penaltyBs: Number(line?.penaltyBs ?? 0),
+      chargeOwner: line?.chargeOwner ?? 'cliente',
+      damageNote: line?.damageNote ?? '',
+    })),
   // La tabla de contratos necesita el saldo económico final sin descargar
   // todo el informe de devolución. Conservamos únicamente el resumen mínimo.
   returnSettlement: rental?.returnSettlement
@@ -101,6 +118,30 @@ const summarizeRental = (rental = {}) => ({
     : null,
   _summaryOnly: true,
 });
+
+const summarizeAccountingMovement = (movement = {}) => {
+  const fields = [
+    'id', 'sessionId', 'type', 'amountBs', 'description', 'sourceType', 'sourceId',
+    'createdBy', 'cashBoxType', 'category', 'paymentMethod', 'paymentAccount',
+    'responsible', 'receipt', 'receiptCode', 'notes', 'isInternalTransfer',
+    'transferGroupId', 'receiptStatus', 'voidedAt', 'voidedBy', 'voidReason',
+    'replacedByMovementId', 'replacementOfMovementId', 'linkedRentalId',
+    'linkedContractId', 'linkedOrderCode', 'contractCode', 'orderCode', 'reference',
+    'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
+    'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
+  ];
+  return Object.fromEntries(fields
+    .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
+    .map((field) => [field, movement[field]]));
+};
+
+const isGuaranteeRefundMovement = (movement = {}) => {
+  const values = [movement?.accountingTag, movement?.category, movement?.type]
+    .map((value) => String(value ?? '').trim().toLowerCase());
+  return values.includes('guarantee_refund')
+    || values.includes('garantia_devuelta_manual')
+    || values.includes('egreso_devolucion_garantia_manual');
+};
 
 const summarizeBootstrapCollection = (name, rows) => {
   if (name === 'contracts') return rows.map(summarizeContract);
@@ -2307,6 +2348,135 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
       sendStateGuardError(req, res, error);
       return;
     }
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/accounting-context', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const allMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+    const recentLimit = Math.min(1500, Math.max(100, Number(req.query.limit ?? 750) || 750));
+    const sortedMovements = allMovements
+      .slice()
+      .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));
+    const selectedMovements = new Map();
+    sortedMovements.slice(0, recentLimit).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
+    allMovements.filter(isGuaranteeRefundMovement).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
+
+    const contractRows = Array.isArray(state.contracts) ? state.contracts : [];
+    const channelMap = new Map();
+    contractRows.flatMap((contract) => Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+      .filter((entry) => !entry?.deletedAt && String(entry?.type ?? '').toLowerCase() !== 'note')
+      .forEach((entry) => {
+      const rawMethod = String(entry?.paymentMethod ?? '').trim().toLowerCase();
+      const method = rawMethod.includes('qr')
+        ? 'qr'
+        : rawMethod.includes('transfer')
+          ? 'transferencia'
+          : rawMethod.includes('efect')
+            ? 'efectivo'
+            : 'sin_metodo';
+      const account = method === 'qr' || method === 'transferencia'
+        ? String(entry?.paymentAccount ?? '').trim().toUpperCase() || 'SIN CUENTA'
+        : '';
+      const key = `${method}:${account}`;
+      const current = channelMap.get(key) ?? {
+        key,
+        method,
+        account,
+        incomeBs: 0,
+        outBs: 0,
+        count: 0,
+      };
+      const amount = Math.abs(Number(entry?.amountBs ?? 0));
+      if (String(entry?.type ?? '').toLowerCase() === 'refund') current.outBs += amount;
+      else current.incomeBs += amount;
+      current.count += 1;
+      channelMap.set(key, current);
+    });
+
+    const paymentChannels = [...channelMap.values()]
+      .map((row) => ({
+        ...row,
+        incomeBs: Math.round(row.incomeBs * 100) / 100,
+        outBs: Math.round(row.outBs * 100) / 100,
+        netBs: Math.round((row.incomeBs - row.outBs) * 100) / 100,
+      }))
+      .sort((a, b) => b.netBs - a.netBs || a.key.localeCompare(b.key, 'es'));
+
+    const contractsById = new Map(contractRows
+      .map((contract) => [String(contract?.id ?? ''), contract]));
+    const returnIssues = (Array.isArray(state.rentals) ? state.rentals : [])
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
+      .flatMap((rental) => {
+        const contract = contractsById.get(String(rental?.contractId ?? ''));
+        const settlement = rental?.returnSettlement ?? {};
+        return (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+          .filter((line) => (
+            Number(line?.damagedQty ?? 0) > 0
+            || Number(line?.missingQty ?? 0) > 0
+            || Number(line?.penaltyBs ?? 0) > 0
+          ))
+          .map((line, index) => ({
+            id: `${rental.id}-${line?.itemId ?? index}`,
+            rentalId: rental.id,
+            contractId: contract?.id ?? rental?.contractId ?? '',
+            orderCode: rental?.orderCode ?? '',
+            contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental?.id,
+            customerName: rental?.customerName ?? contract?.customerName ?? 'Cliente',
+            responsibleName: contract?.responsibles?.[0]?.name ?? contract?.responsibleName ?? rental?.createdByName ?? '-',
+            eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.rentalDate ?? rental?.createdAt,
+            returnedAt: rental?.returnedAt,
+            itemName: line?.itemName ?? line?.name ?? 'Item',
+            damagedQty: Number(line?.damagedQty ?? 0),
+            missingQty: Number(line?.missingQty ?? 0),
+            damagedUnitChargeBs: Number(line?.damagedUnitChargeBs ?? 0),
+            missingUnitChargeBs: Number(line?.missingUnitChargeBs ?? 0),
+            penaltyBs: Number(line?.penaltyBs ?? 0),
+            chargeOwner: ['transporte', 'lavado'].includes(String(line?.chargeOwner ?? '').toLowerCase())
+              ? String(line.chargeOwner).toLowerCase()
+              : 'cliente',
+            note: line?.damageNote ?? '',
+            pendingCollectionBs: Number(settlement?.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0),
+          }));
+      })
+      .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+      movements: [...selectedMovements.values()]
+        .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
+        .map(summarizeAccountingMovement),
+      debts: Array.isArray(state.cashDebts) ? state.cashDebts : [],
+      paymentChannels,
+      returnIssues,
+      totalMovements: allMovements.length,
+      visibleMovements: selectedMovements.size,
+      truncated: selectedMovements.size < allMovements.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const movements = (Array.isArray(snapshot?.state?.cashMovements) ? snapshot.state.cashMovements : [])
+      .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH')
+      .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
+      .map(summarizeAccountingMovement);
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+      movements,
+      total: movements.length,
+    });
+  } catch (error) {
     next(error);
   }
 });
