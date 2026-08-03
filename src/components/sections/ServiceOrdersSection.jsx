@@ -6947,7 +6947,37 @@ function ServiceOrdersSection({
     }
   };
 
-  const fetchContractPdf = async ({ identifier, fileName }) => {
+  const requestContractPdfViewerUrl = async ({ identifier }) => {
+    const requestedId = String(identifier ?? '').trim();
+    if (!requestedId) {
+      throw new Error('No se pudo identificar el contrato.');
+    }
+
+    const response = await fetch(
+      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf-access`),
+      {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'No se pudo preparar el visor del contrato.');
+    }
+
+    const payload = await response.json();
+    const relativeUrl = String(payload?.url ?? '').trim();
+    if (!relativeUrl) {
+      throw new Error('El servidor no devolvió una URL válida para el PDF.');
+    }
+    return getDocumentApiUrl(relativeUrl);
+  };
+
+  const fetchContractPdf = async ({ identifier }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar el contrato.');
@@ -6974,16 +7004,13 @@ function ServiceOrdersSection({
       throw new Error('El servidor no devolvió un documento PDF válido.');
     }
 
-    const safeFileName = `${String(fileName ?? 'CONTRATO')
-      .replace(/\.pdf$/i, '')
-      .trim() || 'CONTRATO'}.pdf`;
-    const namedPdfFile = new File([pdfBlob], safeFileName, {
-      type: 'application/pdf',
-      lastModified: Date.now(),
+    const viewerUrl = await requestContractPdfViewerUrl({
+      identifier: requestedId,
     });
 
     return {
-      blobUrl: URL.createObjectURL(namedPdfFile),
+      blobUrl: URL.createObjectURL(pdfBlob),
+      viewerUrl,
       cacheStatus: response.headers.get('X-Document-Cache') ?? '',
       durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
     };
@@ -8136,17 +8163,13 @@ function ServiceOrdersSection({
         if (!preview) {
           const renderedPdf = await fetchContractPdf({
             identifier: contractIdentifier,
-            fileName: buildDocumentFileBase(
-              orderRow.customerName ?? orderRow.client,
-              baseDocumentCode,
-              'contrato',
-            ),
           });
 
           preview = {
             title: loadingTitle,
             html: '',
             blobUrl: renderedPdf.blobUrl,
+            viewerUrl: renderedPdf.viewerUrl,
             mimeType: 'application/pdf',
             cacheStatus: renderedPdf.cacheStatus,
             durationMs: renderedPdf.durationMs,
@@ -8233,6 +8256,7 @@ function ServiceOrdersSection({
           : undefined,
         html: preview.html ?? '',
         blobUrl: preview.blobUrl ?? '',
+        viewerUrl: preview.viewerUrl ?? '',
         mimeType: preview.mimeType ?? 'text/html',
         loading: false,
         cacheKey,
@@ -8261,7 +8285,11 @@ function ServiceOrdersSection({
   const handlePrintPreview = () => {
     if (documentPreview?.loading || !documentPreview?.blobUrl) return;
     if (documentPreview?.mimeType === 'application/pdf') {
-      window.open(documentPreview.blobUrl, '_blank', 'noopener,noreferrer');
+      window.open(
+        documentPreview.viewerUrl || documentPreview.blobUrl,
+        '_blank',
+        'noopener,noreferrer',
+      );
       return;
     }
     const frame = document.getElementById('orders-document-preview-frame');

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { getStateSnapshot } from '../storage/fileStateStore.js';
 import {
@@ -28,6 +29,38 @@ const contractLogoPath = path.join(
 let contractLogoDataUrlPromise = null;
 const productUploadInfo = getProductUploadInfo();
 const productImageDataUrlPromises = new Map();
+const documentAccessTokens = new Map();
+const DOCUMENT_ACCESS_TOKEN_TTL_MS = 2 * 60 * 1000;
+
+const cleanupDocumentAccessTokens = () => {
+  const now = Date.now();
+  documentAccessTokens.forEach((entry, token) => {
+    if (!entry || entry.expiresAt <= now) {
+      documentAccessTokens.delete(token);
+    }
+  });
+};
+
+const createDocumentAccessToken = ({ kind, identifier }) => {
+  cleanupDocumentAccessTokens();
+  const token = randomUUID();
+  documentAccessTokens.set(token, {
+    kind,
+    identifier: String(identifier ?? '').trim(),
+    expiresAt: Date.now() + DOCUMENT_ACCESS_TOKEN_TTL_MS,
+  });
+  return token;
+};
+
+const hasValidDocumentAccessToken = ({ token, kind, identifier }) => {
+  cleanupDocumentAccessTokens();
+  const record = documentAccessTokens.get(String(token ?? '').trim());
+  if (!record) return false;
+  return record.kind === kind
+    && record.identifier === String(identifier ?? '').trim()
+    && record.expiresAt > Date.now();
+};
+
 
 const getContractLogoDataUrl = async () => {
   if (!contractLogoDataUrlPromise) {
@@ -117,6 +150,22 @@ const requireInternalKey = (req, res, next) => {
     return;
   }
   next();
+};
+
+const requireContractPdfAccess = (req, res, next) => {
+  const requestedId = String(req.params.id ?? '').trim();
+  const token = String(req.query?.access_token ?? '').trim();
+
+  if (token && hasValidDocumentAccessToken({
+    token,
+    kind: 'contract',
+    identifier: requestedId,
+  })) {
+    next();
+    return;
+  }
+
+  requireInternalKey(req, res, next);
 };
 
 const matchesIdentifier = (entry, requestedId) => [
@@ -305,9 +354,35 @@ const resolveInventoryContext = (state, requestedId) => {
   return { contract, rental, deliveries };
 };
 
+router.post(
+  '/__copetin_db/contracts/:id/pdf-access',
+  requireInternalKey,
+  (req, res) => {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    const token = createDocumentAccessToken({
+      kind: 'contract',
+      identifier: requestedId,
+    });
+    const encodedId = encodeURIComponent(requestedId);
+    const encodedToken = encodeURIComponent(token);
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      url: `/__copetin_db/contracts/${encodedId}/pdf?access_token=${encodedToken}`,
+      expiresInMs: DOCUMENT_ACCESS_TOKEN_TTL_MS,
+    });
+  },
+);
+
 router.get(
   '/__copetin_db/contracts/:id/pdf',
-  requireInternalKey,
+  requireContractPdfAccess,
   async (req, res, next) => {
     const startedAt = Date.now();
     try {
