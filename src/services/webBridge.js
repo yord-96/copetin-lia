@@ -3517,51 +3517,6 @@ const normalizeState = (state) => {
 
   repairDuplicateActiveRentalOrderCodes(source, now);
 
-  // Sanea contratos antiguos donde "coordinar devolucion" estaba marcado,
-  // pero quedaron fechas y horas arbitrarias guardadas. La reserva termina
-  // provisionalmente al finalizar el dia del evento, sin crear un recojo ficticio.
-  const coordinatePickupCleanupRevision = 1;
-  if (Number(source.settings.maintenance.coordinatePickupCleanupRevision ?? 0) < coordinatePickupCleanupRevision) {
-    const rentalById = new Map(source.rentals.map((rental) => [String(rental?.id ?? ''), rental]));
-    let cleanedContracts = 0;
-    let cleanedRentals = 0;
-
-    source.contracts.forEach((contract) => {
-      if (contract?.pickupTimeMode !== 'coordinate') return;
-
-      if (contract.pickupDate || contract.pickupWindowStart || contract.pickupWindowEnd) {
-        cleanedContracts += 1;
-      }
-      contract.pickupDate = null;
-      contract.pickupWindowStart = null;
-      contract.pickupWindowEnd = null;
-
-      const rental = rentalById.get(String(contract.rentalId ?? ''));
-      if (!rental) return;
-
-      const fallbackDate = contract.eventDate || contract.deliveryDate || rental.rentalDate || null;
-      if (
-        rental.dueDate !== fallbackDate
-        || rental.dueTime !== '23:59'
-        || rental.pickupWindowStart
-        || rental.pickupWindowEnd
-      ) {
-        cleanedRentals += 1;
-      }
-      rental.pickupTimeMode = 'coordinate';
-      rental.dueDate = fallbackDate;
-      rental.dueTime = '23:59';
-      rental.dueAt = fallbackDate ? `${fallbackDate}T23:59:00` : null;
-      rental.pickupWindowStart = null;
-      rental.pickupWindowEnd = null;
-    });
-
-    source.settings.maintenance.coordinatePickupCleanupRevision = coordinatePickupCleanupRevision;
-    source.settings.maintenance.coordinatePickupCleanupAt = now;
-    source.settings.maintenance.coordinatePickupContractsCleaned = cleanedContracts;
-    source.settings.maintenance.coordinatePickupRentalsCleaned = cleanedRentals;
-  }
-
   const activeReservedByItem = new Map();
   const todayKey = toDateKey(new Date());
   source.rentals
@@ -10768,11 +10723,17 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     }
   });
 
+  const pickupCoordinatesForAvailability = contract.pickupTimeMode === 'coordinate'
+    || rental.pickupTimeMode === 'coordinate';
   const availabilityPeriod = buildAvailabilityPeriod({
     deliveryDate: contract.deliveryDate || rental.rentalDate,
     deliveryWindowStart: contract.deliveryWindowStart || rental.deliveryWindowStart || '00:00',
-    pickupDate: contract.pickupDate || rental.dueDate,
-    pickupWindowEnd: contract.pickupWindowEnd || rental.pickupWindowEnd || rental.dueTime || '23:59',
+    pickupDate: pickupCoordinatesForAvailability
+      ? (contract.eventDate || contract.deliveryDate || rental.rentalDate)
+      : contract.pickupDate || rental.dueDate,
+    pickupWindowEnd: pickupCoordinatesForAvailability
+      ? '23:59'
+      : contract.pickupWindowEnd || rental.pickupWindowEnd || rental.dueTime || '23:59',
   });
   const projectedRequestedItems = (contract.items ?? [])
     .map((line) => {
