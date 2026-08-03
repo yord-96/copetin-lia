@@ -1168,6 +1168,29 @@ const normalizeCoverageDraftLines = (value) => {
 
 const getSupplierCoverageKey = (line) => String(line?.lineKey ?? line?.itemId ?? line ?? '').trim();
 
+const buildSupplierCoverageDraftByItem = (sourcePlan = []) => {
+  const fromRecord = {};
+  (Array.isArray(sourcePlan) ? sourcePlan : []).forEach((line) => {
+    const itemId = String(line?.itemId ?? '').trim();
+    if (!itemId) return;
+    const coverageKey = String(line?.lineKey ?? itemId).trim();
+    const current = normalizeCoverageDraftLines(fromRecord[coverageKey]);
+    current.push({
+      id: line?.id ?? `cov-${itemId}-${current.length}`,
+      lineKey: coverageKey !== itemId ? coverageKey : String(line?.lineKey ?? '').trim() || null,
+      supplierId: String(line?.supplierId ?? '').trim(),
+      supplierName: String(line?.supplierName ?? '').trim(),
+      supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
+      supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
+      neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
+      supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
+      manualCoverage: Boolean(line?.manualCoverage),
+    });
+    fromRecord[coverageKey] = { coverages: current };
+  });
+  return fromRecord;
+};
+
 const buildEmptySupplierCoverageDraft = () => ({
   supplierMode: 'existing',
   supplierId: '',
@@ -4145,26 +4168,7 @@ function ServiceOrdersSection({
       .join(';')}`;
     if (supplierCoverageHydrationKeyRef.current === hydrationKey) return;
     supplierCoverageHydrationKeyRef.current = hydrationKey;
-    const fromRecord = {};
-    sourcePlan.forEach((line) => {
-      const itemId = String(line?.itemId ?? '').trim();
-      if (!itemId) return;
-      const coverageKey = String(line?.lineKey ?? itemId).trim();
-      const current = normalizeCoverageDraftLines(fromRecord[coverageKey]);
-      current.push({
-        id: line?.id ?? `cov-${itemId}-${current.length}`,
-        lineKey: coverageKey !== itemId ? coverageKey : String(line?.lineKey ?? '').trim() || null,
-        supplierId: String(line?.supplierId ?? '').trim(),
-        supplierName: String(line?.supplierName ?? '').trim(),
-        supplierQuoteId: String(line?.supplierQuoteId ?? '').trim() || null,
-        supplierQuoteCode: String(line?.supplierQuoteCode ?? '').trim() || null,
-        neededQty: Math.max(1, Math.trunc(Number(line?.neededQty ?? 1))),
-        supplierUnitCostBs: Math.max(0, Number(line?.supplierUnitCostBs ?? 0)),
-        manualCoverage: Boolean(line?.manualCoverage),
-      });
-      fromRecord[coverageKey] = { coverages: current };
-    });
-    setSupplierFulfillmentDraftByItem(fromRecord);
+    setSupplierFulfillmentDraftByItem(buildSupplierCoverageDraftByItem(sourcePlan));
   }, [draft.recordId, draft.supplierFulfillmentPlan, isHistoricalReconstruction, modalOpen]);
 
   useEffect(() => {
@@ -4770,6 +4774,7 @@ function ServiceOrdersSection({
     if (sourceRecord) {
       const mappedDraft = mapRecordToDraft(sourceRecord, entityType);
       setDraft(mappedDraft);
+      setSupplierFulfillmentDraftByItem(buildSupplierCoverageDraftByItem(mappedDraft.supplierFulfillmentPlan));
       setActiveScheduleDayId(mappedDraft.scheduleDays?.[0]?.id ?? '');
     } else {
       const emptyDraft = buildEmptyDraft(mode);
@@ -4781,9 +4786,9 @@ function ServiceOrdersSection({
         recordStatus: entityType === 'contract' && mode === 'order' ? 'pendiente' : 'borrador',
       };
       setDraft(nextDraft);
+      setSupplierFulfillmentDraftByItem({});
       setActiveScheduleDayId(nextDraft.scheduleDays?.[0]?.id ?? '');
     }
-    setSupplierFulfillmentDraftByItem({});
     setCurrentStep(0);
     setModalOpen(true);
   };
@@ -6748,12 +6753,13 @@ function ServiceOrdersSection({
     let fullContract = contract;
     setContractActionStatus(`Cargando contrato ${contract?.contractCode || contract?.id || ''} para editar...`);
     try {
-      if (fullContract?._summaryOnly) {
-        fullContract = await api.contracts.ensureFull(
-          fullContract.id ?? fullContract.contractCode ?? fullContract.orderCode,
-          'edit-contract',
-        );
-      }
+      // La fila de la tabla es deliberadamente liviana y puede haber perdido la
+      // marca `_summaryOnly` al combinarse con la orden. Editar siempre exige la
+      // version autoritativa del servidor para no reconstruir desde un resumen.
+      fullContract = await api.contracts.ensureFull(
+        fullContract?.id ?? fullContract?.contractCode ?? fullContract?.orderCode,
+        'edit-contract',
+      );
     } catch (requestError) {
       setFormError(requestError.message || 'No se pudo cargar el contrato completo para editar.');
       setMenuState(null);
@@ -13144,6 +13150,10 @@ function ServiceOrdersSection({
                           const supplierCoverageLines = normalizeCoverageDraftLines(supplierFulfillmentDraftByItem[supplierCoverageKey] ?? supplierFulfillmentDraftByItem[line.itemId])
                             .filter((coverage) => coverage.supplierId && coverage.supplierName && coverage.neededQty > 0);
                           const supplierPlannedQty = supplierCoverageLines.reduce((sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage.neededQty ?? 0))), 0);
+                          const manuallyAddedSupplierQty = supplierCoverageLines
+                            .filter((coverage) => coverage.manualCoverage)
+                            .reduce((sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage.neededQty ?? 0))), 0);
+                          const totalCommittedQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0))) + manuallyAddedSupplierQty;
                           const effectiveShortageForItem = Math.max(shortageForItem, Math.min(requestedForItem, supplierPlannedQty));
                           const supplierCoveredQty = Math.min(
                             effectiveShortageForItem,
@@ -13379,6 +13389,11 @@ function ServiceOrdersSection({
                               {hasStockShortage && !hasUncoveredShortage ? (
                                 <small className="orders-available-note is-positive">
                                   Faltante cubierto por proveedor: {supplierCoveredQty} u.
+                                </small>
+                              ) : null}
+                              {manuallyAddedSupplierQty > 0 ? (
+                                <small className="orders-available-note is-positive">
+                                  Total comprometido: {totalCommittedQty} u. ({line.quantity} propias + {manuallyAddedSupplierQty} subalquiladas)
                                 </small>
                               ) : null}
                             </label>

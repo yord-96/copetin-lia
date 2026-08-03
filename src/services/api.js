@@ -159,11 +159,15 @@ const readFreshFullRecordCache = (cache, identifier) => {
     if (cached) cache.delete(key);
     return null;
   }
+  if (cached.record?._summaryOnly) {
+    cache.delete(key);
+    return null;
+  }
   return cached.record;
 };
 
 const rememberFullRecordCache = (cache, record, identifiers = []) => {
-  if (!record?.id) return;
+  if (!record?.id || record?._summaryOnly) return;
   const entry = { record, cachedAt: Date.now() };
   [
     record.id,
@@ -579,6 +583,9 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
   if (!contract?.id) {
     throw new Error('El servidor no devolvio el contrato completo.');
   }
+  if (contract._summaryOnly) {
+    throw new Error('El servidor devolvio un resumen del contrato. La edicion fue bloqueada para proteger precios, notas y subalquileres.');
+  }
 
   if (payload?.revision) {
     rememberServerRevision(payload.revision);
@@ -633,6 +640,9 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
   const rental = payload?.rental ?? null;
   if (!rental?.id) {
     throw new Error('El servidor no devolvio la orden completa.');
+  }
+  if (rental._summaryOnly) {
+    throw new Error('El servidor devolvio un resumen de la orden. La edicion fue bloqueada para proteger sus datos.');
   }
 
   if (payload?.revision) {
