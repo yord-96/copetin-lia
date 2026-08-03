@@ -66419,3 +66419,361 @@ body:has(.accounting-bigcash-view) .workspace {
     justify-self: end;
   }
 }
+/* Contabilidad 2026: jerarquia compacta, coherente con el flujo de Ordenes */
+.accounting-redesign {
+  --accounting-ink: #10254f;
+  --accounting-muted: #64748b;
+  --accounting-line: #dce5f2;
+  --accounting-surface: #ffffff;
+  --accounting-soft: #f6f8fc;
+  --accounting-blue: #2563eb;
+  --accounting-green: #059669;
+  --accounting-orange: #e65300;
+  --accounting-violet: #7c3aed;
+  background: var(--accounting-soft);
+  border: 1px solid #e5eaf2;
+  border-radius: 20px;
+  color: var(--accounting-ink);
+  padding: clamp(16px, 2vw, 26px);
+}
+
+.accounting-redesign :is(.accounting-bigcash-head, .accounting-overview-head) {
+  align-items: flex-start;
+  background: var(--accounting-surface);
+  border: 1px solid var(--accounting-line);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(16, 37, 79, 0.06);
+  margin-bottom: 16px;
+  padding: 18px 20px;
+}
+
+.accounting-redesign :is(.accounting-bigcash-head, .accounting-overview-head) h2 {
+  color: var(--accounting-ink);
+  font-size: clamp(1.45rem, 2vw, 2rem);
+  letter-spacing: -0.035em;
+  margin: 0 0 4px;
+}
+
+.accounting-redesign :is(.accounting-bigcash-head, .accounting-overview-head) p {
+  color: var(--accounting-muted);
+  margin: 0;
+}
+
+.accounting-source-badge {
+  align-items: center;
+  background: #eff6ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  color: #315f9f;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 800;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 5px 9px;
+}
+
+.accounting-source-badge i {
+  background: #16a34a;
+  border: 2px solid #dcfce7;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.12);
+  height: 7px;
+  width: 7px;
+}
+
+.accounting-redesign .accounting-overview-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.accounting-redesign .accounting-date-control,
+.accounting-redesign .accounting-overview-actions input[type="date"] {
+  background: #fff;
+  border-color: var(--accounting-line);
+  border-radius: 10px;
+  min-height: 42px;
+}
+
+.accounting-redesign .accounting-core-kpis,
+.accounting-redesign .bigcash-kpi-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.accounting-redesign .bigcash-kpi-card {
+  background: var(--accounting-surface);
+  border: 1px solid var(--accounting-line);
+  border-radius: 14px;
+  box-shadow: none;
+  min-height: 142px;
+  padding: 16px;
+  text-align: left;
+}
+
+.accounting-redesign .bigcash-kpi-card:hover {
+  border-color: #a8bde0;
+  box-shadow: 0 10px 24px rgba(16, 37, 79, 0.08);
+  transform: translateY(-1px);
+}
+
+.accounting-redesign .bigcash-kpi-content {
+  align-items: flex-start;
+}
+
+.accounting-redesign .bigcash-kpi-card h3 {
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  letter-spacing: -0.04em;
+  margin: 7px 0 5px;
+}
+
+.accounting-redesign .bigcash-kpi-card p {
+  color: var(--accounting-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.accounting-redesign :is(.bigcash-card, .bigcash-ledger-card, .petty-kpi-card, .petty-side-card, .accounting-overview-topcards .box, .accounting-overview-tables .table-box, .accounting-overview-bottom > article) {
+  background: var(--accounting-surface);
+  border: 1px solid var(--accounting-line);
+  border-radius: 14px;
+  box-shadow: 0 7px 22px rgba(16, 37, 79, 0.045);
+}
+
+.accounting-redesign .bigcash-ledger-overview {
+  gap: 12px;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(460px, 1.2fr);
+  margin-bottom: 14px;
+}
+
+.accounting-redesign .bigcash-command-grid {
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.accounting-redesign .bigcash-card > header,
+.accounting-redesign .petty-table-head {
+  border-bottom: 1px solid var(--accounting-line);
+  padding-bottom: 12px;
+}
+
+.accounting-redesign .bigcash-card > header h3,
+.accounting-redesign .petty-table-head h3 {
+  color: var(--accounting-ink);
+  font-size: 0.94rem;
+  letter-spacing: 0;
+}
+
+.accounting-redesign .bigcash-table-wrap,
+.accounting-redesign .petty-table-wrap {
+  border: 1px solid #e5eaf2;
+  border-radius: 11px;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.accounting-redesign .accounting-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 720px;
+}
+
+.accounting-redesign .accounting-table thead th {
+  background: #102d5c;
+  border: 0;
+  color: #fff;
+  font-size: 0.69rem;
+  letter-spacing: 0.035em;
+  padding: 11px 12px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.accounting-redesign .accounting-table tbody td {
+  border-bottom: 1px solid #edf1f7;
+  color: #334155;
+  padding: 11px 12px;
+  vertical-align: middle;
+}
+
+.accounting-redesign .accounting-table tbody tr:nth-child(even) td {
+  background: #fafcff;
+}
+
+.accounting-redesign .accounting-table tbody tr:hover td {
+  background: #f2f7ff;
+}
+
+.accounting-redesign .accounting-inline-action,
+.accounting-redesign .cash-receipt-button {
+  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.accounting-redesign .bigcash-payment-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+}
+
+.accounting-redesign .bigcash-payment-card b,
+.accounting-redesign .bigcash-payment-card em {
+  white-space: normal !important;
+}
+
+.accounting-redesign .petty-kpi-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.accounting-redesign .petty-kpi-card {
+  min-height: 170px;
+  padding: 17px;
+}
+
+.petty-workspace-tabs {
+  background: #eaf0f8;
+  border: 1px solid #d7e1ef;
+  border-radius: 13px;
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 0 14px;
+  padding: 5px;
+}
+
+.petty-workspace-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: #52637e;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.petty-workspace-tabs button b {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.68rem;
+  justify-content: center;
+  min-width: 22px;
+  padding: 3px 6px;
+}
+
+.petty-workspace-tabs button.active {
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(16, 37, 79, 0.1);
+  color: var(--accounting-orange, #e65300);
+}
+
+.accounting-redesign .petty-main-grid {
+  align-items: start;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 285px;
+}
+
+.accounting-redesign .petty-main-grid > article[hidden] {
+  display: none !important;
+}
+
+.accounting-redesign .petty-main-grid > article:not([hidden]) {
+  display: block;
+  grid-column: 1;
+}
+
+.accounting-redesign .petty-side {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.accounting-redesign.accounting-overview-only .accounting-overview-topcards {
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.8fr) minmax(0, 1fr);
+}
+
+.accounting-redesign .accounting-overview-flow {
+  display: none;
+}
+
+.accounting-redesign .accounting-overview-tables {
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.accounting-redesign .accounting-overview-tables .table-box:first-child {
+  grid-column: 1 / -1;
+}
+
+.accounting-redesign .accounting-overview-bottom {
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+@media (max-width: 1180px) {
+  .accounting-redesign .accounting-core-kpis,
+  .accounting-redesign .bigcash-kpi-grid,
+  .accounting-redesign .petty-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-redesign .bigcash-ledger-overview,
+  .accounting-redesign .bigcash-command-grid,
+  .accounting-redesign.accounting-overview-only .accounting-overview-topcards,
+  .accounting-redesign .accounting-overview-tables {
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-redesign .accounting-overview-tables .table-box:first-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .accounting-redesign {
+    border-radius: 14px;
+    padding: 10px;
+  }
+
+  .accounting-redesign :is(.accounting-bigcash-head, .accounting-overview-head),
+  .accounting-redesign .accounting-overview-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .accounting-redesign .accounting-core-kpis,
+  .accounting-redesign .bigcash-kpi-grid,
+  .accounting-redesign .petty-kpi-grid,
+  .accounting-redesign .petty-main-grid,
+  .accounting-redesign .accounting-overview-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .petty-workspace-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-redesign .petty-side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
