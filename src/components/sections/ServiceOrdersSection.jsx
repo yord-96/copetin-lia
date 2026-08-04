@@ -4016,50 +4016,10 @@ function ServiceOrdersSection({
     return map;
   }, [isDailyScheduleMode, normalizedScheduleDays, selectedItems]);
 
-  const originalContractDemandByItemId = useMemo(() => {
-    const map = new Map();
-    if (draft.entityType !== 'contract' || !draft.recordId) return map;
-    if (isDailyScheduleMode) {
-      const demandByItemAndDay = new Map();
-      selectedItems.forEach((line) => {
-        if (isDetachedFromInventory(line)) return;
-        const itemId = String(line.itemId ?? '').trim();
-        if (!itemId) return;
-        const quantity = Math.max(0, Math.trunc(Number(line.originalQuantity ?? 0)));
-        if (quantity <= 0) return;
-        const day = findScheduleDayForLine(line, normalizedScheduleDays, normalizedScheduleDays[0] ?? null);
-        const dayId = String(day?.id ?? normalizedScheduleDays[0]?.id ?? 'default');
-        const byDay = demandByItemAndDay.get(itemId) ?? new Map();
-        byDay.set(dayId, (byDay.get(dayId) ?? 0) + quantity);
-        demandByItemAndDay.set(itemId, byDay);
-      });
-      demandByItemAndDay.forEach((byDay, itemId) => {
-        map.set(itemId, Math.max(0, ...Array.from(byDay.values())));
-      });
-      return map;
-    }
-    selectedItems.forEach((line) => {
-      if (isDetachedFromInventory(line)) return;
-      const itemId = String(line.itemId ?? '').trim();
-      if (!itemId) return;
-      const quantity = Math.max(0, Math.trunc(Number(line.originalQuantity ?? 0)));
-      if (quantity <= 0) return;
-      map.set(itemId, (map.get(itemId) ?? 0) + quantity);
-    });
-    return map;
-  }, [draft.entityType, draft.recordId, isDailyScheduleMode, normalizedScheduleDays, selectedItems]);
-
-  const getEditableAvailableStock = useCallback((line) => {
-    const originalContractQty = Math.max(
-      0,
-      Number(originalContractDemandByItemId.get(line.itemId) ?? 0),
-    );
-    return Math.max(
-      0,
-      Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
-      Number(line.item.availableStock ?? 0) + originalContractQty,
-    );
-  }, [originalContractDemandByItemId]);
+  const getEditableAvailableStock = useCallback((line) => Math.max(
+    0,
+    Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
+  ), []);
 
   const isHistoricalReconstruction = useMemo(() => {
     if (!canChooseResponsibles || draft.entityType !== 'contract' || draft.recordId) return false;
