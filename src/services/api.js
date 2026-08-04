@@ -2499,7 +2499,43 @@ export const api = {
     },
   },
   cash: {
-    getSummary: () => callBridge('cash', 'getSummary', false),
+    getSummary: async () => {
+      const localSummary = await callBridge('cash', 'getSummary', false);
+      if (!shouldUseServerState()) return localSummary;
+
+      const response = await fetch(getServerStateUrl('/accounting/summary'), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo consultar el saldo oficial de las cajas.');
+      }
+      const serverSummary = await response.json();
+      if (serverSummary?.revision) {
+        lastSharedRevision = serverSummary.revision;
+        setCachedServerRevision(serverSummary.revision);
+      }
+      return {
+        ...localSummary,
+        ...serverSummary,
+        activeSession: serverSummary?.activeSession ?? localSummary?.activeSession ?? null,
+        guaranteeHeldBs: Number(localSummary?.guaranteeHeldBs ?? 0),
+        operationalBigCashBs: Number(
+          localSummary?.operationalBigCashBs
+          ?? serverSummary?.bigCashBalanceBs
+          ?? 0
+        ),
+        treasuryAccounts: Array.isArray(localSummary?.treasuryAccounts)
+          ? localSummary.treasuryAccounts
+          : [],
+        treasuryAllocatedBs: Number(localSummary?.treasuryAllocatedBs ?? 0),
+        treasuryUnassignedBs: Number(
+          localSummary?.treasuryUnassignedBs
+          ?? serverSummary?.bigCashBalanceBs
+          ?? 0
+        ),
+      };
+    },
     listSessions: () => callBridge('cash', 'listSessions', false),
     getAccountingContext: async () => {
       if (!shouldUseServerState()) {

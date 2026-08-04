@@ -17344,7 +17344,10 @@ const createWebBridge = () => ({
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
-      const todayMovements = state.cashMovements.filter(
+      const currentMovements = state.cashMovements.filter(
+        (movement) => !isArchivedAccountingRecord(movement),
+      );
+      const todayMovements = currentMovements.filter(
         (movement) => !isVoidedCashMovement(movement) && new Date(movement.createdAt).getTime() >= startOfDay,
       );
       const realTodayMovements = todayMovements.filter((movement) => !movement.isInternalTransfer);
@@ -17404,8 +17407,8 @@ const createWebBridge = () => ({
           }
           : null,
         sessionsCount: state.cashSessions.length,
-        movementsCount: state.cashMovements.length,
-        orphanMovementsCount: state.cashMovements.filter((movement) => !movement.sessionId).length,
+        movementsCount: currentMovements.length,
+        orphanMovementsCount: currentMovements.filter((movement) => !movement.sessionId).length,
         todayIncomeBs,
         todayExpenseBs,
         todayBigCashIncomeBs,

@@ -2137,6 +2137,93 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
 });
 
 
+
+router.get('/__copetin_db/accounting/summary', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const currentMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement))
+      .filter((movement) => (
+        !movement?.voidedAt
+        && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado'
+      ));
+    const currentSessions = (Array.isArray(state.cashSessions) ? state.cashSessions : [])
+      .filter((session) => !isArchivedAccountingRecord(session));
+    const activeSession = currentSessions.find(
+      (session) => String(session?.status ?? '').toLowerCase() === 'open',
+    ) ?? null;
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const todayMovements = currentMovements.filter((movement) => {
+      const createdAt = new Date(movement?.createdAt ?? '').getTime();
+      return Number.isFinite(createdAt) && createdAt >= startOfDay;
+    });
+    const realTodayMovements = todayMovements.filter((movement) => !movement?.isInternalTransfer);
+
+    const sum = (rows, predicate = () => true) => Number(rows
+      .filter(predicate)
+      .reduce((total, movement) => total + Number(movement?.amountBs ?? 0), 0)
+      .toFixed(2));
+    const boxIs = (movement, type) => String(movement?.cashBoxType ?? '').toUpperCase() === type;
+
+    const bigCashBalanceBs = sum(currentMovements, (movement) => boxIs(movement, 'BIG_CASH'));
+    const pettyCashBalanceBs = sum(currentMovements, (movement) => boxIs(movement, 'PETTY_CASH'));
+    const todayIncomeBs = sum(realTodayMovements, (movement) => Number(movement?.amountBs ?? 0) > 0);
+    const todayExpenseBs = Math.abs(sum(
+      realTodayMovements,
+      (movement) => Number(movement?.amountBs ?? 0) < 0,
+    ));
+    const todayBigCashIncomeBs = sum(
+      realTodayMovements,
+      (movement) => boxIs(movement, 'BIG_CASH') && Number(movement?.amountBs ?? 0) > 0,
+    );
+    const todayBigCashExpenseBs = Math.abs(sum(
+      realTodayMovements,
+      (movement) => boxIs(movement, 'BIG_CASH') && Number(movement?.amountBs ?? 0) < 0,
+    ));
+    const todayPettyCashIncomeBs = sum(
+      realTodayMovements,
+      (movement) => boxIs(movement, 'PETTY_CASH') && Number(movement?.amountBs ?? 0) > 0,
+    );
+    const todayPettyCashExpenseBs = Math.abs(sum(
+      realTodayMovements,
+      (movement) => boxIs(movement, 'PETTY_CASH') && Number(movement?.amountBs ?? 0) < 0,
+    ));
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      activeSession: activeSession
+        ? {
+            ...activeSession,
+            expectedBigCashBs: bigCashBalanceBs,
+            expectedPettyCashBs: pettyCashBalanceBs,
+            expectedBalanceBs: Number((bigCashBalanceBs + pettyCashBalanceBs).toFixed(2)),
+          }
+        : null,
+      sessionsCount: currentSessions.length,
+      movementsCount: currentMovements.length,
+      orphanMovementsCount: currentMovements.filter((movement) => !movement?.sessionId).length,
+      todayIncomeBs,
+      todayExpenseBs,
+      todayBigCashIncomeBs,
+      todayBigCashExpenseBs,
+      todayPettyCashIncomeBs,
+      todayPettyCashExpenseBs,
+      bigCashBalanceBs,
+      pettyCashBalanceBs,
+      totalAvailableBs: Number((bigCashBalanceBs + pettyCashBalanceBs).toFixed(2)),
+      currentPeriodId: state?.settings?.accounting?.currentPeriodId ?? null,
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/personnel/options', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
