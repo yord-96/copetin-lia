@@ -1531,6 +1531,20 @@ const getTargetedMutationCollections = (domain, method) => {
 // Las colecciones del patch pueden ser más amplias, por ejemplo para agregar
 // una entrada de auditoría sin descargar previamente todo el historial.
 const getMutationPreflightCollections = (domain, method, targetedCollections) => {
+  if (domain === 'contracts' && method === 'update') {
+    // Para editar un contrato solo necesitamos cargar los registros comerciales
+    // y operativos que participan realmente en la validacion. Los historiales
+    // pesados se incluyen en el patch final cuando cambian, pero no se descargan
+    // completos antes de guardar.
+    return [
+      'contracts',
+      'rentals',
+      'items',
+      'deliveries',
+      'transportRoutes',
+      'calendarEvents',
+    ];
+  }
   if (domain === 'contracts' && method === 'remove') {
     return [
       'contracts',
