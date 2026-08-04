@@ -1685,11 +1685,16 @@ function AccountingSection({
     let printWindow = null;
     try {
       printWindow = openReceiptWindow();
+      const receiptPayload = {
+        movementId,
+        printedByName,
+        movement: movement && typeof movement === 'object' ? movement : null,
+      };
       let result = onPrintCashMovementReceipt
-        ? await onPrintCashMovementReceipt({ movementId, printedByName })
+        ? await onPrintCashMovementReceipt(receiptPayload)
         : null;
       if (!result?.html) {
-        result = await api.printer.printCashMovementReceipt({ movementId, printedByName });
+        result = await api.printer.printCashMovementReceipt(receiptPayload);
       }
       writeReceiptWindow(printWindow, result);
     } catch (error) {

@@ -5462,6 +5462,15 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         th, td { border: 1.25px solid #0f2a5f; padding: 2.25mm 2.5mm; text-align: center; font-size: 10.4px; line-height: 1.12; overflow-wrap: anywhere; }
         th { background: #0f2a5f; color: #fff; font-size: 10.6px; letter-spacing: 0.035em; text-transform: uppercase; font-weight: 900; }
         td.detail { text-align: left; max-height: 11mm; overflow: hidden; }
+        td.receipt-money {
+          padding-left: 1.2mm;
+          padding-right: 1.2mm;
+          font-size: 10px;
+          font-weight: 900;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: clip;
+        }
         .receipt-total-row {
           display: grid;
           grid-template-columns: minmax(0, 1fr) 63mm;
@@ -5472,18 +5481,32 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .amount-words { display: flex; gap: 3mm; justify-content: flex-end; align-items: flex-end; font-size: 9.5px; min-width: 0; }
         .amount-words span { min-width: 66mm; border-bottom: 1.4px solid #0f2a5f; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .total-box {
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
           align-items: center;
+          min-width: 0;
+          overflow: hidden;
           border: 1.4px solid #0f2a5f;
           background: #f8fafc;
-          padding: 1.8mm 4.8mm;
-          font-size: 12.5px;
+          padding: 1.8mm 2.8mm;
+          font-size: 11.2px;
           font-weight: 900;
-          gap: 4mm;
+          gap: 2.2mm;
         }
-        .total-box span { white-space: nowrap; }
-        .total-box b { white-space: nowrap; }
+        .total-box span {
+          min-width: 0;
+          line-height: 1.08;
+          white-space: normal;
+          overflow-wrap: normal;
+        }
+        .total-box b {
+          min-width: 0;
+          max-width: 31mm;
+          font-size: 12.2px;
+          line-height: 1;
+          text-align: right;
+          white-space: nowrap;
+        }
         .receipt-signatures {
           display: grid;
           grid-template-columns: 1fr 1fr;
@@ -5644,7 +5667,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
               <td>${escapeHtml(cashBoxLabel)}</td>
               <td>${escapeHtml(collectionUser)}</td>
               <td>${escapeHtml(contextResponsibleValue)}</td>
-              <td>${formatBs(amount)}</td>
+              <td class="receipt-money">${formatBs(amount)}</td>
             </tr>
           </tbody>
         </table>
@@ -17344,10 +17367,7 @@ const createWebBridge = () => ({
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
-      const currentMovements = state.cashMovements.filter(
-        (movement) => !isArchivedAccountingRecord(movement),
-      );
-      const todayMovements = currentMovements.filter(
+      const todayMovements = state.cashMovements.filter(
         (movement) => !isVoidedCashMovement(movement) && new Date(movement.createdAt).getTime() >= startOfDay,
       );
       const realTodayMovements = todayMovements.filter((movement) => !movement.isInternalTransfer);
@@ -17407,8 +17427,8 @@ const createWebBridge = () => ({
           }
           : null,
         sessionsCount: state.cashSessions.length,
-        movementsCount: currentMovements.length,
-        orphanMovementsCount: currentMovements.filter((movement) => !movement.sessionId).length,
+        movementsCount: state.cashMovements.length,
+        orphanMovementsCount: state.cashMovements.filter((movement) => !movement.sessionId).length,
         todayIncomeBs,
         todayExpenseBs,
         todayBigCashIncomeBs,
