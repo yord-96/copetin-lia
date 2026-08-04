@@ -11461,7 +11461,7 @@ function ServiceOrdersSection({
                 <iframe
                   id="orders-document-preview-frame"
                   title={documentPreview.title}
-                  src={documentPreview.blobUrl}
+                  src={documentPreview.viewerUrl || documentPreview.blobUrl}
                   className="orders-document-frame"
                 />
               )}

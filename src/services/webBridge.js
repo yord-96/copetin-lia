@@ -7924,10 +7924,11 @@ const getReferenceContractStyles = () => `
       position: relative;
       width: auto;
       max-width: none;
-      min-height: auto;
+      min-height: 318mm;
       margin: 0;
-      padding: 0;
-      display: block;
+      padding: 0 0 2.5mm;
+      display: flex;
+      flex-direction: column;
       box-shadow: none;
       background: #fffdfa;
     }
@@ -7960,8 +7961,14 @@ const getReferenceContractStyles = () => `
       page-break-inside: avoid;
     }
     .rc-page-bottom {
-      margin-top: 5mm;
+      margin-top: auto;
       padding-top: 5mm;
+      padding-bottom: 1.5mm;
+    }
+    .rc-sheet.is-multipage .rc-page-bottom {
+      margin-top: 7mm;
+      padding-top: 5mm;
+      padding-bottom: 1.5mm;
     }
     .rc-items { padding-bottom: 1.5mm; }
   }
