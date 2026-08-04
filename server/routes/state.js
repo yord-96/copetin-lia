@@ -1273,27 +1273,63 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         !delivery?.deletedAt
         && (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode)
       ));
-      const deliveriesShowNoExecution = linkedDeliveries.length > 0 && linkedDeliveries.every((delivery) => {
+      const deliveryHasExecutionEvidence = (delivery) => {
         const status = normalize(delivery?.status);
-        return ['programada', 'programado', 'pendiente'].includes(status)
-          && Number(delivery?.progress ?? 0) <= 0
-          && !delivery?.completedAt
-          && !delivery?.deliveredAt
-          && !delivery?.startedAt;
-      });
+        return Boolean(
+          Number(delivery?.progress ?? 0) > 0
+          || delivery?.startedAt
+          || delivery?.completedAt
+          || delivery?.deliveredAt
+          || ['en_ruta', 'en camino', 'en_camino', 'entregado', 'completado', 'completed'].includes(status)
+        );
+      };
+      const deliveriesShowExecution = linkedDeliveries.some(deliveryHasExecutionEvidence);
+      const deliveriesShowNoExecution = linkedDeliveries.length > 0
+        && linkedDeliveries.every((delivery) => !deliveryHasExecutionEvidence(delivery));
+
       const operational = rental.operational ?? {};
       const inventoryStatus = normalize(operational.inventoryStatus);
       const transportStatus = normalize(operational.transportStatus);
-      const hasReturnEvidence = Boolean(rental.returnedAt || Array.isArray(rental.returnReport));
-      const hasOperationalDispatchEvidence = Boolean(
-        operational.inventorySentAt
-        || operational.inventoryDispatchedAt
-        || operational.transportSentAt
+      const dispatchReview = operational.dispatchReview ?? {};
+      const returnReview = operational.returnReview ?? {};
+      const hasReturnEvidence = Boolean(
+        rental.returnedAt
+        || operational.inventoryReturnedAt
+        || operational.inventoryReturnedByName
+        || returnReview.reviewedAt
+        || returnReview.reviewedByName
+        || (Array.isArray(rental.returnReport) && rental.returnReport.length > 0)
+      );
+      const hasExplicitInventoryDispatch = Boolean(
+        operational.inventoryDispatchedAt
+        || operational.inventoryDispatchedByName
+        || operational.inventoryDispatchedByRole
+        || dispatchReview.reviewedAt
+        || dispatchReview.reviewedByName
+        || dispatchReview.reviewedByRole
         || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
+      );
+      const hasExplicitTransportDispatch = Boolean(
+        operational.transportSentAt
+        || operational.transportConfirmedAt
+        || operational.transportConfirmedByName
         || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
       );
+
+      // "confirmado" / inventoryConfirmedAt significa material listo o verificado,
+      // no que haya salido físicamente. Algunos contratos históricos también
+      // guardaron inventorySentAt al confirmar inventario; ese dato aislado no
+      // debe bloquear una anulación administrativa.
+      const hasOperationalDispatchEvidence = Boolean(
+        deliveriesShowExecution
+        || hasExplicitInventoryDispatch
+        || hasExplicitTransportDispatch
+      );
       const wasOperationallySent = hasReturnEvidence
-        || (hasOperationalDispatchEvidence && !deliveriesShowNoExecution);
+        || (
+          hasOperationalDispatchEvidence
+          && !deliveriesShowNoExecution
+        );
 
       const movementMatches = (movement) => {
         const values = [
