@@ -7804,38 +7804,24 @@ const getReferenceContractStyles = () => `
     padding: 1mm 1.2mm 1.4mm;
   }
   .rc-material-lines span { display: none; }
-  .rc-terms-section {
-    margin-top: 3mm;
-    padding-top: 0;
-    border-top: 0;
+  .rc-terms-section,
+  .rc-terms-head,
+  .rc-terms,
+  .rc-terms-list {
+    display: none !important;
+  }
+  .rc-page-bottom {
+    position: static;
+    margin-top: auto;
+    padding-top: 5.5mm;
+    background: transparent;
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .rc-terms-head {
-    display: grid;
-    grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr);
-    gap: 8mm;
-    align-items: end;
-    margin-bottom: 1.5mm;
-  }
-  .rc-terms-section .rc-block-title { margin-bottom: 0; }
-  .rc-terms {
-    padding: 1.7mm 2mm;
-    border: .25mm solid #d8c29c;
-    border-radius: 1.5mm;
-    background: #fffdf9;
-  }
-  .rc-terms-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2.4mm; margin: 0; padding: 0; list-style: none; }
-  .rc-terms-list li { display: grid; grid-template-columns: 4.2mm minmax(0, 1fr); gap: 1.2mm; font-size: 8.6px; line-height: 1.28; }
-  .rc-terms-list b {
-    width: 3.5mm;
-    height: 3.5mm;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    color: #fff;
-    background: #a66a20;
-    font-size: 7px;
+  .rc-page-bottom-signatures {
+    padding-top: 1mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .rc-signatures {
     display: grid;
@@ -7854,8 +7840,8 @@ const getReferenceContractStyles = () => `
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: 4mm;
-    margin-top: 1.8mm;
-    padding-top: 1.2mm;
+    margin-top: 2.2mm;
+    padding-top: 1.4mm;
     border-top: .3mm solid #a66a20;
     color: #555;
     font-size: 8.5px;
@@ -7863,14 +7849,6 @@ const getReferenceContractStyles = () => `
   .rc-footer strong { color: #a66a20; font-size: 9px; }
   .rc-footer span { line-height: 1.2; }
   .rc-footer span:last-child { text-align: right; }
-  .rc-page-bottom {
-    position: static;
-    margin-top: auto;
-    padding-top: 3mm;
-    background: transparent;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
   .rc-sheet.is-dense { font-size: 10px; }
   .rc-sheet.is-dense .rc-title { padding-top: 1mm; padding-bottom: 2.5mm; }
   .rc-sheet.is-dense .rc-upper { margin-top: 2.5mm; }
@@ -7882,7 +7860,7 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-dense .rc-observations, .rc-sheet.is-dense .rc-guarantee-control { min-height: 22mm; }
   .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
-  .rc-sheet.is-dense .rc-terms-list li { font-size: 8px; }
+  .rc-sheet.is-dense .rc-page-bottom { padding-top: 4.5mm; }
   .rc-sheet.is-multipage .rc-financial-block {
     margin-top: 0;
     border-top: 0;
@@ -7929,6 +7907,10 @@ const getReferenceContractStyles = () => `
   .rc-sheet.is-multipage .rc-client-materials {
     margin-top: 3mm;
   }
+  .rc-sheet.is-multipage .rc-page-bottom {
+    margin-top: 6mm;
+    padding-top: 4.5mm;
+  }
   @media print {
     html, body {
       width: auto;
@@ -7970,13 +7952,15 @@ const getReferenceContractStyles = () => `
     .rc-bottom,
     .rc-closeout,
     .rc-client-materials,
-    .rc-terms-section,
-    .rc-page-bottom {
+    .rc-page-bottom,
+    .rc-page-bottom-signatures,
+    .rc-signatures,
+    .rc-footer {
       break-inside: avoid;
       page-break-inside: avoid;
     }
     .rc-page-bottom {
-      margin-top: 3mm;
+      margin-top: 5mm;
       padding-top: 5mm;
     }
     .rc-items { padding-bottom: 1.5mm; }
@@ -8007,9 +7991,6 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
   const hasManualDiscount = Number(discountBs ?? 0) > 0;
   const logisticsMode = contract?.logisticsMode ?? rental?.logisticsMode ?? 'envio';
   const isCustomerPickup = logisticsMode === 'recojo';
-  const cancellationPenaltyPercent = Number(settings?.contractCancellationPenaltyPercent ?? 20);
-  const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
-
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
     .filter((entry) => Number(entry?.missingQty ?? 0) > 0);
@@ -8716,22 +8697,11 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
       </section>
 
       <div class="rc-page-bottom">
-        <section class="rc-terms-section">
-          <div class="rc-terms-head">
-            <h2 class="rc-block-title">Condiciones del servicio</h2>
-            <section class="rc-signatures">
-              <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div>
-              <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>
-            </section>
-          </div>
-          <div class="rc-terms">
-            <ol class="rc-terms-list">
-              <li><b>1</b><span>La reserva queda sujeta a disponibilidad, aprobacion y condiciones de pago acordadas.</span></li>
-              <li><b>2</b><span>Los faltantes, roturas o danos se liquidaran segun la revision de devolucion.</span></li>
-              <li><b>3</b><span>Los cambios de direccion, horario o cantidades deben confirmarse antes de la preparacion logistica.</span></li>
-              <li><b>4</b><span>${escapeHtml(cancellationClause)}</span></li>
-            </ol>
-          </div>
+        <section class="rc-page-bottom-signatures">
+          <section class="rc-signatures">
+            <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div>
+            <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>
+          </section>
         </section>
 
         <footer class="rc-footer">
