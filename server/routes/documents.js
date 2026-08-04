@@ -213,6 +213,10 @@ const buildContractPdfFileName = (contract, rental) => {
   return [customer, code].filter(Boolean).join(' ').toUpperCase() || 'CONTRATO';
 };
 
+const normalizeContractPaperSize = (value) => (
+  String(value ?? '').trim().toLowerCase() === 'carta' ? 'carta' : 'oficio'
+);
+
 const buildInventoryPdfFileName = (rental, contract) => {
   const customer = sanitizeFilePart(
     contract?.customerName ?? rental?.customerName ?? rental?.client ?? '',
@@ -403,17 +407,20 @@ router.post(
       return;
     }
 
+    const paperSize = normalizeContractPaperSize(req.query?.paper ?? req.body?.paper);
     const token = createDocumentAccessToken({
       kind: 'contract',
       identifier: requestedId,
     });
     const encodedId = encodeURIComponent(requestedId);
     const encodedToken = encodeURIComponent(token);
+    const encodedPaperSize = encodeURIComponent(paperSize);
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       ok: true,
-      url: `/__copetin_db/contracts/${encodedId}/pdf?access_token=${encodedToken}`,
+      paperSize,
+      url: `/__copetin_db/contracts/${encodedId}/pdf?paper=${encodedPaperSize}&access_token=${encodedToken}`,
       expiresInMs: DOCUMENT_ACCESS_TOKEN_TTL_MS,
     });
   },
@@ -426,6 +433,7 @@ router.get(
     const startedAt = Date.now();
     try {
       const requestedId = String(req.params.id ?? '').trim();
+      const paperSize = normalizeContractPaperSize(req.query?.paper);
       if (!requestedId) {
         res.status(400).json({ error: 'Debes indicar el contrato.' });
         return;
@@ -451,6 +459,7 @@ router.get(
         deliveries: context.deliveries,
         settings: snapshot?.state?.settings ?? {},
         items: Array.isArray(snapshot?.state?.items) ? snapshot.state.items : [],
+        paperSize,
       });
       const html = await embedContractAssets(rawHtml);
 
@@ -467,6 +476,7 @@ router.get(
       res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
       res.setHeader('X-Document-Key', result.cacheKey);
       res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+      res.setHeader('X-Contract-Paper-Size', paperSize);
       res.send(result.buffer);
     } catch (error) {
       next(error);

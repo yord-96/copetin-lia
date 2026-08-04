@@ -6940,14 +6940,14 @@ function ServiceOrdersSection({
     }
   };
 
-  const requestContractPdfViewerUrl = async ({ identifier }) => {
+  const requestContractPdfViewerUrl = async ({ identifier, paperSize = 'oficio' }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar el contrato.');
     }
 
     const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf-access`),
+      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf-access?paper=${encodeURIComponent(paperSize)}`),
       {
         method: 'POST',
         cache: 'no-store',
@@ -6970,14 +6970,14 @@ function ServiceOrdersSection({
     return getDocumentApiUrl(relativeUrl);
   };
 
-  const fetchContractPdf = async ({ identifier }) => {
+  const fetchContractPdf = async ({ identifier, paperSize = 'oficio' }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar el contrato.');
     }
 
     const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf`),
+      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}`),
       {
         method: 'GET',
         cache: 'no-store',
@@ -6999,6 +6999,7 @@ function ServiceOrdersSection({
 
     const viewerUrl = await requestContractPdfViewerUrl({
       identifier: requestedId,
+      paperSize,
     });
 
     return {
@@ -8100,7 +8101,8 @@ function ServiceOrdersSection({
     }
   };
 
-  const handlePrintOrderDocument = async (kind, orderRow) => {
+  const handlePrintOrderDocument = async (kind, orderRow, requestedPaperSize = 'oficio') => {
+    const paperSize = requestedPaperSize === 'carta' ? 'carta' : 'oficio';
     const documentLabel = kind === 'contract'
       ? 'contrato'
       : kind === 'inventory'
@@ -8128,6 +8130,8 @@ function ServiceOrdersSection({
         : undefined,
       html: '',
       blobUrl: '',
+      paperSize,
+      sourceRow: orderRow,
       loading: true,
     });
     setContractActionStatus(`Generando ${documentLabel} ${getOrderContractLabel(orderRow)}...`);
@@ -8149,6 +8153,7 @@ function ServiceOrdersSection({
         cacheKey = [
           kind,
           String(contractIdentifier ?? ''),
+          paperSize,
           String(orderRow.updatedAt ?? orderRow.createdAt ?? ''),
         ].join(':');
 
@@ -8156,6 +8161,7 @@ function ServiceOrdersSection({
         if (!preview) {
           const renderedPdf = await fetchContractPdf({
             identifier: contractIdentifier,
+            paperSize,
           });
 
           preview = {
@@ -8251,6 +8257,8 @@ function ServiceOrdersSection({
         blobUrl: preview.blobUrl ?? '',
         viewerUrl: preview.viewerUrl ?? '',
         mimeType: preview.mimeType ?? 'text/html',
+        paperSize,
+        sourceRow: orderRow,
         loading: false,
         cacheKey,
       });
@@ -8273,6 +8281,13 @@ function ServiceOrdersSection({
         : 'contract';
 
     handlePrintOrderDocument(kind, documentsOrder);
+  };
+
+  const handleContractPaperSizeChange = async (event) => {
+    const paperSize = event.target.value === 'carta' ? 'carta' : 'oficio';
+    const current = documentPreview;
+    if (!current || current.kind !== 'contract' || !current.sourceRow || current.paperSize === paperSize) return;
+    await handlePrintOrderDocument('contract', current.sourceRow, paperSize);
   };
 
   const handlePrintPreview = () => {
@@ -11470,6 +11485,37 @@ function ServiceOrdersSection({
               <button type="button" className="ghost-button" onClick={closeDocumentPreview}>
                 Cerrar
               </button>
+              {documentPreview.kind === 'contract' ? (
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.55rem',
+                    marginLeft: 'auto',
+                    fontWeight: 700,
+                    color: '#344054',
+                  }}
+                >
+                  Formato
+                  <select
+                    value={documentPreview.paperSize ?? 'oficio'}
+                    onChange={handleContractPaperSizeChange}
+                    disabled={documentPreview.loading}
+                    style={{
+                      minWidth: '7.5rem',
+                      minHeight: '2.5rem',
+                      padding: '0.35rem 0.65rem',
+                      border: '1px solid #d0d5dd',
+                      borderRadius: '0.65rem',
+                      background: '#fff',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <option value="carta">Carta</option>
+                    <option value="oficio">Oficio</option>
+                  </select>
+                </label>
+              ) : null}
               <button
                 type="button"
                 className="primary-button"

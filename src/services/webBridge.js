@@ -7190,8 +7190,18 @@ const buildFulfillmentBreakdown = (line, supplierLines = []) => {
   return { ownQty, supplierQty: effectiveSupplierQty, totalQty, label };
 };
 
-const getReferenceContractStyles = () => `
-  @page { size: 216mm 330mm; margin: 3mm 4mm 9mm; }
+const normalizeContractPaperSize = (value) => (
+  String(value ?? '').trim().toLowerCase() === 'carta' ? 'carta' : 'oficio'
+);
+
+const getReferenceContractStyles = (paperSize = 'oficio') => {
+  const normalizedPaperSize = normalizeContractPaperSize(paperSize);
+  const pageHeightMm = normalizedPaperSize === 'carta' ? 279.4 : 330;
+  const printableHeightMm = normalizedPaperSize === 'carta' ? 267.4 : 318;
+  const screenMinHeight = normalizedPaperSize === 'carta' ? '11in' : '14in';
+
+  return `
+  @page { size: 216mm ${pageHeightMm}mm; margin: 3mm 4mm 9mm; }
   * { box-sizing: border-box; }
   html { background: #d9d9d9; }
   body {
@@ -7207,7 +7217,7 @@ const getReferenceContractStyles = () => `
   .rc-sheet {
     position: relative;
     width: 8.5in;
-    min-height: 14in;
+    min-height: ${screenMinHeight};
     margin: 0 auto;
     padding: .18in .42in .34in;
     display: flex;
@@ -7924,7 +7934,7 @@ const getReferenceContractStyles = () => `
       position: relative;
       width: auto;
       max-width: none;
-      min-height: 318mm;
+      min-height: ${printableHeightMm}mm;
       margin: 0;
       padding: 0 0 2.5mm;
       display: flex;
@@ -7973,8 +7983,16 @@ const getReferenceContractStyles = () => `
     .rc-items { padding-bottom: 1.5mm; }
   }
 `;
+};
 
-export const buildContractDocumentHtml = ({ rental, contract, deliveries, settings, items = [] }) => {
+export const buildContractDocumentHtml = ({
+  rental,
+  contract,
+  deliveries,
+  settings,
+  items = [],
+  paperSize = 'oficio',
+}) => {
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
   const company = getDocumentCompany(settings);
@@ -8606,7 +8624,7 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
   <head>
     <meta charset="utf-8" />
     <title>${escapeHtml(documentTitle)}</title>
-    <style>${getReferenceContractStyles()}</style>
+    <style>${getReferenceContractStyles(paperSize)}</style>
   </head>
   <body>
     <main class="rc-sheet ${densityClass} ${multipageClass}">
