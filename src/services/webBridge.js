@@ -7709,6 +7709,18 @@ const getReferenceContractStyles = () => `
   .rc-item-supplier { display: block; margin-top: .45mm; color: #1d4ed8; font: 900 7.4px Arial, Helvetica, sans-serif; text-transform: uppercase; }
   .rc-check { display: inline-block; width: 4mm; height: 4mm; border: .25mm solid #878787; border-radius: .25mm; }
   .rc-observation-line { display: block; width: 100%; min-width: 0; height: 4mm; }
+  .rc-missing-summary {
+    display: block;
+    width: 100%;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -.1px;
+    text-align: center;
+  }
+  .rc-missing-summary.is-settled { color: #16733f; }
+  .rc-missing-summary.is-pending { color: #b42318; }
   .rc-manual-row td { height: 8mm; }
   .rc-manual-write-line {
     display: block;
@@ -7999,6 +8011,100 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
   const cancellationClause = `La anulacion del contrato se permite hasta la fecha de envio programada (${formatDocumentDate(contract?.deliveryDate ?? rental?.rentalDate)}). Si se anula dentro de ese plazo, se aplicara una penalidad del ${cancellationPenaltyPercent.toFixed(0)}% sobre el total del contrato.`;
 
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
+  const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    .filter((entry) => Number(entry?.missingQty ?? 0) > 0);
+  const returnIssueByLineKey = new Map(
+    returnIssues
+      .map((entry) => [String(entry?.lineKey ?? '').trim(), entry])
+      .filter(([key]) => Boolean(key)),
+  );
+  const returnIssuesByItemId = new Map();
+  returnIssues.forEach((entry) => {
+    const itemId = String(entry?.itemId ?? '').trim();
+    if (!itemId) return;
+    const current = returnIssuesByItemId.get(itemId) ?? [];
+    current.push(entry);
+    returnIssuesByItemId.set(itemId, current);
+  });
+  const isReturnIssueSettled = (issue) => {
+    const statuses = [
+      issue?.chargeStatus,
+      issue?.paymentStatus,
+      issue?.accountingStatus,
+      issue?.status,
+    ].map((value) => normalizeText(value).replace(/\s+/g, '_'));
+    const penaltyBs = Math.max(0, Number(issue?.penaltyBs ?? issue?.missingFeeBs ?? 0));
+    const appliedBs = Math.max(
+      0,
+      Number(issue?.guaranteeAppliedBs ?? 0),
+      Number(issue?.paidBs ?? 0),
+      Number(issue?.collectedBs ?? 0),
+    );
+    return Boolean(
+      issue?.isPaid
+      || issue?.isCollected
+      || issue?.paidAt
+      || issue?.collectedAt
+      || issue?.settledAt
+      || issue?.cashMovementId
+      || issue?.receiptCode
+      || (penaltyBs > 0 && appliedBs >= penaltyBs)
+      || statuses.some((status) => [
+        'paid',
+        'pagado',
+        'collected',
+        'cobrado',
+        'settled',
+        'liquidado',
+        'cancelado',
+        'cancelled',
+      ].includes(status))
+    );
+  };
+  const formatCompactChargeNumber = (value) => {
+    const amount = Math.max(0, Number(value ?? 0));
+    return Number.isInteger(amount)
+      ? String(amount)
+      : amount.toLocaleString('es-BO', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: false,
+      });
+  };
+  const getMissingSummaryForLine = (line) => {
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const itemId = String(line?.itemId ?? '').trim();
+    const issue = (lineKey ? returnIssueByLineKey.get(lineKey) : null)
+      ?? (returnIssuesByItemId.get(itemId) ?? [])[0]
+      ?? null;
+    if (!issue) return null;
+
+    const missingQty = Math.max(0, Math.trunc(Number(issue?.missingQty ?? 0)));
+    if (missingQty <= 0) return null;
+
+    const unitChargeBs = Math.max(
+      0,
+      Number(
+        issue?.missingUnitChargeBs
+        ?? (
+          Number(issue?.missingFeeBs ?? issue?.penaltyBs ?? 0) > 0
+            ? Number(issue?.missingFeeBs ?? issue?.penaltyBs ?? 0) / missingQty
+            : 0
+        ),
+      ),
+    );
+    const totalChargeBs = Math.max(
+      0,
+      Number(issue?.missingFeeBs ?? 0),
+      unitChargeBs * missingQty,
+      Number(issue?.penaltyBs ?? 0),
+    );
+    const settled = isReturnIssueSettled(issue);
+    return {
+      text: `F${missingQty}×${formatCompactChargeNumber(unitChargeBs)}=${formatCompactChargeNumber(totalChargeBs)} · ${settled ? 'CANCELADO' : 'PENDIENTE'}`,
+      settled,
+    };
+  };
   const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
   const documentCustomerName = contract?.customerName ?? rental?.customerName ?? '';
   const documentCustomerPhone = contract?.customerPhone ?? rental?.customerPhone ?? '';
@@ -8193,6 +8299,7 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
         const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
         const lineTotalBs = getDocumentLineGrossTotalBs(line, multiplier);
+        const missingSummary = getMissingSummaryForLine(line);
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -8209,7 +8316,9 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
           <td class="num">${formatBs(lineTotalBs)}</td>
           <td class="check"></td>
           <td class="check"></td>
-          <td><span class="rc-observation-line"></span></td>
+          <td>${missingSummary
+            ? `<span class="rc-missing-summary ${missingSummary.settled ? 'is-settled' : 'is-pending'}">${escapeHtml(missingSummary.text)}</span>`
+            : '<span class="rc-observation-line"></span>'}</td>
         </tr>`;
   };
   let scheduleDaysForDocument = hasDailySchedulePricing && Array.isArray(pricingPlan?.scheduleDays)
