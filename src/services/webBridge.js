@@ -10984,7 +10984,10 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     rental.createdByName = primaryResponsible.name;
     rental.createdByRole = primaryResponsible.role ?? rental.createdByRole ?? 'Operacion';
   }
-  const hasExplicitContractPayment = Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs');
+  const hasExplicitContractPayment = Boolean(
+    payload?.confirmInitialPaymentReset === true
+    || Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs')
+  );
   const paidAtRentalBs = hasExplicitContractPayment
     ? Math.max(0, Number(contract?.payment?.paidAtApprovalBs ?? 0))
     : Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
@@ -15018,9 +15021,9 @@ const createWebBridge = () => ({
             Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
           );
         const resetsInitialPaymentToZero = Boolean(
-          storedPaidAtApprovalBs > 0
+          hasRequestedPaidAtApproval
+          && storedPaidAtApprovalBs > 0
           && requestedPaidAtApprovalBs <= 0
-          && hasRequestedPaidAtApproval
         );
         if (resetsInitialPaymentToZero && payload?.confirmInitialPaymentReset !== true) {
           throw new Error('Debes confirmar expresamente que deseas cambiar el pago inicial a cero.');
@@ -15088,8 +15091,12 @@ const createWebBridge = () => ({
               );
             });
         }
-        cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
-        syncInitialPaymentCashMovement(state, contract, payload, now);
+        if (resetsInitialPaymentToZero && payload?.confirmInitialPaymentReset === true) {
+          syncInitialPaymentCashMovement(state, contract, payload, now);
+        } else {
+          cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
+          syncInitialPaymentCashMovement(state, contract, payload, now);
+        }
         syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
