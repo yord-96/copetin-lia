@@ -2098,6 +2098,93 @@ const importDatabaseDirect = async (payload = {}) => {
   return result;
 };
 
+const analyzeAccountingResetOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('system', 'analyzeReset', false, payload);
+  }
+  const verification = await callBridge('system', 'verifyResetAccess', false, { code: payload?.code });
+  const response = await fetch(getServerStateUrl('/accounting/reset-preview'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      ...payload,
+      userId: payload?.userId ?? verification?.user?.id ?? '',
+    }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo analizar el reinicio contable.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  return result?.analysis ?? result;
+};
+
+const executeAccountingResetOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    throw new Error('El reinicio contable seguro requiere abrir la aplicacion desde el servidor.');
+  }
+  const verification = await callBridge('system', 'verifyResetAccess', false, { code: payload?.code });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  let response;
+  try {
+    response = await fetch(getServerStateUrl('/accounting/reset'), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        ...payload,
+        userId: payload?.userId ?? verification?.user?.id ?? '',
+      }),
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en confirmar el reinicio contable. No lo repitas: recarga Contabilidad para verificar.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo iniciar el nuevo periodo contable.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+
+  await mergeLocalState({
+    cashSessions: Array.isArray(result?.cashSessions) ? result.cashSessions : [],
+    cashMovements: Array.isArray(result?.cashMovements) ? result.cashMovements : [],
+    cashDebts: Array.isArray(result?.cashDebts) ? result.cashDebts : [],
+  });
+  loadedServerCollections.add('cashSessions');
+  loadedServerCollections.add('cashMovements');
+  loadedServerCollections.add('cashDebts');
+  markServerStateStale('accounting-reset');
+  announceDataChange({
+    domain: 'system',
+    method: 'executeReset',
+    collections: ['cashSessions', 'cashMovements', 'cashDebts', 'resetLogs', 'systemAuditLog'],
+  });
+  return result;
+};
+
+const isAccountingOnlyReset = (payload = {}) => {
+  const modules = [...new Set((Array.isArray(payload?.modules) ? payload.modules : [])
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean))];
+  return modules.length === 1 && modules[0] === 'cash_accounting';
+};
+
 export const runtimeInfo =
   {
     ...getWebRuntimeInfo(),
@@ -2490,8 +2577,16 @@ export const api = {
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),
-    analyzeReset: (payload) => callBridge('system', 'analyzeReset', false, payload),
-    executeReset: (payload) => callBridge('system', 'executeReset', true, payload),
+    analyzeReset: (payload) => (
+      isAccountingOnlyReset(payload)
+        ? analyzeAccountingResetOnServer(payload)
+        : callBridge('system', 'analyzeReset', false, payload)
+    ),
+    executeReset: (payload) => (
+      isAccountingOnlyReset(payload)
+        ? executeAccountingResetOnServer(payload)
+        : callBridge('system', 'executeReset', true, payload)
+    ),
     exportDatabase: (payload) => exportDatabaseDirect(payload),
     importDatabase: (payload) => importDatabaseDirect(payload),
     listResetLogs: () => callBridge('system', 'listResetLogs', false),

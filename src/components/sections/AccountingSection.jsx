@@ -101,6 +101,11 @@ const isOpeningCashMovement = (movement) =>
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
+const isArchivedAccountingRecord = (record) => Boolean(
+  record?.accountingArchivedAt
+  || record?.accountingPeriodStatus === 'archived'
+);
+
 
 const PAYMENT_METHOD_META = {
   efectivo: { label: 'Efectivo', shortLabel: 'EFE', className: 'cash' },
@@ -634,7 +639,10 @@ function AccountingSection({
   );
 
   const sortedMovements = useMemo(
-    () => [...cashMovements].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    () => cashMovements
+      .filter((movement) => !isArchivedAccountingRecord(movement))
+      .slice()
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
     [cashMovements],
   );
 
@@ -644,7 +652,10 @@ function AccountingSection({
   );
 
   const sortedCashDebts = useMemo(
-    () => [...cashDebts].sort((a, b) => new Date(b.createdAt ?? b.debtDate ?? 0) - new Date(a.createdAt ?? a.debtDate ?? 0)),
+    () => cashDebts
+      .filter((debt) => !isArchivedAccountingRecord(debt))
+      .slice()
+      .sort((a, b) => new Date(b.createdAt ?? b.debtDate ?? 0) - new Date(a.createdAt ?? a.debtDate ?? 0)),
     [cashDebts],
   );
 
@@ -1048,11 +1059,15 @@ function AccountingSection({
     const movementDateKey = getDateKey(movement?.createdAt);
     const movementTime = new Date(movement?.createdAt ?? 0).getTime();
 
-    const sessionById = cashSessions.find((session) => String(session?.id ?? '').trim() === movementSessionId);
+    const sessionById = cashSessions.find((session) => (
+      !isArchivedAccountingRecord(session)
+      && String(session?.id ?? '').trim() === movementSessionId
+    ));
     const sessionByIdName = cleanName(sessionById?.openedBy || sessionById?.createdBy || sessionById?.responsible);
     if (sessionByIdName) return sessionByIdName;
 
     const sessionByTime = cashSessions.find((session) => {
+      if (isArchivedAccountingRecord(session)) return false;
       const openedAt = new Date(session?.openedAt ?? session?.createdAt ?? 0).getTime();
       const closedAt = session?.closedAt ? new Date(session.closedAt).getTime() : Number.POSITIVE_INFINITY;
       return Number.isFinite(movementTime)
@@ -1141,10 +1156,12 @@ function AccountingSection({
   }, [filteredPettyHistoryRows]);
   const pettyHistorySummary = pettyHistoryMeta.summary ?? clientPettyHistorySummary;
 
-  const activeCashSession = useMemo(
-    () => cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? cashSessions[0] ?? null,
-    [cashSessions],
-  );
+  const activeCashSession = useMemo(() => {
+    const currentSessions = cashSessions.filter((session) => !isArchivedAccountingRecord(session));
+    return currentSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open')
+      ?? currentSessions[0]
+      ?? null;
+  }, [cashSessions]);
 
   const getRentalContract = useCallback((rental) => (
     contractByRentalId.get(rental?.id)
@@ -3194,7 +3211,295 @@ function AccountingSection({
 
   if (activeModule === 'contabilidad_caja_grande') {
     return (
-      <section className="panel accounting-bigcash-view accounting-redesign">
+      <section className="panel accounting-bigcash-view accounting-redesign bigcash-balanced-layout">
+        <style>{`
+          .bigcash-balanced-layout {
+            --bigcash-gap: 14px;
+            --bigcash-border: #dde5ef;
+            --bigcash-muted: #667085;
+            --bigcash-ink: #102a56;
+            --bigcash-surface: #ffffff;
+          }
+
+          .bigcash-balanced-layout .accounting-bigcash-head {
+            min-height: auto;
+            padding: 22px 24px;
+            border-radius: 18px;
+            align-items: center;
+          }
+
+          .bigcash-balanced-layout .accounting-bigcash-head h2 {
+            margin: 0;
+            font-size: clamp(30px, 2.4vw, 42px);
+            line-height: 1;
+            letter-spacing: -1.2px;
+          }
+
+          .bigcash-balanced-layout .accounting-bigcash-head p {
+            margin: 7px 0 10px;
+            font-size: 14px;
+          }
+
+          .bigcash-balanced-layout .accounting-overview-actions {
+            align-items: center;
+            gap: 10px;
+          }
+
+          .bigcash-balanced-layout .accounting-date-control,
+          .bigcash-balanced-layout .accounting-bigcash-action-group button {
+            min-height: 42px;
+          }
+
+          .bigcash-balanced-layout .accounting-core-kpis {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: var(--bigcash-gap);
+            margin-top: 16px;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-card {
+            position: relative;
+            min-width: 0;
+            min-height: 116px;
+            padding: 17px 18px;
+            border: 1px solid var(--bigcash-border);
+            border-radius: 16px;
+            overflow: hidden;
+            text-align: left;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-content {
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+          }
+
+          .bigcash-balanced-layout .bigcash-hero-icon {
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            border-radius: 11px;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-card strong {
+            display: block;
+            min-height: 28px;
+            font-size: 11px;
+            line-height: 1.25;
+            letter-spacing: .25px;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-card h3 {
+            margin: 4px 0 4px;
+            font-size: clamp(22px, 1.55vw, 29px);
+            line-height: 1.05;
+            letter-spacing: -.55px;
+            white-space: nowrap;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-card p {
+            margin: 0;
+            color: var(--bigcash-muted);
+            font-size: 11.5px;
+            line-height: 1.3;
+          }
+
+          .bigcash-balanced-layout .bigcash-kpi-card .pill {
+            top: 9px;
+            right: 10px;
+            font-size: 9px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-overview {
+            display: grid;
+            grid-template-columns: minmax(360px, .92fr) minmax(0, 1.48fr);
+            gap: var(--bigcash-gap);
+            align-items: stretch;
+            margin-top: 14px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card {
+            min-width: 0;
+            min-height: 218px;
+            padding: 18px;
+            border: 1px solid var(--bigcash-border);
+            border-radius: 16px;
+            background: var(--bigcash-surface);
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card.closing {
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            gap: 14px;
+            border-left: 4px solid #194b91;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card.closing > div:first-child {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card.closing > div:first-child span,
+          .bigcash-balanced-layout .bigcash-ledger-card.methods header span {
+            color: var(--bigcash-muted);
+            font-size: 11px;
+            font-weight: 700;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card h3 {
+            margin: 3px 0 0;
+            color: var(--bigcash-ink);
+            font-size: 18px;
+            line-height: 1.2;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-totals {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 9px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-totals > span,
+          .bigcash-balanced-layout .bigcash-ledger-split > span {
+            min-width: 0;
+            padding: 11px 12px;
+            border: 1px solid #e3eaf3;
+            border-radius: 11px;
+            background: #f8fafc;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-totals small,
+          .bigcash-balanced-layout .bigcash-ledger-split span {
+            font-size: 10.5px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-totals strong {
+            display: block;
+            margin-top: 4px;
+            font-size: 15px;
+            white-space: nowrap;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-split {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 9px;
+            align-self: end;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-split > span {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card.methods {
+            display: flex;
+            flex-direction: column;
+          }
+
+          .bigcash-balanced-layout .bigcash-ledger-card.methods header {
+            margin-bottom: 12px;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 9px;
+            align-content: start;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr);
+            grid-template-areas:
+              "badge detail"
+              "net net"
+              "flow flow";
+            gap: 4px 8px;
+            min-width: 0;
+            min-height: 88px;
+            padding: 10px 11px;
+            border-radius: 12px;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card > span {
+            grid-area: badge;
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            font-size: 9px;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card > div {
+            grid-area: detail;
+            min-width: 0;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card strong {
+            display: block;
+            font-size: 11px;
+            line-height: 1.15;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card small {
+            display: block;
+            margin-top: 2px;
+            overflow: hidden;
+            color: var(--bigcash-muted);
+            font-size: 9.5px;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card > b {
+            grid-area: net;
+            margin-top: 2px;
+            font-size: 12px;
+            line-height: 1.15;
+          }
+
+          .bigcash-balanced-layout .bigcash-payment-card > em {
+            grid-area: flow;
+            font-size: 9.5px;
+            line-height: 1.2;
+          }
+
+          @media (max-width: 1280px) {
+            .bigcash-balanced-layout .accounting-core-kpis {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .bigcash-balanced-layout .bigcash-ledger-overview {
+              grid-template-columns: 1fr;
+            }
+
+            .bigcash-balanced-layout .bigcash-payment-grid {
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 760px) {
+            .bigcash-balanced-layout .accounting-bigcash-head {
+              padding: 18px;
+            }
+
+            .bigcash-balanced-layout .accounting-core-kpis,
+            .bigcash-balanced-layout .bigcash-payment-grid,
+            .bigcash-balanced-layout .bigcash-ledger-totals,
+            .bigcash-balanced-layout .bigcash-ledger-split {
+              grid-template-columns: 1fr;
+            }
+
+            .bigcash-balanced-layout .bigcash-kpi-card h3 {
+              white-space: normal;
+            }
+          }
+        `}</style>
         <header className="accounting-bigcash-head">
           <div>
             <h2>Caja Grande</h2>

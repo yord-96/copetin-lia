@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
@@ -8,6 +11,9 @@ import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../stor
 
 const router = Router();
 const gzipAsync = promisify(gzip);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '../..');
+const accountingBackupDirectory = path.join(projectRoot, 'data', 'backups');
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
 const configuredResetSecurityCode = String(process.env.RESET_SECURITY_CODE ?? '').trim();
 const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurityCode !== 'cambia-este-codigo'
@@ -373,6 +379,89 @@ const assertDeveloperDatabaseAccess = (state, { code, userId } = {}) => {
     throw error;
   }
   return currentUser;
+};
+
+const isArchivedAccountingRecord = (record) => Boolean(
+  record?.accountingArchivedAt
+  || record?.accountingPeriodStatus === 'archived'
+);
+
+const getCurrentAccountingRows = (state) => ({
+  cashMovements: (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((row) => !isArchivedAccountingRecord(row)),
+  cashSessions: (Array.isArray(state?.cashSessions) ? state.cashSessions : [])
+    .filter((row) => !isArchivedAccountingRecord(row)),
+  cashDebts: (Array.isArray(state?.cashDebts) ? state.cashDebts : [])
+    .filter((row) => !isArchivedAccountingRecord(row)),
+});
+
+const buildAccountingResetAnalysis = (state) => {
+  const current = getCurrentAccountingRows(state);
+  const movementCounts = current.cashMovements.reduce((result, movement) => {
+    const cashBoxType = String(movement?.cashBoxType ?? '').toUpperCase();
+    if (cashBoxType === 'PETTY_CASH') result.pettyCash += 1;
+    else result.bigCash += 1;
+    if (movement?.linkedContractId || movement?.linkedRentalId || movement?.linkedOrderCode) {
+      result.contractLinked += 1;
+    }
+    if (movement?.isInternalTransfer) result.internalTransfers += 1;
+    return result;
+  }, { bigCash: 0, pettyCash: 0, contractLinked: 0, internalTransfers: 0 });
+  const total = current.cashMovements.length + current.cashSessions.length + current.cashDebts.length;
+  const module = {
+    id: 'cash_accounting',
+    level: 'safe',
+    risk: 'medio',
+    name: 'Iniciar nuevo periodo de Caja Grande y Caja Chica',
+    description: 'Archiva el periodo contable actual y comienza ambas cajas en Bs 0,00 sin borrar contratos, recibos ni movimientos economicos.',
+    total,
+    deleteCount: total,
+    archiveCount: total,
+    blockedCount: 0,
+    dependencies: [],
+    records: { deletable: [], blocked: [] },
+    impact: {
+      cashMovements: current.cashMovements.length,
+      cashSessions: current.cashSessions.length,
+      cashDebts: current.cashDebts.length,
+      ...movementCounts,
+    },
+  };
+  return {
+    availableModules: [module],
+    selectedModules: ['cash_accounting'],
+    modules: [module],
+    summary: {
+      total,
+      deletable: total,
+      archived: total,
+      blocked: 0,
+      critical: 0,
+    },
+    impact: module.impact,
+    canExecute: true,
+  };
+};
+
+const writeAccountingResetBackup = async ({ snapshot, currentUser }) => {
+  await fs.mkdir(accountingBackupDirectory, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `accounting-reset-${timestamp}.json`;
+  const filepath = path.join(accountingBackupDirectory, filename);
+  const payload = {
+    app: 'el-copetin',
+    kind: 'accounting-reset-backup',
+    exportedAt: new Date().toISOString(),
+    exportedBy: {
+      id: currentUser?.id ?? null,
+      name: currentUser?.fullName ?? currentUser?.name ?? 'Developer',
+      role: getUserDisplayRole(currentUser),
+    },
+    revision: snapshot?.revision ?? null,
+    state: snapshot?.state ?? {},
+  };
+  await fs.writeFile(filepath, JSON.stringify(payload), 'utf8');
+  return { filename, filepath };
 };
 
 const countBackupRows = (state) =>
@@ -2145,6 +2234,210 @@ router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next)
 });
 
 
+
+router.post('/__copetin_db/accounting/reset-preview', requireInternalKey, async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const currentUser = assertDeveloperDatabaseAccess(snapshot?.state ?? {}, {
+      code: req.body?.code,
+      userId: req.body?.userId,
+    });
+    const analysis = buildAccountingResetAnalysis(snapshot?.state ?? {});
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      user: {
+        id: currentUser.id,
+        fullName: currentUser.fullName,
+        role: getUserDisplayRole(currentUser),
+      },
+      analysis,
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/accounting/reset', requireInternalKey, async (req, res, next) => {
+  try {
+    const confirmation = String(req.body?.confirmation ?? '').trim().toUpperCase();
+    if (!['CONFIRMAR', 'RESET'].includes(confirmation)) {
+      res.status(400).json({ error: 'Debes escribir CONFIRMAR o RESET para iniciar el nuevo periodo contable.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const currentUser = assertDeveloperDatabaseAccess(snapshot?.state ?? {}, {
+      code: req.body?.code,
+      userId: req.body?.userId,
+    });
+    const backup = await writeAccountingResetBackup({ snapshot, currentUser });
+    const now = new Date().toISOString();
+    const periodId = `accounting-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    let responseData = null;
+
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.cashSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+      state.cashDebts = Array.isArray(state.cashDebts) ? state.cashDebts : [];
+      state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+
+      const analysis = buildAccountingResetAnalysis(state);
+      let archivedMovements = 0;
+      let archivedSessions = 0;
+      let archivedDebts = 0;
+
+      state.cashMovements = state.cashMovements.map((movement) => {
+        if (isArchivedAccountingRecord(movement)) return movement;
+        archivedMovements += 1;
+        return {
+          ...movement,
+          accountingArchivedAt: now,
+          accountingArchivedById: currentUser.id,
+          accountingArchivedByName: currentUser.fullName,
+          accountingPeriodStatus: 'archived',
+        };
+      });
+
+      state.cashSessions = state.cashSessions.map((session) => {
+        if (isArchivedAccountingRecord(session)) return session;
+        archivedSessions += 1;
+        return {
+          ...session,
+          status: String(session?.status ?? '').toLowerCase() === 'open' ? 'closed' : session.status,
+          closedAt: session.closedAt ?? now,
+          closedBy: session.closedBy ?? currentUser.fullName,
+          closeNotes: [session.closeNotes, 'Periodo cerrado por reinicio contable seguro.']
+            .map((value) => String(value ?? '').trim())
+            .filter(Boolean)
+            .join(' | '),
+          accountingArchivedAt: now,
+          accountingArchivedById: currentUser.id,
+          accountingArchivedByName: currentUser.fullName,
+          accountingPeriodStatus: 'archived',
+        };
+      });
+
+      state.cashDebts = state.cashDebts.map((debt) => {
+        if (isArchivedAccountingRecord(debt)) return debt;
+        archivedDebts += 1;
+        return {
+          ...debt,
+          accountingArchivedAt: now,
+          accountingArchivedById: currentUser.id,
+          accountingArchivedByName: currentUser.fullName,
+          accountingPeriodStatus: 'archived',
+        };
+      });
+
+      const newSession = {
+        id: `cash-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        status: 'open',
+        openingAmountBs: 0,
+        openingBigCashBs: 0,
+        openingPettyCashBs: 0,
+        openedBy: currentUser.fullName,
+        openedAt: now,
+        openNotes: 'Nuevo periodo contable iniciado en Bs 0,00.',
+        accountingPeriodId: periodId,
+        accountingPeriodStatus: 'current',
+        treasuryAccounts: [],
+        treasuryUpdatedAt: null,
+        treasuryUpdatedBy: '',
+      };
+      state.cashSessions.push(newSession);
+
+      state.settings = {
+        ...(state.settings ?? {}),
+        accounting: {
+          ...(state.settings?.accounting ?? {}),
+          currentPeriodId: periodId,
+          resetAt: now,
+          resetById: currentUser.id,
+          resetByName: currentUser.fullName,
+          previousPeriodBackup: backup.filename,
+        },
+      };
+
+      const resetLog = {
+        id: `rst-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        userRole: getUserDisplayRole(currentUser),
+        action: 'accounting_period_reset',
+        modules: ['cash_accounting'],
+        summary: {
+          total: archivedMovements + archivedSessions + archivedDebts,
+          archivedMovements,
+          archivedSessions,
+          archivedDebts,
+          bigCashBs: 0,
+          pettyCashBs: 0,
+        },
+        result: 'success',
+        errors: [],
+        observations: String(req.body?.observations ?? '').trim(),
+        backupFile: backup.filename,
+        ip: req.ip,
+        createdAt: now,
+      };
+      state.resetLogs.unshift(resetLog);
+      state.systemAuditLog.unshift({
+        id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        type: 'accounting_period_reset',
+        action: 'Nuevo periodo de Caja Grande y Caja Chica',
+        entityType: 'accounting',
+        entityId: periodId,
+        detail: `Se archivaron ${archivedMovements} movimientos, ${archivedSessions} sesiones y ${archivedDebts} deudas. Contratos y recibos conservados.`,
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        createdAt: now,
+      });
+
+      responseData = {
+        analysis,
+        log: resetLog,
+        period: state.settings.accounting,
+        cashSessions: [newSession],
+        cashMovements: [],
+        cashDebts: [],
+        summary: {
+          bigCashBs: 0,
+          pettyCashBs: 0,
+          archivedMovements,
+          archivedSessions,
+          archivedDebts,
+        },
+        backup: { filename: backup.filename },
+      };
+      return state;
+    });
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      ...responseData,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+
 router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next) => {
   try {
     const requestedId = String(req.params.id ?? '').trim();
@@ -2865,7 +3158,8 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
-    const allMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+    const allMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement));
     const recentLimit = Math.min(1500, Math.max(100, Number(req.query.limit ?? 750) || 750));
     const sortedMovements = allMovements
       .slice()
@@ -2959,7 +3253,8 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       movements: [...selectedMovements.values()]
         .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
         .map(summarizeAccountingMovement),
-      debts: Array.isArray(state.cashDebts) ? state.cashDebts : [],
+      debts: (Array.isArray(state.cashDebts) ? state.cashDebts : [])
+        .filter((debt) => !isArchivedAccountingRecord(debt)),
       paymentChannels,
       returnIssues,
       totalMovements: allMovements.length,
@@ -2975,6 +3270,7 @@ router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
     const movements = (Array.isArray(snapshot?.state?.cashMovements) ? snapshot.state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement))
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH')
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
       .map(summarizeAccountingMovement);
@@ -3049,12 +3345,14 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     };
 
     const pettyMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement))
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
     let rows;
     if (sector === 'suppliers') {
       rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt);
     } else if (sector === 'debts') {
-      rows = Array.isArray(state.cashDebts) ? state.cashDebts : [];
+      rows = (Array.isArray(state.cashDebts) ? state.cashDebts : [])
+        .filter((debt) => !isArchivedAccountingRecord(debt));
     } else if (sector === 'advances') {
       rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
     } else if (sector === 'expenses') {
@@ -3143,7 +3441,13 @@ router.get('/__copetin_db/collections', async (req, res, next) => {
 
     const snapshot = await getStateSnapshot();
     const collections = Object.fromEntries(
-      requestedNames.map((name) => [name, Array.isArray(snapshot?.state?.[name]) ? snapshot.state[name] : []]),
+      requestedNames.map((name) => {
+        const rows = Array.isArray(snapshot?.state?.[name]) ? snapshot.state[name] : [];
+        if (['cashMovements', 'cashSessions', 'cashDebts'].includes(name)) {
+          return [name, rows.filter((row) => !isArchivedAccountingRecord(row))];
+        }
+        return [name, rows];
+      }),
     );
     await sendJsonPayload(req, res, {
       initialized: snapshot.initialized,

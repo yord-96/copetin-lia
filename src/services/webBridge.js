@@ -3664,10 +3664,10 @@ const RESET_MODULES = [
     id: 'cash_accounting',
     level: 'safe',
     risk: 'medio',
-    name: 'Reiniciar contabilidad de caja',
-    description: 'Borra todos los movimientos y sesiones de Caja Grande y Caja Chica para dejar contabilidad limpia. Las garantias activas se recalculan desde contratos vigentes.',
-    deletes: ['cashMovements', 'cashSessions'],
-    warnings: ['No borra contratos, clientes ni inventario. Despues de ejecutar, Caja Grande queda sin ingresos operativos ni Caja Chica de prueba.'],
+    name: 'Iniciar nuevo periodo de Caja Grande y Caja Chica',
+    description: 'Cierra y archiva el periodo contable actual para comenzar Caja Grande y Caja Chica en Bs 0,00. Conserva contratos, recibos y movimientos economicos historicos.',
+    deletes: [],
+    warnings: ['No borra contratos, recibos ni movimientos economicos vinculados. Los registros anteriores quedan archivados y disponibles para trazabilidad.'],
   },
   {
     id: 'trial_cleanup',
@@ -4272,60 +4272,80 @@ const applyTrialCleanup = (state) => {
 };
 
 const applyCashAccountingReset = (state) => {
-  const deletedByCollection = {};
+  const now = new Date().toISOString();
+  const periodId = `accounting-${Date.now()}`;
   const previousMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
   const previousSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+  const previousDebts = Array.isArray(state.cashDebts) ? state.cashDebts : [];
 
-  if (previousMovements.length > 0) {
-    deletedByCollection.cashMovements = previousMovements.length;
-  }
-  if (previousSessions.length > 0) {
-    deletedByCollection.cashSessions = previousSessions.length;
-  }
+  let archivedMovements = 0;
+  let archivedSessions = 0;
+  let archivedDebts = 0;
 
-  state.cashSessions = [];
-  state.cashMovements = [];
-
-  const activeGuaranteeRentals = Array.isArray(state.rentals)
-    ? state.rentals
-      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'active')
-      .filter((rental) => Number(rental?.depositBs ?? 0) > 0)
-    : [];
-  const contractByRentalId = new Map(
-    (Array.isArray(state.contracts) ? state.contracts : [])
-      .filter((contract) => !contract?.deletedAt)
-      .map((contract) => [String(contract.rentalId ?? ''), contract]),
-  );
-
-  activeGuaranteeRentals.forEach((rental) => {
-    const contract = contractByRentalId.get(String(rental.id ?? ''));
-    const primaryResponsible = contract?.responsibles?.[0] ?? null;
-    const responsibleName = String(
-      primaryResponsible?.name
-      ?? contract?.createdByName
-      ?? rental?.createdByName
-      ?? contract?.createdBy
-      ?? rental?.createdBy
-      ?? 'Contabilidad',
-    ).trim() || 'Contabilidad';
-    state.cashMovements.push(buildCashMovement({
-      type: 'ingreso_garantia',
-      amountBs: Number(rental.depositBs ?? 0),
-      description: `Ingreso garantia: ${rental.customerName ?? 'Cliente'}`,
-      sourceType: 'rental',
-      sourceId: rental.id,
-      createdBy: responsibleName,
-      responsible: responsibleName,
-      cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-      category: 'garantia',
-      linkedRentalId: rental.id,
-      linkedContractId: rental.contractId ?? contract?.id ?? '',
-      linkedOrderCode: rental.orderCode ?? contract?.orderCode ?? '',
-      notes: 'Regenerado por reset contable: solo garantia activa.',
-    }));
+  state.cashMovements = previousMovements.map((movement) => {
+    if (isArchivedAccountingRecord(movement)) return movement;
+    archivedMovements += 1;
+    return {
+      ...movement,
+      accountingArchivedAt: now,
+      accountingPeriodStatus: 'archived',
+    };
+  });
+  state.cashSessions = previousSessions.map((session) => {
+    if (isArchivedAccountingRecord(session)) return session;
+    archivedSessions += 1;
+    return {
+      ...session,
+      status: session.status === 'open' ? 'closed' : session.status,
+      closedAt: session.closedAt ?? now,
+      closedBy: session.closedBy ?? 'Reset contable',
+      closeNotes: [session.closeNotes, 'Periodo cerrado por reinicio contable seguro.']
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+        .join(' | '),
+      accountingArchivedAt: now,
+      accountingPeriodStatus: 'archived',
+    };
+  });
+  state.cashDebts = previousDebts.map((debt) => {
+    if (isArchivedAccountingRecord(debt)) return debt;
+    archivedDebts += 1;
+    return {
+      ...debt,
+      accountingArchivedAt: now,
+      accountingPeriodStatus: 'archived',
+    };
   });
 
-  return deletedByCollection;
+  state.cashSessions.push({
+    id: makeId('cash'),
+    status: 'open',
+    openingAmountBs: 0,
+    openingBigCashBs: 0,
+    openingPettyCashBs: 0,
+    openedBy: 'Reset contable',
+    openedAt: now,
+    openNotes: 'Nuevo periodo contable iniciado en Bs 0,00.',
+    accountingPeriodId: periodId,
+    accountingPeriodStatus: 'current',
+    treasuryAccounts: [],
+    treasuryUpdatedAt: null,
+    treasuryUpdatedBy: '',
+  });
+  state.settings = {
+    ...(state.settings ?? {}),
+    accounting: {
+      ...(state.settings?.accounting ?? {}),
+      currentPeriodId: periodId,
+      resetAt: now,
+    },
+  };
+
+  return {
+    cashMovementsArchived: archivedMovements,
+    cashSessionsArchived: archivedSessions,
+    cashDebtsArchived: archivedDebts,
+  };
 };
 
 const applyFactoryReset = (state, analysis) => {
@@ -4401,7 +4421,10 @@ const applyResetAnalysis = (state, analysis) => {
   return deletedByCollection;
 };
 
-const getActiveSession = (state) => state.cashSessions.find((session) => session.status === 'open') ?? null;
+const getActiveSession = (state) => state.cashSessions.find((session) => (
+  !isArchivedAccountingRecord(session)
+  && session.status === 'open'
+)) ?? null;
 const CASH_BOX_TYPES = {
   BIG_CASH: 'BIG_CASH',
   PETTY_CASH: 'PETTY_CASH',
@@ -4537,6 +4560,11 @@ const buildCashMovement = ({
 const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
+const isArchivedAccountingRecord = (record) => Boolean(
+  record?.accountingArchivedAt
+  || record?.accountingPeriodStatus === 'archived'
+);
+
 
 const isGuaranteeCashMovement = (movement) => {
   const type = normalizeText(movement?.type);
@@ -4713,7 +4741,7 @@ const nextAttendanceCode = (state) => {
 
 const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
   const balance = state.cashMovements
-    .filter((movement) => !isVoidedCashMovement(movement))
+    .filter((movement) => !isVoidedCashMovement(movement) && !isArchivedAccountingRecord(movement))
     .filter((movement) => movement.sessionId === sessionId)
     .filter((movement) => !cashBoxType || normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
     .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0);
@@ -4722,7 +4750,7 @@ const calculateSessionBalance = (state, sessionId, cashBoxType = null) => {
 
 const calculateCashBoxBalance = (state, cashBoxType) => Number(
   state.cashMovements
-    .filter((movement) => !isVoidedCashMovement(movement))
+    .filter((movement) => !isVoidedCashMovement(movement) && !isArchivedAccountingRecord(movement))
     .filter((movement) => normalizeCashBoxType(movement.cashBoxType) === cashBoxType)
     .reduce((sum, movement) => sum + Number(movement.amountBs ?? 0), 0)
     .toFixed(2),
@@ -17398,20 +17426,27 @@ const createWebBridge = () => ({
     },
     listSessions: async () => {
       const { cashSessions } = readQueryState();
-      return cashSessions.slice().sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
+      return cashSessions
+        .filter((session) => !isArchivedAccountingRecord(session))
+        .slice()
+        .sort((a, b) => new Date(b.openedAt) - new Date(a.openedAt));
     },
     listMovements: async (payload) => {
       const filterSessionId = String(payload?.sessionId ?? '').trim();
       const { cashMovements } = readQueryState();
+      const currentMovements = cashMovements.filter((movement) => !isArchivedAccountingRecord(movement));
       const filtered = filterSessionId
-        ? cashMovements.filter((movement) => movement.sessionId === filterSessionId)
-        : cashMovements;
+        ? currentMovements.filter((movement) => movement.sessionId === filterSessionId)
+        : currentMovements;
 
       return filtered.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
     listDebts: async () => {
       const { cashDebts } = readQueryState();
-      return cashDebts.slice().sort((a, b) => new Date(b.createdAt ?? b.debtDate) - new Date(a.createdAt ?? a.debtDate));
+      return cashDebts
+        .filter((debt) => !isArchivedAccountingRecord(debt))
+        .slice()
+        .sort((a, b) => new Date(b.createdAt ?? b.debtDate) - new Date(a.createdAt ?? a.debtDate));
     },
     createDebt: async (payload) => {
       const description = String(payload?.description ?? payload?.detail ?? '').trim();
