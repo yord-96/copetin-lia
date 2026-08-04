@@ -15005,15 +15005,22 @@ const createWebBridge = () => ({
           Number(contract?.payment?.paidAtApprovalBs ?? 0),
           Number(contract?.payment?.paidAtRentalBs ?? 0),
         );
-        const hasRequestedPaidAtApproval = Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs');
-        const requestedPaidAtApprovalBs = Math.max(
-          0,
-          Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
+        const forceInitialPaymentReset = Boolean(
+          payload?.confirmInitialPaymentReset === true
+          && Number(payload?.forceInitialPaymentBs) === 0
         );
+        const hasRequestedPaidAtApproval = forceInitialPaymentReset
+          || Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs');
+        const requestedPaidAtApprovalBs = forceInitialPaymentReset
+          ? 0
+          : Math.max(
+            0,
+            Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
+          );
         const resetsInitialPaymentToZero = Boolean(
-          hasRequestedPaidAtApproval
-          && storedPaidAtApprovalBs > 0
+          storedPaidAtApprovalBs > 0
           && requestedPaidAtApprovalBs <= 0
+          && hasRequestedPaidAtApproval
         );
         if (resetsInitialPaymentToZero && payload?.confirmInitialPaymentReset !== true) {
           throw new Error('Debes confirmar expresamente que deseas cambiar el pago inicial a cero.');
@@ -15083,7 +15090,6 @@ const createWebBridge = () => ({
         }
         cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncInitialPaymentCashMovement(state, contract, payload, now);
-        cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);

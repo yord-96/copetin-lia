@@ -6469,6 +6469,11 @@ function ServiceOrdersSection({
             && Math.max(0, Number(draft.originalPaidAtApprovalBs ?? 0)) > 0
             && Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0
           ),
+          forceInitialPaymentBs: zeroInitialPaymentConfirmed
+            && Math.max(0, Number(draft.originalPaidAtApprovalBs ?? 0)) > 0
+            && Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0
+            ? 0
+            : undefined,
         };
         let savedContract = null;
         if (approveNow && !draft.recordId && onCreateAndApproveContract) {
