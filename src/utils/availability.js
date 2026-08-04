@@ -63,7 +63,7 @@ const finishesByStartDate = (left, right) =>
   && hasValidPeriod(right)
   && left.endDate
   && right.startDate
-  && left.endDate <= right.startDate;
+  && left.endDate < right.startDate;
 
 const getContractMaps = (contracts = []) => {
   const byRentalId = new Map();
