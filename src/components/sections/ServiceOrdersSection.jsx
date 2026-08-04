@@ -9161,30 +9161,34 @@ function ServiceOrdersSection({
                   {visibleContractsForRender.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                     const economicInternalNotes = row.economicInternalNotes ?? [];
+                    const isCancelledRow = row.status === 'anulado';
+                    const showSentStyle = !isCancelledRow && row.isSent;
+                    const showReturnedStyle = !isCancelledRow && row.isReturned;
                     const isRowFinalized = finalizedContractOverrides.has(row.id)
                       ? finalizedContractOverrides.get(row.id)
                       : Boolean(row.isFinalized);
+                    const showFinalizedStyle = !isCancelledRow && isRowFinalized;
                     return (
-                      <tr key={row.id} className={`orders-row contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}${isRowFinalized ? ' is-finalized' : ''}`}>
-                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
+                      <tr key={row.id} className={`orders-row contract-${row.status}${showSentStyle ? ' is-sent' : ''}${showReturnedStyle ? ' is-returned' : ''}${showFinalizedStyle ? ' is-finalized' : ''}`}>
+                        <td className={showSentStyle ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
                           </div>
                         </td>
-                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
+                        <td className={showSentStyle ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong>{formatDate(row.eventDate)}</strong>
                             <span>{formatLongSpanishDate(row.eventDate)}</span>
                           </div>
                         </td>
-                        <td className={row.isSent ? 'orders-contract-sent-cell' : ''}>
+                        <td className={showSentStyle ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">
                             <strong>{row.customerName}</strong>
                             <span>{row.customerPhone || 'Sin WhatsApp/celular'}</span>
                             {row.customerReferencePhone ? <span>Ref: {row.customerReferencePhone}</span> : null}
                           </div>
                         </td>
-                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
+                        <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-responsible-cell">
                             <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
                             <div>
@@ -9193,7 +9197,7 @@ function ServiceOrdersSection({
                             </div>
                           </div>
                         </td>
-                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
+                        <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-cell-main">
                             {normalizeText(row.logisticsMode) === 'recojo' ? (
                               <>
@@ -9222,7 +9226,7 @@ function ServiceOrdersSection({
                             </button>
                           ) : null}
                         </td>
-                        <td className={row.isReturned ? 'orders-contract-returned-cell' : ''}>
+                        <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-hidden-status-cell">
                             <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
                             {row.status === 'oculto' ? (
@@ -9306,9 +9310,13 @@ function ServiceOrdersSection({
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                 const transportMeta = getContractTransportLabel(row);
                 const economicInternalNotes = row.economicInternalNotes ?? [];
+                const isCancelledRow = row.status === 'anulado';
+                const showSentStyle = !isCancelledRow && row.isSent;
+                const showReturnedStyle = !isCancelledRow && row.isReturned;
                 const isRowFinalized = finalizedContractOverrides.has(row.id)
                   ? finalizedContractOverrides.get(row.id)
                   : Boolean(row.isFinalized);
+                const showFinalizedStyle = !isCancelledRow && isRowFinalized;
                 const serviceDateLabel = [row.deliveryDate, row.pickupDate].filter(Boolean).map(formatDate).join(' - ') || formatDate(row.eventDate);
                 const serviceAddressLabel = normalizeText(row.logisticsMode) === 'recojo'
                   ? 'Recojo por cliente'
@@ -9317,9 +9325,9 @@ function ServiceOrdersSection({
                   ? 'Cliente retira y devuelve'
                   : 'Envio por mi equipo';
                 return (
-                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}${row.isSent ? ' is-sent' : ''}${row.isReturned ? ' is-returned' : ''}${isRowFinalized ? ' is-finalized' : ''}`}>
+                  <article key={row.id} className={`orders-mobile-contract-card contract-${row.status}${showSentStyle ? ' is-sent' : ''}${showReturnedStyle ? ' is-returned' : ''}${showFinalizedStyle ? ' is-finalized' : ''}`}>
                     <header>
-                      <div className={row.isSent ? 'orders-mobile-sent-zone' : ''}>
+                      <div className={showSentStyle ? 'orders-mobile-sent-zone' : ''}>
                         <strong>{row.contractCode}</strong>
                         <span>{formatLongSpanishDate(row.eventDate)}</span>
                       </div>
@@ -9334,12 +9342,12 @@ function ServiceOrdersSection({
                         </b>
                       </div>
                     </header>
-                    <div className={`orders-mobile-contract-main ${row.isSent ? 'orders-mobile-sent-zone' : ''}`}>
+                    <div className={`orders-mobile-contract-main ${showSentStyle ? 'orders-mobile-sent-zone' : ''}`}>
                       <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
                       <p><span>Celular:</span> <strong>{row.customerPhone || 'Sin WhatsApp/celular'}</strong></p>
                       {row.customerReferencePhone ? <p><span>Ref:</span> <strong>{row.customerReferencePhone}</strong></p> : null}
                     </div>
-                    <div className={`orders-mobile-contract-bottom ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
+                    <div className={`orders-mobile-contract-bottom ${showReturnedStyle ? 'orders-mobile-returned-zone' : ''}`}>
                       <div className="orders-responsible-cell">
                         <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
                         <div>
@@ -9352,7 +9360,7 @@ function ServiceOrdersSection({
                         <strong>{row.orderCode || '-'}</strong>
                       </div>
                     </div>
-                    <div className={`orders-mobile-contract-meta ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
+                    <div className={`orders-mobile-contract-meta ${showReturnedStyle ? 'orders-mobile-returned-zone' : ''}`}>
                       <span className="orders-mobile-date-line">Servicio: {serviceDateLabel}</span>
                       <span>Entrega / recojo</span>
                     </div>
@@ -9365,7 +9373,7 @@ function ServiceOrdersSection({
                           <em>Entrega / recojo</em>
                         </span>
                       </div>
-                      <div className={`orders-mobile-contract-address ${row.isReturned ? 'orders-mobile-returned-zone' : ''}`}>
+                      <div className={`orders-mobile-contract-address ${showReturnedStyle ? 'orders-mobile-returned-zone' : ''}`}>
                         <MapPin aria-hidden="true" />
                         <span>
                           <small>Direccion</small>
