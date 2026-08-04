@@ -1024,6 +1024,27 @@ const directNormalizeText = (value) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+
+const directBusinessText = (value) =>
+  String(value ?? '').trim().toLocaleUpperCase('es-BO');
+
+const buildDirectSupplier = (payload = {}, now = new Date().toISOString()) => ({
+  id: directId('sup'),
+  name: directBusinessText(payload.name),
+  contactName: directBusinessText(payload.contactName),
+  phone: String(payload.phone ?? '').trim(),
+  whatsapp: String(payload.whatsapp ?? payload.phone ?? '').trim(),
+  email: String(payload.email ?? '').trim().toLowerCase(),
+  address: directBusinessText(payload.address),
+  city: directBusinessText(payload.city),
+  type: 'regular',
+  paymentTerms: directBusinessText(payload.paymentTerms),
+  notes: directBusinessText(payload.notes),
+  status: 'active',
+  createdAt: now,
+  updatedAt: now,
+  deletedAt: null,
+});
 const directInventoryLineKey = (line, index = 0) => String(
   line?.lineKey
   ?? line?.returnLineKey
@@ -1176,6 +1197,52 @@ const findDirectOperation = (state, clientOperationId) => {
   return (Array.isArray(state.cashMovements) ? state.cashMovements : [])
     .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
 };
+
+router.post('/__copetin_db/suppliers/create', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const name = directBusinessText(payload.name);
+    if (!name) {
+      res.status(400).json({ error: 'El nombre del proveedor es obligatorio.' });
+      return;
+    }
+
+    let createdSupplier = null;
+    const result = await updateStateSnapshot((state) => {
+      state.suppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
+
+      const duplicate = state.suppliers.find((supplier) => (
+        !supplier?.deletedAt
+        && directNormalizeText(supplier?.name).trim() === directNormalizeText(name).trim()
+      ));
+      if (duplicate) {
+        const error = new Error('Ya existe un proveedor con ese nombre.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      createdSupplier = buildDirectSupplier({ ...payload, name });
+      state.suppliers.push(createdSupplier);
+      return state;
+    });
+
+    res.json({
+      ok: true,
+      supplier: createdSupplier,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
 
 router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
   try {

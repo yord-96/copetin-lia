@@ -1331,6 +1331,43 @@ const mergeTransactionChangesIntoLocalState = async (changes = {}) => {
   await bridge.__storage.mergeState(partialState);
 };
 
+const createSupplierOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('suppliers', 'create', true, payload);
+  }
+
+  const response = await fetch(getServerStateUrl('/suppliers/create'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo crear el proveedor.');
+  }
+
+  const result = await response.json();
+  const supplier = result?.supplier ?? null;
+  if (!supplier?.id) {
+    throw new Error('El servidor no devolvió el proveedor creado.');
+  }
+
+  if (result?.revision) {
+    rememberServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+
+  // El controlador incorpora el proveedor confirmado a React inmediatamente.
+  // No reconstruimos ni persistimos toda la base en el navegador.
+  announceDataChange({
+    domain: 'suppliers',
+    method: 'create',
+    collections: ['suppliers'],
+  });
+
+  return supplier;
+};
+
 const createAndApproveContractOnServer = async ({ contract, trace } = {}) => {
   if (!shouldUseServerState()) {
     throw new Error('La aprobacion transaccional requiere conexion con el servidor.');
@@ -2062,7 +2099,7 @@ export const api = {
   },
   suppliers: {
     listBundle: () => callBridge('suppliers', 'listBundle', false),
-    create: (payload) => callBridge('suppliers', 'create', true, payload),
+    create: (payload) => createSupplierOnServer(payload),
     update: (payload) => callBridge('suppliers', 'update', true, payload),
     createQuote: (payload) => callBridge('suppliers', 'createQuote', true, payload),
     createLoan: (payload) => callBridge('suppliers', 'createLoan', true, payload),
