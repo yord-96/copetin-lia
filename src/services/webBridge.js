@@ -17357,9 +17357,7 @@ const createWebBridge = () => ({
       const bigCashBalanceBs = calculateCashBoxBalance(state, CASH_BOX_TYPES.BIG_CASH);
       const guaranteeHeldBs = calculateHeldGuarantees(state);
       const operationalBigCashBs = calculateOperationalBigCashBalance(state);
-      const pettyCashBalanceBs = activeSession
-        ? calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH)
-        : 0;
+      const pettyCashBalanceBs = calculateCashBoxBalance(state, CASH_BOX_TYPES.PETTY_CASH);
       const treasuryAccounts = activeSession ? normalizeTreasuryAccounts(activeSession.treasuryAccounts) : [];
       const treasuryAllocatedBs = toPositiveRoundedNumber(
         treasuryAccounts.reduce((sum, account) => sum + Number(account.amountBs ?? 0), 0),

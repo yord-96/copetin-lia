@@ -1287,6 +1287,46 @@ const findDirectOperation = (state, clientOperationId) => {
     .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
 };
 
+const getDirectCurrentCashSession = (state) => (
+  (Array.isArray(state?.cashSessions) ? state.cashSessions : [])
+    .find((session) => (
+      !isArchivedAccountingRecord(session)
+      && String(session?.status ?? '').toLowerCase() === 'open'
+    )) ?? null
+);
+
+const getDirectCurrentCashBalance = (state, cashBoxType) => Number(
+  (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !isArchivedAccountingRecord(movement))
+    .filter((movement) => !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
+    .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === cashBoxType)
+    .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
+    .toFixed(2)
+);
+
+const summarizeDirectCashState = (state) => ({
+  bigCashBalanceBs: getDirectCurrentCashBalance(state, 'BIG_CASH'),
+  pettyCashBalanceBs: getDirectCurrentCashBalance(state, 'PETTY_CASH'),
+  activeSessionId: getDirectCurrentCashSession(state)?.id ?? null,
+});
+
+const normalizeDirectCashMovementPayload = (payload = {}) => {
+  const type = String(payload?.type ?? '').trim().toLowerCase();
+  const cashBoxType = String(payload?.cashBoxType ?? (type === 'egreso' ? 'PETTY_CASH' : 'BIG_CASH'))
+    .trim()
+    .toUpperCase();
+  return {
+    ...payload,
+    type,
+    cashBoxType: cashBoxType === 'PETTY_CASH' ? 'PETTY_CASH' : 'BIG_CASH',
+    description: String(payload?.description ?? '').trim(),
+    category: String(payload?.category ?? '').trim(),
+    createdBy: String(payload?.createdBy ?? payload?.createdByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+    responsible: String(payload?.responsible ?? payload?.createdBy ?? 'Sistema').trim() || 'Sistema',
+  };
+};
+
+
 router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
@@ -2094,6 +2134,218 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
     });
     res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
   } catch (error) { if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+
+router.get('/__copetin_db/personnel/options', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const query = directNormalizeText(req.query?.query ?? '').trim();
+    const limit = Math.min(30, Math.max(5, Number.parseInt(req.query?.limit, 10) || 20));
+    const rows = (Array.isArray(snapshot?.state?.personnelEmployees) ? snapshot.state.personnelEmployees : [])
+      .filter((employee) => !employee?.deletedAt && String(employee?.status ?? 'active').toLowerCase() !== 'inactive')
+      .filter((employee) => {
+        if (!query) return true;
+        return [
+          employee?.fullName,
+          employee?.documentId,
+          employee?.employeeCode,
+          employee?.position,
+          employee?.department,
+        ].some((value) => directNormalizeText(value).includes(query));
+      })
+      .sort((left, right) => String(left?.fullName ?? '').localeCompare(String(right?.fullName ?? ''), 'es'))
+      .slice(0, limit)
+      .map((employee) => ({
+        id: employee.id,
+        employeeCode: employee.employeeCode ?? '',
+        fullName: employee.fullName ?? '',
+        documentId: employee.documentId ?? '',
+        department: employee.department ?? '',
+        position: employee.position ?? '',
+        status: employee.status ?? 'active',
+      }));
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      employees: rows,
+      total: rows.length,
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/cash/movement', async (req, res, next) => {
+  try {
+    const rawPayload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const payload = normalizeDirectCashMovementPayload(rawPayload);
+    const amountBs = directMoney(payload.amountBs);
+
+    if (amountBs <= 0) {
+      res.status(400).json({ error: 'El monto del movimiento debe ser mayor a 0.' });
+      return;
+    }
+    if (!payload.description) {
+      res.status(400).json({ error: 'Debes escribir una descripcion para el movimiento.' });
+      return;
+    }
+    if (!['ingreso', 'egreso', 'transferencia'].includes(payload.type)) {
+      res.status(400).json({ error: 'Tipo de movimiento de caja no valido.' });
+      return;
+    }
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.cashSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+
+      const duplicate = findDirectOperation(state, payload.clientOperationId);
+      if (duplicate) {
+        const linked = duplicate.transferGroupId
+          ? state.cashMovements.filter((movement) => movement.transferGroupId === duplicate.transferGroupId)
+          : [duplicate];
+        responseData = {
+          movement: duplicate,
+          movements: linked,
+          summary: summarizeDirectCashState(state),
+          duplicated: true,
+        };
+        return state;
+      }
+
+      let activeSession = getDirectCurrentCashSession(state);
+      if (!activeSession && payload.type === 'transferencia') {
+        activeSession = {
+          id: directId('cash'),
+          status: 'open',
+          openingAmountBs: 0,
+          openingBigCashBs: 0,
+          openingPettyCashBs: 0,
+          openedBy: payload.createdBy,
+          openedAt: new Date().toISOString(),
+          openNotes: 'Apertura automatica por reposicion a Caja Chica.',
+          accountingPeriodId: state?.settings?.accounting?.currentPeriodId ?? null,
+          accountingPeriodStatus: 'current',
+          treasuryAccounts: [],
+          treasuryUpdatedAt: null,
+          treasuryUpdatedBy: '',
+        };
+        state.cashSessions.push(activeSession);
+      }
+
+      const periodId = state?.settings?.accounting?.currentPeriodId ?? activeSession?.accountingPeriodId ?? null;
+      const bigCashBalance = getDirectCurrentCashBalance(state, 'BIG_CASH');
+      const pettyCashBalance = getDirectCurrentCashBalance(state, 'PETTY_CASH');
+
+      if (payload.type === 'transferencia' && amountBs > bigCashBalance) {
+        const error = new Error(`Caja Grande no tiene saldo suficiente. Disponible: Bs ${bigCashBalance.toFixed(2)}.`);
+        error.statusCode = 400;
+        throw error;
+      }
+      if (payload.type === 'egreso') {
+        if (payload.cashBoxType !== 'PETTY_CASH') {
+          const error = new Error('Los gastos operativos deben registrarse desde Caja Chica.');
+          error.statusCode = 400;
+          throw error;
+        }
+        if (!activeSession) {
+          const error = new Error('No existe una sesion vigente de Caja Chica.');
+          error.statusCode = 400;
+          throw error;
+        }
+        if (amountBs > pettyCashBalance) {
+          const error = new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${pettyCashBalance.toFixed(2)}.`);
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+
+      if (payload.type === 'transferencia') {
+        const transferGroupId = directId('trf');
+        const receiptCode = nextDirectReceiptCode(state);
+        const common = {
+          ...payload,
+          sessionId: activeSession?.id ?? null,
+          sourceType: 'transferencia',
+          sourceId: transferGroupId,
+          category: payload.category || 'reposicion_caja_chica',
+          receiptCode,
+          accountingPeriodId: periodId,
+        };
+        const outMovement = {
+          ...buildDirectMovement(state, {
+            ...common,
+            type: 'transferencia_salida_caja_chica',
+            amountBs: -amountBs,
+            cashBoxType: 'BIG_CASH',
+          }),
+          isInternalTransfer: true,
+          transferGroupId,
+          accountingPeriodId: periodId,
+          accountingPeriodStatus: 'current',
+        };
+        const inMovement = {
+          ...buildDirectMovement(state, {
+            ...common,
+            type: 'transferencia_entrada_caja_chica',
+            amountBs,
+            cashBoxType: 'PETTY_CASH',
+            receiptCode,
+          }),
+          isInternalTransfer: true,
+          transferGroupId,
+          accountingPeriodId: periodId,
+          accountingPeriodStatus: 'current',
+        };
+        state.cashMovements.push(outMovement, inMovement);
+        responseData = {
+          movement: outMovement,
+          movements: [outMovement, inMovement],
+          summary: summarizeDirectCashState(state),
+        };
+        return state;
+      }
+
+      const signedAmount = payload.type === 'egreso' ? -amountBs : amountBs;
+      const movement = {
+        ...buildDirectMovement(state, {
+          ...payload,
+          sessionId: payload.type === 'egreso' ? activeSession?.id ?? null : activeSession?.id ?? null,
+          type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
+          amountBs: signedAmount,
+          cashBoxType: payload.type === 'egreso' ? 'PETTY_CASH' : payload.cashBoxType,
+        }),
+        accountingPeriodId: periodId,
+        accountingPeriodStatus: 'current',
+      };
+      state.cashMovements.push(movement);
+      responseData = {
+        movement,
+        movements: [movement],
+        summary: summarizeDirectCashState(state),
+      };
+      return state;
+    });
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      ...responseData,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
 });
 
 router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next) => {

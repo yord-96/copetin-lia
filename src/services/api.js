@@ -1696,6 +1696,9 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
+    if (path === '/cash/movement') {
+      await applyDirectCashResultLocally(result);
+    }
     const method = path.includes('update-receipt')
       ? 'updateMovementReceipt'
       : path.includes('collect')
@@ -1707,6 +1710,62 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (error?.name === 'AbortError') throw new Error('El servidor tardo demasiado en confirmar la operacion. No la repitas: vuelve a abrir el contrato para verificar el recibo.');
     throw error;
   } finally { clearTimeout(timeoutId); }
+};
+
+
+const applyDirectCashResultLocally = async (result = {}) => {
+  const createdRows = Array.isArray(result?.movements)
+    ? result.movements
+    : result?.movement
+      ? [result.movement]
+      : [];
+  if (!createdRows.length) return;
+
+  const local = await exportLocalCollections(['cashMovements', 'cashSessions']);
+  const currentRows = Array.isArray(local?.cashMovements) ? local.cashMovements : [];
+  const byId = new Map(currentRows.map((row) => [String(row?.id ?? ''), row]));
+  createdRows.forEach((row) => {
+    const id = String(row?.id ?? '').trim();
+    if (id) byId.set(id, row);
+  });
+  await mergeLocalState({ cashMovements: [...byId.values()] });
+  loadedServerCollections.add('cashMovements');
+  localServerCommitSerial += 1;
+};
+
+const getPersonnelOptionsFromServer = async ({ query = '', limit = 20 } = {}) => {
+  if (!shouldUseServerState()) {
+    const bundle = await callBridge('personnel', 'listBundle', false);
+    const normalized = String(query ?? '').trim().toLowerCase();
+    const employees = (Array.isArray(bundle?.employees) ? bundle.employees : [])
+      .filter((employee) => !employee?.deletedAt && String(employee?.status ?? 'active').toLowerCase() !== 'inactive')
+      .filter((employee) => !normalized || [
+        employee?.fullName,
+        employee?.documentId,
+        employee?.employeeCode,
+        employee?.position,
+        employee?.department,
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalized)))
+      .slice(0, limit);
+    return { employees, total: employees.length };
+  }
+  const params = new URLSearchParams({
+    query: String(query ?? ''),
+    limit: String(Math.min(30, Math.max(5, Number(limit) || 20))),
+  });
+  const response = await fetch(getServerStateUrl(`/personnel/options?${params.toString()}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el personal disponible.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  return result;
 };
 
 const shouldFallbackToBridgeOperation = (error) => error?.status === 404 || error?.status === 405;
@@ -2282,6 +2341,7 @@ export const api = {
     updateLoanStatus: (payload) => callBridge('suppliers', 'updateLoanStatus', true, payload),
   },
   personnel: {
+    getOptions: (payload) => getPersonnelOptionsFromServer(payload),
     listBundle: async () => { await ensureServerCollectionsLoaded(['personnelAttendance', 'personnelIncidents'], 'personnel-bundle'); return callBridge('personnel', 'listBundle', false); },
     createEmployee: (payload) => callBridge('personnel', 'createEmployee', true, payload),
     updateEmployee: (payload) => callBridge('personnel', 'updateEmployee', true, payload),
@@ -2546,13 +2606,18 @@ export const api = {
     closeSession: (payload) => callBridge('cash', 'closeSession', true, payload),
     updateTreasuryAccounts: (payload) => callBridge('cash', 'updateTreasuryAccounts', true, payload),
     createManualMovement: async (payload) => {
-      if (shouldUseServerState() && (payload?.linkedContractId || String(payload?.accountingTag ?? '').includes('guarantee') || String(payload?.category ?? '').includes('garantia'))) {
+      if (shouldUseServerState()) {
         try {
-          const result = await callDirectCashOperation('/cash/manual-economic-movement', payload);
+          const directPath = payload?.linkedContractId
+            || String(payload?.accountingTag ?? '').includes('guarantee')
+            || String(payload?.category ?? '').includes('garantia')
+            ? '/cash/manual-economic-movement'
+            : '/cash/movement';
+          const result = await callDirectCashOperation(directPath, payload);
           return result?.movement ?? result;
         } catch (error) {
           if (!shouldFallbackToBridgeOperation(error)) throw error;
-          console.warn('[copetin-sync] Endpoint directo de movimiento economico no disponible; usando guardado local.', error);
+          console.warn('[copetin-sync] Endpoint directo de caja no disponible; usando compatibilidad local.', error);
         }
       }
       return callBridge('cash', 'createManualMovement', true, payload);

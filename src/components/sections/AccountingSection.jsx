@@ -334,7 +334,6 @@ function AccountingSection({
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
-  onCreateEmployee,
 }) {
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
@@ -364,6 +363,9 @@ function AccountingSection({
     query: '',
   });
   const [cashModal, setCashModal] = useState(null);
+  const [advancePersonnelOptions, setAdvancePersonnelOptions] = useState([]);
+  const [advancePersonnelLoading, setAdvancePersonnelLoading] = useState(false);
+  const [advancePersonnelError, setAdvancePersonnelError] = useState('');
   const [bigCashListModal, setBigCashListModal] = useState(null);
   const [bigCashListQuery, setBigCashListQuery] = useState('');
   const [bigCashListMonth, setBigCashListMonth] = useState('');
@@ -513,13 +515,15 @@ function AccountingSection({
   };
 
   const rentalById = useMemo(() => new Map(rentals.map((rental) => [rental.id, rental])), [rentals]);
-  const personnelEmployees = useMemo(
-    () => (personnelBundle?.employees ?? [])
+  const personnelEmployees = useMemo(() => {
+    const source = advancePersonnelOptions.length > 0
+      ? advancePersonnelOptions
+      : (personnelBundle?.employees ?? []);
+    return source
       .filter((employee) => !employee?.deletedAt && String(employee?.status ?? 'active') !== 'inactive')
       .slice()
-      .sort((a, b) => String(a?.fullName ?? '').localeCompare(String(b?.fullName ?? ''), 'es')),
-    [personnelBundle?.employees],
-  );
+      .sort((a, b) => String(a?.fullName ?? '').localeCompare(String(b?.fullName ?? ''), 'es'));
+  }, [advancePersonnelOptions, personnelBundle?.employees]);
   const filteredAdvanceEmployees = useMemo(() => {
     const query = normalizeText(advancePeopleQuery);
     if (!query) return personnelEmployees.slice(0, 8);
@@ -535,11 +539,6 @@ function AccountingSection({
         return haystack.includes(query);
       })
       .slice(0, 10);
-  }, [advancePeopleQuery, personnelEmployees]);
-  const advanceQueryMatchesEmployee = useMemo(() => {
-    const query = normalizeText(advancePeopleQuery);
-    if (!query) return false;
-    return personnelEmployees.some((employee) => normalizeText(employee.fullName) === query);
   }, [advancePeopleQuery, personnelEmployees]);
   const contractByRentalId = useMemo(() => {
     const map = new Map();
@@ -1531,10 +1530,24 @@ function AccountingSection({
     setCashActionFeedback('');
   };
 
+  const loadAdvancePersonnelOptions = useCallback(async (query = '') => {
+    setAdvancePersonnelLoading(true);
+    setAdvancePersonnelError('');
+    try {
+      const result = await api.personnel.getOptions({ query, limit: 20 });
+      setAdvancePersonnelOptions(Array.isArray(result?.employees) ? result.employees : []);
+    } catch (error) {
+      setAdvancePersonnelError(error.message || 'No se pudo cargar el personal.');
+    } finally {
+      setAdvancePersonnelLoading(false);
+    }
+  }, []);
+
   const openCashAction = (type, patch = {}) => {
     resetCashForm(patch);
     if (type === 'advance') {
       setAdvancePeopleQuery('');
+      void loadAdvancePersonnelOptions('');
     }
     setCashModal(type);
   };
@@ -1553,15 +1566,6 @@ function AccountingSection({
     }
   };
 
-  const handleUseNewAdvanceEmployee = () => {
-    const fullName = String(advancePeopleQuery ?? '').trim();
-    setCashForm((current) => ({
-      ...current,
-      employeeId: '',
-      responsible: fullName,
-      description: fullName ? `Adelanto de sueldo - ${fullName}` : 'Adelanto de sueldo',
-    }));
-  };
 
   const openPettyHistory = (movement = 'all') => {
     setPettyHistoryFilters((current) => ({
@@ -1832,35 +1836,15 @@ function AccountingSection({
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
       } else if (cashModal === 'advance') {
-        let employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
-        const typedEmployeeName = String(cashForm.responsible || advancePeopleQuery || '').trim();
-        const matchingEmployee = typedEmployeeName
-          ? personnelEmployees.find((entry) => normalizeText(entry.fullName) === normalizeText(typedEmployeeName)) ?? null
-          : null;
-        employee = employee ?? matchingEmployee;
-        const employeeName = String(employee?.fullName ?? typedEmployeeName).trim();
-        const documentId = String(cashForm.documentId ?? employee?.documentId ?? '').trim();
-        const requestDate = cashForm.requestDate || selectedDate;
-        if (!employeeName) {
-          throw new Error('Selecciona o escribe el trabajador que solicita el adelanto.');
-        }
-        if (!documentId) {
-          throw new Error('Ingresa el numero de carnet del trabajador.');
-        }
+        const employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
         if (!employee) {
-          if (!onCreateEmployee) {
-            throw new Error('No se pudo registrar personal nuevo desde Caja Chica.');
-          }
-          employee = await onCreateEmployee({
-            fullName: employeeName,
-            documentId,
-            department: 'Operaciones',
-            position: 'Personal eventual',
-            contractType: 'eventual',
-            hireDate: requestDate,
-            notes: 'Creado desde Caja Chica al registrar adelanto de personal.',
-            status: 'active',
-          });
+          throw new Error('Selecciona un trabajador existente del modulo Personal.');
+        }
+        const employeeName = String(employee.fullName ?? '').trim();
+        const documentId = String(employee.documentId ?? '').trim();
+        const requestDate = cashForm.requestDate || selectedDate;
+        if (!documentId) {
+          throw new Error('El trabajador seleccionado no tiene carnet registrado en Personal.');
         }
         const created = await onCreateCashMovement?.({
           type: 'egreso',
@@ -2829,6 +2813,7 @@ function AccountingSection({
                       onChange={(event) => {
                         const value = event.target.value;
                         setAdvancePeopleQuery(value);
+                        void loadAdvancePersonnelOptions(value);
                         setCashForm((current) => ({
                           ...current,
                           employeeId: '',
@@ -2856,16 +2841,16 @@ function AccountingSection({
                         </button>
                       );
                     })}
-                    {filteredAdvanceEmployees.length === 0 ? (
-                      <p className="petty-advance-empty">No hay coincidencias en personal.</p>
+                    {advancePersonnelLoading ? (
+                      <p className="petty-advance-empty">Cargando personal...</p>
+                    ) : null}
+                    {!advancePersonnelLoading && filteredAdvanceEmployees.length === 0 ? (
+                      <p className="petty-advance-empty">No hay coincidencias en Personal.</p>
+                    ) : null}
+                    {advancePersonnelError ? (
+                      <p className="petty-advance-empty">{advancePersonnelError}</p>
                     ) : null}
                   </div>
-
-                  {advancePeopleQuery.trim() && !cashForm.employeeId && !advanceQueryMatchesEmployee ? (
-                    <button type="button" className="petty-advance-create" onClick={handleUseNewAdvanceEmployee}>
-                      Registrar nuevo: <strong>{advancePeopleQuery.trim()}</strong>
-                    </button>
-                  ) : null}
 
                   {cashForm.employeeId || cashForm.responsible ? (
                     <div className="petty-advance-selected">
