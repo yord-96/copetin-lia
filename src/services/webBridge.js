@@ -6201,8 +6201,8 @@ const getProfessionalDocumentStyles = () => `
     border-top: 1px solid #334155;
     text-align: center;
     color: #475569;
-    font-size: 10px;
-    font-weight: 800;
+    font-size: 11.5px;
+    font-weight: 900;
     text-transform: uppercase;
   }
   .doc-footer {
@@ -8026,6 +8026,26 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
     current.push(entry);
     returnIssuesByItemId.set(itemId, current);
   });
+  const activeEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+    .filter((entry) => !entry?.deletedAt);
+  const ledgerChargeCoverageBs = activeEconomicLedger
+    .filter((entry) => entry?.type === 'charge')
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
+  let remainingLedgerChargeCoverageBs = ledgerChargeCoverageBs;
+  const ledgerSettledReturnIssues = new Set();
+  returnIssues.forEach((issue, index) => {
+    const penaltyBs = Math.max(
+      0,
+      Number(issue?.missingFeeBs ?? 0),
+      Number(issue?.damagedFeeBs ?? 0),
+      Number(issue?.penaltyBs ?? 0),
+    );
+    if (penaltyBs <= 0 || remainingLedgerChargeCoverageBs + 0.005 < penaltyBs) return;
+    remainingLedgerChargeCoverageBs = Number((remainingLedgerChargeCoverageBs - penaltyBs).toFixed(2));
+    ledgerSettledReturnIssues.add(issue);
+    ledgerSettledReturnIssues.add(String(issue?.lineKey ?? '').trim() || `issue-${index}`);
+  });
+
   const isReturnIssueSettled = (issue) => {
     const statuses = [
       issue?.chargeStatus,
@@ -8036,12 +8056,17 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
     const penaltyBs = Math.max(0, Number(issue?.penaltyBs ?? issue?.missingFeeBs ?? 0));
     const appliedBs = Math.max(
       0,
+      Number(issue?.appliedToGuaranteeBs ?? 0),
       Number(issue?.guaranteeAppliedBs ?? 0),
+      Number(issue?.chargedBs ?? 0),
       Number(issue?.paidBs ?? 0),
       Number(issue?.collectedBs ?? 0),
     );
+    const lineKey = String(issue?.lineKey ?? '').trim();
     return Boolean(
-      issue?.isPaid
+      ledgerSettledReturnIssues.has(issue)
+      || (lineKey && ledgerSettledReturnIssues.has(lineKey))
+      || issue?.isPaid
       || issue?.isCollected
       || issue?.paidAt
       || issue?.collectedAt
@@ -8058,6 +8083,8 @@ export const buildContractDocumentHtml = ({ rental, contract, deliveries, settin
         'liquidado',
         'cancelado',
         'cancelled',
+        'aplicado_garantia',
+        'cubierto_garantia',
       ].includes(status))
     );
   };
