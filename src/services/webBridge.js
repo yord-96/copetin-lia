@@ -10984,7 +10984,10 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     rental.createdByName = primaryResponsible.name;
     rental.createdByRole = primaryResponsible.role ?? rental.createdByRole ?? 'Operacion';
   }
-  const paidAtRentalBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
+  const hasExplicitContractPayment = Object.prototype.hasOwnProperty.call(payload ?? {}, 'paidAtApprovalBs');
+  const paidAtRentalBs = hasExplicitContractPayment
+    ? Math.max(0, Number(contract?.payment?.paidAtApprovalBs ?? 0))
+    : Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
   const pendingPaymentBs = Math.max(0, Number((totalBs - paidAtRentalBs).toFixed(2)));
   const overpaidBs = Math.max(0, Number((paidAtRentalBs - totalBs).toFixed(2)));
@@ -15007,6 +15010,14 @@ const createWebBridge = () => ({
           0,
           Number(hasRequestedPaidAtApproval ? payload?.paidAtApprovalBs : storedPaidAtApprovalBs),
         );
+        const resetsInitialPaymentToZero = Boolean(
+          hasRequestedPaidAtApproval
+          && storedPaidAtApprovalBs > 0
+          && requestedPaidAtApprovalBs <= 0
+        );
+        if (resetsInitialPaymentToZero && payload?.confirmInitialPaymentReset !== true) {
+          throw new Error('Debes confirmar expresamente que deseas cambiar el pago inicial a cero.');
+        }
         const prepaidAppliedBs = Math.max(0, Number(payload?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0));
         const registeredCollectionBs = getRegisteredContractCollectionBs(state, contract);
         const paidAtApprovalBs = hasRequestedPaidAtApproval
@@ -15055,6 +15066,20 @@ const createWebBridge = () => ({
         if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
           contract.responsibles = responsibles;
+        }
+        if (resetsInitialPaymentToZero && payload?.confirmInitialPaymentReset === true) {
+          contract.economicLedger = (Array.isArray(contract.economicLedger) ? contract.economicLedger : [])
+            .filter((entry) => {
+              if (String(entry?.type ?? '').trim() !== 'deposit') return true;
+              const entryId = normalizeText(entry?.id);
+              const entryNote = normalizeText(entry?.note);
+              return !(
+                entryId.includes('initial-payment')
+                || entryNote.includes('pago inicial')
+                || entryNote.includes('primer pago')
+                || entryNote.includes('pimer pago')
+              );
+            });
         }
         cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
         syncInitialPaymentCashMovement(state, contract, payload, now);

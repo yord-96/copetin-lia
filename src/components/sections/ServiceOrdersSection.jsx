@@ -1057,6 +1057,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     guaranteePaymentMethod: 'efectivo',
     guaranteePaymentAccount: '',
     paidAtApprovalBs: '0',
+    originalPaidAtApprovalBs: '0',
     initialPaymentMethod: 'efectivo',
     initialPaymentAccount: '',
     pricingMode: 'simple',
@@ -1479,6 +1480,7 @@ function ServiceOrdersSection({
   const [quoteToDelete, setQuoteToDelete] = useState(null);
   const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
+  const [zeroInitialPaymentConfirmation, setZeroInitialPaymentConfirmation] = useState(null);
   const cancelReasonRef = useRef(null);
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
@@ -4641,6 +4643,7 @@ function ServiceOrdersSection({
     guaranteePaymentMethod: normalizeLedgerPaymentMethod(record?.guarantee?.paymentMethod ?? record?.payment?.guaranteePaymentMethod),
     guaranteePaymentAccount: normalizeLedgerPaymentAccount(record?.guarantee?.paymentAccount ?? record?.payment?.guaranteePaymentAccount),
     paidAtApprovalBs: String(record?.payment?.paidAtApprovalBs ?? 0),
+    originalPaidAtApprovalBs: String(record?.payment?.paidAtApprovalBs ?? 0),
     initialPaymentMethod: normalizeLedgerPaymentMethod(record?.payment?.initialPaymentMethod ?? record?.payment?.paymentMethod),
     initialPaymentAccount: normalizeLedgerPaymentAccount(record?.payment?.initialPaymentAccount ?? record?.payment?.paymentAccount),
     pricingMode: record?.pricingPlan?.mode === 'daily_schedule'
@@ -6429,7 +6432,27 @@ function ServiceOrdersSection({
       : [],
   });
 
-  const handleSaveQuote = async ({ approveNow }) => {
+  const handleSaveQuote = async ({ approveNow, zeroInitialPaymentConfirmed = false }) => {
+    const originalPaidAtApprovalBs = Math.max(0, Number(draft.originalPaidAtApprovalBs ?? 0));
+    const requestedPaidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
+    const requiresZeroPaymentConfirmation = Boolean(
+      draft.entityType === 'contract'
+      && draft.recordId
+      && originalPaidAtApprovalBs > 0
+      && requestedPaidAtApprovalBs <= 0
+      && !zeroInitialPaymentConfirmed
+    );
+
+    if (requiresZeroPaymentConfirmation) {
+      setZeroInitialPaymentConfirmation({
+        approveNow: Boolean(approveNow),
+        previousAmountBs: originalPaidAtApprovalBs,
+        contractCode: draft.manualDocumentCode || draft.recordId,
+        customerName: draft.customerName,
+      });
+      return;
+    }
+
     if (!beginSubmit()) return;
     setFormError('');
     setActionFeedback('');
@@ -6441,6 +6464,11 @@ function ServiceOrdersSection({
           ...payload,
           validUntil: null,
           status: draft.recordStatus || (draft.mode === 'order' ? 'pendiente' : 'borrador'),
+          confirmInitialPaymentReset: Boolean(
+            zeroInitialPaymentConfirmed
+            && Math.max(0, Number(draft.originalPaidAtApprovalBs ?? 0)) > 0
+            && Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0
+          ),
         };
         let savedContract = null;
         if (approveNow && !draft.recordId && onCreateAndApproveContract) {
@@ -14343,6 +14371,67 @@ function ServiceOrdersSection({
                   </>
                 )}
               </div>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {zeroInitialPaymentConfirmation ? (
+        <div
+          className="orders-modal-backdrop"
+          onClick={() => {
+            if (!isSubmitting) setZeroInitialPaymentConfirmation(null);
+          }}
+        >
+          <div className="orders-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <span className="orders-confirm-icon">!</span>
+              <div>
+                <h3>Confirmar pago inicial en cero</h3>
+                <p>
+                  Este contrato tenía un pago inicial registrado. Al confirmar, el pago quedará realmente
+                  en cero y se anulará el registro automático vinculado.
+                </p>
+              </div>
+            </header>
+
+            <div className="orders-confirm-summary">
+              <strong>
+                {zeroInitialPaymentConfirmation.customerName || 'Cliente'}
+                {zeroInitialPaymentConfirmation.contractCode
+                  ? ` · ${zeroInitialPaymentConfirmation.contractCode}`
+                  : ''}
+              </strong>
+              <span>
+                Monto anterior: {formatBs(zeroInitialPaymentConfirmation.previousAmountBs)}
+              </span>
+              <small>Nuevo monto confirmado: {formatBs(0)}</small>
+            </div>
+
+            <footer>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setZeroInitialPaymentConfirmation(null)}
+                disabled={isSubmitting}
+              >
+                No, conservar monto
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => {
+                  const approveNow = Boolean(zeroInitialPaymentConfirmation.approveNow);
+                  setZeroInitialPaymentConfirmation(null);
+                  handleSaveQuote({
+                    approveNow,
+                    zeroInitialPaymentConfirmed: true,
+                  });
+                }}
+                disabled={isSubmitting}
+              >
+                Sí, cambiar a cero
+              </button>
             </footer>
           </div>
         </div>
