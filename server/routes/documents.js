@@ -272,17 +272,22 @@ const resolveContractContext = (state, requestedId) => {
   const contract = contracts.find((entry) => matchesIdentifier(entry, requestedId)) ?? null;
   if (!contract) return null;
 
-  const rental = rentals.find((entry) =>
-    String(entry?.contractId ?? '').trim() === String(contract.id ?? '').trim()
-    || (
-      contract?.contractCode
-      && String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
+  const rentalByContractId = contract?.id
+    ? rentals.find((entry) =>
+      String(entry?.contractId ?? '').trim() === String(contract.id).trim()
     )
-    || (
-      contract?.orderCode
-      && String(entry?.orderCode ?? '').trim() === String(contract.orderCode).trim()
+    : null;
+  const rentalByOrderCode = !rentalByContractId && contract?.orderCode
+    ? rentals.find((entry) =>
+      String(entry?.orderCode ?? '').trim() === String(contract.orderCode).trim()
     )
-  ) ?? null;
+    : null;
+  const rentalByContractCode = !rentalByContractId && !rentalByOrderCode && contract?.contractCode
+    ? rentals.find((entry) =>
+      String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
+    )
+    : null;
+  const rental = rentalByContractId ?? rentalByOrderCode ?? rentalByContractCode ?? null;
 
   const deliveries = allDeliveries
     .filter((entry) =>
@@ -319,30 +324,46 @@ const resolveInventoryContext = (state, requestedId) => {
   let contract = contracts.find((entry) => matchesIdentifier(entry, requestedId)) ?? null;
 
   if (!rental && contract) {
-    rental = rentals.find((entry) =>
-      String(entry?.contractId ?? '').trim() === String(contract.id ?? '').trim()
-      || (
-        contract?.contractCode
-        && String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
-      )
-      || (
-        contract?.orderCode
-        && String(entry?.orderCode ?? '').trim() === String(contract.orderCode).trim()
-      )
+    rental = (
+      contract?.id
+        ? rentals.find((entry) =>
+          String(entry?.contractId ?? '').trim() === String(contract.id).trim()
+        )
+        : null
+    ) ?? (
+      contract?.orderCode
+        ? rentals.find((entry) =>
+          String(entry?.orderCode ?? '').trim() === String(contract.orderCode).trim()
+        )
+        : null
+    ) ?? (
+      contract?.contractCode
+        ? rentals.find((entry) =>
+          String(entry?.contractCode ?? '').trim() === String(contract.contractCode).trim()
+        )
+        : null
     ) ?? null;
   }
 
   if (rental && !contract) {
-    contract = contracts.find((entry) =>
-      String(entry?.id ?? '').trim() === String(rental.contractId ?? '').trim()
-      || (
-        rental?.contractCode
-        && String(entry?.contractCode ?? '').trim() === String(rental.contractCode).trim()
-      )
-      || (
-        rental?.orderCode
-        && String(entry?.orderCode ?? '').trim() === String(rental.orderCode).trim()
-      )
+    contract = (
+      rental?.contractId
+        ? contracts.find((entry) =>
+          String(entry?.id ?? '').trim() === String(rental.contractId).trim()
+        )
+        : null
+    ) ?? (
+      rental?.orderCode
+        ? contracts.find((entry) =>
+          String(entry?.orderCode ?? '').trim() === String(rental.orderCode).trim()
+        )
+        : null
+    ) ?? (
+      rental?.contractCode
+        ? contracts.find((entry) =>
+          String(entry?.contractCode ?? '').trim() === String(rental.contractCode).trim()
+        )
+        : null
     ) ?? null;
   }
 
