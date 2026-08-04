@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { getStateSnapshot } from '../storage/fileStateStore.js';
 import {
@@ -29,36 +29,54 @@ const contractLogoPath = path.join(
 let contractLogoDataUrlPromise = null;
 const productUploadInfo = getProductUploadInfo();
 const productImageDataUrlPromises = new Map();
-const documentAccessTokens = new Map();
 const DOCUMENT_ACCESS_TOKEN_TTL_MS = 2 * 60 * 1000;
+const documentAccessSecret = internalKey || String(
+  process.env.DOCUMENT_ACCESS_SECRET
+    ?? process.env.SESSION_SECRET
+    ?? 'copetin-document-access',
+).trim();
 
-const cleanupDocumentAccessTokens = () => {
-  const now = Date.now();
-  documentAccessTokens.forEach((entry, token) => {
-    if (!entry || entry.expiresAt <= now) {
-      documentAccessTokens.delete(token);
-    }
-  });
-};
+const signDocumentAccessPayload = (payload) => createHmac('sha256', documentAccessSecret)
+  .update(payload)
+  .digest('base64url');
 
 const createDocumentAccessToken = ({ kind, identifier }) => {
-  cleanupDocumentAccessTokens();
-  const token = randomUUID();
-  documentAccessTokens.set(token, {
-    kind,
-    identifier: String(identifier ?? '').trim(),
-    expiresAt: Date.now() + DOCUMENT_ACCESS_TOKEN_TTL_MS,
-  });
-  return token;
+  const expiresAt = Date.now() + DOCUMENT_ACCESS_TOKEN_TTL_MS;
+  const payload = [
+    String(kind ?? '').trim(),
+    String(identifier ?? '').trim(),
+    String(expiresAt),
+  ].join(':');
+  return `${expiresAt}.${signDocumentAccessPayload(payload)}`;
 };
 
 const hasValidDocumentAccessToken = ({ token, kind, identifier }) => {
-  cleanupDocumentAccessTokens();
-  const record = documentAccessTokens.get(String(token ?? '').trim());
-  if (!record) return false;
-  return record.kind === kind
-    && record.identifier === String(identifier ?? '').trim()
-    && record.expiresAt > Date.now();
+  const rawToken = String(token ?? '').trim();
+  const separatorIndex = rawToken.indexOf('.');
+  if (separatorIndex <= 0) return false;
+
+  const expiresAtRaw = rawToken.slice(0, separatorIndex);
+  const providedSignature = rawToken.slice(separatorIndex + 1);
+  const expiresAt = Number(expiresAtRaw);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() || !providedSignature) {
+    return false;
+  }
+
+  const payload = [
+    String(kind ?? '').trim(),
+    String(identifier ?? '').trim(),
+    String(expiresAt),
+  ].join(':');
+  const expectedSignature = signDocumentAccessPayload(payload);
+
+  try {
+    const providedBuffer = Buffer.from(providedSignature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    return providedBuffer.length === expectedBuffer.length
+      && timingSafeEqual(providedBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
 };
 
 

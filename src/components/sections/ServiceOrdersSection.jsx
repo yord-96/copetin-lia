@@ -2231,12 +2231,12 @@ function ServiceOrdersSection({
         : undefined;
       const rawAuthoritativePendingBs =
         resetPendingOverride
-        ?? linkedRental?.returnSettlement?.pendingCollectionBs
-        ?? linkedRental?.payment?.pendingPaymentBs
-        ?? linkedRental?.totals?.pendingPaymentBs
         ?? contract?.payment?.pendingPaymentBs
         ?? contract?.payment?.pendingBs
-        ?? contract?.totals?.pendingPaymentBs;
+        ?? contract?.totals?.pendingPaymentBs
+        ?? linkedRental?.payment?.pendingPaymentBs
+        ?? linkedRental?.totals?.pendingPaymentBs
+        ?? linkedRental?.returnSettlement?.pendingCollectionBs;
       const hasAuthoritativePending = rawAuthoritativePendingBs !== undefined
         && rawAuthoritativePendingBs !== null
         && rawAuthoritativePendingBs !== '';
