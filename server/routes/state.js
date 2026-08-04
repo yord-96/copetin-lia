@@ -1198,6 +1198,294 @@ const findDirectOperation = (state, clientOperationId) => {
     .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
 };
 
+router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+
+    const requestedRentalId = String(req.body?.id ?? req.body?.rentalId ?? '').trim();
+    const requestedContractId = String(req.body?.contractId ?? '').trim();
+    const reason = String(req.body?.reason ?? '').trim();
+    if (!requestedRentalId && !requestedContractId) {
+      res.status(400).json({ error: 'No se pudo identificar el contrato u orden de servicio a anular.' });
+      return;
+    }
+    if (!reason) {
+      res.status(400).json({ error: 'Debes indicar por que se esta anulando el contrato.' });
+      return;
+    }
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      const now = new Date().toISOString();
+      const normalize = (value) => String(value ?? '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+      const toDayKey = (value) => {
+        const match = String(value ?? '').match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) return match[1];
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+      };
+      const todayKey = toDayKey(now);
+      const contractFromId = requestedContractId
+        ? (state.contracts ?? []).find((entry) => entry.id === requestedContractId && !entry.deletedAt)
+        : null;
+      const rental = requestedRentalId
+        ? (state.rentals ?? []).find((entry) => entry.id === requestedRentalId && !entry.deletedAt)
+        : (state.rentals ?? []).find((entry) => (
+          !entry.deletedAt && contractFromId && (
+            entry.id === contractFromId.rentalId
+            || (entry.orderCode && entry.orderCode === contractFromId.orderCode)
+          )
+        ));
+      if (!rental) {
+        const error = new Error('Orden de servicio no encontrada.');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (rental.status === 'returned') {
+        const error = new Error('No se puede anular una orden ya devuelta.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (rental.status === 'cancelled') {
+        const error = new Error('Esta orden ya fue anulada.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const contract = contractFromId ?? (state.contracts ?? []).find((entry) => (
+        !entry.deletedAt && (
+          entry.rentalId === rental.id
+          || (entry.orderCode && entry.orderCode === rental.orderCode)
+        )
+      )) ?? null;
+      const cutoffDate = contract?.deliveryDate ?? rental.rentalDate ?? contract?.eventDate ?? null;
+      if (!cutoffDate) {
+        const error = new Error('No se pudo validar la fecha limite de anulacion para este contrato.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const linkedDeliveries = (state.deliveries ?? []).filter((delivery) => (
+        !delivery?.deletedAt
+        && (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode)
+      ));
+      const deliveriesShowNoExecution = linkedDeliveries.length > 0 && linkedDeliveries.every((delivery) => {
+        const status = normalize(delivery?.status);
+        return ['programada', 'programado', 'pendiente'].includes(status)
+          && Number(delivery?.progress ?? 0) <= 0
+          && !delivery?.completedAt
+          && !delivery?.deliveredAt
+          && !delivery?.startedAt;
+      });
+      const operational = rental.operational ?? {};
+      const inventoryStatus = normalize(operational.inventoryStatus);
+      const transportStatus = normalize(operational.transportStatus);
+      const hasReturnEvidence = Boolean(rental.returnedAt || Array.isArray(rental.returnReport));
+      const hasOperationalDispatchEvidence = Boolean(
+        operational.inventorySentAt
+        || operational.inventoryDispatchedAt
+        || operational.transportSentAt
+        || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
+        || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
+      );
+      const wasOperationallySent = hasReturnEvidence
+        || (hasOperationalDispatchEvidence && !deliveriesShowNoExecution);
+
+      const movementMatches = (movement) => {
+        const values = [
+          movement?.sourceId, movement?.linkedRentalId, movement?.linkedContractId,
+          movement?.linkedOrderCode, movement?.contractCode, movement?.orderCode, movement?.reference,
+        ].map((value) => String(value ?? '').trim()).filter(Boolean);
+        return values.includes(String(rental.id))
+          || values.includes(String(rental.orderCode ?? ''))
+          || (contract && (values.includes(String(contract.id)) || values.includes(String(contract.contractCode ?? ''))));
+      };
+      const isVoided = (movement) => Boolean(
+        movement?.voidedAt || movement?.voidedBy
+        || ['anulado', 'voided'].includes(normalize(movement?.status))
+      );
+      const positiveCashCollectedBs = (state.cashMovements ?? [])
+        .filter((movement) => movementMatches(movement) && !isVoided(movement))
+        .reduce((total, movement) => {
+          const amount = Number(movement?.amountBs ?? movement?.amount ?? 0);
+          const type = normalize(movement?.type);
+          const tag = normalize(movement?.accountingTag);
+          const category = normalize(movement?.category);
+          const isIncome = amount > 0 && (
+            type.includes('ingreso') || type.includes('cobro')
+            || tag.includes('payment') || tag.includes('collection') || tag.includes('guarantee')
+            || category.includes('adelanto') || category.includes('cobro') || category.includes('garantia')
+          );
+          return total + (isIncome ? amount : 0);
+        }, 0);
+      const recordedCollectedBs = Math.max(
+        Number(rental?.payment?.paidAtRentalBs ?? 0),
+        Number(rental?.totals?.paidAtRentalBs ?? 0),
+        Number(rental?.payment?.cashCollectedBs ?? 0),
+        Number(rental?.payment?.rentalCollectedBs ?? 0),
+        Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
+        Number(contract?.payment?.paidAtApprovalBs ?? 0),
+        positiveCashCollectedBs,
+        0,
+      );
+      const guaranteeWasCollected = ['pagada', 'pagado', 'validada', 'validado', 'retenida', 'retenido']
+        .includes(normalize(rental?.payment?.guaranteeStatus ?? contract?.guarantee?.status));
+      const isWithinCancellationWindow = Boolean(todayKey && toDayKey(cutoffDate) && todayKey <= toDayKey(cutoffDate));
+      const canCancelUnfulfilledAfterCutoff = !wasOperationallySent
+        && recordedCollectedBs <= 0.009
+        && !guaranteeWasCollected;
+      if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
+        const error = new Error(
+          `El plazo de anulacion vencio el ${toDayKey(cutoffDate)}. `
+          + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const totalBs = Number(contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
+      const configuredPenaltyPercent = Math.max(0, Number(state.settings?.contractCancellationPenaltyPercent ?? 20));
+      const penaltyPercent = isWithinCancellationWindow ? configuredPenaltyPercent : 0;
+      const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
+      const userId = req.body?.userId ?? req.body?.createdById ?? null;
+      const userName = String(req.body?.userName ?? req.body?.createdByName ?? req.body?.createdBy ?? 'Sistema').trim() || 'Sistema';
+      const userRole = String(req.body?.userRole ?? req.body?.createdByRole ?? 'Operacion').trim() || 'Operacion';
+
+      state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+      (rental.items ?? []).forEach((line) => {
+        const item = (state.items ?? []).find((entry) => entry.id === line.itemId);
+        if (!item || line?.controlsStock === false) return;
+        const reservedQty = Number.isFinite(Number(line?.internalReservedQty))
+          ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
+          : Math.max(0, Math.trunc(Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)));
+        if (reservedQty <= 0) return;
+        const beforeTotalStock = Number(item.totalStock ?? 0);
+        const beforeAvailableStock = Number(item.availableStock ?? 0);
+        item.availableStock = Math.min(beforeTotalStock, beforeAvailableStock + reservedQty);
+        item.updatedAt = now;
+        state.inventoryMovements.push({
+          id: directId('mov'), itemId: item.id, itemName: item.name, category: item.category,
+          type: 'reinsercion', reason: `Anulacion de contrato ${contract?.contractCode ?? rental.orderCode}`,
+          detail: `Reintegro de ${reservedQty} unidades por anulacion de ${rental.orderCode}`,
+          reference: rental.orderCode, deltaUnits: reservedQty,
+          beforeTotalStock, afterTotalStock: beforeTotalStock,
+          beforeAvailableStock, afterAvailableStock: item.availableStock,
+          reservedStockAfter: beforeTotalStock - item.availableStock,
+          userName, userRole, createdAt: now, status: 'cancelado',
+        });
+      });
+
+      linkedDeliveries.forEach((delivery) => {
+        delivery.status = 'cancelada';
+        delivery.progress = 0;
+        delivery.cancelledAt = now;
+        delivery.updatedAt = now;
+        if (!String(delivery.notes ?? '').includes('[ANULADO]')) {
+          delivery.notes = `${String(delivery.notes ?? '').trim()} [ANULADO]`.trim();
+        }
+      });
+
+      const changedSupplierLoans = [];
+      (state.supplierLoans ?? []).forEach((loan) => {
+        if (loan?.deletedAt) return;
+        const linked = loan.rentalId === rental.id
+          || loan.orderCode === rental.orderCode
+          || (contract && (loan.contractId === contract.id || loan.contractCode === contract.contractCode));
+        if (!linked) return;
+        const status = normalize(loan.status);
+        if (['devuelto', 'returned', 'cancelado', 'cancelled', 'anulado'].includes(status)) return;
+        loan.status = 'cancelado';
+        loan.cancelledAt = now;
+        loan.cancellationReason = reason;
+        loan.updatedAt = now;
+        changedSupplierLoans.push(structuredClone(loan));
+      });
+
+      rental.status = 'cancelled';
+      rental.cancelledAt = now;
+      rental.cancellationPenaltyPercent = penaltyPercent;
+      rental.cancellationPenaltyBs = penaltyBs;
+      rental.cancellationReason = reason;
+      rental.cancellationCutoffDate = toDayKey(cutoffDate);
+      rental.penaltiesBs = Number((Number(rental.penaltiesBs ?? 0) + penaltyBs).toFixed(2));
+      rental.operational = {
+        ...operational,
+        inventoryStatus: 'anulado', transportStatus: 'anulado',
+        inventoryNote: reason, transportNote: reason,
+        administrativeCancellation: true,
+        administrativeCancellationReason: deliveriesShowNoExecution && hasOperationalDispatchEvidence
+          ? 'Marcas operativas inconsistentes con entregas programadas al 0%.'
+          : '',
+        cancelledAt: now, cancelledByName: userName, cancelledByRole: userRole,
+      };
+      rental.updatedAt = now;
+
+      if (contract) {
+        contract.status = 'anulado';
+        contract.cancelledAt = now;
+        contract.cancellationPenaltyPercent = penaltyPercent;
+        contract.cancellationPenaltyBs = penaltyBs;
+        contract.cancellationReason = reason;
+        contract.cancellationCutoffDate = toDayKey(cutoffDate);
+        contract.updatedAt = now;
+        contract.revisionHistory = Array.isArray(contract.revisionHistory) ? contract.revisionHistory : [];
+        contract.revisionHistory.unshift({
+          id: directId('rev'), type: 'cancelled', createdAt: now,
+          createdById: userId, createdByName: userName, createdByRole: userRole,
+          notes: [
+            `Contrato anulado por ${userName}`, `Motivo: ${reason}`,
+            `Items liberados de inventario para ${rental.orderCode}`,
+            'Numero de contrato conservado.',
+          ],
+        });
+      }
+
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.systemAuditLog.unshift({
+        id: directId('audit'), type: 'contract_cancelled', action: 'anular_contrato',
+        entityType: 'contract', entityId: contract?.id ?? rental.id,
+        entityCode: contract?.contractCode ?? rental.orderCode,
+        detail: `Anulacion administrativa. Motivo: ${reason}. Entregas anuladas: ${linkedDeliveries.length}. Subalquileres anulados: ${changedSupplierLoans.length}.`,
+        userId, userName, userRole, createdAt: now,
+      });
+
+      responseData = {
+        contract: contract ? structuredClone(contract) : null,
+        rental: structuredClone(rental),
+        deliveries: structuredClone(linkedDeliveries),
+        supplierLoans: changedSupplierLoans,
+        cancellation: {
+          administrative: !isWithinCancellationWindow,
+          reconciledStaleOperationalMarks: deliveriesShowNoExecution && hasOperationalDispatchEvidence,
+          penaltyBs,
+        },
+      };
+      return state;
+    });
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/suppliers/create', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)

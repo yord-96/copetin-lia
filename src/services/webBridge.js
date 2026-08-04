@@ -12646,15 +12646,31 @@ const createWebBridge = () => ({
         const operational = rental.operational ?? {};
         const inventoryStatus = normalizeText(operational.inventoryStatus ?? '');
         const transportStatus = normalizeText(operational.transportStatus ?? '');
-        const wasOperationallySent = Boolean(
+        const linkedDeliveries = (state.deliveries ?? []).filter((delivery) => (
+          !delivery?.deletedAt
+          && (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode)
+        ));
+        const deliveriesShowNoExecution = linkedDeliveries.length > 0 && linkedDeliveries.every((delivery) => {
+          const status = normalizeText(delivery?.status ?? '');
+          return ['programada', 'programado', 'pendiente'].includes(status)
+            && Number(delivery?.progress ?? 0) <= 0
+            && !delivery?.completedAt
+            && !delivery?.deliveredAt
+            && !delivery?.startedAt;
+        });
+        const hasReturnEvidence = Boolean(rental.returnedAt || Array.isArray(rental.returnReport));
+        const hasOperationalDispatchEvidence = Boolean(
           operational.inventorySentAt
           || operational.inventoryDispatchedAt
           || operational.transportSentAt
           || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
           || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
-          || rental.returnedAt
-          || Array.isArray(rental.returnReport),
         );
+        // Algunas ordenes historicas conservaron marcas operativas antiguas aunque sus
+        // entregas siguen programadas en 0%. Esa contradiccion no debe bloquear una
+        // anulacion administrativa sin cobros ni evidencia fisica de ejecucion.
+        const wasOperationallySent = hasReturnEvidence
+          || (hasOperationalDispatchEvidence && !deliveriesShowNoExecution);
         const collectedBs = Math.max(
           Number(rental?.payment?.paidAtRentalBs ?? 0),
           Number(rental?.totals?.paidAtRentalBs ?? 0),
@@ -16571,15 +16587,31 @@ const createWebBridge = () => ({
         const operational = rental.operational ?? {};
         const inventoryStatus = normalizeText(operational.inventoryStatus ?? '');
         const transportStatus = normalizeText(operational.transportStatus ?? '');
-        const wasOperationallySent = Boolean(
+        const linkedDeliveries = (state.deliveries ?? []).filter((delivery) => (
+          !delivery?.deletedAt
+          && (delivery.rentalId === rental.id || delivery.orderCode === rental.orderCode)
+        ));
+        const deliveriesShowNoExecution = linkedDeliveries.length > 0 && linkedDeliveries.every((delivery) => {
+          const status = normalizeText(delivery?.status ?? '');
+          return ['programada', 'programado', 'pendiente'].includes(status)
+            && Number(delivery?.progress ?? 0) <= 0
+            && !delivery?.completedAt
+            && !delivery?.deliveredAt
+            && !delivery?.startedAt;
+        });
+        const hasReturnEvidence = Boolean(rental.returnedAt || Array.isArray(rental.returnReport));
+        const hasOperationalDispatchEvidence = Boolean(
           operational.inventorySentAt
           || operational.inventoryDispatchedAt
           || operational.transportSentAt
           || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
           || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(transportStatus)
-          || rental.returnedAt
-          || Array.isArray(rental.returnReport),
         );
+        // Algunas ordenes historicas conservaron marcas operativas antiguas aunque sus
+        // entregas siguen programadas en 0%. Esa contradiccion no debe bloquear una
+        // anulacion administrativa sin cobros ni evidencia fisica de ejecucion.
+        const wasOperationallySent = hasReturnEvidence
+          || (hasOperationalDispatchEvidence && !deliveriesShowNoExecution);
         const collectedBs = Math.max(
           Number(rental?.payment?.paidAtRentalBs ?? 0),
           Number(rental?.totals?.paidAtRentalBs ?? 0),

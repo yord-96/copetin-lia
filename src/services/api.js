@@ -1747,6 +1747,81 @@ const callDirectRentalReturnOperation = async (payload = {}) => {
 };
 
 
+const cancelContractOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) return null;
+
+  const requestedId = String(payload?.id ?? payload?.rentalId ?? payload?.contractId ?? '').trim();
+  if (!requestedId) {
+    throw new Error('No se pudo identificar el contrato u orden de servicio a anular.');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(getServerStateUrl('/contracts/cancel'), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw await createServerStateError(response, 'No se pudo anular el contrato.');
+    }
+
+    const result = await response.json();
+    if (result?.revision) rememberServerRevision(result.revision);
+
+    const collections = {};
+    if (result?.contract?.id) {
+      const snapshot = await exportLocalCollections(['contracts']);
+      const rows = Array.isArray(snapshot?.contracts) ? snapshot.contracts : [];
+      collections.contracts = rows.some((entry) => String(entry?.id ?? '') === String(result.contract.id))
+        ? rows.map((entry) => (String(entry?.id ?? '') === String(result.contract.id) ? result.contract : entry))
+        : [result.contract, ...rows];
+      forgetFullRecordCache(fullContractCache, result.contract);
+      rememberFullRecordCache(fullContractCache, result.contract, [result.contract.contractCode]);
+    }
+    if (result?.rental?.id) {
+      const snapshot = await exportLocalCollections(['rentals']);
+      const rows = Array.isArray(snapshot?.rentals) ? snapshot.rentals : [];
+      collections.rentals = rows.some((entry) => String(entry?.id ?? '') === String(result.rental.id))
+        ? rows.map((entry) => (String(entry?.id ?? '') === String(result.rental.id) ? result.rental : entry))
+        : [result.rental, ...rows];
+      forgetFullRecordCache(fullRentalCache, result.rental);
+      rememberFullRecordCache(fullRentalCache, result.rental, [result.rental.orderCode, result.rental.contractCode]);
+    }
+    if (Array.isArray(result?.deliveries)) {
+      const snapshot = await exportLocalCollections(['deliveries']);
+      const rows = Array.isArray(snapshot?.deliveries) ? snapshot.deliveries : [];
+      const changed = new Map(result.deliveries.map((entry) => [String(entry?.id ?? ''), entry]));
+      collections.deliveries = rows.map((entry) => changed.get(String(entry?.id ?? '')) ?? entry);
+    }
+    if (Array.isArray(result?.supplierLoans)) {
+      const snapshot = await exportLocalCollections(['supplierLoans']);
+      const rows = Array.isArray(snapshot?.supplierLoans) ? snapshot.supplierLoans : [];
+      const changed = new Map(result.supplierLoans.map((entry) => [String(entry?.id ?? ''), entry]));
+      collections.supplierLoans = rows.map((entry) => changed.get(String(entry?.id ?? '')) ?? entry);
+    }
+    if (Object.keys(collections).length) await mergeLocalState(collections);
+
+    markServerStateStale('rentals.cancel:direct');
+    announceDataChange({
+      domain: 'rentals',
+      method: 'cancel',
+      collections: ['items', 'contracts', 'rentals', 'deliveries', 'supplierLoans', 'inventoryMovements', 'systemAuditLog'],
+    });
+    return result?.rental ?? result;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en confirmar la anulacion. No la repitas: vuelve a abrir el contrato para verificar su estado.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const fetchContractEconomicContext = async (identifier) => {
   const requestedId = String(identifier ?? '').trim();
   if (!requestedId) {
@@ -2261,7 +2336,15 @@ export const api = {
     getFull: (identifier) => fetchFullServerRental(identifier, 'rental-report'),
     create: (payload) => callBridge('rentals', 'create', true, payload),
     updateOperational: (payload) => callBridge('rentals', 'updateOperational', true, payload),
-    cancel: (payload) => callBridge('rentals', 'cancel', true, payload),
+    cancel: async (payload) => {
+      try {
+        const cancelled = await cancelContractOnServer(payload);
+        if (cancelled) return cancelled;
+      } catch (error) {
+        if (!shouldFallbackToBridgeOperation(error)) throw error;
+      }
+      return callBridge('rentals', 'cancel', true, payload);
+    },
     remove: (payload) => callBridge('rentals', 'remove', true, payload),
     registerReturn: async (payload) => {
       if (shouldUseServerState()) return callDirectRentalReturnOperation(payload);
