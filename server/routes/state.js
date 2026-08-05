@@ -3124,6 +3124,149 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
 });
 
 
+
+router.put('/__copetin_db/contracts/:id/note', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+    const requestedId = String(req.params.id ?? '').trim();
+    const noteText = String(req.body.note ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+    if (!noteText) {
+      res.status(400).json({ error: 'La nota no puede estar vacia.' });
+      return;
+    }
+    if (noteText.length > 2000) {
+      res.status(400).json({ error: 'La nota no puede superar los 2000 caracteres.' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const userId = req.body.updatedById ?? req.body.userId ?? null;
+    const userName = String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema';
+    const userRole = String(req.body.updatedByRole ?? req.body.userRole ?? 'Sistema').trim() || 'Sistema';
+    const requestedNoteId = String(req.body.noteId ?? '').trim();
+    let responseContract = null;
+    let responseRental = null;
+    let responseNote = null;
+
+    const result = await updateStateSnapshot((state) => {
+      const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      const contractIndex = contracts.findIndex((contract) => (
+        String(contract?.id ?? '') === requestedId
+        || (!contract?.deletedAt && (
+          String(contract?.contractCode ?? '') === requestedId
+          || String(contract?.number ?? '') === requestedId
+        ))
+      ));
+      if (contractIndex < 0) {
+        const error = new Error('Contrato no encontrado para guardar la nota.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const existingContract = contracts[contractIndex];
+      const ledger = normalizeEconomicLedgerRows(existingContract?.economicLedger);
+      const activeNotes = ledger
+        .filter((entry) => entry.type === 'note' && !entry.deletedAt && entry.note)
+        .sort((left, right) => new Date(right.createdAt ?? 0) - new Date(left.createdAt ?? 0));
+      const targetNote = requestedNoteId
+        ? ledger.find((entry) => String(entry?.id ?? '') === requestedNoteId && entry.type === 'note' && !entry.deletedAt)
+        : activeNotes[0];
+
+      if (targetNote) {
+        targetNote.note = noteText;
+        targetNote.editedAt = now;
+        targetNote.editedByName = userName;
+        targetNote.createdById = targetNote.createdById ?? userId;
+        targetNote.createdByName = targetNote.createdByName || userName;
+        responseNote = structuredClone(targetNote);
+      } else {
+        const createdNote = normalizeEconomicLedgerRows([{
+          id: makeEconomicLedgerId(),
+          type: 'note',
+          note: noteText,
+          createdAt: now,
+          createdById: userId,
+          createdByName: userName,
+        }])[0];
+        ledger.push(createdNote);
+        responseNote = structuredClone(createdNote);
+      }
+
+      const updatedContract = {
+        ...existingContract,
+        economicLedger: ledger,
+        economicLedgerUpdatedAt: now,
+        economicLedgerUpdatedById: userId,
+        economicLedgerUpdatedByName: userName,
+        updatedAt: now,
+      };
+      contracts[contractIndex] = updatedContract;
+
+      const rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      const referenceKeys = new Set([
+        updatedContract.id,
+        updatedContract.rentalId,
+        updatedContract.contractCode,
+        updatedContract.orderCode,
+      ].map((value) => String(value ?? '').trim()).filter(Boolean));
+      const linkedRental = rentals.find((rental) => [
+        rental?.id,
+        rental?.rentalId,
+        rental?.contractId,
+        rental?.contractCode,
+        rental?.orderCode,
+      ].some((value) => referenceKeys.has(String(value ?? '').trim()))) ?? null;
+
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.systemAuditLog.unshift({
+        id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        type: targetNote ? 'contract_note_updated' : 'contract_note_created',
+        action: targetNote ? 'editar_nota_contrato' : 'crear_nota_contrato',
+        entityType: 'contract',
+        entityId: updatedContract.id,
+        entityCode: updatedContract.contractCode ?? '',
+        detail: `${targetNote ? 'Nota economica editada' : 'Nota economica registrada'} desde Cotizaciones y Contratos.`,
+        userId,
+        userName,
+        userRole,
+        createdAt: now,
+      });
+
+      responseContract = summarizeContract(structuredClone(updatedContract));
+      responseRental = linkedRental ? summarizeRental(structuredClone(linkedRental)) : null;
+      return state;
+    });
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      contract: responseContract,
+      ...(responseRental ? { rental: responseRental } : {}),
+      note: responseNote,
+      revision: result.revision,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {

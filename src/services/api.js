@@ -2018,6 +2018,51 @@ const resetContractEconomicsOnServer = async (payload = {}) => {
 };
 
 
+
+const updateContractNoteOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) return null;
+  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
+  if (!requestedId) throw new Error('Debes indicar el contrato para guardar la nota.');
+
+  const response = await fetch(
+    getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/note`),
+    {
+      method: 'PUT',
+      cache: 'no-store',
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo guardar la nota del contrato.');
+  }
+  const result = await response.json();
+  if (result && Object.prototype.hasOwnProperty.call(result, 'revision')) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+
+  if (result?.contract?.id) {
+    const current = await exportLocalCollections(['contracts']);
+    const contracts = Array.isArray(current?.contracts) ? current.contracts : [];
+    const nextContracts = contracts.some((entry) => String(entry?.id) === String(result.contract.id))
+      ? contracts.map((entry) => String(entry?.id) === String(result.contract.id)
+        ? { ...entry, ...result.contract }
+        : entry)
+      : [result.contract, ...contracts];
+    await mergeLocalState({ contracts: nextContracts });
+    forgetFullRecordCache(fullContractCache, [requestedId, result.contract.id]);
+  }
+
+  markServerStateStale('contracts.updateNote:direct');
+  announceDataChange({
+    domain: 'contracts',
+    method: 'updateNote',
+    collections: ['contracts', 'systemAuditLog'],
+  });
+  return result;
+};
+
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return null;
@@ -2327,6 +2372,7 @@ export const api = {
       forgetFullRecordCache(fullContractCache, updated);
       return updated;
     },
+    updateNote: (payload) => updateContractNoteOnServer(payload),
     resetEconomics: (payload) => resetContractEconomicsOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
     restore: (payload) => callBridge('contracts', 'restore', true, payload),

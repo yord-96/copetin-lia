@@ -7613,6 +7613,27 @@ function ServiceOrdersSection({
         throw new Error('El servidor respondio sin devolver el contrato actualizado.');
       }
 
+      const updatedLedger = Array.isArray(updated?.economicLedger)
+        ? updated.economicLedger
+        : normalizedNextLedger;
+      const updatedLedgerKey = String(
+        updated?.id
+        ?? updated?.contractCode
+        ?? contractEconomicsData.contract?.id
+        ?? contractEconomicsData.contract?.contractCode
+        ?? '',
+      ).trim();
+
+      // Si el contrato fue reseteado, el modal puede conservar temporalmente un
+      // override del ledger. Debe reemplazarse con la respuesta autoritativa del
+      // servidor; de lo contrario la nueva linea queda oculta hasta recargar.
+      setActiveEconomicResetLedger(updatedLedger);
+      if (updatedLedgerKey) {
+        setEconomicResetLedgerByContract((current) => ({
+          ...current,
+          [updatedLedgerKey]: updatedLedger,
+        }));
+      }
       setContractEconomicsTarget(updated);
       setActionFeedback(
         successMessage

@@ -365,16 +365,22 @@ export const useAppController = () => {
       }
     };
 
-    const refreshOrderRentals = async () => {
+    const refreshOrderContractsAndRentals = async () => {
       try {
-        // En Ordenes solo sincronizamos la coleccion que alimenta los colores
-        // operativos. React recibe el arreglo nuevo en una unica actualizacion,
-        // sin recargar la pagina ni reemplazar todo el estado de la aplicacion.
-        await api.sync.refreshCollections(['rentals'], 'orders-operational-change');
-        const rentalsData = await api.rentals.list();
-        if (!disposed) setRentals(rentalsData);
+        // En Ordenes sincronizamos solamente las dos colecciones que alimentan
+        // la tabla y sus estados operativos. Esto permite reflejar notas y
+        // movimientos de otros usuarios sin reemplazar todo el estado local.
+        await api.sync.refreshCollections(['contracts', 'rentals'], 'orders-contract-change');
+        const [contractsData, rentalsData] = await Promise.all([
+          api.contracts.list(),
+          api.rentals.list(),
+        ]);
+        if (!disposed) {
+          setContracts(contractsData);
+          setRentals(rentalsData);
+        }
       } catch (refreshError) {
-        console.warn('[copetin] No se pudo sincronizar el estado operativo de las ordenes.', refreshError);
+        console.warn('[copetin] No se pudieron sincronizar contratos y alquileres de las ordenes.', refreshError);
       }
     };
 
@@ -405,10 +411,13 @@ export const useAppController = () => {
       // Movimientos. Sincroniza solamente alquileres y actualiza React una vez.
       if (activeTab === 'alquiler') {
         const changedCollections = Array.isArray(event?.collections) ? event.collections : [];
-        const rentalsChanged = event?.domain === 'rentals' || changedCollections.includes('rentals');
-        if (rentalsChanged) {
+        const ordersChanged = event?.domain === 'rentals'
+          || event?.domain === 'contracts'
+          || changedCollections.includes('rentals')
+          || changedCollections.includes('contracts');
+        if (ordersChanged) {
           window.clearTimeout(refreshTimer);
-          refreshTimer = window.setTimeout(refreshOrderRentals, 100);
+          refreshTimer = window.setTimeout(refreshOrderContractsAndRentals, 100);
         }
         return;
       }
