@@ -325,6 +325,8 @@ function AdminApp() {
 
   useEffect(() => {
     if (!controller.authReady || !controller.currentUser || typeof window === 'undefined') return undefined;
+    const mobileStartup = window.matchMedia?.('(max-width: 900px), (pointer: coarse)')?.matches ?? window.innerWidth <= 900;
+    if (mobileStartup) return undefined;
 
     const preloadOrder = [
       'alquiler',

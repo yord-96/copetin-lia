@@ -2417,20 +2417,17 @@ export const api = {
         return null;
       }
 
-      // La sesion se reconstruye siempre contra el estado ya hidratado/sincronizado.
-      // Evita devolver durante el primer render un rol antiguo guardado en memoria
-      // mientras la base parcial todavía se está restaurando en segundo plano.
-      await syncServerState({
-        required: true,
-        reason: 'auth-session',
-        notifyWhenUpdated: false,
-      });
+      // Para reconstruir una sesion solo necesitamos usuarios. Descargar esta
+      // coleccion evita bloquear el ingreso con el bootstrap completo, especialmente
+      // en celulares, sin cambiar permisos ni la validacion contra el servidor.
+      await fetchServerCollections(['users'], 'auth-session-users');
       return bridge.auth.getSession();
     },
     login: async (payload) => {
-      // Un cambio de usuario debe validar credenciales y rol contra la version
-      // vigente del servidor, aunque ya exista una carga previa en esta pestaña.
-      await syncServerState({ force: true, required: true, reason: 'auth-login' });
+      // Las credenciales y permisos viven en usuarios. Validamos esa coleccion
+      // directamente contra el servidor y dejamos el resto del estado para la carga
+      // del espacio de trabajo; asi el selector Copetin/Lincoln aparece de inmediato.
+      await fetchServerCollections(['users'], 'auth-login-users');
       const session = await getBridge().auth.login(payload);
       const { __requiresFullStatePush, ...publicSession } = session;
       if (__requiresFullStatePush) {

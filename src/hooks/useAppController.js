@@ -30,6 +30,24 @@ const normalizePresenceList = (value) => {
   return [];
 };
 
+const isMobileStartup = () => {
+  if (typeof window === 'undefined') return false;
+  const narrowScreen = window.matchMedia?.('(max-width: 900px)')?.matches ?? window.innerWidth <= 900;
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+  return narrowScreen || coarsePointer;
+};
+
+const MOBILE_CALENDAR_COLLECTIONS = Object.freeze([
+  'items',
+  'contracts',
+  'rentals',
+  'deliveries',
+  'calendarEvents',
+  'suppliers',
+  'supplierQuotes',
+  'supplierLoans',
+]);
+
 const buildReceiptsFromRentals = (rentals) => {
   const allReceipts = [];
 
@@ -144,17 +162,60 @@ export const useAppController = () => {
   const [generatedReports, setGeneratedReports] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const deferredGroupsLoadedRef = useRef(new Set());
+  const mobileInitialLoadCompletedRef = useRef(false);
+  const mobileBackgroundLoadScheduledRef = useRef(false);
 
   const [imagePreview, setImagePreview] = useState(null);
 
   const loadData = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
+    const mobileProgressive = isMobileStartup() && !mobileInitialLoadCompletedRef.current;
     if (!silent) {
       setLoading(true);
       setError('');
     }
     try {
-      await api.sync.ensureLoaded({ background: true });
+      if (mobileProgressive) {
+        await api.sync.refreshCollections(MOBILE_CALENDAR_COLLECTIONS, 'mobile-calendar-bootstrap');
+        const [
+          inventoryData,
+          contractsData,
+          rentalsData,
+          suppliersData,
+          deliveriesData,
+          calendarEventsData,
+        ] = await Promise.all([
+          api.inventory.list(),
+          api.contracts.list(),
+          api.rentals.list(),
+          api.suppliers.listBundle(),
+          api.transport.listDeliveries(),
+          api.calendar.listEvents(),
+        ]);
+
+        setItems(inventoryData);
+        setContracts(contractsData);
+        setRentals(rentalsData);
+        setSupplierBundle(suppliersData);
+        setDeliveries(deliveriesData);
+        setCalendarEvents(calendarEventsData);
+        mobileInitialLoadCompletedRef.current = true;
+
+        if (!mobileBackgroundLoadScheduledRef.current && typeof window !== 'undefined') {
+          mobileBackgroundLoadScheduledRef.current = true;
+          window.setTimeout(() => {
+            api.sync.pullLatest()
+              .then(() => loadData({ silent: true, forceComplete: true }))
+              .catch((backgroundError) => {
+                mobileBackgroundLoadScheduledRef.current = false;
+                console.warn('[copetin] No se pudo completar la carga movil en segundo plano.', backgroundError);
+              });
+          }, 2500);
+        }
+        return;
+      }
+
+      await api.sync.ensureLoaded({ background: !options?.forceComplete });
       const [
         dashboardData,
         inventoryData,
@@ -220,7 +281,7 @@ export const useAppController = () => {
       setSettingsBundle(settingsData);
       setUserPresence(normalizePresenceList(presenceData));
 
-      // Las colecciones históricas se cargan al abrir su módulo.
+      // Las colecciones historicas se cargan al abrir su modulo.
 
     } catch (loadError) {
       if (!silent) {
