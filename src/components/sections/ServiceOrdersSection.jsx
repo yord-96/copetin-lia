@@ -7565,35 +7565,63 @@ function ServiceOrdersSection({
       }
 
       // El recibo de Caja y la Hoja Flexible son dos respaldos del mismo cobro.
-      // Se agrega una única línea vinculada al movimiento ya creado; no se genera
-      // un segundo movimiento de caja.
+      // Cada concepto se refleja con el tipo económico correcto, siempre enlazado
+      // al movimiento ya creado. No se genera un segundo movimiento de caja.
       const commercialCollectionBs = Number(collectionBreakdown
         .filter((entry) => ['rental', 'transport', 'balance'].includes(entry.target))
         .reduce((sum, entry) => sum + toMoneyNumber(entry.amountBs), 0)
         .toFixed(2));
-      if (commercialCollectionBs > 0 && movementId) {
+      const damageCollectionBs = Number(collectionBreakdown
+        .filter((entry) => entry.target === 'damage')
+        .reduce((sum, entry) => sum + toMoneyNumber(entry.amountBs), 0)
+        .toFixed(2));
+      if ((commercialCollectionBs > 0 || damageCollectionBs > 0) && movementId) {
         const currentLedger = contractEconomicsData.economicLedger ?? [];
-        const alreadyLinked = currentLedger.some(
-          (entry) => String(entry?.cashMovementId ?? '') === String(movementId),
+        const nextLedgerEntries = [];
+
+        const hasLinkedDeposit = currentLedger.some(
+          (entry) => String(entry?.cashMovementId ?? '') === String(movementId)
+            && entry?.type === 'deposit',
         );
-        if (!alreadyLinked) {
+        if (commercialCollectionBs > 0 && !hasLinkedDeposit) {
+          nextLedgerEntries.push({
+            id: `eco-cash-${movementId}-deposit`,
+            type: 'deposit',
+            amountBs: commercialCollectionBs,
+            paymentMethod,
+            paymentAccount,
+            note: defaultNote,
+            createdAt: movement?.createdAt ?? new Date().toISOString(),
+            createdByName: createdBy,
+            cashMovementId: movementId,
+            cashReceiptCode: receiptCode,
+            isCashRegistered: true,
+          });
+        }
+
+        const hasLinkedDamageCharge = currentLedger.some(
+          (entry) => String(entry?.cashMovementId ?? '') === String(movementId)
+            && entry?.type === 'charge',
+        );
+        if (damageCollectionBs > 0 && !hasLinkedDamageCharge) {
+          nextLedgerEntries.push({
+            id: `eco-cash-${movementId}-damage`,
+            type: 'charge',
+            amountBs: damageCollectionBs,
+            paymentMethod,
+            paymentAccount,
+            note: defaultNote || 'COBRO DE DAÑOS / FALTANTES',
+            createdAt: movement?.createdAt ?? new Date().toISOString(),
+            createdByName: createdBy,
+            cashMovementId: movementId,
+            cashReceiptCode: receiptCode,
+            isCashRegistered: true,
+          });
+        }
+
+        if (nextLedgerEntries.length > 0) {
           await saveContractEconomicLedgerRows(
-            [
-              ...currentLedger,
-              {
-                id: `eco-cash-${movementId}`,
-                type: 'deposit',
-                amountBs: commercialCollectionBs,
-                paymentMethod,
-                paymentAccount,
-                note: defaultNote,
-                createdAt: movement?.createdAt ?? new Date().toISOString(),
-                createdByName: createdBy,
-                cashMovementId: movementId,
-                cashReceiptCode: receiptCode,
-                isCashRegistered: true,
-              },
-            ],
+            [...currentLedger, ...nextLedgerEntries],
             '',
             { force: true },
           );
