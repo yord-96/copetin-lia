@@ -7834,6 +7834,129 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-observations p { margin: 0; text-transform: uppercase; white-space: pre-line; }
   .rc-change-lines { display: block; min-height: 12mm; padding-top: .2mm; }
   .rc-change-line { display: none; }
+  .rc-economic-control {
+    min-height: 29mm;
+    padding: 1.35mm 1.5mm 1.5mm;
+    border: .25mm solid #d8c29c;
+    border-radius: 1.5mm;
+    background: #fffdf9;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .rc-economic-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3mm;
+    align-items: start;
+    margin-bottom: 1.2mm;
+  }
+  .rc-economic-head .rc-bottom-title { margin-bottom: 0; }
+  .rc-economic-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22mm;
+    min-height: 5mm;
+    padding: .5mm 1.4mm;
+    border: .25mm solid #c9a46f;
+    border-radius: 99mm;
+    background: #f8ecd9;
+    color: #73430f;
+    font: 900 7px Arial, Helvetica, sans-serif;
+    line-height: 1;
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .rc-economic-status.is-paid { border-color: #8ac6a1; background: #e8f6ed; color: #17643a; }
+  .rc-economic-status.is-pending { border-color: #e0a08d; background: #fff0eb; color: #a33120; }
+  .rc-economic-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .8mm;
+    margin-bottom: 1.1mm;
+  }
+  .rc-economic-summary span {
+    display: grid;
+    align-content: center;
+    min-height: 8mm;
+    padding: .75mm .8mm;
+    border: .2mm solid #e4d3bb;
+    background: #fffaf2;
+  }
+  .rc-economic-summary small {
+    color: #795a36;
+    font: 800 6.2px Arial, Helvetica, sans-serif;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+  .rc-economic-summary strong {
+    margin-top: .35mm;
+    color: #171717;
+    font: 900 8.6px Arial, Helvetica, sans-serif;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .rc-economic-lines {
+    display: grid;
+    border: .2mm solid #e4d3bb;
+    border-radius: .8mm;
+    overflow: hidden;
+    background: #fff;
+  }
+  .rc-economic-line {
+    display: grid;
+    grid-template-columns: 23mm 16mm minmax(0, 1fr) 20mm;
+    gap: 1.2mm;
+    align-items: center;
+    min-height: 6.4mm;
+    padding: .65mm .8mm;
+    border-bottom: .2mm solid #eee1cf;
+  }
+  .rc-economic-line:last-child { border-bottom: 0; }
+  .rc-economic-line b {
+    color: #633c12;
+    font: 900 6.7px Arial, Helvetica, sans-serif;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+  .rc-economic-line strong {
+    color: #111;
+    font: 900 8px Arial, Helvetica, sans-serif;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .rc-economic-line em {
+    min-width: 0;
+    color: #343434;
+    font: 700 6.7px Arial, Helvetica, sans-serif;
+    font-style: normal;
+    line-height: 1.15;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+  .rc-economic-line small {
+    color: #73552f;
+    font: 800 6.3px Arial, Helvetica, sans-serif;
+    line-height: 1.1;
+    text-align: right;
+    text-transform: uppercase;
+  }
+  .rc-economic-empty {
+    min-height: 13mm;
+    display: grid;
+    place-items: center;
+    border: .2mm dashed #ddc9ab;
+    color: #725e46;
+    font: 800 7px Arial, Helvetica, sans-serif;
+    text-transform: uppercase;
+  }
+  .rc-economic-more {
+    margin: .8mm 0 0;
+    color: #725e46;
+    font: 800 6.4px Arial, Helvetica, sans-serif;
+    text-align: right;
+    text-transform: uppercase;
+  }
   .rc-client-materials {
     margin-top: 0;
     break-inside: avoid;
@@ -8638,6 +8761,81 @@ export const buildContractDocumentHtml = ({
             <div class="rc-financial-item transport"><span>${escapeHtml(dayLabel)}</span><strong>${formatBs(daySubtotalBs)}</strong></div>`;
     }).join('')
     : '';
+  const economicLedgerRowsForDocument = activeEconomicLedger
+    .slice()
+    .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+  const economicTotalsForDocument = economicLedgerRowsForDocument.reduce((totals, entry) => {
+    const amountBs = Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0));
+    if (entry?.type === 'deposit') totals.collectedBs += amountBs;
+    if (entry?.type === 'guarantee') totals.guaranteeBs += amountBs;
+    if (entry?.type === 'charge') totals.chargesBs += amountBs;
+    if (entry?.type === 'refund') totals.refundsBs += amountBs;
+    return totals;
+  }, { collectedBs: 0, guaranteeBs: 0, chargesBs: 0, refundsBs: 0 });
+  const economicPendingBs = Math.max(
+    0,
+    Number(
+      rental?.returnSettlement?.pendingCollectionBs
+      ?? rental?.payment?.pendingPaymentBs
+      ?? rental?.totals?.pendingPaymentBs
+      ?? printedPendingBs,
+    ),
+  );
+  const economicStatusLabel = economicPendingBs > 0.005
+    ? `PENDIENTE ${formatBs(economicPendingBs)}`
+    : economicTotalsForDocument.refundsBs > 0
+      ? 'LIQUIDADO Y DEVUELTO'
+      : economicTotalsForDocument.guaranteeBs > economicTotalsForDocument.refundsBs + 0.005
+        ? 'PAGADO · GARANTIA RETENIDA'
+        : 'PAGADO';
+  const economicStatusClass = economicPendingBs > 0.005 ? 'is-pending' : 'is-paid';
+  const economicTypeLabel = (entry) => ({
+    deposit: 'Deposito / pago',
+    guarantee: 'Garantia apartada',
+    charge: 'Dano / faltante',
+    refund: 'Devolucion',
+    note: 'Nota interna',
+  }[entry?.type] ?? 'Movimiento');
+  const economicLineStatus = (entry) => {
+    const receiptCode = String(entry?.cashReceiptCode ?? entry?.receiptCode ?? '').trim();
+    if (receiptCode) return receiptCode;
+    if (entry?.type === 'guarantee') return 'DINERO SEPARADO';
+    if (entry?.type === 'refund') return 'DEVUELTO';
+    if (entry?.type === 'charge' && !entry?.isCashRegistered) return 'APLICADO A GARANTIA';
+    if (entry?.isCashRegistered) return 'COBRADO EN CAJA';
+    return entry?.type === 'note' ? 'INFORMATIVO' : 'ANOTADO';
+  };
+  const economicDocumentLimit = 6;
+  const economicVisibleRows = economicLedgerRowsForDocument.slice(-economicDocumentLimit);
+  const economicHiddenCount = Math.max(0, economicLedgerRowsForDocument.length - economicVisibleRows.length);
+  const economicLinesHtml = economicVisibleRows.length > 0
+    ? economicVisibleRows.map((entry) => {
+      const note = String(entry?.note ?? '').trim() || 'Sin detalle adicional';
+      const author = String(entry?.editedByName ?? entry?.createdByName ?? '').trim();
+      const dateLabel = entry?.createdAt ? formatDocumentDate(entry.createdAt) : '';
+      const detailParts = [note, author ? `REG.: ${author}` : '', dateLabel].filter(Boolean);
+      return `<div class="rc-economic-line">
+        <b>${escapeHtml(economicTypeLabel(entry))}</b>
+        <strong>${entry?.type === 'note' ? '-' : formatBs(entry?.amountBs ?? entry?.amount ?? 0)}</strong>
+        <em>${escapeHtml(detailParts.join(' · '))}</em>
+        <small>${escapeHtml(economicLineStatus(entry))}</small>
+      </div>`;
+    }).join('')
+    : '<div class="rc-economic-empty">Sin movimientos economicos registrados</div>';
+  const economicControlHtml = `
+    <div class="rc-economic-head">
+      <h3 class="rc-bottom-title">Estado economico del contrato</h3>
+      <span class="rc-economic-status ${economicStatusClass}">${escapeHtml(economicStatusLabel)}</span>
+    </div>
+    <div class="rc-economic-summary">
+      <span><small>Cobrado / pagos</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
+      <span><small>Garantia apartada</small><strong>${formatBs(economicTotalsForDocument.guaranteeBs)}</strong></span>
+      <span><small>Danos / faltantes</small><strong>${formatBs(economicTotalsForDocument.chargesBs)}</strong></span>
+      <span><small>Devuelto al cliente</small><strong>${formatBs(economicTotalsForDocument.refundsBs)}</strong></span>
+    </div>
+    <div class="rc-economic-lines">${economicLinesHtml}</div>
+    ${economicHiddenCount > 0 ? `<p class="rc-economic-more">+ ${economicHiddenCount} movimiento(s) anterior(es) conservado(s) en el historial</p>` : ''}`;
+
   const financialSummaryHtml = `
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
@@ -8743,13 +8941,8 @@ export const buildContractDocumentHtml = ({
               <strong>Observaciones:</strong>
               <p>${escapeHtml(observations)}</p>
             </div>
-            <div class="rc-guarantee-control">
-              <h3 class="rc-bottom-title">Control de garantia</h3>
-              <div class="rc-change-lines">
-                <span class="rc-change-line"></span>
-                <span class="rc-change-line"></span>
-                <span class="rc-change-line"></span>
-              </div>
+            <div class="rc-economic-control">
+              ${economicControlHtml}
             </div>
           </section>
 
