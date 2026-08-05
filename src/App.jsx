@@ -328,30 +328,21 @@ function AdminApp() {
     const mobileStartup = window.matchMedia?.('(max-width: 900px), (pointer: coarse)')?.matches ?? window.innerWidth <= 900;
     if (mobileStartup) return undefined;
 
-    const preloadOrder = [
-      'alquiler',
-      'inventario',
-      'devolucion',
-      'caja',
-      'items',
-      'proveedores',
-      'asistencia',
-      'personal',
-      'recibos',
-    ].filter((tabId) => allowedTabRoots.length === 0 || allowedTabRoots.includes(tabId));
+    const preloadOrder = ['alquiler']
+      .filter((tabId) => allowedTabRoots.length === 0 || allowedTabRoots.includes(tabId));
     const timeoutIds = [];
     const runPreload = () => {
-      preloadOrder.forEach((tabId, index) => {
-        const timeoutId = window.setTimeout(() => preloadTabModule(tabId), index * 350);
+      preloadOrder.forEach((tabId) => {
+        const timeoutId = window.setTimeout(() => preloadTabModule(tabId), 0);
         timeoutIds.push(timeoutId);
       });
     };
 
     let idleId = null;
     if (typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(runPreload, { timeout: 2500 });
+      idleId = window.requestIdleCallback(runPreload, { timeout: 8000 });
     } else {
-      timeoutIds.push(window.setTimeout(runPreload, 1200));
+      timeoutIds.push(window.setTimeout(runPreload, 6000));
     }
 
     return () => {
@@ -696,7 +687,11 @@ function AdminApp() {
           />
         )}
 
-        {controller.activeTab === 'alquiler' && (
+        {controller.activeTab === 'alquiler' && controller.ordersModuleLoading && (
+          <p className="status">Cargando Ordenes...</p>
+        )}
+
+        {controller.activeTab === 'alquiler' && !controller.ordersModuleLoading && (
           <StableServiceOrdersSection
             quotes={controller.quotes}
             contracts={controller.contracts}

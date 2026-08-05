@@ -566,6 +566,40 @@ const fetchMobileCalendarOverview = async () => {
   return payload?.overview ?? { contracts: [], rentals: [], deliveries: [], calendarEvents: [] };
 };
 
+
+const fetchMobileOrdersOverview = async () => {
+  const response = await fetch(getServerStateUrl('/orders/mobile-overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el resumen movil de Ordenes.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) {
+    lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
+  }
+  return payload?.overview ?? {
+    contracts: [],
+    hiddenContracts: [],
+    rentals: [],
+    deliveries: [],
+    quotes: [],
+    clients: [],
+    items: [],
+    inventoryCombos: [],
+    suppliers: [],
+    supplierQuotes: [],
+    supplierLoans: [],
+    vehicles: [],
+    drivers: [],
+    users: [],
+    personnelEmployees: [],
+    settings: {},
+  };
+};
+
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
   if (!shouldUseServerState()) return;
   const missingNames = (Array.isArray(names) ? names : [])
@@ -2328,6 +2362,7 @@ export const api = {
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getMobileCalendarOverview: fetchMobileCalendarOverview,
+    getMobileOrdersOverview: fetchMobileOrdersOverview,
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),

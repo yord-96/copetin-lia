@@ -3995,6 +3995,191 @@ const summarizeCalendarDelivery = (delivery = {}) => ({
   _calendarSummaryOnly: true,
 });
 
+
+const summarizeOrdersItemLine = (line = {}) => ({
+  itemId: line.itemId ?? '',
+  itemName: line.itemName ?? line.name ?? '',
+  name: line.name ?? line.itemName ?? '',
+  quantity: Number(line.quantity ?? 0),
+  lineTotalBs: Number(line.lineTotalBs ?? 0),
+  serviceDate: line.serviceDate ?? null,
+  serviceDayId: line.serviceDayId ?? null,
+  serviceDayLabel: line.serviceDayLabel ?? '',
+  controlsStock: line.controlsStock,
+  supplierBackedQty: Number(line.supplierBackedQty ?? 0),
+  internalReservedQty: line.internalReservedQty ?? null,
+});
+
+const summarizeOrdersContract = (contract = {}) => ({
+  id: contract.id ?? '',
+  rentalId: contract.rentalId ?? '',
+  contractCode: contract.contractCode ?? '',
+  orderCode: contract.orderCode ?? '',
+  quoteId: contract.quoteId ?? '',
+  status: contract.status ?? '',
+  createdAt: contract.createdAt ?? null,
+  updatedAt: contract.updatedAt ?? null,
+  deletedAt: contract.deletedAt ?? null,
+  deletedByName: contract.deletedByName ?? '',
+  deletedByRole: contract.deletedByRole ?? '',
+  customerName: contract.customerName ?? contract.clientName ?? '',
+  customerPhone: contract.customerPhone ?? contract.phone ?? '',
+  companyName: contract.companyName ?? '',
+  eventDate: contract.eventDate ?? contract.deliveryDate ?? contract.pickupDate ?? null,
+  deliveryDate: contract.deliveryDate ?? null,
+  pickupDate: contract.pickupDate ?? null,
+  eventType: contract.eventType ?? '',
+  logisticsMode: contract.logisticsMode ?? 'envio',
+  address: contract.address ?? contract.deliveryAddress ?? contract.serviceAddress ?? '',
+  city: contract.city ?? '',
+  responsibleId: contract.responsibleId ?? null,
+  responsibleName: contract.responsibleName ?? contract.assignedToName ?? '',
+  responsibleRole: contract.responsibleRole ?? contract.assignedToRole ?? '',
+  createdByName: contract.createdByName ?? '',
+  createdByRole: contract.createdByRole ?? '',
+  notes: contract.notes ?? contract.note ?? '',
+  observations: contract.observations ?? '',
+  cancellationPenaltyPercent: Number(contract.cancellationPenaltyPercent ?? 0),
+  cancellationPenaltyBs: Number(contract.cancellationPenaltyBs ?? 0),
+  cancellationReason: contract.cancellationReason ?? '',
+  accountingStatus: contract.accountingStatus ?? '',
+  paymentStatus: contract.paymentStatus ?? '',
+  payment: contract.payment
+    ? {
+        paidAtApprovalBs: Number(contract.payment.paidAtApprovalBs ?? 0),
+        pendingPaymentBs: contract.payment.pendingPaymentBs ?? null,
+        pendingBs: contract.payment.pendingBs ?? null,
+        guaranteeStatus: contract.payment.guaranteeStatus ?? '',
+      }
+    : null,
+  guarantee: contract.guarantee
+    ? { status: contract.guarantee.status ?? '' }
+    : null,
+  totals: {
+    totalBs: Number(contract?.totals?.totalBs ?? 0),
+    guaranteeBs: Number(contract?.totals?.guaranteeBs ?? 0),
+    deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+    pendingPaymentBs: contract?.totals?.pendingPaymentBs ?? null,
+  },
+  services: (Array.isArray(contract.services) ? contract.services : []).map((service) => ({
+    lineTotalBs: Number(service?.lineTotalBs ?? 0),
+  })),
+  items: (Array.isArray(contract.items) ? contract.items : []).map(summarizeOrdersItemLine),
+  economicLedger: Array.isArray(contract.economicLedger) ? contract.economicLedger : [],
+  economicResetAt: contract.economicResetAt ?? null,
+  economicResetVersion: contract.economicResetVersion ?? null,
+  isFinalized: Boolean(contract.isFinalized),
+  finalizedAt: contract.finalizedAt ?? null,
+  finalizedByName: contract.finalizedByName ?? '',
+  _summaryOnly: true,
+  _ordersSummaryOnly: true,
+});
+
+const summarizeOrdersRental = (rental = {}) => ({
+  id: rental.id ?? '',
+  rentalId: rental.rentalId ?? rental.id ?? '',
+  contractId: rental.contractId ?? '',
+  contractCode: rental.contractCode ?? '',
+  orderCode: rental.orderCode ?? '',
+  deletedAt: rental.deletedAt ?? null,
+  status: rental.status ?? '',
+  createdAt: rental.createdAt ?? rental.rentalAt ?? null,
+  rentalDate: rental.rentalDate ?? null,
+  dueDate: rental.dueDate ?? null,
+  dueTime: rental.dueTime ?? '',
+  customerName: rental.customerName ?? '',
+  customerPhone: rental.customerPhone ?? rental.phone ?? '',
+  companyName: rental.companyName ?? '',
+  logisticsMode: rental.logisticsMode ?? 'envio',
+  eventAddress: rental.eventAddress ?? rental.address ?? '',
+  address: rental.address ?? '',
+  city: rental.city ?? '',
+  accountingStatus: rental.accountingStatus ?? '',
+  refundBs: Number(rental.refundBs ?? 0),
+  cancelledAt: rental.cancelledAt ?? null,
+  cancellationPenaltyPercent: Number(rental.cancellationPenaltyPercent ?? 0),
+  cancellationPenaltyBs: Number(rental.cancellationPenaltyBs ?? 0),
+  cancellationReason: rental.cancellationReason ?? '',
+  operational: rental.operational
+    ? {
+        inventoryStatus: rental.operational.inventoryStatus ?? 'pendiente',
+        transportStatus: rental.operational.transportStatus ?? 'pendiente',
+        inventoryNote: rental.operational.inventoryNote ?? '',
+        transportNote: rental.operational.transportNote ?? '',
+        inventorySentAt: rental.operational.inventorySentAt ?? null,
+        transportSentAt: rental.operational.transportSentAt ?? null,
+        inventoryConfirmedAt: rental.operational.inventoryConfirmedAt ?? null,
+        transportConfirmedAt: rental.operational.transportConfirmedAt ?? null,
+      }
+    : { inventoryStatus: 'pendiente', transportStatus: 'pendiente' },
+  payment: rental.payment
+    ? {
+        status: rental.payment.status ?? '',
+        pendingPaymentBs: rental.payment.pendingPaymentBs ?? null,
+      }
+    : null,
+  totals: {
+    totalBs: Number(rental?.totals?.totalBs ?? 0),
+    pendingPaymentBs: rental?.totals?.pendingPaymentBs ?? null,
+  },
+  returnSettlement: rental.returnSettlement
+    ? {
+        pendingCollectionBs: rental.returnSettlement.pendingCollectionBs ?? null,
+        refundBs: Number(rental.returnSettlement.refundBs ?? 0),
+        accountingStatus: rental.returnSettlement.accountingStatus ?? '',
+      }
+    : null,
+  items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeOrdersItemLine),
+  _summaryOnly: true,
+  _ordersSummaryOnly: true,
+});
+
+const summarizeOrdersDelivery = (delivery = {}) => ({
+  id: delivery.id ?? '',
+  rentalId: delivery.rentalId ?? '',
+  orderCode: delivery.orderCode ?? '',
+  status: delivery.status ?? '',
+  scheduledDate: delivery.scheduledDate ?? delivery.date ?? null,
+  date: delivery.date ?? null,
+  address: delivery.address ?? '',
+  city: delivery.city ?? '',
+  deletedAt: delivery.deletedAt ?? null,
+});
+
+router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const allContracts = Array.isArray(state.contracts) ? state.contracts : [];
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        contracts: allContracts.filter((contract) => !contract?.deletedAt).map(summarizeOrdersContract),
+        hiddenContracts: allContracts.filter((contract) => Boolean(contract?.deletedAt)).map(summarizeOrdersContract),
+        rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeOrdersRental),
+        deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeOrdersDelivery),
+        quotes: Array.isArray(state.quotes) ? state.quotes : [],
+        clients: Array.isArray(state.clients) ? state.clients : [],
+        items: Array.isArray(state.items) ? state.items : [],
+        inventoryCombos: Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [],
+        suppliers: Array.isArray(state.suppliers) ? state.suppliers : [],
+        supplierQuotes: Array.isArray(state.supplierQuotes) ? state.supplierQuotes : [],
+        supplierLoans: Array.isArray(state.supplierLoans) ? state.supplierLoans : [],
+        vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
+        drivers: Array.isArray(state.drivers) ? state.drivers : [],
+        users: Array.isArray(state.users) ? state.users : [],
+        personnelEmployees: Array.isArray(state.personnelEmployees) ? state.personnelEmployees : [],
+        settings: state.settings ?? {},
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/calendar/mobile-overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();

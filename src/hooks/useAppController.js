@@ -155,7 +155,9 @@ export const useAppController = () => {
   const [auditLog, setAuditLog] = useState([]);
   const deferredGroupsLoadedRef = useRef(new Set());
   const mobileInitialLoadCompletedRef = useRef(false);
-  const mobileBackgroundLoadScheduledRef = useRef(false);
+  const mobileOrdersLoadedRef = useRef(false);
+  const mobileOrdersRequestRef = useRef(null);
+  const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
 
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -175,22 +177,6 @@ export const useAppController = () => {
         setCalendarEvents(Array.isArray(mobileOverview?.calendarEvents) ? mobileOverview.calendarEvents : []);
         mobileInitialLoadCompletedRef.current = true;
 
-        if (!mobileBackgroundLoadScheduledRef.current && typeof window !== 'undefined') {
-          mobileBackgroundLoadScheduledRef.current = true;
-          const completeMobileLoad = () => {
-            api.sync.pullLatest()
-              .then(() => loadData({ silent: true, forceComplete: true }))
-              .catch((backgroundError) => {
-                mobileBackgroundLoadScheduledRef.current = false;
-                console.warn('[copetin] No se pudo completar la carga movil en segundo plano.', backgroundError);
-              });
-          };
-          if ('requestIdleCallback' in window) {
-            window.requestIdleCallback(completeMobileLoad, { timeout: 15000 });
-          } else {
-            window.setTimeout(completeMobileLoad, 12000);
-          }
-        }
         return;
       }
 
@@ -272,6 +258,57 @@ export const useAppController = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!authReady || !currentUser || activeTab !== 'alquiler' || !isMobileStartup()) return;
+    if (mobileOrdersLoadedRef.current || mobileOrdersRequestRef.current) return;
+
+    let disposed = false;
+    setOrdersModuleLoading(true);
+    const request = api.sync.getMobileOrdersOverview()
+      .then((overview) => {
+        if (disposed) return;
+        setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
+        setHiddenContracts(Array.isArray(overview?.hiddenContracts) ? overview.hiddenContracts : []);
+        setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
+        setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+        setQuotes(Array.isArray(overview?.quotes) ? overview.quotes : []);
+        setClients(Array.isArray(overview?.clients) ? overview.clients : []);
+        setItems(Array.isArray(overview?.items) ? overview.items : []);
+        setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
+        setSupplierBundle({
+          suppliers: Array.isArray(overview?.suppliers) ? overview.suppliers : [],
+          quotes: Array.isArray(overview?.supplierQuotes) ? overview.supplierQuotes : [],
+          loans: Array.isArray(overview?.supplierLoans) ? overview.supplierLoans : [],
+        });
+        setVehicles(Array.isArray(overview?.vehicles) ? overview.vehicles : []);
+        setDrivers(Array.isArray(overview?.drivers) ? overview.drivers : []);
+        setUsers(Array.isArray(overview?.users) ? overview.users : []);
+        setPersonnelBundle((current) => ({
+          ...current,
+          employees: Array.isArray(overview?.personnelEmployees) ? overview.personnelEmployees : [],
+        }));
+        setSettingsBundle((current) => ({
+          ...current,
+          settings: overview?.settings ?? current?.settings ?? null,
+        }));
+        mobileOrdersLoadedRef.current = true;
+      })
+      .catch((ordersError) => {
+        if (!disposed) {
+          setError(ordersError.message || 'No se pudo cargar Ordenes.');
+        }
+      })
+      .finally(() => {
+        mobileOrdersRequestRef.current = null;
+        if (!disposed) setOrdersModuleLoading(false);
+      });
+
+    mobileOrdersRequestRef.current = request;
+    return () => {
+      disposed = true;
+    };
+  }, [activeTab, authReady, currentUser]);
 
   useEffect(() => {
     if (!authReady || !currentUser) return;
@@ -446,6 +483,9 @@ export const useAppController = () => {
         || event?.source === 'storage';
       const isBackgroundStateReplacement = event?.source === 'background-sync';
       if (!isRemoteChange && !isBackgroundStateReplacement) return;
+      // El reemplazo silencioso ya actualizó la base local. No reconstruimos
+      // todas las vistas inmediatamente porque bloquea la navegación en PC.
+      if (isBackgroundStateReplacement && !isRemoteChange) return;
 
       // Ordenes no necesita una recarga global para reflejar un cambio de
       // Movimientos. Sincroniza solamente alquileres y actualiza React una vez.
@@ -626,6 +666,9 @@ export const useAppController = () => {
     try {
       const session = await api.auth.login(payload);
       deferredGroupsLoadedRef.current.clear();
+      mobileInitialLoadCompletedRef.current = false;
+      mobileOrdersLoadedRef.current = false;
+      mobileOrdersRequestRef.current = null;
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));
       return session;
@@ -2615,6 +2658,7 @@ export const useAppController = () => {
     currentUser,
     authError,
     loading,
+    ordersModuleLoading,
     error,
     loadData,
     dashboard,
