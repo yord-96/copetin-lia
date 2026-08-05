@@ -118,6 +118,12 @@ const DOCUMENT_INTERNAL_KEY = String(
     ?? import.meta.env?.APP_INTERNAL_KEY
     ?? '',
 ).trim();
+const isMobileContractPdfViewer = () => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  if (navigator.userAgentData?.mobile === true) return true;
+  return /Android|iPhone|iPod|Mobile/i.test(String(navigator.userAgent ?? ''));
+};
+
 const getDocumentApiUrl = (path) => DOCUMENT_API_BASE_URL ? `${DOCUMENT_API_BASE_URL}${path}` : path;
 
 const clampPercentValue = (value) => Math.min(100, Math.max(0, Number(value ?? 0)));
@@ -8383,8 +8389,15 @@ function ServiceOrdersSection({
   const handlePrintPreview = () => {
     if (documentPreview?.loading || !documentPreview?.blobUrl) return;
     if (documentPreview?.mimeType === 'application/pdf') {
+      const pdfUrl = documentPreview.viewerUrl || documentPreview.blobUrl;
+      if (isMobileContractPdfViewer()) {
+        // En celular se abre en la misma pestaña. Al volver con el botón Atrás,
+        // sessionStorage pertenece a la misma pestaña y la sesión se conserva.
+        window.location.assign(pdfUrl);
+        return;
+      }
       window.open(
-        documentPreview.viewerUrl || documentPreview.blobUrl,
+        pdfUrl,
         '_blank',
         'noopener,noreferrer',
       );
@@ -11714,12 +11727,33 @@ function ServiceOrdersSection({
                   <span>Estamos cargando la versión completa y verificando que no falte ningún dato.</span>
                 </div>
               ) : (
-                <iframe
-                  id="orders-document-preview-frame"
-                  title={documentPreview.title}
-                  src={documentPreview.viewerUrl || documentPreview.blobUrl}
-                  className="orders-document-frame"
-                />
+                isMobileContractPdfViewer() && documentPreview.mimeType === 'application/pdf' ? (
+                  <div
+                    className="orders-document-frame"
+                    style={{
+                      display: 'grid',
+                      placeItems: 'center',
+                      alignContent: 'center',
+                      gap: '0.75rem',
+                      padding: '1.5rem',
+                      textAlign: 'center',
+                      color: '#475467',
+                      background: '#f8fafc',
+                    }}
+                  >
+                    <strong>El PDF está listo.</strong>
+                    <span>
+                      Pulsa “Abrir PDF” para visualizarlo correctamente. Se abrirá en esta misma pestaña y podrás volver al sistema sin perder la sesión.
+                    </span>
+                  </div>
+                ) : (
+                  <iframe
+                    id="orders-document-preview-frame"
+                    title={documentPreview.title}
+                    src={documentPreview.viewerUrl || documentPreview.blobUrl}
+                    className="orders-document-frame"
+                  />
+                )
               )}
             </div>
             <footer className="orders-modal-foot">
@@ -11763,7 +11797,9 @@ function ServiceOrdersSection({
                 onClick={handlePrintPreview}
                 disabled={documentPreview.loading || !documentPreview.blobUrl}
               >
-                Imprimir / guardar PDF
+                {isMobileContractPdfViewer() && documentPreview.mimeType === 'application/pdf'
+                  ? 'Abrir PDF'
+                  : 'Imprimir / guardar PDF'}
               </button>
             </footer>
           </div>
