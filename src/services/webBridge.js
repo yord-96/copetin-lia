@@ -7835,8 +7835,8 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-change-lines { display: block; min-height: 12mm; padding-top: .2mm; }
   .rc-change-line { display: none; }
   .rc-economic-control {
-    min-height: 29mm;
-    padding: 1.35mm 1.5mm 1.5mm;
+    min-height: 32mm;
+    padding: 1.55mm 1.7mm 1.7mm;
     border: .25mm solid #d8c29c;
     border-radius: 1.5mm;
     background: #fffdf9;
@@ -7848,21 +7848,21 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 3mm;
     align-items: start;
-    margin-bottom: 1.2mm;
+    margin-bottom: 1.45mm;
   }
   .rc-economic-head .rc-bottom-title { margin-bottom: 0; }
   .rc-economic-status {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 22mm;
-    min-height: 5mm;
-    padding: .5mm 1.4mm;
+    min-width: 24mm;
+    min-height: 5.6mm;
+    padding: .6mm 1.6mm;
     border: .25mm solid #c9a46f;
     border-radius: 99mm;
     background: #f8ecd9;
     color: #73430f;
-    font: 900 7px Arial, Helvetica, sans-serif;
+    font: 900 7.4px Arial, Helvetica, sans-serif;
     line-height: 1;
     text-align: center;
     text-transform: uppercase;
@@ -7872,27 +7872,27 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-economic-summary {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: .8mm;
-    margin-bottom: 1.1mm;
+    gap: 1mm;
+    margin-bottom: 1.35mm;
   }
   .rc-economic-summary span {
     display: grid;
     align-content: center;
-    min-height: 8mm;
-    padding: .75mm .8mm;
+    min-height: 8.8mm;
+    padding: .9mm 1mm;
     border: .2mm solid #e4d3bb;
     background: #fffaf2;
   }
   .rc-economic-summary small {
     color: #795a36;
-    font: 800 6.2px Arial, Helvetica, sans-serif;
+    font: 800 6.6px Arial, Helvetica, sans-serif;
     line-height: 1.05;
     text-transform: uppercase;
   }
   .rc-economic-summary strong {
-    margin-top: .35mm;
+    margin-top: .45mm;
     color: #171717;
-    font: 900 8.6px Arial, Helvetica, sans-serif;
+    font: 900 9.3px Arial, Helvetica, sans-serif;
     line-height: 1;
     white-space: nowrap;
   }
@@ -7905,30 +7905,36 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   }
   .rc-economic-line {
     display: grid;
-    grid-template-columns: 23mm 16mm minmax(0, 1fr) 20mm;
-    gap: 1.2mm;
+    grid-template-columns: 22mm 19mm 15mm minmax(0, 1fr) 18mm;
+    gap: 1.1mm;
     align-items: center;
-    min-height: 6.4mm;
-    padding: .65mm .8mm;
+    min-height: 7.4mm;
+    padding: .85mm 1mm;
     border-bottom: .2mm solid #eee1cf;
   }
   .rc-economic-line:last-child { border-bottom: 0; }
+  .rc-economic-line time {
+    color: #5f4a2f;
+    font: 800 6.7px Arial, Helvetica, sans-serif;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
   .rc-economic-line b {
     color: #633c12;
-    font: 900 6.7px Arial, Helvetica, sans-serif;
+    font: 900 7.05px Arial, Helvetica, sans-serif;
     line-height: 1.1;
     text-transform: uppercase;
   }
   .rc-economic-line strong {
     color: #111;
-    font: 900 8px Arial, Helvetica, sans-serif;
+    font: 900 8.35px Arial, Helvetica, sans-serif;
     line-height: 1;
     white-space: nowrap;
   }
   .rc-economic-line em {
     min-width: 0;
     color: #343434;
-    font: 700 6.7px Arial, Helvetica, sans-serif;
+    font: 700 7px Arial, Helvetica, sans-serif;
     font-style: normal;
     line-height: 1.15;
     text-transform: uppercase;
@@ -7936,7 +7942,7 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   }
   .rc-economic-line small {
     color: #73552f;
-    font: 800 6.3px Arial, Helvetica, sans-serif;
+    font: 800 6.6px Arial, Helvetica, sans-serif;
     line-height: 1.1;
     text-align: right;
     text-transform: uppercase;
@@ -8812,9 +8818,10 @@ export const buildContractDocumentHtml = ({
     ? economicVisibleRows.map((entry) => {
       const note = String(entry?.note ?? '').trim() || 'Sin detalle adicional';
       const author = String(entry?.editedByName ?? entry?.createdByName ?? '').trim();
-      const dateLabel = entry?.createdAt ? formatDocumentDate(entry.createdAt) : '';
-      const detailParts = [note, author ? `REG.: ${author}` : '', dateLabel].filter(Boolean);
+      const dateLabel = entry?.createdAt ? formatDateTime(entry.createdAt) : (entry?.date ? formatDocumentDate(entry.date) : '-');
+      const detailParts = [note, author ? `REG.: ${author}` : ''].filter(Boolean);
       return `<div class="rc-economic-line">
+        <time>${escapeHtml(dateLabel)}</time>
         <b>${escapeHtml(economicTypeLabel(entry))}</b>
         <strong>${entry?.type === 'note' ? '-' : formatBs(entry?.amountBs ?? entry?.amount ?? 0)}</strong>
         <em>${escapeHtml(detailParts.join(' · '))}</em>
