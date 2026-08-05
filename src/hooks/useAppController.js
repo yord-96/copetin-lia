@@ -34,7 +34,8 @@ const isMobileStartup = () => {
   if (typeof window === 'undefined') return false;
   const narrowScreen = window.matchMedia?.('(max-width: 900px)')?.matches ?? window.innerWidth <= 900;
   const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
-  return narrowScreen || coarsePointer;
+  // Un equipo de escritorio con pantalla tactil no debe entrar al flujo movil.
+  return narrowScreen && coarsePointer;
 };
 
 const MOBILE_CALENDAR_COLLECTIONS = Object.freeze([
@@ -172,23 +173,14 @@ export const useAppController = () => {
     }
     try {
       if (mobileProgressive) {
-        await api.sync.refreshCollections(MOBILE_CALENDAR_COLLECTIONS, 'mobile-calendar-bootstrap');
-        const [
-          contractsData,
-          rentalsData,
-          deliveriesData,
-          calendarEventsData,
-        ] = await Promise.all([
-          api.contracts.list(),
-          api.rentals.list(),
-          api.transport.listDeliveries(),
-          api.calendar.listEvents(),
-        ]);
-
-        setContracts(contractsData);
-        setRentals(rentalsData);
-        setDeliveries(deliveriesData);
-        setCalendarEvents(calendarEventsData);
+        const mobileCollections = await api.sync.refreshCollections(
+          MOBILE_CALENDAR_COLLECTIONS,
+          'mobile-calendar-bootstrap',
+        );
+        setContracts(Array.isArray(mobileCollections?.contracts) ? mobileCollections.contracts : []);
+        setRentals(Array.isArray(mobileCollections?.rentals) ? mobileCollections.rentals : []);
+        setDeliveries(Array.isArray(mobileCollections?.deliveries) ? mobileCollections.deliveries : []);
+        setCalendarEvents(Array.isArray(mobileCollections?.calendarEvents) ? mobileCollections.calendarEvents : []);
         mobileInitialLoadCompletedRef.current = true;
 
         if (!mobileBackgroundLoadScheduledRef.current && typeof window !== 'undefined') {

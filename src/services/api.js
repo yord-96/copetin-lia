@@ -545,10 +545,6 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
   await mergeLocalState(payload?.collections ?? {});
   requestedNames.forEach((name) => loadedServerCollections.add(name));
   serverStateIsPartial = PARTIAL_BOOTSTRAP_COLLECTIONS.some((name) => !loadedServerCollections.has(name));
-  // Una carga dirigida ya deja datos válidos para las lecturas locales.
-  // Evita que cada api.*.list() dispare inmediatamente un bootstrap completo.
-  hasLoadedServerState = true;
-  lastSharedSyncAt = Date.now();
   console.info('[copetin-sync] Colecciones diferidas cargadas.', { reason, collections: requestedNames });
   return payload?.collections ?? {};
 };
