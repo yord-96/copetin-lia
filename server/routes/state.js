@@ -46,6 +46,7 @@ const readablePartialCollectionSet = new Set([
   'supplierLoans',
   'deliveries',
   'calendarEvents',
+  'calendarBoardNotes',
   ...deferredBootstrapCollections,
   ...summarizedBootstrapCollections,
 ]);
@@ -3907,6 +3908,108 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
       total,
       hasMore: offset + pageRows.length < total,
       summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+const summarizeCalendarContract = (contract = {}) => ({
+  id: contract.id ?? '',
+  contractCode: contract.contractCode ?? '',
+  rentalId: contract.rentalId ?? '',
+  orderCode: contract.orderCode ?? '',
+  deletedAt: contract.deletedAt ?? null,
+  status: contract.status ?? '',
+  pickupDate: contract.pickupDate ?? null,
+  validUntil: contract.validUntil ?? null,
+  deliveryDate: contract.deliveryDate ?? null,
+  pickupWindowStart: contract.pickupWindowStart ?? '',
+  pickupWindowEnd: contract.pickupWindowEnd ?? '',
+  deliveryWindowStart: contract.deliveryWindowStart ?? '',
+  deliveryWindowEnd: contract.deliveryWindowEnd ?? '',
+  customerName: contract.customerName ?? '',
+  eventType: contract.eventType ?? '',
+  logisticsMode: contract.logisticsMode ?? 'envio',
+  address: contract.address ?? contract.deliveryAddress ?? contract.serviceAddress ?? '',
+  city: contract.city ?? '',
+  createdByName: contract.createdByName ?? '',
+  createdBy: contract.createdBy ?? '',
+  createdByRole: contract.createdByRole ?? '',
+  totals: { totalBs: Number(contract?.totals?.totalBs ?? 0) },
+  itemsCount: Array.isArray(contract.items) ? contract.items.length : Number(contract.itemsCount ?? 0),
+  _calendarSummaryOnly: true,
+});
+
+const summarizeCalendarRental = (rental = {}) => ({
+  id: rental.id ?? '',
+  orderCode: rental.orderCode ?? '',
+  deletedAt: rental.deletedAt ?? null,
+  status: rental.status ?? '',
+  rentalDate: rental.rentalDate ?? null,
+  createdAt: rental.createdAt ?? null,
+  dueDate: rental.dueDate ?? null,
+  dueTime: rental.dueTime ?? '',
+  deliveryWindowStart: rental.deliveryWindowStart ?? '',
+  deliveryWindowEnd: rental.deliveryWindowEnd ?? '',
+  customerName: rental.customerName ?? '',
+  companyName: rental.companyName ?? '',
+  logisticsMode: rental.logisticsMode ?? 'envio',
+  eventAddress: rental.eventAddress ?? rental.address ?? '',
+  address: rental.address ?? '',
+  city: rental.city ?? '',
+  createdByName: rental.createdByName ?? '',
+  createdBy: rental.createdBy ?? '',
+  createdByRole: rental.createdByRole ?? '',
+  operational: rental.operational
+    ? { inventoryStatus: rental.operational.inventoryStatus ?? 'pendiente' }
+    : { inventoryStatus: 'pendiente' },
+  totals: { totalBs: Number(rental?.totals?.totalBs ?? 0) },
+  itemsCount: Array.isArray(rental.items) ? rental.items.length : Number(rental.itemsCount ?? 0),
+  _calendarSummaryOnly: true,
+});
+
+const summarizeCalendarDelivery = (delivery = {}) => ({
+  id: delivery.id ?? '',
+  deliveryCode: delivery.deliveryCode ?? '',
+  rentalId: delivery.rentalId ?? '',
+  orderCode: delivery.orderCode ?? '',
+  deletedAt: delivery.deletedAt ?? null,
+  status: delivery.status ?? '',
+  scheduledDate: delivery.scheduledDate ?? delivery.date ?? null,
+  date: delivery.date ?? null,
+  title: delivery.title ?? '',
+  subtitle: delivery.subtitle ?? '',
+  description: delivery.description ?? '',
+  notes: delivery.notes ?? '',
+  companyName: delivery.companyName ?? '',
+  customerName: delivery.customerName ?? '',
+  address: delivery.address ?? '',
+  city: delivery.city ?? '',
+  vehicleId: delivery.vehicleId ?? '',
+  createdByName: delivery.createdByName ?? '',
+  createdBy: delivery.createdBy ?? '',
+  createdByRole: delivery.createdByRole ?? '',
+  itemsCount: Array.isArray(delivery.items) ? delivery.items.length : Number(delivery.itemsCount ?? 0),
+  _calendarSummaryOnly: true,
+});
+
+router.get('/__copetin_db/calendar/mobile-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        contracts: (Array.isArray(state.contracts) ? state.contracts : []).map(summarizeCalendarContract),
+        rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeCalendarRental),
+        deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeCalendarDelivery),
+        calendarEvents: Array.isArray(state.calendarEvents) ? state.calendarEvents : [],
+      },
     });
   } catch (error) {
     next(error);

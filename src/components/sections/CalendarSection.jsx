@@ -235,6 +235,10 @@ const compactUniqueParts = (parts = []) => {
     });
 };
 
+const getRecordItemsCount = (record) => (
+  Array.isArray(record?.items) ? record.items.length : Number(record?.itemsCount ?? 0)
+);
+
 const buildItemsSummary = (...records) => {
   const source = records.find((record) => Array.isArray(record?.items) && record.items.length > 0);
   if (!source) return '';
@@ -444,7 +448,7 @@ function CalendarSection({
             id: `contract-end-${contract.id}`,
             title: `Recojo ${contract.contractCode}`,
             subtitle: `${contract.customerName || 'Cliente'} - ${contract.eventType || 'sin evento'}`,
-            detailLine: `${contract.items?.length ?? 0} items | ${contract.status || 'sin estado'}`,
+            detailLine: `${getRecordItemsCount(contract)} items | ${contract.status || 'sin estado'}`,
             type: 'return',
             date: dateKey,
             startTime: contract.pickupWindowStart || '20:00',
@@ -458,7 +462,7 @@ function CalendarSection({
             orderCode: contract.orderCode,
             customerName: contract.customerName,
             totalBs: Number(contract?.totals?.totalBs ?? 0),
-            itemsCount: contract.items?.length ?? 0,
+            itemsCount: getRecordItemsCount(contract),
             logisticsMode: contract.logisticsMode ?? 'envio',
             eventName: contract.eventType,
             operationLabel: getOperationLabel('return', contract.logisticsMode ?? 'envio'),
@@ -495,7 +499,7 @@ function CalendarSection({
             id: `rental-customer-pickup-${rental.id}`,
             title: `Alistamiento ${rental.orderCode}`,
             subtitle: `${rental.customerName || 'Cliente'} - ${contract?.eventType || rental.companyName || 'sin evento'}`,
-            detailLine: `${rental.items?.length ?? 0} items | ${getOperationalStatusMeta('inventory', inventoryStatus).label}`,
+            detailLine: `${getRecordItemsCount(rental)} items | ${getOperationalStatusMeta('inventory', inventoryStatus).label}`,
             type: 'delivery',
             date: deliveryKey,
             startTime: deliveryStart,
@@ -509,7 +513,7 @@ function CalendarSection({
             orderCode: rental.orderCode,
             customerName: rental.customerName,
             totalBs: Number(rental?.totals?.totalBs ?? 0),
-            itemsCount: rental.items?.length ?? 0,
+            itemsCount: getRecordItemsCount(rental),
             logisticsMode,
             eventName: contract?.eventType ?? rental.companyName,
             operationLabel: 'Alistamiento para recojo',
@@ -540,7 +544,7 @@ function CalendarSection({
         id: `rental-return-${rental.id}`,
         title: `${returnVerb} ${rental.orderCode}`,
         subtitle: `${rental.customerName || 'Cliente'} - ${contract?.eventType || rental.companyName || 'sin evento'}`,
-        detailLine: `${rental.items?.length ?? 0} items | Total ${Number(rental?.totals?.totalBs ?? 0).toFixed(2)} Bs`,
+        detailLine: `${getRecordItemsCount(rental)} items | Total ${Number(rental?.totals?.totalBs ?? 0).toFixed(2)} Bs`,
         type: 'return',
         date: dueKey,
         startTime: returnStart,
@@ -554,7 +558,7 @@ function CalendarSection({
         orderCode: rental.orderCode,
         customerName: rental.customerName,
         totalBs: Number(rental?.totals?.totalBs ?? 0),
-        itemsCount: rental.items?.length ?? 0,
+        itemsCount: getRecordItemsCount(rental),
         logisticsMode,
         eventName: contract?.eventType ?? rental.companyName,
         operationLabel: getOperationLabel('return', logisticsMode),
@@ -563,12 +567,16 @@ function CalendarSection({
       });
     });
 
-    rows.push(...buildInventoryReturnRiskEvents({
-      items,
-      rentals,
-      contracts,
-      todayKey,
-    }));
+    const hasFullCalendarRecords = !contracts.some((row) => row?._calendarSummaryOnly)
+      && !rentals.some((row) => row?._calendarSummaryOnly);
+    if (hasFullCalendarRecords) {
+      rows.push(...buildInventoryReturnRiskEvents({
+        items,
+        rentals,
+        contracts,
+        todayKey,
+      }));
+    }
 
     (supplierBundle?.loans ?? []).forEach((loan) => {
       const requestKey = toDateKey(loan.requestDate);
@@ -692,13 +700,13 @@ function CalendarSection({
           responsibleRole: responsible.role,
           responsibleInitials: responsible.initials,
           totalBs: event.totalBs ?? rental?.totals?.totalBs ?? contract?.totals?.totalBs,
-          itemsCount: event.itemsCount ?? rental?.items?.length ?? contract?.items?.length,
+          itemsCount: event.itemsCount ?? (getRecordItemsCount(rental) || getRecordItemsCount(contract)),
           logisticsMode,
           logisticsLine: event.logisticsLine ?? logisticsMeta?.label,
           detailLine:
             event.detailLine
             ?? (contract?.contractCode
-              ? `${eventName || 'Sin evento'} | ${operationLabel} | ${rental?.items?.length ?? contract.items?.length ?? 0} items`
+              ? `${eventName || 'Sin evento'} | ${operationLabel} | ${getRecordItemsCount(rental) || getRecordItemsCount(contract)} items`
               : undefined),
         };
       })
@@ -1775,7 +1783,7 @@ function CalendarSection({
                 </span>
                 <span className={`calendar-logistics-badge ${logisticsMeta.className}`}>{detailEvent.operationLabel || logisticsMeta.label}</span>
                 <span>
-                  {(linkedContract?.items?.length ?? linkedRental?.items?.length ?? detailEvent.itemsCount ?? 0)} items
+                  {(getRecordItemsCount(linkedContract) || getRecordItemsCount(linkedRental) || detailEvent.itemsCount || 0)} items
                   {' | '}
                   Total Bs {Number(linkedContract?.totals?.totalBs ?? linkedRental?.totals?.totalBs ?? detailEvent.totalBs ?? 0).toFixed(2)}
                   {' | '}

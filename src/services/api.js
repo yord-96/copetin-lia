@@ -549,6 +549,23 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
   return payload?.collections ?? {};
 };
 
+
+const fetchMobileCalendarOverview = async () => {
+  const response = await fetch(getServerStateUrl('/calendar/mobile-overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el resumen movil del calendario.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) {
+    lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
+  }
+  return payload?.overview ?? { contracts: [], rentals: [], deliveries: [], calendarEvents: [] };
+};
+
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
   if (!shouldUseServerState()) return;
   const missingNames = (Array.isArray(names) ? names : [])
@@ -2310,6 +2327,7 @@ export const api = {
     }),
     pullLatest: () => syncServerState({ force: true, reason: 'manual-refresh' }),
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
+    getMobileCalendarOverview: fetchMobileCalendarOverview,
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),
@@ -2506,7 +2524,10 @@ export const api = {
   calendar: {
     listEvents: () => callBridge('calendar', 'listEvents', false),
     createEvent: (payload) => callBridge('calendar', 'createEvent', true, payload),
-    listBoardNotes: () => callBridge('calendar', 'listBoardNotes', false),
+    listBoardNotes: async () => {
+      if (shouldUseServerState()) await fetchServerCollections(['calendarBoardNotes'], 'calendar-board-notes');
+      return getBridge().calendar.listBoardNotes();
+    },
     upsertBoardNote: (payload) => callBridge('calendar', 'upsertBoardNote', true, payload),
     removeBoardNote: (payload) => callBridge('calendar', 'removeBoardNote', true, payload),
   },

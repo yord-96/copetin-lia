@@ -38,12 +38,7 @@ const isMobileStartup = () => {
   return narrowScreen && coarsePointer;
 };
 
-const MOBILE_CALENDAR_COLLECTIONS = Object.freeze([
-  'contracts',
-  'rentals',
-  'deliveries',
-  'calendarEvents',
-]);
+
 
 const buildReceiptsFromRentals = (rentals) => {
   const allReceipts = [];
@@ -173,14 +168,11 @@ export const useAppController = () => {
     }
     try {
       if (mobileProgressive) {
-        const mobileCollections = await api.sync.refreshCollections(
-          MOBILE_CALENDAR_COLLECTIONS,
-          'mobile-calendar-bootstrap',
-        );
-        setContracts(Array.isArray(mobileCollections?.contracts) ? mobileCollections.contracts : []);
-        setRentals(Array.isArray(mobileCollections?.rentals) ? mobileCollections.rentals : []);
-        setDeliveries(Array.isArray(mobileCollections?.deliveries) ? mobileCollections.deliveries : []);
-        setCalendarEvents(Array.isArray(mobileCollections?.calendarEvents) ? mobileCollections.calendarEvents : []);
+        const mobileOverview = await api.sync.getMobileCalendarOverview();
+        setContracts(Array.isArray(mobileOverview?.contracts) ? mobileOverview.contracts : []);
+        setRentals(Array.isArray(mobileOverview?.rentals) ? mobileOverview.rentals : []);
+        setDeliveries(Array.isArray(mobileOverview?.deliveries) ? mobileOverview.deliveries : []);
+        setCalendarEvents(Array.isArray(mobileOverview?.calendarEvents) ? mobileOverview.calendarEvents : []);
         mobileInitialLoadCompletedRef.current = true;
 
         if (!mobileBackgroundLoadScheduledRef.current && typeof window !== 'undefined') {
