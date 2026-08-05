@@ -14,10 +14,12 @@ import {
   Info,
   MapPin,
   MessageCircle,
+  MessageSquarePlus,
   PackageOpen,
   Phone,
   Pencil,
   Search,
+  SquarePen,
   RefreshCw,
   Truck,
   UserRound,
@@ -1454,6 +1456,10 @@ function ServiceOrdersSection({
   });
   const [contractEconomicsLedgerEditingId, setContractEconomicsLedgerEditingId] = useState(null);
   const [contractEconomicNotePreview, setContractEconomicNotePreview] = useState(null);
+  const [contractEconomicNoteDraft, setContractEconomicNoteDraft] = useState('');
+  const [contractEconomicNoteError, setContractEconomicNoteError] = useState('');
+  const [isSavingContractEconomicNote, setIsSavingContractEconomicNote] = useState(false);
+  const [contractNoteOverrides, setContractNoteOverrides] = useState(() => new Map());
   const contractEconomicsLedgerTypeRef = useRef(null);
   const contractEconomicsLedgerAmountRef = useRef(null);
   const contractEconomicsLedgerNoteRef = useRef(null);
@@ -8593,6 +8599,70 @@ function ServiceOrdersSection({
   const isLastStep = currentStep === QUOTE_WIZARD_STEPS.length - 1;
   const isCommercialCompactView = metrics.length === 2;
 
+  const getVisibleEconomicNotes = (row) => {
+    const override = contractNoteOverrides.get(String(row?.id ?? ''));
+    return override ?? row?.economicInternalNotes ?? getEconomicInternalNotes(row);
+  };
+
+  const openContractEconomicNoteEditor = (row) => {
+    const notes = getVisibleEconomicNotes(row);
+    setContractEconomicNoteDraft(notes[0]?.note ?? '');
+    setContractEconomicNoteError('');
+    setContractEconomicNotePreview({ contract: row, notes });
+  };
+
+  const closeContractEconomicNoteEditor = () => {
+    if (isSavingContractEconomicNote) return;
+    setContractEconomicNotePreview(null);
+    setContractEconomicNoteDraft('');
+    setContractEconomicNoteError('');
+  };
+
+  const handleSaveContractEconomicNote = async () => {
+    if (!contractEconomicNotePreview?.contract || isSavingContractEconomicNote) return;
+    const note = String(contractEconomicNoteDraft ?? '').trim();
+    if (!note) {
+      setContractEconomicNoteError('Escribe una nota antes de guardar.');
+      return;
+    }
+
+    setContractEconomicNoteError('');
+    setIsSavingContractEconomicNote(true);
+    try {
+      const currentNote = contractEconomicNotePreview.notes?.[0] ?? null;
+      const userName = String(
+        currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+      ).trim() || 'Sistema';
+      const result = await api.contracts.updateNote({
+        id: contractEconomicNotePreview.contract.id
+          ?? contractEconomicNotePreview.contract.contractCode,
+        noteId: currentNote?.id ?? null,
+        note,
+        updatedById: currentUser?.id ?? null,
+        updatedByName: userName,
+        updatedByRole: currentUser ? getUserDisplayRole(currentUser) : 'Sistema',
+      });
+      const updatedContract = result?.contract ?? contractEconomicNotePreview.contract;
+      const updatedNotes = getEconomicInternalNotes(updatedContract);
+      const contractId = String(updatedContract?.id ?? contractEconomicNotePreview.contract?.id ?? '');
+      setContractNoteOverrides((current) => {
+        const next = new Map(current);
+        if (contractId) next.set(contractId, updatedNotes);
+        return next;
+      });
+      setContractEconomicNotePreview({ contract: updatedContract, notes: updatedNotes });
+      setContractEconomicNoteDraft(updatedNotes[0]?.note ?? note);
+    } catch (error) {
+      setContractEconomicNoteError(error?.message || 'No se pudo guardar la nota.');
+    } finally {
+      setIsSavingContractEconomicNote(false);
+    }
+  };
+
   return (
     <section className="panel orders-view">
       <header className="orders-header">
@@ -9196,7 +9266,7 @@ function ServiceOrdersSection({
                 <tbody>
                   {visibleContractsForRender.map((row) => {
                     const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
-                    const economicInternalNotes = row.economicInternalNotes ?? [];
+                    const economicInternalNotes = getVisibleEconomicNotes(row);
                     const isCancelledRow = row.status === 'anulado';
                     const showSentStyle = !isCancelledRow && row.isSent;
                     const showReturnedStyle = !isCancelledRow && row.isReturned;
@@ -9249,18 +9319,47 @@ function ServiceOrdersSection({
                           </div>
                         </td>
                         <td className={`orders-economic-note-cell ${row.isReturned ? 'orders-contract-returned-cell' : ''}`}>
-                          {economicInternalNotes.length > 0 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 30 }}>
+                            {economicInternalNotes.length > 0 ? (
+                              <button
+                                type="button"
+                                className="orders-economic-note-bubble"
+                                onClick={() => openContractEconomicNoteEditor(row)}
+                                title="Ver nota interna economica"
+                                aria-label={`Ver nota interna economica del contrato ${row.contractCode}`}
+                              >
+                                <MessageCircle aria-hidden="true" />
+                                <span>{economicInternalNotes.length}</span>
+                              </button>
+                            ) : null}
                             <button
                               type="button"
-                              className="orders-economic-note-bubble"
-                              onClick={() => setContractEconomicNotePreview({ contract: row, notes: economicInternalNotes })}
-                              title="Ver nota interna economica"
-                              aria-label={`Ver nota interna economica del contrato ${row.contractCode}`}
+                              onClick={() => openContractEconomicNoteEditor(row)}
+                              disabled={readOnly}
+                              title={economicInternalNotes.length > 0 ? 'Editar nota' : 'Agregar nota'}
+                              aria-label={`${economicInternalNotes.length > 0 ? 'Editar' : 'Agregar'} nota del contrato ${row.contractCode}`}
+                              style={{
+                                width: 29,
+                                height: 29,
+                                minWidth: 29,
+                                padding: 0,
+                                borderRadius: 8,
+                                border: '1px solid rgba(234, 88, 12, 0.32)',
+                                background: economicInternalNotes.length > 0 ? '#fff7ed' : '#ffffff',
+                                color: '#c2410c',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: readOnly ? 'not-allowed' : 'pointer',
+                                opacity: readOnly ? 0.55 : 1,
+                                boxShadow: '0 1px 2px rgba(15, 23, 42, 0.06)',
+                              }}
                             >
-                              <MessageCircle aria-hidden="true" />
-                              <span>{economicInternalNotes.length}</span>
+                              {economicInternalNotes.length > 0
+                                ? <SquarePen aria-hidden="true" size={14} />
+                                : <MessageSquarePlus aria-hidden="true" size={14} />}
                             </button>
-                          ) : null}
+                          </div>
                         </td>
                         <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-hidden-status-cell">
@@ -9345,7 +9444,7 @@ function ServiceOrdersSection({
               {visibleContractsForRender.map((row) => {
                 const statusMeta = CONTRACT_STATUS_META[row.status] ?? CONTRACT_STATUS_META.borrador;
                 const transportMeta = getContractTransportLabel(row);
-                const economicInternalNotes = row.economicInternalNotes ?? [];
+                const economicInternalNotes = getVisibleEconomicNotes(row);
                 const isCancelledRow = row.status === 'anulado';
                 const showSentStyle = !isCancelledRow && row.isSent;
                 const showReturnedStyle = !isCancelledRow && row.isReturned;
@@ -9434,16 +9533,17 @@ function ServiceOrdersSection({
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
                       </button>
-                      {economicInternalNotes.length > 0 ? (
-                        <button
-                          type="button"
-                          className="orders-economic-note-mobile-button"
-                          onClick={() => setContractEconomicNotePreview({ contract: row, notes: economicInternalNotes })}
-                        >
-                          <MessageCircle aria-hidden="true" />
-                          Nota economica
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        className="orders-economic-note-mobile-button"
+                        onClick={() => openContractEconomicNoteEditor(row)}
+                        disabled={readOnly}
+                      >
+                        {economicInternalNotes.length > 0
+                          ? <SquarePen aria-hidden="true" />
+                          : <MessageSquarePlus aria-hidden="true" />}
+                        {economicInternalNotes.length > 0 ? 'Editar nota' : 'Agregar nota'}
+                      </button>
                       <button
                         type="button"
                         className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
@@ -9730,40 +9830,97 @@ function ServiceOrdersSection({
       {contractEconomicNotePreview ? (
         <div
           className="orders-modal-backdrop orders-economic-note-backdrop"
-          onClick={() => setContractEconomicNotePreview(null)}
+          onClick={closeContractEconomicNoteEditor}
         >
           <section
             className="orders-modal orders-economic-note-modal"
             onClick={(event) => event.stopPropagation()}
+            style={{ width: 'min(520px, calc(100vw - 28px))' }}
           >
             <header className="orders-modal-head">
               <div>
-                <h3>Nota interna economica</h3>
+                <h3>{contractEconomicNotePreview.notes.length > 0 ? 'Editar nota' : 'Agregar nota'}</h3>
                 <p>
                   Contrato {contractEconomicNotePreview.contract?.contractCode || '-'}
                   {' | '}
                   {contractEconomicNotePreview.contract?.customerName || 'Cliente sin registrar'}
                 </p>
               </div>
-              <button type="button" className="orders-modal-close" onClick={() => setContractEconomicNotePreview(null)}>
+              <button type="button" className="orders-modal-close" onClick={closeContractEconomicNoteEditor} disabled={isSavingContractEconomicNote}>
                 x
               </button>
             </header>
-            <div className="orders-economic-note-modal-body">
-              {contractEconomicNotePreview.notes.map((note) => (
-                <article key={note.id} className="orders-economic-note-card">
-                  <span>
-                    {formatDateTime(note.createdAt)}
-                    {' | '}
-                    {note.createdByName || 'Sistema'}
+            <div className="orders-economic-note-modal-body" style={{ display: 'grid', gap: 14 }}>
+              {contractEconomicNotePreview.notes[0] ? (
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 12, color: '#7c2d12' }}>
+                  <strong>{contractEconomicNotePreview.notes[0].createdByName || 'Sistema'}</strong>
+                  <span style={{ display: 'block', marginTop: 3 }}>
+                    Registrada: {formatDateTime(contractEconomicNotePreview.notes[0].createdAt)}
+                    {contractEconomicNotePreview.notes[0].editedAt
+                      ? ` | Editada: ${formatDateTime(contractEconomicNotePreview.notes[0].editedAt)}`
+                      : ''}
                   </span>
-                  <p>{note.note}</p>
-                </article>
-              ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#64748b' }}>Todavía no existe una nota para este contrato.</div>
+              )}
+              <label style={{ display: 'grid', gap: 7 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>Nota interna económica</span>
+                <textarea
+                  value={contractEconomicNoteDraft}
+                  onChange={(event) => setContractEconomicNoteDraft(event.target.value)}
+                  rows={5}
+                  maxLength={2000}
+                  autoFocus
+                  placeholder="Escribe aquí la nota del contrato..."
+                  disabled={isSavingContractEconomicNote || readOnly}
+                  style={{
+                    width: '100%',
+                    resize: 'vertical',
+                    minHeight: 112,
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 10,
+                    padding: '11px 12px',
+                    font: 'inherit',
+                    lineHeight: 1.45,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <small style={{ justifySelf: 'end', color: '#64748b' }}>{contractEconomicNoteDraft.length}/2000</small>
+              </label>
+              {contractEconomicNoteError ? (
+                <div style={{ padding: '9px 11px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>
+                  {contractEconomicNoteError}
+                </div>
+              ) : null}
+              {contractEconomicNotePreview.notes.length > 1 ? (
+                <details>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 12, color: '#475569' }}>
+                    Historial anterior ({contractEconomicNotePreview.notes.length - 1})
+                  </summary>
+                  <div style={{ display: 'grid', gap: 8, marginTop: 9 }}>
+                    {contractEconomicNotePreview.notes.slice(1).map((note) => (
+                      <article key={note.id} className="orders-economic-note-card">
+                        <span>{formatDateTime(note.createdAt)} {' | '} {note.createdByName || 'Sistema'}</span>
+                        <p>{note.note}</p>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </div>
             <footer className="orders-modal-foot">
-              <button type="button" className="ghost-button" onClick={() => setContractEconomicNotePreview(null)}>
-                Cerrar
+              <button type="button" className="ghost-button" onClick={closeContractEconomicNoteEditor} disabled={isSavingContractEconomicNote}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleSaveContractEconomicNote}
+                disabled={isSavingContractEconomicNote || readOnly || !String(contractEconomicNoteDraft).trim()}
+              >
+                {isSavingContractEconomicNote ? 'Guardando...' : 'Guardar'}
               </button>
             </footer>
           </section>
