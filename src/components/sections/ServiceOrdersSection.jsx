@@ -7538,6 +7538,68 @@ function ServiceOrdersSection({
       const movementId = resolveEconomicMovementId(result);
       const movement = result?.movement ?? result ?? {};
       const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? contractEconomicsCollectionDraft.receipt ?? '').trim();
+
+      // La micro-ruta de cobro devuelve inmediatamente el alquiler y el movimiento
+      // actualizados. Los aplicamos al modal y al resumen de la tabla sin esperar
+      // una recarga general ni volver a registrar el ingreso.
+      if (result?.rental?.id) {
+        setContractEconomicsFullRental(result.rental);
+      }
+      const pendingAfterCollectionBs = result?.rental
+        ? toMoneyNumber(
+          result.rental?.returnSettlement?.pendingCollectionBs
+          ?? result.rental?.payment?.pendingPaymentBs
+          ?? result.rental?.totals?.pendingPaymentBs,
+        )
+        : Math.max(0, Number((contractEconomicsData.managedDebtBs - amountBs).toFixed(2)));
+      const pendingOverrideKey = String(
+        contractEconomicsData.contract?.id
+        ?? contractEconomicsData.contract?.contractCode
+        ?? '',
+      ).trim();
+      if (pendingOverrideKey) {
+        setEconomicResetPendingByContract((current) => ({
+          ...current,
+          [pendingOverrideKey]: pendingAfterCollectionBs,
+        }));
+      }
+
+      // El recibo de Caja y la Hoja Flexible son dos respaldos del mismo cobro.
+      // Se agrega una única línea vinculada al movimiento ya creado; no se genera
+      // un segundo movimiento de caja.
+      const commercialCollectionBs = Number(collectionBreakdown
+        .filter((entry) => ['rental', 'transport', 'balance'].includes(entry.target))
+        .reduce((sum, entry) => sum + toMoneyNumber(entry.amountBs), 0)
+        .toFixed(2));
+      if (commercialCollectionBs > 0 && movementId) {
+        const currentLedger = contractEconomicsData.economicLedger ?? [];
+        const alreadyLinked = currentLedger.some(
+          (entry) => String(entry?.cashMovementId ?? '') === String(movementId),
+        );
+        if (!alreadyLinked) {
+          await saveContractEconomicLedgerRows(
+            [
+              ...currentLedger,
+              {
+                id: `eco-cash-${movementId}`,
+                type: 'deposit',
+                amountBs: commercialCollectionBs,
+                paymentMethod,
+                paymentAccount,
+                note: defaultNote,
+                createdAt: movement?.createdAt ?? new Date().toISOString(),
+                createdByName: createdBy,
+                cashMovementId: movementId,
+                cashReceiptCode: receiptCode,
+                isCashRegistered: true,
+              },
+            ],
+            '',
+            { force: true },
+          );
+        }
+      }
+
       if (movementId) {
         void handlePrintEconomicReceipt({ ...movement, id: movementId }).catch((printError) => {
           console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
