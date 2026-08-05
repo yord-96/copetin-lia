@@ -1111,7 +1111,7 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
   if (!force && now - lastSharedSyncAt < SYNC_THROTTLE_MS) {
     return;
   }
-  if (!force && preferCache && hasCachedLocalState()) {
+  if (!force && preferCache && hasCachedLocalState() && !serverStateIsPartial) {
     lastSharedRevision = getCachedServerRevision();
     lastSharedSyncAt = now;
     hasLoadedServerState = true;
@@ -1131,7 +1131,7 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
 
   sharedSyncPromise = (async () => {
   try {
-    if (!force && hasCachedLocalState()) {
+    if (!force && hasCachedLocalState() && !serverStateIsPartial) {
       const meta = await fetchServerMeta();
       const remoteRevision = meta?.revision ?? null;
       const cachedRevision = getCachedServerRevision();
