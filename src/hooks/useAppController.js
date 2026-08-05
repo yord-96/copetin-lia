@@ -38,14 +38,10 @@ const isMobileStartup = () => {
 };
 
 const MOBILE_CALENDAR_COLLECTIONS = Object.freeze([
-  'items',
   'contracts',
   'rentals',
   'deliveries',
   'calendarEvents',
-  'suppliers',
-  'supplierQuotes',
-  'supplierLoans',
 ]);
 
 const buildReceiptsFromRentals = (rentals) => {
@@ -178,39 +174,38 @@ export const useAppController = () => {
       if (mobileProgressive) {
         await api.sync.refreshCollections(MOBILE_CALENDAR_COLLECTIONS, 'mobile-calendar-bootstrap');
         const [
-          inventoryData,
           contractsData,
           rentalsData,
-          suppliersData,
           deliveriesData,
           calendarEventsData,
         ] = await Promise.all([
-          api.inventory.list(),
           api.contracts.list(),
           api.rentals.list(),
-          api.suppliers.listBundle(),
           api.transport.listDeliveries(),
           api.calendar.listEvents(),
         ]);
 
-        setItems(inventoryData);
         setContracts(contractsData);
         setRentals(rentalsData);
-        setSupplierBundle(suppliersData);
         setDeliveries(deliveriesData);
         setCalendarEvents(calendarEventsData);
         mobileInitialLoadCompletedRef.current = true;
 
         if (!mobileBackgroundLoadScheduledRef.current && typeof window !== 'undefined') {
           mobileBackgroundLoadScheduledRef.current = true;
-          window.setTimeout(() => {
+          const completeMobileLoad = () => {
             api.sync.pullLatest()
               .then(() => loadData({ silent: true, forceComplete: true }))
               .catch((backgroundError) => {
                 mobileBackgroundLoadScheduledRef.current = false;
                 console.warn('[copetin] No se pudo completar la carga movil en segundo plano.', backgroundError);
               });
-          }, 2500);
+          };
+          if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(completeMobileLoad, { timeout: 15000 });
+          } else {
+            window.setTimeout(completeMobileLoad, 12000);
+          }
         }
         return;
       }
