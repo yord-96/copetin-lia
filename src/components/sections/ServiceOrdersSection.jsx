@@ -7948,6 +7948,7 @@ function ServiceOrdersSection({
         accountingTag: 'validated_guarantee',
         createdBy: createdByName,
       });
+      rememberEconomicCashResult(cashResult);
       movementId = resolveEconomicMovementId(cashResult);
     }
     const entry = {
@@ -7979,7 +7980,7 @@ function ServiceOrdersSection({
           receiptWindow,
         });
       } else if (movementId) {
-        void handlePrintEconomicReceipt({ id: movementId }).catch((printError) => {
+        void handlePrintEconomicReceipt(cashResult?.movement ?? cashResult ?? { id: movementId }).catch((printError) => {
           console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
           setActionFeedback('El cobro fue guardado correctamente, pero el recibo no pudo abrirse automaticamente. Puedes abrirlo desde Ver documentos.');
         });
