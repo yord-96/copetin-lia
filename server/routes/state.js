@@ -1017,34 +1017,56 @@ const getContractCurrentEconomicSeed = (contract, rental) => {
     ?? rental?.payment?.guaranteeStatus
     ?? '',
   ).trim().toLowerCase();
+  const storedGuaranteePaidBs = directMoney(
+    contract?.guarantee?.validatedBs
+    ?? rental?.guarantee?.validatedBs
+    ?? rental?.depositBs
+    ?? 0,
+  );
+  // Un contrato marcado como garantia pagada debe reconstruir el importe vigente
+  // aunque los campos derivados de la orden hayan quedado en cero por un Reset anterior.
   const guaranteePaidBs = guaranteeStatus === 'validado'
-    ? directMoney(rental?.depositBs ?? contract?.guarantee?.validatedBs ?? guaranteeDeclaredBs)
+    ? directMoney(storedGuaranteePaidBs > 0 ? storedGuaranteePaidBs : guaranteeDeclaredBs)
     : 0;
   const paymentMethod = directPaymentMethod(
-    contract?.payment?.method
+    contract?.payment?.initialPaymentMethod
+    ?? contract?.payment?.method
+    ?? contract?.initialPaymentMethod
     ?? contract?.paymentMethod
+    ?? rental?.payment?.initialPaymentMethod
     ?? rental?.payment?.method
     ?? 'efectivo',
   );
   const paymentAccount = directPaymentAccount(
     paymentMethod,
-    contract?.payment?.account
+    contract?.payment?.initialPaymentAccount
+    ?? contract?.payment?.account
+    ?? contract?.initialPaymentAccount
     ?? contract?.paymentAccount
+    ?? rental?.payment?.initialPaymentAccount
     ?? rental?.payment?.account
     ?? '',
   );
   const guaranteeMethod = directPaymentMethod(
-    contract?.guarantee?.method
+    contract?.guarantee?.paymentMethod
+    ?? contract?.guarantee?.method
+    ?? contract?.payment?.guaranteePaymentMethod
     ?? contract?.payment?.guaranteeMethod
+    ?? rental?.guarantee?.paymentMethod
     ?? rental?.guarantee?.method
+    ?? rental?.payment?.guaranteePaymentMethod
     ?? rental?.payment?.guaranteeMethod
     ?? paymentMethod,
   );
   const guaranteeAccount = directPaymentAccount(
     guaranteeMethod,
-    contract?.guarantee?.account
+    contract?.guarantee?.paymentAccount
+    ?? contract?.guarantee?.account
+    ?? contract?.payment?.guaranteePaymentAccount
     ?? contract?.payment?.guaranteeAccount
+    ?? rental?.guarantee?.paymentAccount
     ?? rental?.guarantee?.account
+    ?? rental?.payment?.guaranteePaymentAccount
     ?? rental?.payment?.guaranteeAccount
     ?? '',
   );
@@ -2912,7 +2934,21 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
         pendingPaymentBs: outstandingRentalBs,
         status: paymentStatus,
         mode: paymentStatus,
+        initialPaymentMethod: seed.paymentMethod,
+        initialPaymentAccount: seed.paymentAccount,
         guaranteeStatus: seed.guaranteeStatus || contract?.payment?.guaranteeStatus || 'no_validado',
+        guaranteePaymentMethod: seed.guaranteeMethod,
+        guaranteePaymentAccount: seed.guaranteeAccount,
+      };
+      contract.guarantee = {
+        ...(contract.guarantee ?? {}),
+        amountBs: seed.guaranteeDeclaredBs,
+        validatedBs: seed.guaranteePaidBs,
+        status: seed.guaranteeStatus || 'no_validado',
+        paymentMethod: seed.guaranteeMethod,
+        paymentAccount: seed.guaranteeAccount,
+        method: seed.guaranteeMethod,
+        account: seed.guaranteeAccount,
       };
       contract.totals = {
         ...(contract.totals ?? {}),
@@ -2932,7 +2968,11 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           returnChargesCollectedBs: 0,
           status: paymentStatus,
           mode: paymentStatus,
+          initialPaymentMethod: seed.paymentMethod,
+          initialPaymentAccount: seed.paymentAccount,
           guaranteeStatus: seed.guaranteeStatus || rental?.payment?.guaranteeStatus || 'no_validado',
+          guaranteePaymentMethod: seed.guaranteeMethod,
+          guaranteePaymentAccount: seed.guaranteeAccount,
         };
         rental.totals = {
           ...(rental.totals ?? {}),
@@ -2950,6 +2990,8 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           amountBs: seed.guaranteeDeclaredBs,
           validatedBs: seed.guaranteePaidBs,
           status: seed.guaranteeStatus || 'no_validado',
+          paymentMethod: seed.guaranteeMethod,
+          paymentAccount: seed.guaranteeAccount,
           method: seed.guaranteeMethod,
           account: seed.guaranteeAccount,
         };
