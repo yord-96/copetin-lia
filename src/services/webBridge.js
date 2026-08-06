@@ -15375,10 +15375,24 @@ const createWebBridge = () => ({
           : 0;
         const guaranteeBs = Math.max(0, Number(payload?.guaranteeBs ?? contract?.totals?.guaranteeBs ?? 0));
         const registeredGuaranteeBs = getRegisteredContractGuaranteeBs(state, contract);
-        const requestedGuaranteeStatus = String(payload?.guaranteeStatus ?? contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
-        const guaranteeStatus = requestedGuaranteeStatus === 'validado' || (guaranteeBs > 0 && registeredGuaranteeBs >= guaranteeBs)
-          ? 'validado'
-          : 'no_validado';
+        const hasExplicitGuaranteeStatus = Object.prototype.hasOwnProperty.call(payload ?? {}, 'guaranteeStatus');
+        const requestedGuaranteeStatus = String(
+          payload?.guaranteeStatus
+          ?? contract?.guarantee?.status
+          ?? contract?.payment?.guaranteeStatus
+          ?? '',
+        ).trim();
+        // Cuando el usuario cambia expresamente la garantia de Pagado a Debe,
+        // ese valor debe prevalecer sobre movimientos historicos todavía activos.
+        // Luego se anulan contablemente dichos movimientos sin borrar el historial.
+        const guaranteeMarkedPending = hasExplicitGuaranteeStatus
+          && requestedGuaranteeStatus !== 'validado';
+        const guaranteeStatus = guaranteeMarkedPending
+          ? 'no_validado'
+          : requestedGuaranteeStatus === 'validado'
+            || (guaranteeBs > 0 && registeredGuaranteeBs >= guaranteeBs)
+            ? 'validado'
+            : 'no_validado';
         const guaranteePaymentMethod = normalizePaymentMethod(payload?.guaranteePaymentMethod ?? contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod);
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod ?? contract?.payment?.initialPaymentMethod);
         const guaranteePaymentAccount = guaranteePaymentMethod === 'qr'
@@ -15495,7 +15509,43 @@ const createWebBridge = () => ({
           cleanupApprovedContractEconomicDuplicates(state, contract, payload, now);
           syncInitialPaymentCashMovement(state, contract, payload, now);
         }
-        syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
+        if (guaranteeMarkedPending) {
+          const referenceKeys = getContractCashReferenceKeys(state, contract);
+          const auditUserName = getAuditUserName(payload);
+          state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+          state.cashMovements.forEach((movement) => {
+            if (
+              isVoidedCashMovement(movement)
+              || !isGuaranteeCashMovement(movement)
+              || !cashMovementMatchesContract(movement, referenceKeys)
+            ) {
+              return;
+            }
+            movement.receiptStatus = 'anulado';
+            movement.voidedAt = now;
+            movement.voidedBy = auditUserName;
+            movement.voidReason = `Garantia marcada como pendiente en el contrato ${contract?.contractCode || contract?.id || ''}`.trim();
+            movement.updatedAt = now;
+          });
+
+          contract.economicLedger = (Array.isArray(contract.economicLedger) ? contract.economicLedger : [])
+            .map((entry) => {
+              if (String(entry?.type ?? '').trim() !== 'guarantee' || entry?.deletedAt) {
+                return entry;
+              }
+              return {
+                ...entry,
+                deletedAt: now,
+                deletedById: payload?.updatedById ?? payload?.userId ?? null,
+                deletedByName: auditUserName,
+                deletionReason: 'Garantia marcada nuevamente como pendiente desde la edicion del contrato.',
+                editedAt: now,
+                editedByName: auditUserName,
+              };
+            });
+        } else {
+          syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
+        }
         if (payload.economicLedger !== undefined) {
           const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
           const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
