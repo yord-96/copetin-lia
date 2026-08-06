@@ -2466,6 +2466,115 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
   }
 });
 
+
+const requireDeveloperCashAction = (payload = {}) => {
+  const role = String(payload?.userRole ?? payload?.createdByRole ?? payload?.role ?? '')
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  if (role !== 'developer' && !role.includes('desarrollador')) {
+    const error = new Error('Esta accion esta disponible solamente para Developer.');
+    error.statusCode = 403;
+    throw error;
+  }
+};
+
+router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    requireDeveloperCashAction(payload);
+    const movementId = String(req.params.movementId ?? '').trim();
+    const amountBs = directMoney(payload.amountBs);
+    if (!movementId) return res.status(400).json({ error: 'Movimiento no identificado.' });
+    if (amountBs <= 0) return res.status(400).json({ error: 'El monto debe ser mayor a 0.' });
+    if (!String(payload.description ?? '').trim()) return res.status(400).json({ error: 'Debes escribir el concepto.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      const movement = state.cashMovements.find((row) => String(row?.id ?? '') === movementId);
+      if (!movement) { const error = new Error('Gasto de Caja Chica no encontrado.'); error.statusCode = 404; throw error; }
+      if (isArchivedAccountingRecord(movement) || movement?.voidedAt || String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado') {
+        const error = new Error('No se puede editar un movimiento anulado o eliminado.'); error.statusCode = 409; throw error;
+      }
+      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) >= 0 || movement?.isInternalTransfer) {
+        const error = new Error('Solo se pueden editar gastos activos de Caja Chica.'); error.statusCode = 409; throw error;
+      }
+      const oldAmountBs = Math.abs(Number(movement.amountBs ?? 0));
+      const availableIncludingCurrent = directMoney(getDirectCurrentCashBalance(state, 'PETTY_CASH') + oldAmountBs);
+      if (amountBs > availableIncludingCurrent) {
+        const error = new Error(`Caja Chica no tiene saldo suficiente. Maximo editable: Bs ${availableIncludingCurrent.toFixed(2)}.`);
+        error.statusCode = 400;
+        throw error;
+      }
+      const now = new Date().toISOString();
+      const previousSnapshot = {
+        amountBs: movement.amountBs, description: movement.description, category: movement.category,
+        paymentMethod: movement.paymentMethod, paymentAccount: movement.paymentAccount,
+        responsible: movement.responsible, receipt: movement.receipt, notes: movement.notes,
+      };
+      movement.amountBs = -amountBs;
+      movement.description = String(payload.description ?? '').trim();
+      movement.category = String(payload.category ?? movement.category ?? 'varios').trim();
+      movement.paymentMethod = directPaymentMethod(payload.paymentMethod ?? movement.paymentMethod);
+      movement.paymentAccount = directPaymentAccount(movement.paymentMethod, payload.paymentAccount ?? movement.paymentAccount);
+      movement.responsible = String(payload.responsible ?? movement.responsible ?? '').trim();
+      movement.receipt = String(payload.receipt ?? movement.receipt ?? '').trim();
+      movement.notes = String(payload.notes ?? movement.notes ?? '').trim();
+      movement.editedAt = now;
+      movement.editedBy = String(payload.updatedBy ?? payload.createdBy ?? 'Developer').trim() || 'Developer';
+      movement.editReason = String(payload.reason ?? 'Correccion de gasto desde Caja Chica.').trim();
+      movement.editHistory = [
+        ...(Array.isArray(movement.editHistory) ? movement.editHistory : []),
+        { ...previousSnapshot, changedAt: now, changedBy: movement.editedBy, reason: movement.editReason },
+      ];
+      movement.updatedAt = now;
+      responseData = { movement: structuredClone(movement), summary: summarizeDirectCashState(state) };
+      return state;
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.delete('/__copetin_db/cash/petty-expense/:movementId', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    requireDeveloperCashAction(payload);
+    const movementId = String(req.params.movementId ?? '').trim();
+    const reason = String(payload.reason ?? '').trim();
+    if (!movementId) return res.status(400).json({ error: 'Movimiento no identificado.' });
+    if (!reason) return res.status(400).json({ error: 'Debes indicar el motivo de eliminacion.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      const movement = state.cashMovements.find((row) => String(row?.id ?? '') === movementId);
+      if (!movement) { const error = new Error('Gasto de Caja Chica no encontrado.'); error.statusCode = 404; throw error; }
+      if (isArchivedAccountingRecord(movement)) {
+        responseData = { movement: structuredClone(movement), summary: summarizeDirectCashState(state), duplicated: true };
+        return state;
+      }
+      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) >= 0 || movement?.isInternalTransfer) {
+        const error = new Error('Solo se pueden eliminar gastos de Caja Chica.'); error.statusCode = 409; throw error;
+      }
+      const now = new Date().toISOString();
+      movement.deletedAt = now;
+      movement.deletedBy = String(payload.deletedBy ?? payload.createdBy ?? 'Developer').trim() || 'Developer';
+      movement.deletionReason = reason;
+      movement.updatedAt = now;
+      responseData = { movement: structuredClone(movement), summary: summarizeDirectCashState(state) };
+      return state;
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};

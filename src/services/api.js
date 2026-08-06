@@ -2749,13 +2749,42 @@ export const api = {
             ? '/cash/manual-economic-movement'
             : '/cash/movement';
           const result = await callDirectCashOperation(directPath, payload);
-          return result?.movement ?? result;
+          return result;
         } catch (error) {
           if (!shouldFallbackToBridgeOperation(error)) throw error;
           console.warn('[copetin-sync] Endpoint directo de caja no disponible; usando compatibilidad local.', error);
         }
       }
       return callBridge('cash', 'createManualMovement', true, payload);
+    },
+    updatePettyExpense: async (payload) => {
+      if (!shouldUseServerState()) throw new Error('La edicion atomica requiere conexion con el servidor.');
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      const response = await fetch(getServerStateUrl(`/cash/petty-expense/${encodeURIComponent(movementId)}`), {
+        method: 'PATCH', cache: 'no-store',
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo editar el gasto de Caja Chica.');
+      const result = await response.json();
+      if (result?.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      await applyDirectCashResultLocally(result);
+      announceDataChange({ domain: 'cash', method: 'updatePettyExpense' });
+      return result;
+    },
+    deletePettyExpense: async (payload) => {
+      if (!shouldUseServerState()) throw new Error('La eliminacion atomica requiere conexion con el servidor.');
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      const response = await fetch(getServerStateUrl(`/cash/petty-expense/${encodeURIComponent(movementId)}`), {
+        method: 'DELETE', cache: 'no-store',
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo eliminar el gasto de Caja Chica.');
+      const result = await response.json();
+      if (result?.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      announceDataChange({ domain: 'cash', method: 'deletePettyExpense' });
+      return result;
     },
     updateMovementReceipt: async (payload) => {
       if (shouldUseServerState()) return callDirectCashOperation('/cash/update-receipt-metadata', payload);

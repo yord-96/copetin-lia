@@ -1208,21 +1208,67 @@ export const useAppController = () => {
   const handleCreateCashMovement = async (payload) => {
     setError('');
     try {
-      const created = await api.cash.createManualMovement(payload);
-      const [summary, sessions, context] = await Promise.all([
-        api.cash.getSummary(),
-        api.cash.listSessions(),
-        api.cash.getAccountingContext(),
-      ]);
-      setCashSummary(summary);
-      setCashSessions(sessions);
-      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
-      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
-      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
-      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
+      const created = await api.cash.createManualMovement({
+        ...payload,
+        clientOperationId: payload?.clientOperationId
+          || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `cash-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+      });
+      const createdRows = [
+        ...(Array.isArray(created?.movements) ? created.movements : []),
+        created?.movement,
+      ].filter((movement) => movement?.id);
+      if (createdRows.length) {
+        setCashMovements((current) => {
+          const byId = new Map(current.map((movement) => [String(movement.id), movement]));
+          createdRows.forEach((movement) => byId.set(String(movement.id), movement));
+          return [...byId.values()];
+        });
+      }
+      if (created?.summary) setCashSummary((current) => ({ ...(current ?? {}), ...created.summary }));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el movimiento de caja.');
+      throw requestError;
+    }
+  };
+
+  const handleUpdatePettyExpense = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.updatePettyExpense({
+        ...payload,
+        userRole: getUserDisplayRole(currentUser),
+        updatedBy: getCurrentUserTrace().createdByName,
+      });
+      if (result?.movement?.id) {
+        setCashMovements((current) => current.map((movement) => (
+          String(movement?.id) === String(result.movement.id) ? result.movement : movement
+        )));
+      }
+      if (result?.summary) setCashSummary((current) => ({ ...(current ?? {}), ...result.summary }));
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo editar el gasto de Caja Chica.');
+      throw requestError;
+    }
+  };
+
+  const handleDeletePettyExpense = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.deletePettyExpense({
+        ...payload,
+        userRole: getUserDisplayRole(currentUser),
+        deletedBy: getCurrentUserTrace().createdByName,
+      });
+      const deletedId = result?.movement?.id ?? payload?.movementId;
+      if (deletedId) {
+        setCashMovements((current) => current.filter((movement) => String(movement?.id) !== String(deletedId)));
+      }
+      if (result?.summary) setCashSummary((current) => ({ ...(current ?? {}), ...result.summary }));
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo eliminar el gasto de Caja Chica.');
       throw requestError;
     }
   };
@@ -2748,6 +2794,8 @@ export const useAppController = () => {
     handleDeleteCashDebt,
     handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
+    handleUpdatePettyExpense,
+    handleDeletePettyExpense,
     handleVoidAndReplaceCashMovementReceipt,
     handleCollectReceivable,
     handleReceiveReturnedOrder,

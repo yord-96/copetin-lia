@@ -327,6 +327,8 @@ function AccountingSection({
   onOpenCashSession,
   onCloseCashSession,
   onCreateCashMovement,
+  onUpdatePettyExpense,
+  onDeletePettyExpense,
   onCreateCashDebt,
   onPayCashDebt,
   onDeleteCashDebt,
@@ -363,6 +365,7 @@ function AccountingSection({
     query: '',
   });
   const [cashModal, setCashModal] = useState(null);
+  const [editingPettyExpense, setEditingPettyExpense] = useState(null);
   const [advancePersonnelOptions, setAdvancePersonnelOptions] = useState([]);
   const [advancePersonnelLoading, setAdvancePersonnelLoading] = useState(false);
   const [advancePersonnelError, setAdvancePersonnelError] = useState('');
@@ -1583,8 +1586,45 @@ function AccountingSection({
     setPettyHistoryFilters((current) => ({ ...current, ...range }));
   };
 
+  const openEditPettyExpense = (movement) => {
+    if (!isDeveloperUser || !movement || isVoidedCashMovement(movement)) return;
+    setEditingPettyExpense(movement);
+    setCashForm({
+      amountBs: String(Math.abs(toNumber(movement.amountBs)) || ''),
+      description: movement.description || '',
+      category: movement.category || 'varios',
+      paymentMethod: movement.paymentMethod || 'efectivo',
+      paymentAccount: movement.paymentAccount || '',
+      responsible: movement.responsible || movement.createdBy || '',
+      receipt: movement.receipt || '',
+      notes: movement.notes || '',
+      linkedRentalId: movement.linkedRentalId || '',
+      debtId: '', supplierLoanId: '', debtKind: 'payable', debtDate: '', dueDate: '',
+      employeeId: '', documentId: '', requestDate: '',
+    });
+    setCashModal('expense');
+    setCashActionError('');
+    setCashActionFeedback('');
+  };
+
+  const handleDeletePettyExpenseAction = async (movement) => {
+    if (!isDeveloperUser || !movement || isVoidedCashMovement(movement)) return;
+    const reason = window.prompt('Motivo obligatorio para eliminar este gasto de Caja Chica:');
+    if (!String(reason ?? '').trim()) return;
+    if (!window.confirm(`Eliminar logicamente el gasto "${movement.description}" por ${formatBs(Math.abs(toNumber(movement.amountBs)))}?`)) return;
+    setCashActionError('');
+    try {
+      await onDeletePettyExpense?.({ movementId: movement.id, reason: String(reason).trim() });
+      setCashActionFeedback('Gasto eliminado correctamente. Se conservo la auditoria.');
+      void loadPettySector('expenses', { filters: { category: pettyCashTypeFilter, query: pettyCashQuery } });
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo eliminar el gasto.');
+    }
+  };
+
   const closeCashAction = () => {
     setCashModal(null);
+    setEditingPettyExpense(null);
     setAdvancePeopleQuery('');
     setCashActionError('');
   };
@@ -1820,6 +1860,21 @@ function AccountingSection({
       } else if (cashModal === 'expense') {
         const linkedTransportOption = transportContractOptions.find((entry) => entry.rentalId === cashForm.linkedRentalId) ?? null;
         const isTransportExpense = Boolean(linkedTransportOption) || String(cashForm.category ?? '').toLowerCase() === 'transporte';
+        if (editingPettyExpense) {
+          await onUpdatePettyExpense?.({
+            movementId: editingPettyExpense.id,
+            amountBs,
+            description: cashForm.description,
+            category: cashForm.category,
+            paymentMethod: cashForm.paymentMethod,
+            paymentAccount: cashForm.paymentMethod === 'qr' ? cashForm.paymentAccount : '',
+            responsible: cashForm.responsible || currentUserName,
+            receipt: cashForm.receipt,
+            notes: cashForm.notes,
+            reason: 'Edicion manual autorizada por Developer.',
+          });
+          setCashActionFeedback('Gasto de Caja Chica actualizado.');
+        } else {
         const created = await onCreateCashMovement?.({
           type: 'egreso',
           cashBoxType: 'PETTY_CASH',
@@ -1840,6 +1895,7 @@ function AccountingSection({
         });
         await printCashReceipt(resolvePrintableCashMovementId(created, 'PETTY_CASH'));
         setCashActionFeedback('Gasto registrado en Caja Chica.');
+        }
       } else if (cashModal === 'advance') {
         const employee = personnelEmployees.find((entry) => String(entry.id) === String(cashForm.employeeId)) ?? null;
         if (!employee) {
@@ -2076,7 +2132,7 @@ function AccountingSection({
   const getCashModalTitle = () => {
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
-    if (cashModal === 'expense') return 'Registrar gasto de Caja Chica';
+    if (cashModal === 'expense') return editingPettyExpense ? 'Editar gasto de Caja Chica' : 'Registrar gasto de Caja Chica';
     if (cashModal === 'advance') return 'Registrar adelanto de personal';
     if (cashModal === 'debt') return 'Registrar deuda';
     if (cashModal === 'payDebt') return 'Pagar deuda';
@@ -2108,6 +2164,16 @@ function AccountingSection({
         >
           Recibo
         </button>
+        {isDeveloperUser && isPettyCash(movement) && Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer ? (
+          <>
+            <button type="button" className="cash-receipt-action" onClick={() => openEditPettyExpense(movement)} title="Editar gasto de Caja Chica">
+              Editar
+            </button>
+            <button type="button" className="cash-receipt-action danger" onClick={() => handleDeletePettyExpenseAction(movement)} title="Eliminar logicamente conservando auditoria">
+              Eliminar
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="cash-receipt-action danger"
