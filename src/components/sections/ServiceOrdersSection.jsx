@@ -439,6 +439,7 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
     cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
     cashRegisteredAt: entry?.cashRegisteredAt ?? null,
+    cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
     deletedAt: entry?.deletedAt ?? null,
     deletedById: entry?.deletedById ?? null,
@@ -446,6 +447,16 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     deletionReason: String(entry?.deletionReason ?? '').trim(),
   };
 };
+
+const isCashCollectedDamageLedgerEntry = (entry) => (
+  entry?.type === 'charge'
+  && entry?.cashCollectionTarget === 'damage'
+  && Boolean(
+    entry?.isCashRegistered
+    || String(entry?.cashMovementId ?? '').trim()
+    || String(entry?.cashReceiptCode ?? '').trim()
+  )
+);
 
 const getEconomicInternalNotes = (contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
   .map(normalizeEconomicLedgerEntry)
@@ -2169,7 +2180,7 @@ function ServiceOrdersSection({
       const rowLedgerTotals = economicLedger.reduce((totals, entry) => {
         if (entry.type === 'deposit') totals.receivedBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'guarantee') totals.guaranteeBs += toMoneyNumber(entry.amountBs);
-        if (entry.type === 'charge') totals.chargesBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'refund') totals.refundedBs += toMoneyNumber(entry.amountBs);
         return totals;
       }, {
@@ -3073,7 +3084,7 @@ function ServiceOrdersSection({
     const ledgerTotals = economicLedger.reduce((totals, entry) => {
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
-      if (entry.type === 'charge') totals.chargesBs += entry.amountBs;
+      if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
       if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
       return totals;
     }, {
@@ -3548,7 +3559,7 @@ function ServiceOrdersSection({
     const ledgerTotals = ledger.reduce((totals, entry) => {
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
-      if (entry.type === 'charge') totals.chargesBs += entry.amountBs;
+      if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
       if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
       return totals;
     }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, refundedBs: 0 });
@@ -7577,29 +7588,51 @@ function ServiceOrdersSection({
         .filter((entry) => ['rental', 'transport', 'balance'].includes(entry.target))
         .reduce((sum, entry) => sum + toMoneyNumber(entry.amountBs), 0)
         .toFixed(2));
-      if (commercialCollectionBs > 0 && movementId) {
+      const damageCollectionBs = Number(collectionBreakdown
+        .filter((entry) => entry.target === 'damage')
+        .reduce((sum, entry) => sum + toMoneyNumber(entry.amountBs), 0)
+        .toFixed(2));
+      if ((commercialCollectionBs > 0 || damageCollectionBs > 0) && movementId) {
         const currentLedger = contractEconomicsData.economicLedger ?? [];
         const alreadyLinked = currentLedger.some(
           (entry) => String(entry?.cashMovementId ?? '') === String(movementId),
         );
         if (!alreadyLinked) {
+          const createdAt = movement?.createdAt ?? new Date().toISOString();
+          const linkedEntries = [];
+          if (commercialCollectionBs > 0) {
+            linkedEntries.push({
+              id: `eco-cash-${movementId}`,
+              type: 'deposit',
+              amountBs: commercialCollectionBs,
+              paymentMethod,
+              paymentAccount,
+              note: defaultNote,
+              createdAt,
+              createdByName: createdBy,
+              cashMovementId: movementId,
+              cashReceiptCode: receiptCode,
+              isCashRegistered: true,
+            });
+          }
+          if (damageCollectionBs > 0) {
+            linkedEntries.push({
+              id: `eco-damage-cash-${movementId}`,
+              type: 'charge',
+              amountBs: damageCollectionBs,
+              paymentMethod,
+              paymentAccount,
+              note: defaultNote || `Cobro de daños/faltantes del contrato ${contractEconomicsData.contract?.contractCode || ''}.`,
+              createdAt,
+              createdByName: createdBy,
+              cashMovementId: movementId,
+              cashReceiptCode: receiptCode,
+              isCashRegistered: true,
+              cashCollectionTarget: 'damage',
+            });
+          }
           await saveContractEconomicLedgerRows(
-            [
-              ...currentLedger,
-              {
-                id: `eco-cash-${movementId}`,
-                type: 'deposit',
-                amountBs: commercialCollectionBs,
-                paymentMethod,
-                paymentAccount,
-                note: defaultNote,
-                createdAt: movement?.createdAt ?? new Date().toISOString(),
-                createdByName: createdBy,
-                cashMovementId: movementId,
-                cashReceiptCode: receiptCode,
-                isCashRegistered: true,
-              },
-            ],
+            [...currentLedger, ...linkedEntries],
             '',
             { force: true },
           );
