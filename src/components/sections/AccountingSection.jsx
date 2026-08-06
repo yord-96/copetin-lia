@@ -102,9 +102,11 @@ const isVoidedCashMovement = (movement) =>
   String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado'
   || Boolean(movement?.voidedAt);
 const isArchivedAccountingRecord = (record) => Boolean(
-  record?.accountingArchivedAt
+  record?.deletedAt
+  || record?.accountingArchivedAt
   || record?.accountingPeriodStatus === 'archived'
 );
+const isDeletedCashMovement = (movement) => Boolean(movement?.deletedAt);
 
 
 const PAYMENT_METHOD_META = {
@@ -419,6 +421,7 @@ function AccountingSection({
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
   const [debtActionMenuId, setDebtActionMenuId] = useState('');
+  const [pettyExpenseActionMenuId, setPettyExpenseActionMenuId] = useState('');
   const [advancePeopleQuery, setAdvancePeopleQuery] = useState('');
   const cashSubmitLockRef = useRef(false);
 
@@ -2143,6 +2146,14 @@ function AccountingSection({
   };
 
   const renderReceiptActions = (movement) => {
+    if (isDeletedCashMovement(movement)) {
+      return (
+        <div className="cash-receipt-status">
+          <span className="cash-receipt-voided">Eliminado</span>
+          {movement.deletionReason ? <small title={movement.deletionReason}>{movement.deletionReason}</small> : null}
+        </div>
+      );
+    }
     if (isVoidedCashMovement(movement)) {
       return (
         <div className="cash-receipt-status">
@@ -2154,6 +2165,45 @@ function AccountingSection({
     if (!canPrintCashMovement(movement)) {
       return <span className="cash-receipt-muted">Sin recibo</span>;
     }
+    const isActivePettyExpense = isPettyCash(movement)
+      && Number(movement?.amountBs ?? 0) < 0
+      && !movement?.isInternalTransfer;
+    if (isActivePettyExpense) {
+      return (
+        <div className="petty-debt-actions">
+          <div className="petty-debt-menu">
+            <button
+              type="button"
+              className="petty-debt-menu-button"
+              aria-label={`Opciones del gasto ${movement.description || movement.id}`}
+              onClick={() => setPettyExpenseActionMenuId((current) => current === movement.id ? '' : movement.id)}
+            >
+              ⋮
+            </button>
+            {pettyExpenseActionMenuId === movement.id ? (
+              <div className="petty-debt-menu-popover">
+                <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); printCashReceipt(movement); }}>
+                  Recibo
+                </button>
+                {isDeveloperUser ? (
+                  <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); openEditPettyExpense(movement); }}>
+                    Editar
+                  </button>
+                ) : null}
+                {isDeveloperUser ? (
+                  <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); handleDeletePettyExpenseAction(movement); }}>
+                    Eliminar
+                  </button>
+                ) : null}
+                <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); openVoidReceiptAction(movement); }}>
+                  Anular
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="cash-receipt-actions">
         <button
@@ -2164,16 +2214,6 @@ function AccountingSection({
         >
           Recibo
         </button>
-        {isDeveloperUser && isPettyCash(movement) && Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer ? (
-          <>
-            <button type="button" className="cash-receipt-action" onClick={() => openEditPettyExpense(movement)} title="Editar gasto de Caja Chica">
-              Editar
-            </button>
-            <button type="button" className="cash-receipt-action danger" onClick={() => handleDeletePettyExpenseAction(movement)} title="Eliminar logicamente conservando auditoria">
-              Eliminar
-            </button>
-          </>
-        ) : null}
         <button
           type="button"
           className="cash-receipt-action danger"
@@ -4209,7 +4249,11 @@ function AccountingSection({
                         && ['movilidad', 'transporte'].includes(String(movement?.category ?? '').toLowerCase())
                       );
                     return (
-                      <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
+                      <tr
+                        key={movement.id}
+                        className={isVoidedCashMovement(movement) || isDeletedCashMovement(movement) ? 'cash-row-voided' : ''}
+                        title={isDeletedCashMovement(movement) ? `Eliminado: ${movement.deletionReason || 'sin motivo'}` : undefined}
+                      >
                         <td>
                           <strong>{formatDate(movement.createdAt)}</strong>
                           <small>{getLongHourLabel(movement.createdAt)}</small>

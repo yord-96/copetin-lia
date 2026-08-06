@@ -140,6 +140,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'linkedContractId', 'linkedOrderCode', 'contractCode', 'orderCode', 'reference',
     'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
     'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
+    'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
@@ -391,7 +392,8 @@ const assertDeveloperDatabaseAccess = (state, { code, userId } = {}) => {
 };
 
 const isArchivedAccountingRecord = (record) => Boolean(
-  record?.accountingArchivedAt
+  record?.deletedAt
+  || record?.accountingArchivedAt
   || record?.accountingPeriodStatus === 'archived'
 );
 
@@ -3987,7 +3989,9 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     };
 
     const pettyMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
-      .filter((movement) => !isArchivedAccountingRecord(movement))
+      // Los eliminados siguen visibles en Caja Chica como historial tachado,
+      // pero summarizeDirectCashState ya los excluye de saldos y totales.
+      .filter((movement) => !movement?.accountingArchivedAt && movement?.accountingPeriodStatus !== 'archived')
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
     let rows;
     if (sector === 'suppliers') {
