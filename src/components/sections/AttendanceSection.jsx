@@ -367,19 +367,35 @@ function AttendanceSection({
           <div className="attendance-photo-picker">
             <span className="attendance-photo-title">Evidencia fotográfica</span>
 
-            <div className={`attendance-photo-action${!canMark ? ' is-disabled' : ''}`}>
-              <span className="attendance-photo-action-label" aria-hidden="true">
-                {photoDraft ? '📷 Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
-              </span>
-              <input
-                id="attendance-photo-input"
-                className="attendance-photo-input"
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-                disabled={!canMark}
-                aria-label={photoDraft ? 'Cambiar o volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
-              />
+            <div className="attendance-photo-native-grid">
+              <div className="attendance-photo-native-box">
+                <strong>📷 Tomar foto</strong>
+                <small>Abre la cámara del celular.</small>
+                <input
+                  id="attendance-photo-camera-input"
+                  className="attendance-photo-native-input"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  disabled={!canMark}
+                  aria-label="Tomar foto con la cámara"
+                />
+              </div>
+
+              <div className="attendance-photo-native-box">
+                <strong>🖼️ Buscar foto</strong>
+                <small>Selecciona una imagen guardada en el dispositivo.</small>
+                <input
+                  id="attendance-photo-gallery-input"
+                  className="attendance-photo-native-input"
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  disabled={!canMark}
+                  aria-label="Buscar foto en galería o archivos"
+                />
+              </div>
             </div>
 
             {photoDraft ? (
