@@ -426,17 +426,22 @@ const preserveLocalDetailsInSummaries = async (state) => {
     const currentContractsById = new Map((Array.isArray(current?.contracts) ? current.contracts : [])
       .map((row) => [String(row?.id ?? '').trim(), row])
       .filter(([id]) => id));
-    nextState.contracts = state.contracts.map((row) => mergeSummaryRecordDetails(
-      row,
-      currentContractsById.get(String(row?.id ?? '').trim()),
-      [
-        'economicLedger',
-        'revisionHistory',
-        'supplierFulfillmentPlan',
-        'pricingPlan',
-        'deletionSnapshot',
-      ],
-    ));
+    nextState.contracts = state.contracts.map((row) => {
+      const currentRow = currentContractsById.get(String(row?.id ?? '').trim());
+      const incomingIsResetAuthoritative = Boolean(row?.economicResetAt)
+        || Number(row?.economicResetVersion ?? 0) >= 1;
+      return mergeSummaryRecordDetails(
+        row,
+        currentRow,
+        [
+          ...(incomingIsResetAuthoritative ? [] : ['economicLedger']),
+          'revisionHistory',
+          'supplierFulfillmentPlan',
+          'pricingPlan',
+          'deletionSnapshot',
+        ],
+      );
+    });
   }
 
   if (hasSummarizedRentals) {
@@ -1946,6 +1951,34 @@ const fetchContractEconomicContext = async (identifier) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
   try {
+    try {
+      const repairResponse = await fetch(
+        getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-ledger/repair-legacy-reset`),
+        {
+          method: 'POST',
+          cache: 'no-store',
+          headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({}),
+        },
+      );
+      if (repairResponse.ok) {
+        const repairResult = await repairResponse.json();
+        if (repairResult?.revision) {
+          lastSharedRevision = repairResult.revision;
+          setCachedServerRevision(repairResult.revision);
+        }
+        if (repairResult?.repaired && repairResult?.contract?.id) {
+          rememberFullRecordCache(
+            fullContractCache,
+            repairResult.contract,
+            [requestedId, repairResult.contract.id, repairResult.contract.contractCode],
+          );
+        }
+      }
+    } catch (repairError) {
+      console.warn('[economic-ledger] No se pudo comprobar reparacion legacy; se continuara con la lectura.', repairError);
+    }
+
     const response = await fetch(
       getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/economic-context`),
       {

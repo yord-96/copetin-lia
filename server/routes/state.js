@@ -892,6 +892,154 @@ const resolveServiceOrderForContract = (serviceOrders, contract, rental = null) 
   }) ?? null;
 };
 
+
+const isLegacySyntheticEconomicEntry = (entry, contract = null) => {
+  if (!entry || entry?.deletedAt) return false;
+  const entryId = String(entry?.id ?? '').trim().toLowerCase();
+  const note = String(entry?.note ?? '').trim().toLowerCase();
+  const contractId = String(contract?.id ?? '').trim().toLowerCase();
+  const exactInitialId = contractId ? `initial-payment-${contractId}` : '';
+  const exactGuaranteeId = contractId ? `validated-guarantee-${contractId}` : '';
+  return (
+    (entry?.type === 'deposit' && (
+      (exactInitialId && entryId === exactInitialId)
+      || note === 'pago inicial registrado al crear el contrato.'
+      || note === 'pago inicial registrado al crear el contrato'
+    ))
+    || (entry?.type === 'guarantee' && (
+      (exactGuaranteeId && entryId === exactGuaranteeId)
+      || entryId.includes('garantia-validada')
+      || note === 'garantia pagada registrada al crear el contrato.'
+      || note === 'garantia pagada registrada al crear el contrato'
+    ))
+  );
+};
+
+const getLegacyResetRevivalRepair = (contract = {}) => {
+  const ledger = normalizeEconomicLedgerRows(contract?.economicLedger).filter((entry) => !entry?.deletedAt);
+  const legacyEntries = ledger.filter((entry) => isLegacySyntheticEconomicEntry(entry, contract));
+  const modernEntries = ledger.filter((entry) => !isLegacySyntheticEconomicEntry(entry, contract));
+  const hasLegacyInitial = legacyEntries.some((entry) => entry.type === 'deposit');
+  const hasLegacyGuarantee = legacyEntries.some((entry) => entry.type === 'guarantee');
+  const linkedModernEntries = modernEntries.filter((entry) =>
+    String(entry?.cashMovementId ?? '').trim()
+    || String(entry?.cashReceiptCode ?? '').trim()
+  );
+  const ledgerUpdatedAtMs = new Date(contract?.economicLedgerUpdatedAt ?? 0).getTime() || 0;
+  const createdAtMs = new Date(
+    contract?.approvedAt
+    ?? contract?.createdAt
+    ?? contract?.contractDate
+    ?? 0,
+  ).getTime() || 0;
+  const updatedAfterCreation = ledgerUpdatedAtMs > 0
+    && (!createdAtMs || ledgerUpdatedAtMs - createdAtMs > 60 * 1000);
+
+  const shouldRepair = !contract?.economicResetAt
+    && Number(contract?.economicResetVersion ?? 0) < 1
+    && hasLegacyInitial
+    && hasLegacyGuarantee
+    && modernEntries.length >= 3
+    && linkedModernEntries.length >= 2
+    && updatedAfterCreation;
+
+  return { shouldRepair, legacyEntries, modernEntries };
+};
+
+router.post('/__copetin_db/contracts/:id/economic-ledger/repair-legacy-reset', async (req, res, next) => {
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      const requestedKey = normalizeEconomicContextKey(requestedId);
+      const matchingContracts = state.contracts.filter((entry) => [
+        entry?.id,
+        entry?.contractCode,
+        entry?.number,
+        entry?.orderCode,
+        entry?.rentalId,
+      ].some((value) => normalizeEconomicContextKey(value) === requestedKey));
+      const contract = matchingContracts.find((entry) => !entry?.deletedAt)
+        ?? matchingContracts[0]
+        ?? null;
+
+      if (!contract) {
+        const error = new Error('Contrato no encontrado para reparar el cuaderno economico.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const repair = getLegacyResetRevivalRepair(contract);
+      if (!repair.shouldRepair) {
+        responseData = {
+          repaired: false,
+          contract: structuredClone(contract),
+          removedLegacyRows: 0,
+        };
+        return state;
+      }
+
+      const now = new Date().toISOString();
+      const repairUserId = contract?.economicLedgerUpdatedById ?? null;
+      const repairUserName = String(
+        contract?.economicLedgerUpdatedByName
+        ?? req.body?.updatedByName
+        ?? req.body?.userName
+        ?? 'Sistema',
+      ).trim() || 'Sistema';
+
+      contract.economicLedger = repair.modernEntries;
+      contract.economicResetAt = contract?.economicLedgerUpdatedAt ?? now;
+      contract.economicResetVersion = 1;
+      contract.economicLedgerUpdatedAt = now;
+      contract.economicLedgerUpdatedById = repairUserId;
+      contract.economicLedgerUpdatedByName = repairUserName;
+
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.systemAuditLog.unshift({
+        id: directId('audit'),
+        type: 'contract_economic_legacy_repair',
+        action: 'reparar_lineas_legacy_post_reset',
+        entityType: 'contract',
+        entityId: contract.id,
+        entityCode: contract.contractCode ?? '',
+        detail: `Se retiraron ${repair.legacyEntries.length} linea(s) sintetica(s) legacy revividas despues de actividad economica reconstruida.`,
+        userId: repairUserId,
+        userName: repairUserName,
+        createdAt: now,
+      });
+
+      responseData = {
+        repaired: true,
+        contract: structuredClone(contract),
+        removedLegacyRows: repair.legacyEntries.length,
+      };
+      return state;
+    });
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      ...responseData,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/contracts/:id/economic-context', async (req, res, next) => {
   try {
     const requestedId = String(req.params.id ?? '').trim();

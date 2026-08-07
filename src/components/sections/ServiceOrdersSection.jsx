@@ -2868,6 +2868,20 @@ function ServiceOrdersSection({
         return entryNote.includes('reset economico')
           || (entryNote.includes('conservad') && entryNote.includes('reset'));
       });
+    const hasAuthoritativeEconomicLedger = storedEconomicLedger.some((entry) => {
+      const entryId = normalizeText(entry?.id);
+      const entryNote = normalizeText(entry?.note);
+      const isLegacySynthetic = (
+        entryId.includes('initial-payment')
+        || entryId.includes('validated-guarantee')
+        || entryId.includes('garantia-validada')
+        || entryNote === 'pago inicial registrado al crear el contrato.'
+        || entryNote === 'pago inicial registrado al crear el contrato'
+        || entryNote === 'garantia pagada registrada al crear el contrato.'
+        || entryNote === 'garantia pagada registrada al crear el contrato'
+      );
+      return !isLegacySynthetic && !entry?.deletedAt;
+    });
     const hasInitialPaymentEntry = initialPaymentBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'deposit') return false;
       const entryId = normalizeText(entry.id);
@@ -2899,7 +2913,7 @@ function ServiceOrdersSection({
       );
     });
     const economicLedgerBaseUnfiltered = [
-      ...(initialPaymentBs > 0 && !hasEconomicResetLedger && !hasInitialPaymentEntry
+      ...(initialPaymentBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasInitialPaymentEntry
         ? [{
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'deposit',
@@ -2922,7 +2936,7 @@ function ServiceOrdersSection({
           editedByName: '',
         }]
         : []),
-      ...(guaranteeValidatedBs > 0 && !hasEconomicResetLedger && !hasValidatedGuaranteeEntry
+      ...(guaranteeValidatedBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasValidatedGuaranteeEntry
         ? [{
           id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'guarantee',

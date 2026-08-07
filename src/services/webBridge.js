@@ -2636,6 +2636,20 @@ const normalizeState = (state) => {
           return entryNote.includes('reset economico')
             || (entryNote.includes('conservad') && entryNote.includes('reset'));
         });
+      const hasAuthoritativeEconomicLedger = normalizedEconomicLedger.some((entry) => {
+        const entryId = normalizeText(entry?.id);
+        const entryNote = normalizeText(entry?.note);
+        const isLegacySynthetic = (
+          entryId.includes('initial-payment')
+          || entryId.includes('validated-guarantee')
+          || entryId.includes('garantia-validada')
+          || entryNote === 'pago inicial registrado al crear el contrato.'
+          || entryNote === 'pago inicial registrado al crear el contrato'
+          || entryNote === 'garantia pagada registrada al crear el contrato.'
+          || entryNote === 'garantia pagada registrada al crear el contrato'
+        );
+        return !isLegacySynthetic && !entry?.deletedAt;
+      });
       const hasInitialPaymentEntry = paidAtApprovalBs > 0 && normalizedEconomicLedger.some((entry) => {
         if (entry.type !== 'deposit') return false;
         const sameAmount = Math.abs(Number(entry.amountBs ?? 0) - paidAtApprovalBs) < 0.01;
@@ -2661,7 +2675,7 @@ const normalizeState = (state) => {
           || entryNote.includes('ingreso garantia')
         );
       });
-      if (paidAtApprovalBs > 0 && !hasEconomicResetLedger && !hasInitialPaymentEntry) {
+      if (paidAtApprovalBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasInitialPaymentEntry) {
         normalizedEconomicLedger.unshift({
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
           type: 'deposit',
@@ -2685,7 +2699,7 @@ const normalizeState = (state) => {
           editedByName: '',
         });
       }
-      if (guaranteeStatus === 'validado' && guaranteeBs > 0 && !hasEconomicResetLedger && !hasValidatedGuaranteeEntry) {
+      if (guaranteeStatus === 'validado' && guaranteeBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasValidatedGuaranteeEntry) {
         normalizedEconomicLedger.unshift({
           id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? makeId('con')}`,
           type: 'guarantee',
