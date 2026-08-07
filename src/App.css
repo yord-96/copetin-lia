@@ -2620,8 +2620,20 @@
   font-weight: 700;
 }
 
-.attendance-photo-picker input {
-  display: none;
+.attendance-photo-picker input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .attendance-photo-picker span {
@@ -66887,5 +66899,29 @@ body:has(.accounting-bigcash-view) .workspace {
   .accounting-redesign .petty-side {
     grid-column: 1;
     grid-row: auto;
+  }
+}
+
+
+/* Asistencia: selector de foto compatible con navegadores móviles.
+   El input no puede usar display:none porque algunos WebView/Chrome Android
+   no abren el picker desde un label asociado a un file input no renderizado. */
+.attendance-photo-picker label[for="attendance-photo-input"] {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .attendance-photo-picker label[for="attendance-photo-input"] {
+    position: relative;
+    z-index: 2;
+    pointer-events: auto !important;
+  }
+
+  .attendance-photo-picker input[type="file"] {
+    display: block !important;
   }
 }
