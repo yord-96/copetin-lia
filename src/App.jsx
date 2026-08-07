@@ -581,6 +581,7 @@ function AdminApp() {
             currentUser={controller.currentUser}
             formatDateTime={formatDateTime}
             canMark={canMarkAttendance}
+            onLoadRecords={controller.handleLoadAttendanceRecords}
             onCreateRecord={canMarkAttendance ? controller.handleCreateAttendanceRecord : undefined}
           />
         )}

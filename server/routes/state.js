@@ -2447,6 +2447,177 @@ router.get('/__copetin_db/personnel/options', async (req, res, next) => {
   }
 });
 
+
+const nextDirectAttendanceCode = (state) => {
+  const maxPersisted = (Array.isArray(state?.attendanceRecords) ? state.attendanceRecords : [])
+    .reduce((max, record) => {
+      const match = String(record?.code ?? '').match(/^ASI-(\d+)$/i);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+  return `ASI-${String(maxPersisted + 1).padStart(5, '0')}`;
+};
+
+const getAttendanceClientDateKey = (value, timezoneOffsetMinutes = 0) => {
+  const time = new Date(value ?? 0).getTime();
+  if (!Number.isFinite(time)) return '';
+  return new Date(time - Number(timezoneOffsetMinutes || 0) * 60000).toISOString().slice(0, 10);
+};
+
+const summarizeAttendanceRecord = (record = {}) => ({
+  id: record.id,
+  code: record.code ?? '',
+  type: record.type ?? '',
+  location: record.location ?? '',
+  reason: record.reason ?? '',
+  photoUrl: record.photoUrl ?? '',
+  photoMimeType: record.photoMimeType ?? '',
+  photoSizeBytes: Number(record.photoSizeBytes ?? 0) || 0,
+  photoWidth: record.photoWidth ?? null,
+  photoHeight: record.photoHeight ?? null,
+  latitude: record.latitude ?? null,
+  longitude: record.longitude ?? null,
+  capturedAt: record.capturedAt ?? record.createdAt ?? null,
+  createdAt: record.createdAt ?? record.capturedAt ?? null,
+  userId: record.userId ?? '',
+  userName: record.userName ?? '',
+  role: record.role ?? '',
+  notes: record.notes ?? '',
+});
+
+router.get('/__copetin_db/attendance', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const dateFrom = String(req.query?.dateFrom ?? '').trim();
+    const dateTo = String(req.query?.dateTo ?? dateFrom).trim();
+    const type = String(req.query?.type ?? 'all').trim().toLowerCase();
+    const query = String(req.query?.query ?? '').trim().toLowerCase();
+    const timezoneOffsetMinutes = Number(req.query?.timezoneOffsetMinutes ?? 0) || 0;
+    const limit = Math.min(1000, Math.max(20, Number.parseInt(req.query?.limit, 10) || 300));
+
+    const rows = (Array.isArray(snapshot?.state?.attendanceRecords) ? snapshot.state.attendanceRecords : [])
+      .filter((record) => {
+        const dateKey = getAttendanceClientDateKey(record?.capturedAt ?? record?.createdAt, timezoneOffsetMinutes);
+        if (dateFrom && dateKey < dateFrom) return false;
+        if (dateTo && dateKey > dateTo) return false;
+        if (type !== 'all' && String(record?.type ?? '').toLowerCase() !== type) return false;
+        if (query) {
+          const haystack = [
+            record?.code,
+            record?.userName,
+            record?.location,
+            record?.reason,
+            record?.type,
+          ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+          if (!haystack.includes(query)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b?.capturedAt ?? b?.createdAt ?? 0) - new Date(a?.capturedAt ?? a?.createdAt ?? 0))
+      .slice(0, limit)
+      .map(summarizeAttendanceRecord);
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      records: rows,
+      total: rows.length,
+      revision: snapshot?.revision ?? null,
+      version: snapshot?.version ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/attendance', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const type = String(payload?.type ?? '').trim().toLowerCase();
+    const location = String(payload?.location ?? '').trim();
+    const reason = String(payload?.reason ?? '').trim();
+    const photoUrl = String(payload?.photoUrl ?? '').trim();
+    const userName = String(payload?.userName ?? payload?.createdBy ?? '').trim() || 'Usuario';
+    const userId = String(payload?.userId ?? '').trim();
+    const role = String(payload?.role ?? '').trim();
+    const clientOperationId = String(payload?.clientOperationId ?? '').trim();
+
+    if (!['entrada', 'salida'].includes(type)) {
+      res.status(400).json({ error: 'Debes seleccionar si es entrada o salida.' });
+      return;
+    }
+    if (!location) {
+      res.status(400).json({ error: 'Debes registrar la ubicacion.' });
+      return;
+    }
+    if (!reason) {
+      res.status(400).json({ error: 'Debes indicar el motivo.' });
+      return;
+    }
+    if (!photoUrl) {
+      res.status(400).json({ error: 'Debes tomar o subir una foto para respaldar la marca.' });
+      return;
+    }
+
+    let responseRecord = null;
+    let duplicated = false;
+    const result = await updateStateSnapshot((state) => {
+      state.attendanceRecords = Array.isArray(state.attendanceRecords) ? state.attendanceRecords : [];
+
+      if (clientOperationId) {
+        const duplicate = state.attendanceRecords.find(
+          (record) => String(record?.clientOperationId ?? '') === clientOperationId,
+        );
+        if (duplicate) {
+          responseRecord = structuredClone(duplicate);
+          duplicated = true;
+          return state;
+        }
+      }
+
+      const capturedAt = new Date().toISOString();
+      const record = {
+        id: directId('att'),
+        code: nextDirectAttendanceCode(state),
+        type,
+        location,
+        reason,
+        photoDataUrl: '',
+        photoUrl,
+        photoMimeType: String(payload?.photoMimeType ?? '').trim(),
+        photoSizeBytes: Number(payload?.photoSizeBytes ?? 0) || 0,
+        photoWidth: payload?.photoWidth ?? null,
+        photoHeight: payload?.photoHeight ?? null,
+        latitude: payload?.latitude ?? null,
+        longitude: payload?.longitude ?? null,
+        capturedAt,
+        createdAt: capturedAt,
+        userId,
+        userName,
+        role,
+        notes: String(payload?.notes ?? '').trim(),
+        createdBy: String(payload?.createdBy ?? userName).trim() || userName,
+        clientOperationId: clientOperationId || null,
+      };
+      state.attendanceRecords.push(record);
+      responseRecord = structuredClone(record);
+      return state;
+    });
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(duplicated ? 200 : 201).json({
+      ok: true,
+      record: summarizeAttendanceRecord(responseRecord),
+      duplicated,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/cash/movement', async (req, res, next) => {
   try {
     const rawPayload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};

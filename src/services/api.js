@@ -732,6 +732,66 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
   }
 };
 
+
+const fetchAttendanceRecordsDirect = async (filters = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('attendance', 'listRecords', false);
+  }
+  const params = new URLSearchParams();
+  const dateFrom = String(filters?.dateFrom ?? '').trim();
+  const dateTo = String(filters?.dateTo ?? '').trim();
+  const type = String(filters?.type ?? 'all').trim();
+  const query = String(filters?.query ?? '').trim();
+  if (dateFrom) params.set('dateFrom', dateFrom);
+  if (dateTo) params.set('dateTo', dateTo);
+  if (type) params.set('type', type);
+  if (query) params.set('query', query);
+  params.set('timezoneOffsetMinutes', String(new Date().getTimezoneOffset()));
+  params.set('limit', String(Math.min(1000, Math.max(20, Number(filters?.limit ?? 300) || 300))));
+
+  const response = await fetch(getServerStateUrl(`/attendance?${params.toString()}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar la asistencia.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  return Array.isArray(result?.records) ? result.records : [];
+};
+
+const createAttendanceRecordDirect = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('attendance', 'createRecord', true, payload);
+  }
+  const response = await fetch(getServerStateUrl('/attendance'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo registrar la asistencia.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+    lastSharedSyncAt = Date.now();
+    hasLoadedServerState = true;
+  }
+  announceDataChange({
+    domain: 'attendance',
+    method: 'createRecord',
+    collections: ['attendanceRecords'],
+  });
+  return result?.record ?? null;
+};
+
 const fetchServerMeta = async () => {
   const response = await fetch(getServerStateUrl('?meta=1'), {
     cache: 'no-store',
@@ -2834,8 +2894,8 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
-    listRecords: async () => { await ensureServerCollectionsLoaded(['attendanceRecords'], 'attendance-records'); return callBridge('attendance', 'listRecords', false); },
-    createRecord: (payload) => callBridge('attendance', 'createRecord', true, payload),
+    listRecords: (filters) => fetchAttendanceRecordsDirect(filters),
+    createRecord: (payload) => createAttendanceRecordDirect(payload),
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),

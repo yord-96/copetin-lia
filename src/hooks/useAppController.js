@@ -316,10 +316,7 @@ export const useAppController = () => {
     let group = null;
     let loader = null;
     const activeInventoryTab = String(activeTab);
-    if (activeTab === 'asistencia') {
-      group = 'attendance';
-      loader = async () => setAttendanceRecords(await api.attendance.listRecords());
-    } else if (activeTab === 'personal') {
+    if (activeTab === 'personal') {
       group = 'personnel';
       loader = async () => setPersonnelBundle(await api.personnel.listBundle());
     } else if (activeTab === 'recibos') {
@@ -486,6 +483,31 @@ export const useAppController = () => {
       // El reemplazo silencioso ya actualizó la base local. No reconstruimos
       // todas las vistas inmediatamente porque bloquea la navegación en PC.
       if (isBackgroundStateReplacement && !isRemoteChange) return;
+
+      if (activeTab === 'asistencia') {
+        const changedCollections = Array.isArray(event?.collections) ? event.collections : [];
+        const attendanceChanged = event?.domain === 'attendance'
+          || changedCollections.includes('attendanceRecords');
+        if (attendanceChanged) {
+          window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(async () => {
+            try {
+              const today = new Date();
+              const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+                .toISOString().slice(0, 10);
+              const records = await api.attendance.listRecords({
+                dateFrom: localToday,
+                dateTo: localToday,
+                limit: 300,
+              });
+              if (!disposed) setAttendanceRecords(records);
+            } catch (refreshError) {
+              console.warn('[copetin] No se pudo refrescar asistencia.', refreshError);
+            }
+          }, 100);
+        }
+        return;
+      }
 
       // Ordenes no necesita una recarga global para reflejar un cambio de
       // Movimientos. Sincroniza solamente alquileres y actualiza React una vez.
@@ -2570,18 +2592,38 @@ export const useAppController = () => {
     }
   };
 
+  const handleLoadAttendanceRecords = useCallback(async (filters = {}) => {
+    try {
+      const records = await api.attendance.listRecords(filters);
+      setAttendanceRecords(Array.isArray(records) ? records : []);
+      return records;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo cargar la asistencia.');
+      throw requestError;
+    }
+  }, []);
+
   const handleCreateAttendanceRecord = async (payload) => {
     setError('');
     try {
       const trace = getCurrentUserTrace();
       const created = await api.attendance.createRecord({
         ...payload,
+        clientOperationId: payload?.clientOperationId
+          || (typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `attendance-${Date.now()}-${Math.random().toString(16).slice(2)}`),
         userId: currentUser?.id ?? payload?.userId ?? '',
         userName: currentUser?.fullName || currentUser?.username || payload?.userName || 'Usuario',
         role: currentUser ? getUserDisplayRole(currentUser) : payload?.role ?? 'Usuario',
         createdBy: trace.createdByName,
       });
-      await loadData();
+      if (created?.id) {
+        setAttendanceRecords((current) => {
+          const withoutDuplicate = current.filter((record) => String(record?.id) !== String(created.id));
+          return [created, ...withoutDuplicate];
+        });
+      }
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar la asistencia.');
@@ -2832,6 +2874,7 @@ export const useAppController = () => {
     handlePrintRentalReceipt,
     handlePrintReturnReceipt,
     handlePrintCashMovementReceipt,
+    handleLoadAttendanceRecords,
     handleCreateAttendanceRecord,
     handleVerifyResetAccess,
     handleAnalyzeSystemReset,

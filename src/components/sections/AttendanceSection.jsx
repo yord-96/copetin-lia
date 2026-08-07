@@ -64,6 +64,7 @@ function AttendanceSection({
   currentUser = null,
   formatDateTime,
   canMark = true,
+  onLoadRecords,
   onCreateRecord,
 }) {
   const [form, setForm] = useState({
@@ -85,12 +86,38 @@ function AttendanceSection({
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [isReportLoading, setIsReportLoading] = useState(false);
 
   useEffect(() => () => {
     if (photoDraft?.previewUrl) {
       URL.revokeObjectURL(photoDraft.previewUrl);
     }
   }, [photoDraft?.previewUrl]);
+
+  useEffect(() => {
+    if (!onLoadRecords) return undefined;
+    let disposed = false;
+    const timerId = window.setTimeout(async () => {
+      setIsReportLoading(true);
+      try {
+        await onLoadRecords({
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          type: filters.type,
+          query: filters.query,
+          limit: 300,
+        });
+      } catch (loadError) {
+        if (!disposed) setError(loadError.message || 'No se pudo cargar el reporte de asistencia.');
+      } finally {
+        if (!disposed) setIsReportLoading(false);
+      }
+    }, filters.query ? 250 : 0);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timerId);
+    };
+  }, [filters.dateFrom, filters.dateTo, filters.type, filters.query, onLoadRecords]);
 
   const currentTimeLabel = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
   const todayLabel = new Date().toLocaleDateString('es-BO', {
@@ -356,7 +383,7 @@ function AttendanceSection({
               <span>02 · Reporte</span>
               <h3>Marcas registradas</h3>
             </div>
-            <strong>{filteredRecords.length}</strong>
+            <strong>{isReportLoading ? '…' : filteredRecords.length}</strong>
           </div>
 
           <div className="attendance-filters">
