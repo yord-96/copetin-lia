@@ -2868,20 +2868,6 @@ function ServiceOrdersSection({
         return entryNote.includes('reset economico')
           || (entryNote.includes('conservad') && entryNote.includes('reset'));
       });
-    const hasAuthoritativeEconomicLedger = storedEconomicLedger.some((entry) => {
-      const entryId = normalizeText(entry?.id);
-      const entryNote = normalizeText(entry?.note);
-      const isLegacySynthetic = (
-        entryId.includes('initial-payment')
-        || entryId.includes('validated-guarantee')
-        || entryId.includes('garantia-validada')
-        || entryNote === 'pago inicial registrado al crear el contrato.'
-        || entryNote === 'pago inicial registrado al crear el contrato'
-        || entryNote === 'garantia pagada registrada al crear el contrato.'
-        || entryNote === 'garantia pagada registrada al crear el contrato'
-      );
-      return !isLegacySynthetic && !entry?.deletedAt;
-    });
     const hasInitialPaymentEntry = initialPaymentBs > 0 && storedEconomicLedger.some((entry) => {
       if (entry.type !== 'deposit') return false;
       const entryId = normalizeText(entry.id);
@@ -2913,7 +2899,7 @@ function ServiceOrdersSection({
       );
     });
     const economicLedgerBaseUnfiltered = [
-      ...(initialPaymentBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasInitialPaymentEntry
+      ...(initialPaymentBs > 0 && !hasEconomicResetLedger && !hasInitialPaymentEntry
         ? [{
           id: `initial-payment-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'deposit',
@@ -2936,7 +2922,7 @@ function ServiceOrdersSection({
           editedByName: '',
         }]
         : []),
-      ...(guaranteeValidatedBs > 0 && !hasEconomicResetLedger && !hasAuthoritativeEconomicLedger && !hasValidatedGuaranteeEntry
+      ...(guaranteeValidatedBs > 0 && !hasEconomicResetLedger && !hasValidatedGuaranteeEntry
         ? [{
           id: `validated-guarantee-${contract?.id ?? contract?.contractCode ?? rental?.id ?? 'contract'}`,
           type: 'guarantee',
@@ -4281,6 +4267,23 @@ function ServiceOrdersSection({
     },
     [getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
+
+  const getDisplayedItemSubtotalBs = useCallback((line) => {
+    const baseLineTotalBs = Math.max(0, Number(line?.lineTotalBs ?? 0));
+    const coverageKey = getSupplierCoverageKey(line);
+    const coverageLines = normalizeCoverageDraftLines(
+      supplierFulfillmentDraftByItem[coverageKey] ?? supplierFulfillmentDraftByItem[line?.itemId],
+    );
+    const manualCoveredQty = coverageLines
+      .filter((coverage) => coverage?.manualCoverage)
+      .reduce(
+        (sum, coverage) => sum + Math.max(0, Math.trunc(Number(coverage?.neededQty ?? 0))),
+        0,
+      );
+    if (manualCoveredQty <= 0) return baseLineTotalBs;
+    const effectiveSaleUnitPriceBs = getSupplierCoverageEffectiveSaleUnitPriceBs(line);
+    return Number((baseLineTotalBs + (manualCoveredQty * effectiveSaleUnitPriceBs)).toFixed(2));
+  }, [supplierFulfillmentDraftByItem]);
 
   const uncoveredStockIssues = useMemo(
     () => supplierCoverageRows.filter((line) => line.uncoveredQty > 0),
@@ -13861,7 +13864,7 @@ function ServiceOrdersSection({
                                 Rebaja: {formatBs(line.lineDiscountBs ?? 0)}
                               </small>
                             </label>
-                            <strong>{formatBs(line.lineTotalBs)}</strong>
+                            <strong>{formatBs(getDisplayedItemSubtotalBs(line))}</strong>
                             <button
                               type="button"
                               className="danger-button orders-selected-remove"
@@ -14490,7 +14493,7 @@ function ServiceOrdersSection({
                                   </small>
                                 ) : null}
                               </span>
-                              <strong>{formatBs(line.lineTotalBs)}</strong>
+                              <strong>{formatBs(getDisplayedItemSubtotalBs(line))}</strong>
                             </div>
                           );
                         })}
