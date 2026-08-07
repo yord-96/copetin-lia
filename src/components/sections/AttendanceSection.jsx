@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
 
@@ -75,6 +75,7 @@ function AttendanceSection({
     longitude: null,
   });
   const [photoDraft, setPhotoDraft] = useState(null);
+  const photoInputRef = useRef(null);
   const [filters, setFilters] = useState({
     dateFrom: getInputDate(),
     dateTo: getInputDate(),
@@ -147,7 +148,8 @@ function AttendanceSection({
   }, [filters, records]);
 
   const handlePhotoChange = async (event) => {
-    const file = event.target.files?.[0];
+    const input = event.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
     setError('');
     try {
@@ -163,7 +165,24 @@ function AttendanceSection({
       });
     } catch (photoError) {
       setError(photoError.message || 'No se pudo cargar la foto.');
+    } finally {
+      // Permite volver a seleccionar/tomar la misma foto en Android/iPhone.
+      input.value = '';
     }
+  };
+
+  const handleOpenPhotoPicker = () => {
+    if (!canMark) return;
+    setError('');
+    const input = photoInputRef.current;
+    if (!input) {
+      setError('No se pudo abrir la cámara. Recarga la vista e intenta nuevamente.');
+      return;
+    }
+    // Debe ejecutarse dentro del gesto directo del usuario para que
+    // Chrome/Safari móvil permitan abrir cámara/selector.
+    input.value = '';
+    input.click();
   };
 
   const handleUseLocation = () => {
@@ -359,11 +378,35 @@ function AttendanceSection({
             />
           </label>
 
-          <label className="attendance-photo-picker">
-            Evidencia fotográfica
-            <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} disabled={!canMark} />
-            <span>{photoDraft ? 'Foto preparada correctamente' : 'Tomar foto o seleccionar imagen'}</span>
-          </label>
+          <div className="attendance-photo-picker">
+            <span>Evidencia fotográfica</span>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoChange}
+              disabled={!canMark}
+              tabIndex={-1}
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: 'none',
+              }}
+            />
+            <button
+              type="button"
+              className="attendance-photo-picker-button"
+              onClick={handleOpenPhotoPicker}
+              disabled={!canMark}
+            >
+              {photoDraft ? 'Cambiar / volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
+            </button>
+            {photoDraft ? <small>Foto preparada correctamente</small> : null}
+          </div>
 
           {photoDraft?.previewUrl ? (
             <AttendancePhoto className="attendance-photo-preview" src={photoDraft.previewUrl} alt="Vista previa de asistencia" />
