@@ -982,7 +982,7 @@ const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
   };
 };
 
-const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLines = []) => {
+const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLines = [], supplierFulfillmentPlan = []) => {
   if (pricingPlan?.mode !== 'daily_schedule') return pricingPlan;
   const sourceDays = Array.isArray(pricingPlan?.scheduleDays) ? pricingPlan.scheduleDays : [];
   const days = sourceDays.map((day, index) => ({
@@ -1016,9 +1016,41 @@ const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLine
     days.push(nextDay);
     return nextDay;
   };
+  const manualSupplierSalesByLineKey = new Map();
+  const manualSupplierSalesByItemId = new Map();
+  normalizeSupplierFulfillmentPlan(supplierFulfillmentPlan)
+    .filter((coverage) => coverage?.manualCoverage)
+    .forEach((coverage) => {
+      const lineKey = String(coverage?.lineKey ?? '').trim();
+      const itemId = String(coverage?.itemId ?? '').trim();
+      const saleBs = toPositiveRoundedNumber(
+        coverage?.totalSaleBs
+        ?? (Number(coverage?.neededQty ?? 0) * Number(coverage?.saleUnitPriceBs ?? 0)),
+      );
+      if (lineKey) {
+        manualSupplierSalesByLineKey.set(
+          lineKey,
+          toPositiveRoundedNumber((manualSupplierSalesByLineKey.get(lineKey) ?? 0) + saleBs),
+        );
+      } else if (itemId) {
+        manualSupplierSalesByItemId.set(
+          itemId,
+          toPositiveRoundedNumber((manualSupplierSalesByItemId.get(itemId) ?? 0) + saleBs),
+        );
+      }
+    });
+
   itemLines.forEach((line) => {
     const day = findOrCreateDay(line);
-    const amountBs = toPositiveRoundedNumber(line?.lineTotalBs ?? Number(line?.quantity ?? 0) * Number(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0));
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const itemId = String(line?.itemId ?? '').trim();
+    const manualSupplierSaleBs = lineKey && manualSupplierSalesByLineKey.has(lineKey)
+      ? Number(manualSupplierSalesByLineKey.get(lineKey) ?? 0)
+      : Number(manualSupplierSalesByItemId.get(itemId) ?? 0);
+    const amountBs = toPositiveRoundedNumber(
+      Number(line?.lineTotalBs ?? Number(line?.quantity ?? 0) * Number(line?.unitPriceBs ?? line?.rentalPriceBs ?? 0))
+      + manualSupplierSaleBs,
+    );
     day.itemCount += 1;
     day.itemSubtotalBs = toPositiveRoundedNumber(day.itemSubtotalBs + amountBs);
     day.subtotalBs = toPositiveRoundedNumber(day.subtotalBs + amountBs);
@@ -8495,26 +8527,6 @@ export const buildContractDocumentHtml = ({
 
     return Number((baseLineTotalBs * multiplier).toFixed(2));
   };
-  const getDocumentLineGrossTotalBs = (line, multiplier = 1) => {
-    const supplierSupportLines = supplierSupportByItem.get(String(line.lineKey ?? '').trim())
-      ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
-    const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
-    const unitPriceBs = getDocumentLineUnitPriceBs(line);
-    const storedGrossLineTotalBs = Number(line.grossLineTotalBs);
-    const storedLineTotalBs = Number(line.lineTotalBs);
-    const storedDiscountBs = Number(line.discountBs ?? 0);
-    const quantityGrossBs = Number((fulfillmentBreakdown.totalQty * unitPriceBs).toFixed(2));
-    const recoveredGrossBs = storedLineTotalBs > 0 && storedDiscountBs > 0
-      ? Number((storedLineTotalBs + storedDiscountBs).toFixed(2))
-      : 0;
-    const grossLineTotalBs = Number.isFinite(storedGrossLineTotalBs) && storedGrossLineTotalBs > 0
-      ? storedGrossLineTotalBs
-      : recoveredGrossBs > 0
-        ? recoveredGrossBs
-        : quantityGrossBs;
-
-    return Number((grossLineTotalBs * multiplier).toFixed(2));
-  };
   const renderContractItemRow = (line, multiplier = 1) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
@@ -8525,7 +8537,7 @@ export const buildContractDocumentHtml = ({
         const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
         const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
-        const lineTotalBs = getDocumentLineGrossTotalBs(line, multiplier);
+        const lineTotalBs = getDocumentLineTotalBs(line, multiplier);
         const missingSummary = getMissingSummaryForLine(line);
         contractRowNumber += 1;
         return `
@@ -8585,7 +8597,7 @@ export const buildContractDocumentHtml = ({
   const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
-    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineGrossTotalBs(line), 0);
+    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
     return `
         <tr class="rc-duration-day-row">
           <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
@@ -14582,6 +14594,7 @@ const createWebBridge = () => ({
           calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
           normalizedItems,
           requestedServices,
+          payload?.supplierFulfillmentPlan,
         );
         const alignedItems = alignLinesToDailySchedule(pricingPlan, normalizedItems);
         const alignedServices = alignLinesToDailySchedule(pricingPlan, requestedServices);
@@ -14821,6 +14834,7 @@ const createWebBridge = () => ({
           calculateDurationPricing({ pricingPlan: quote.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
           quote.items ?? [],
           quote.services ?? [],
+          quote.supplierFulfillmentPlan,
         );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
@@ -15053,6 +15067,7 @@ const createWebBridge = () => ({
           calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
           normalizedItems,
           requestedServices,
+          payload?.supplierFulfillmentPlan,
         );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
@@ -15382,6 +15397,7 @@ const createWebBridge = () => ({
           calculateDurationPricing({ pricingPlan: contract.pricingPlan, baseSubtotalBs: itemsBaseSubtotalBs }),
           contract.items ?? [],
           contract.services ?? [],
+          contract.supplierFulfillmentPlan,
         );
         contract.items = alignLinesToDailySchedule(pricingPlan, contract.items ?? []);
         contract.services = alignLinesToDailySchedule(pricingPlan, contract.services ?? []);
@@ -16588,6 +16604,7 @@ const createWebBridge = () => ({
           calculateDurationPricing({ pricingPlan: payload?.pricingPlan, baseSubtotalBs: itemsSubtotalBs }),
           rentalItems,
           requestedServices,
+          supplierFulfillmentPlan,
         );
         const quotedTotals = payload?.quotedTotals && typeof payload.quotedTotals === 'object' ? payload.quotedTotals : null;
         const subtotalBs = Math.max(0, toPositiveRoundedNumber(

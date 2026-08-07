@@ -2174,7 +2174,22 @@ function ServiceOrdersSection({
       const servicesBs = (Array.isArray(contract?.services) ? contract.services : [])
         .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
       const transportBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs);
-      const totalBs = Number(contract?.totals?.totalBs ?? 0);
+      const storedTotalBs = Number(contract?.totals?.totalBs ?? 0);
+      const storedItemsNetSubtotalBs = toMoneyNumber(
+        contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs,
+      );
+      const storedDiscountBs = toMoneyNumber(contract?.totals?.discountBs);
+      const pricingMode = normalizeText(contract?.pricingPlan?.mode);
+      const repairedDailyScheduleTotalBs = pricingMode === 'daily_schedule' && storedItemsNetSubtotalBs > 0
+        ? Math.max(
+          0,
+          Number((storedItemsNetSubtotalBs + servicesBs - storedDiscountBs + transportBs).toFixed(2)),
+        )
+        : storedTotalBs;
+      // Reparación visual conservadora para contratos antiguos donde el plan diario
+      // quedó con subtotal previo al subalquiler manual. No altera contratos con
+      // pricing por duración ni reduce un total ya mayor/correcto.
+      const totalBs = Math.max(storedTotalBs, repairedDailyScheduleTotalBs);
       const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - transportBs).toFixed(2)));
       const managedTotalBs = Number((rentalTotalBs + guaranteeBs + transportBs + servicesBs).toFixed(2));
       const rowLedgerTotals = economicLedger.reduce((totals, entry) => {
