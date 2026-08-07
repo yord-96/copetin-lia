@@ -365,55 +365,26 @@ function AttendanceSection({
           </label>
 
           <div className="attendance-photo-picker">
-            <span>Evidencia fotográfica</span>
+            <span className="attendance-photo-title">Evidencia fotográfica</span>
 
-            <label
-              htmlFor="attendance-photo-input"
-              style={{
-                display: 'flex',
-                width: '100%',
-                minHeight: 58,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 16,
-                border: '1px dashed #f28a55',
-                background: '#fff8f3',
-                color: '#d9530b',
-                fontWeight: 800,
-                fontSize: '0.98rem',
-                padding: '13px 18px',
-                boxSizing: 'border-box',
-                marginTop: 8,
-                cursor: canMark ? 'pointer' : 'not-allowed',
-                userSelect: 'none',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              {photoDraft ? '📷 Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
-            </label>
-
-            <input
-              id="attendance-photo-input"
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhotoChange}
-              disabled={!canMark}
-              style={{
-                position: 'absolute',
-                width: 1,
-                height: 1,
-                opacity: 0,
-                overflow: 'hidden',
-                clip: 'rect(0 0 0 0)',
-                whiteSpace: 'nowrap',
-              }}
-            />
+            <div className={`attendance-photo-action${!canMark ? ' is-disabled' : ''}`}>
+              <span className="attendance-photo-action-label" aria-hidden="true">
+                {photoDraft ? '📷 Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
+              </span>
+              <input
+                id="attendance-photo-input"
+                className="attendance-photo-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoChange}
+                disabled={!canMark}
+                aria-label={photoDraft ? 'Cambiar o volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
+              />
+            </div>
 
             {photoDraft ? (
-              <small style={{ display: 'block', marginTop: 8, color: '#2f855a', fontWeight: 700 }}>
-                Foto preparada correctamente
-              </small>
+              <small className="attendance-photo-ready">Foto preparada correctamente</small>
             ) : null}
           </div>
 
