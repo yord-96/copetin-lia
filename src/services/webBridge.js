@@ -18507,9 +18507,52 @@ const createWebBridge = () => ({
 
         const isReturned = rental.status === 'returned';
         const settlement = rental.returnSettlement ?? {};
-        const currentPending = isReturned
+        const storedRentalTotalBs = Math.max(0, Number(rental?.totals?.totalBs ?? 0));
+        const rentalItemsNetSubtotalBs = Math.max(
+          0,
+          Number(rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs ?? 0),
+        );
+        const rentalServicesSubtotalBs = Math.max(
+          0,
+          Number(
+            rental?.totals?.servicesSubtotalBs
+            ?? (Array.isArray(rental?.services)
+              ? rental.services.reduce((sum, service) => sum + Number(service?.lineTotalBs ?? 0), 0)
+              : 0),
+          ),
+        );
+        const rentalDiscountBs = Math.max(0, Number(rental?.totals?.discountBs ?? 0));
+        const rentalDeliveryFeeBs = Math.max(
+          0,
+          Number(rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0),
+        );
+        const rentalPricingMode = normalizeText(rental?.pricingPlan?.mode);
+        const repairedRentalTotalBs = rentalPricingMode === 'daily_schedule' && rentalItemsNetSubtotalBs > 0
+          ? Math.max(
+            storedRentalTotalBs,
+            Number((
+              rentalItemsNetSubtotalBs
+              + rentalServicesSubtotalBs
+              - rentalDiscountBs
+              + rentalDeliveryFeeBs
+            ).toFixed(2)),
+          )
+          : storedRentalTotalBs;
+        const commercialTotalCorrectionBs = Math.max(
+          0,
+          Number((repairedRentalTotalBs - storedRentalTotalBs).toFixed(2)),
+        );
+        const storedPendingBs = isReturned
           ? Number(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0)
           : Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+        // Si el contrato viejo quedó con totalBs anterior al subalquiler manual,
+        // el pendiente de devolución también quedó corto por exactamente esa
+        // diferencia. Se suma una sola vez y en esta misma transacción se persiste
+        // el total comercial reparado para que futuras cobranzas no lo repitan.
+        const currentPending = Number((
+          Math.max(0, storedPendingBs)
+          + commercialTotalCorrectionBs
+        ).toFixed(2));
 
         if (currentPending <= 0) {
           throw new Error('Esta orden no tiene saldo pendiente por cobrar.');
@@ -18566,6 +18609,12 @@ const createWebBridge = () => ({
 
         rental.totals = {
           ...(rental.totals ?? {}),
+          ...(repairedRentalTotalBs > storedRentalTotalBs
+            ? {
+                totalBs: Number(repairedRentalTotalBs.toFixed(2)),
+                baseSubtotalBs: Number((rentalItemsNetSubtotalBs + rentalServicesSubtotalBs).toFixed(2)),
+              }
+            : {}),
           paidAtRentalBs: rental.payment.paidAtRentalBs,
           pendingPaymentBs: remainingBs,
           overpaidBs: rental.payment.overpaidBs,
@@ -18592,6 +18641,29 @@ const createWebBridge = () => ({
 
         state.contracts.forEach((contract) => {
           if (contract.rentalId === rental.id || (contract.orderCode && contract.orderCode === rental.orderCode)) {
+            if (repairedRentalTotalBs > storedRentalTotalBs) {
+              contract.totals = {
+                ...(contract.totals ?? {}),
+                totalBs: Number(repairedRentalTotalBs.toFixed(2)),
+                baseSubtotalBs: Number((rentalItemsNetSubtotalBs + rentalServicesSubtotalBs).toFixed(2)),
+                subtotalBs: Number((repairedRentalTotalBs - rentalDeliveryFeeBs).toFixed(2)),
+              };
+              const commercialPendingBs = Math.max(
+                0,
+                Number((
+                  repairedRentalTotalBs
+                  - Math.min(
+                    repairedRentalTotalBs,
+                    Number(contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? 0),
+                  )
+                ).toFixed(2)),
+              );
+              contract.payment = {
+                ...(contract.payment ?? {}),
+                pendingBs: commercialPendingBs,
+              };
+              contract.pendingPaymentBs = commercialPendingBs;
+            }
             contract.accountingStatus = rental.accountingStatus;
             contract.paymentStatus = rental.payment.status;
             contract.updatedAt = now;

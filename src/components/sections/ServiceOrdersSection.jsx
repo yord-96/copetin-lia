@@ -2708,7 +2708,7 @@ function ServiceOrdersSection({
       unclassifiedBs: 0,
     });
 
-    const totalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
+    const storedTotalBs = toMoneyNumber(contract?.totals?.totalBs ?? contract?.totalBs ?? rental?.totals?.totalBs);
     const guaranteeDeclaredBs = toMoneyNumber(
       rental?.guaranteeDeclaredBs
       ?? rental?.guarantee?.amountBs
@@ -2750,6 +2750,23 @@ function ServiceOrdersSection({
     const deliveryFeeBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
     const servicesBs = (Array.isArray(contract?.services) ? contract.services : Array.isArray(rental?.services) ? rental.services : [])
       .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
+    const storedItemsNetSubtotalBs = toMoneyNumber(
+      contract?.totals?.itemsNetSubtotalBs
+      ?? contract?.totals?.itemsSubtotalBs
+      ?? rental?.totals?.itemsNetSubtotalBs
+      ?? rental?.totals?.itemsSubtotalBs,
+    );
+    const pricingMode = normalizeText(contract?.pricingPlan?.mode ?? rental?.pricingPlan?.mode);
+    const repairedDailyScheduleTotalBs = pricingMode === 'daily_schedule' && storedItemsNetSubtotalBs > 0
+      ? Math.max(
+        0,
+        Number((storedItemsNetSubtotalBs + servicesBs - discountBs + deliveryFeeBs).toFixed(2)),
+      )
+      : storedTotalBs;
+    // Contratos antiguos con subalquiler manual podían guardar itemsNetSubtotalBs
+    // correcto pero totalBs/chargeableSubtotalBs anterior. El económico debe usar
+    // el mayor total comercial válido, sin duplicar pagos ni daños.
+    const totalBs = Math.max(storedTotalBs, repairedDailyScheduleTotalBs);
     const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - deliveryFeeBs).toFixed(2)));
     const itemsGrossSubtotalBs = Math.max(
       rentalTotalBs + itemDiscountsBs,
