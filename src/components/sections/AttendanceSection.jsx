@@ -364,51 +364,49 @@ function AttendanceSection({
             />
           </label>
 
-          <div
-            className="attendance-photo-picker"
-            style={{ position: 'relative', overflow: 'hidden' }}
-          >
+          <div className="attendance-photo-picker">
             <span>Evidencia fotográfica</span>
 
-            <div
-              aria-hidden="true"
+            <label
+              htmlFor="attendance-photo-input"
               style={{
-                width: '100%',
-                minHeight: 54,
                 display: 'flex',
+                width: '100%',
+                minHeight: 58,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderRadius: 14,
+                borderRadius: 16,
                 border: '1px dashed #f28a55',
                 background: '#fff8f3',
                 color: '#d9530b',
                 fontWeight: 800,
-                fontSize: '0.95rem',
-                padding: '12px 16px',
+                fontSize: '0.98rem',
+                padding: '13px 18px',
                 boxSizing: 'border-box',
                 marginTop: 8,
+                cursor: canMark ? 'pointer' : 'not-allowed',
+                userSelect: 'none',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {photoDraft ? 'Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
-            </div>
+              {photoDraft ? '📷 Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
+            </label>
 
             <input
+              id="attendance-photo-input"
               type="file"
               accept="image/*"
               capture="environment"
               onChange={handlePhotoChange}
               disabled={!canMark}
-              aria-label={photoDraft ? 'Cambiar o volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
               style={{
                 position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                height: 62,
-                opacity: 0.001,
-                cursor: canMark ? 'pointer' : 'not-allowed',
-                zIndex: 5,
+                width: 1,
+                height: 1,
+                opacity: 0,
+                overflow: 'hidden',
+                clip: 'rect(0 0 0 0)',
+                whiteSpace: 'nowrap',
               }}
             />
 
