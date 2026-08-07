@@ -66955,16 +66955,17 @@ body:has(.accounting-bigcash-view) .workspace {
 
 
 /* FIX FINAL ASISTENCIA FOTO:
-   El input file REAL ocupa toda el área visible. El toque/clic llega
-   directamente al control nativo del navegador; no depende de label ni
-   de input.click() programático. */
+   El input file REAL cubre toda el área táctil. En móvil se deja al
+   navegador decidir entre cámara/galería (el JSX no fuerza capture). */
 .attendance-view .attendance-photo-action {
   position: relative !important;
+  isolation: isolate !important;
   overflow: hidden !important;
 }
 
 .attendance-view .attendance-photo-action .attendance-photo-input {
   display: block !important;
+  visibility: visible !important;
   position: absolute !important;
   inset: 0 !important;
   z-index: 50 !important;
@@ -66972,14 +66973,21 @@ body:has(.accounting-bigcash-view) .workspace {
   height: 100% !important;
   min-width: 100% !important;
   min-height: 100% !important;
-  opacity: 0.001 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
   pointer-events: auto !important;
+  cursor: pointer !important;
   clip: auto !important;
   clip-path: none !important;
-  overflow: visible !important;
+  touch-action: auto !important;
+  -webkit-tap-highlight-color: transparent !important;
 }
 
 .attendance-view .attendance-photo-action-label {
+  position: relative !important;
+  z-index: 1 !important;
   pointer-events: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
@@ -66989,10 +66997,10 @@ body:has(.accounting-bigcash-view) .workspace {
   .attendance-view .attendance-photo-action {
     min-height: 3.25rem !important;
     border-radius: 0.95rem !important;
-    touch-action: manipulation !important;
   }
 
   .attendance-view .attendance-photo-action .attendance-photo-input {
+    inset: 0 !important;
     display: block !important;
     visibility: visible !important;
   }

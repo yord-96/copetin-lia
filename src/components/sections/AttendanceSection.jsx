@@ -376,7 +376,6 @@ function AttendanceSection({
                 className="attendance-photo-input"
                 type="file"
                 accept="image/*"
-                capture="environment"
                 onChange={handlePhotoChange}
                 disabled={!canMark}
                 aria-label={photoDraft ? 'Cambiar o volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
