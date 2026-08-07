@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
 
@@ -75,7 +75,6 @@ function AttendanceSection({
     longitude: null,
   });
   const [photoDraft, setPhotoDraft] = useState(null);
-  const photoInputRef = useRef(null);
   const [filters, setFilters] = useState({
     dateFrom: getInputDate(),
     dateTo: getInputDate(),
@@ -171,19 +170,6 @@ function AttendanceSection({
     }
   };
 
-  const handleOpenPhotoPicker = () => {
-    if (!canMark) return;
-    setError('');
-    const input = photoInputRef.current;
-    if (!input) {
-      setError('No se pudo abrir la cámara. Recarga la vista e intenta nuevamente.');
-      return;
-    }
-    // Debe ejecutarse dentro del gesto directo del usuario para que
-    // Chrome/Safari móvil permitan abrir cámara/selector.
-    input.value = '';
-    input.click();
-  };
 
   const handleUseLocation = () => {
     setError('');
@@ -378,34 +364,59 @@ function AttendanceSection({
             />
           </label>
 
-          <div className="attendance-photo-picker">
+          <div
+            className="attendance-photo-picker"
+            style={{ position: 'relative', overflow: 'hidden' }}
+          >
             <span>Evidencia fotográfica</span>
+
+            <div
+              aria-hidden="true"
+              style={{
+                width: '100%',
+                minHeight: 54,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 14,
+                border: '1px dashed #f28a55',
+                background: '#fff8f3',
+                color: '#d9530b',
+                fontWeight: 800,
+                fontSize: '0.95rem',
+                padding: '12px 16px',
+                boxSizing: 'border-box',
+                marginTop: 8,
+              }}
+            >
+              {photoDraft ? 'Cambiar / volver a tomar foto' : '📷 Tomar foto o seleccionar imagen'}
+            </div>
+
             <input
-              ref={photoInputRef}
               type="file"
               accept="image/*"
               capture="environment"
               onChange={handlePhotoChange}
               disabled={!canMark}
-              tabIndex={-1}
-              aria-hidden="true"
+              aria-label={photoDraft ? 'Cambiar o volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
               style={{
                 position: 'absolute',
-                width: 1,
-                height: 1,
-                opacity: 0,
-                pointerEvents: 'none',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                height: 62,
+                opacity: 0.001,
+                cursor: canMark ? 'pointer' : 'not-allowed',
+                zIndex: 5,
               }}
             />
-            <button
-              type="button"
-              className="attendance-photo-picker-button"
-              onClick={handleOpenPhotoPicker}
-              disabled={!canMark}
-            >
-              {photoDraft ? 'Cambiar / volver a tomar foto' : 'Tomar foto o seleccionar imagen'}
-            </button>
-            {photoDraft ? <small>Foto preparada correctamente</small> : null}
+
+            {photoDraft ? (
+              <small style={{ display: 'block', marginTop: 8, color: '#2f855a', fontWeight: 700 }}>
+                Foto preparada correctamente
+              </small>
+            ) : null}
           </div>
 
           {photoDraft?.previewUrl ? (
