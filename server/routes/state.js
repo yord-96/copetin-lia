@@ -1232,12 +1232,55 @@ const getContractCurrentEconomicSeed = (contract, rental) => {
   };
 };
 
-const getRentalChargeTargetBs = (contract, rental) => directMoney(
-  rental?.totals?.totalBs
-  ?? contract?.totals?.totalBs
-  ?? contract?.totalBs
-  ?? 0,
-);
+const getRentalChargeTargetBs = (contract, rental) => {
+  const storedTotalBs = directMoney(
+    rental?.totals?.totalBs
+    ?? contract?.totals?.totalBs
+    ?? contract?.totalBs
+    ?? 0,
+  );
+  const pricingMode = String(
+    rental?.pricingPlan?.mode
+    ?? contract?.pricingPlan?.mode
+    ?? '',
+  ).trim().toLowerCase();
+  if (pricingMode !== 'daily_schedule') return storedTotalBs;
+
+  const itemsNetSubtotalBs = directMoney(
+    rental?.totals?.itemsNetSubtotalBs
+    ?? rental?.totals?.itemsSubtotalBs
+    ?? contract?.totals?.itemsNetSubtotalBs
+    ?? contract?.totals?.itemsSubtotalBs
+    ?? 0,
+  );
+  if (itemsNetSubtotalBs <= 0) return storedTotalBs;
+
+  const servicesSubtotalBs = directMoney(
+    rental?.totals?.servicesSubtotalBs
+    ?? contract?.totals?.servicesSubtotalBs
+    ?? 0,
+  );
+  const discountBs = directMoney(
+    rental?.totals?.discountBs
+    ?? contract?.totals?.discountBs
+    ?? 0,
+  );
+  const deliveryFeeBs = directMoney(
+    rental?.totals?.deliveryFeeBs
+    ?? rental?.deliveryFeeBs
+    ?? contract?.totals?.deliveryFeeBs
+    ?? contract?.deliveryFeeBs
+    ?? 0,
+  );
+  const reconstructedTotalBs = directMoney(Math.max(
+    0,
+    itemsNetSubtotalBs + servicesSubtotalBs - discountBs + deliveryFeeBs,
+  ));
+
+  // Reparacion conservadora para daily_schedule antiguos: nunca reduce un total
+  // ya valido y evita volver a perder ventas manuales de proveedor/subalquiler.
+  return Math.max(storedTotalBs, reconstructedTotalBs);
+};
 
 const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
   const rows = [];
@@ -2243,9 +2286,27 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       if (!rental) { const error = new Error('No se encontro la orden seleccionada.'); error.statusCode = 404; throw error; }
       const isReturned = rental.status === 'returned';
       const settlement = rental.returnSettlement ?? {};
-      const currentPending = Number(isReturned
+      const storedRentalTotalBs = directMoney(
+        rental?.totals?.totalBs
+        ?? linkedContract?.totals?.totalBs
+        ?? linkedContract?.totalBs
+        ?? 0,
+      );
+      const repairedRentalTotalBs = getRentalChargeTargetBs(linkedContract, rental);
+      const commercialTotalCorrectionBs = directMoney(Math.max(
+        0,
+        repairedRentalTotalBs - storedRentalTotalBs,
+      ));
+      const storedPendingBs = Number(isReturned
         ? settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0
         : rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+      // Contratos daily_schedule antiguos pueden conservar pendingCollectionBs
+      // calculado con un total anterior a la venta manual de proveedor. Se suma
+      // solamente la diferencia comercial y, en esta misma transaccion, se
+      // persiste el total reparado para que nunca vuelva a aplicarse.
+      const currentPending = directMoney(
+        Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
+      );
       if (currentPending <= 0) { const error = new Error('Esta orden no tiene saldo pendiente por cobrar.'); error.statusCode = 409; throw error; }
       if (amountBs - currentPending > 0.01) { const error = new Error(`El saldo pendiente es Bs ${currentPending.toFixed(2)}.`); error.statusCode = 409; throw error; }
 
@@ -2272,12 +2333,38 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         damageCollectedBs: directMoney(Number(rental?.payment?.damageCollectedBs ?? rental?.totals?.damageCollectedBs ?? 0) + explicitDamage),
         status: remainingBs > 0 ? 'saldo_pendiente' : (isReturned ? 'cobrado_finalizado' : 'cancelado'),
         mode: remainingBs > 0 ? 'a_cuenta' : 'cancelado', lastCollectionAt: now, lastCollectionBy: String(payload.createdBy ?? 'Sistema') };
-      rental.totals = { ...(rental.totals ?? {}), ...rental.payment };
+      rental.totals = {
+        ...(rental.totals ?? {}),
+        ...(repairedRentalTotalBs > storedRentalTotalBs
+          ? {
+              totalBs: repairedRentalTotalBs,
+              baseSubtotalBs: directMoney(
+                Number(rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs ?? 0)
+                + Number(rental?.totals?.servicesSubtotalBs ?? 0),
+              ),
+            }
+          : {}),
+        ...rental.payment,
+      };
       if (isReturned) {
-        rental.returnSettlement = { ...settlement, pendingCollectionBs: remainingBs,
+        const repairedOutstandingRentalBs = directMoney(Math.max(
+          0,
+          Number(settlement.outstandingRentalBs ?? 0)
+            + commercialTotalCorrectionBs
+            - rentalNow
+            - transportNow,
+        ));
+        rental.returnSettlement = {
+          ...settlement,
+          outstandingRentalBs: repairedOutstandingRentalBs,
+          pendingCollectionBs: remainingBs,
+          paidBs: directMoney(
+            Number(settlement.paidBs ?? previousPaid) + rentalNow + transportNow,
+          ),
           collectedAfterReturnBs: directMoney(Number(settlement.collectedAfterReturnBs ?? 0) + amountBs),
           collectedAt: remainingBs === 0 ? now : settlement.collectedAt ?? null,
-          collectedBy: remainingBs === 0 ? String(payload.createdBy ?? 'Sistema') : settlement.collectedBy ?? null };
+          collectedBy: remainingBs === 0 ? String(payload.createdBy ?? 'Sistema') : settlement.collectedBy ?? null,
+        };
         rental.accountingStatus = remainingBs === 0 ? 'cobrado_finalizado' : 'finalizado_pendiente_cobro';
         rental.finalizedAt = remainingBs === 0 ? now : rental.finalizedAt ?? null;
       } else rental.accountingStatus = remainingBs === 0 ? 'cobrado' : 'saldo_pendiente';
@@ -2285,6 +2372,24 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
 
       state.contracts.forEach((contract) => {
         if (String(contract?.rentalId ?? '') === rental.id || (contract?.orderCode && contract.orderCode === rental.orderCode)) {
+          if (repairedRentalTotalBs > storedRentalTotalBs) {
+            const deliveryFeeBs = directMoney(
+              rental?.totals?.deliveryFeeBs
+              ?? rental?.deliveryFeeBs
+              ?? contract?.totals?.deliveryFeeBs
+              ?? contract?.deliveryFeeBs
+              ?? 0,
+            );
+            contract.totals = {
+              ...(contract.totals ?? {}),
+              totalBs: repairedRentalTotalBs,
+              baseSubtotalBs: directMoney(
+                Number(rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs ?? contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? 0)
+                + Number(rental?.totals?.servicesSubtotalBs ?? contract?.totals?.servicesSubtotalBs ?? 0),
+              ),
+              subtotalBs: directMoney(Math.max(0, repairedRentalTotalBs - deliveryFeeBs)),
+            };
+          }
           contract.accountingStatus = rental.accountingStatus; contract.paymentStatus = rental.payment.status; contract.updatedAt = now;
         }
       });
