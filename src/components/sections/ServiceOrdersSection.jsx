@@ -1426,6 +1426,7 @@ function ServiceOrdersSection({
   const [isCourtesyMode, setIsCourtesyMode] = useState(false);
   const [serviceModalOpen, setServiceModalOpen] = useState(false);
   const [serviceDraft, setServiceDraft] = useState(buildEmptyServiceDraft);
+  const [editingServiceId, setEditingServiceId] = useState('');
   const [itemSearch, setItemSearch] = useState('');
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all');
   const [catalogVisibleCount, setCatalogVisibleCount] = useState(CATALOG_PAGE_SIZE);
@@ -5801,18 +5802,32 @@ function ServiceOrdersSection({
   };
 
   const openServiceModal = () => {
+    setEditingServiceId('');
     setServiceDraft(buildEmptyServiceDraft());
+    setFormError('');
+    setServiceModalOpen(true);
+  };
+
+  const openEditServiceModal = (service) => {
+    setEditingServiceId(service.id);
+    setServiceDraft({
+      name: String(service.name ?? ''),
+      detail: String(service.detail ?? ''),
+      quantity: String(Math.max(1, Number(service.quantity ?? 1))),
+      unitPriceBs: String(Math.max(0, Number(service.unitPriceBs ?? 0))),
+    });
     setFormError('');
     setServiceModalOpen(true);
   };
 
   const closeServiceModal = () => {
     setServiceModalOpen(false);
+    setEditingServiceId('');
     setServiceDraft(buildEmptyServiceDraft());
     setFormError('');
   };
 
-  const addDraftService = () => {
+  const saveDraftService = () => {
     const name = serviceDraft.name.trim();
     const quantity = Math.max(1, parseIntegerInput(serviceDraft.quantity, 1));
     const unitPriceBs = Math.max(0, parseMoneyInput(serviceDraft.unitPriceBs, 0));
@@ -5824,20 +5839,29 @@ function ServiceOrdersSection({
       setFormError('Indica un precio mayor a cero para el servicio.');
       return;
     }
-    setDraft((current) => ({
-      ...current,
-      services: [
-        ...(current.services ?? []),
-        {
-          id: `service-${Date.now()}`,
-          name,
-          detail: serviceDraft.detail.trim(),
-          quantity,
-          unitPriceBs,
-          ...(current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {}),
-        },
-      ],
-    }));
+    setDraft((current) => {
+      const serviceFields = {
+        name,
+        detail: serviceDraft.detail.trim(),
+        quantity,
+        unitPriceBs,
+      };
+      return {
+        ...current,
+        services: editingServiceId
+          ? (current.services ?? []).map((service) => (
+            service.id === editingServiceId ? { ...service, ...serviceFields } : service
+          ))
+          : [
+            ...(current.services ?? []),
+            {
+              id: `service-${Date.now()}`,
+              ...serviceFields,
+              ...(current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {}),
+            },
+          ],
+      };
+    });
     setFormError('');
     closeServiceModal();
   };
@@ -12346,8 +12370,12 @@ function ServiceOrdersSection({
           <div className="orders-modal orders-service-modal" onClick={(event) => event.stopPropagation()}>
             <header className="orders-modal-head">
               <div>
-                <h3>Asignar servicio</h3>
-                <p>Registra personal o trabajo adicional sin afectar el inventario.</p>
+                <h3>{editingServiceId ? 'Editar servicio' : 'Asignar servicio'}</h3>
+                <p>
+                  {editingServiceId
+                    ? 'Corrige los datos del servicio sin eliminarlo ni cambiar el dia asignado.'
+                    : 'Registra personal o trabajo adicional sin afectar el inventario.'}
+                </p>
               </div>
               <button type="button" className="orders-modal-close" onClick={closeServiceModal} aria-label="Cerrar">
                 <X aria-hidden="true" />
@@ -12406,8 +12434,8 @@ function ServiceOrdersSection({
             {formError ? <p className="status error orders-service-error">{formError}</p> : null}
             <footer className="orders-modal-foot">
               <button type="button" className="ghost-button" onClick={closeServiceModal}>Cancelar</button>
-              <button type="button" className="primary-button" onClick={addDraftService}>
-                Agregar servicio
+              <button type="button" className="primary-button" onClick={saveDraftService}>
+                {editingServiceId ? 'Guardar cambios' : 'Agregar servicio'}
               </button>
             </footer>
           </div>
@@ -13993,14 +14021,26 @@ function ServiceOrdersSection({
                               ) : null}
                               <span>{service.quantity} x {formatBs(service.unitPriceBs)}</span>
                               <strong>{formatBs(service.lineTotalBs)}</strong>
-                              <button
-                                type="button"
-                                className="orders-service-remove"
-                                onClick={() => removeDraftService(service.id)}
-                                aria-label={`Quitar servicio ${service.name}`}
-                              >
-                                <Trash2 aria-hidden="true" />
-                              </button>
+                              <div className="orders-service-actions">
+                                <button
+                                  type="button"
+                                  className="orders-service-edit"
+                                  onClick={() => openEditServiceModal(service)}
+                                  aria-label={`Editar servicio ${service.name}`}
+                                  title="Editar servicio"
+                                >
+                                  <Pencil aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="orders-service-remove"
+                                  onClick={() => removeDraftService(service.id)}
+                                  aria-label={`Quitar servicio ${service.name}`}
+                                  title="Quitar servicio"
+                                >
+                                  <Trash2 aria-hidden="true" />
+                                </button>
+                              </div>
                             </article>
                           ))}
                         </div>

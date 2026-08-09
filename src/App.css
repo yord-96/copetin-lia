@@ -45993,7 +45993,7 @@ button.calendar-dispatch-row:focus-visible {
 
 .orders-services-list article {
   display: grid;
-  grid-template-columns: 1.6rem minmax(150px, 1fr) 110px 85px 2rem;
+  grid-template-columns: 1.6rem minmax(150px, 1fr) 110px 85px auto;
   gap: 0.5rem;
   align-items: center;
   padding: 0.45rem 0.55rem;
@@ -46026,18 +46026,34 @@ button.calendar-dispatch-row:focus-visible {
   white-space: nowrap;
 }
 
+.orders-service-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.orders-service-edit,
 .orders-service-remove {
   width: 1.75rem;
   height: 1.75rem;
   display: grid;
   place-items: center;
-  border: 1px solid #ffd2d2;
   border-radius: 0.4rem;
-  background: #fff7f7;
-  color: #d93737;
   cursor: pointer;
 }
 
+.orders-service-edit {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1769c2;
+}
+
+.orders-service-remove {
+  border: 1px solid #ffd2d2;
+  background: #fff7f7;
+  color: #d93737;
+}
+
+.orders-service-edit svg,
 .orders-service-remove svg {
   width: 0.85rem;
   height: 0.85rem;
@@ -67097,4 +67113,3 @@ body:has(.accounting-bigcash-view) .workspace {
     -webkit-appearance: auto !important;
   }
 }
-
