@@ -9,6 +9,18 @@ const cacheDirectory = path.resolve(
   process.env.DOCUMENT_PDF_CACHE_DIR
     ?? path.join(projectRoot, 'data', 'generated-documents', 'pdf-cache'),
 );
+const browserUserDataDirectory = path.resolve(
+  process.env.CHROMIUM_USER_DATA_DIR
+    ?? path.join(projectRoot, 'data', 'chromium-profile'),
+);
+const chromiumDiskCacheBytes = Math.max(
+  0,
+  Number.parseInt(process.env.CHROMIUM_DISK_CACHE_BYTES ?? '52428800', 10) || 0,
+);
+const chromiumMediaCacheBytes = Math.max(
+  0,
+  Number.parseInt(process.env.CHROMIUM_MEDIA_CACHE_BYTES ?? '10485760', 10) || 0,
+);
 
 const executableCandidates = [
   process.env.CHROMIUM_EXECUTABLE_PATH,
@@ -30,6 +42,7 @@ const executableCandidates = [
 ].filter(Boolean);
 
 let browserPromise = null;
+let browserInstance = null;
 
 const findExecutablePath = async () => {
   for (const candidate of executableCandidates) {
@@ -54,9 +67,11 @@ const launchBrowser = async () => {
     import('puppeteer-core'),
     findExecutablePath(),
   ]);
+  await fs.mkdir(browserUserDataDirectory, { recursive: true });
 
   const browser = await puppeteer.launch({
     executablePath,
+    userDataDir: browserUserDataDirectory,
     headless: true,
     args: [
       '--no-sandbox',
@@ -64,11 +79,17 @@ const launchBrowser = async () => {
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--font-render-hinting=medium',
+      `--disk-cache-size=${chromiumDiskCacheBytes}`,
+      `--media-cache-size=${chromiumMediaCacheBytes}`,
     ],
   });
+  browserInstance = browser;
 
   browser.on('disconnected', () => {
-    browserPromise = null;
+    if (browserInstance === browser) {
+      browserInstance = null;
+      browserPromise = null;
+    }
   });
 
   return browser;
@@ -135,8 +156,26 @@ const waitForDocumentAssets = async (page) => {
 };
 
 export const ensureDocumentPdfCacheDirectory = async () => {
-  await fs.mkdir(cacheDirectory, { recursive: true });
+  await Promise.all([
+    fs.mkdir(cacheDirectory, { recursive: true }),
+    fs.mkdir(browserUserDataDirectory, { recursive: true }),
+  ]);
   return cacheDirectory;
+};
+
+export const closeDocumentPdfRenderer = async () => {
+  const pendingBrowser = browserPromise;
+  browserPromise = null;
+  if (!pendingBrowser) return;
+
+  try {
+    const browser = await pendingBrowser;
+    if (browser?.connected) {
+      await browser.close();
+    }
+  } finally {
+    browserInstance = null;
+  }
 };
 
 export const warmDocumentPdfRenderer = async () => {

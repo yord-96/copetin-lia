@@ -21,7 +21,10 @@ import {
   ensureAttendanceUploadDirectory,
   getAttendanceUploadInfo,
 } from './storage/attendancePhotoStore.js';
-import { warmDocumentPdfRenderer } from './storage/documentPdfRenderer.js';
+import {
+  closeDocumentPdfRenderer,
+  warmDocumentPdfRenderer,
+} from './storage/documentPdfRenderer.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -29,6 +32,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const distPath = path.join(projectRoot, 'dist');
+let httpServer = null;
+let shutdownStarted = false;
 
 const parseOrigins = (value) =>
   String(value ?? '')
@@ -208,10 +213,40 @@ const start = async () => {
   } catch (error) {
     console.warn('Motor PDF no disponible al iniciar:', error?.message ?? error);
   }
-  app.listen(port, () => {
+  httpServer = app.listen(port, () => {
     console.log(`Copetin API escuchando en puerto ${port}`);
   });
 };
+
+const closeHttpServer = async () => {
+  if (!httpServer) return;
+  await Promise.race([
+    new Promise((resolve) => httpServer.close(resolve)),
+    new Promise((resolve) => setTimeout(resolve, 10000)),
+  ]);
+};
+
+const shutdown = async (signal) => {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  console.log(`Cerrando Copetin API por ${signal}.`);
+
+  try {
+    await closeHttpServer();
+    await closeDocumentPdfRenderer();
+    process.exit(0);
+  } catch (error) {
+    console.error('No se pudo cerrar Copetin API limpiamente.', error);
+    process.exit(1);
+  }
+};
+
+process.once('SIGINT', () => {
+  void shutdown('SIGINT');
+});
+process.once('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
 
 start().catch((error) => {
   console.error('No se pudo iniciar Copetin API.');
