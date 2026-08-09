@@ -982,6 +982,23 @@ const calculateDurationPricing = ({ pricingPlan, baseSubtotalBs }) => {
   };
 };
 
+const calculateGeneralItemDiscountBs = ({
+  discountMode,
+  discountBs,
+  discountPercent,
+  itemSubtotalBs,
+}) => {
+  const safeItemSubtotalBs = Math.max(0, toPositiveRoundedNumber(itemSubtotalBs ?? 0));
+  if (discountMode === 'fixed') {
+    return Number(Math.min(
+      safeItemSubtotalBs,
+      Math.max(0, toPositiveRoundedNumber(discountBs ?? 0)),
+    ).toFixed(2));
+  }
+  const safePercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(discountPercent ?? 0)));
+  return Number((safeItemSubtotalBs * (safePercent / 100)).toFixed(2));
+};
+
 const enrichDailySchedulePricingPlan = (pricingPlan, itemLines = [], serviceLines = [], supplierFulfillmentPlan = []) => {
   if (pricingPlan?.mode !== 'daily_schedule') return pricingPlan;
   const sourceDays = Array.isArray(pricingPlan?.scheduleDays) ? pricingPlan.scheduleDays : [];
@@ -14516,7 +14533,7 @@ const createWebBridge = () => ({
       transaction((state) => {
         const now = new Date().toISOString();
         const discountMode = payload?.discountMode === 'fixed' ? 'fixed' : 'percent';
-        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const requestedDiscountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const generalDiscountPercent = discountMode === 'percent'
           ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)))
           : 0;
@@ -14600,6 +14617,12 @@ const createWebBridge = () => ({
         const alignedServices = alignLinesToDailySchedule(pricingPlan, requestedServices);
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
+        const discountBs = calculateGeneralItemDiscountBs({
+          discountMode,
+          discountBs: requestedDiscountBs,
+          discountPercent: generalDiscountPercent,
+          itemSubtotalBs: pricingPlan.chargeableSubtotalBs,
+        });
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
@@ -14843,7 +14866,7 @@ const createWebBridge = () => ({
           : payload?.discountMode === 'percent'
             ? 'percent'
             : quote?.totals?.discountMode === 'fixed' ? 'fixed' : 'percent';
-        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
+        const requestedDiscountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? quote?.totals?.discountBs ?? 0));
         const discountPercent = discountMode === 'percent'
           ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? quote?.totals?.discountPercent ?? 0)))
           : 0;
@@ -14864,6 +14887,12 @@ const createWebBridge = () => ({
           deliveryChargeMode: payload?.deliveryChargeMode ?? quote?.deliveryChargeMode,
           deliveryFeeBs: payload?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? quote?.totals?.deliveryFeeBs,
           deliveryFeeReason: payload?.deliveryFeeReason ?? quote?.deliveryFeeReason,
+        });
+        const discountBs = calculateGeneralItemDiscountBs({
+          discountMode,
+          discountBs: requestedDiscountBs,
+          discountPercent,
+          itemSubtotalBs: pricingPlan.chargeableSubtotalBs,
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const paidAtApprovalBs = Math.max(0, toPositiveRoundedNumber(payload?.paidAtApprovalBs ?? quote?.payment?.paidAtApprovalBs ?? 0));
@@ -14992,7 +15021,7 @@ const createWebBridge = () => ({
       transaction((state) => {
         const now = new Date().toISOString();
         const discountMode = payload?.discountMode === 'fixed' ? 'fixed' : 'percent';
-        const discountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
+        const requestedDiscountBs = Math.max(0, toPositiveRoundedNumber(payload?.discountBs ?? 0));
         const discountPercent = discountMode === 'percent'
           ? Math.min(100, Math.max(0, toPositiveRoundedNumber(payload?.discountPercent ?? 0)))
           : 0;
@@ -15071,6 +15100,12 @@ const createWebBridge = () => ({
         );
         const baseSubtotalBs = itemsBaseSubtotalBs + servicesSubtotalBs;
         const subtotalBs = pricingPlan.chargeableSubtotalBs + servicesSubtotalBs;
+        const discountBs = calculateGeneralItemDiscountBs({
+          discountMode,
+          discountBs: requestedDiscountBs,
+          discountPercent,
+          itemSubtotalBs: pricingPlan.chargeableSubtotalBs,
+        });
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({ ...payload, logisticsMode });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
@@ -15408,7 +15443,7 @@ const createWebBridge = () => ({
           : payload?.discountMode === 'percent'
             ? 'percent'
             : contract?.totals?.discountMode === 'fixed' ? 'fixed' : 'percent';
-        const discountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
+        const requestedDiscountBs = Math.max(0, Number(payload?.discountBs ?? contract?.totals?.discountBs ?? 0));
         const discountPercent = discountMode === 'percent'
           ? Math.min(100, Math.max(0, Number(payload?.discountPercent ?? contract?.totals?.discountPercent ?? 0)))
           : 0;
@@ -15437,6 +15472,12 @@ const createWebBridge = () => ({
           deliveryChargeMode: payload?.deliveryChargeMode ?? contract?.deliveryChargeMode,
           deliveryFeeBs: payload?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? contract?.totals?.deliveryFeeBs,
           deliveryFeeReason: payload?.deliveryFeeReason ?? contract?.deliveryFeeReason,
+        });
+        const discountBs = calculateGeneralItemDiscountBs({
+          discountMode,
+          discountBs: requestedDiscountBs,
+          discountPercent,
+          itemSubtotalBs: pricingPlan.chargeableSubtotalBs,
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const now = new Date().toISOString();
@@ -16610,8 +16651,16 @@ const createWebBridge = () => ({
         const subtotalBs = Math.max(0, toPositiveRoundedNumber(
           quotedTotals?.subtotalBs ?? pricingPlan.chargeableSubtotalBs + servicesSubtotalBs,
         ));
-        const discountBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountBs ?? 0));
-        const discountPercent = Math.min(100, Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountPercent ?? payload?.discountPercent ?? 0)));
+        const discountMode = quotedTotals?.discountMode === 'fixed' ? 'fixed' : 'percent';
+        const discountPercent = discountMode === 'percent'
+          ? Math.min(100, Math.max(0, toPositiveRoundedNumber(quotedTotals?.discountPercent ?? payload?.discountPercent ?? 0)))
+          : 0;
+        const discountBs = calculateGeneralItemDiscountBs({
+          discountMode,
+          discountBs: quotedTotals?.discountBs ?? 0,
+          discountPercent,
+          itemSubtotalBs: pricingPlan.chargeableSubtotalBs,
+        });
         const logisticsMode = ['envio', 'recojo'].includes(payload?.logisticsMode) ? payload.logisticsMode : 'envio';
         const deliveryCharge = normalizeDeliveryCharge({
           ...payload,
@@ -16619,7 +16668,7 @@ const createWebBridge = () => ({
           deliveryFeeBs: payload?.deliveryFeeBs ?? quotedTotals?.deliveryFeeBs,
           totals: quotedTotals,
         });
-        const totalBs = Math.max(0, toPositiveRoundedNumber(quotedTotals?.totalBs ?? subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
+        const totalBs = Math.max(0, toPositiveRoundedNumber(subtotalBs - discountBs + deliveryCharge.deliveryFeeBs));
         const prepaidClientId = String(payload?.prepaidClientId ?? '').trim();
         let prepaidAppliedBs = Math.max(0, toPositiveRoundedNumber(payload?.prepaidAppliedBs ?? 0));
         let prepaidClient = null;

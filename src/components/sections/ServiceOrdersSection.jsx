@@ -4406,6 +4406,7 @@ function ServiceOrdersSection({
   );
 
   const quoteSubtotalBs = durationPricing.chargeableSubtotalBs + servicesSubtotalBs;
+  const generalDiscountBaseBs = durationPricing.chargeableSubtotalBs;
 
   const quotePricingPlan = useMemo(
     () => ({
@@ -4486,10 +4487,10 @@ function ServiceOrdersSection({
   const generalDiscountBs = useMemo(() => {
     if (generalDiscountMode === 'fixed') {
       const fixedDiscountBs = Math.max(0, Number(draft.discountBs ?? 0));
-      return Number(Math.min(quoteSubtotalBs, fixedDiscountBs).toFixed(2));
+      return Number(Math.min(generalDiscountBaseBs, fixedDiscountBs).toFixed(2));
     }
-    return Number((quoteSubtotalBs * (generalDiscountPercent / 100)).toFixed(2));
-  }, [draft.discountBs, generalDiscountMode, generalDiscountPercent, quoteSubtotalBs]);
+    return Number((generalDiscountBaseBs * (generalDiscountPercent / 100)).toFixed(2));
+  }, [draft.discountBs, generalDiscountBaseBs, generalDiscountMode, generalDiscountPercent]);
   const paidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
 
   const quoteTotalBs = useMemo(() => (
@@ -14212,7 +14213,7 @@ function ServiceOrdersSection({
                             <input
                               type="number"
                               min="0"
-                              max={quoteSubtotalBs}
+                              max={generalDiscountBaseBs}
                               step="0.01"
                               value={draft.discountBs}
                               onFocus={selectNumericInput}
@@ -14231,8 +14232,8 @@ function ServiceOrdersSection({
                         </label>
                         <small className="orders-field-live-summary is-info">
                           {generalDiscountMode === 'fixed'
-                            ? `Rebaja fija: ${formatBs(generalDiscountBs)}`
-                            : `Seleccionado: ${generalDiscountPercent}% | Rebaja: ${formatBs(generalDiscountBs)}`}
+                            ? `Rebaja fija solo sobre items: ${formatBs(generalDiscountBs)}`
+                            : `Seleccionado: ${generalDiscountPercent}% solo sobre items | Rebaja: ${formatBs(generalDiscountBs)}`}
                         </small>
                       </div>
                       <label>
@@ -14392,7 +14393,7 @@ function ServiceOrdersSection({
                         </div>
                       ) : null}
                       <div className="orders-money-row muted">
-                        <span>Descuento ({generalDiscountPercent}%)</span>
+                        <span>Descuento items ({generalDiscountPercent}%)</span>
                         <strong>{formatBs(generalDiscountBs)}</strong>
                       </div>
                       <div className="orders-money-row muted">
@@ -14637,7 +14638,7 @@ function ServiceOrdersSection({
                     </div>
                   ) : null}
                   <div className="orders-money-row muted">
-                    <span>Descuento ({generalDiscountPercent}%)</span>
+                    <span>Descuento items ({generalDiscountPercent}%)</span>
                     <strong>{formatBs(generalDiscountBs)}</strong>
                   </div>
                   <div className="orders-money-row muted">
