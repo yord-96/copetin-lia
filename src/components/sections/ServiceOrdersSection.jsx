@@ -1620,6 +1620,7 @@ function ServiceOrdersSection({
 
   const canChooseResponsibles = isDeveloper(currentUser);
   const canViewHiddenContracts = isDeveloper(currentUser);
+  const canRemoveCancelledContract = isDeveloper(currentUser) && Boolean(onRemoveContract);
   const canManageContractEconomicLedger = !readOnly;
   const contractNumberingInfo = useMemo(() => {
     const numbering = settings?.numbering ?? {};
@@ -9915,12 +9916,23 @@ function ServiceOrdersSection({
 
           {menuState.type === 'contract' && activeContractMenuRow ? (
             activeContractMenuRow.status === 'anulado' ? (
-              <button
-                type="button"
-                onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
-              >
-                Previsualizar contrato PDF
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
+                >
+                  Previsualizar contrato PDF
+                </button>
+                {canRemoveCancelledContract ? (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => handleDeleteContractClick(activeContractMenuRow)}
+                  >
+                    Eliminar
+                  </button>
+                ) : null}
+              </>
             ) : activeContractMenuRow.status === 'oculto' ? (
               <>
                 <button
