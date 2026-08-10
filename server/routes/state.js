@@ -237,6 +237,7 @@ const normalizeEconomicLedgerRows = (rows) => {
       isCashRegistered: Boolean(entry?.isCashRegistered),
       cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
       reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
+      refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
       deletedAt: String(entry?.deletedAt ?? '').trim() || null,
       deletedById: entry?.deletedById ?? null,
       deletedByName: String(entry?.deletedByName ?? '').trim(),

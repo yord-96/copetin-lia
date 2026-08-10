@@ -441,12 +441,21 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     cashRegisteredAt: entry?.cashRegisteredAt ?? null,
     cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
+    refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
     deletedAt: entry?.deletedAt ?? null,
     deletedById: entry?.deletedById ?? null,
     deletedByName: String(entry?.deletedByName ?? '').trim(),
     deletionReason: String(entry?.deletionReason ?? '').trim(),
   };
 };
+
+const isGeneratedEconomicCollectionEntry = (entry) => (
+  entry?.type === 'deposit'
+  && (
+    String(entry?.id ?? '').startsWith('eco-cash-')
+    || Boolean(String(entry?.cashCollectionTarget ?? '').trim())
+  )
+);
 
 const isCashCollectedDamageLedgerEntry = (entry) => (
   entry?.type === 'charge'
@@ -1461,6 +1470,7 @@ function ServiceOrdersSection({
     note: '',
   });
   const [contractEconomicsGuaranteeRefundDraft, setContractEconomicsGuaranteeRefundDraft] = useState({
+    source: 'guarantee',
     amountBs: '',
     paymentMethod: 'efectivo',
     paymentAccount: '',
@@ -3153,6 +3163,15 @@ function ServiceOrdersSection({
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
+    // Las lineas agregadas manualmente como deposito representan el dinero que
+    // el cliente realmente entrego. Una linea eco-cash posterior respalda la
+    // aplicacion/cobro con recibo, pero no vuelve a sumar el mismo dinero.
+    const ledgerManualCustomerDepositsBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'deposit' && !entry.reclassifiedFromPayment && !isGeneratedEconomicCollectionEntry(entry)
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
+    const ledgerCustomerDepositsBs = Math.max(ledgerManualCustomerDepositsBs, ledgerConfirmedRentalBs);
     const ledgerUnregisteredRentalBs = Math.max(0, Number((ledgerAnnotatedRentalBs - ledgerConfirmedRentalBs).toFixed(2)));
     const ledgerUnregisteredGuaranteeBs = Math.max(0, Number((ledgerAnnotatedGuaranteeBs - ledgerConfirmedGuaranteeBs).toFixed(2)));
     const ledgerUnregisteredTotalBs = Number((ledgerUnregisteredRentalBs + ledgerUnregisteredGuaranteeBs).toFixed(2));
@@ -3160,12 +3179,30 @@ function ServiceOrdersSection({
     const effectiveGuaranteeValidatedBs = Math.max(guaranteeValidatedBs, ledgerConfirmedGuaranteeBs);
     const effectiveChargesBs = Math.max(0, penaltiesBs);
     const guaranteeReserveBs = Math.max(ledgerConfirmedGuaranteeBs, effectiveGuaranteeValidatedBs);
-    const reclassifiedGuaranteeBs = economicLedger.reduce((sum, entry) => (
+    const explicitlyReclassifiedGuaranteeBs = economicLedger.reduce((sum, entry) => (
       entry.type === 'guarantee' && entry.reclassifiedFromPayment
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
-    const ledgerRecordedRentalBs = Math.max(0, Number((ledgerConfirmedRentalBs - reclassifiedGuaranteeBs).toFixed(2)));
+    // Compatibilidad con hojas anteriores: si ya habia depositos anotados y se
+    // aparto una garantia, esa garantia salio de esos fondos aunque las versiones
+    // antiguas no guardaran reclassifiedFromPayment=true.
+    const guaranteeNotExplicitlyReclassifiedBs = Math.max(
+      0,
+      Number((ledgerAnnotatedGuaranteeBs - explicitlyReclassifiedGuaranteeBs).toFixed(2)),
+    );
+    const inferredReclassifiedGuaranteeBs = Math.min(
+      guaranteeNotExplicitlyReclassifiedBs,
+      Math.max(0, Number((ledgerManualCustomerDepositsBs - explicitlyReclassifiedGuaranteeBs).toFixed(2))),
+    );
+    const reclassifiedGuaranteeBs = Number((
+      explicitlyReclassifiedGuaranteeBs + inferredReclassifiedGuaranteeBs
+    ).toFixed(2));
+    const ledgerFundsAfterGuaranteeBs = Math.max(
+      0,
+      Number((ledgerManualCustomerDepositsBs - reclassifiedGuaranteeBs).toFixed(2)),
+    );
+    const ledgerRecordedRentalBs = Math.max(0, Number((ledgerConfirmedRentalBs - explicitlyReclassifiedGuaranteeBs).toFixed(2)));
     // La garantia retenida no cancela automaticamente los daños.
     // Solo se considera aplicada cuando existe una linea explicita de cargo
     // creada desde "Aplicar daños a garantia". Despues de un Reset economico,
@@ -3252,19 +3289,41 @@ function ServiceOrdersSection({
     };
     const damagePendingBs = collectionTargetPending.damageBs;
     const damagesSettled = penaltiesBs > 0 && damagePendingBs <= 0.009;
-    const ledgerAppliedToRentalBs = Math.min(rentalReceivedBs, ledgerChargeTargetBs);
-    const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - rentalReceivedBs).toFixed(2)));
+    const ledgerFundsAvailableForRentalBs = Math.max(rentalReceivedBs, ledgerFundsAfterGuaranteeBs);
+    const ledgerAppliedToRentalBs = Math.min(ledgerFundsAvailableForRentalBs, ledgerChargeTargetBs);
+    const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerFundsAvailableForRentalBs).toFixed(2)));
+    const ledgerGrossSurplusBs = Math.max(
+      0,
+      Number((ledgerFundsAvailableForRentalBs - ledgerChargeTargetBs).toFixed(2)),
+    );
+    const ledgerSurplusRefundedBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'refund' && entry.refundSource === 'surplus'
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
+    const ledgerGuaranteeRefundedBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'refund' && entry.refundSource !== 'surplus'
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
     const excessPaymentBs = Math.max(
       0,
+      ledgerGrossSurplusBs,
       toMoneyNumber(contract?.payment?.overpaidBs),
       toMoneyNumber(rental?.payment?.overpaidBs),
       toMoneyNumber(rental?.totals?.overpaidBs),
     );
-    const effectiveRefundedBs = Math.max(ledgerTotals.refundedBs, confirmedGuaranteeRefundBs);
-    const ledgerRefundSuggestedBs = Math.max(0, Number((excessPaymentBs - effectiveRefundedBs).toFixed(2)));
+    const effectiveGuaranteeRefundedBs = Math.max(ledgerGuaranteeRefundedBs, confirmedGuaranteeRefundBs);
+    const effectiveRefundedBs = Number((effectiveGuaranteeRefundedBs + ledgerSurplusRefundedBs).toFixed(2));
+    const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerGrossSurplusBs - ledgerSurplusRefundedBs).toFixed(2)));
     const guaranteeRefundAvailableBs = Math.max(
       0,
-      Number((guaranteeReserveBs - guaranteeAppliedToChargesBs - effectiveRefundedBs).toFixed(2)),
+      Number((guaranteeReserveBs - guaranteeAppliedToChargesBs - effectiveGuaranteeRefundedBs).toFixed(2)),
+    );
+    const totalRefundAvailableBs = Number((guaranteeRefundAvailableBs + ledgerRefundSuggestedBs).toFixed(2));
+    const availableDepositsForGuaranteeBs = Math.max(
+      0,
+      Number((ledgerCustomerDepositsBs - reclassifiedGuaranteeBs).toFixed(2)),
     );
     const realIncomeBs = Number((rentalReceivedBs + collectionByTarget.damageBs).toFixed(2));
     const totalManagedBs = Number((rentalTotalBs + effectiveGuaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
@@ -3334,6 +3393,7 @@ function ServiceOrdersSection({
       ledgerTotals,
       confirmedGuaranteeRefundBs,
       effectiveRefundedBs,
+      effectiveGuaranteeRefundedBs,
       ledgerConfirmedRentalBs,
       ledgerConfirmedGuaranteeBs,
       ledgerUnregisteredRentalBs,
@@ -3341,6 +3401,12 @@ function ServiceOrdersSection({
       ledgerUnregisteredTotalBs,
       ledgerAnnotatedRentalBs,
       ledgerAnnotatedGuaranteeBs,
+      ledgerCustomerDepositsBs,
+      ledgerFundsAfterGuaranteeBs,
+      ledgerGrossSurplusBs,
+      ledgerSurplusRefundedBs,
+      totalRefundAvailableBs,
+      availableDepositsForGuaranteeBs,
       ledgerAppliedToRentalBs,
       ledgerChargeTargetBs,
       ledgerDebtBs,
@@ -3358,7 +3424,7 @@ function ServiceOrdersSection({
         ? 'Sin garantia'
         : guaranteeAppliedToChargesBs >= guaranteeReserveBs && guaranteeReserveBs > 0
           ? 'Cobrada por danos'
-          : effectiveRefundedBs > 0 && guaranteeRefundAvailableBs <= 0
+          : effectiveGuaranteeRefundedBs > 0 && guaranteeRefundAvailableBs <= 0
             ? 'Devuelta'
             : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
               ? 'Retenida'
@@ -3372,6 +3438,8 @@ function ServiceOrdersSection({
       refundBs,
       statusLabel: effectiveBalanceBs > 0
         ? 'Saldo pendiente'
+        : ledgerRefundSuggestedBs > 0
+          ? 'Excedente por devolver'
         : penaltiesBs > 0
           ? 'Liquidacion con cargos'
           : 'Sin saldo pendiente',
@@ -8161,11 +8229,11 @@ function ServiceOrdersSection({
   const handleSeparateEconomicGuarantee = async () => {
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
     const declaredGapBs = Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs);
-    const amount = Math.max(0, contractEconomicsData.excessPaymentBs > 0 ? contractEconomicsData.excessPaymentBs : declaredGapBs);
+    const amount = declaredGapBs;
     if (amount <= 0) return;
     const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
     const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])].reverse().find((entry) => entry.type === 'deposit' && entry.paymentMethod);
-    const isReclassification = contractEconomicsData.excessPaymentBs > 0;
+    const isReclassification = contractEconomicsData.availableDepositsForGuaranteeBs >= amount;
     let cashResult = null;
     let movementId = null;
     if (!isReclassification) {
@@ -8261,9 +8329,17 @@ function ServiceOrdersSection({
     event.preventDefault();
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsGuaranteeRefund) return;
 
+    const requestedSource = contractEconomicsGuaranteeRefundDraft.source === 'surplus' ? 'surplus' : 'guarantee';
+    const refundSource = requestedSource === 'guarantee' && contractEconomicsData.guaranteeRefundAvailableBs <= 0
+      ? 'surplus'
+      : requestedSource === 'surplus' && contractEconomicsData.ledgerRefundSuggestedBs <= 0
+        ? 'guarantee'
+        : requestedSource;
     const refundableBs = Math.max(
       0,
-      toMoneyNumber(contractEconomicsData.guaranteeRefundAvailableBs),
+      toMoneyNumber(refundSource === 'surplus'
+        ? contractEconomicsData.ledgerRefundSuggestedBs
+        : contractEconomicsData.guaranteeRefundAvailableBs),
     );
     const amount = Math.max(0, toMoneyNumber(contractEconomicsGuaranteeRefundDraft.amountBs || refundableBs));
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsGuaranteeRefundDraft.paymentMethod);
@@ -8272,7 +8348,7 @@ function ServiceOrdersSection({
       : '';
 
     if (refundableBs <= 0) {
-      setContractEconomicsError('No existe una garantia disponible para devolver.');
+      setContractEconomicsError('No existe dinero disponible en ese concepto para devolver.');
       return;
     }
     if (amount <= 0) {
@@ -8304,19 +8380,19 @@ function ServiceOrdersSection({
         type: 'egreso',
         cashBoxType: 'BIG_CASH',
         amountBs: amount,
-        description: `Devolucion garantia: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
-        category: 'garantia_devuelta_manual',
+        description: `${refundSource === 'surplus' ? 'Devolucion excedente' : 'Devolucion garantia'}: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
+        category: refundSource === 'surplus' ? 'excedente_devuelto_manual' : 'garantia_devuelta_manual',
         paymentMethod,
         paymentAccount,
         responsible: createdByName,
         receipt: contractEconomicsGuaranteeRefundDraft.receipt,
         notes: contractEconomicsGuaranteeRefundDraft.note
           || contractEconomicsGuaranteeRefundDraft.receipt
-          || `Devolucion de garantia del contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || ''}`,
+          || `Devolucion de ${refundSource === 'surplus' ? 'excedente' : 'garantia'} del contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || ''}`,
         linkedRentalId: contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '',
         linkedContractId: contractEconomicsData.contract?.id ?? '',
         linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-        accountingTag: 'guarantee_refund',
+        accountingTag: refundSource === 'surplus' ? 'contract_overpayment_refund' : 'guarantee_refund',
         createdBy: createdByName,
       });
       rememberEconomicCashResult(result);
@@ -8332,12 +8408,13 @@ function ServiceOrdersSection({
       const entry = {
         id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         type: 'refund',
+        refundSource,
         amountBs: amount,
         paymentMethod,
         paymentAccount,
         note: contractEconomicsGuaranteeRefundDraft.note
           || contractEconomicsGuaranteeRefundDraft.receipt
-          || `Devolucion de garantia a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+          || `Devolucion de ${refundSource === 'surplus' ? 'excedente' : 'garantia'} a ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
         createdAt: new Date().toISOString(),
         createdByName,
         cashMovementId: movementId || null,
@@ -8346,12 +8423,13 @@ function ServiceOrdersSection({
       };
       const updated = await saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
-        'Devolucion de garantia registrada en Caja Grande con recibo.',
+        `Devolucion de ${refundSource === 'surplus' ? 'excedente' : 'garantia'} registrada en Caja Grande con recibo.`,
         { force: true },
       );
       if (updated) {
         resetContractEconomicLedgerForm();
         setContractEconomicsGuaranteeRefundDraft({
+          source: 'guarantee',
           amountBs: '',
           paymentMethod: 'efectivo',
           paymentAccount: '',
@@ -10277,8 +10355,8 @@ function ServiceOrdersSection({
                 className="contract-economics-panel"
                 style={{
                   marginBottom: '14px',
-                  borderColor: contractEconomicsData.managedDebtBs > 0 ? '#fdba74' : '#86efac',
-                  background: contractEconomicsData.managedDebtBs > 0 ? '#fff7ed' : '#f0fdf4',
+                  borderColor: contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.ledgerRefundSuggestedBs > 0 ? '#fdba74' : '#86efac',
+                  background: contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.ledgerRefundSuggestedBs > 0 ? '#fff7ed' : '#f0fdf4',
                 }}
               >
                 <header>
@@ -10291,6 +10369,8 @@ function ServiceOrdersSection({
                         ? `Saldo pendiente ${formatBs(contractEconomicsData.managedDebtBs)}`
                         : contractEconomicsData.damagePendingBs > 0
                           ? `Alquiler pagado | Danos pendientes ${formatBs(contractEconomicsData.damagePendingBs)}`
+                          : contractEconomicsData.ledgerRefundSuggestedBs > 0
+                            ? `Alquiler pagado | Excedente por devolver ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}`
                           : contractEconomicsData.guaranteeRefundAvailableBs > 0
                             ? `Alquiler pagado | Garantia por devolver ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}`
                             : 'Contrato economicamente al dia'}
@@ -10299,11 +10379,13 @@ function ServiceOrdersSection({
                       Vista resumida del estado con el que ingreso el contrato. Los datos historicos, recibos y movimientos anteriores se conservan sin transformarlos.
                     </p>
                   </div>
-                  <span className={`orders-contract-close-pill ${contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.damagePendingBs > 0 ? 'is-pending' : 'is-ready'}`}>
+                  <span className={`orders-contract-close-pill ${contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.damagePendingBs > 0 || contractEconomicsData.totalRefundAvailableBs > 0 ? 'is-pending' : 'is-ready'}`}>
                     {contractEconomicsData.managedDebtBs > 0
                       ? 'Pendiente de cobro'
                       : contractEconomicsData.damagePendingBs > 0
                         ? 'Danos pendientes'
+                        : contractEconomicsData.ledgerRefundSuggestedBs > 0
+                          ? 'Excedente pendiente'
                         : contractEconomicsData.guaranteeRefundAvailableBs > 0
                           ? 'Garantia pendiente'
                           : 'Sin pendientes'}
@@ -10339,21 +10421,18 @@ function ServiceOrdersSection({
                 </div>
 
                 {canManageContractEconomicLedger && (
-                  contractEconomicsData.excessPaymentBs > 0
-                  || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs
+                  contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs
                   || contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs
                 ) ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-                    {(contractEconomicsData.excessPaymentBs > 0 || contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs) ? (
+                    {contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs ? (
                       <button
                         type="button"
                         className="ghost-button"
                         onClick={handleSeparateEconomicGuarantee}
                         disabled={readOnly || isSavingContractEconomicsLedger}
                       >
-                        {contractEconomicsData.excessPaymentBs > 0
-                          ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)} como garantia`
-                          : `Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
+                        {`Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
                       </button>
                     ) : null}
                   </div>
@@ -10594,18 +10673,15 @@ function ServiceOrdersSection({
                               readOnly
                               || isSavingContractEconomicsLedger
                               || (
-                                contractEconomicsData.excessPaymentBs <= 0
-                                && Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0
+                                Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0
                               )
                             }
                             style={{ width: '100%' }}
                           >
-                            {contractEconomicsData.excessPaymentBs > 0
-                              ? `Separar excedente ${formatBs(contractEconomicsData.excessPaymentBs)}`
-                              : `Separar garantia ${formatBs(Math.max(
-                                0,
-                                contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs,
-                              ))}`}
+                            {`Separar garantia ${formatBs(Math.max(
+                              0,
+                              contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs,
+                            ))}`}
                           </button>
                         </section>
 
@@ -10620,7 +10696,7 @@ function ServiceOrdersSection({
                             background: '#f7fff9',
                             padding: '10px',
                             display: 'grid',
-                            gridTemplateColumns: 'minmax(210px, 1.15fr) minmax(105px, 0.45fr) minmax(130px, 0.55fr) minmax(170px, 0.8fr) minmax(145px, 0.55fr)',
+                            gridTemplateColumns: 'minmax(190px, 1.1fr) repeat(6, minmax(110px, 0.5fr))',
                             gap: '8px',
                             alignItems: 'end',
                           }}
@@ -10631,11 +10707,24 @@ function ServiceOrdersSection({
                             </span>
                             <h4 style={{ margin: '2px 0', fontSize: '14px' }}>Garantia o excedente con recibo</h4>
                             <p style={{ margin: 0, color: '#667085', lineHeight: 1.4 }}>
-                              {contractEconomicsData.guaranteeRefundAvailableBs > 0
-                                ? `Disponible: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}. Genera un egreso de Caja Grande.`
-                                : 'No existe una garantia disponible para devolver.'}
+                              {contractEconomicsData.totalRefundAvailableBs > 0
+                                ? `Garantia: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)} · Excedente: ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}.`
+                                : 'No existe dinero disponible para devolver.'}
                             </p>
                           </div>
+                          <label>
+                            Concepto
+                            <select
+                              value={contractEconomicsGuaranteeRefundDraft.source === 'surplus' && contractEconomicsData.ledgerRefundSuggestedBs > 0
+                                ? 'surplus'
+                                : contractEconomicsData.guaranteeRefundAvailableBs > 0 ? 'guarantee' : 'surplus'}
+                              onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, source: event.target.value, amountBs: '' }))}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
+                            >
+                              <option value="guarantee" disabled={contractEconomicsData.guaranteeRefundAvailableBs <= 0}>Garantia ({formatBs(contractEconomicsData.guaranteeRefundAvailableBs)})</option>
+                              <option value="surplus" disabled={contractEconomicsData.ledgerRefundSuggestedBs <= 0}>Excedente ({formatBs(contractEconomicsData.ledgerRefundSuggestedBs)})</option>
+                            </select>
+                          </label>
                           <label>
                             Monto
                             <input
@@ -10644,8 +10733,10 @@ function ServiceOrdersSection({
                               step="0.01"
                               value={contractEconomicsGuaranteeRefundDraft.amountBs}
                               onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                              placeholder={String(contractEconomicsData.guaranteeRefundAvailableBs.toFixed(2))}
-                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                              placeholder={String((contractEconomicsGuaranteeRefundDraft.source === 'surplus' || contractEconomicsData.guaranteeRefundAvailableBs <= 0
+                                ? contractEconomicsData.ledgerRefundSuggestedBs
+                                : contractEconomicsData.guaranteeRefundAvailableBs).toFixed(2))}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             />
                           </label>
                           <label>
@@ -10657,7 +10748,7 @@ function ServiceOrdersSection({
                                 paymentMethod: event.target.value,
                                 paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '',
                               }))}
-                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             >
                               <option value="efectivo">Efectivo</option>
                               <option value="qr">QR</option>
@@ -10670,7 +10761,7 @@ function ServiceOrdersSection({
                               value={contractEconomicsGuaranteeRefundDraft.receipt}
                               onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, receipt: event.target.value }))}
                               placeholder="Referencia opcional"
-                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                              disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             />
                           </label>
                           {contractEconomicsGuaranteeRefundDraft.paymentMethod === 'qr' ? (
@@ -10679,7 +10770,7 @@ function ServiceOrdersSection({
                               <select
                                 value={contractEconomicsGuaranteeRefundDraft.paymentAccount}
                                 onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
-                                disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                                disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                               >
                                 <option value="">Seleccionar</option>
                                 {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
@@ -10691,7 +10782,7 @@ function ServiceOrdersSection({
                           <button
                             type="submit"
                             className="primary-button"
-                            disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.guaranteeRefundAvailableBs <= 0}
+                            disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             style={{ width: '100%' }}
                           >
                             {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
@@ -10706,28 +10797,28 @@ function ServiceOrdersSection({
                 <aside className="contract-economics-money-story">
                   <h4>Que paso con el dinero</h4>
                   <div>
-                    <span>Cobrado con recibo</span>
-                    <strong>{formatBs(contractEconomicsData.rentalReceivedBs)}</strong>
+                    <span>Depositado por el cliente</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerCustomerDepositsBs)}</strong>
                   </div>
                   <div>
-                    <span>Aplicado al alquiler</span>
+                    <span>Garantia apartada del deposito</span>
+                    <strong>- {formatBs(contractEconomicsData.reclassifiedGuaranteeBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Aplicado al contrato</span>
                     <strong>- {formatBs(contractEconomicsData.ledgerAppliedToRentalBs)}</strong>
                   </div>
                   <div>
-                    <span>Garantia separada</span>
-                    <strong>- {formatBs(contractEconomicsData.ledgerConfirmedGuaranteeBs)}</strong>
+                    <span>Excedente pendiente de devolver</span>
+                    <strong>{formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
                   </div>
                   <div>
-                    <span>Dano descontado</span>
-                    <strong>- {formatBs(contractEconomicsData.guaranteeAppliedToChargesBs)}</strong>
+                    <span>Garantia devuelta</span>
+                    <strong>+ {formatBs(contractEconomicsData.effectiveGuaranteeRefundedBs)}</strong>
                   </div>
                   <div>
-                    <span>Anotado sin recibo</span>
-                    <strong>{formatBs(contractEconomicsData.ledgerUnregisteredTotalBs)}</strong>
-                  </div>
-                  <div>
-                    <span>Devolucion al cliente</span>
-                    <strong>+ {formatBs(contractEconomicsData.effectiveRefundedBs)}</strong>
+                    <span>Danos cobrados por separado</span>
+                    <strong>+ {formatBs(contractEconomicsData.collectionByTarget.damageBs)}</strong>
                   </div>
                   <footer>
                     <span>Ingreso real alquiler</span>
@@ -10745,14 +10836,14 @@ function ServiceOrdersSection({
                   </div>
                   <div className="contract-economics-notebook-summary">
                     <article className="tone-blue">
-                      <span>Cobrado con recibo</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerConfirmedRentalBs)}</strong>
-                      <small>{contractEconomicsData.ledgerUnregisteredRentalBs > 0 ? `Anotado sin recibo: ${formatBs(contractEconomicsData.ledgerUnregisteredRentalBs)}` : 'Confirmado en Caja Grande'}</small>
+                      <span>Depositos del cliente</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerCustomerDepositsBs)}</strong>
+                      <small>{contractEconomicsData.ledgerUnregisteredRentalBs > 0 ? `Sin recibo de caja: ${formatBs(contractEconomicsData.ledgerUnregisteredRentalBs)}` : 'Respaldado en Caja Grande'}</small>
                     </article>
                     <article className="tone-blue">
-                      <span>A cobrar</span>
+                      <span>Total contrato</span>
                       <strong>{formatBs(contractEconomicsData.ledgerChargeTargetBs)}</strong>
-                      <small>Alquiler + cargos a cobrar</small>
+                      <small>Items, servicios y transporte</small>
                     </article>
                     <article className="tone-violet">
                       <span>Garantia reservada</span>
@@ -10765,9 +10856,9 @@ function ServiceOrdersSection({
                       <small>Garantia - danos - devoluciones</small>
                     </article>
                     <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
-                      <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : 'Todo cubierto'}</span>
-                      <strong>{formatBs(contractEconomicsData.ledgerDebtBs)}</strong>
-                      <small>{contractEconomicsData.ledgerDebtBs > 0 ? 'El pago no alcanza' : 'No falta dinero'}</small>
+                      <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : contractEconomicsData.ledgerRefundSuggestedBs > 0 ? 'Excedente a devolver' : 'Todo cubierto'}</span>
+                      <strong>{formatBs(contractEconomicsData.ledgerDebtBs > 0 ? contractEconomicsData.ledgerDebtBs : contractEconomicsData.ledgerRefundSuggestedBs)}</strong>
+                      <small>{contractEconomicsData.ledgerDebtBs > 0 ? 'El pago no alcanza' : contractEconomicsData.ledgerRefundSuggestedBs > 0 ? 'Dinero restante del cliente' : 'No falta dinero'}</small>
                     </article>
                   </div>
                   <strong>{contractEconomicsData.economicLedger.length} linea(s)</strong>
