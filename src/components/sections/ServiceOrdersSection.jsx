@@ -11195,7 +11195,7 @@ function ServiceOrdersSection({
                                   ? 'El recibo ya fue emitido; primero debe corregirse mediante anulacion y reemplazo.'
                                   : `Apartar ${formatBs(guaranteeToSeparateFromDepositBs)} de este deposito.`}
                               >
-                                Apartar garantia {formatBs(guaranteeToSeparateFromDepositBs)}
+                                Apartar {formatBs(guaranteeToSeparateFromDepositBs)}
                               </button>
                             ) : null}
                             {canHaveDepositReceipt ? (

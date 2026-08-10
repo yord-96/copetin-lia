@@ -10855,8 +10855,8 @@ textarea:focus {
 .contract-economics-ledger-form,
 .contract-economics-notebook-line {
   display: grid;
-  grid-template-columns: 48px 126px 172px 116px 128px 118px minmax(210px, 1fr) 138px 168px;
-  min-width: 1280px;
+  grid-template-columns: 48px 126px 160px 110px 115px 105px minmax(200px, 1fr) 120px 260px;
+  min-width: 1320px;
   gap: 0.54rem;
   align-items: center;
 }
@@ -10951,7 +10951,7 @@ textarea:focus {
   display: grid;
   max-height: 260px;
   overflow: auto;
-  min-width: 1280px;
+  min-width: 1320px;
   overscroll-behavior: contain;
 }
 
@@ -11187,14 +11187,18 @@ textarea:focus {
 }
 
 .contract-economics-notebook-line-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 0.38rem;
 }
 
 .contract-economics-row-action {
-  min-height: 1.75rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11203,9 +11207,12 @@ textarea:focus {
   border-radius: 0.3rem;
   background: rgba(255, 255, 255, 0.92);
   color: #33446d;
-  padding: 0 0.48rem;
+  padding: 0.28rem 0.42rem;
   font-size: 0.68rem;
   font-weight: 900;
+  line-height: 1.15;
+  white-space: normal;
+  text-align: center;
   cursor: pointer;
 }
 
