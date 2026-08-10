@@ -181,6 +181,19 @@ const hasSameCommercialShape = (currentRecord, nextRecord) =>
   && (Array.isArray(currentRecord?.items) ? currentRecord.items.length : 0)
     === (Array.isArray(nextRecord?.items) ? nextRecord.items.length : 0);
 
+const hasFreshSupplierPlanRemovalApproval = (currentRecord, nextRecord, currentSupplierRows, nextSupplierRows) => {
+  const currentApprovalId = String(currentRecord?.supplierPlanRemovalApproval?.id ?? '').trim();
+  const approval = nextRecord?.supplierPlanRemovalApproval;
+  const nextApprovalId = String(approval?.id ?? '').trim();
+  return Boolean(
+    nextApprovalId
+    && nextApprovalId !== currentApprovalId
+    && approval?.confirmedAt
+    && Number(approval?.fromRows) === currentSupplierRows
+    && Number(approval?.toRows) === nextSupplierRows
+  );
+};
+
 const assertNoCommercialRecordRegression = (collection, currentRecord, nextRecord) => {
   if (!currentRecord || !nextRecord) return;
   const label = collection === 'contracts' ? 'contrato' : 'orden';
@@ -206,7 +219,11 @@ const assertNoCommercialRecordRegression = (collection, currentRecord, nextRecor
 
   const currentSupplierRows = planRows(currentRecord.supplierFulfillmentPlan);
   const nextSupplierRows = planRows(nextRecord.supplierFulfillmentPlan);
-  if (currentSupplierRows > 0 && nextSupplierRows === 0) {
+  if (
+    currentSupplierRows > 0
+    && nextSupplierRows === 0
+    && !hasFreshSupplierPlanRemovalApproval(currentRecord, nextRecord, currentSupplierRows, nextSupplierRows)
+  ) {
     const error = new Error(`Guardado bloqueado por seguridad: el ${label} ${code} perderia su plan de proveedores.`);
     error.code = 'STATE_SUPPLIER_PLAN_REGRESSION_BLOCKED';
     error.statusCode = 409;

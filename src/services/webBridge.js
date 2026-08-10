@@ -11412,6 +11412,9 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   };
   rental.pricingPlan = deepClone(contract.pricingPlan);
   rental.supplierFulfillmentPlan = deepClone(contract.supplierFulfillmentPlan ?? []);
+  if (payload?.confirmSupplierPlanRemoval === true && contract.supplierPlanRemovalApproval) {
+    rental.supplierPlanRemovalApproval = deepClone(contract.supplierPlanRemovalApproval);
+  }
   const primaryResponsible = contract?.responsibles?.[0] ?? null;
   if (primaryResponsible?.name) {
     rental.createdById = primaryResponsible.id ?? rental.createdById ?? null;
@@ -15421,6 +15424,12 @@ const createWebBridge = () => ({
           requestedSupplierFulfillmentPlan,
           contract.items ?? [],
         );
+        const previousSupplierPlanRows = normalizeSupplierFulfillmentPlan(beforeContract?.supplierFulfillmentPlan).length;
+        const nextSupplierPlanRows = normalizeSupplierFulfillmentPlan(contract.supplierFulfillmentPlan).length;
+        const removesSupplierCoverage = nextSupplierPlanRows < previousSupplierPlanRows;
+        if (removesSupplierCoverage && payload?.confirmSupplierPlanRemoval !== true) {
+          throw new Error('Debes confirmar expresamente que deseas guardar el contrato sin las coberturas de proveedor retiradas.');
+        }
 
         const itemsGrossSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
           + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan);
@@ -15481,6 +15490,24 @@ const createWebBridge = () => ({
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const now = new Date().toISOString();
+        if (removesSupplierCoverage && payload?.confirmSupplierPlanRemoval === true) {
+          contract.supplierPlanRemovalApproval = {
+            id: makeId('supplier-removal-approval'),
+            confirmedAt: now,
+            confirmedById: payload?.updatedById ?? payload?.userId ?? null,
+            confirmedByName: getAuditUserName(payload),
+            confirmedByRole: getAuditUserRole(payload),
+            fromRows: previousSupplierPlanRows,
+            toRows: nextSupplierPlanRows,
+            removedLines: (Array.isArray(payload?.supplierPlanRemovalDetails)
+              ? payload.supplierPlanRemovalDetails
+              : []).map((line) => ({
+              supplierName: String(line?.supplierName ?? 'Proveedor').trim() || 'Proveedor',
+              itemName: String(line?.itemName ?? 'Item').trim() || 'Item',
+              quantity: Math.max(0, Number(line?.quantity ?? 0)),
+            })),
+          };
+        }
         const storedPaidAtApprovalBs = Math.max(
           0,
           Number(contract?.payment?.paidAtApprovalBs ?? 0),

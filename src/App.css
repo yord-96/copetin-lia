@@ -12708,6 +12708,26 @@ textarea:focus {
   font-size: 0.74rem;
 }
 
+.orders-confirm-list {
+  max-height: 11rem;
+  margin: 0.35rem 0;
+  padding: 0.5rem 0.65rem 0.5rem 1.65rem;
+  overflow-y: auto;
+  border: 1px solid #e4e9f5;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #4f5b84;
+  font-size: 0.74rem;
+}
+
+.orders-confirm-list li + li {
+  margin-top: 0.3rem;
+}
+
+.orders-confirm-list b {
+  color: #253063;
+}
+
 .orders-confirm-modal footer {
   display: flex;
   justify-content: flex-end;

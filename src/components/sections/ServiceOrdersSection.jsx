@@ -1505,6 +1505,7 @@ function ServiceOrdersSection({
   const [contractToRevert, setContractToRevert] = useState(null);
   const [orderToCancel, setOrderToCancel] = useState(null);
   const [zeroInitialPaymentConfirmation, setZeroInitialPaymentConfirmation] = useState(null);
+  const [supplierPlanRemovalConfirmation, setSupplierPlanRemovalConfirmation] = useState(null);
   const cancelReasonRef = useRef(null);
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
@@ -4804,6 +4805,7 @@ function ServiceOrdersSection({
     if (readOnly) return;
     setActionFeedback('');
     setFormError('');
+    setSupplierPlanRemovalConfirmation(null);
     setItemSearch('');
     setItemCategoryFilter('all');
     setQuickItemDraft(buildEmptyQuickItemDraft());
@@ -4838,6 +4840,7 @@ function ServiceOrdersSection({
   const closeModal = () => {
     if (isSubmitting) return;
     setModalOpen(false);
+    setSupplierPlanRemovalConfirmation(null);
     setFormError('');
     setItemSearch('');
     setItemCategoryFilter('all');
@@ -6490,7 +6493,11 @@ function ServiceOrdersSection({
       : [],
   });
 
-  const handleSaveQuote = async ({ approveNow, zeroInitialPaymentConfirmed = false }) => {
+  const handleSaveQuote = async ({
+    approveNow,
+    zeroInitialPaymentConfirmed = false,
+    supplierPlanRemovalConfirmed = false,
+  }) => {
     const originalPaidAtApprovalBs = Math.max(0, Number(draft.originalPaidAtApprovalBs ?? 0));
     const requestedPaidAtApprovalBs = Math.max(0, Number(draft.paidAtApprovalBs ?? 0));
     const requiresZeroPaymentConfirmation = Boolean(
@@ -6511,12 +6518,59 @@ function ServiceOrdersSection({
       return;
     }
 
+    let payload;
+    try {
+      payload = createQuotePayload();
+    } catch (requestError) {
+      setFormError(requestError.message || 'No se pudo validar el contrato.');
+      return;
+    }
+
+    const originalSupplierPlan = Array.isArray(draft.supplierFulfillmentPlan)
+      ? draft.supplierFulfillmentPlan
+      : [];
+    const nextSupplierPlan = Array.isArray(payload.supplierFulfillmentPlan)
+      ? payload.supplierFulfillmentPlan
+      : [];
+    const nextSupplierPlanKeys = new Set(nextSupplierPlan.map((line) => (
+      String(line?.id ?? '').trim()
+      || [line?.lineKey, line?.itemId, line?.supplierId, line?.supplierName]
+        .map((value) => String(value ?? '').trim())
+        .join('|')
+    )));
+    const removedSupplierLines = originalSupplierPlan.filter((line) => {
+      const key = String(line?.id ?? '').trim()
+        || [line?.lineKey, line?.itemId, line?.supplierId, line?.supplierName]
+          .map((value) => String(value ?? '').trim())
+          .join('|');
+      return key && !nextSupplierPlanKeys.has(key);
+    });
+
+    if (
+      draft.entityType === 'contract'
+      && draft.recordId
+      && removedSupplierLines.length > 0
+      && !supplierPlanRemovalConfirmed
+    ) {
+      setSupplierPlanRemovalConfirmation({
+        approveNow: Boolean(approveNow),
+        zeroInitialPaymentConfirmed: Boolean(zeroInitialPaymentConfirmed),
+        contractCode: draft.manualDocumentCode || draft.recordId,
+        customerName: draft.customerName,
+        removedLines: removedSupplierLines.map((line) => ({
+          supplierName: String(line?.supplierName ?? 'Proveedor').trim() || 'Proveedor',
+          itemName: String(line?.itemName ?? 'Item').trim() || 'Item',
+          quantity: Math.max(0, Number(line?.neededQty ?? line?.quantity ?? 0)),
+        })),
+      });
+      return;
+    }
+
     if (!beginSubmit()) return;
     setFormError('');
     setActionFeedback('');
     try {
       setSubmitStatusMessage('Validando datos del contrato...');
-      const payload = createQuotePayload();
       if (draft.entityType === 'contract') {
         const contractPayload = {
           ...payload,
@@ -6532,6 +6586,12 @@ function ServiceOrdersSection({
             && Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0
             ? 0
             : undefined,
+          confirmSupplierPlanRemoval: Boolean(supplierPlanRemovalConfirmed && removedSupplierLines.length > 0),
+          supplierPlanRemovalDetails: removedSupplierLines.map((line) => ({
+            supplierName: String(line?.supplierName ?? 'Proveedor').trim() || 'Proveedor',
+            itemName: String(line?.itemName ?? 'Item').trim() || 'Item',
+            quantity: Math.max(0, Number(line?.neededQty ?? line?.quantity ?? 0)),
+          })),
         };
         let savedContract = null;
         if (approveNow && !draft.recordId && onCreateAndApproveContract) {
@@ -6616,6 +6676,7 @@ function ServiceOrdersSection({
         }
       }
       setModalOpen(false);
+      setSupplierPlanRemovalConfirmation(null);
       setItemSearch('');
       setDraft(buildEmptyDraft('quote'));
       setFormError('');
@@ -14862,6 +14923,74 @@ function ServiceOrdersSection({
                 disabled={isSubmitting}
               >
                 Sí, cambiar a cero
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {supplierPlanRemovalConfirmation ? (
+        <div
+          className="orders-modal-backdrop"
+          onClick={() => {
+            if (!isSubmitting) setSupplierPlanRemovalConfirmation(null);
+          }}
+        >
+          <div className="orders-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <span className="orders-confirm-icon">!</span>
+              <div>
+                <h3>Guardar sin proveedores asignados</h3>
+                <p>
+                  Corregiste las fechas y quitaste coberturas de proveedor. ¿Estás seguro de guardar
+                  este contrato usando ahora el inventario propio disponible?
+                </p>
+              </div>
+            </header>
+
+            <div className="orders-confirm-summary">
+              <strong>
+                {supplierPlanRemovalConfirmation.customerName || 'Cliente'}
+                {supplierPlanRemovalConfirmation.contractCode
+                  ? ` · ${supplierPlanRemovalConfirmation.contractCode}`
+                  : ''}
+              </strong>
+              <span>Se quitarán estas coberturas:</span>
+              <ul className="orders-confirm-list">
+                {supplierPlanRemovalConfirmation.removedLines.map((line, index) => (
+                  <li key={`${line.supplierName}-${line.itemName}-${index}`}>
+                    <b>{line.supplierName}</b>
+                    {' · '}{line.itemName}{line.quantity > 0 ? ` (${line.quantity} u.)` : ''}
+                  </li>
+                ))}
+              </ul>
+              <small>El sistema volverá a validar que exista inventario suficiente para las fechas corregidas.</small>
+            </div>
+
+            <footer>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setSupplierPlanRemovalConfirmation(null)}
+                disabled={isSubmitting}
+              >
+                No, revisar proveedores
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => {
+                  const confirmation = supplierPlanRemovalConfirmation;
+                  setSupplierPlanRemovalConfirmation(null);
+                  handleSaveQuote({
+                    approveNow: Boolean(confirmation.approveNow),
+                    zeroInitialPaymentConfirmed: Boolean(confirmation.zeroInitialPaymentConfirmed),
+                    supplierPlanRemovalConfirmed: true,
+                  });
+                }}
+                disabled={isSubmitting}
+              >
+                Sí, guardar sin esos proveedores
               </button>
             </footer>
           </div>
