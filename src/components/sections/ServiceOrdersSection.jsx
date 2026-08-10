@@ -442,6 +442,10 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
     refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
+    sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+    contractAllocationBs: Math.max(0, toMoneyNumber(entry?.contractAllocationBs)),
+    guaranteeAllocationBs: Math.max(0, toMoneyNumber(entry?.guaranteeAllocationBs)),
+    surplusAllocationBs: Math.max(0, toMoneyNumber(entry?.surplusAllocationBs)),
     deletedAt: entry?.deletedAt ?? null,
     deletedById: entry?.deletedById ?? null,
     deletedByName: String(entry?.deletedByName ?? '').trim(),
@@ -456,6 +460,61 @@ const isGeneratedEconomicCollectionEntry = (entry) => (
     || Boolean(String(entry?.cashCollectionTarget ?? '').trim())
   )
 );
+
+const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
+  const deposits = ledger
+    .filter((entry) => entry?.type === 'deposit' && !entry?.reclassifiedFromPayment && !isGeneratedEconomicCollectionEntry(entry))
+    .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+  const guarantees = ledger.filter((entry) => entry?.type === 'guarantee');
+  const explicitByDeposit = guarantees.reduce((map, entry) => {
+    const sourceDepositId = String(entry?.sourceDepositId ?? '').trim();
+    if (!sourceDepositId) return map;
+    map.set(sourceDepositId, toMoneyNumber(map.get(sourceDepositId)) + toMoneyNumber(entry?.amountBs));
+    return map;
+  }, new Map());
+  let unassignedGuaranteeBs = guarantees.reduce((sum, entry) => (
+    String(entry?.sourceDepositId ?? '').trim() ? sum : sum + toMoneyNumber(entry?.amountBs)
+  ), 0);
+  let contractPendingBs = Math.max(0, toMoneyNumber(contractTotalBs));
+  const allocations = new Map();
+
+  deposits.forEach((entry) => {
+    const receivedBs = Math.max(0, toMoneyNumber(entry?.amountBs));
+    const savedContractBs = Math.max(0, toMoneyNumber(entry?.contractAllocationBs));
+    const savedGuaranteeBs = Math.max(0, toMoneyNumber(entry?.guaranteeAllocationBs));
+    const savedSurplusBs = Math.max(0, toMoneyNumber(entry?.surplusAllocationBs));
+    const savedTotalBs = Number((savedContractBs + savedGuaranteeBs + savedSurplusBs).toFixed(2));
+    if (savedTotalBs > 0 && Math.abs(savedTotalBs - receivedBs) < 0.01) {
+      const explicitlyLinkedGuaranteeBs = Math.max(0, toMoneyNumber(explicitByDeposit.get(entry.id)));
+      const savedFromUnassignedGuaranteeBs = Math.max(0, savedGuaranteeBs - explicitlyLinkedGuaranteeBs);
+      unassignedGuaranteeBs = Math.max(
+        0,
+        Number((unassignedGuaranteeBs - savedFromUnassignedGuaranteeBs).toFixed(2)),
+      );
+      allocations.set(entry.id, {
+        receivedBs,
+        contractBs: savedContractBs,
+        guaranteeBs: savedGuaranteeBs,
+        surplusBs: savedSurplusBs,
+      });
+      contractPendingBs = Math.max(0, Number((contractPendingBs - savedContractBs).toFixed(2)));
+      return;
+    }
+
+    const explicitGuaranteeBs = Math.min(receivedBs, Math.max(0, toMoneyNumber(explicitByDeposit.get(entry.id))));
+    const remainingAfterExplicitBs = Math.max(0, Number((receivedBs - explicitGuaranteeBs).toFixed(2)));
+    const inferredGuaranteeBs = Math.min(remainingAfterExplicitBs, unassignedGuaranteeBs);
+    unassignedGuaranteeBs = Math.max(0, Number((unassignedGuaranteeBs - inferredGuaranteeBs).toFixed(2)));
+    const guaranteeBs = Number((explicitGuaranteeBs + inferredGuaranteeBs).toFixed(2));
+    const availableForContractBs = Math.max(0, Number((receivedBs - guaranteeBs).toFixed(2)));
+    const contractBs = Math.min(availableForContractBs, contractPendingBs);
+    const surplusBs = Math.max(0, Number((availableForContractBs - contractBs).toFixed(2)));
+    contractPendingBs = Math.max(0, Number((contractPendingBs - contractBs).toFixed(2)));
+    allocations.set(entry.id, { receivedBs, contractBs, guaranteeBs, surplusBs });
+  });
+
+  return allocations;
+};
 
 const isCashCollectedDamageLedgerEntry = (entry) => (
   entry?.type === 'charge'
@@ -1494,6 +1553,7 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
+  const [generatingDepositReceiptId, setGeneratingDepositReceiptId] = useState(null);
   const [receiptEditMovement, setReceiptEditMovement] = useState(null);
   const [receiptEditDraft, setReceiptEditDraft] = useState({
     receiptCode: '',
@@ -8179,6 +8239,133 @@ function ServiceOrdersSection({
     if (updated) resetContractEconomicLedgerForm();
   };
 
+  const handleDepositReceipt = async (entry) => {
+    if (!contractEconomicsData || entry?.type !== 'deposit' || generatingDepositReceiptId) return;
+
+    const linkedMovementId = String(entry?.cashMovementId ?? '').trim();
+    if (linkedMovementId) {
+      const linkedMovement = (contractEconomicsData.movements ?? []).find(
+        (movement) => String(movement?.id ?? '') === linkedMovementId,
+      );
+      if (linkedMovement) {
+        await handlePrintEconomicReceipt(linkedMovement);
+      } else {
+        setContractEconomicsError('El recibo existe, pero no se pudo cargar su movimiento. Cierra y vuelve a abrir el sector economico.');
+      }
+      return;
+    }
+
+    if (contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs + 0.01) {
+      setContractEconomicsError('Primero aparta la garantia del deposito. Asi el recibo mostrara correctamente cuanto va al contrato y cuanto queda como garantia.');
+      return;
+    }
+
+    const allocations = getEconomicDepositAllocations(
+      contractEconomicsData.economicLedger,
+      contractEconomicsData.ledgerChargeTargetBs,
+    );
+    const allocation = allocations.get(entry.id);
+    if (!allocation || allocation.receivedBs <= 0) {
+      setContractEconomicsError('No se pudo calcular el desglose de este deposito.');
+      return;
+    }
+
+    const createdBy = String(
+      currentUser?.fullName
+      ?? currentUser?.name
+      ?? currentUser?.username
+      ?? currentUser?.email
+      ?? 'Sistema',
+    ).trim() || 'Sistema';
+    const contractCode = contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || '';
+    const customerName = contractEconomicsData.contract?.customerName || 'Cliente';
+    const receiptDetail = [
+      `ABONO RECIBIDO PARA CONTRATO ${contractCode}`,
+      `Total recibido: ${formatBs(allocation.receivedBs)}`,
+      `Aplicado al contrato: ${formatBs(allocation.contractBs)}`,
+      allocation.guaranteeBs > 0 ? `Apartado como garantia: ${formatBs(allocation.guaranteeBs)}` : '',
+      allocation.surplusBs > 0 ? `Excedente del cliente: ${formatBs(allocation.surplusBs)}` : '',
+      entry.note ? `Detalle: ${entry.note}` : '',
+    ].filter(Boolean).join('\n');
+    const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
+    const commonPayload = {
+      receivedAmountBs: allocation.receivedBs,
+      guaranteeAllocationBs: allocation.guaranteeBs,
+      surplusAllocationBs: allocation.surplusBs,
+      paymentMethod: entry.paymentMethod || 'efectivo',
+      paymentAccount: entry.paymentMethod === 'qr' ? entry.paymentAccount || '' : '',
+      receiptDetail,
+      receiptCustomerName: customerName,
+      customerName,
+      note: entry.note || `Abono contrato ${contractCode}`,
+      notes: entry.note || `Abono contrato ${contractCode}`,
+      linkedRentalId: rentalId,
+      linkedContractId: contractEconomicsData.contract?.id ?? '',
+      linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+      accountingTag: 'contract_deposit_receipt',
+      category: 'abono_contrato',
+      createdBy,
+      responsible: createdBy,
+    };
+
+    setGeneratingDepositReceiptId(entry.id);
+    setContractEconomicsError('');
+    try {
+      const result = allocation.contractBs > 0 && rentalId
+        ? await api.cash.collectReceivable({
+            ...commonPayload,
+            rentalId,
+            amountBs: allocation.contractBs,
+            collectionTarget: 'balance',
+            collectionTargets: ['balance'],
+            collectionBreakdown: [{
+              target: 'balance',
+              amountBs: allocation.contractBs,
+              label: 'Contrato',
+              detail: 'Aplicacion del abono al saldo comercial.',
+            }],
+          })
+        : await api.cash.createManualMovement({
+            ...commonPayload,
+            type: 'ingreso',
+            cashBoxType: 'BIG_CASH',
+            amountBs: allocation.receivedBs,
+            description: `Abono contrato ${contractCode}: ${customerName}`,
+          });
+      rememberEconomicCashResult(result);
+      const movement = result?.movement ?? result ?? {};
+      const movementId = resolveEconomicMovementId(result);
+      if (!movementId) throw new Error('Caja registro el abono, pero no devolvio el movimiento para enlazar el recibo.');
+
+      if (result?.rental?.id) setContractEconomicsFullRental(result.rental);
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim();
+      const nextLedger = (contractEconomicsData.economicLedger ?? []).map((row) => (
+        row.id === entry.id
+          ? {
+              ...row,
+              cashMovementId: movementId,
+              cashReceiptCode: receiptCode,
+              cashRegisteredAt: movement?.createdAt ?? new Date().toISOString(),
+              isCashRegistered: true,
+              contractAllocationBs: allocation.contractBs,
+              guaranteeAllocationBs: allocation.guaranteeBs,
+              surplusAllocationBs: allocation.surplusBs,
+            }
+          : row
+      ));
+      await saveContractEconomicLedgerRows(
+        nextLedger,
+        `Abono respaldado con recibo ${receiptCode || 'oficial'}.`,
+        { force: true },
+      );
+      await handlePrintEconomicReceipt({ ...movement, id: movementId });
+    } catch (error) {
+      setContractEconomicsError(error.message || 'No se pudo generar el recibo del deposito.');
+    } finally {
+      setGeneratingDepositReceiptId(null);
+    }
+  };
+
   const handleEditContractEconomicLedgerEntry = (entry) => {
     if (!canManageContractEconomicLedger) return;
     setContractEconomicsLedgerEditingId(entry.id);
@@ -8232,7 +8419,9 @@ function ServiceOrdersSection({
     const amount = declaredGapBs;
     if (amount <= 0) return;
     const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
-    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])].reverse().find((entry) => entry.type === 'deposit' && entry.paymentMethod);
+    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])].reverse().find((entry) => (
+      entry.type === 'deposit' && entry.paymentMethod && !isGeneratedEconomicCollectionEntry(entry)
+    ));
     const isReclassification = contractEconomicsData.availableDepositsForGuaranteeBs >= amount;
     let cashResult = null;
     let movementId = null;
@@ -8268,6 +8457,7 @@ function ServiceOrdersSection({
       createdAt: new Date().toISOString(),
       createdByName,
       reclassifiedFromPayment: isReclassification,
+      sourceDepositId: isReclassification ? lastPaidEntry?.id ?? null : null,
       cashMovementId: movementId,
       cashReceiptCode: String(cashResult?.receiptCode ?? cashResult?.movement?.receiptCode ?? '').trim(),
       cashRegisteredAt: cashResult?.createdAt ?? cashResult?.movement?.createdAt ?? null,
@@ -10985,6 +11175,13 @@ function ServiceOrdersSection({
                       const isIncomeFlow = entry.type === 'deposit';
                       const isReservedGuarantee = entry.type === 'guarantee';
                       const isRefundFlow = entry.type === 'refund';
+                      const canHaveDepositReceipt = isIncomeFlow && !isGeneratedEconomicCollectionEntry(entry);
+                      const depositAllocation = canHaveDepositReceipt
+                        ? getEconomicDepositAllocations(
+                            contractEconomicsData.economicLedger,
+                            contractEconomicsData.ledgerChargeTargetBs,
+                          ).get(entry.id)
+                        : null;
                       const moneyFlowTitle = entry.type === 'deposit'
                         ? entry.isCashRegistered
                           ? `Ingreso confirmado en Caja Grande${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
@@ -11034,17 +11231,43 @@ function ServiceOrdersSection({
                           <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
                           <em>{entry.type === 'note' ? 'Sin metodo' : formatPaymentMethodLabel(entry.paymentMethod)}</em>
                           <small>{entry.paymentAccount || '-'}</small>
-                          <p>{entry.note}</p>
+                          <p>
+                            {entry.note}
+                            {depositAllocation ? (
+                              <small style={{ display: 'block', marginTop: '3px' }}>
+                                Recibido {formatBs(depositAllocation.receivedBs)} = contrato {formatBs(depositAllocation.contractBs)}
+                                {depositAllocation.guaranteeBs > 0 ? ` + garantia ${formatBs(depositAllocation.guaranteeBs)}` : ''}
+                                {depositAllocation.surplusBs > 0 ? ` + excedente ${formatBs(depositAllocation.surplusBs)}` : ''}
+                              </small>
+                            ) : null}
+                          </p>
                           <small title={editedLabel ? `${creatorLabel}. ${editedLabel}` : creatorLabel}>
                             {creatorLabel}
                             {editedLabel ? <b>{editedLabel}</b> : null}
                           </small>
                           <div className="contract-economics-notebook-line-actions">
+                            {canHaveDepositReceipt ? (
+                              <button
+                                type="button"
+                                className="contract-economics-row-action"
+                                onClick={() => handleDepositReceipt(entry)}
+                                disabled={
+                                  generatingDepositReceiptId === entry.id
+                                  || (!entry.cashMovementId && (readOnly || isSavingContractEconomicsLedger))
+                                }
+                                aria-label={`${entry.cashMovementId ? 'Abrir' : 'Generar'} recibo del deposito`}
+                              >
+                                {generatingDepositReceiptId === entry.id
+                                  ? 'Generando...'
+                                  : entry.cashReceiptCode || (entry.cashMovementId ? 'Ver recibo' : 'Generar recibo')}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="contract-economics-row-action"
                               onClick={() => handleEditContractEconomicLedgerEntry(entry)}
-                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              disabled={readOnly || isSavingContractEconomicsLedger || (canHaveDepositReceipt && Boolean(entry.cashMovementId))}
+                              title={canHaveDepositReceipt && entry.cashMovementId ? 'Un deposito con recibo oficial no puede cambiar de monto desde la hoja.' : ''}
                               aria-label={`Editar linea ${meta.label}`}
                             >
                               <Pencil aria-hidden="true" />
@@ -11054,7 +11277,8 @@ function ServiceOrdersSection({
                               type="button"
                               className="contract-economics-row-action danger"
                               onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
-                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              disabled={readOnly || isSavingContractEconomicsLedger || (canHaveDepositReceipt && Boolean(entry.cashMovementId))}
+                              title={canHaveDepositReceipt && entry.cashMovementId ? 'Para corregir un recibo oficial debe usarse el flujo de anulacion y reemplazo.' : ''}
                               aria-label={`Eliminar linea ${meta.label}`}
                             >
                               <Trash2 aria-hidden="true" />

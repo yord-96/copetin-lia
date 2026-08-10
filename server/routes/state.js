@@ -140,6 +140,8 @@ const summarizeAccountingMovement = (movement = {}) => {
     'linkedContractId', 'linkedOrderCode', 'contractCode', 'orderCode', 'reference',
     'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
     'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
+    'collectionTargets', 'collectionBreakdown', 'receiptDetail', 'receivedAmountBs',
+    'contractAllocationBs', 'guaranteeAllocationBs', 'surplusAllocationBs',
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
   ];
   return Object.fromEntries(fields
@@ -238,6 +240,10 @@ const normalizeEconomicLedgerRows = (rows) => {
       cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
       reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
       refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
+      sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+      contractAllocationBs: toPositiveRoundedNumber(entry?.contractAllocationBs),
+      guaranteeAllocationBs: toPositiveRoundedNumber(entry?.guaranteeAllocationBs),
+      surplusAllocationBs: toPositiveRoundedNumber(entry?.surplusAllocationBs),
       deletedAt: String(entry?.deletedAt ?? '').trim() || null,
       deletedById: entry?.deletedById ?? null,
       deletedByName: String(entry?.deletedByName ?? '').trim(),
@@ -1427,6 +1433,10 @@ const buildDirectMovement = (state, payload = {}) => ({
   collectionTargets: Array.isArray(payload.collectionTargets) ? payload.collectionTargets : [],
   collectionBreakdown: Array.isArray(payload.collectionBreakdown) ? payload.collectionBreakdown : [],
   receiptDetail: String(payload.receiptDetail ?? '').trim(),
+  receivedAmountBs: directMoney(payload.receivedAmountBs ?? payload.amountBs),
+  contractAllocationBs: directMoney(payload.contractAllocationBs),
+  guaranteeAllocationBs: directMoney(payload.guaranteeAllocationBs),
+  surplusAllocationBs: directMoney(payload.surplusAllocationBs),
   transportRevenueBs: directMoney(payload.transportRevenueBs),
   damageCollectedBs: directMoney(payload.damageCollectedBs),
   transportExpenseBs: directMoney(payload.transportExpenseBs),
@@ -2248,8 +2258,10 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const rentalId = String(payload.rentalId ?? '').trim();
     const amountBs = directMoney(payload.amountBs);
+    const receivedAmountBs = directMoney(payload.receivedAmountBs ?? amountBs);
     if (!rentalId) return res.status(400).json({ error: 'No se pudo identificar la orden a cobrar.' });
     if (amountBs <= 0) return res.status(400).json({ error: 'El monto cobrado debe ser mayor a 0.' });
+    if (receivedAmountBs + 0.01 < amountBs) return res.status(400).json({ error: 'El total recibido no puede ser menor al monto aplicado al contrato.' });
 
     let responseData = null;
     const result = await updateStateSnapshot((state) => {
@@ -2409,12 +2421,16 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const target = String(payload.collectionTarget ?? 'balance');
       const mixed = breakdown.length > 1 || target === 'mixed';
       const type = mixed ? 'ingreso_cobro_mixto_contrato' : target === 'transport' ? 'ingreso_transporte_cliente' : target === 'damage' ? 'ingreso_danos_faltantes' : isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
-      const movement = buildDirectMovement(state, { ...payload, type, amountBs,
+      const movement = buildDirectMovement(state, { ...payload, type, amountBs: receivedAmountBs,
         description: String(payload.receiptDetail ?? '').trim().split('\n').filter(Boolean).slice(0,2).join(' | ') || String(payload.note ?? '').trim() || `Cobro contrato: ${rental.customerName ?? ''}`,
         sourceType: isReturned ? 'return' : 'rental', sourceId: rental.id, cashBoxType: 'BIG_CASH',
         category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
         linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? matchedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
-        transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note });
+        transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note,
+        contractAllocationBs: amountBs,
+        guaranteeAllocationBs: directMoney(payload.guaranteeAllocationBs),
+        surplusAllocationBs: directMoney(payload.surplusAllocationBs),
+        receivedAmountBs });
       state.cashMovements.push(movement);
       responseData = { rental: structuredClone(rental), movement: structuredClone(movement), movements: [structuredClone(movement)] };
       return state;

@@ -2613,6 +2613,10 @@ const normalizeState = (state) => {
             isCashRegistered: Boolean(entry?.isCashRegistered),
             reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
             refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
+            sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+            contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
+            guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
+            surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
             createdAt: entry?.createdAt ?? now,
             createdById: entry?.createdById ?? entry?.userId ?? null,
             createdByName: String(
@@ -4568,6 +4572,10 @@ const buildCashMovement = ({
   collectionTargets = [],
   collectionBreakdown = [],
   receiptDetail = '',
+  receivedAmountBs = 0,
+  contractAllocationBs = 0,
+  guaranteeAllocationBs = 0,
+  surplusAllocationBs = 0,
   transportRevenueBs = 0,
   damageCollectedBs = 0,
   transportExpenseBs = 0,
@@ -4615,6 +4623,10 @@ const buildCashMovement = ({
     })).filter((entry) => entry.target && entry.amountBs > 0)
     : [],
   receiptDetail: String(receiptDetail ?? '').trim(),
+  receivedAmountBs: Number(Number(receivedAmountBs || amountBs || 0).toFixed(2)),
+  contractAllocationBs: Number(Number(contractAllocationBs ?? 0).toFixed(2)),
+  guaranteeAllocationBs: Number(Number(guaranteeAllocationBs ?? 0).toFixed(2)),
+  surplusAllocationBs: Number(Number(surplusAllocationBs ?? 0).toFixed(2)),
   transportRevenueBs: Number(Number(transportRevenueBs ?? 0).toFixed(2)),
   damageCollectedBs: Number(Number(damageCollectedBs ?? 0).toFixed(2)),
   transportExpenseBs: Number(Number(transportExpenseBs ?? 0).toFixed(2)),
@@ -15661,6 +15673,10 @@ const createWebBridge = () => ({
               isCashRegistered: Boolean(entry?.isCashRegistered),
               reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
               refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
+              sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+              contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
+              guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
+              surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
               createdAt: entry?.createdAt ?? now,
               createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
               editedAt: entry?.editedAt ?? null,
@@ -15734,6 +15750,10 @@ const createWebBridge = () => ({
             isCashRegistered: Boolean(entry?.isCashRegistered),
             reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
             refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
+            sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+            contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
+            guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
+            surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
             createdAt: entry?.createdAt ?? now,
             createdByName: String(entry?.createdByName ?? entry?.createdBy ?? payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
             editedAt: entry?.editedAt ?? null,
@@ -18573,6 +18593,7 @@ const createWebBridge = () => ({
     collectReceivable: async (payload) => {
       const rentalId = String(payload?.rentalId ?? '').trim();
       const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto cobrado');
+      const receivedAmountRaw = toNumber(payload?.receivedAmountBs ?? amountRaw, 'monto recibido');
       const createdBy = String(payload?.createdBy ?? '').trim() || 'Contabilidad';
       const note = String(payload?.note ?? '').trim();
       const accountingTag = String(payload?.accountingTag ?? '').trim();
@@ -18605,6 +18626,9 @@ const createWebBridge = () => ({
       }
       if (amountRaw <= 0) {
         throw new Error('El monto cobrado debe ser mayor a 0.');
+      }
+      if (receivedAmountRaw + 0.01 < amountRaw) {
+        throw new Error('El total recibido no puede ser menor al monto aplicado al contrato.');
       }
 
       let result = null;
@@ -18670,6 +18694,7 @@ const createWebBridge = () => ({
         }
 
         const amountBs = Number(amountRaw.toFixed(2));
+        const receivedAmountBs = Number(receivedAmountRaw.toFixed(2));
         const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
         const overpaidNowBs = Number(Math.max(0, amountBs - currentPending).toFixed(2));
         const previousOverpaidBs = Number(rental?.payment?.overpaidBs ?? rental?.totals?.overpaidBs ?? 0);
@@ -18855,12 +18880,16 @@ const createWebBridge = () => ({
           buildCashMovement({
             ...commonMovementPayload,
             type: movementType,
-            amountBs,
+            amountBs: receivedAmountBs,
             description: movementDescription,
             category: movementCategory,
             accountingTag: movementAccountingTag,
             transportRevenueBs: transportCollectedNowBs,
             damageCollectedBs: damageCollectedNowBs,
+            contractAllocationBs: amountBs,
+            guaranteeAllocationBs: Math.max(0, Number(Number(payload?.guaranteeAllocationBs ?? 0).toFixed(2))),
+            surplusAllocationBs: Math.max(0, Number(Number(payload?.surplusAllocationBs ?? 0).toFixed(2))),
+            receivedAmountBs,
           }),
         ];
         state.cashMovements.push(...createdMovements);
