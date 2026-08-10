@@ -5314,7 +5314,19 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     : contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
     ? `${movementLabel} por contrato ${contractCode}`
     : movement.description || movement.category || 'Movimiento de caja');
-  const detailHtml = escapeHtml(detail).replace(/\n/g, '<br>');
+  const rawDetailLines = detail.split('\n').map((line) => line.trim()).filter(Boolean);
+  const compactDetailLines = String(movement?.accountingTag ?? '').toLowerCase() === 'contract_deposit_receipt'
+    && /^abono recibido para contrato\b/i.test(rawDetailLines[0] ?? '')
+    ? rawDetailLines.slice(1).filter((line) => !/^detalle\s*:/i.test(line))
+    : rawDetailLines;
+  const detailHtml = (compactDetailLines.length > 0 ? compactDetailLines : [detail])
+    .map((line) => {
+      const match = line.match(/^([^:]{1,80}):\s*(.+)$/);
+      return match
+        ? `<span class="receipt-detail-line"><span>${escapeHtml(match[1])}</span><strong>${escapeHtml(match[2])}</strong></span>`
+        : `<span class="receipt-detail-line is-note">${escapeHtml(line)}</span>`;
+    })
+    .join('');
   const rawObservation = movement.notes || movement.note || movement.category || 'Movimiento registrado en sistema.';
   const observation = contractCode
     ? String(rawObservation).replace(/OS-\d+/gi, `Contrato ${contractCode}`)
@@ -5350,11 +5362,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           width: 8.5in;
           height: 5.5in;
           margin: 0;
-          padding: 4.4mm 6mm 3.2mm;
-          background:
-            linear-gradient(135deg, rgba(255, 247, 237, 0.85), rgba(255, 255, 255, 0) 42%),
-            #fff;
-          border: 2px solid #f04b10;
+          padding: 4mm 4.8mm 3mm;
+          background: #fff;
+          border: 1.5px solid #0b2c67;
           outline: 0;
           overflow: hidden;
           display: flex;
@@ -5391,99 +5401,85 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         }
         .receipt-top {
           display: grid;
-          grid-template-columns: 72mm minmax(0, 1fr) 43mm;
-          gap: 4mm;
+          grid-template-columns: 82mm minmax(0, 1fr) 46mm;
+          gap: 2mm;
           align-items: center;
-          padding: 0 3mm 3mm;
-          border-bottom: 2px solid #f04b10;
+          min-height: 36mm;
+          padding: 0 2mm 2.4mm;
         }
-        .receipt-brand { display: grid; grid-template-columns: 23mm minmax(0, 1fr); gap: 4mm; align-items: center; min-width: 0; }
-        .brand-stamp {
-          display: grid;
-          place-items: center;
-          width: 24mm;
-          height: 24mm;
-          color: #f04b10;
+        .receipt-brand {
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          min-width: 0;
+          overflow: hidden;
         }
-        .brand-stamp svg {
-          width: 24mm;
-          height: 24mm;
+        .receipt-brand-logo-frame {
+          position: relative;
           display: block;
+          width: 82mm;
+          height: 21mm;
+          overflow: hidden;
         }
-        .brand-name {
-          font-family: Georgia, "Times New Roman", serif;
-          font-size: 27px;
-          font-style: italic;
-          font-weight: 800;
-          letter-spacing: 0;
-          color: #111;
-          white-space: nowrap;
+        .receipt-brand-logo {
+          position: absolute;
+          top: 0;
+          left: 0;
+          display: block;
+          width: 92mm;
+          max-width: none;
+          height: auto;
+          transform: translate(-5mm, -5.8mm);
         }
-        .brand-subtitle { margin-top: 2px; color: #f04b10; font-size: 9px; font-weight: 900; line-height: 1.2; text-transform: uppercase; }
         .receipt-title {
           min-width: 0;
           text-align: center;
-          border-left: 2px solid #111;
-          border-right: 2px solid #111;
-          padding: 1mm 3mm 0;
+          padding: 0 3mm;
         }
         .receipt-title h1 {
-          font-size: 15.2px;
+          color: #0b2c67;
+          font-size: 17.5px;
           font-weight: 900;
-          letter-spacing: 0;
-          line-height: 1.02;
+          letter-spacing: 0.015em;
+          line-height: 1.05;
           white-space: normal;
           overflow-wrap: anywhere;
         }
-        .receipt-code { display: inline-block; margin-top: 2.2mm; padding: 1.1mm 7mm; border: 1.5px solid #f04b10; border-radius: 7px; background: #fff7ed; color: #ea580c; font-size: 16px; font-weight: 900; }
+        .receipt-code { display: inline-block; margin-top: 1.6mm; padding: 0 4mm 1mm; border-bottom: 1.5px solid #0b2c67; color: #f04b10; font-size: 34px; font-weight: 950; line-height: 1; }
         .receipt-contract-code {
           display: block;
-          margin-top: 1.7mm;
-          color: #f04b10;
-          font-size: 18px;
+          margin-top: 1.2mm;
+          color: #0b2c67;
+          font-size: 15px;
           line-height: 1;
           font-weight: 950;
-          letter-spacing: 0.035em;
+          letter-spacing: 0;
           text-transform: uppercase;
         }
         .receipt-contract-code small {
-          display: block;
-          margin-bottom: 0.6mm;
-          color: #7c2d12;
-          font-size: 7.4px;
-          letter-spacing: 0.08em;
+          display: inline;
+          margin-right: 2mm;
+          color: #0b2c67;
+          font-size: 9px;
+          letter-spacing: 0;
         }
-        .receipt-datebox { display: grid; gap: 2.5mm; font-size: 11.5px; min-width: 0; }
-        .receipt-datebox span { display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
-        .receipt-datebox strong { font-size: 11px; font-weight: 900; }
-        .receipt-datebox .contract-chip {
-          display: block;
-          padding: 1.2mm 2.5mm;
-          border: 1.4px solid #fdba74;
-          border-radius: 8px;
-          background: #fff7ed;
-          color: #ea580c;
-          text-align: center;
-          font-size: 12.5px;
-          font-weight: 950;
-          letter-spacing: 0.02em;
-        }
-        .receipt-datebox .contract-chip small {
-          display: block;
-          color: #7c2d12;
-          font-size: 7.5px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
+        .receipt-datebox { display: grid; gap: 2.5mm; color: #0b2c67; font-size: 11.5px; min-width: 0; }
+        .receipt-datebox > span:not(.receipt-copy-kind) { display: grid; grid-template-columns: 7mm 14mm minmax(0, 1fr); align-items: center; gap: 1mm; min-width: 0; }
+        .receipt-datebox strong { font-size: 10.5px; font-weight: 900; }
+        .receipt-datebox b { color: #f04b10; font-size: 12px; white-space: nowrap; }
+        .receipt-date-icon { width: 6mm; height: 6mm; object-fit: contain; }
         .receipt-copy-kind {
           justify-self: end;
-          padding: 0.8mm 2.4mm;
-          border: 1px solid #0f2a5f;
-          border-radius: 999px;
-          color: #0f2a5f;
-          font-size: 8px;
+          min-width: 39mm;
+          padding: 2mm 3mm;
+          border: 0;
+          border-radius: 7px;
+          background: #0b2c67;
+          color: #fff;
+          text-align: center;
+          font-size: 18px;
           font-weight: 950;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.02em;
           line-height: 1;
         }
         .receipt-contact {
@@ -5491,10 +5487,12 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           grid-template-columns: 1fr 1.25fr 1.7fr;
           gap: 3mm;
           align-items: center;
+          min-height: 10mm;
           padding: 1.8mm 7mm;
-          border-bottom: 1.5px solid #0f2a5f;
-          color: #111;
-          font-size: 9.5px;
+          border: 0;
+          background: #0b2c67;
+          color: #fff;
+          font-size: 11px;
           text-align: center;
         }
         .receipt-contact span {
@@ -5503,7 +5501,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           align-items: center;
           gap: 6px;
           min-width: 0;
-          border-right: 1.5px solid #0f2a5f;
+          border-right: 1px solid rgba(255, 255, 255, 0.55);
         }
         .receipt-contact span:last-child { border-right: 0; }
         .cash-receipt-icon {
@@ -5511,74 +5509,99 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           height: 14px;
           object-fit: contain;
           flex: 0 0 auto;
+          filter: brightness(0) invert(1);
         }
         .receipt-info {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 4mm;
-          padding: 2.6mm 4mm;
-          border: 1.3px solid #c7d2fe;
-          border-radius: 8px;
-          background: #ffffff;
-          margin-top: 2.6mm;
-          height: 28mm;
+          padding: 2mm 3.5mm;
+          border: 0;
+          border-radius: 0;
+          background: transparent;
+          margin-top: 2mm;
+          height: 31mm;
           overflow: hidden;
         }
-        .info-col + .info-col { border-left: 1.3px solid #c7d2fe; padding-left: 4mm; }
-        .info-line { display: grid; grid-template-columns: 32mm 4mm minmax(0, 1fr); gap: 1.6mm; margin-bottom: 1.25mm; font-size: 10.2px; line-height: 1.1; }
+        .info-col {
+          border: 1.2px solid #0b2c67;
+          border-radius: 7px;
+          padding: 2.6mm 3mm;
+          overflow: hidden;
+        }
+        .info-line { position: relative; display: grid; grid-template-columns: 38mm minmax(0, 1fr); gap: 1.8mm; margin-bottom: 2mm; padding-left: 4mm; font-size: 10.8px; line-height: 1.08; }
+        .info-line::before { content: ""; position: absolute; left: 0; top: 0.8mm; width: 1.7mm; height: 1.7mm; border-radius: 999px; background: #f04b10; }
         .info-line strong { color: #0f2a5f; text-transform: uppercase; font-weight: 900; }
         .info-line span { max-height: 7.4mm; overflow: hidden; overflow-wrap: anywhere; }
         .info-line.is-important span {
-          color: #ea580c;
-          font-size: 11px;
-          font-weight: 950;
-          text-transform: uppercase;
+          color: #111827;
+          font-size: 10.8px;
+          font-weight: 700;
+          text-transform: none;
         }
-        table { width: 100%; border-collapse: collapse; margin-top: 2.6mm; table-layout: fixed; }
-        th, td { border: 1.25px solid #0f2a5f; padding: 2.25mm 2.5mm; text-align: center; font-size: 10.4px; line-height: 1.12; overflow-wrap: anywhere; }
-        th { background: #0f2a5f; color: #fff; font-size: 10.6px; letter-spacing: 0.035em; text-transform: uppercase; font-weight: 900; }
-        td.detail { text-align: left; max-height: 11mm; overflow: hidden; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 1.5mm; table-layout: fixed; }
+        th, td { border-right: 1.15px solid #0b2c67; border-bottom: 1.15px solid #0b2c67; padding: 1.7mm 2.5mm; text-align: center; font-size: 10.8px; line-height: 1.12; overflow-wrap: anywhere; }
+        th:first-child, td:first-child { border-left: 1.15px solid #0b2c67; }
+        thead th:first-child { border-top-left-radius: 7px; }
+        thead th:last-child { border-top-right-radius: 7px; }
+        tbody tr:last-child td:first-child { border-bottom-left-radius: 7px; }
+        tbody tr:last-child td:last-child { border-bottom-right-radius: 7px; }
+        th { background: #0f2a5f; color: #fff; padding-top: 1.6mm; padding-bottom: 1.6mm; font-size: 10.8px; letter-spacing: 0.025em; line-height: 1; text-transform: uppercase; font-weight: 900; white-space: nowrap; }
+        tbody td { height: 19mm; }
+        td.detail { text-align: left; max-height: 19mm; overflow: hidden; }
+        .receipt-detail-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3mm; margin-bottom: 1mm; }
+        .receipt-detail-line strong { white-space: nowrap; }
+        .receipt-detail-line.is-note { display: block; color: #334155; }
         td.receipt-money {
           padding-left: 1.2mm;
           padding-right: 1.2mm;
-          font-size: 10px;
-          font-weight: 900;
+          color: #f04b10;
+          font-size: 24px;
+          font-weight: 950;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: clip;
         }
         .receipt-total-row {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 63mm;
+          grid-template-columns: minmax(0, 1fr) 74mm;
           gap: 6mm;
           align-items: center;
-          margin-top: 2.2mm;
+          margin-top: 1.8mm;
         }
-        .amount-words { display: flex; gap: 3mm; justify-content: flex-end; align-items: flex-end; font-size: 9.5px; min-width: 0; }
-        .amount-words span { min-width: 66mm; border-bottom: 1.4px solid #0f2a5f; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .amount-words { display: flex; gap: 3mm; justify-content: flex-start; align-items: flex-end; padding-left: 4mm; font-size: 10px; min-width: 0; }
+        .amount-words span { min-width: 74mm; border-bottom: 1.2px solid #0f2a5f; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .total-box {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
           align-items: center;
           min-width: 0;
           overflow: hidden;
-          border: 1.4px solid #0f2a5f;
-          background: #f8fafc;
-          padding: 1.8mm 2.8mm;
+          border: 1.4px solid #f04b10;
+          background: #fff;
+          padding: 0;
           font-size: 11.2px;
           font-weight: 900;
-          gap: 2.2mm;
+          gap: 0;
         }
         .total-box span {
           min-width: 0;
+          align-self: stretch;
+          display: grid;
+          place-items: center;
+          padding: 1.8mm 2.5mm;
+          background: #0b2c67;
+          color: #fff;
           line-height: 1.08;
           white-space: normal;
           overflow-wrap: normal;
         }
         .total-box b {
           min-width: 0;
-          max-width: 31mm;
-          font-size: 12.2px;
+          max-width: 39mm;
+          padding: 1.8mm 2.5mm;
+          color: #f04b10;
+          font-size: 16px;
           line-height: 1;
           text-align: right;
           white-space: nowrap;
@@ -5587,23 +5610,14 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 24mm;
-          margin: auto 17mm 3mm;
-          padding-top: 7mm;
+          margin: auto 17mm 1mm;
+          padding-top: 4mm;
           text-align: center;
         }
         .signature-line { border-top: 1.4px solid #0f2a5f; padding-top: 1.6mm; }
         .signature-line strong { display: block; font-size: 10.5px; }
         .signature-line span { font-size: 9px; }
-        .receipt-warning {
-          margin-top: 0;
-          border-bottom: 1.5px solid #f04b10;
-          padding-bottom: 1.2mm;
-          text-align: center;
-          color: #f04b10;
-          font-weight: 800;
-          font-size: 10.5px;
-        }
-        .receipt-footer { margin-top: 1mm; text-align: center; font-size: 9.5px; }
+        .receipt-footer { width: 72mm; margin: 1mm 5mm 0 auto; border-bottom: 1px solid #f04b10; padding-bottom: 1mm; text-align: center; color: #0b2c67; font-size: 8.8px; }
         @media print {
           html, body {
             width: 8.5in;
@@ -5679,18 +5693,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
       <main class="cash-receipt-sheet" id="receipt-original">
         <section class="receipt-top">
           <div class="receipt-brand">
-            <span class="brand-stamp">
-              <svg viewBox="0 0 64 64" role="img" aria-label="El Copetin">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="#f04b10" stroke-width="4" />
-                <path d="M18 18h28L33 34v13" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M24 47h18" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" />
-                <path d="M33 34l14-21" fill="none" stroke="#f04b10" stroke-width="4" stroke-linecap="round" />
-              </svg>
+            <span class="receipt-brand-logo-frame">
+              <img class="receipt-brand-logo" src="/imagenes/LOGO%20RECIBIO.png" alt="El Copetin" />
             </span>
-            <div>
-              <div class="brand-name">El Copet&iacute;n</div>
-              <p class="brand-subtitle">Alquiler de mobiliario, cristaler&iacute;a y equipos para eventos</p>
-            </div>
           </div>
           <div class="receipt-title">
             <h1>${escapeHtml(title)}</h1>
@@ -5699,9 +5704,8 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           </div>
           <div class="receipt-datebox">
             <span class="receipt-copy-kind">ORIGINAL</span>
-            ${contractCode ? `<span class="contract-chip"><small>Contrato</small>${escapeHtml(contractCode)}</span>` : ''}
-            <span><strong>FECHA:</strong> ${escapeHtml(dateLabel)}</span>
-            <span><strong>HORA:</strong> ${escapeHtml(timeLabel)}</span>
+            <span><img class="receipt-date-icon" src="${escapeHtml('/imagenes/pdf contrato/calendario.png')}" alt="" /><strong>FECHA:</strong><b>${escapeHtml(dateLabel)}</b></span>
+            <span><img class="receipt-date-icon" src="${escapeHtml('/imagenes/pdf contrato/reloj.png')}" alt="" /><strong>HORA:</strong><b>${escapeHtml(timeLabel)}</b></span>
           </div>
         </section>
 
@@ -5713,27 +5717,26 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
 
         <section class="receipt-info">
           <div class="info-col">
-            <p class="info-line"><strong>Tipo de movimiento</strong><b>:</b><span>${escapeHtml(movementLabel)}</span></p>
-            <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><b>:</b><span>${escapeHtml(cashBoxLabel)}</span></p>
-            <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><b>:</b><span>${escapeHtml(partyName)}</span></p>
+            <p class="info-line"><strong>Tipo de movimiento</strong><span>${escapeHtml(movementLabel)}</span></p>
+            <p class="info-line"><strong>${escapeHtml(cashBoxRoleLabel)}</strong><span>${escapeHtml(cashBoxLabel)}</span></p>
+            <p class="info-line is-important"><strong>${escapeHtml(partyLabel)}</strong><span>${escapeHtml(partyName)}</span></p>
           </div>
           <div class="info-col">
-            <p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><b>:</b><span>${escapeHtml(contractCode || reference)}</span></p>
-            <p class="info-line is-important"><strong>${escapeHtml(contextResponsibleLabel)}</strong><b>:</b><span>${escapeHtml(contextResponsibleValue)}</span></p>
-            <p class="info-line"><strong>Metodo de pago</strong><b>:</b><span>${escapeHtml(paymentMethodLabel)}</span></p>
-            <p class="info-line"><strong>Observacion</strong><b>:</b><span>${escapeHtml(observation)}</span></p>
+            ${!contractCode ? `<p class="info-line is-important"><strong>${escapeHtml(contextReferenceLabel)}</strong><span>${escapeHtml(reference)}</span></p>` : ''}
+            <p class="info-line is-important"><strong>${escapeHtml(contextResponsibleLabel)}</strong><span>${escapeHtml(contextResponsibleValue)}</span></p>
+            <p class="info-line"><strong>Metodo de pago</strong><span>${escapeHtml(paymentMethodLabel)}</span></p>
+            <p class="info-line"><strong>Observacion</strong><span>${escapeHtml(observation)}</span></p>
           </div>
         </section>
 
         <table>
           <thead>
             <tr>
-              <th style="width: 10mm;">Nro</th>
+              <th style="width: 14mm;">Nro</th>
               <th>Detalle</th>
               <th style="width: 26mm;">Caja</th>
               <th style="width: 34mm;">${escapeHtml(receiptUserHeader)}</th>
-              <th style="width: 34mm;">${escapeHtml(contextResponsibleLabel)}</th>
-              <th style="width: 32mm;">${escapeHtml(totalLabel)}</th>
+              <th style="width: 45mm;">${escapeHtml(totalLabel)}</th>
             </tr>
           </thead>
           <tbody>
@@ -5742,7 +5745,6 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
               <td class="detail">${detailHtml}</td>
               <td>${escapeHtml(cashBoxLabel)}</td>
               <td>${escapeHtml(collectionUser)}</td>
-              <td>${escapeHtml(contextResponsibleValue)}</td>
               <td class="receipt-money">${formatBs(amount)}</td>
             </tr>
           </tbody>
@@ -5758,10 +5760,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           <div class="signature-line"><strong>Recibi</strong><span>(Nombre y Firma)</span></div>
         </section>
 
-        <p class="receipt-warning">Comprobante interno de ${isOut ? 'egreso' : 'ingreso'}. Conserve este recibo para control de caja.</p>
         <p class="receipt-footer">Documento generado por ${escapeHtml(company.name)}</p>
       </main>
-      <div class="receipt-cut-line" aria-hidden="true"><span>CORTAR POR AQU&Iacute;</span></div>
+      <div class="receipt-cut-line" aria-hidden="true"><span>CORTAR POR LA MITAD</span></div>
       </div>
       <script>
         (() => {
