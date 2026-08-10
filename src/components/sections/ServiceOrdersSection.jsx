@@ -7547,12 +7547,12 @@ function ServiceOrdersSection({
     return printWindow;
   };
 
-  const handlePrintEconomicReceipt = async (movement) => {
+  const handlePrintEconomicReceipt = async (movement, providedWindow = null) => {
     if (!movement?.id) return;
-    let printWindow = null;
+    let printWindow = providedWindow;
     try {
       setContractEconomicsError('');
-      printWindow = openCashReceiptWindow();
+      printWindow = printWindow || openCashReceiptWindow();
       const printedByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
       const receiptPayload = { movementId: movement.id, movement, printedByName };
       let result = onPrintCashMovementReceipt
@@ -8255,8 +8255,9 @@ function ServiceOrdersSection({
       return;
     }
 
-    if (contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs + 0.01) {
+    if (contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.ledgerAnnotatedGuaranteeBs + 0.01) {
       setContractEconomicsError('Primero aparta la garantia del deposito. Asi el recibo mostrara correctamente cuanto va al contrato y cuanto queda como garantia.');
+      setActionFeedback('Primero usa "Apartar garantia" en la fila del deposito y luego genera el recibo.');
       return;
     }
 
@@ -8310,7 +8311,9 @@ function ServiceOrdersSection({
 
     setGeneratingDepositReceiptId(entry.id);
     setContractEconomicsError('');
+    let receiptWindow = null;
     try {
+      receiptWindow = openCashReceiptWindow();
       const result = allocation.contractBs > 0 && rentalId
         ? await api.cash.collectReceivable({
             ...commonPayload,
@@ -8358,8 +8361,9 @@ function ServiceOrdersSection({
         `Abono respaldado con recibo ${receiptCode || 'oficial'}.`,
         { force: true },
       );
-      await handlePrintEconomicReceipt({ ...movement, id: movementId });
+      await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
     } catch (error) {
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       setContractEconomicsError(error.message || 'No se pudo generar el recibo del deposito.');
     } finally {
       setGeneratingDepositReceiptId(null);
@@ -8413,75 +8417,52 @@ function ServiceOrdersSection({
     receiptWindow.document.close();
   };
 
-  const handleSeparateEconomicGuarantee = async () => {
+  const handleSeparateEconomicGuarantee = async (depositEntry) => {
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
-    const declaredGapBs = Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs);
-    const amount = declaredGapBs;
-    if (amount <= 0) return;
-    const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
-    const lastPaidEntry = [...(contractEconomicsData.economicLedger ?? [])].reverse().find((entry) => (
-      entry.type === 'deposit' && entry.paymentMethod && !isGeneratedEconomicCollectionEntry(entry)
-    ));
-    const isReclassification = contractEconomicsData.availableDepositsForGuaranteeBs >= amount;
-    let cashResult = null;
-    let movementId = null;
-    if (!isReclassification) {
-      cashResult = await api.cash.createManualMovement({
-        type: 'ingreso',
-        cashBoxType: 'BIG_CASH',
-        amountBs: amount,
-        description: `Ingreso garantia: ${contractEconomicsData.contract?.customerName || 'cliente'}`,
-        category: 'garantia',
-        paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
-        paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
-        responsible: createdByName,
-        notes: `Garantia recibida para contrato ${contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || ''}`,
-        linkedRentalId: contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '',
-        linkedContractId: contractEconomicsData.contract?.id ?? '',
-        linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-        accountingTag: 'validated_guarantee',
-        createdBy: createdByName,
-      });
-      rememberEconomicCashResult(cashResult);
-      movementId = resolveEconomicMovementId(cashResult);
+    if (!depositEntry || depositEntry.type !== 'deposit' || isGeneratedEconomicCollectionEntry(depositEntry)) return;
+
+    const declaredGapBs = Math.max(
+      0,
+      Number((contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerAnnotatedGuaranteeBs).toFixed(2)),
+    );
+    const alreadyAllocatedFromDepositBs = (contractEconomicsData.economicLedger ?? []).reduce((sum, row) => (
+      row.type === 'guarantee' && String(row.sourceDepositId ?? '') === String(depositEntry.id)
+        ? sum + toMoneyNumber(row.amountBs)
+        : sum
+    ), 0);
+    const depositAvailableBs = Math.max(
+      0,
+      Number((toMoneyNumber(depositEntry.amountBs) - alreadyAllocatedFromDepositBs).toFixed(2)),
+    );
+    const amount = Math.min(declaredGapBs, depositAvailableBs);
+    if (amount <= 0) {
+      setContractEconomicsError(declaredGapBs <= 0
+        ? 'La garantia ya fue apartada completamente.'
+        : 'Este deposito no tiene saldo suficiente para apartar la garantia.');
+      return;
     }
+
+    const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
     const entry = {
       id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type: 'guarantee',
       amountBs: amount,
-      paymentMethod: lastPaidEntry?.paymentMethod || 'efectivo',
-      paymentAccount: lastPaidEntry?.paymentMethod === 'qr' ? lastPaidEntry.paymentAccount || '' : '',
-      note: isReclassification
-        ? `Excedente de pago reclasificado como garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`
-        : `Garantia recibida para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+      paymentMethod: depositEntry.paymentMethod || 'efectivo',
+      paymentAccount: depositEntry.paymentMethod === 'qr' ? depositEntry.paymentAccount || '' : '',
+      note: `Del deposito de ${formatBs(depositEntry.amountBs)} se apartaron ${formatBs(amount)} como garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
       createdAt: new Date().toISOString(),
       createdByName,
-      reclassifiedFromPayment: isReclassification,
-      sourceDepositId: isReclassification ? lastPaidEntry?.id ?? null : null,
-      cashMovementId: movementId,
-      cashReceiptCode: String(cashResult?.receiptCode ?? cashResult?.movement?.receiptCode ?? '').trim(),
-      cashRegisteredAt: cashResult?.createdAt ?? cashResult?.movement?.createdAt ?? null,
+      reclassifiedFromPayment: true,
+      sourceDepositId: depositEntry.id,
+      cashMovementId: null,
+      cashReceiptCode: '',
+      cashRegisteredAt: null,
     };
-    const receiptWindow = isReclassification ? window.open('', '_blank', 'width=720,height=860') : null;
-    const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], isReclassification ? 'Excedente separado como garantia.' : 'Garantia registrada en Caja Grande.');
-    if (updated) {
-      if (isReclassification) {
-        printGuaranteeOperationReceipt({
-          title: 'Comprobante de separacion de garantia',
-          amountBs: amount,
-          detail: 'El excedente del pago fue separado como garantia y ya no se considera pago del alquiler.',
-          guaranteeBeforeBs: contractEconomicsData.guaranteeReserveBs,
-          guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs + amount,
-          receiptWindow,
-        });
-      } else if (movementId) {
-        void handlePrintEconomicReceipt(cashResult?.movement ?? cashResult ?? { id: movementId }).catch((printError) => {
-          console.error('[economic-receipt] No se pudo abrir el recibo automaticamente', printError);
-          setActionFeedback('El cobro fue guardado correctamente, pero el recibo no pudo abrirse automaticamente. Puedes abrirlo desde Ver documentos.');
-        });
-      }
-      resetContractEconomicLedgerForm();
-    }
+    const updated = await saveContractEconomicLedgerRows(
+      [...(contractEconomicsData.economicLedger ?? []), entry],
+      `Garantia ${formatBs(amount)} apartada desde el deposito ${formatBs(depositEntry.amountBs)}.`,
+    );
+    if (updated) resetContractEconomicLedgerForm();
   };
 
   const handleApplyEconomicCharge = async () => {
@@ -10610,23 +10591,6 @@ function ServiceOrdersSection({
                   </article>
                 </div>
 
-                {canManageContractEconomicLedger && (
-                  contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs
-                  || contractEconomicsData.penaltiesBs > contractEconomicsData.ledgerTotals.chargesBs
-                ) ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-                    {contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.guaranteeReserveBs ? (
-                      <button
-                        type="button"
-                        className="ghost-button"
-                        onClick={handleSeparateEconomicGuarantee}
-                        disabled={readOnly || isSavingContractEconomicsLedger}
-                      >
-                        {`Registrar garantia ${formatBs(Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs))}`}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
               </section>
 
               <div className="contract-economics-story-layout">
@@ -10796,6 +10760,7 @@ function ServiceOrdersSection({
                       >
                         <section
                           style={{
+                            gridColumn: '1 / -1',
                             border: '1px solid #fed7aa',
                             borderRadius: '12px',
                             background: '#fffaf5',
@@ -10834,47 +10799,6 @@ function ServiceOrdersSection({
                           </button>
                         </section>
 
-                        <section
-                          style={{
-                            border: '1px solid #ddd6fe',
-                            borderRadius: '12px',
-                            background: '#faf8ff',
-                            padding: '10px',
-                            display: 'grid',
-                            gridTemplateRows: 'auto 1fr auto',
-                            gap: '6px',
-                            minWidth: 0,
-                          }}
-                        >
-                          <span style={{ color: '#6d28d9', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
-                            C. Separar garantia
-                          </span>
-                          <div>
-                            <h4 style={{ margin: '0 0 3px', fontSize: '14px' }}>Apartar garantia o excedente</h4>
-                            <p style={{ margin: 0, color: '#667085', lineHeight: 1.45 }}>
-                              Separa dinero ya cobrado como garantia. No genera un cobro adicional ni un nuevo ingreso.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={handleSeparateEconomicGuarantee}
-                            disabled={
-                              readOnly
-                              || isSavingContractEconomicsLedger
-                              || (
-                                Math.max(0, contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs) <= 0
-                              )
-                            }
-                            style={{ width: '100%' }}
-                          >
-                            {`Separar garantia ${formatBs(Math.max(
-                              0,
-                              contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.guaranteeReserveBs,
-                            ))}`}
-                          </button>
-                        </section>
-
                         <form
                           className="contract-economics-collect compact guarantee-refund"
                           onSubmit={handleSubmitContractEconomicGuaranteeRefund}
@@ -10893,7 +10817,7 @@ function ServiceOrdersSection({
                         >
                           <div style={{ alignSelf: 'center', minWidth: 0 }}>
                             <span style={{ color: '#15803d', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
-                              D. Devolver dinero
+                              C. Devolver dinero
                             </span>
                             <h4 style={{ margin: '2px 0', fontSize: '14px' }}>Garantia o excedente con recibo</h4>
                             <p style={{ margin: 0, color: '#667085', lineHeight: 1.4 }}>
@@ -11182,6 +11106,21 @@ function ServiceOrdersSection({
                             contractEconomicsData.ledgerChargeTargetBs,
                           ).get(entry.id)
                         : null;
+                      const guaranteeGapBs = Math.max(
+                        0,
+                        Number((contractEconomicsData.guaranteeDeclaredBs - contractEconomicsData.ledgerAnnotatedGuaranteeBs).toFixed(2)),
+                      );
+                      const guaranteeAlreadyFromDepositBs = canHaveDepositReceipt
+                        ? (contractEconomicsData.economicLedger ?? []).reduce((sum, row) => (
+                            row.type === 'guarantee' && String(row.sourceDepositId ?? '') === String(entry.id)
+                              ? sum + toMoneyNumber(row.amountBs)
+                              : sum
+                          ), 0)
+                        : 0;
+                      const guaranteeAvailableFromDepositBs = canHaveDepositReceipt
+                        ? Math.max(0, Number((toMoneyNumber(entry.amountBs) - guaranteeAlreadyFromDepositBs).toFixed(2)))
+                        : 0;
+                      const guaranteeToSeparateFromDepositBs = Math.min(guaranteeGapBs, guaranteeAvailableFromDepositBs);
                       const moneyFlowTitle = entry.type === 'deposit'
                         ? entry.isCashRegistered
                           ? `Ingreso confirmado en Caja Grande${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
@@ -11246,6 +11185,19 @@ function ServiceOrdersSection({
                             {editedLabel ? <b>{editedLabel}</b> : null}
                           </small>
                           <div className="contract-economics-notebook-line-actions">
+                            {canHaveDepositReceipt && guaranteeToSeparateFromDepositBs > 0 ? (
+                              <button
+                                type="button"
+                                className="contract-economics-row-action"
+                                onClick={() => handleSeparateEconomicGuarantee(entry)}
+                                disabled={readOnly || isSavingContractEconomicsLedger || Boolean(entry.cashMovementId)}
+                                title={entry.cashMovementId
+                                  ? 'El recibo ya fue emitido; primero debe corregirse mediante anulacion y reemplazo.'
+                                  : `Apartar ${formatBs(guaranteeToSeparateFromDepositBs)} de este deposito.`}
+                              >
+                                Apartar garantia {formatBs(guaranteeToSeparateFromDepositBs)}
+                              </button>
+                            ) : null}
                             {canHaveDepositReceipt ? (
                               <button
                                 type="button"
@@ -11253,8 +11205,12 @@ function ServiceOrdersSection({
                                 onClick={() => handleDepositReceipt(entry)}
                                 disabled={
                                   generatingDepositReceiptId === entry.id
+                                  || (!entry.cashMovementId && guaranteeGapBs > 0)
                                   || (!entry.cashMovementId && (readOnly || isSavingContractEconomicsLedger))
                                 }
+                                title={!entry.cashMovementId && guaranteeGapBs > 0
+                                  ? 'Primero aparta la garantia desde uno de los depositos.'
+                                  : entry.cashMovementId ? 'Abrir o reimprimir el recibo.' : 'Generar recibo oficial del deposito.'}
                                 aria-label={`${entry.cashMovementId ? 'Abrir' : 'Generar'} recibo del deposito`}
                               >
                                 {generatingDepositReceiptId === entry.id
