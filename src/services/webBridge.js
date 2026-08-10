@@ -8261,7 +8261,10 @@ export const buildContractDocumentHtml = ({
   const isCustomerPickup = logisticsMode === 'recojo';
   const catalogById = new Map((items ?? []).map((item) => [String(item.id), item]));
   const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
-    .filter((entry) => Number(entry?.missingQty ?? 0) > 0);
+    .filter((entry) => (
+      Number(entry?.damagedQty ?? 0) > 0
+      || Number(entry?.missingQty ?? 0) > 0
+    ));
   const returnIssueByLineKey = new Map(
     returnIssues
       .map((entry) => [String(entry?.lineKey ?? '').trim(), entry])
@@ -8280,15 +8283,29 @@ export const buildContractDocumentHtml = ({
   const ledgerChargeCoverageBs = activeEconomicLedger
     .filter((entry) => entry?.type === 'charge')
     .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
+  const getReturnIssueChargeBs = (issue) => {
+    const damagedQty = Math.max(0, Math.trunc(Number(issue?.damagedQty ?? 0)));
+    const missingQty = Math.max(0, Math.trunc(Number(issue?.missingQty ?? 0)));
+    const damagedFeeBs = Math.max(
+      0,
+      Number(issue?.damagedFeeBs ?? 0),
+      damagedQty * Math.max(0, Number(issue?.damagedUnitChargeBs ?? 0)),
+    );
+    const missingFeeBs = Math.max(
+      0,
+      Number(issue?.missingFeeBs ?? 0),
+      missingQty * Math.max(0, Number(issue?.missingUnitChargeBs ?? 0)),
+    );
+    return Math.max(
+      0,
+      Number(issue?.penaltyBs ?? 0),
+      damagedFeeBs + missingFeeBs,
+    );
+  };
   let remainingLedgerChargeCoverageBs = ledgerChargeCoverageBs;
   const ledgerSettledReturnIssues = new Set();
   returnIssues.forEach((issue, index) => {
-    const penaltyBs = Math.max(
-      0,
-      Number(issue?.missingFeeBs ?? 0),
-      Number(issue?.damagedFeeBs ?? 0),
-      Number(issue?.penaltyBs ?? 0),
-    );
+    const penaltyBs = getReturnIssueChargeBs(issue);
     if (penaltyBs <= 0 || remainingLedgerChargeCoverageBs + 0.005 < penaltyBs) return;
     remainingLedgerChargeCoverageBs = Number((remainingLedgerChargeCoverageBs - penaltyBs).toFixed(2));
     ledgerSettledReturnIssues.add(issue);
@@ -8302,7 +8319,7 @@ export const buildContractDocumentHtml = ({
       issue?.accountingStatus,
       issue?.status,
     ].map((value) => normalizeText(value).replace(/\s+/g, '_'));
-    const penaltyBs = Math.max(0, Number(issue?.penaltyBs ?? issue?.missingFeeBs ?? 0));
+    const penaltyBs = getReturnIssueChargeBs(issue);
     const appliedBs = Math.max(
       0,
       Number(issue?.appliedToGuaranteeBs ?? 0),
@@ -8347,7 +8364,7 @@ export const buildContractDocumentHtml = ({
         useGrouping: false,
       });
   };
-  const getMissingSummaryForLine = (line) => {
+  const getReturnIssueSummaryForLine = (line) => {
     const lineKey = String(line?.lineKey ?? '').trim();
     const itemId = String(line?.itemId ?? '').trim();
     const issue = (lineKey ? returnIssueByLineKey.get(lineKey) : null)
@@ -8355,29 +8372,44 @@ export const buildContractDocumentHtml = ({
       ?? null;
     if (!issue) return null;
 
+    const damagedQty = Math.max(0, Math.trunc(Number(issue?.damagedQty ?? 0)));
     const missingQty = Math.max(0, Math.trunc(Number(issue?.missingQty ?? 0)));
-    if (missingQty <= 0) return null;
+    if (damagedQty <= 0 && missingQty <= 0) return null;
 
-    const unitChargeBs = Math.max(
+    const damagedUnitChargeBs = damagedQty > 0
+      ? Math.max(
+        0,
+        Number(issue?.damagedUnitChargeBs ?? 0),
+        Number(issue?.damagedFeeBs ?? 0) / damagedQty,
+      )
+      : 0;
+    const missingUnitChargeBs = missingQty > 0
+      ? Math.max(
+        0,
+        Number(issue?.missingUnitChargeBs ?? 0),
+        Number(issue?.missingFeeBs ?? 0) / missingQty,
+      )
+      : 0;
+    const damagedTotalBs = Math.max(
       0,
-      Number(
-        issue?.missingUnitChargeBs
-        ?? (
-          Number(issue?.missingFeeBs ?? issue?.penaltyBs ?? 0) > 0
-            ? Number(issue?.missingFeeBs ?? issue?.penaltyBs ?? 0) / missingQty
-            : 0
-        ),
-      ),
+      Number(issue?.damagedFeeBs ?? 0),
+      damagedUnitChargeBs * damagedQty,
     );
-    const totalChargeBs = Math.max(
+    const missingTotalBs = Math.max(
       0,
       Number(issue?.missingFeeBs ?? 0),
-      unitChargeBs * missingQty,
-      Number(issue?.penaltyBs ?? 0),
+      missingUnitChargeBs * missingQty,
     );
+    const parts = [];
+    if (damagedQty > 0) {
+      parts.push(`D${damagedQty}×${formatCompactChargeNumber(damagedUnitChargeBs)}=${formatCompactChargeNumber(damagedTotalBs)}`);
+    }
+    if (missingQty > 0) {
+      parts.push(`F${missingQty}×${formatCompactChargeNumber(missingUnitChargeBs)}=${formatCompactChargeNumber(missingTotalBs)}`);
+    }
     const settled = isReturnIssueSettled(issue);
     return {
-      text: `F${missingQty}×${formatCompactChargeNumber(unitChargeBs)}=${formatCompactChargeNumber(totalChargeBs)} · ${settled ? 'CANCELADO' : 'PENDIENTE'}`,
+      text: `${parts.join(' / ')} · ${settled ? 'CANCELADO' : 'PENDIENTE'}`,
       settled,
     };
   };
@@ -8555,7 +8587,7 @@ export const buildContractDocumentHtml = ({
         const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
         const lineTotalBs = getDocumentLineTotalBs(line, multiplier);
-        const missingSummary = getMissingSummaryForLine(line);
+        const returnIssueSummary = getReturnIssueSummaryForLine(line);
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -8572,8 +8604,8 @@ export const buildContractDocumentHtml = ({
           <td class="num">${formatBs(lineTotalBs)}</td>
           <td class="check"></td>
           <td class="check"></td>
-          <td>${missingSummary
-            ? `<span class="rc-missing-summary ${missingSummary.settled ? 'is-settled' : 'is-pending'}">${escapeHtml(missingSummary.text)}</span>`
+          <td>${returnIssueSummary
+            ? `<span class="rc-missing-summary ${returnIssueSummary.settled ? 'is-settled' : 'is-pending'}">${escapeHtml(returnIssueSummary.text)}</span>`
             : '<span class="rc-observation-line"></span>'}</td>
         </tr>`;
   };
@@ -8759,7 +8791,7 @@ export const buildContractDocumentHtml = ({
         <table class="rc-table">
           ${contractTableCols}
           <thead>
-            <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Faltantes</th></tr>
+            <tr><th class="rc-row-index">N.</th><th>Descripcion</th><th class="num">Cant.</th><th class="num">Precio unit.</th><th class="num">Subtotal</th><th class="check">Entregado</th><th class="check">Recogido</th><th>Daños / faltantes</th></tr>
           </thead>
           <tbody>${bodyRows || '<tr><td colspan="8">Sin items registrados</td></tr>'}</tbody>
         </table>`;
