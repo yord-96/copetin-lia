@@ -764,6 +764,25 @@ const fetchAttendanceRecordsDirect = async (filters = {}) => {
   return Array.isArray(result?.records) ? result.records : [];
 };
 
+const fetchAttendanceUsersDirect = async () => {
+  if (!shouldUseServerState()) {
+    return callBridge('users', 'list', false);
+  }
+  const response = await fetch(getServerStateUrl('/attendance/users'), {
+    cache: 'default',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudieron cargar los usuarios de asistencia.');
+  }
+  const result = await response.json();
+  if (result?.revision) {
+    lastSharedRevision = result.revision;
+    setCachedServerRevision(result.revision);
+  }
+  return Array.isArray(result?.users) ? result.users : [];
+};
+
 const createAttendanceRecordDirect = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return callBridge('attendance', 'createRecord', true, payload);
@@ -2894,6 +2913,7 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
+    listUsers: () => fetchAttendanceUsersDirect(),
     listRecords: (filters) => fetchAttendanceRecordsDirect(filters),
     createRecord: (payload) => createAttendanceRecordDirect(payload),
   },

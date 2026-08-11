@@ -322,16 +322,15 @@ export const useAppController = () => {
       loader = async () => {
         setAttendanceUsersLoading(true);
         try {
-          // En celulares, autenticacion ya dejo una copia reciente de usuarios en
-          // el estado local. La mostramos primero y refrescamos el VPS sin bloquear
-          // la busqueda, igual que los resumenes moviles de Calendario y Ordenes.
+          // Muestra cualquier copia local inmediatamente y consulta despues el
+          // endpoint atomico, que solo transporta los campos usados por Asistencia.
           const cachedUsers = await api.users.list();
           if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
             setUsers(cachedUsers);
             setAttendanceUsersLoading(false);
           }
-          await api.sync.refreshCollections(['users'], 'attendance-users');
-          setUsers(await api.users.list());
+          const attendanceUsers = await api.attendance.listUsers();
+          setUsers(attendanceUsers);
         } finally {
           setAttendanceUsersLoading(false);
         }

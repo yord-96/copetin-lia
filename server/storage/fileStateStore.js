@@ -8,6 +8,9 @@ const projectRoot = path.resolve(__dirname, '..', '..');
 const defaultStateFile = path.join(projectRoot, 'data', 'app-state.json');
 const stateFilePath = path.resolve(process.env.APP_STATE_FILE || defaultStateFile);
 let writeQueue = Promise.resolve();
+let cachedPayload = null;
+let cachedFileSignature = null;
+let activeReadPromise = null;
 
 const protectedBusinessCollections = [
   'items',
@@ -49,15 +52,38 @@ const normalizeRevision = (revision) => {
   return value || null;
 };
 
-const readJsonFile = async () => {
+const getFileSignature = async () => {
   try {
-    const raw = await fs.readFile(stateFilePath, 'utf8');
-    return JSON.parse(raw);
+    const stats = await fs.stat(stateFilePath);
+    return `${stats.size}:${stats.mtimeMs}`;
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      return null;
-    }
+    if (error.code === 'ENOENT') return null;
     throw error;
+  }
+};
+
+const readJsonFile = async () => {
+  const signature = await getFileSignature();
+  if (signature === null) {
+    cachedPayload = null;
+    cachedFileSignature = null;
+    return null;
+  }
+  if (cachedPayload && cachedFileSignature === signature) return cachedPayload;
+  if (activeReadPromise) return activeReadPromise;
+
+  activeReadPromise = (async () => {
+    const raw = await fs.readFile(stateFilePath, 'utf8');
+    const payload = JSON.parse(raw);
+    cachedPayload = payload;
+    cachedFileSignature = await getFileSignature();
+    return payload;
+  })();
+
+  try {
+    return await activeReadPromise;
+  } finally {
+    activeReadPromise = null;
   }
 };
 
@@ -123,6 +149,8 @@ const writeJsonFile = async (payload) => {
     const serialized = JSON.stringify(payload, null, 2);
     await fs.writeFile(temporaryPath, serialized, 'utf8');
     await replaceFileWithRetry(temporaryPath, serialized);
+    cachedPayload = payload;
+    cachedFileSignature = await getFileSignature();
   } catch (error) {
     console.error('[state-store] No se pudo escribir el estado del sistema.', {
       stateFilePath,

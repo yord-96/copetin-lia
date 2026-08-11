@@ -2613,6 +2613,38 @@ const summarizeAttendanceRecord = (record = {}) => ({
   notes: record.notes ?? '',
 });
 
+const summarizeAttendanceUser = (user = {}) => ({
+  id: user.id,
+  fullName: user.fullName ?? '',
+  username: user.username ?? '',
+  role: user.role ?? '',
+  roleId: user.roleId ?? '',
+  roleIds: Array.isArray(user.roleIds) ? user.roleIds : [],
+  status: user.status ?? 'active',
+});
+
+router.get('/__copetin_db/attendance/users', async (_req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const users = (Array.isArray(snapshot?.state?.users) ? snapshot.state.users : [])
+      .filter((user) => !user?.deletedAt && String(user?.status ?? 'active').toLowerCase() === 'active')
+      .sort((left, right) => String(left?.fullName ?? left?.username ?? '')
+        .localeCompare(String(right?.fullName ?? right?.username ?? ''), 'es'))
+      .map(summarizeAttendanceUser);
+
+    res.setHeader('Cache-Control', 'private, max-age=30');
+    res.json({
+      ok: true,
+      users,
+      total: users.length,
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/attendance', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
