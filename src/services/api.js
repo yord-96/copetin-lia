@@ -2568,6 +2568,9 @@ export const api = {
   },
   users: {
     list: () => callBridge('users', 'list', false),
+    // Lectura estrictamente local para vistas progresivas. No debe iniciar ni
+    // esperar el bootstrap global del servidor.
+    listCached: () => getBridge().users.list(),
     create: (payload) => callBridge('users', 'create', true, payload),
     update: (payload) => callBridge('users', 'update', true, payload),
     remove: (payload) => callBridge('users', 'remove', true, payload),

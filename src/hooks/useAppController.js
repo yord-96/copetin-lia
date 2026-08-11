@@ -324,7 +324,7 @@ export const useAppController = () => {
         try {
           // Muestra cualquier copia local inmediatamente y consulta despues el
           // endpoint atomico, que solo transporta los campos usados por Asistencia.
-          const cachedUsers = await api.users.list();
+          const cachedUsers = await api.users.listCached();
           if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
             setUsers(cachedUsers);
             setAttendanceUsersLoading(false);
