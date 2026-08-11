@@ -2603,6 +2603,13 @@ const summarizeAttendanceRecord = (record = {}) => ({
   userId: record.userId ?? '',
   userName: record.userName ?? '',
   role: record.role ?? '',
+  markingMode: record.markingMode ?? 'personal',
+  attendanceGroupId: record.attendanceGroupId ?? '',
+  attendanceGroupSize: Number(record.attendanceGroupSize ?? 1) || 1,
+  responsibleUserId: record.responsibleUserId ?? '',
+  responsibleName: record.responsibleName ?? '',
+  groupMemberNames: Array.isArray(record.groupMemberNames) ? record.groupMemberNames : [],
+  isManualParticipant: Boolean(record.isManualParticipant),
   notes: record.notes ?? '',
 });
 
@@ -2629,6 +2636,8 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
             record?.location,
             record?.reason,
             record?.type,
+            record?.responsibleName,
+            ...(Array.isArray(record?.groupMemberNames) ? record.groupMemberNames : []),
           ].map((value) => String(value ?? '').toLowerCase()).join(' ');
           if (!haystack.includes(query)) return false;
         }
@@ -2717,6 +2726,15 @@ router.post('/__copetin_db/attendance', async (req, res, next) => {
         userId,
         userName,
         role,
+        markingMode: String(payload?.markingMode ?? '') === 'responsable' ? 'responsable' : 'personal',
+        attendanceGroupId: String(payload?.attendanceGroupId ?? '').trim(),
+        attendanceGroupSize: Math.max(1, Number.parseInt(payload?.attendanceGroupSize, 10) || 1),
+        responsibleUserId: String(payload?.responsibleUserId ?? '').trim(),
+        responsibleName: String(payload?.responsibleName ?? '').trim(),
+        groupMemberNames: Array.isArray(payload?.groupMemberNames)
+          ? payload.groupMemberNames.map((name) => String(name ?? '').trim()).filter(Boolean)
+          : [],
+        isManualParticipant: Boolean(payload?.isManualParticipant),
         notes: String(payload?.notes ?? '').trim(),
         createdBy: String(payload?.createdBy ?? userName).trim() || userName,
         clientOperationId: clientOperationId || null,

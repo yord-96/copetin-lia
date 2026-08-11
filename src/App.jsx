@@ -578,6 +578,7 @@ function AdminApp() {
         {controller.activeTab === 'asistencia' && (
           <AttendanceSection
             records={controller.attendanceRecords}
+            users={controller.users}
             currentUser={controller.currentUser}
             formatDateTime={formatDateTime}
             canMark={canMarkAttendance}

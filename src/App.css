@@ -381,6 +381,293 @@
   }
 }
 
+/* Asistencia grupal por responsable. */
+.attendance-view .attendance-mode-panel {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.8rem;
+  border: 1px solid #dce4ef;
+  border-radius: 0.85rem;
+  background: #f8fafc;
+}
+
+.attendance-view .attendance-mode-label {
+  color: #34415d;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.attendance-view .attendance-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.attendance-view .attendance-mode-toggle button {
+  min-height: 2.7rem;
+  border: 1px solid #dce3ed;
+  border-radius: 0.7rem;
+  background: #fff;
+  color: #47536c;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.attendance-view .attendance-mode-toggle button.active {
+  border-color: #f26c32;
+  background: #fff2e9;
+  color: #c83b00;
+  box-shadow: 0 0 0 3px rgba(239, 75, 5, 0.09);
+}
+
+.attendance-view .attendance-mode-panel > small {
+  color: #778198;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.attendance-view .attendance-responsible-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid #bfd7f5;
+  border-radius: 0.9rem;
+  background: linear-gradient(145deg, #f5f9ff, #ffffff);
+}
+
+.attendance-view .attendance-responsible-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.attendance-view .attendance-responsible-panel > header > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.attendance-view .attendance-responsible-panel > header strong {
+  color: #17345f;
+  font-size: 0.82rem;
+}
+
+.attendance-view .attendance-responsible-panel > header small {
+  color: #71809a;
+  font-size: 0.63rem;
+}
+
+.attendance-view .attendance-responsible-panel > header b {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #e4efff;
+  color: #1756a5;
+  padding: 0.3rem 0.58rem;
+  font-size: 0.62rem;
+}
+
+.attendance-view .attendance-participant-search {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.attendance-view .attendance-participant-search input,
+.attendance-view .attendance-manual-participant input {
+  width: 100%;
+  min-height: 2.55rem;
+  border: 1px solid #d9e2ee;
+  border-radius: 0.68rem;
+  background: #fff;
+  padding: 0.55rem 0.68rem;
+  color: #24314d;
+}
+
+.attendance-view .attendance-participant-list {
+  max-height: 15rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
+  padding: 0.22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.attendance-view .attendance-participant-list > label {
+  min-width: 0;
+  min-height: 3.3rem;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.52rem;
+  padding: 0.48rem 0.55rem;
+  border: 1px solid #dfe6ef;
+  border-radius: 0.7rem;
+  background: #fff;
+  cursor: pointer;
+}
+
+.attendance-view .attendance-participant-list > label.selected {
+  border-color: #78b5ef;
+  background: #edf6ff;
+  box-shadow: inset 0 0 0 1px rgba(23, 92, 211, 0.08);
+}
+
+.attendance-view .attendance-participant-list input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: #ef4b05;
+}
+
+.attendance-view .attendance-participant-avatar {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eaf1fb;
+  color: #244c82;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.attendance-view .attendance-participant-list label > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.attendance-view .attendance-participant-list strong,
+.attendance-view .attendance-participant-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendance-view .attendance-participant-list strong {
+  color: #20304e;
+  font-size: 0.7rem;
+}
+
+.attendance-view .attendance-participant-list small {
+  color: #7c879c;
+  font-size: 0.58rem;
+}
+
+.attendance-view .attendance-participant-list > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 1rem;
+  color: #7a8599;
+  text-align: center;
+}
+
+.attendance-view .attendance-manual-participant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.55rem;
+  padding-top: 0.68rem;
+  border-top: 1px solid #dfe7f1;
+}
+
+.attendance-view .attendance-manual-participant label {
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.attendance-view .attendance-manual-participant > button {
+  min-height: 2.55rem;
+  border: 0;
+  border-radius: 0.68rem;
+  background: #17396d;
+  color: #fff;
+  padding: 0.5rem 0.78rem;
+  font-size: 0.66rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.attendance-view .attendance-manual-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.attendance-view .attendance-manual-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #f7c5aa;
+  border-radius: 999px;
+  background: #fff4ed;
+  color: #a83808;
+  padding: 0.3rem 0.38rem 0.3rem 0.58rem;
+  font-size: 0.64rem;
+  font-weight: 850;
+}
+
+.attendance-view .attendance-manual-chips button {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #b83d09;
+  cursor: pointer;
+}
+
+.attendance-view .attendance-group-photo-advice {
+  display: grid;
+  gap: 0.16rem;
+  margin: 0.55rem 0;
+  padding: 0.68rem 0.75rem;
+  border: 1px solid #f6c26b;
+  border-radius: 0.7rem;
+  background: #fff8e8;
+}
+
+.attendance-view .attendance-group-photo-advice strong {
+  color: #9a4d00;
+  font-size: 0.72rem;
+}
+
+.attendance-view .attendance-group-photo-advice span {
+  color: #8b673b;
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.attendance-view .attendance-responsible-record {
+  display: block;
+  margin-top: 0.18rem;
+  color: #175ca8 !important;
+  font-size: 0.58rem !important;
+  font-weight: 800;
+}
+
+@media (max-width: 768px) {
+  .attendance-view .attendance-participant-list {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 18rem;
+  }
+
+  .attendance-view .attendance-manual-participant {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .attendance-view .attendance-manual-participant > button {
+    width: 100%;
+  }
+}
+
 /* Caja Grande: tablero operativo rediseñado */
 .accounting-bigcash-view .bigcash-side {
   display: grid;

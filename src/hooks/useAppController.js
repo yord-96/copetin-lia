@@ -2607,15 +2607,24 @@ export const useAppController = () => {
     setError('');
     try {
       const trace = getCurrentUserTrace();
+      const isResponsibleMark = String(payload?.markingMode ?? '') === 'responsable';
       const created = await api.attendance.createRecord({
         ...payload,
         clientOperationId: payload?.clientOperationId
           || (typeof crypto !== 'undefined' && crypto.randomUUID
             ? crypto.randomUUID()
             : `attendance-${Date.now()}-${Math.random().toString(16).slice(2)}`),
-        userId: currentUser?.id ?? payload?.userId ?? '',
-        userName: currentUser?.fullName || currentUser?.username || payload?.userName || 'Usuario',
-        role: currentUser ? getUserDisplayRole(currentUser) : payload?.role ?? 'Usuario',
+        userId: isResponsibleMark ? String(payload?.userId ?? '') : currentUser?.id ?? payload?.userId ?? '',
+        userName: isResponsibleMark
+          ? String(payload?.userName ?? '').trim() || 'Usuario'
+          : currentUser?.fullName || currentUser?.username || payload?.userName || 'Usuario',
+        role: isResponsibleMark
+          ? String(payload?.role ?? '').trim() || 'Usuario'
+          : currentUser ? getUserDisplayRole(currentUser) : payload?.role ?? 'Usuario',
+        responsibleUserId: isResponsibleMark ? String(currentUser?.id ?? '') : '',
+        responsibleName: isResponsibleMark
+          ? currentUser?.fullName || currentUser?.username || 'Responsable'
+          : '',
         createdBy: trace.createdByName,
       });
       if (created?.id) {

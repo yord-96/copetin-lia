@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
+import { getUserDisplayRole } from '../../utils/permissions';
 
 const getInputDate = (date = new Date()) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -61,6 +62,7 @@ const resolveStreetAddress = async (latitude, longitude) => {
 
 function AttendanceSection({
   records = [],
+  users = [],
   currentUser = null,
   formatDateTime,
   canMark = true,
@@ -75,6 +77,11 @@ function AttendanceSection({
     longitude: null,
   });
   const [photoDraft, setPhotoDraft] = useState(null);
+  const [markingMode, setMarkingMode] = useState('personal');
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [manualParticipantNames, setManualParticipantNames] = useState([]);
+  const [manualParticipantDraft, setManualParticipantDraft] = useState('');
+  const [participantQuery, setParticipantQuery] = useState('');
   const [filters, setFilters] = useState({
     dateFrom: getInputDate(),
     dateTo: getInputDate(),
@@ -139,12 +146,71 @@ function AttendanceSection({
       if (filters.dateTo && dateKey > filters.dateTo) return false;
       if (filters.type !== 'all' && record.type !== filters.type) return false;
       if (query) {
-        const haystack = normalizeText(`${record.code} ${record.userName} ${record.location} ${record.reason} ${record.type}`);
+        const haystack = normalizeText(`${record.code} ${record.userName} ${record.location} ${record.reason} ${record.type} ${record.responsibleName}`);
         if (!haystack.includes(query)) return false;
       }
       return true;
     });
   }, [filters, records]);
+
+  const selectableUsers = useMemo(
+    () => users
+      .filter((user) => !user?.deletedAt && String(user?.status ?? 'active') === 'active')
+      .slice()
+      .sort((a, b) => String(a?.fullName ?? a?.username ?? '').localeCompare(String(b?.fullName ?? b?.username ?? ''), 'es')),
+    [users],
+  );
+
+  const filteredSelectableUsers = useMemo(() => {
+    const query = normalizeText(participantQuery).trim();
+    if (!query) return selectableUsers;
+    return selectableUsers.filter((user) => normalizeText([
+      user?.fullName,
+      user?.username,
+      user?.role,
+    ].filter(Boolean).join(' ')).includes(query));
+  }, [participantQuery, selectableUsers]);
+
+  const selectedParticipants = useMemo(() => {
+    const registered = selectedUserIds
+      .map((userId) => selectableUsers.find((user) => String(user.id) === String(userId)))
+      .filter(Boolean)
+      .map((user) => ({
+        userId: String(user.id),
+        userName: String(user.fullName || user.username || 'Usuario').trim(),
+        role: String(getUserDisplayRole(user) || 'Usuario').trim(),
+        manual: false,
+      }));
+    const manual = manualParticipantNames.map((name) => ({
+      userId: '',
+      userName: name,
+      role: 'Nombre manual',
+      manual: true,
+    }));
+    return [...registered, ...manual];
+  }, [manualParticipantNames, selectableUsers, selectedUserIds]);
+
+  const toggleParticipantUser = (userId) => {
+    setSelectedUserIds((current) => (
+      current.includes(userId)
+        ? current.filter((id) => id !== userId)
+        : [...current, userId]
+    ));
+  };
+
+  const addManualParticipant = () => {
+    const name = String(manualParticipantDraft ?? '').trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    const normalizedName = normalizeText(name);
+    const alreadyRegistered = selectedParticipants.some((participant) => normalizeText(participant.userName) === normalizedName);
+    if (alreadyRegistered) {
+      setError('Esa persona ya esta incluida en la marcacion grupal.');
+      return;
+    }
+    setManualParticipantNames((current) => [...current, name]);
+    setManualParticipantDraft('');
+    setError('');
+  };
 
   const handlePhotoChange = async (event) => {
     const input = event.currentTarget;
@@ -219,25 +285,54 @@ function AttendanceSection({
       setError('Debes tomar o subir una foto para respaldar la marca.');
       return;
     }
+    const participants = markingMode === 'responsable'
+      ? selectedParticipants
+      : [{
+        userId: String(currentUser?.id ?? ''),
+        userName: String(currentUser?.fullName || currentUser?.username || 'Usuario'),
+        role: String(currentUser?.role || 'Usuario'),
+        manual: false,
+      }];
+    if (markingMode === 'responsable' && participants.length === 0) {
+      setError('Selecciona al menos un usuario o escribe el nombre de una persona.');
+      return;
+    }
     setIsSubmitting(true);
     try {
+      const attendanceGroupId = markingMode === 'responsable'
+        ? `attendance-group-${Date.now()}-${Math.random().toString(16).slice(2)}`
+        : '';
       const uploadStartedAt = performance.now();
       const uploadedPhoto = await api.uploads.attendancePhoto(photoDraft.blob, {
-        recordId: `${currentUser?.id ?? 'attendance'}-${Date.now()}`,
+        recordId: attendanceGroupId || `${currentUser?.id ?? 'attendance'}-${Date.now()}`,
       });
       console.info('[copetin-attendance] Foto de asistencia subida.', {
         originalBytes: photoDraft.originalSizeBytes,
         finalBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
         durationMs: Math.round(performance.now() - uploadStartedAt),
       });
-      await onCreateRecord?.({
-        ...form,
-        photoUrl: uploadedPhoto.photoUrl,
-        photoMimeType: uploadedPhoto.mimeType ?? photoDraft.mimeType,
-        photoSizeBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
-        photoWidth: photoDraft.width,
-        photoHeight: photoDraft.height,
-      });
+      for (const participant of participants) {
+        await onCreateRecord?.({
+          ...form,
+          markingMode,
+          attendanceGroupId,
+          attendanceGroupSize: participants.length,
+          responsibleUserId: markingMode === 'responsable' ? String(currentUser?.id ?? '') : '',
+          responsibleName: markingMode === 'responsable'
+            ? String(currentUser?.fullName || currentUser?.username || 'Responsable')
+            : '',
+          groupMemberNames: participants.map((entry) => entry.userName),
+          userId: participant.userId,
+          userName: participant.userName,
+          role: participant.role,
+          isManualParticipant: participant.manual,
+          photoUrl: uploadedPhoto.photoUrl,
+          photoMimeType: uploadedPhoto.mimeType ?? photoDraft.mimeType,
+          photoSizeBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
+          photoWidth: photoDraft.width,
+          photoHeight: photoDraft.height,
+        });
+      }
       setForm({
         type: 'entrada',
         location: '',
@@ -249,7 +344,13 @@ function AttendanceSection({
         if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
         return null;
       });
-      setStatus('Marca registrada correctamente.');
+      setSelectedUserIds([]);
+      setManualParticipantNames([]);
+      setManualParticipantDraft('');
+      setParticipantQuery('');
+      setStatus(markingMode === 'responsable'
+        ? `${participants.length} marcas registradas correctamente por el responsable.`
+        : 'Marca registrada correctamente.');
     } catch (submitError) {
       setError(submitError.message || 'No se pudo registrar la asistencia.');
     } finally {
@@ -295,7 +396,10 @@ function AttendanceSection({
           <div className="attendance-card-head">
             <div>
               <span>Biométrico móvil</span>
-              <h3>{form.type === 'entrada' ? 'Registrar entrada' : 'Registrar salida'}</h3>
+              <h3>
+                {form.type === 'entrada' ? 'Registrar entrada' : 'Registrar salida'}
+                {markingMode === 'responsable' ? ' grupal' : ''}
+              </h3>
             </div>
             <strong>{currentTimeLabel}</strong>
           </div>
@@ -309,13 +413,131 @@ function AttendanceSection({
             </span>
             <div>
               <small>{todayLabel}</small>
-              <strong>{form.type === 'entrada' ? 'Entrada del equipo' : 'Salida del equipo'}</strong>
-              <p>La marca guardará usuario, fecha, hora, ubicación y evidencia.</p>
+              <strong>
+                {markingMode === 'responsable'
+                  ? `${form.type === 'entrada' ? 'Entrada' : 'Salida'} como responsable`
+                  : form.type === 'entrada' ? 'Entrada del equipo' : 'Salida del equipo'}
+              </strong>
+              <p>
+                {markingMode === 'responsable'
+                  ? 'Una sola evidencia respaldará las marcas individuales de todas las personas seleccionadas.'
+                  : 'La marca guardará usuario, fecha, hora, ubicación y evidencia.'}
+              </p>
             </div>
           </article>
 
           {!canMark ? (
             <p className="status error">Tu usuario puede ver esta sección, pero no tiene habilitada la marcación.</p>
+          ) : null}
+
+          <div className="attendance-mode-panel">
+            <span className="attendance-mode-label">Quién realiza la marcación</span>
+            <div className="attendance-mode-toggle">
+              <button
+                type="button"
+                className={markingMode === 'personal' ? 'active' : ''}
+                onClick={() => setMarkingMode('personal')}
+                disabled={!canMark}
+              >
+                Mi asistencia
+              </button>
+              <button
+                type="button"
+                className={markingMode === 'responsable' ? 'active' : ''}
+                onClick={() => setMarkingMode('responsable')}
+                disabled={!canMark}
+              >
+                Responsable
+              </button>
+            </div>
+            <small>
+              {markingMode === 'responsable'
+                ? 'Selecciona a todas las personas cuya entrada o salida registrarás en conjunto.'
+                : 'La marca se registrará solamente a nombre de tu usuario.'}
+            </small>
+          </div>
+
+          {markingMode === 'responsable' ? (
+            <section className="attendance-responsible-panel">
+              <header>
+                <span>
+                  <strong>Personas de la marcación</strong>
+                  <small>Usuarios registrados y nombres agregados manualmente.</small>
+                </span>
+                <b>{selectedParticipants.length} seleccionada(s)</b>
+              </header>
+
+              <label className="attendance-participant-search">
+                Buscar usuarios
+                <input
+                  type="search"
+                  value={participantQuery}
+                  onChange={(event) => setParticipantQuery(event.target.value)}
+                  placeholder="Buscar por nombre, usuario o rol..."
+                />
+              </label>
+
+              <div className="attendance-participant-list">
+                {filteredSelectableUsers.map((user) => {
+                  const userId = String(user.id);
+                  const userName = user.fullName || user.username || 'Usuario';
+                  return (
+                    <label key={userId} className={selectedUserIds.includes(userId) ? 'selected' : ''}>
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.includes(userId)}
+                        onChange={() => toggleParticipantUser(userId)}
+                      />
+                      <span className="attendance-participant-avatar" aria-hidden="true">
+                        {String(userName).trim().charAt(0).toUpperCase()}
+                      </span>
+                      <span>
+                        <strong>{userName}</strong>
+                        <small>{[user.username, getUserDisplayRole(user)].filter(Boolean).join(' · ') || 'Usuario registrado'}</small>
+                      </span>
+                    </label>
+                  );
+                })}
+                {filteredSelectableUsers.length === 0 ? (
+                  <p>No se encontraron usuarios registrados.</p>
+                ) : null}
+              </div>
+
+              <div className="attendance-manual-participant">
+                <label>
+                  Si la persona no tiene usuario
+                  <input
+                    value={manualParticipantDraft}
+                    onChange={(event) => setManualParticipantDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addManualParticipant();
+                      }
+                    }}
+                    placeholder="Escribe su nombre completo"
+                  />
+                </label>
+                <button type="button" onClick={addManualParticipant}>+ Agregar nombre</button>
+              </div>
+
+              {manualParticipantNames.length > 0 ? (
+                <div className="attendance-manual-chips">
+                  {manualParticipantNames.map((name) => (
+                    <span key={name}>
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() => setManualParticipantNames((current) => current.filter((entry) => entry !== name))}
+                        aria-label={`Quitar a ${name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
           ) : null}
 
           <div className="attendance-type-toggle">
@@ -367,6 +589,15 @@ function AttendanceSection({
           <div className="attendance-photo-picker">
             <span className="attendance-photo-title">Evidencia fotográfica</span>
 
+            {markingMode === 'responsable' && selectedParticipants.length > 1 ? (
+              <div className="attendance-group-photo-advice">
+                <strong>Foto grupal recomendada</strong>
+                <span>
+                  Incluye en la foto a las {selectedParticipants.length} personas seleccionadas para que la evidencia sea clara.
+                </span>
+              </div>
+            ) : null}
+
             <div className="attendance-photo-native-grid">
               <div className="attendance-photo-native-box">
                 <strong>📷 Tomar foto</strong>
@@ -410,8 +641,18 @@ function AttendanceSection({
           {error ? <p className="status error">{error}</p> : null}
           {status ? <p className="status success">{status}</p> : null}
 
-          <button type="submit" className="attendance-submit" disabled={isSubmitting || !canMark}>
-            {isSubmitting ? 'Registrando...' : 'Registrar asistencia'}
+          <button
+            type="submit"
+            className="attendance-submit"
+            disabled={isSubmitting || !canMark || (markingMode === 'responsable' && selectedParticipants.length === 0)}
+          >
+            {isSubmitting
+              ? markingMode === 'responsable' ? 'Registrando grupo...' : 'Registrando...'
+              : markingMode === 'responsable'
+                ? selectedParticipants.length > 0
+                  ? `Registrar ${selectedParticipants.length} asistencia(s)`
+                  : 'Selecciona personas'
+                : 'Registrar asistencia'}
           </button>
         </form>
 
@@ -447,6 +688,9 @@ function AttendanceSection({
                 <div>
                   <strong>{record.userName}</strong>
                   <small>{formatDateTime ? formatDateTime(record.capturedAt) : record.capturedAt}</small>
+                  {record.markingMode === 'responsable' ? (
+                    <small className="attendance-responsible-record">Responsable: {record.responsibleName || 'Sin identificar'}</small>
+                  ) : null}
                 </div>
                 <span className={`attendance-type ${record.type}`}>{record.type === 'entrada' ? 'Entrada' : 'Salida'}</span>
                 <p>{record.location}</p>
@@ -492,6 +736,11 @@ function AttendanceSection({
                     <td>
                       <strong>{record.userName}</strong>
                       <small>{record.role}</small>
+                      {record.markingMode === 'responsable' ? (
+                        <small className="attendance-responsible-record">
+                          Grupo de {record.attendanceGroupSize || 1} · Responsable: {record.responsibleName || 'Sin identificar'}
+                        </small>
+                      ) : null}
                     </td>
                     <td><span className={`attendance-type ${record.type}`}>{record.type === 'entrada' ? 'Entrada' : 'Salida'}</span></td>
                     <td>

@@ -3571,6 +3571,15 @@ const normalizeState = (state) => {
       userId: String(record?.userId ?? '').trim(),
       userName: String(record?.userName ?? record?.createdBy ?? 'Usuario').trim() || 'Usuario',
       role: String(record?.role ?? '').trim(),
+      markingMode: String(record?.markingMode ?? '') === 'responsable' ? 'responsable' : 'personal',
+      attendanceGroupId: String(record?.attendanceGroupId ?? '').trim(),
+      attendanceGroupSize: Math.max(1, Math.trunc(Number(record?.attendanceGroupSize ?? 1)) || 1),
+      responsibleUserId: String(record?.responsibleUserId ?? '').trim(),
+      responsibleName: String(record?.responsibleName ?? '').trim(),
+      groupMemberNames: Array.isArray(record?.groupMemberNames)
+        ? record.groupMemberNames.map((name) => String(name ?? '').trim()).filter(Boolean)
+        : [],
+      isManualParticipant: Boolean(record?.isManualParticipant),
       notes: String(record?.notes ?? '').trim(),
     }))
     : [];
@@ -19284,6 +19293,7 @@ const createWebBridge = () => ({
       const photoHeight = payload?.photoHeight ?? null;
       const latitude = payload?.latitude ?? null;
       const longitude = payload?.longitude ?? null;
+      const markingMode = String(payload?.markingMode ?? '') === 'responsable' ? 'responsable' : 'personal';
 
       if (!['entrada', 'salida'].includes(type)) {
         throw new Error('Debes seleccionar si es entrada o salida.');
@@ -19320,6 +19330,15 @@ const createWebBridge = () => ({
           userId,
           userName,
           role,
+          markingMode,
+          attendanceGroupId: String(payload?.attendanceGroupId ?? '').trim(),
+          attendanceGroupSize: Math.max(1, Math.trunc(Number(payload?.attendanceGroupSize ?? 1)) || 1),
+          responsibleUserId: String(payload?.responsibleUserId ?? '').trim(),
+          responsibleName: String(payload?.responsibleName ?? '').trim(),
+          groupMemberNames: Array.isArray(payload?.groupMemberNames)
+            ? payload.groupMemberNames.map((name) => String(name ?? '').trim()).filter(Boolean)
+            : [],
+          isManualParticipant: Boolean(payload?.isManualParticipant),
           notes: String(payload?.notes ?? '').trim(),
         };
         state.attendanceRecords.push(createdRecord);
