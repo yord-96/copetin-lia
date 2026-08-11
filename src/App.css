@@ -68366,3 +68366,1006 @@ body:has(.accounting-bigcash-view) .workspace {
     stroke-width: 1.8;
   }
 }
+
+/* CAJA CHICA · composicion operativa fina, simetrica y con tabla autocontenida. */
+.accounting-pettycash-view.accounting-redesign {
+  --petty-navy: #102d5c;
+  --petty-navy-soft: #edf3fb;
+  --petty-orange: #ea580c;
+  --petty-line: #dfe6f0;
+  --petty-muted: #64748b;
+  gap: 1rem;
+  border: 1px solid #e3e9f2;
+  border-radius: 1.15rem;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at 100% 0, rgba(37, 99, 235, 0.055), transparent 28rem),
+    #f7f9fc;
+  box-shadow: 0 1rem 2.8rem rgba(16, 45, 92, 0.055);
+}
+
+.accounting-pettycash-view .pettycash-head {
+  position: relative;
+  min-height: 7.2rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(16, 45, 92, 0.12);
+  border-radius: 1rem;
+  padding: 1.15rem 1.25rem;
+  background:
+    radial-gradient(circle at 88% 20%, rgba(255, 255, 255, 0.16), transparent 13rem),
+    linear-gradient(125deg, #102d5c 0%, #163c72 68%, #1e4f8c 100%);
+  box-shadow: 0 0.85rem 2rem rgba(16, 45, 92, 0.16);
+}
+
+.accounting-pettycash-view .pettycash-head::after {
+  content: '';
+  position: absolute;
+  right: 5.5rem;
+  bottom: -5rem;
+  width: 12rem;
+  height: 12rem;
+  border: 1.2rem solid rgba(255, 255, 255, 0.045);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.accounting-pettycash-view .pettycash-head > div:first-child {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.accounting-pettycash-view .pettycash-head h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(1.55rem, 2.2vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.accounting-pettycash-view .pettycash-head p {
+  max-width: 54rem;
+  margin: 0;
+  color: rgba(240, 246, 255, 0.78);
+  font-size: 0.82rem;
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-source-badge {
+  width: fit-content;
+  margin-top: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0.34rem 0.68rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 0.67rem;
+  font-weight: 850;
+  backdrop-filter: blur(7px);
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-source-badge i {
+  background: #72d79d;
+  box-shadow: 0 0 0 3px rgba(114, 215, 157, 0.16);
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-overview-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-date-control {
+  min-width: 12rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0.55rem 1.2rem rgba(4, 20, 46, 0.14);
+}
+
+.accounting-pettycash-view .petty-kpi-grid {
+  gap: 0.85rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.accounting-pettycash-view .petty-kpi-card {
+  position: relative;
+  min-height: 10.4rem;
+  overflow: hidden;
+  border-color: var(--petty-line);
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 0.65rem 1.6rem rgba(16, 45, 92, 0.055);
+}
+
+.accounting-pettycash-view .petty-kpi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0.22rem;
+  background: #6d5ce7;
+}
+
+.accounting-pettycash-view .petty-kpi-card.balance::before {
+  background: #16a36a;
+}
+
+.accounting-pettycash-view .petty-kpi-card.expenses::before {
+  background: var(--petty-orange);
+}
+
+.accounting-pettycash-view .petty-opening-head,
+.accounting-pettycash-view .petty-card-title {
+  min-height: 3.25rem;
+}
+
+.accounting-pettycash-view .petty-hero-icon {
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 0.85rem;
+}
+
+.accounting-pettycash-view .petty-hero-icon svg {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.accounting-pettycash-view .petty-kpi-card h3 {
+  font-size: clamp(1.38rem, 2vw, 1.78rem);
+}
+
+.accounting-pettycash-view .petty-opening-note,
+.accounting-pettycash-view .petty-balance-list,
+.accounting-pettycash-view .petty-expense-foot {
+  margin-top: auto;
+}
+
+.accounting-pettycash-view .petty-workspace-tabs {
+  position: relative;
+  gap: 0.35rem;
+  margin: 0;
+  border: 1px solid #d8e1ed;
+  border-radius: 1rem;
+  padding: 0.36rem;
+  background: #eaf0f7;
+  box-shadow: inset 0 1px 2px rgba(16, 45, 92, 0.035);
+}
+
+.accounting-pettycash-view .petty-workspace-tabs button {
+  min-height: 2.75rem;
+  border-radius: 0.72rem;
+  color: #4f607a;
+  transition: 0.18s ease;
+}
+
+.accounting-pettycash-view .petty-workspace-tabs button:hover {
+  background: rgba(255, 255, 255, 0.64);
+  color: var(--petty-navy);
+}
+
+.accounting-pettycash-view .petty-workspace-tabs button.active {
+  background: #ffffff;
+  color: var(--petty-orange);
+  box-shadow: 0 0.4rem 1rem rgba(16, 45, 92, 0.1);
+}
+
+.accounting-pettycash-view .petty-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.accounting-pettycash-view .petty-main-grid > article:not([hidden]) {
+  grid-column: 1;
+  order: 2;
+  min-width: 0;
+}
+
+.accounting-pettycash-view .petty-side {
+  grid-column: 1;
+  grid-row: auto;
+  order: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.accounting-pettycash-view .petty-side-card,
+.accounting-pettycash-view .petty-info-card {
+  min-width: 0;
+  min-height: 10rem;
+  height: 100%;
+  border-color: var(--petty-line);
+  border-radius: 1rem;
+  padding: 1rem;
+  box-shadow: 0 0.55rem 1.4rem rgba(16, 45, 92, 0.045);
+}
+
+.accounting-pettycash-view .petty-side-card h3 {
+  min-height: 2rem;
+  margin-bottom: 0.65rem;
+  color: var(--petty-navy);
+  font-size: 0.76rem;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.accounting-pettycash-view .petty-info-card {
+  align-content: start;
+  background:
+    radial-gradient(circle at 100% 0, rgba(37, 99, 235, 0.1), transparent 10rem),
+    #f7faff;
+}
+
+.accounting-pettycash-view .petty-info-card > span {
+  width: 2.15rem;
+  height: 2.15rem;
+  background: var(--petty-navy);
+}
+
+.accounting-pettycash-view .petty-info-card p {
+  color: #52637a;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.accounting-pettycash-view .petty-reposition-list {
+  gap: 0.35rem;
+}
+
+.accounting-pettycash-view .petty-reposition-list div {
+  min-height: 1.55rem;
+  grid-template-columns: minmax(5rem, 0.72fr) minmax(0, 1fr) auto;
+}
+
+.accounting-pettycash-view .petty-main-grid > .bigcash-card {
+  display: grid !important;
+  gap: 0.8rem;
+  border-color: var(--petty-line);
+  border-radius: 1rem;
+  padding: 0.95rem;
+  box-shadow: 0 0.75rem 1.9rem rgba(16, 45, 92, 0.06);
+}
+
+.accounting-pettycash-view .petty-table-head {
+  min-height: 3.55rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  border-bottom: 1px solid var(--petty-line);
+  padding-bottom: 0.8rem;
+}
+
+.accounting-pettycash-view .petty-table-head h3 {
+  margin: 0;
+  color: var(--petty-navy);
+  font-size: 0.92rem;
+  letter-spacing: 0.015em;
+}
+
+.accounting-pettycash-view .petty-table-head p {
+  color: var(--petty-muted);
+  line-height: 1.4;
+}
+
+.accounting-pettycash-view .petty-action-pair {
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.accounting-pettycash-view .petty-primary-button,
+.accounting-pettycash-view .petty-secondary-button {
+  min-height: 2.45rem;
+  border-radius: 0.72rem;
+  box-shadow: none;
+  font-size: 0.75rem;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.accounting-pettycash-view .petty-primary-button {
+  border-color: #1d4b84;
+  background: linear-gradient(180deg, #1b477d, #102d5c);
+}
+
+.accounting-pettycash-view .petty-primary-button:hover:not(:disabled),
+.accounting-pettycash-view .petty-secondary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0.5rem 1rem rgba(16, 45, 92, 0.13);
+}
+
+.accounting-pettycash-view .petty-primary-button:disabled,
+.accounting-pettycash-view .petty-secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.accounting-pettycash-view .petty-toolbar {
+  grid-template-columns: minmax(15rem, 0.34fr) minmax(20rem, 1fr);
+  gap: 0.65rem;
+}
+
+.accounting-pettycash-view .petty-toolbar label {
+  min-height: 2.7rem;
+  border-color: #d7e0ec;
+  border-radius: 0.72rem;
+  padding: 0 0.8rem;
+  background: #fbfcfe;
+}
+
+.accounting-pettycash-view .petty-toolbar label:focus-within {
+  border-color: #6d8fbe;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(52, 100, 164, 0.1);
+}
+
+.accounting-pettycash-view .petty-table-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: clamp(28rem, calc(100dvh - 23.5rem), 43rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  border: 1px solid #dbe4ef;
+  border-radius: 0.8rem;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+
+.accounting-pettycash-view .petty-table-wrap::-webkit-scrollbar {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.accounting-pettycash-view .petty-table-wrap::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #edf2f7;
+}
+
+.accounting-pettycash-view .petty-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid #edf2f7;
+  border-radius: 999px;
+  background: #8fa3bd;
+}
+
+.accounting-pettycash-view .petty-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: #667d9b;
+}
+
+.accounting-pettycash-view .petty-table {
+  width: 100%;
+  min-width: 72rem;
+  table-layout: fixed;
+}
+
+.accounting-pettycash-view .petty-advances-table {
+  min-width: 58rem;
+}
+
+.accounting-pettycash-view .petty-supplier-loans-table {
+  min-width: 64rem;
+}
+
+.accounting-pettycash-view .petty-debt-table {
+  min-width: 74rem;
+}
+
+.accounting-pettycash-view .petty-table thead th {
+  top: 0;
+  z-index: 4;
+  height: 2.65rem;
+  padding: 0.7rem 0.75rem;
+  background: var(--petty-navy);
+  color: #ffffff;
+  box-shadow: inset 0 -1px rgba(255, 255, 255, 0.12);
+}
+
+.accounting-pettycash-view .petty-table tbody td {
+  padding: 0.72rem 0.75rem;
+  color: #3d4b61;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.accounting-pettycash-view .petty-table tbody td > strong {
+  color: #26354d;
+  font-size: 0.73rem;
+}
+
+.accounting-pettycash-view .petty-table tbody tr:nth-child(even) td {
+  background: #f8fafd;
+}
+
+.accounting-pettycash-view .petty-table tbody tr:hover td {
+  background: #eef5ff;
+}
+
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(1) { width: 7.6rem; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(2) { width: 30%; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(3) { width: 13%; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(4) { width: 8.5rem; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(5) { width: 7rem; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(6) { width: 8rem; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(7) { width: 9rem; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(8) { width: 5rem; }
+
+.accounting-pettycash-view .petty-table td:nth-last-child(1),
+.accounting-pettycash-view .petty-table th:nth-last-child(1) {
+  text-align: right;
+}
+
+.accounting-pettycash-view .section-link.blue {
+  width: fit-content;
+  min-height: 2.15rem;
+  border-radius: 0.62rem;
+  color: #245694;
+  font-weight: 850;
+}
+
+@media (max-width: 1180px) {
+  .accounting-pettycash-view .petty-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-pettycash-view .petty-info-card {
+    grid-column: 1 / -1;
+    min-height: auto;
+  }
+
+  .accounting-pettycash-view .petty-table-wrap {
+    max-height: 34rem;
+  }
+}
+
+@media (max-width: 820px) {
+  .accounting-pettycash-view.accounting-redesign {
+    gap: 0.75rem;
+    border: 0;
+    border-radius: 0;
+    padding: 0.65rem;
+    box-shadow: none;
+  }
+
+  .accounting-pettycash-view .pettycash-head {
+    min-height: 0;
+    align-items: stretch;
+    border-radius: 1rem;
+    padding: 1rem;
+  }
+
+  .accounting-pettycash-view .pettycash-head .accounting-overview-actions,
+  .accounting-pettycash-view .pettycash-head .accounting-date-control {
+    width: 100%;
+  }
+
+  .accounting-pettycash-view .petty-kpi-grid,
+  .accounting-pettycash-view .petty-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-pettycash-view .petty-info-card {
+    grid-column: auto;
+  }
+
+  .accounting-pettycash-view .petty-kpi-card,
+  .accounting-pettycash-view .petty-side-card,
+  .accounting-pettycash-view .petty-info-card {
+    min-height: auto;
+  }
+
+  .accounting-pettycash-view .petty-workspace-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-pettycash-view .petty-table-head,
+  .accounting-pettycash-view .petty-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-pettycash-view .petty-action-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-pettycash-view .petty-action-pair > * {
+    width: 100%;
+  }
+
+  .accounting-pettycash-view .petty-expenses-card .petty-action-pair > *:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .accounting-pettycash-view .petty-table-wrap {
+    max-height: min(62dvh, 36rem);
+    scrollbar-gutter: auto;
+  }
+}
+
+/* Caja Chica · lectura financiera: saldo + movimiento diario + acumulado. */
+.accounting-pettycash-view .pettycash-head {
+  min-height: 5.6rem;
+  padding: 0.8rem 1.1rem;
+}
+
+.accounting-pettycash-view .pettycash-head h2 {
+  font-size: clamp(1.35rem, 1.8vw, 1.7rem);
+}
+
+.accounting-pettycash-view .pettycash-head p {
+  font-size: 0.74rem;
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-source-badge {
+  margin-top: 0.2rem;
+  padding: 0.24rem 0.58rem;
+  font-size: 0.59rem;
+}
+
+.accounting-pettycash-view .petty-money-grid {
+  grid-template-columns: minmax(16rem, 0.85fr) minmax(27rem, 1.35fr) minmax(17rem, 0.9fr);
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-kpi-card {
+  min-height: 8.5rem;
+  gap: 0.55rem;
+  padding: 0.82rem 0.9rem;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title {
+  min-height: 2.65rem;
+  gap: 0.65rem;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-hero-icon {
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 0.72rem;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title strong {
+  color: #26354d;
+  font-size: 0.67rem;
+  letter-spacing: 0.035em;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title h3 {
+  margin-top: 0.1rem;
+  font-size: clamp(1.18rem, 1.75vw, 1.55rem);
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title p {
+  margin: 0;
+  color: #718096;
+  font-size: 0.65rem;
+}
+
+.accounting-pettycash-view .petty-money-context {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
+  margin-top: auto;
+}
+
+.accounting-pettycash-view .petty-money-context > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+  border: 1px solid #e4eaf2;
+  border-radius: 0.65rem;
+  padding: 0.48rem 0.56rem;
+  background: #f8fafc;
+}
+
+.accounting-pettycash-view .petty-money-context small {
+  color: #718096;
+  font-size: 0.57rem;
+}
+
+.accounting-pettycash-view .petty-money-context b {
+  min-width: 0;
+  color: #334155;
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounting-pettycash-view .petty-day-movement::before {
+  background: #2f63d6;
+}
+
+.accounting-pettycash-view .petty-day-movement {
+  grid-template-columns: minmax(10.5rem, 0.65fr) minmax(0, 1.35fr);
+  grid-template-rows: 1fr auto;
+  align-items: center;
+}
+
+.accounting-pettycash-view .petty-day-movement .petty-card-title {
+  grid-row: 1 / span 2;
+}
+
+.accounting-pettycash-view .petty-day-equation {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr) auto);
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.accounting-pettycash-view .petty-day-equation > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+  border: 1px solid #e2e9f2;
+  border-radius: 0.65rem;
+  padding: 0.5rem 0.55rem;
+  background: #f8fafc;
+}
+
+.accounting-pettycash-view .petty-day-equation small {
+  color: #718096;
+  font-size: 0.55rem;
+  white-space: nowrap;
+}
+
+.accounting-pettycash-view .petty-day-equation b {
+  color: #26354d;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.accounting-pettycash-view .petty-day-equation > i {
+  color: #93a0b2;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.accounting-pettycash-view .petty-day-closing {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding-right: 0.1rem;
+}
+
+.accounting-pettycash-view .petty-day-closing small {
+  color: #667085;
+  font-size: 0.58rem;
+  font-weight: 750;
+}
+
+.accounting-pettycash-view .petty-day-closing strong {
+  font-size: 0.82rem;
+}
+
+.accounting-pettycash-view .petty-main-grid > article:not([hidden]) {
+  order: 1;
+}
+
+.accounting-pettycash-view .petty-side {
+  order: 2;
+  display: block;
+}
+
+.accounting-pettycash-view .petty-side .petty-repositions {
+  min-height: auto;
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(0, 2.3fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-repositions h3 {
+  min-height: 0;
+  margin: 0;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list div {
+  min-width: 0;
+  min-height: 2.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "date amount" "label amount";
+  gap: 0.08rem 0.4rem;
+  border-left: 2px solid #b8c8dc;
+  padding: 0.25rem 0.45rem;
+  background: #f8fafc;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list span {
+  grid-area: date;
+  color: #65758b;
+  font-size: 0.59rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list strong {
+  grid-area: label;
+  color: #334155;
+  font-size: 0.62rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list b {
+  grid-area: amount;
+  align-self: center;
+  color: #244f83;
+  font-size: 0.66rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-repositions > .section-link {
+  margin: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 1360px) {
+  .accounting-pettycash-view .petty-money-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounting-pettycash-view .petty-day-movement {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .accounting-pettycash-view .petty-side .petty-repositions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .accounting-pettycash-view .petty-side .petty-reposition-list {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 820px) {
+  .accounting-pettycash-view .petty-money-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-pettycash-view .petty-day-movement {
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .accounting-pettycash-view .petty-day-movement .petty-card-title {
+    grid-row: auto;
+  }
+
+  .accounting-pettycash-view .petty-day-equation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .accounting-pettycash-view .petty-day-equation > i {
+    display: none;
+  }
+
+  .accounting-pettycash-view .petty-day-closing {
+    justify-content: space-between;
+  }
+
+  .accounting-pettycash-view .petty-side .petty-reposition-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .accounting-pettycash-view .petty-money-context,
+  .accounting-pettycash-view .petty-side .petty-reposition-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Caja Chica · escala tipografica legible sin depender de pesos excesivos. */
+.accounting-pettycash-view .pettycash-head p {
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-source-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.accounting-pettycash-view .pettycash-head .accounting-date-control input {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title strong {
+  font-size: 0.79rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title h3 {
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  line-height: 1.12;
+}
+
+.accounting-pettycash-view .petty-money-grid .petty-card-title p {
+  font-size: 0.76rem;
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+.accounting-pettycash-view .petty-money-context small,
+.accounting-pettycash-view .petty-day-equation small,
+.accounting-pettycash-view .petty-day-closing small {
+  color: #66758a;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.accounting-pettycash-view .petty-money-context b,
+.accounting-pettycash-view .petty-day-equation b {
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.accounting-pettycash-view .petty-day-closing strong {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.accounting-pettycash-view .petty-money-context > span,
+.accounting-pettycash-view .petty-day-equation > span {
+  min-height: 3.45rem;
+  justify-content: center;
+  padding: 0.58rem 0.65rem;
+}
+
+.accounting-pettycash-view .petty-day-equation > i {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.accounting-pettycash-view .petty-workspace-tabs button {
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.accounting-pettycash-view .petty-workspace-tabs button b {
+  min-width: 1.55rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.accounting-pettycash-view .petty-table-head h3 {
+  font-size: 1rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.accounting-pettycash-view .petty-table-head p {
+  font-size: 0.82rem;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.accounting-pettycash-view .petty-primary-button,
+.accounting-pettycash-view .petty-secondary-button,
+.accounting-pettycash-view .petty-advance-total {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.accounting-pettycash-view .petty-toolbar select,
+.accounting-pettycash-view .petty-toolbar input {
+  font-size: 0.88rem;
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+.accounting-pettycash-view .petty-table thead th {
+  height: 3rem;
+  padding: 0.78rem 0.82rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.025em;
+}
+
+.accounting-pettycash-view .petty-table tbody td {
+  padding: 0.88rem 0.82rem;
+  font-size: 0.82rem;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.accounting-pettycash-view .petty-table tbody td > strong {
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.accounting-pettycash-view .petty-table tbody td small,
+.accounting-pettycash-view .petty-debt-table td small,
+.accounting-pettycash-view .cash-linked-reference {
+  font-size: 0.72rem;
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+.accounting-pettycash-view .petty-category,
+.accounting-pettycash-view .petty-debt-status,
+.accounting-pettycash-view .petty-debt-type {
+  min-height: 1.65rem;
+  padding: 0.2rem 0.58rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.accounting-pettycash-view .accounting-inline-action,
+.accounting-pettycash-view .cash-receipt-button,
+.accounting-pettycash-view .cash-receipt-muted {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.accounting-pettycash-view .petty-side .petty-repositions h3 {
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list div {
+  min-height: 3.15rem;
+  gap: 0.12rem 0.5rem;
+  padding: 0.38rem 0.55rem;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list span {
+  font-size: 0.7rem;
+  font-weight: 450;
+  line-height: 1.3;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list strong {
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.accounting-pettycash-view .petty-side .petty-reposition-list b {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.accounting-pettycash-view .section-link.blue {
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+@media (max-width: 820px) {
+  .accounting-pettycash-view .petty-table thead th {
+    font-size: 0.74rem;
+  }
+
+  .accounting-pettycash-view .petty-table tbody td,
+  .accounting-pettycash-view .petty-table tbody td > strong {
+    font-size: 0.8rem;
+  }
+
+  .accounting-pettycash-view .petty-money-context small,
+  .accounting-pettycash-view .petty-day-equation small,
+  .accounting-pettycash-view .petty-day-closing small {
+    font-size: 0.74rem;
+  }
+
+  .accounting-pettycash-view .petty-money-context b,
+  .accounting-pettycash-view .petty-day-equation b {
+    font-size: 0.86rem;
+  }
+}

@@ -769,24 +769,45 @@ function AccountingSection({
     return sumBy(openingRows, (movement) => movement.amountBs);
   }, [postedMovements, selectedDate]);
 
-  const dayPettyOpeningRows = useMemo(
-    () => postedMovements.filter(
-      (movement) => isPettyCash(movement)
-        && String(movement.type ?? '').toLowerCase() === 'apertura'
-        && getDateKey(movement.createdAt) === selectedDate,
+  const pettyLedgerThroughSelectedDate = useMemo(
+    () => postedMovements.filter((movement) => (
+      isPettyCash(movement)
+      && getDateKey(movement.createdAt) <= selectedDate
+    )),
+    [postedMovements, selectedDate],
+  );
+
+  const pettyReceivedToDateBs = useMemo(
+    () => sumBy(
+      pettyLedgerThroughSelectedDate.filter((movement) => toNumber(movement.amountBs) > 0),
+      (movement) => movement.amountBs,
+    ),
+    [pettyLedgerThroughSelectedDate],
+  );
+
+  const pettySpentToDateBs = useMemo(
+    () => Math.abs(sumBy(
+      pettyLedgerThroughSelectedDate.filter((movement) => toNumber(movement.amountBs) < 0),
+      (movement) => movement.amountBs,
+    )),
+    [pettyLedgerThroughSelectedDate],
+  );
+
+  const pettyBalanceBeforeSelectedDateBs = useMemo(
+    () => sumBy(
+      postedMovements.filter((movement) => (
+        isPettyCash(movement)
+        && getDateKey(movement.createdAt) < selectedDate
+      )),
+      (movement) => movement.amountBs,
     ),
     [postedMovements, selectedDate],
   );
 
-  const selectedDayPettyRepositions = useMemo(
-    () => pettyTransfersRows.filter((movement) => getDateKey(movement.createdAt) === selectedDate),
-    [pettyTransfersRows, selectedDate],
-  );
-
-  const dayPettyRepositionBs = useMemo(
-    () => Math.max(0, dayTransfersToPettyBs - dayPettyOpeningBs),
-    [dayPettyOpeningBs, dayTransfersToPettyBs],
-  );
+  const selectedDayPettyNetBs = Number((dayTransfersToPettyBs - dayPettyExpenseBs).toFixed(2));
+  const selectedDayPettyClosingBs = Number((pettyBalanceBeforeSelectedDateBs + selectedDayPettyNetBs).toFixed(2));
+  const pettyIncomeCountToDate = pettyLedgerThroughSelectedDate.filter((movement) => toNumber(movement.amountBs) > 0).length;
+  const pettyExpenseCountToDate = pettyLedgerThroughSelectedDate.filter((movement) => toNumber(movement.amountBs) < 0).length;
 
   const bigCashBalanceBs = toNumber(cashSummary?.bigCashBalanceBs ?? 0);
   const pettyCashBalanceBs = toNumber(cashSummary?.pettyCashBalanceBs ?? 0);
@@ -1160,13 +1181,6 @@ function AccountingSection({
     };
   }, [filteredPettyHistoryRows]);
   const pettyHistorySummary = pettyHistoryMeta.summary ?? clientPettyHistorySummary;
-
-  const activeCashSession = useMemo(() => {
-    const currentSessions = cashSessions.filter((session) => !isArchivedAccountingRecord(session));
-    return currentSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open')
-      ?? currentSessions[0]
-      ?? null;
-  }, [cashSessions]);
 
   const getRentalContract = useCallback((rental) => (
     contractByRentalId.get(rental?.id)
@@ -4073,10 +4087,6 @@ function AccountingSection({
   }
 
   if (activeModule === 'contabilidad_caja_chica') {
-    const openingRow = dayPettyOpeningRows[0] ?? null;
-    const openingSource = selectedDayPettyRepositions[0] ?? openingRow;
-    const pettyOpenedBy = openingRow?.responsible || openingRow?.createdBy || activeCashSession?.openedBy || '-';
-
     return (
       <section className="panel accounting-pettycash-view accounting-redesign">
         <header className="accounting-bigcash-head pettycash-head">
@@ -4093,55 +4103,58 @@ function AccountingSection({
           </div>
         </header>
 
-        <section className="petty-kpi-grid">
-          <article className="petty-kpi-card opening">
-            <div className="petty-opening-head">
-              <span className="petty-hero-icon violet"><CashIcon kind="big" /></span>
-              <div>
-                <strong>FONDO RECIBIDO</strong>
-                <span>{formatDate(openingRow?.createdAt ?? selectedDate)} - {getLongHourLabel(openingRow?.createdAt ?? activeCashSession?.openedAt)}</span>
-                <small>Por: {pettyOpenedBy}</small>
-              </div>
-            </div>
-            <h3 className="value-blue">{formatBs(dayPettyOpeningBs + dayPettyRepositionBs)}</h3>
-            <div className="petty-opening-note">
-              <span>Desde Caja Grande</span>
-              <b>{openingSource?.receipt || openingSource?.id ? `Ingreso N° ${String(openingSource?.receipt || openingSource?.id).slice(0, 12)}` : 'Sin referencia registrada'}</b>
-            </div>
-          </article>
-
-          <article className="petty-kpi-card balance">
+        <section className="petty-kpi-grid petty-money-grid">
+          <article className="petty-kpi-card balance petty-balance-primary">
             <div className="petty-card-title">
               <span className="petty-hero-icon green"><CashIcon kind="petty" /></span>
               <div>
                 <strong>SALDO DISPONIBLE</strong>
                 <h3 className="value-green">{formatBs(pettyCashBalanceBs)}</h3>
-                <p>Saldo actual en caja chica</p>
+                <p>Dinero disponible actualmente</p>
               </div>
             </div>
-            <div className="petty-balance-list">
-              <span><small>Apertura del día</small><b>{formatBs(dayPettyOpeningBs)}</b></span>
-              <span><small>Reposiciones del dia</small><b>{formatBs(dayPettyRepositionBs)}</b></span>
-              <span><small>Gastos del día</small><b className="value-orange">- {formatBs(dayPettyExpenseBs)}</b></span>
-              <span><small>Saldo disponible</small><b className="value-green">{formatBs(pettyCashBalanceBs)}</b></span>
+            <div className="petty-money-context">
+              <span><small>Saldo antes de esta fecha</small><b>{formatBs(pettyBalanceBeforeSelectedDateBs)}</b></span>
+              <span><small>Variación del día</small><b className={selectedDayPettyNetBs >= 0 ? 'value-green' : 'value-orange'}>{selectedDayPettyNetBs >= 0 ? '+' : '-'} {formatBs(Math.abs(selectedDayPettyNetBs))}</b></span>
             </div>
           </article>
 
-          <article className="petty-kpi-card expenses">
+          <article className="petty-kpi-card petty-day-movement">
             <div className="petty-card-title">
-              <span className="petty-hero-icon orange"><MiniIcon kind="cart" /></span>
+              <span className="petty-hero-icon blue"><MiniIcon kind="calendar" /></span>
               <div>
-                <strong>GASTOS DEL DÍA</strong>
-                <h3 className="value-orange">{formatBs(dayPettyExpenseBs)}</h3>
-                <p>Total gastado hoy</p>
+                <strong>MOVIMIENTO DEL DÍA</strong>
+                <h3 className={selectedDayPettyNetBs >= 0 ? 'value-blue' : 'value-orange'}>{selectedDayPettyNetBs >= 0 ? '+' : '-'} {formatBs(Math.abs(selectedDayPettyNetBs))}</h3>
+                <p>{formatDate(selectedDate)}</p>
               </div>
             </div>
-            <div className="petty-expense-foot">
-              <b>N° de gastos: {dayPettyExpensesRows.filter((movement) => !isVoidedCashMovement(movement)).length}</b>
-              <button type="button">Ver detalles</button>
+            <div className="petty-day-equation" aria-label="Calculo del saldo del día">
+              <span><small>Saldo anterior</small><b>{formatBs(pettyBalanceBeforeSelectedDateBs)}</b></span>
+              <i>+</i>
+              <span><small>Recibido hoy</small><b className="value-blue">{formatBs(dayTransfersToPettyBs)}</b></span>
+              <i>−</i>
+              <span><small>Gastado hoy</small><b className="value-orange">{formatBs(dayPettyExpenseBs)}</b></span>
+            </div>
+            <div className="petty-day-closing">
+              <small>Saldo al cierre de la fecha</small>
+              <strong className={selectedDayPettyClosingBs >= 0 ? 'value-green' : 'value-orange'}>{formatBs(selectedDayPettyClosingBs)}</strong>
             </div>
           </article>
 
+          <article className="petty-kpi-card expenses petty-history-money">
+            <div className="petty-card-title">
+              <span className="petty-hero-icon orange"><MiniIcon kind="chart" /></span>
+              <div>
+                <strong>ACUMULADO HASTA LA FECHA</strong>
+                <h3 className="value-blue">{formatBs(pettyReceivedToDateBs)}</h3>
+                <p>Total recibido desde Caja Grande</p>
+              </div>
+            </div>
+            <div className="petty-money-context">
+              <span><small>Total utilizado</small><b className="value-orange">- {formatBs(pettySpentToDateBs)}</b></span>
+              <span><small>Movimientos</small><b>{pettyIncomeCountToDate} ingresos · {pettyExpenseCountToDate} salidas</b></span>
+            </div>
+          </article>
         </section>
 
         <nav className="petty-workspace-tabs" aria-label="Secciones de Caja Chica">
@@ -4575,26 +4588,8 @@ function AccountingSection({
           </article>
 
           <aside className="petty-side">
-            <article className="petty-side-card petty-day-summary">
-              <h3>RESUMEN DEL DÍA</h3>
-              <div>
-                <span><small>Apertura (desde Caja Grande)</small><b>{formatBs(dayPettyOpeningBs)}</b></span>
-                <span><small>Reposiciones del dia</small><b>{formatBs(dayPettyRepositionBs)}</b></span>
-                <span><small>Total gastos del día</small><b className="value-orange">- {formatBs(dayPettyExpenseBs)}</b></span>
-                <span className="total"><small>Saldo disponible</small><b className="value-green">{formatBs(pettyCashBalanceBs)}</b></span>
-              </div>
-            </article>
-
-            <article className="petty-info-card">
-              <span><MiniIcon kind="info" /></span>
-              <div>
-                <strong>Importante</strong>
-                <p>La caja chica solo recibe fondos desde Caja Grande. Desde esta vista registra gastos, filtra movimientos y conserva comprobantes.</p>
-              </div>
-            </article>
-
             <article className="petty-side-card petty-repositions">
-              <h3>ÚLTIMAS REPOSICIONES DESDE CAJA GRANDE</h3>
+              <h3>ÚLTIMOS INGRESOS DESDE CAJA GRANDE</h3>
               <div className="petty-reposition-list">
                 {pettyTransfersRows.slice(0, 4).map((movement) => (
                   <div key={movement.id}>
