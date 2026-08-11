@@ -41686,6 +41686,14 @@ button.calendar-dispatch-row:focus-visible {
   background: #48b56a;
 }
 
+.lincon-topbar-status.has-error > span {
+  background: #c93645;
+}
+
+.lincon-main > .attendance-view {
+  margin-top: 1rem;
+}
+
 .lincon-topbar-status div {
   display: grid;
 }

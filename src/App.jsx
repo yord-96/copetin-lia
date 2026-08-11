@@ -11,7 +11,15 @@ import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
-import { canAccessTab, canWriteTab, getAllowedTabRoots, getDefaultTabForUser, isDeveloper } from './utils/permissions';
+import {
+  canAccessCompany,
+  canAccessTab,
+  canWriteTab,
+  getAllowedTabRoots,
+  getDefaultTabForUser,
+  getUserCompanyAccess,
+  isDeveloper,
+} from './utils/permissions';
 
 const DEVELOPER_COMPANY_STORAGE_KEY = 'copetin-developer-company-choice-v1';
 const SIDEBAR_SEEN_STORAGE_KEY = 'copetin-sidebar-seen-counts-v3-empty';
@@ -155,7 +163,8 @@ const preloadTabModule = (tabId) => {
 
 const readDeveloperCompanyChoice = () => {
   if (typeof window === 'undefined') return '';
-  return window.sessionStorage.getItem(DEVELOPER_COMPANY_STORAGE_KEY) || '';
+  const choice = window.sessionStorage.getItem(DEVELOPER_COMPANY_STORAGE_KEY) || '';
+  return choice === 'lincon' ? 'lincoln' : choice;
 };
 
 const saveDeveloperCompanyChoice = (choice) => {
@@ -209,7 +218,7 @@ function DeveloperCompanyIcon({ type }) {
   );
 }
 
-function DeveloperCompanyModal({ onSelect }) {
+function DeveloperCompanyModal({ availableCompanies = [], onSelect }) {
   const companies = [
     {
       id: 'copetin',
@@ -220,8 +229,8 @@ function DeveloperCompanyModal({ onSelect }) {
       type: 'main',
     },
     {
-      id: 'lincon',
-      title: 'Lincon',
+      id: 'lincoln',
+      title: 'Lincoln',
       eyebrow: 'Salon de eventos',
       description: 'Reservas, ambientes, paquetes y agenda operativa del salon.',
       tags: ['Reservas', 'Ambientes', 'Paquetes', 'Eventos'],
@@ -238,15 +247,15 @@ function DeveloperCompanyModal({ onSelect }) {
               EC
             </span>
             <div>
-              <span>Acceso developer</span>
-              <strong>El Copetin</strong>
+              <span>Acceso empresarial</span>
+              <strong>Copetin / Lincoln</strong>
             </div>
           </div>
           <h2 id="developer-company-title">Elige tu espacio de trabajo</h2>
           <p>Selecciona el entorno que quieres abrir ahora. La eleccion se mantiene solo durante esta sesion.</p>
         </header>
         <div className="developer-company-options">
-          {companies.map((company) => (
+          {companies.filter((company) => availableCompanies.includes(company.id)).map((company) => (
             <button
               key={company.id}
               type="button"
@@ -277,8 +286,8 @@ function DeveloperCompanyModal({ onSelect }) {
           ))}
         </div>
         <footer className="developer-company-footer">
-          <span>Sesion developer</span>
-          <strong>El sistema abrira la operacion seleccionada sin mezclar datos.</strong>
+          <span>Acceso empresarial</span>
+          <strong>El sistema abrira solamente una base empresarial a la vez.</strong>
         </footer>
       </section>
     </div>
@@ -301,9 +310,18 @@ function AdminApp() {
   );
   const navigationDisplayTab = pendingNavigationTab || controller.activeTab;
   const isNavigating = Boolean(pendingNavigationTab && pendingNavigationTab !== controller.activeTab) || isNavigationPending;
+  const availableCompanies = useMemo(
+    () => (controller.currentUser ? getUserCompanyAccess(controller.currentUser) : []),
+    [controller.currentUser],
+  );
+  const selectedCompany = availableCompanies.length === 1
+    ? availableCompanies[0]
+    : availableCompanies.includes(developerCompanyChoice)
+      ? developerCompanyChoice
+      : '';
 
   useEffect(() => {
-    if (!controller.currentUser || !isDeveloper(controller.currentUser)) {
+    if (!controller.currentUser) {
       if (typeof window !== 'undefined' && !controller.currentUser) {
         window.sessionStorage.removeItem(DEVELOPER_COMPANY_STORAGE_KEY);
       }
@@ -312,7 +330,8 @@ function AdminApp() {
       setDeveloperCompanyChoice('');
       return;
     }
-    setDeveloperCompanyChoice(readDeveloperCompanyChoice());
+    const storedChoice = readDeveloperCompanyChoice();
+    setDeveloperCompanyChoice(getUserCompanyAccess(controller.currentUser).includes(storedChoice) ? storedChoice : '');
   }, [controller.currentUser]);
 
   useEffect(() => {
@@ -444,8 +463,14 @@ function AdminApp() {
   };
 
   const handleDeveloperCompanySelect = (choice) => {
+    if (!canAccessCompany(controller.currentUser, choice)) return;
     saveDeveloperCompanyChoice(choice);
     setDeveloperCompanyChoice(choice);
+  };
+
+  const handleCompanyChooserOpen = () => {
+    if (typeof window !== 'undefined') window.sessionStorage.removeItem(DEVELOPER_COMPANY_STORAGE_KEY);
+    setDeveloperCompanyChoice('');
   };
 
   const renderWorkspaceContent = () => {
@@ -799,14 +824,27 @@ function AdminApp() {
   }
 
   const shouldShowDeveloperCompanyModal =
-    isDeveloper(controller.currentUser)
-    && !developerCompanyChoice;
+    availableCompanies.length > 1
+    && !selectedCompany;
 
-  if (isDeveloper(controller.currentUser) && developerCompanyChoice === 'lincon') {
+  if (selectedCompany === 'lincoln') {
+    const canMarkAttendance = canAccessTab(controller.currentUser, 'asistencia');
     return (
       <Suspense fallback={<p className="status">Preparando Lincoln...</p>}>
         <LinconWorkspaceSection
           currentUser={controller.currentUser}
+          availableCompanies={availableCompanies}
+          attendanceProps={{
+            records: controller.attendanceRecords,
+            users: controller.users,
+            usersLoading: controller.attendanceUsersLoading,
+            currentUser: controller.currentUser,
+            formatDateTime,
+            canMark: canMarkAttendance,
+            onLoadRecords: controller.handleLoadAttendanceRecords,
+            onCreateRecord: canMarkAttendance ? controller.handleCreateAttendanceRecord : undefined,
+          }}
+          onOpenAttendance={() => controller.setActiveTab('asistencia')}
           onSwitchWorkspace={handleDeveloperCompanySelect}
           onLogout={controller.handleLogout}
         />
@@ -836,6 +874,7 @@ function AdminApp() {
             canReset={isDeveloper(controller.currentUser)}
             userPresence={controller.userPresence}
             activeTab={controller.activeTab}
+            onSwitchCompany={availableCompanies.length > 1 ? handleCompanyChooserOpen : undefined}
             onPublishUpdateNotice={isDeveloper(controller.currentUser) ? controller.handlePublishUpdateNotice : undefined}
           />
 
@@ -879,7 +918,7 @@ function AdminApp() {
       )}
 
       {shouldShowDeveloperCompanyModal ? (
-        <DeveloperCompanyModal onSelect={handleDeveloperCompanySelect} />
+        <DeveloperCompanyModal availableCompanies={availableCompanies} onSelect={handleDeveloperCompanySelect} />
       ) : null}
     </div>
   );

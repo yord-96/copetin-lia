@@ -11,8 +11,10 @@ import uploadRoutes from './routes/uploads.js';
 import documentRoutes from './routes/documents.js';
 import contractTransactionRoutes from './routes/contractTransactions.js';
 import publicCatalogRoutes from './routes/publicCatalog.js';
+import lincolnRoutes from './routes/lincoln.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
+import { ensureLincolnStateStore, getLincolnStateStoreInfo } from './storage/lincolnStateStore.js';
 import {
   ensureProductUploadDirectory,
   getProductUploadInfo,
@@ -115,6 +117,7 @@ app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 app.use(publicCatalogRoutes);
 app.use(documentRoutes);
 app.use(contractTransactionRoutes);
+app.use(lincolnRoutes);
 
 app.get('/health', async (_req, res, next) => {
   try {
@@ -136,6 +139,8 @@ app.get('/health', async (_req, res, next) => {
       postgres,
       storage: getStateStoreInfo().storage,
       stateFile: getStateStoreInfo().stateFilePath,
+      lincolnStorage: getLincolnStateStoreInfo().storage,
+      lincolnStateFile: getLincolnStateStoreInfo().stateFilePath,
       uploads: {
         products: productUploadInfo.uploadDirectory,
         attendance: attendanceUploadInfo.uploadDirectory,
@@ -205,6 +210,7 @@ app.use((error, _req, res, _next) => {
 
 const start = async () => {
   await ensureStateStore();
+  await ensureLincolnStateStore();
   await ensureProductUploadDirectory();
   await ensureAttendanceUploadDirectory();
   try {

@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../../services/api';
+import AttendanceSection from './AttendanceSection';
 
 const upcomingReservations = [
   { client: 'Corporacion Andina', eventType: 'Cena de Gala', date: '07 Jun 2026', time: 'Sab, 19:00', room: 'Lincoln Salon Principal', status: 'Confirmado' },
@@ -33,6 +35,7 @@ const sidebarItems = [
   { id: 'reportes', label: 'Reportes', icon: 'chart' },
   { id: 'configuracion', label: 'Configuracion', icon: 'panel' },
   { id: 'usuarios', label: 'Usuarios', icon: 'users' },
+  { id: 'asistencia', label: 'Asistencia compartida', icon: 'users' },
 ];
 
 const agendaKpis = [
@@ -701,8 +704,16 @@ function LinconReservationsView() {
   );
 }
 
-function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
+function LinconWorkspaceSection({
+  currentUser,
+  availableCompanies = ['lincoln'],
+  attendanceProps = {},
+  onOpenAttendance,
+  onSwitchWorkspace,
+  onLogout,
+}) {
   const [activeView, setActiveView] = useState('panel');
+  const [databaseStatus, setDatabaseStatus] = useState({ loading: true, error: '', snapshot: null });
   const userName = currentUser?.fullName ?? currentUser?.name ?? 'Yordy Copa Cerezo';
   const workspaceTitle = {
     agenda: 'Agenda / Centro de Eventos Lincoln',
@@ -712,6 +723,20 @@ function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
     agenda: '+ Nuevo registro',
     reservas: '+ Nueva reserva',
   }[activeView];
+
+  useEffect(() => {
+    let disposed = false;
+    api.lincoln.getState()
+      .then((snapshot) => {
+        if (!disposed) setDatabaseStatus({ loading: false, error: '', snapshot });
+      })
+      .catch((error) => {
+        if (!disposed) setDatabaseStatus({ loading: false, error: error.message || 'No se pudo abrir la base Lincoln.', snapshot: null });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   return (
     <div className={`lincon-shell ${activeView !== 'panel' ? 'lincon-shell--agenda' : ''}`}>
@@ -723,7 +748,7 @@ function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
           <select defaultValue="lincoln"><option value="lincoln">Centro de Eventos Lincoln</option></select>
         </label>
 
-        <div className="lincon-user-card"><span>YC</span><div><strong>{userName}</strong><small>Developer</small></div></div>
+        <div className="lincon-user-card"><span>YC</span><div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div></div>
 
         <nav className="lincon-nav" aria-label="Lincoln">
           {sidebarItems.map((item) => (
@@ -732,7 +757,10 @@ function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
               type="button"
               className={activeView === item.id ? 'is-active' : ''}
               onClick={() => {
-                if (['panel', 'agenda', 'reservas'].includes(item.id)) setActiveView(item.id);
+                if (['panel', 'agenda', 'reservas', 'asistencia'].includes(item.id)) {
+                  setActiveView(item.id);
+                  if (item.id === 'asistencia') onOpenAttendance?.();
+                }
               }}
             >
               <LinconIcon name={item.icon} />
@@ -741,11 +769,13 @@ function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
           ))}
         </nav>
 
-        <div className="lincon-switcher">
-          <span>Acceso a Copetin</span>
-          <p>Selecciona tu area de trabajo</p>
-          <div><button type="button" onClick={() => onSwitchWorkspace('copetin')}>Copetin</button><button type="button" className="is-current">Lincoln</button></div>
-        </div>
+        {availableCompanies.includes('copetin') ? (
+          <div className="lincon-switcher">
+            <span>Espacios habilitados</span>
+            <p>Selecciona tu area de trabajo</p>
+            <div><button type="button" onClick={() => onSwitchWorkspace('copetin')}>Copetin</button><button type="button" className="is-current">Lincoln</button></div>
+          </div>
+        ) : null}
       </aside>
 
       <main className="lincon-main">
@@ -754,15 +784,22 @@ function LinconWorkspaceSection({ currentUser, onSwitchWorkspace, onLogout }) {
             <LinconIcon name="home" />
             <strong>{workspaceTitle}</strong>
           </div>
-          <div className="lincon-topbar-status"><span /><div><strong>Salon activo</strong><small>Lincoln Salon Principal</small></div></div>
+          <div className={`lincon-topbar-status ${databaseStatus.error ? 'has-error' : ''}`}>
+            <span />
+            <div>
+              <strong>{databaseStatus.loading ? 'Conectando base Lincoln' : databaseStatus.error ? 'Base Lincoln no disponible' : 'Base Lincoln separada'}</strong>
+              <small>{databaseStatus.error || (databaseStatus.snapshot ? `Revision ${databaseStatus.snapshot.version}` : 'Sin mezclar datos con El Copetin')}</small>
+            </div>
+          </div>
           <button type="button" className="lincon-icon-button" aria-label="Notificaciones"><LinconIcon name="bell" /></button>
           {workspaceAction ? <button type="button" className="lincon-new-record">{workspaceAction}</button> : null}
-          <div className="lincon-account"><div><strong>{userName}</strong><small>Developer</small></div><span>YC</span></div>
+          <div className="lincon-account"><div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div><span>YC</span></div>
           <button type="button" className="lincon-logout" onClick={onLogout}>Salir</button>
         </header>
 
         {activeView === 'agenda' ? <LinconAgendaView /> : null}
         {activeView === 'reservas' ? <LinconReservationsView /> : null}
+        {activeView === 'asistencia' ? <AttendanceSection {...attendanceProps} /> : null}
         {activeView === 'panel' ? <LinconPanelView onOpenAgenda={() => setActiveView('agenda')} /> : null}
       </main>
     </div>

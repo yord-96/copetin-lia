@@ -783,6 +783,30 @@ const fetchAttendanceUsersDirect = async () => {
   return Array.isArray(result?.users) ? result.users : [];
 };
 
+const fetchLincolnState = async () => {
+  const response = await fetch(getApiUrl('/__lincoln_db'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo abrir la base independiente de Lincoln.');
+  }
+  return response.json();
+};
+
+const replaceLincolnState = async ({ state, revision }) => {
+  const response = await fetch(getApiUrl('/__lincoln_db'), {
+    method: 'PUT',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ state, revision }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo guardar la base independiente de Lincoln.');
+  }
+  return response.json();
+};
+
 const createAttendanceRecordDirect = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return callBridge('attendance', 'createRecord', true, payload);
@@ -2919,6 +2943,10 @@ export const api = {
     listUsers: () => fetchAttendanceUsersDirect(),
     listRecords: (filters) => fetchAttendanceRecordsDirect(filters),
     createRecord: (payload) => createAttendanceRecordDirect(payload),
+  },
+  lincoln: {
+    getState: () => fetchLincolnState(),
+    replaceState: (payload) => replaceLincolnState(payload),
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),

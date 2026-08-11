@@ -141,6 +141,28 @@ export const DEFAULT_USER_PERMISSIONS = {
   ordersReadOnly: false,
 };
 
+export const COMPANY_ACCESS_OPTIONS = Object.freeze([
+  { id: 'copetin', label: 'El Copetin', description: 'Sistema administrativo, contratos, inventario y caja.' },
+  { id: 'lincoln', label: 'Lincoln', description: 'Sistema independiente del Centro de Eventos Lincoln.' },
+]);
+
+export const normalizeCompanyAccess = (access, { developer = false } = {}) => {
+  if (developer) return ['copetin', 'lincoln'];
+  const source = Array.isArray(access) ? access : [access];
+  const normalized = source
+    .map((entry) => String(entry ?? '').trim().toLowerCase())
+    .map((entry) => (entry === 'lincon' ? 'lincoln' : entry))
+    .filter((entry) => COMPANY_ACCESS_OPTIONS.some((option) => option.id === entry));
+  return [...new Set(normalized)].length > 0 ? [...new Set(normalized)] : ['copetin'];
+};
+
+export const getUserCompanyAccess = (user) => normalizeCompanyAccess(user?.companyAccess, {
+  developer: isDeveloper(user),
+});
+
+export const canAccessCompany = (user, companyId) => getUserCompanyAccess(user)
+  .includes(String(companyId ?? '').trim().toLowerCase().replace(/^lincon$/, 'lincoln'));
+
 export const normalizeUserPermissions = (permissions = {}) => ({
   ...DEFAULT_USER_PERMISSIONS,
   attendanceEnabled: permissions?.attendanceEnabled !== false,

@@ -352,6 +352,17 @@ const normalizeUserPermissions = (permissions = {}) => ({
   ordersReadOnly: Boolean(permissions?.ordersReadOnly),
 });
 
+const normalizeCompanyAccess = (access, { developer = false } = {}) => {
+  if (developer) return ['copetin', 'lincoln'];
+  const source = Array.isArray(access) ? access : [access];
+  const normalized = source
+    .map((entry) => String(entry ?? '').trim().toLowerCase())
+    .map((entry) => (entry === 'lincon' ? 'lincoln' : entry))
+    .filter((entry) => ['copetin', 'lincoln'].includes(entry));
+  const unique = [...new Set(normalized)];
+  return unique.length > 0 ? unique : ['copetin'];
+};
+
 const hashPassword = (password) => {
   const input = String(password ?? '');
   let hash = 2166136261;
@@ -400,6 +411,7 @@ const sanitizeUserForSession = (user) => {
     roleId,
     role: getDisplayRoleForIds(roleIds),
     permissions,
+    companyAccess: normalizeCompanyAccess(user.companyAccess, { developer: roleIds.includes('developer') }),
     allowedTabs,
     defaultTab: role.defaultTab,
     status: user.status,
@@ -13020,6 +13032,7 @@ const createWebBridge = () => ({
           roleIds,
           role: getDisplayRoleForIds(roleIds),
           permissions: normalizeUserPermissions(payload?.permissions),
+          companyAccess: normalizeCompanyAccess(payload?.companyAccess, { developer: roleIds.includes('developer') }),
           status: String(payload?.status ?? 'active').trim() || 'active',
           phone: String(payload?.phone ?? '').trim(),
           isCurrentUser: false,
@@ -13098,6 +13111,9 @@ const createWebBridge = () => ({
         if (payload.status !== undefined) user.status = String(payload.status ?? '').trim() || user.status;
         if (payload.phone !== undefined) user.phone = String(payload.phone ?? '').trim();
         if (payload.permissions !== undefined) user.permissions = normalizeUserPermissions(payload.permissions);
+        if (payload.companyAccess !== undefined) {
+          user.companyAccess = normalizeCompanyAccess(payload.companyAccess, { developer: isDeveloperUser(user) });
+        }
         user.updatedAt = new Date().toISOString();
         updated = deepClone(user);
         return state;

@@ -65,6 +65,7 @@ function TopBar({
   userPresence = [],
   activeTab = '',
   onPublishUpdateNotice,
+  onSwitchCompany,
 }) {
   const [isPublishingNotice, setIsPublishingNotice] = useState(false);
   const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
@@ -141,6 +142,16 @@ function TopBar({
               title="Panel de Reset del Sistema"
             >
               Panel Reset
+            </button>
+          ) : null}
+          {onSwitchCompany ? (
+            <button
+              type="button"
+              className="admin-update-button"
+              onClick={onSwitchCompany}
+              title="Cambiar entre El Copetin y Lincoln"
+            >
+              Cambiar empresa
             </button>
           ) : null}
           <div className="user-pill">

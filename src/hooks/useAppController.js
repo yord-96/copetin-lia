@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
-import { canAccessTab, getDefaultTabForUser, getUserDisplayRole } from '../utils/permissions';
+import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole } from '../utils/permissions';
 
 const isPrintCanceledError = (error) => {
   const message = String(error?.message ?? '').toLowerCase();
@@ -585,6 +585,10 @@ export const useAppController = () => {
   useEffect(() => {
     if (!authReady) return;
     if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    if (!getUserCompanyAccess(currentUser).includes('copetin')) {
       setLoading(false);
       return;
     }

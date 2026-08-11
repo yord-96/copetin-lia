@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  COMPANY_ACCESS_OPTIONS,
   DEFAULT_USER_PERMISSIONS,
   ROLE_OPTIONS,
   getUserRoleDefinitions,
@@ -7,6 +8,7 @@ import {
   isDeveloper,
   normalizeUserPermissions,
   normalizeRoleIds,
+  normalizeCompanyAccess,
 } from '../../utils/permissions';
 
 const roleTone = (role) => {
@@ -32,6 +34,7 @@ const EMPTY_USER_FORM = {
   password: '',
   roleIds: ['ventas'],
   permissions: DEFAULT_USER_PERMISSIONS,
+  companyAccess: ['copetin'],
   phone: '',
   status: 'active',
 };
@@ -180,6 +183,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       password: '',
       roleIds: getUserRoleIds(user),
       permissions: normalizeUserPermissions(user.permissions),
+      companyAccess: normalizeCompanyAccess(user.companyAccess, { developer: isDeveloper(user) }),
       phone: user.phone ?? '',
       status: user.status ?? 'active',
     });
@@ -227,6 +231,10 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       setFormError('La contrasena debe tener al menos 4 caracteres.');
       return;
     }
+    if (normalizeCompanyAccess(form.companyAccess).length === 0) {
+      setFormError('Selecciona al menos una empresa para el usuario.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -236,6 +244,9 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
         username: form.username.trim(),
         roleIds: normalizeRoleIds(form.roleIds),
         permissions: normalizeUserPermissions(form.permissions),
+        companyAccess: normalizeCompanyAccess(form.companyAccess, {
+          developer: normalizeRoleIds(form.roleIds).includes('developer'),
+        }),
         phone: form.phone.trim(),
         status: form.status,
       };
@@ -259,6 +270,9 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
     const selectedRoleIds = normalizeRoleIds(form.roleIds);
     const selectedRoles = selectedRoleIds.map((roleId) => ROLE_OPTIONS.find((option) => option.id === roleId)).filter(Boolean);
     const permissions = normalizeUserPermissions(form.permissions);
+    const companyAccess = normalizeCompanyAccess(form.companyAccess, {
+      developer: selectedRoleIds.includes('developer'),
+    });
     const setPermission = (key, value) => {
       setForm((current) => ({
         ...current,
@@ -278,6 +292,16 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
           ...current,
           roleIds: nextRoleIds.length > 0 ? nextRoleIds : [roleId],
         };
+      });
+    };
+    const toggleCompany = (companyId) => {
+      if (selectedRoleIds.includes('developer')) return;
+      setForm((current) => {
+        const currentAccess = normalizeCompanyAccess(current.companyAccess);
+        const nextAccess = currentAccess.includes(companyId)
+          ? currentAccess.filter((entry) => entry !== companyId)
+          : [...currentAccess, companyId];
+        return { ...current, companyAccess: nextAccess.length > 0 ? nextAccess : [companyId] };
       });
     };
     return (
@@ -343,6 +367,26 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                   </label>
                 ))}
               </div>
+            </fieldset>
+            <fieldset className="user-access-picker user-company-picker">
+              <legend>Empresas habilitadas</legend>
+              <div className="user-access-options user-permission-options">
+                {COMPANY_ACCESS_OPTIONS.map((company) => (
+                  <label key={company.id} className="user-access-option">
+                    <input
+                      type="checkbox"
+                      checked={companyAccess.includes(company.id)}
+                      disabled={selectedRoleIds.includes('developer')}
+                      onChange={() => toggleCompany(company.id)}
+                    />
+                    <span>
+                      <strong>{company.label}</strong>
+                      <small>{company.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {selectedRoleIds.includes('developer') ? <small>El developer conserva acceso a ambas empresas.</small> : null}
             </fieldset>
             <fieldset className="user-access-picker user-permissions-picker">
               <legend>Permisos finos</legend>
@@ -483,6 +527,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                 <th>Usuario</th>
                 <th>Acceso</th>
                 <th>Rol</th>
+                <th>Empresa</th>
                 <th>Estado</th>
                 <th>Ultimo Acceso</th>
                 <th>Acciones</th>
@@ -507,6 +552,15 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                     <div className="users-role-list">
                       {getUserRoleDefinitions(row).map((role) => (
                         <span key={role.label} className={`users-role-chip ${roleTone(role.label)}`}>{role.label}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="users-role-list">
+                      {normalizeCompanyAccess(row.companyAccess, { developer: isDeveloper(row) }).map((companyId) => (
+                        <span key={companyId} className="users-role-chip viewer">
+                          {companyId === 'lincoln' ? 'Lincoln' : 'El Copetin'}
+                        </span>
                       ))}
                     </div>
                   </td>
@@ -549,7 +603,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
               ))}
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <p className="status">No hay usuarios con esos filtros.</p>
                   </td>
                 </tr>
