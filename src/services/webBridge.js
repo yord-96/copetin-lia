@@ -183,6 +183,7 @@ const normalizeComboRule = (line, inventoryItems = []) => {
 };
 
 const getComboIngredientSignature = (line) => {
+  if (!line) return '';
   const optionIds = Array.isArray(line?.optionItemIds) && line.optionItemIds.length > 0
     ? line.optionItemIds
     : [line?.itemId];
@@ -218,6 +219,14 @@ const dedupeComboIngredients = (ingredients = []) => {
     });
   });
   return [...bySignature.values()];
+};
+
+const resolveComboPriceIngredientSignature = (ingredients = [], requestedSignature = '') => {
+  const signatures = (Array.isArray(ingredients) ? ingredients : [])
+    .map(getComboIngredientSignature)
+    .filter(Boolean);
+  const requested = String(requestedSignature ?? '').trim();
+  return signatures.includes(requested) ? requested : signatures[0] ?? '';
 };
 
 const normalizeComboPricingCondition = (condition) => {
@@ -2078,6 +2087,10 @@ const normalizeState = (state) => {
         category: categoryName,
         rentalPriceBs: Math.max(0, toPositiveRoundedNumber(combo?.rentalPriceBs ?? combo?.priceBs ?? 0)),
         pricingCondition: normalizeComboPricingCondition(combo?.pricingCondition),
+        priceIngredientSignature: resolveComboPriceIngredientSignature(
+          ingredients,
+          combo?.priceIngredientSignature,
+        ),
         notes: String(combo?.notes ?? '').trim(),
         imageUrl: String(combo?.imageUrl ?? '').trim() || null,
         imageDataUrl: combo?.imageDataUrl ?? null,
@@ -12241,6 +12254,10 @@ const createWebBridge = () => ({
         if (ingredients.length === 0) {
           throw new Error('Agrega al menos un producto existente al combo.');
         }
+        const priceIngredientSignature = resolveComboPriceIngredientSignature(
+          ingredients,
+          payload?.priceIngredientSignature,
+        );
 
         createdCombo = {
           id: makeId('combo'),
@@ -12248,6 +12265,7 @@ const createWebBridge = () => ({
           category,
           rentalPriceBs,
           pricingCondition,
+          priceIngredientSignature,
           notes,
           imageUrl,
           imageDataUrl,
@@ -12327,6 +12345,12 @@ const createWebBridge = () => ({
             throw new Error('Agrega al menos un producto existente al combo.');
           }
           combo.ingredients = ingredients;
+        }
+        if (payload.priceIngredientSignature !== undefined || payload.ingredients !== undefined) {
+          combo.priceIngredientSignature = resolveComboPriceIngredientSignature(
+            combo.ingredients,
+            payload.priceIngredientSignature ?? combo.priceIngredientSignature,
+          );
         }
         combo.updatedAt = new Date().toISOString();
         updatedCombo = deepClone(combo);

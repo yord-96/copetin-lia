@@ -15515,7 +15515,7 @@ textarea:focus {
 .inventory-combo-editor header,
 .inventory-combo-line {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(150px, auto) auto auto;
   gap: 0.7rem;
   align-items: center;
 }
@@ -15537,6 +15537,24 @@ textarea:focus {
   padding: 0.55rem;
 }
 
+.inventory-combo-price-help {
+  margin: 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.58rem;
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.inventory-combo-line.is-price-target {
+  border-color: #fb923c;
+  background: #fffaf5;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
+}
+
 .inventory-combo-line span {
   display: grid;
   gap: 0.14rem;
@@ -15552,6 +15570,35 @@ textarea:focus {
 
 .inventory-combo-line input {
   width: 76px;
+}
+
+.inventory-combo-line .inventory-combo-price-target {
+  min-width: 150px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #d7def0;
+  border-radius: 0.58rem;
+  background: #f8faff;
+  padding: 0.48rem 0.62rem;
+  color: #33446d;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.inventory-combo-line .inventory-combo-price-target:has(input:checked) {
+  border-color: #f97316;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.inventory-combo-line .inventory-combo-price-target input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: #ea580c;
 }
 
 .orders-combo-catalog-row {

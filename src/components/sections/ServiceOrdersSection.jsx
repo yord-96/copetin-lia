@@ -5355,6 +5355,7 @@ function ServiceOrdersSection({
   };
 
   const getComboRuleSignature = (rule) => {
+    if (!rule) return '';
     const optionIds = Array.isArray(rule?.optionItemIds) && rule.optionItemIds.length > 0
       ? rule.optionItemIds
       : [rule?.itemId];
@@ -5535,7 +5536,13 @@ function ServiceOrdersSection({
       const previousItems = existingComboLineKey
         ? current.items.filter((line) => line.comboLineKey !== existingComboLineKey)
         : current.items;
-      let priceAssigned = false;
+      const requestedPriceSignature = String(combo?.priceIngredientSignature ?? '').trim();
+      const priceAllocationIndex = Math.max(
+        0,
+        allocations.findIndex((allocation) => (
+          getComboRuleSignature(allocation.rule) === requestedPriceSignature
+        )),
+      );
       return {
         ...current,
         items: [
@@ -5547,8 +5554,7 @@ function ServiceOrdersSection({
           const item = allocation.item;
           const quantity = allocation.quantity;
           const comboPrice = getComboUnitPriceForQuantity(combo, requestedComboQuantity);
-          const isPriceLine = !priceAssigned;
-          priceAssigned = true;
+          const isPriceLine = allocationIndex === priceAllocationIndex;
           return {
             lineKey: `${comboLineKey}-${item?.id ?? line.itemId}-${index}-${allocationIndex}`,
             itemId: item?.id ?? line.itemId,

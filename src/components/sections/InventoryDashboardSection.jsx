@@ -44,6 +44,7 @@ const compactInventorySearchText = (value) => normalizeInventorySearchText(value
 const getInventorySearchTokens = (value) => normalizeInventorySearchText(value).split(' ').filter(Boolean);
 
 const getComboIngredientSignature = (line) => {
+  if (!line) return '';
   const optionIds = Array.isArray(line?.optionItemIds) && line.optionItemIds.length > 0
     ? line.optionItemIds
     : [line?.itemId];
@@ -1108,6 +1109,7 @@ const EMPTY_COMBO_FORM = {
   },
   notes: '',
   ingredients: [],
+  priceIngredientSignature: '',
   imageUrl: null,
   imageDataUrl: null,
   imageFile: null,
@@ -1988,6 +1990,7 @@ function InventoryDashboardSection({
         sku: String(combo.id ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COMBO',
         price: Number(combo.rentalPriceBs ?? 0),
         pricingCondition: combo.pricingCondition ?? null,
+        priceIngredientSignature: String(combo.priceIngredientSignature ?? '').trim(),
         catalogValue,
         ingredients,
         ingredientsCount: ingredients.length,
@@ -2947,6 +2950,19 @@ function InventoryDashboardSection({
     setComboError('');
     setComboIngredientQuery('');
     setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
+    const editableIngredients = dedupeComboIngredientLines(row.ingredients)
+      .filter((line) => inventoryRows.some((item) => item.id === line.itemId))
+      .map((line) => ({
+        itemId: line.itemId,
+        quantity: String(line.quantity),
+        selectionMode: line.selectionMode ?? 'item',
+        optionItemIds: (line.optionItemIds ?? [line.itemId])
+          .filter((itemId) => inventoryRows.some((item) => item.id === itemId)),
+        category: line.categoryRule ?? '',
+        slotLabel: line.slotLabel ?? line.itemName ?? '',
+      }));
+    const availablePriceSignatures = new Set(editableIngredients.map(getComboIngredientSignature));
+    const savedPriceSignature = String(row.priceIngredientSignature ?? '').trim();
     setComboForm({
       id: row.id,
       name: row.name,
@@ -2959,17 +2975,10 @@ function InventoryDashboardSection({
         aboveUnitPriceBs: String(row.pricingCondition?.aboveUnitPriceBs ?? 0),
       },
       notes: row.notes ?? '',
-      ingredients: dedupeComboIngredientLines(row.ingredients)
-        .filter((line) => inventoryRows.some((item) => item.id === line.itemId))
-        .map((line) => ({
-          itemId: line.itemId,
-          quantity: String(line.quantity),
-          selectionMode: line.selectionMode ?? 'item',
-          optionItemIds: (line.optionItemIds ?? [line.itemId])
-            .filter((itemId) => inventoryRows.some((item) => item.id === itemId)),
-          category: line.categoryRule ?? '',
-          slotLabel: line.slotLabel ?? line.itemName ?? '',
-        })),
+      ingredients: editableIngredients,
+      priceIngredientSignature: availablePriceSignatures.has(savedPriceSignature)
+        ? savedPriceSignature
+        : getComboIngredientSignature(editableIngredients[0]),
       imageUrl: row.imageUrl ?? null,
       imageDataUrl: row.imageDataUrl ?? null,
       imageFile: null,
@@ -3009,10 +3018,14 @@ function InventoryDashboardSection({
         optionItemIds: candidates.map((row) => row.id),
         slotLabel: comboRuleDraft.label.trim() || comboRuleDraft.category,
       };
-      setComboForm((current) => ({
-        ...current,
-        ingredients: dedupeComboIngredientLines([...current.ingredients, nextLine]),
-      }));
+      setComboForm((current) => {
+        const ingredients = dedupeComboIngredientLines([...current.ingredients, nextLine]);
+        return {
+          ...current,
+          ingredients,
+          priceIngredientSignature: current.priceIngredientSignature || getComboIngredientSignature(ingredients[0]),
+        };
+      });
     } else {
       if (comboRuleDraft.itemIds.length === 0) {
         setComboError('Selecciona uno o mas productos alternativos.');
@@ -3027,10 +3040,14 @@ function InventoryDashboardSection({
         optionItemIds: comboRuleDraft.itemIds,
         slotLabel: comboRuleDraft.label.trim() || defaultItem?.name || 'Componente',
       };
-      setComboForm((current) => ({
-        ...current,
-        ingredients: dedupeComboIngredientLines([...current.ingredients, nextLine]),
-      }));
+      setComboForm((current) => {
+        const ingredients = dedupeComboIngredientLines([...current.ingredients, nextLine]);
+        return {
+          ...current,
+          ingredients,
+          priceIngredientSignature: current.priceIngredientSignature || getComboIngredientSignature(ingredients[0]),
+        };
+      });
     }
     setComboRuleDraft({ mode: 'items', label: '', quantity: '1', category: '', itemIds: [] });
     setComboIngredientQuery('');
@@ -3046,11 +3063,25 @@ function InventoryDashboardSection({
     }));
   };
 
-  const removeComboIngredient = (lineIndex) => {
+  const selectComboPriceIngredient = (lineIndex) => {
     setComboForm((current) => ({
       ...current,
-      ingredients: current.ingredients.filter((_, index) => index !== lineIndex),
+      priceIngredientSignature: getComboIngredientSignature(current.ingredients[lineIndex]),
     }));
+  };
+
+  const removeComboIngredient = (lineIndex) => {
+    setComboForm((current) => {
+      const removedSignature = getComboIngredientSignature(current.ingredients[lineIndex]);
+      const ingredients = current.ingredients.filter((_, index) => index !== lineIndex);
+      return {
+        ...current,
+        ingredients,
+        priceIngredientSignature: current.priceIngredientSignature === removedSignature
+          ? getComboIngredientSignature(ingredients[0])
+          : current.priceIngredientSignature,
+      };
+    });
   };
 
   const handleDeleteCombo = async (row) => {
@@ -3333,6 +3364,8 @@ function InventoryDashboardSection({
         ...line,
         optionItemIds: (line.optionItemIds ?? [line.itemId]).filter((itemId) => activeItemIds.has(itemId)),
       }));
+    const normalizedPriceSignatures = new Set(normalizedIngredients.map(getComboIngredientSignature));
+    const requestedPriceSignature = String(comboForm.priceIngredientSignature ?? '').trim();
     const payload = {
       id: comboForm.id,
       name: String(comboForm.name ?? '').trim(),
@@ -3346,6 +3379,9 @@ function InventoryDashboardSection({
       },
       notes: String(comboForm.notes ?? '').trim(),
       imageUrl: comboForm.imageUrl || null,
+      priceIngredientSignature: normalizedPriceSignatures.has(requestedPriceSignature)
+        ? requestedPriceSignature
+        : getComboIngredientSignature(normalizedIngredients[0]),
       ingredients: normalizedIngredients.map((line) => ({
         itemId: line.itemId,
         quantity: Math.max(1, Math.trunc(Number(line.quantity ?? 1))),
@@ -4003,6 +4039,7 @@ function InventoryDashboardSection({
       return {
         ...line,
         lineIndex: index,
+        ingredientSignature: getComboIngredientSignature(line),
         quantity,
         item,
         optionRows,
@@ -5919,11 +5956,17 @@ function InventoryDashboardSection({
                   <strong>Ingredientes seleccionados</strong>
                   <span>Separado: {formatBs(comboIngredientValue)} | Combo: {formatBs(Number(comboForm.rentalPriceBs ?? 0))}</span>
                 </header>
+                <p className="inventory-combo-price-help">
+                  Elige en que componente se mostrara el precio total del combo. Este cambio no modifica contratos ya guardados.
+                </p>
                 {comboIngredientRows.length === 0 ? (
                   <p className="status">Aun no agregaste ingredientes.</p>
                 ) : (
                   comboIngredientRows.map((line) => (
-                    <div key={`${line.itemId}-${line.lineIndex}`} className="inventory-combo-line">
+                    <div
+                      key={`${line.itemId}-${line.lineIndex}`}
+                      className={`inventory-combo-line${comboForm.priceIngredientSignature === line.ingredientSignature ? ' is-price-target' : ''}`}
+                    >
                       <span>
                         <strong>{line.slotLabel || line.item.name}</strong>
                         <small>
@@ -5941,6 +5984,15 @@ function InventoryDashboardSection({
                           value={line.quantity}
                           onChange={(event) => updateComboIngredientQuantity(line.lineIndex, event.target.value)}
                         />
+                      </label>
+                      <label className="inventory-combo-price-target">
+                        <input
+                          type="radio"
+                          name="combo-price-ingredient"
+                          checked={comboForm.priceIngredientSignature === line.ingredientSignature}
+                          onChange={() => selectComboPriceIngredient(line.lineIndex)}
+                        />
+                        <span>Mostrar precio aqu&iacute;</span>
                       </label>
                       <strong>{line.quantity} por combo</strong>
                       <button type="button" className="danger-button" onClick={() => removeComboIngredient(line.lineIndex)}>
