@@ -343,7 +343,12 @@ function AdminApp() {
   }, [controller.activeTab, pendingNavigationTab]);
 
   useEffect(() => {
-    if (!controller.authReady || !controller.currentUser || typeof window === 'undefined') return undefined;
+    if (
+      !controller.authReady
+      || !controller.currentUser
+      || controller.loading
+      || typeof window === 'undefined'
+    ) return undefined;
     const mobileStartup = window.matchMedia?.('(max-width: 900px), (pointer: coarse)')?.matches ?? window.innerWidth <= 900;
     if (mobileStartup) return undefined;
 
@@ -359,9 +364,9 @@ function AdminApp() {
 
     let idleId = null;
     if (typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(runPreload, { timeout: 8000 });
+      idleId = window.requestIdleCallback(runPreload, { timeout: 15000 });
     } else {
-      timeoutIds.push(window.setTimeout(runPreload, 6000));
+      timeoutIds.push(window.setTimeout(runPreload, 10000));
     }
 
     return () => {
@@ -370,7 +375,7 @@ function AdminApp() {
       }
       timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
-  }, [allowedTabRoots, controller.authReady, controller.currentUser]);
+  }, [allowedTabRoots, controller.authReady, controller.currentUser, controller.loading]);
 
   useEffect(() => {
     if (!controller.currentUser || canAccessTab(controller.currentUser, controller.activeTab)) return;

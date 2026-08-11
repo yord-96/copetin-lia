@@ -51,54 +51,13 @@ const readablePartialCollectionSet = new Set([
   ...summarizedBootstrapCollections,
 ]);
 
-const summarizeItemLine = (line = {}) => ({
-  itemId: line.itemId ?? '',
-  itemName: line.itemName ?? line.name ?? '',
-  name: line.name ?? line.itemName ?? '',
-  quantity: line.quantity ?? 0,
-  unitPriceBs: line.unitPriceBs ?? null,
-  rentalPriceBs: line.rentalPriceBs ?? null,
-  grossLineTotalBs: line.grossLineTotalBs ?? null,
-  discountPercent: line.discountPercent ?? 0,
-  discountBs: line.discountBs ?? 0,
-  lineTotalBs: line.lineTotalBs ?? null,
-  lineType: line.lineType ?? '',
-  controlsStock: line.controlsStock,
-  verificationStatus: line.verificationStatus,
-  supplierBackedQty: line.supplierBackedQty ?? 0,
-  internalReservedQty: line.internalReservedQty ?? null,
-  serviceDayId: line.serviceDayId ?? null,
-  serviceDate: line.serviceDate ?? null,
-  serviceDayLabel: line.serviceDayLabel ?? null,
-  comboId: line.comboId ?? null,
-  comboName: line.comboName ?? '',
-  comboLineKey: line.comboLineKey ?? null,
-  comboComponentName: line.comboComponentName ?? '',
-  comboQuantity: line.comboQuantity ?? 1,
-  comboComponentQuantity: line.comboComponentQuantity ?? 1,
-  comboPricingRole: line.comboPricingRole ?? '',
-  comboPricingCondition: line.comboPricingCondition ?? null,
-  comboRuleIndex: line.comboRuleIndex ?? 0,
-  comboSlotLabel: line.comboSlotLabel ?? '',
-  comboSelectionMode: line.comboSelectionMode ?? 'item',
-  comboOptionItemIds: Array.isArray(line.comboOptionItemIds) ? line.comboOptionItemIds : [],
-  comboCategory: line.comboCategory ?? '',
-});
-
-const summarizeContract = (contract = {}) => ({
-  ...contract,
-  items: (Array.isArray(contract.items) ? contract.items : []).map(summarizeItemLine),
-  revisionHistory: [],
-  economicLedger: Array.isArray(contract.economicLedger) ? contract.economicLedger : [],
-  deletionSnapshot: null,
-  _summaryOnly: true,
-});
+// El bootstrap solo necesita datos para dibujar listados. Los documentos,
+// revisiones y planes completos se descargan de forma atomica al abrirlos.
+// La base de datos permanece intacta.
+const summarizeContract = (contract = {}) => summarizeOrdersContract(contract);
 
 const summarizeRental = (rental = {}) => ({
-  ...rental,
-  items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeItemLine),
-  inventoryAvailabilityAssumptions: null,
-  returnReport: null,
+  ...summarizeOrdersRental(rental),
   returnIssueSummary: (Array.isArray(rental.returnReport) ? rental.returnReport : [])
     .filter((line) => (
       Number(line?.damagedQty ?? 0) > 0
@@ -4671,6 +4630,8 @@ const summarizeOrdersContract = (contract = {}) => ({
   deletedByRole: contract.deletedByRole ?? '',
   customerName: contract.customerName ?? contract.clientName ?? '',
   customerPhone: contract.customerPhone ?? contract.phone ?? '',
+  customerReferencePhone: contract.customerReferencePhone ?? contract.referencePhone ?? '',
+  clientId: contract.clientId ?? contract.customerId ?? '',
   companyName: contract.companyName ?? '',
   eventDate: contract.eventDate ?? contract.deliveryDate ?? contract.pickupDate ?? null,
   deliveryDate: contract.deliveryDate ?? null,
@@ -4682,6 +4643,11 @@ const summarizeOrdersContract = (contract = {}) => ({
   responsibleId: contract.responsibleId ?? null,
   responsibleName: contract.responsibleName ?? contract.assignedToName ?? '',
   responsibleRole: contract.responsibleRole ?? contract.assignedToRole ?? '',
+  responsibles: (Array.isArray(contract.responsibles) ? contract.responsibles : []).map((entry) => ({
+    id: entry?.id ?? '',
+    name: entry?.name ?? '',
+    role: entry?.role ?? '',
+  })),
   createdByName: contract.createdByName ?? '',
   createdByRole: contract.createdByRole ?? '',
   notes: contract.notes ?? contract.note ?? '',
@@ -4706,8 +4672,13 @@ const summarizeOrdersContract = (contract = {}) => ({
     totalBs: Number(contract?.totals?.totalBs ?? 0),
     guaranteeBs: Number(contract?.totals?.guaranteeBs ?? 0),
     deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+    itemsNetSubtotalBs: contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? null,
+    discountBs: contract?.totals?.discountBs ?? null,
     pendingPaymentBs: contract?.totals?.pendingPaymentBs ?? null,
   },
+  pricingPlan: contract?.pricingPlan
+    ? { mode: contract.pricingPlan.mode ?? 'simple' }
+    : null,
   services: (Array.isArray(contract.services) ? contract.services : []).map((service) => ({
     lineTotalBs: Number(service?.lineTotalBs ?? 0),
   })),
