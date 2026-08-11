@@ -5343,17 +5343,38 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     ? (movement.receipt || receiptCode)
     : contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
   const storedReceiptDetail = String(movement?.receiptDetail ?? '').trim();
-  const detail = storedReceiptDetail || (isPersonnelAdvance
+  const rawDetailLines = storedReceiptDetail
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const meaningfulStoredDetailLines = rawDetailLines.filter((line) => (
+    !/^abono recibido para contrato\b/i.test(line)
+    && !/^pago recibido para contrato\b/i.test(line)
+    && !/^ingreso por contrato\b/i.test(line)
+    && !/^detalle\s*:/i.test(line)
+  ));
+  const allocationDetailLines = [];
+  if (!isOut && contractCode) {
+    const receivedAmountBs = Math.max(0, Number(movement?.receivedAmountBs ?? amount));
+    const contractAllocationBs = Math.max(0, Number(movement?.contractAllocationBs ?? 0));
+    const guaranteeAllocationBs = Math.max(0, Number(movement?.guaranteeAllocationBs ?? 0));
+    const surplusAllocationBs = Math.max(0, Number(movement?.surplusAllocationBs ?? 0));
+    if (receivedAmountBs > 0) allocationDetailLines.push(`Total recibido: ${formatBs(receivedAmountBs)}`);
+    if (contractAllocationBs > 0) allocationDetailLines.push(`Aplicado al contrato: ${formatBs(contractAllocationBs)}`);
+    if (guaranteeAllocationBs > 0) allocationDetailLines.push(`Apartado como garantia: ${formatBs(guaranteeAllocationBs)}`);
+    if (surplusAllocationBs > 0) allocationDetailLines.push(`Excedente del cliente: ${formatBs(surplusAllocationBs)}`);
+  }
+  const fallbackDetail = isPersonnelAdvance
     ? movement.description || 'Adelanto de personal'
-    : contractCode && /cobro|saldo|alquiler|liquidacion/i.test(`${movement.description ?? ''} ${movement.category ?? ''}`)
-    ? `${movementLabel} por contrato ${contractCode}`
-    : movement.description || movement.category || 'Movimiento de caja');
-  const rawDetailLines = detail.split('\n').map((line) => line.trim()).filter(Boolean);
-  const compactDetailLines = String(movement?.accountingTag ?? '').toLowerCase() === 'contract_deposit_receipt'
-    && /^abono recibido para contrato\b/i.test(rawDetailLines[0] ?? '')
-    ? rawDetailLines.slice(1).filter((line) => !/^detalle\s*:/i.test(line))
-    : rawDetailLines;
-  const detailHtml = (compactDetailLines.length > 0 ? compactDetailLines : [detail])
+    : movement.description || movement.category || 'Movimiento de caja';
+  const compactDetailLines = meaningfulStoredDetailLines.length > 0
+    ? meaningfulStoredDetailLines
+    : allocationDetailLines.length > 0
+    ? allocationDetailLines
+    : (!isOut && contractCode
+      ? [`Total recibido: ${formatBs(amount)}`]
+      : [fallbackDetail]);
+  const detailHtml = compactDetailLines
     .map((line) => {
       const match = line.match(/^([^:]{1,80}):\s*(.+)$/);
       return match
@@ -5396,7 +5417,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           width: 8.5in;
           height: 5.5in;
           margin: 0;
-          padding: 4mm 4.8mm 3mm;
+          padding: 3.6mm 4.8mm 2.8mm;
           background: #fff;
           border: 1.5px solid #0b2c67;
           outline: 0;
@@ -5435,11 +5456,11 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         }
         .receipt-top {
           display: grid;
-          grid-template-columns: 82mm minmax(0, 1fr) 46mm;
-          gap: 2mm;
+          grid-template-columns: 78mm minmax(0, 1fr) 45mm;
+          gap: 2.5mm;
           align-items: center;
-          min-height: 36mm;
-          padding: 0 2mm 2.4mm;
+          min-height: 34mm;
+          padding: 0 2mm 1.8mm;
         }
         .receipt-brand {
           display: flex;
@@ -5451,8 +5472,8 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .receipt-brand-logo-frame {
           position: relative;
           display: block;
-          width: 82mm;
-          height: 21mm;
+          width: 78mm;
+          height: 20mm;
           overflow: hidden;
         }
         .receipt-brand-logo {
@@ -5460,10 +5481,10 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           top: 0;
           left: 0;
           display: block;
-          width: 92mm;
+          width: 87mm;
           max-width: none;
           height: auto;
-          transform: translate(-5mm, -5.8mm);
+          transform: translate(-4.5mm, -5.2mm);
         }
         .receipt-title {
           min-width: 0;
@@ -5472,19 +5493,19 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         }
         .receipt-title h1 {
           color: #0b2c67;
-          font-size: 17.5px;
+          font-size: 16.8px;
           font-weight: 900;
           letter-spacing: 0.015em;
           line-height: 1.05;
           white-space: normal;
           overflow-wrap: anywhere;
         }
-        .receipt-code { display: inline-block; margin-top: 1.6mm; padding: 0 4mm 1mm; border-bottom: 1.5px solid #0b2c67; color: #f04b10; font-size: 34px; font-weight: 950; line-height: 1; }
+        .receipt-code { display: inline-block; margin-top: 1.4mm; padding: 0 4mm 0.9mm; border-bottom: 1.4px solid #0b2c67; color: #f04b10; font-size: 31px; font-weight: 950; line-height: 1; }
         .receipt-contract-code {
           display: block;
           margin-top: 1.2mm;
           color: #0b2c67;
-          font-size: 15px;
+          font-size: 14px;
           line-height: 1;
           font-weight: 950;
           letter-spacing: 0;
@@ -5497,7 +5518,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           font-size: 9px;
           letter-spacing: 0;
         }
-        .receipt-datebox { display: grid; gap: 2.5mm; color: #0b2c67; font-size: 11.5px; min-width: 0; }
+        .receipt-datebox { display: grid; gap: 2.1mm; color: #0b2c67; font-size: 11.2px; min-width: 0; }
         .receipt-datebox > span:not(.receipt-copy-kind) { display: grid; grid-template-columns: 7mm 14mm minmax(0, 1fr); align-items: center; gap: 1mm; min-width: 0; }
         .receipt-datebox strong { font-size: 10.5px; font-weight: 900; }
         .receipt-datebox b { color: #f04b10; font-size: 12px; white-space: nowrap; }
@@ -5505,13 +5526,13 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .receipt-copy-kind {
           justify-self: end;
           min-width: 39mm;
-          padding: 2mm 3mm;
+          padding: 1.8mm 3mm;
           border: 0;
           border-radius: 7px;
           background: #0b2c67;
           color: #fff;
           text-align: center;
-          font-size: 18px;
+          font-size: 17px;
           font-weight: 950;
           letter-spacing: 0.02em;
           line-height: 1;
@@ -5521,12 +5542,12 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           grid-template-columns: 1fr 1.25fr 1.7fr;
           gap: 3mm;
           align-items: center;
-          min-height: 10mm;
-          padding: 1.8mm 7mm;
+          min-height: 9.5mm;
+          padding: 1.55mm 6mm;
           border: 0;
           background: #0b2c67;
           color: #fff;
-          font-size: 11px;
+          font-size: 10.6px;
           text-align: center;
         }
         .receipt-contact span {
@@ -5548,49 +5569,51 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .receipt-info {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 4mm;
-          padding: 2mm 3.5mm;
+          gap: 3.5mm;
+          padding: 2mm 3.5mm 1.5mm;
           border: 0;
           border-radius: 0;
           background: transparent;
-          margin-top: 2mm;
-          height: 31mm;
+          margin-top: 1.7mm;
+          height: 29.5mm;
           overflow: hidden;
         }
         .info-col {
           border: 1.2px solid #0b2c67;
           border-radius: 7px;
-          padding: 2.6mm 3mm;
+          padding: 2.3mm 3mm;
           overflow: hidden;
         }
-        .info-line { position: relative; display: grid; grid-template-columns: 38mm minmax(0, 1fr); gap: 1.8mm; margin-bottom: 2mm; padding-left: 4mm; font-size: 10.8px; line-height: 1.08; }
+        .info-line { position: relative; display: grid; grid-template-columns: 37mm minmax(0, 1fr); gap: 1.8mm; margin-bottom: 1.7mm; padding-left: 4mm; font-size: 10.4px; line-height: 1.1; }
         .info-line::before { content: ""; position: absolute; left: 0; top: 0.8mm; width: 1.7mm; height: 1.7mm; border-radius: 999px; background: #f04b10; }
         .info-line strong { color: #0f2a5f; text-transform: uppercase; font-weight: 900; }
-        .info-line span { max-height: 7.4mm; overflow: hidden; overflow-wrap: anywhere; }
+        .info-line span { max-height: 8.2mm; overflow: hidden; overflow-wrap: anywhere; }
         .info-line.is-important span {
           color: #111827;
           font-size: 10.8px;
           font-weight: 700;
           text-transform: none;
         }
-        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 1.5mm; table-layout: fixed; }
-        th, td { border-right: 1.15px solid #0b2c67; border-bottom: 1.15px solid #0b2c67; padding: 1.7mm 2.5mm; text-align: center; font-size: 10.8px; line-height: 1.12; overflow-wrap: anywhere; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 1.2mm; table-layout: fixed; }
+        th, td { border-right: 1.05px solid #0b2c67; border-bottom: 1.05px solid #0b2c67; padding: 1.55mm 2.3mm; text-align: center; font-size: 10.4px; line-height: 1.14; overflow-wrap: anywhere; }
         th:first-child, td:first-child { border-left: 1.15px solid #0b2c67; }
         thead th:first-child { border-top-left-radius: 7px; }
         thead th:last-child { border-top-right-radius: 7px; }
         tbody tr:last-child td:first-child { border-bottom-left-radius: 7px; }
         tbody tr:last-child td:last-child { border-bottom-right-radius: 7px; }
-        th { background: #0f2a5f; color: #fff; padding-top: 1.6mm; padding-bottom: 1.6mm; font-size: 10.8px; letter-spacing: 0.025em; line-height: 1; text-transform: uppercase; font-weight: 900; white-space: nowrap; }
-        tbody td { height: 19mm; }
-        td.detail { text-align: left; max-height: 19mm; overflow: hidden; }
-        .receipt-detail-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3mm; margin-bottom: 1mm; }
-        .receipt-detail-line strong { white-space: nowrap; }
-        .receipt-detail-line.is-note { display: block; color: #334155; }
+        th { background: #0f2a5f; color: #fff; padding-top: 1.45mm; padding-bottom: 1.45mm; font-size: 10.2px; letter-spacing: 0.02em; line-height: 1; text-transform: uppercase; font-weight: 900; white-space: nowrap; }
+        tbody td { height: 18mm; }
+        td.detail { text-align: left; max-height: 18mm; overflow: hidden; padding-left: 3mm; padding-right: 3mm; }
+        .receipt-detail-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4mm; margin-bottom: 0.75mm; padding-bottom: 0.55mm; border-bottom: 1px dotted #cbd5e1; }
+        .receipt-detail-line:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+        .receipt-detail-line > span { color: #334155; }
+        .receipt-detail-line strong { color: #0f2a5f; white-space: nowrap; font-weight: 900; }
+        .receipt-detail-line.is-note { display: block; color: #334155; border-bottom: 0; }
         td.receipt-money {
           padding-left: 1.2mm;
           padding-right: 1.2mm;
           color: #f04b10;
-          font-size: 24px;
+          font-size: 22px;
           font-weight: 950;
           white-space: nowrap;
           overflow: hidden;
@@ -5601,9 +5624,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           grid-template-columns: minmax(0, 1fr) 74mm;
           gap: 6mm;
           align-items: center;
-          margin-top: 1.8mm;
+          margin-top: 1.5mm;
         }
-        .amount-words { display: flex; gap: 3mm; justify-content: flex-start; align-items: flex-end; padding-left: 4mm; font-size: 10px; min-width: 0; }
+        .amount-words { display: flex; gap: 2.5mm; justify-content: flex-start; align-items: flex-end; padding-left: 4mm; font-size: 9.8px; min-width: 0; }
         .amount-words span { min-width: 74mm; border-bottom: 1.2px solid #0f2a5f; padding-bottom: 0.8mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .total-box {
           display: grid;
@@ -5623,7 +5646,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           align-self: stretch;
           display: grid;
           place-items: center;
-          padding: 1.8mm 2.5mm;
+          padding: 1.6mm 2.3mm;
           background: #0b2c67;
           color: #fff;
           line-height: 1.08;
@@ -5633,7 +5656,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .total-box b {
           min-width: 0;
           max-width: 39mm;
-          padding: 1.8mm 2.5mm;
+          padding: 1.6mm 2.3mm;
           color: #f04b10;
           font-size: 16px;
           line-height: 1;
@@ -5643,15 +5666,15 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .receipt-signatures {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 24mm;
-          margin: auto 17mm 1mm;
-          padding-top: 4mm;
+          gap: 26mm;
+          margin: auto 18mm 0.6mm;
+          padding-top: 3.2mm;
           text-align: center;
         }
-        .signature-line { border-top: 1.4px solid #0f2a5f; padding-top: 1.6mm; }
+        .signature-line { border-top: 1.2px solid #0f2a5f; padding-top: 1.35mm; }
         .signature-line strong { display: block; font-size: 10.5px; }
         .signature-line span { font-size: 9px; }
-        .receipt-footer { width: 72mm; margin: 1mm 5mm 0 auto; border-bottom: 1px solid #f04b10; padding-bottom: 1mm; text-align: center; color: #0b2c67; font-size: 8.8px; }
+        .receipt-footer { width: 72mm; margin: 0.8mm 5mm 0 auto; border-bottom: 1px solid #f04b10; padding-bottom: 0.8mm; text-align: center; color: #64748b; font-size: 8.2px; }
         @media print {
           html, body {
             width: 8.5in;
