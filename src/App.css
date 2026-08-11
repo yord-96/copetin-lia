@@ -70840,8 +70840,10 @@ body:has(.accounting-bigcash-view) .workspace {
   }
 }
 
-/* El menu de escritorio conserva su propio desplazamiento. */
-@media (min-width: 769px) {
+/* El menu lateral de escritorio es el contenedor que desplaza. Mantener el
+   submenu dentro del flujo evita que se recorte al abrir Inventario,
+   Transporte o Contabilidad. */
+@media (min-width: 1181px) {
   .app-layout {
     align-items: start;
   }
@@ -70851,27 +70853,56 @@ body:has(.accounting-bigcash-view) .workspace {
     top: 0;
     height: 100dvh;
     min-height: 0;
-    overflow: hidden;
-    overscroll-behavior: contain;
-  }
-
-  .app-sidebar .tab-list {
-    position: static;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     scrollbar-gutter: stable;
   }
 
-  .app-sidebar .tab-list::-webkit-scrollbar {
+  .app-sidebar .tab-list {
+    position: static;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-sidebar :is(.tab-list, .tab-with-children, .tab-row, .tab, .tab-main, .sidebar-help-card) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-sidebar .tab-submenu {
+    box-sizing: border-box;
+    width: auto;
+    min-width: 0;
+    max-width: calc(100% - 1.5rem);
+    margin-right: 0 !important;
+    margin-left: 1.5rem !important;
+  }
+
+  .app-sidebar .tab-submenu > li,
+  .app-sidebar .tab-subitem {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-sidebar .tab-subitem {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .app-sidebar::-webkit-scrollbar {
     width: 0.45rem;
   }
 
-  .app-sidebar .tab-list::-webkit-scrollbar-thumb {
+  .app-sidebar::-webkit-scrollbar-track {
+    background: rgba(128, 39, 0, 0.18);
+  }
+
+  .app-sidebar::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.34);
+    background: rgba(255, 255, 255, 0.58);
   }
 }
