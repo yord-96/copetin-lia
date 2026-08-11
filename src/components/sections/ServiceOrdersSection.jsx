@@ -1489,6 +1489,9 @@ function ServiceOrdersSection({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
+  const [activeClientResultIndex, setActiveClientResultIndex] = useState(0);
   const [quickItemDraft, setQuickItemDraft] = useState(buildEmptyQuickItemDraft);
   const [isQuickItemOpen, setIsQuickItemOpen] = useState(false);
   const [isCourtesyMode, setIsCourtesyMode] = useState(false);
@@ -4641,6 +4644,40 @@ function ServiceOrdersSection({
     [clients, draft.clientId],
   );
 
+  const filteredClientOptions = useMemo(() => {
+    const query = normalizeText(clientSearchQuery).trim();
+    const tokens = query.split(/\s+/).filter(Boolean);
+    return clients
+      .map((client) => {
+        const name = normalizeText(client.name);
+        const company = normalizeText(client.companyName);
+        const ci = normalizeText(client.nitCi || client.customerCi);
+        const phone = normalizeText(client.whatsapp || client.phone);
+        const referencePhone = normalizeText(client.referencePhone);
+        const searchable = [name, company, ci, phone, referencePhone].filter(Boolean).join(' ');
+        if (tokens.some((token) => !searchable.includes(token))) return null;
+
+        let score = 0;
+        if (query) {
+          if (name === query) score += 1000;
+          else if (name.startsWith(query)) score += 700;
+          else if (name.split(' ').some((word) => word.startsWith(query))) score += 560;
+          else if (name.includes(query)) score += 420;
+          if (company.includes(query)) score += 220;
+          if (ci.includes(query) || phone.includes(query) || referencePhone.includes(query)) score += 300;
+          score += tokens.reduce((total, token) => (
+            total + (name.split(' ').some((word) => word.startsWith(token)) ? 45 : 0)
+          ), 0);
+        }
+        if (client.id === draft.clientId) score += 80;
+        return { client, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score || a.client.name.localeCompare(b.client.name, 'es'))
+      .slice(0, 10)
+      .map((entry) => entry.client);
+  }, [clientSearchQuery, clients, draft.clientId]);
+
   const selectedClientAddresses = useMemo(
     () => getClientAddressOptions(selectedClientForDraft),
     [selectedClientForDraft],
@@ -4946,6 +4983,7 @@ function ServiceOrdersSection({
     if (sourceRecord) {
       const mappedDraft = mapRecordToDraft(sourceRecord, entityType);
       setDraft(mappedDraft);
+      setClientSearchQuery(clients.find((client) => client.id === mappedDraft.clientId)?.name || mappedDraft.customerName || '');
       setSupplierFulfillmentDraftByItem(buildSupplierCoverageDraftByItem(mappedDraft.supplierFulfillmentPlan));
       setActiveScheduleDayId(mappedDraft.scheduleDays?.[0]?.id ?? '');
     } else {
@@ -4958,16 +4996,22 @@ function ServiceOrdersSection({
         recordStatus: entityType === 'contract' && mode === 'order' ? 'pendiente' : 'borrador',
       };
       setDraft(nextDraft);
+      setClientSearchQuery('');
       setSupplierFulfillmentDraftByItem({});
       setActiveScheduleDayId(nextDraft.scheduleDays?.[0]?.id ?? '');
     }
     setCurrentStep(0);
+    setIsClientSearchOpen(false);
+    setActiveClientResultIndex(0);
     setModalOpen(true);
   };
 
   const closeModal = () => {
     if (isSubmitting) return;
     setModalOpen(false);
+    setClientSearchQuery('');
+    setIsClientSearchOpen(false);
+    setActiveClientResultIndex(0);
     setSupplierPlanRemovalConfirmation(null);
     setFormError('');
     setItemSearch('');
@@ -5223,6 +5267,9 @@ function ServiceOrdersSection({
   };
 
   const clearClientFields = () => {
+    setClientSearchQuery('');
+    setIsClientSearchOpen(false);
+    setActiveClientResultIndex(0);
     setDraft((current) => ({
       ...current,
       clientId: '',
@@ -5247,6 +5294,10 @@ function ServiceOrdersSection({
     const addressOptions = getClientAddressOptions(selected);
     const firstAddress = addressOptions[0] ?? null;
 
+    setClientSearchQuery(selected.name);
+    setIsClientSearchOpen(false);
+    setActiveClientResultIndex(0);
+
     setDraft((current) => ({
       ...current,
       clientId: selected.id,
@@ -5259,6 +5310,34 @@ function ServiceOrdersSection({
       addressSource: firstAddress?.id || 'manual',
       city: firstAddress?.city || selected.city || current.city,
     }));
+  };
+
+  const handleClientSearchKeyDown = (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsClientSearchOpen(true);
+      setActiveClientResultIndex((index) => Math.max(0, Math.min(filteredClientOptions.length - 1, index + 1)));
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsClientSearchOpen(true);
+      setActiveClientResultIndex((index) => Math.max(0, index - 1));
+      return;
+    }
+    if (event.key === 'Enter' && isClientSearchOpen && filteredClientOptions[activeClientResultIndex]) {
+      event.preventDefault();
+      event.stopPropagation();
+      setClientFromSelection(filteredClientOptions[activeClientResultIndex].id);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsClientSearchOpen(false);
+    }
   };
 
   const setDraftAddressSource = (value) => {
@@ -13065,20 +13144,120 @@ function ServiceOrdersSection({
                     <h4><span className="orders-section-icon"><UserRound aria-hidden="true" /></span>Informacion del cliente</h4>
                     <p className="orders-step-help">Busca un cliente registrado o completa los datos manualmente.</p>
                     <div className="orders-form-grid" onKeyDown={handleClientFieldsArrowNavigation}>
-                      <label className="orders-icon-field search" data-client-nav-field>
-                        Cliente registrado
-                        <span>
-                          <i aria-hidden="true"><Search /></i>
-                          <select value={draft.clientId} onChange={(event) => setClientFromSelection(event.target.value)}>
-                            <option value="">Cliente nuevo / limpiar datos...</option>
-                            {clients.map((client) => (
-                              <option key={client.id} value={client.id}>
-                                {client.name}{client.isBlacklisted ? ' - No atender' : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </span>
-                      </label>
+                      <div
+                        className="orders-client-search-field"
+                        data-client-nav-field
+                        onBlur={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget)) {
+                            setIsClientSearchOpen(false);
+                            if (selectedClientForDraft) setClientSearchQuery(selectedClientForDraft.name);
+                          }
+                        }}
+                      >
+                        <label htmlFor="orders-client-search">Cliente registrado</label>
+                        <div className={`orders-client-search-control${isClientSearchOpen ? ' is-open' : ''}${draft.clientId ? ' has-selection' : ''}`}>
+                          <Search aria-hidden="true" />
+                          <input
+                            id="orders-client-search"
+                            type="search"
+                            role="combobox"
+                            autoComplete="off"
+                            aria-autocomplete="list"
+                            aria-expanded={isClientSearchOpen}
+                            aria-controls="orders-client-search-results"
+                            aria-activedescendant={isClientSearchOpen && filteredClientOptions[activeClientResultIndex]
+                              ? `orders-client-option-${filteredClientOptions[activeClientResultIndex].id}`
+                              : undefined}
+                            value={clientSearchQuery}
+                            placeholder="Buscar por nombre, CI, telefono o empresa..."
+                            onFocus={(event) => {
+                              setIsClientSearchOpen(true);
+                              setActiveClientResultIndex(0);
+                              if (draft.clientId) event.currentTarget.select();
+                            }}
+                            onChange={(event) => {
+                              setClientSearchQuery(event.target.value);
+                              setIsClientSearchOpen(true);
+                              setActiveClientResultIndex(0);
+                            }}
+                            onKeyDown={handleClientSearchKeyDown}
+                          />
+                          {draft.clientId ? (
+                            <button
+                              type="button"
+                              className="orders-client-search-clear"
+                              aria-label="Quitar cliente seleccionado"
+                              title="Quitar cliente seleccionado"
+                              onClick={clearClientFields}
+                            >
+                              <X aria-hidden="true" />
+                            </button>
+                          ) : null}
+                        </div>
+                        {isClientSearchOpen ? (
+                          <div id="orders-client-search-results" className="orders-client-search-results" role="listbox">
+                            <button
+                              type="button"
+                              className="orders-client-search-new"
+                              onClick={clearClientFields}
+                            >
+                              <span className="orders-client-result-icon"><UserRound aria-hidden="true" /></span>
+                              <span>
+                                <strong>Cliente nuevo</strong>
+                                <small>Limpiar los datos y registrarlos manualmente</small>
+                              </span>
+                            </button>
+                            {filteredClientOptions.length > 0 ? (
+                              filteredClientOptions.map((client, index) => {
+                                const clientPhone = client.whatsapp || client.phone || '';
+                                const clientCi = client.nitCi || client.customerCi || '';
+                                return (
+                                  <button
+                                    id={`orders-client-option-${client.id}`}
+                                    key={client.id}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={draft.clientId === client.id}
+                                    className={`orders-client-search-result${activeClientResultIndex === index ? ' is-active' : ''}${draft.clientId === client.id ? ' is-selected' : ''}`}
+                                    onMouseEnter={() => setActiveClientResultIndex(index)}
+                                    onClick={() => setClientFromSelection(client.id)}
+                                  >
+                                    <span className="orders-client-result-avatar" aria-hidden="true">
+                                      {String(client.name || '?').trim().charAt(0).toUpperCase()}
+                                    </span>
+                                    <span className="orders-client-result-copy">
+                                      <strong>{client.name}</strong>
+                                      <small>
+                                        {[clientCi && `CI ${clientCi}`, clientPhone && `Tel. ${clientPhone}`, client.companyName]
+                                          .filter(Boolean)
+                                          .join(' · ') || 'Sin datos adicionales'}
+                                      </small>
+                                    </span>
+                                    {client.isBlacklisted ? (
+                                      <span className="orders-client-result-warning">No atender</span>
+                                    ) : draft.clientId === client.id ? (
+                                      <Check className="orders-client-result-check" aria-label="Seleccionado" />
+                                    ) : null}
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="orders-client-search-empty">
+                                <Search aria-hidden="true" />
+                                <strong>No encontramos coincidencias</strong>
+                                <small>Prueba con otro nombre, CI, telefono o empresa.</small>
+                              </div>
+                            )}
+                            <footer>
+                              {filteredClientOptions.length} resultado(s) visible(s)
+                              {clients.length > filteredClientOptions.length ? ` de ${clients.length} clientes` : ''}
+                            </footer>
+                          </div>
+                        ) : null}
+                        <small className="orders-client-search-hint">
+                          Busca cualquier parte del nombre; por ejemplo, &ldquo;Daniela&rdquo;.
+                        </small>
+                      </div>
                       <label className="orders-icon-field company" data-client-nav-field>
                         Empresa / razon social
                         <span>
@@ -14242,14 +14421,14 @@ function ServiceOrdersSection({
                             <label className="orders-line-field">
                               <span>Precio</span>
                               <input
-                                type="number"
+                                type="text"
                                 inputMode="decimal"
-                                min="0"
-                                step="0.01"
+                                pattern="[0-9]*[.,]?[0-9]*"
                                 value={line.unitPriceInput}
                                 onFocus={selectNumericInput}
                                 onChange={(event) => setDraftItemPrice(line.lineKey, event.target.value)}
                                 onBlur={() => normalizeDraftItemPrice(line.lineKey)}
+                                title="Escribe el precio manualmente. La rueda del mouse no modifica este valor."
                                 aria-label={`Precio unitario de ${line.item.name}`}
                                 readOnly={isCourtesyLine || Boolean(line.comboId && line.comboPricingRole !== 'price')}
                               />
