@@ -38,6 +38,10 @@ const sidebarItems = [
   { id: 'asistencia', label: 'Asistencia compartida', icon: 'users' },
 ];
 
+const linconEnabledViews = new Set(['panel', 'agenda', 'reservas', 'asistencia']);
+const linconMobilePrimaryItems = sidebarItems.filter((item) => linconEnabledViews.has(item.id));
+const linconMobileMoreItems = sidebarItems.filter((item) => !linconEnabledViews.has(item.id));
+
 const agendaKpis = [
   ['Eventos del mes', '1', 'Junio de 2026', 'calendar'],
   ['Interesados', '1', 'Este mes', 'users'],
@@ -713,8 +717,10 @@ function LinconWorkspaceSection({
   onLogout,
 }) {
   const [activeView, setActiveView] = useState('panel');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [databaseStatus, setDatabaseStatus] = useState({ loading: true, error: '', snapshot: null });
   const userName = currentUser?.fullName ?? currentUser?.name ?? 'Yordy Copa Cerezo';
+  const userInitials = userName.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'US';
   const workspaceTitle = {
     agenda: 'Agenda / Centro de Eventos Lincoln',
     reservas: 'Reservas / Centro de Eventos Lincoln',
@@ -723,6 +729,14 @@ function LinconWorkspaceSection({
     agenda: '+ Nuevo registro',
     reservas: '+ Nueva reserva',
   }[activeView];
+  const activeItem = sidebarItems.find((item) => item.id === activeView) ?? sidebarItems[0];
+
+  const openView = (viewId) => {
+    if (!linconEnabledViews.has(viewId)) return;
+    setActiveView(viewId);
+    setIsMobileMenuOpen(false);
+    if (viewId === 'asistencia') onOpenAttendance?.();
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -756,12 +770,8 @@ function LinconWorkspaceSection({
               key={item.id}
               type="button"
               className={activeView === item.id ? 'is-active' : ''}
-              onClick={() => {
-                if (['panel', 'agenda', 'reservas', 'asistencia'].includes(item.id)) {
-                  setActiveView(item.id);
-                  if (item.id === 'asistencia') onOpenAttendance?.();
-                }
-              }}
+              onClick={() => openView(item.id)}
+              disabled={!linconEnabledViews.has(item.id)}
             >
               <LinconIcon name={item.icon} />
               {item.label}
@@ -779,6 +789,22 @@ function LinconWorkspaceSection({
       </aside>
 
       <main className="lincon-main">
+        <header className="lincon-mobile-header">
+          <div className="lincon-mobile-brand">
+            <small>Centro de Eventos</small>
+            <strong>Lincoln</strong>
+          </div>
+          <div className="lincon-mobile-heading">
+            <span>{activeItem.label}</span>
+            <small className={databaseStatus.error ? 'has-error' : ''}>
+              <i />{databaseStatus.loading ? 'Conectando' : databaseStatus.error ? 'Sin conexion' : 'Base Lincoln'}
+            </small>
+          </div>
+          <button type="button" className="lincon-mobile-account" onClick={() => setIsMobileMenuOpen(true)} aria-label="Abrir menu de usuario">
+            {userInitials}
+          </button>
+        </header>
+
         <header className="lincon-topbar">
           <div className="lincon-topbar-brand">
             <LinconIcon name="home" />
@@ -800,8 +826,51 @@ function LinconWorkspaceSection({
         {activeView === 'agenda' ? <LinconAgendaView /> : null}
         {activeView === 'reservas' ? <LinconReservationsView /> : null}
         {activeView === 'asistencia' ? <AttendanceSection {...attendanceProps} /> : null}
-        {activeView === 'panel' ? <LinconPanelView onOpenAgenda={() => setActiveView('agenda')} /> : null}
+        {activeView === 'panel' ? <LinconPanelView onOpenAgenda={() => openView('agenda')} /> : null}
       </main>
+
+      <nav className="lincon-mobile-nav" aria-label="Navegacion principal de Lincoln">
+        {linconMobilePrimaryItems.map((item) => (
+          <button key={item.id} type="button" className={activeView === item.id ? 'is-active' : ''} onClick={() => openView(item.id)}>
+            <LinconIcon name={item.icon} />
+            <span>{item.id === 'asistencia' ? 'Asistencia' : item.label}</span>
+          </button>
+        ))}
+        <button type="button" className={isMobileMenuOpen ? 'is-active' : ''} onClick={() => setIsMobileMenuOpen(true)}>
+          <span className="lincon-mobile-more-icon"><i /><i /><i /></span>
+          <span>Mas</span>
+        </button>
+      </nav>
+
+      {isMobileMenuOpen ? (
+        <div className="lincon-mobile-menu-backdrop" role="presentation" onClick={() => setIsMobileMenuOpen(false)}>
+          <section className="lincon-mobile-menu" role="dialog" aria-modal="true" aria-label="Mas opciones de Lincoln" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div><small>Lincoln</small><strong>Mas opciones</strong></div>
+              <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Cerrar menu">×</button>
+            </header>
+            <div className="lincon-mobile-user-summary">
+              <span>{userInitials}</span>
+              <div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div>
+            </div>
+            <div className="lincon-mobile-more-grid">
+              {linconMobileMoreItems.map((item) => (
+                <button key={item.id} type="button" disabled title="Disponible proximamente">
+                  <LinconIcon name={item.icon} />
+                  <span>{item.label}</span>
+                  <small>Proximamente</small>
+                </button>
+              ))}
+            </div>
+            <div className="lincon-mobile-menu-actions">
+              {availableCompanies.includes('copetin') ? (
+                <button type="button" onClick={() => onSwitchWorkspace('copetin')}><LinconIcon name="home" /> Ir a El Copetin</button>
+              ) : null}
+              <button type="button" className="is-logout" onClick={onLogout}>Salir de la sesion</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

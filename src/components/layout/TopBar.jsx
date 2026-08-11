@@ -57,6 +57,18 @@ const deviceLabel = (device) =>
     .replace(/^Computadora\b/i, 'PC')
     .trim() || 'Dispositivo';
 
+function TopbarActionIcon({ name }) {
+  const paths = name === 'company'
+    ? ['M4 9h16', 'M7 9V5h10v4', 'M6 9v10', 'M18 9v10', 'M3 19h18', 'M9 13h2', 'M13 13h2']
+    : ['M4 13h3l9 4V7l-9 4H4z', 'M7 13v5', 'M19 10c1 1 1 3 0 4'];
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {paths.map((path) => <path key={path} d={path} />)}
+    </svg>
+  );
+}
+
 function TopBar({
   onOpenResetDialog,
   currentUser = null,
@@ -126,12 +138,18 @@ function TopBar({
           {canReset ? (
             <button
               type="button"
-              className="admin-update-button"
+              className="admin-update-button topbar-utility-action topbar-utility-action--notice"
               onClick={handlePublishNotice}
               disabled={isPublishingNotice}
               title="Publicar aviso global de actualizacion"
             >
-              {isPublishingNotice ? 'Avisando...' : 'Avisar mejoras'}
+              <TopbarActionIcon name="notice" />
+              <span className="topbar-action-label topbar-action-label--desktop">
+                {isPublishingNotice ? 'Avisando...' : 'Avisar mejoras'}
+              </span>
+              <span className="topbar-action-label topbar-action-label--mobile">
+                {isPublishingNotice ? 'Avisando' : 'Mejoras'}
+              </span>
             </button>
           ) : null}
           {canReset ? (
@@ -147,11 +165,13 @@ function TopBar({
           {onSwitchCompany ? (
             <button
               type="button"
-              className="admin-update-button"
+              className="admin-update-button topbar-utility-action topbar-utility-action--company"
               onClick={onSwitchCompany}
               title="Cambiar entre El Copetin y Lincoln"
             >
-              Cambiar empresa
+              <TopbarActionIcon name="company" />
+              <span className="topbar-action-label topbar-action-label--desktop">Cambiar empresa</span>
+              <span className="topbar-action-label topbar-action-label--mobile">Empresa</span>
             </button>
           ) : null}
           <div className="user-pill">

@@ -43,7 +43,15 @@ const parseOrigins = (value) =>
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-const allowedOrigins = parseOrigins(process.env.CORS_ORIGIN);
+const localDevelopmentOrigins = isProduction
+  ? []
+  : ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const allowedOrigins = [
+  ...new Set([
+    ...parseOrigins(process.env.CORS_ORIGIN),
+    ...localDevelopmentOrigins,
+  ]),
+];
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
