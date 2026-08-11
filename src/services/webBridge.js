@@ -5500,7 +5500,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           white-space: normal;
           overflow-wrap: anywhere;
         }
-        .receipt-code { display: inline-block; margin-top: 1.4mm; padding: 0 4mm 0.9mm; border-bottom: 1.4px solid #0b2c67; color: #f04b10; font-size: 31px; font-weight: 950; line-height: 1; }
+        .receipt-code { display: inline-block; margin-top: 1.4mm; padding: 0 4mm 0.9mm; border-bottom: 1.4px solid #0b2c67; color: #e97c07; font-size: 31px; font-weight: 950; line-height: 1; }
         .receipt-contract-code {
           display: block;
           margin-top: 1.2mm;
@@ -5521,7 +5521,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .receipt-datebox { display: grid; gap: 2.1mm; color: #0b2c67; font-size: 11.2px; min-width: 0; }
         .receipt-datebox > span:not(.receipt-copy-kind) { display: grid; grid-template-columns: 7mm 14mm minmax(0, 1fr); align-items: center; gap: 1mm; min-width: 0; }
         .receipt-datebox strong { font-size: 10.5px; font-weight: 900; }
-        .receipt-datebox b { color: #f04b10; font-size: 12px; white-space: nowrap; }
+        .receipt-datebox b { color: #e97c07; font-size: 12px; white-space: nowrap; }
         .receipt-date-icon { width: 6mm; height: 6mm; object-fit: contain; }
         .receipt-copy-kind {
           justify-self: end;
@@ -5585,7 +5585,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           overflow: hidden;
         }
         .info-line { position: relative; display: grid; grid-template-columns: 37mm minmax(0, 1fr); gap: 1.8mm; margin-bottom: 1.7mm; padding-left: 4mm; font-size: 10.4px; line-height: 1.1; }
-        .info-line::before { content: ""; position: absolute; left: 0; top: 0.8mm; width: 1.7mm; height: 1.7mm; border-radius: 999px; background: #f04b10; }
+        .info-line::before { content: ""; position: absolute; left: 0; top: 0.8mm; width: 1.7mm; height: 1.7mm; border-radius: 999px; background: #e97c07; }
         .info-line strong { color: #0f2a5f; text-transform: uppercase; font-weight: 900; }
         .info-line span { max-height: 8.2mm; overflow: hidden; overflow-wrap: anywhere; }
         .info-line.is-important span {
@@ -5612,7 +5612,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         td.receipt-money {
           padding-left: 1.2mm;
           padding-right: 1.2mm;
-          color: #f04b10;
+          color: #e97c07;
           font-size: 22px;
           font-weight: 950;
           white-space: nowrap;
@@ -5634,7 +5634,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           align-items: center;
           min-width: 0;
           overflow: hidden;
-          border: 1.4px solid #f04b10;
+          border: 1.4px solid #e97c07;
           background: #fff;
           padding: 0;
           font-size: 11.2px;
@@ -5657,7 +5657,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           min-width: 0;
           max-width: 39mm;
           padding: 1.6mm 2.3mm;
-          color: #f04b10;
+          color: #e97c07;
           font-size: 16px;
           line-height: 1;
           text-align: right;
@@ -5674,7 +5674,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         .signature-line { border-top: 1.2px solid #0f2a5f; padding-top: 1.35mm; }
         .signature-line strong { display: block; font-size: 10.5px; }
         .signature-line span { font-size: 9px; }
-        .receipt-footer { width: 72mm; margin: 0.8mm 5mm 0 auto; border-bottom: 1px solid #f04b10; padding-bottom: 0.8mm; text-align: center; color: #64748b; font-size: 8.2px; }
+        .receipt-footer { width: 72mm; margin: 0.8mm 5mm 0 auto; border-bottom: 1px solid #e97c07; padding-bottom: 0.8mm; text-align: center; color: #64748b; font-size: 8.2px; }
         @media print {
           html, body {
             width: 8.5in;
