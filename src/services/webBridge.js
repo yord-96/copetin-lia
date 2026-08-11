@@ -5539,26 +5539,36 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         }
         .receipt-contact {
           display: grid;
-          grid-template-columns: 1fr 1.25fr 1.7fr;
-          gap: 3mm;
+          grid-template-columns: 0.82fr 1.16fr 2.02fr;
+          gap: 1.2mm;
           align-items: center;
-          min-height: 9.5mm;
-          padding: 1.55mm 6mm;
+          min-height: 7.6mm;
+          margin: 0 3.5mm;
+          padding: 1.05mm 3.2mm;
           border: 0;
+          border-radius: 7px;
           background: #0b2c67;
           color: #fff;
-          font-size: 10.6px;
+          font-size: 9.8px;
+          line-height: 1;
           text-align: center;
+          overflow: hidden;
         }
         .receipt-contact span {
           display: flex;
           justify-content: center;
           align-items: center;
-          gap: 6px;
+          gap: 5px;
           min-width: 0;
+          white-space: nowrap;
           border-right: 1px solid rgba(255, 255, 255, 0.55);
         }
-        .receipt-contact span:last-child { border-right: 0; }
+        .receipt-contact span:last-child {
+          justify-content: flex-start;
+          border-right: 0;
+          padding-left: 2mm;
+          font-size: 9.35px;
+        }
         .cash-receipt-icon {
           width: 14px;
           height: 14px;
