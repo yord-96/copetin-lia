@@ -63,6 +63,7 @@ const resolveStreetAddress = async (latitude, longitude) => {
 function AttendanceSection({
   records = [],
   users = [],
+  usersLoading = false,
   currentUser = null,
   formatDateTime,
   canMark = true,
@@ -499,7 +500,7 @@ function AttendanceSection({
                   );
                 })}
                 {filteredSelectableUsers.length === 0 ? (
-                  <p>No se encontraron usuarios registrados.</p>
+                  <p>{usersLoading ? 'Cargando usuarios...' : 'No se encontraron usuarios registrados.'}</p>
                 ) : null}
               </div>
 

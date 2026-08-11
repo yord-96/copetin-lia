@@ -579,6 +579,7 @@ function AdminApp() {
           <AttendanceSection
             records={controller.attendanceRecords}
             users={controller.users}
+            usersLoading={controller.attendanceUsersLoading}
             currentUser={controller.currentUser}
             formatDateTime={formatDateTime}
             canMark={canMarkAttendance}

@@ -131,6 +131,7 @@ export const useAppController = () => {
   const [cashMovementMeta, setCashMovementMeta] = useState({ total: 0, visible: 0, truncated: false });
   const [accountingOperationsLoading, setAccountingOperationsLoading] = useState(false);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [attendanceUsersLoading, setAttendanceUsersLoading] = useState(false);
   const [userPresence, setUserPresence] = useState([]);
   const [updateNotice, setUpdateNotice] = useState(null);
   const [clients, setClients] = useState([]);
@@ -316,7 +317,18 @@ export const useAppController = () => {
     let group = null;
     let loader = null;
     const activeInventoryTab = String(activeTab);
-    if (activeTab === 'personal') {
+    if (activeTab === 'asistencia') {
+      group = 'attendance-users';
+      loader = async () => {
+        setAttendanceUsersLoading(true);
+        try {
+          await api.sync.refreshCollections(['users'], 'attendance-users');
+          setUsers(await api.users.list());
+        } finally {
+          setAttendanceUsersLoading(false);
+        }
+      };
+    } else if (activeTab === 'personal') {
       group = 'personnel';
       loader = async () => setPersonnelBundle(await api.personnel.listBundle());
     } else if (activeTab === 'recibos') {
@@ -2786,6 +2798,7 @@ export const useAppController = () => {
     cashMovementMeta,
     accountingOperationsLoading,
     attendanceRecords,
+    attendanceUsersLoading,
     userPresence,
     updateNotice,
     activeCashSession,
