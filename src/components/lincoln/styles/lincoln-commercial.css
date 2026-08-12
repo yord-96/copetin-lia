@@ -1,0 +1,141 @@
+.lincoln-commercial-page{padding:1.2rem 1.3rem 1.7rem;display:grid;gap:1rem}.lincoln-commercial-titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}.lincoln-commercial-titlebar h1{margin:0;color:#241719;font-size:1.72rem;letter-spacing:-.03em}.lincoln-commercial-titlebar p{margin:.28rem 0 0;color:#826d66;font-size:.82rem}.lincoln-commercial-primary-actions{display:flex;gap:.55rem}.lincoln-commercial-primary-actions button{min-width:9.7rem;border:1px solid #7a121b;border-radius:.7rem;padding:.72rem 1rem;background:#7a121b;color:#fff;font-weight:850;cursor:pointer}.lincoln-commercial-primary-actions button:last-child{background:#9a1b24}.lincoln-commercial-card{overflow:hidden;border:1px solid #eadbd3;border-radius:1rem;background:#fff;box-shadow:0 10px 28px rgba(91,39,29,.06)}.lincoln-commercial-metrics{display:grid;grid-template-columns:1.15fr .62fr 1.15fr;gap:.65rem;padding:.8rem}.lincoln-commercial-metrics article{min-height:4.35rem;border:1px solid #eadfd8;border-radius:.8rem;padding:.8rem .95rem;display:flex;align-items:center;justify-content:space-between;background:#fff}.lincoln-commercial-metrics article>div{display:grid;gap:.12rem}.lincoln-commercial-metrics strong,.lincoln-commercial-metrics article>span{color:#53181d;font-size:.84rem;font-weight:900;text-transform:uppercase}.lincoln-commercial-metrics span{color:#91786f;font-size:.68rem}.lincoln-commercial-metrics article>b{color:#7a121b;font-size:1.4rem}.lincoln-commercial-metrics .is-numbering{grid-template-columns:auto 1fr 1fr;gap:.8rem}.lincoln-commercial-metrics .is-numbering>div{border-left:1px solid #eee3dd;padding-left:.72rem}.lincoln-commercial-metrics .is-numbering small{color:#a16d62;font-size:.55rem;font-weight:850;text-transform:uppercase}.lincoln-commercial-metrics .is-numbering b{color:#5b1b20;font-size:1.25rem}.lincoln-commercial-metrics .is-contracts{border-color:#c98e85;background:#fffaf8}.lincoln-commercial-filters{display:grid;grid-template-columns:minmax(260px,1fr) 180px 180px auto;gap:.55rem;padding:.72rem .8rem;border-top:1px solid #f0e7e2;background:#fffaf6}.lincoln-commercial-filters>input,.lincoln-commercial-filters label{border:1px solid #e4d8d1;border-radius:.62rem;background:#fff}.lincoln-commercial-filters>input{padding:.7rem .8rem}.lincoln-commercial-filters label{display:flex;align-items:center;gap:.5rem;padding:0 .7rem}.lincoln-commercial-filters label span{color:#8c5b53;font-size:.55rem;font-weight:900;text-transform:uppercase}.lincoln-commercial-filters label input{min-width:0;width:100%;border:0;padding:.65rem 0;background:transparent}.lincoln-commercial-filters .is-clear{border:0;background:transparent;color:#9a1b24;font-weight:850;cursor:pointer}.lincoln-commercial-statuses{display:flex;gap:.42rem;flex-wrap:wrap;padding:0 .8rem .72rem;background:#fffaf6}.lincoln-commercial-statuses button{border:1px solid #eadcd5;border-radius:999px;padding:.38rem .68rem;background:#fff;color:#6c5550;font-size:.66rem;font-weight:800;cursor:pointer}.lincoln-commercial-statuses button.is-active{border-color:#b94a54;background:#fff0ee;color:#8b1620}.lincoln-commercial-table-wrap{overflow:auto;border-top:1px solid #ede4df}.lincoln-commercial-table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0}.lincoln-commercial-table th{padding:.72rem .72rem;background:#64151d;color:#fff;text-align:left;font-size:.61rem;font-weight:900;text-transform:uppercase;letter-spacing:.035em}.lincoln-commercial-table td{padding:.78rem .72rem;border-bottom:1px solid #eee5e0;color:#3f3633;font-size:.71rem;vertical-align:middle}.lincoln-commercial-table tbody tr:nth-child(even) td{background:#fdf9f7}.lincoln-commercial-table tbody tr:hover td{background:#faf2ef}.lincoln-commercial-table td strong{display:block;color:#2e2523;font-size:.72rem}.lincoln-commercial-table td small{display:block;margin-top:.12rem;color:#97837b;font-size:.59rem}.lincoln-commercial-code{border:0;border-radius:.48rem;padding:.34rem .48rem;background:#f9ece8;color:#a52d35;font-weight:900;cursor:pointer}.lincoln-commercial-code.is-contract{background:#781820;color:#fff}.lincoln-commercial-status{display:inline-flex;border-radius:999px;padding:.3rem .5rem;background:#fff3e2;color:#9b681d;font-size:.58rem;font-weight:900;white-space:nowrap}.lincoln-commercial-status.is-contract{background:#eaf5ed;color:#277048}.lincoln-commercial-actions{display:flex;gap:.32rem}.lincoln-commercial-actions button{border:1px solid #e6ccc5;border-radius:.46rem;padding:.38rem .5rem;background:#fff;color:#861c25;font-size:.58rem;font-weight:850;cursor:pointer}.lincoln-commercial-actions .is-primary{border-color:#7a121b;background:#7a121b;color:#fff}.lincoln-commercial-table .is-muted{color:#aa9a94}.lincoln-commercial-table .is-empty{text-align:center;padding:2.2rem;color:#8a7770}.lincoln-commercial-error{margin:.6rem .8rem;padding:.7rem;border:1px solid #efc9c5;border-radius:.6rem;background:#fff2f0;color:#9d322d}@media(max-width:1050px){.lincoln-commercial-titlebar{align-items:stretch;flex-direction:column}.lincoln-commercial-primary-actions{justify-content:flex-end}.lincoln-commercial-metrics{grid-template-columns:1fr 1fr}.lincoln-commercial-metrics .is-numbering{grid-column:1/-1}.lincoln-commercial-filters{grid-template-columns:1fr 1fr}.lincoln-commercial-filters>input{grid-column:1/-1}}@media(max-width:680px){.lincoln-commercial-page{padding:.75rem}.lincoln-commercial-primary-actions{display:grid;grid-template-columns:1fr 1fr}.lincoln-commercial-primary-actions button{min-width:0}.lincoln-commercial-metrics{grid-template-columns:1fr}.lincoln-commercial-metrics .is-numbering{grid-column:auto}.lincoln-commercial-filters{grid-template-columns:1fr}.lincoln-commercial-filters>input{grid-column:auto}}
+
+
+/* ================================================================
+   RESERVAS Y CONTRATOS · LEGIBILIDAD + MÉTRICAS INTERACTIVAS
+   ================================================================ */
+
+.lincoln-commercial-metric-card {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.75rem;
+  border: 1px solid #eadfd8;
+  border-radius: .8rem;
+  padding: .82rem .95rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.lincoln-commercial-metric-card {
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+button.lincoln-commercial-metric-card:hover {
+  border-color: #bc7b76;
+  background: #fffaf8;
+  box-shadow: 0 5px 14px rgba(95, 27, 32, .07);
+}
+
+button.lincoln-commercial-metric-card:active {
+  transform: translateY(1px);
+}
+
+button.lincoln-commercial-metric-card.is-selected {
+  border-color: #8d1a24;
+  box-shadow: inset 0 0 0 1px #8d1a24;
+  background: #fff7f5;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card > div {
+  display: grid;
+  gap: .15rem;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card > b {
+  color: #7a121b;
+  font-size: 1.42rem;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: .8rem;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering > div {
+  border-left: 1px solid #eee3dd;
+  padding-left: .72rem;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-contracts {
+  border-color: #c98e85;
+  background: #fffaf8;
+}
+
+/* Texto general de filtros más cómodo */
+.lincoln-commercial-filters > input {
+  font-size: .82rem;
+}
+
+.lincoln-commercial-filters label span {
+  font-size: .62rem;
+}
+
+.lincoln-commercial-filters label input {
+  font-size: .78rem;
+}
+
+.lincoln-commercial-filters .is-clear {
+  font-size: .78rem;
+}
+
+/* Chips de estados */
+.lincoln-commercial-statuses button {
+  min-height: 2rem;
+  padding: .42rem .76rem;
+  font-size: .72rem;
+  line-height: 1;
+}
+
+/* Tabla: subir aproximadamente 15–20% la legibilidad */
+.lincoln-commercial-table th {
+  padding: .78rem .78rem;
+  font-size: .69rem;
+}
+
+.lincoln-commercial-table td {
+  padding: .82rem .78rem;
+  font-size: .80rem;
+  line-height: 1.28;
+}
+
+.lincoln-commercial-table td strong {
+  font-size: .80rem;
+  line-height: 1.25;
+}
+
+.lincoln-commercial-table td small {
+  margin-top: .18rem;
+  font-size: .67rem;
+  line-height: 1.25;
+}
+
+.lincoln-commercial-code {
+  padding: .38rem .56rem;
+  font-size: .79rem;
+}
+
+.lincoln-commercial-status {
+  padding: .34rem .58rem;
+  font-size: .66rem;
+}
+
+.lincoln-commercial-actions button {
+  min-height: 2rem;
+  padding: .42rem .58rem;
+  font-size: .66rem;
+}
+
+/* Evita sensación de tabla comprimida en monitores grandes */
+@media (min-width: 1280px) {
+  .lincoln-commercial-table {
+    min-width: 1160px;
+  }
+}

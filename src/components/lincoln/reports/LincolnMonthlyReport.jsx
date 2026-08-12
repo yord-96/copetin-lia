@@ -1,0 +1,7 @@
+import LincolnReportTable from './LincolnReportTable';
+import { formatLincolnBs, LINCOLN_MONTH_NAMES } from '../shared/lincolnFormatters';
+
+export default function LincolnMonthlyReport({ data }) {
+  const summary = data?.summary ?? {};
+  return <><section className="lincoln-report-summary-bar"><div><small>Ingresos de caja</small><strong>{formatLincolnBs(summary.cashIncomeBs)}</strong></div><div><small>Egresos de caja</small><strong>{formatLincolnBs(summary.cashExpenseBs)}</strong></div><div><small>Utilidad operativa</small><strong className={Number(summary.utilityBs) < 0 ? 'is-negative' : ''}>{formatLincolnBs(summary.utilityBs)}</strong></div><div><small>Garantías recibidas</small><strong>{formatLincolnBs(summary.guaranteeIncomeBs)}</strong></div></section><div className="lincoln-report-split"><section className="lincoln-phase3-card"><header className="lincoln-phase3-card-head"><div><small>Ingresos</small><h3>{LINCOLN_MONTH_NAMES[(data?.month ?? 1)-1]} {data?.year}</h3></div><strong className="lincoln-phase3-total">{formatLincolnBs(summary.cashIncomeBs)}</strong></header><LincolnReportTable rows={data?.income ?? []} kind="income"/></section><section className="lincoln-phase3-card"><header className="lincoln-phase3-card-head"><div><small>Egresos</small><h3>{LINCOLN_MONTH_NAMES[(data?.month ?? 1)-1]} {data?.year}</h3></div><strong className="lincoln-phase3-total is-expense">{formatLincolnBs(summary.cashExpenseBs)}</strong></header><LincolnReportTable rows={data?.expenses ?? []} kind="expense"/></section></div></>;
+}

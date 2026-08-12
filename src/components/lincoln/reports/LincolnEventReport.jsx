@@ -1,0 +1,8 @@
+import LincolnReportTable from './LincolnReportTable';
+import { formatLincolnBs, formatLincolnDate } from '../shared/lincolnFormatters';
+
+export default function LincolnEventReport({ data }) {
+  if (!data?.event) return <div className="lincoln-phase3-empty">Selecciona un evento para ver su reporte.</div>;
+  const { event, summary } = data;
+  return <><section className="lincoln-report-event-head"><div><small>Reporte por evento</small><h3>{event.code} · {event.clientName || event.eventType}</h3><p>{formatLincolnDate(event.eventDate)} · {event.eventType} · {event.roomName}</p></div><div><span>UTILIDAD</span><strong className={Number(summary?.utilityBs)<0?'is-negative':''}>{formatLincolnBs(summary?.utilityBs)}</strong></div></section><section className="lincoln-report-summary-bar"><div><small>Ingreso operativo</small><strong>{formatLincolnBs(summary?.operatingIncomeBs)}</strong></div><div><small>Gasto operativo</small><strong>{formatLincolnBs(summary?.operatingExpenseBs)}</strong></div><div><small>Garantías recibidas</small><strong>{formatLincolnBs(summary?.guaranteeIncomeBs)}</strong></div><div><small>Garantías devueltas</small><strong>{formatLincolnBs(summary?.guaranteeReturnBs)}</strong></div></section><div className="lincoln-report-split"><section className="lincoln-phase3-card"><header className="lincoln-phase3-card-head"><div><small>Ingresos</small><h3>Movimientos del evento</h3></div></header><LincolnReportTable rows={data.income} kind="income"/></section><section className="lincoln-phase3-card"><header className="lincoln-phase3-card-head"><div><small>Egresos</small><h3>Costos y salidas</h3></div></header><LincolnReportTable rows={data.expenses} kind="expense"/></section></div></>;
+}

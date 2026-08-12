@@ -3737,140 +3737,251 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
 
 
 
-router.put('/__copetin_db/contracts/:id/note', async (req, res, next) => {
+const findContractIndexForNoteMutation = (contracts, requestedId) => {
+  const cleanId = String(requestedId ?? '').trim();
+  if (!cleanId) return -1;
+  const exactIdIndex = contracts.findIndex((contract) => String(contract?.id ?? '') === cleanId);
+  if (exactIdIndex >= 0) return exactIdIndex;
+  const activeCodeIndex = contracts.findIndex((contract) => (
+    !contract?.deletedAt
+    && (
+      String(contract?.contractCode ?? '') === cleanId
+      || String(contract?.number ?? '') === cleanId
+    )
+  ));
+  if (activeCodeIndex >= 0) return activeCodeIndex;
+  return contracts.findIndex((contract) => (
+    String(contract?.contractCode ?? '') === cleanId
+    || String(contract?.number ?? '') === cleanId
+  ));
+};
+
+const getContractNoteActor = (body = {}) => ({
+  userId: body.updatedById ?? body.userId ?? null,
+  userName: String(body.updatedByName ?? body.userName ?? 'Sistema').trim() || 'Sistema',
+  userRole: String(body.updatedByRole ?? body.userRole ?? 'Sistema').trim() || 'Sistema',
+});
+
+const validateContractNoteText = (value) => {
+  const note = String(value ?? '').trim();
+  if (!note) {
+    const error = new Error('La nota no puede estar vacia.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (note.length > 2000) {
+    const error = new Error('La nota no puede superar los 2000 caracteres.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return note;
+};
+
+const appendContractNoteAudit = (state, {
+  action,
+  contract,
+  note,
+  actor,
+  now,
+}) => {
+  state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+  const actionMeta = {
+    create: {
+      type: 'contract_note_created',
+      action: 'crear_nota_contrato',
+      detail: 'Nota interna registrada desde Cotizaciones y Contratos.',
+    },
+    update: {
+      type: 'contract_note_updated',
+      action: 'editar_nota_contrato',
+      detail: 'Nota interna editada desde Cotizaciones y Contratos.',
+    },
+    delete: {
+      type: 'contract_note_deleted',
+      action: 'eliminar_nota_contrato',
+      detail: 'Nota interna eliminada desde Cotizaciones y Contratos.',
+    },
+  }[action] ?? {
+    type: 'contract_note_updated',
+    action: 'actualizar_nota_contrato',
+    detail: 'Nota interna actualizada desde Cotizaciones y Contratos.',
+  };
+
+  state.systemAuditLog.unshift({
+    id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    type: actionMeta.type,
+    action: actionMeta.action,
+    entityType: 'contract',
+    entityId: contract.id,
+    entityCode: contract.contractCode ?? '',
+    detail: actionMeta.detail,
+    noteId: note?.id ?? null,
+    userId: actor.userId,
+    userName: actor.userName,
+    userRole: actor.userRole,
+    createdAt: now,
+  });
+};
+
+const mutateContractInternalNote = async ({
+  requestedId,
+  revision,
+  action,
+  noteId = '',
+  noteText = '',
+  actor,
+}) => {
+  let responseContract = null;
+  let responseRental = null;
+  let responseNote = null;
+
+  const result = await updateStateSnapshot((state) => {
+    const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const contractIndex = findContractIndexForNoteMutation(contracts, requestedId);
+    if (contractIndex < 0) {
+      const error = new Error('Contrato no encontrado para guardar la nota.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const now = new Date().toISOString();
+    const existingContract = contracts[contractIndex];
+    const ledger = normalizeEconomicLedgerRows(existingContract?.economicLedger);
+    let targetNote = null;
+
+    if (action === 'create') {
+      const createdNote = normalizeEconomicLedgerRows([{
+        id: makeEconomicLedgerId(),
+        type: 'note',
+        note: validateContractNoteText(noteText),
+        createdAt: now,
+        createdById: actor.userId,
+        createdByName: actor.userName,
+      }])[0];
+      ledger.push(createdNote);
+      targetNote = createdNote;
+    } else {
+      const cleanNoteId = String(noteId ?? '').trim();
+      if (!cleanNoteId) {
+        const error = new Error('Debes indicar la nota.');
+        error.statusCode = 400;
+        throw error;
+      }
+      targetNote = ledger.find((entry) => (
+        String(entry?.id ?? '') === cleanNoteId
+        && entry.type === 'note'
+        && !entry.deletedAt
+      ));
+      if (!targetNote) {
+        const error = new Error('La nota ya no existe o fue eliminada.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      if (action === 'update') {
+        targetNote.note = validateContractNoteText(noteText);
+        targetNote.editedAt = now;
+        targetNote.editedByName = actor.userName;
+        targetNote.createdById = targetNote.createdById ?? actor.userId;
+        targetNote.createdByName = targetNote.createdByName || actor.userName;
+      } else if (action === 'delete') {
+        targetNote.deletedAt = now;
+        targetNote.deletedById = actor.userId;
+        targetNote.deletedByName = actor.userName;
+        targetNote.deletionReason = 'Eliminada desde Cotizaciones y Contratos';
+      }
+    }
+
+    const updatedContract = {
+      ...existingContract,
+      economicLedger: ledger,
+      economicLedgerUpdatedAt: now,
+      economicLedgerUpdatedById: actor.userId,
+      economicLedgerUpdatedByName: actor.userName,
+      updatedAt: now,
+    };
+    contracts[contractIndex] = updatedContract;
+
+    const rentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const referenceKeys = new Set([
+      updatedContract.id,
+      updatedContract.rentalId,
+      updatedContract.contractCode,
+      updatedContract.orderCode,
+    ].map((value) => String(value ?? '').trim()).filter(Boolean));
+    const linkedRental = rentals.find((rental) => [
+      rental?.id,
+      rental?.rentalId,
+      rental?.contractId,
+      rental?.contractCode,
+      rental?.orderCode,
+    ].some((value) => referenceKeys.has(String(value ?? '').trim()))) ?? null;
+
+    appendContractNoteAudit(state, {
+      action,
+      contract: updatedContract,
+      note: targetNote,
+      actor,
+      now,
+    });
+
+    responseContract = summarizeContract(structuredClone(updatedContract));
+    responseRental = linkedRental ? summarizeRental(structuredClone(linkedRental)) : null;
+    responseNote = targetNote ? structuredClone(targetNote) : null;
+    return state;
+  }, revision);
+
+  return {
+    result,
+    contract: responseContract,
+    rental: responseRental,
+    note: responseNote,
+  };
+};
+
+const sendContractNoteMutation = (res, mutation) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({
+    ok: true,
+    contract: mutation.contract,
+    ...(mutation.rental ? { rental: mutation.rental } : {}),
+    note: mutation.note,
+    revision: mutation.result.revision,
+    version: mutation.result.version,
+    updatedAt: mutation.result.updatedAt,
+  });
+};
+
+router.post('/__copetin_db/contracts/:id/notes', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
       res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
       return;
     }
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revision actual para guardar la nota.' });
+      return;
+    }
+
     const requestedId = String(req.params.id ?? '').trim();
-    const noteText = String(req.body.note ?? '').trim();
     if (!requestedId) {
       res.status(400).json({ error: 'Debes indicar el contrato.' });
       return;
     }
-    if (!noteText) {
-      res.status(400).json({ error: 'La nota no puede estar vacia.' });
-      return;
-    }
-    if (noteText.length > 2000) {
-      res.status(400).json({ error: 'La nota no puede superar los 2000 caracteres.' });
-      return;
-    }
 
-    const now = new Date().toISOString();
-    const userId = req.body.updatedById ?? req.body.userId ?? null;
-    const userName = String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema';
-    const userRole = String(req.body.updatedByRole ?? req.body.userRole ?? 'Sistema').trim() || 'Sistema';
-    const requestedNoteId = String(req.body.noteId ?? '').trim();
-    let responseContract = null;
-    let responseRental = null;
-    let responseNote = null;
-
-    const result = await updateStateSnapshot((state) => {
-      const contracts = Array.isArray(state.contracts) ? state.contracts : [];
-      const contractIndex = contracts.findIndex((contract) => (
-        String(contract?.id ?? '') === requestedId
-        || (!contract?.deletedAt && (
-          String(contract?.contractCode ?? '') === requestedId
-          || String(contract?.number ?? '') === requestedId
-        ))
-      ));
-      if (contractIndex < 0) {
-        const error = new Error('Contrato no encontrado para guardar la nota.');
-        error.statusCode = 404;
-        throw error;
-      }
-
-      const existingContract = contracts[contractIndex];
-      const ledger = normalizeEconomicLedgerRows(existingContract?.economicLedger);
-      const activeNotes = ledger
-        .filter((entry) => entry.type === 'note' && !entry.deletedAt && entry.note)
-        .sort((left, right) => new Date(right.createdAt ?? 0) - new Date(left.createdAt ?? 0));
-      const targetNote = requestedNoteId
-        ? ledger.find((entry) => String(entry?.id ?? '') === requestedNoteId && entry.type === 'note' && !entry.deletedAt)
-        : activeNotes[0];
-
-      if (targetNote) {
-        targetNote.note = noteText;
-        targetNote.editedAt = now;
-        targetNote.editedByName = userName;
-        targetNote.createdById = targetNote.createdById ?? userId;
-        targetNote.createdByName = targetNote.createdByName || userName;
-        responseNote = structuredClone(targetNote);
-      } else {
-        const createdNote = normalizeEconomicLedgerRows([{
-          id: makeEconomicLedgerId(),
-          type: 'note',
-          note: noteText,
-          createdAt: now,
-          createdById: userId,
-          createdByName: userName,
-        }])[0];
-        ledger.push(createdNote);
-        responseNote = structuredClone(createdNote);
-      }
-
-      const updatedContract = {
-        ...existingContract,
-        economicLedger: ledger,
-        economicLedgerUpdatedAt: now,
-        economicLedgerUpdatedById: userId,
-        economicLedgerUpdatedByName: userName,
-        updatedAt: now,
-      };
-      contracts[contractIndex] = updatedContract;
-
-      const rentals = Array.isArray(state.rentals) ? state.rentals : [];
-      const referenceKeys = new Set([
-        updatedContract.id,
-        updatedContract.rentalId,
-        updatedContract.contractCode,
-        updatedContract.orderCode,
-      ].map((value) => String(value ?? '').trim()).filter(Boolean));
-      const linkedRental = rentals.find((rental) => [
-        rental?.id,
-        rental?.rentalId,
-        rental?.contractId,
-        rental?.contractCode,
-        rental?.orderCode,
-      ].some((value) => referenceKeys.has(String(value ?? '').trim()))) ?? null;
-
-      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
-      state.systemAuditLog.unshift({
-        id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
-        type: targetNote ? 'contract_note_updated' : 'contract_note_created',
-        action: targetNote ? 'editar_nota_contrato' : 'crear_nota_contrato',
-        entityType: 'contract',
-        entityId: updatedContract.id,
-        entityCode: updatedContract.contractCode ?? '',
-        detail: `${targetNote ? 'Nota economica editada' : 'Nota economica registrada'} desde Cotizaciones y Contratos.`,
-        userId,
-        userName,
-        userRole,
-        createdAt: now,
-      });
-
-      responseContract = summarizeContract(structuredClone(updatedContract));
-      responseRental = linkedRental ? summarizeRental(structuredClone(linkedRental)) : null;
-      return state;
+    const mutation = await mutateContractInternalNote({
+      requestedId,
+      revision: req.body.revision,
+      action: 'create',
+      noteText: req.body.note,
+      actor: getContractNoteActor(req.body),
     });
-
-    if (!result.initialized) {
-      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
-      return;
-    }
-
-    res.set('Cache-Control', 'private, no-store');
-    res.json({
-      ok: true,
-      contract: responseContract,
-      ...(responseRental ? { rental: responseRental } : {}),
-      note: responseNote,
-      revision: result.revision,
-      updatedAt: result.updatedAt,
-    });
+    sendContractNoteMutation(res, mutation);
   } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
     if (error?.statusCode) {
       res.status(error.statusCode).json({ error: error.message });
       return;
@@ -3878,6 +3989,127 @@ router.put('/__copetin_db/contracts/:id/note', async (req, res, next) => {
     next(error);
   }
 });
+
+router.patch('/__copetin_db/contracts/:id/notes/:noteId', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revision actual para editar la nota.' });
+      return;
+    }
+
+    const requestedId = String(req.params.id ?? '').trim();
+    const noteId = String(req.params.noteId ?? '').trim();
+    if (!requestedId || !noteId) {
+      res.status(400).json({ error: 'Debes indicar el contrato y la nota.' });
+      return;
+    }
+
+    const mutation = await mutateContractInternalNote({
+      requestedId,
+      revision: req.body.revision,
+      action: 'update',
+      noteId,
+      noteText: req.body.note,
+      actor: getContractNoteActor(req.body),
+    });
+    sendContractNoteMutation(res, mutation);
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.delete('/__copetin_db/contracts/:id/notes/:noteId', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revision actual para eliminar la nota.' });
+      return;
+    }
+
+    const requestedId = String(req.params.id ?? '').trim();
+    const noteId = String(req.params.noteId ?? '').trim();
+    if (!requestedId || !noteId) {
+      res.status(400).json({ error: 'Debes indicar el contrato y la nota.' });
+      return;
+    }
+
+    const mutation = await mutateContractInternalNote({
+      requestedId,
+      revision: req.body.revision,
+      action: 'delete',
+      noteId,
+      actor: getContractNoteActor(req.body),
+    });
+    sendContractNoteMutation(res, mutation);
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+// Compatibilidad con clientes antiguos: PUT conserva la semántica anterior.
+// Con noteId edita esa nota; sin noteId crea una nota nueva en vez de sobrescribir
+// silenciosamente la última.
+router.put('/__copetin_db/contracts/:id/note', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+
+    const requestedNoteId = String(req.body.noteId ?? '').trim();
+    const snapshot = await getStateSnapshot();
+    const mutation = await mutateContractInternalNote({
+      requestedId,
+      revision: Object.prototype.hasOwnProperty.call(req.body, 'revision')
+        ? req.body.revision
+        : snapshot.revision,
+      action: requestedNoteId ? 'update' : 'create',
+      noteId: requestedNoteId,
+      noteText: req.body.note,
+      actor: getContractNoteActor(req.body),
+    });
+    sendContractNoteMutation(res, mutation);
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
   try {

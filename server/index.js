@@ -24,6 +24,14 @@ import {
   getAttendanceUploadInfo,
 } from './storage/attendancePhotoStore.js';
 import {
+  ensureLincolnRoomUploadDirectory,
+  getLincolnRoomUploadInfo,
+} from './storage/lincolnRoomImageStore.js';
+import {
+  ensureLincolnPackageUploadDirectory,
+  getLincolnPackageUploadInfo,
+} from './storage/lincolnPackageImageStore.js';
+import {
   closeDocumentPdfRenderer,
   warmDocumentPdfRenderer,
 } from './storage/documentPdfRenderer.js';
@@ -152,6 +160,7 @@ app.get('/health', async (_req, res, next) => {
       uploads: {
         products: productUploadInfo.uploadDirectory,
         attendance: attendanceUploadInfo.uploadDirectory,
+        lincolnRooms: lincolnRoomUploadInfo.uploadDirectory,
       },
       time: new Date().toISOString(),
     });
@@ -178,6 +187,26 @@ const attendanceUploadInfo = getAttendanceUploadInfo();
 app.use(
   '/uploads/attendance',
   express.static(attendanceUploadInfo.uploadDirectory, {
+    immutable: true,
+    maxAge: '30d',
+    index: false,
+  }),
+);
+
+const lincolnRoomUploadInfo = getLincolnRoomUploadInfo();
+app.use(
+  '/uploads/lincoln/rooms',
+  express.static(lincolnRoomUploadInfo.uploadDirectory, {
+    immutable: true,
+    maxAge: '30d',
+    index: false,
+  }),
+);
+
+const lincolnPackageUploadInfo = getLincolnPackageUploadInfo();
+app.use(
+  '/uploads/lincoln/packages',
+  express.static(lincolnPackageUploadInfo.uploadDirectory, {
     immutable: true,
     maxAge: '30d',
     index: false,
@@ -221,6 +250,8 @@ const start = async () => {
   await ensureLincolnStateStore();
   await ensureProductUploadDirectory();
   await ensureAttendanceUploadDirectory();
+  await ensureLincolnRoomUploadDirectory();
+  await ensureLincolnPackageUploadDirectory();
   try {
     await warmDocumentPdfRenderer();
     console.log('Motor PDF listo.');

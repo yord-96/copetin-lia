@@ -783,6 +783,115 @@ const fetchAttendanceUsersDirect = async () => {
   return Array.isArray(result?.users) ? result.users : [];
 };
 
+const fetchLincolnCommercialOverview = ({ query = '', status = 'all', from = '', to = '' } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set('query', String(query));
+  if (status) params.set('status', String(status));
+  if (from) params.set('from', String(from));
+  if (to) params.set('to', String(to));
+  return fetchLincolnQuery(`/__lincoln_db/commercial?${params.toString()}`, 'No se pudo cargar Reservas y Contratos de Lincoln.');
+};
+
+const fetchLincolnClientsOverview = ({ query = '', status = 'all' } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set('query', String(query));
+  if (status) params.set('status', String(status));
+  return fetchLincolnQuery(`/__lincoln_db/clients/overview?${params.toString()}`, 'No se pudo cargar la base de clientes de Lincoln.');
+};
+
+const fetchLincolnRoomsOverview = ({ query = '', status = 'all' } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set('query', String(query));
+  if (status) params.set('status', String(status));
+  return fetchLincolnQuery(`/__lincoln_db/rooms/overview?${params.toString()}`, 'No se pudo cargar Salones Lincoln.');
+};
+
+const fetchLincolnPackagesOverview = ({ query = '', status = 'all', roomId = '' } = {}) => {
+  const params = new URLSearchParams();
+  if (query) params.set('query', String(query));
+  if (status) params.set('status', String(status));
+  if (roomId) params.set('roomId', String(roomId));
+  return fetchLincolnQuery(`/__lincoln_db/packages/overview?${params.toString()}`, 'No se pudo cargar Paquetes Lincoln.');
+};
+
+
+
+const fetchLincolnAgendaMonth = async ({ year, month }) => {
+  const query = new URLSearchParams({ year: String(year), month: String(month) });
+  const response = await fetch(getApiUrl(`/__lincoln_db/agenda/month?${query.toString()}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar la agenda mensual de Lincoln.');
+  }
+  return response.json();
+};
+
+const fetchLincolnAgendaYear = async ({ year }) => {
+  const query = new URLSearchParams({ year: String(year) });
+  const response = await fetch(getApiUrl(`/__lincoln_db/agenda/year?${query.toString()}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el radar anual de Lincoln.');
+  }
+  return response.json();
+};
+
+
+const fetchLincolnQuery = async (path, fallback) => {
+  const response = await fetch(getApiUrl(path), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, fallback);
+
+  const contentType = String(response.headers.get('content-type') ?? '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    const body = await response.text().catch(() => '');
+    const looksLikeHtml = /<!doctype|<html/i.test(body);
+    const error = new Error(
+      looksLikeHtml
+        ? 'El servidor local todavía no cargó esta ruta de Lincoln. Reinicia el proceso de desarrollo del servidor y vuelve a abrir la vista.'
+        : fallback,
+    );
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+};
+
+const fetchLincolnSettlements = ({ year = '', status = 'all', query = '' } = {}) => {
+  const params = new URLSearchParams();
+  if (year) params.set('year', String(year));
+  if (status) params.set('status', String(status));
+  if (query) params.set('query', String(query));
+  return fetchLincolnQuery(`/__lincoln_db/settlements?${params.toString()}`, 'No se pudieron cargar las rendiciones Lincoln.');
+};
+
+const fetchLincolnSettlementDetail = ({ eventId }) => fetchLincolnQuery(
+  `/__lincoln_db/settlements/${encodeURIComponent(eventId)}`,
+  'No se pudo cargar la rendición del evento Lincoln.',
+);
+
+const fetchLincolnMonthlyReport = ({ year, month }) => fetchLincolnQuery(
+  `/__lincoln_db/reports/monthly?${new URLSearchParams({ year: String(year), month: String(month) }).toString()}`,
+  'No se pudo cargar el reporte mensual Lincoln.',
+);
+
+const fetchLincolnAnnualReport = ({ year }) => fetchLincolnQuery(
+  `/__lincoln_db/reports/annual?${new URLSearchParams({ year: String(year) }).toString()}`,
+  'No se pudo cargar el reporte anual Lincoln.',
+);
+
+const fetchLincolnEventReport = ({ eventId }) => fetchLincolnQuery(
+  `/__lincoln_db/reports/events/${encodeURIComponent(eventId)}`,
+  'No se pudo cargar el reporte del evento Lincoln.',
+);
+
 const fetchLincolnState = async () => {
   const response = await fetch(getApiUrl('/__lincoln_db'), {
     cache: 'no-store',
@@ -806,6 +915,84 @@ const replaceLincolnState = async ({ state, revision }) => {
   }
   return response.json();
 };
+
+
+const mutateLincolnRecord = async ({ collection, id = '', record, revision, actor }) => {
+  const suffix = id
+    ? `/__lincoln_db/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`
+    : `/__lincoln_db/${encodeURIComponent(collection)}`;
+  const response = await fetch(getApiUrl(suffix), {
+    method: id ? 'PUT' : 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ record, revision, actor }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo guardar el registro de Lincoln.');
+  }
+  return response.json();
+};
+
+const convertLincolnReservation = async ({ reservationId, event, revision, actor }) => {
+  const response = await fetch(getApiUrl(`/__lincoln_db/reservations/${encodeURIComponent(reservationId)}/convert`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ event, revision, actor }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo convertir la reserva en evento.');
+  }
+  return response.json();
+};
+
+
+const callLincolnMutation = async (path, { method = 'POST', body = {}, fallback = 'No se pudo completar la operación de Lincoln.' } = {}) => {
+  const response = await fetch(getApiUrl(path), {
+    method,
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, fallback);
+  }
+  return response.json();
+};
+
+const createLincolnEventPayment = ({ eventId, payment, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/events/${encodeURIComponent(eventId)}/payments`,
+  { body: { payment, revision, actor }, fallback: 'No se pudo registrar el pago del evento Lincoln.' },
+);
+
+const voidLincolnEventPayment = ({ paymentId, reason, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/payments/${encodeURIComponent(paymentId)}/void`,
+  { body: { reason, revision, actor }, fallback: 'No se pudo anular el pago de Lincoln.' },
+);
+
+const returnLincolnEventGuarantee = ({ eventId, refund, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/events/${encodeURIComponent(eventId)}/guarantee-return`,
+  { body: { refund, revision, actor }, fallback: 'No se pudo registrar la devolución de garantía.' },
+);
+
+const mutateLincolnExpense = ({ id = '', expense, revision, actor }) => callLincolnMutation(
+  id ? `/__lincoln_db/cash/expenses/${encodeURIComponent(id)}` : '/__lincoln_db/cash/expenses',
+  {
+    method: id ? 'PUT' : 'POST',
+    body: { expense, revision, actor },
+    fallback: 'No se pudo guardar el egreso de Lincoln.',
+  },
+);
+
+
+const setLincolnSettlementStatus = ({ eventId, settlement, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/settlements/${encodeURIComponent(eventId)}/status`,
+  {
+    method: 'PUT',
+    body: { settlement, revision, actor },
+    fallback: 'No se pudo actualizar el estado de la rendición Lincoln.',
+  },
+);
 
 const createAttendanceRecordDirect = async (payload = {}) => {
   if (!shouldUseServerState()) {
@@ -1206,6 +1393,59 @@ const uploadProductImage = async (file, { itemId } = {}) => {
   }
   return response.json();
 };
+
+const uploadLincolnRoomImage = async (file, { roomId } = {}) => {
+  if (!(file instanceof File)) throw new Error('Selecciona una imagen válida para el salón.');
+  const response = await fetch(getApiUrl('/api/uploads/lincoln/rooms'), {
+    method: 'POST',
+    headers: getInternalHeaders({
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Lincoln-Room-Id': String(roomId ?? 'room').trim() || 'room',
+    }),
+    body: file,
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo subir la imagen del salón.');
+  return response.json();
+};
+
+const deleteLincolnRoomImage = async ({ filename } = {}) => {
+  const safeFilename = String(filename ?? '').trim();
+  if (!safeFilename) return { ok: true };
+  const response = await fetch(getApiUrl(`/api/uploads/lincoln/rooms/${encodeURIComponent(safeFilename)}`), {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo eliminar la imagen del salón.');
+  return response.json();
+};
+
+const uploadLincolnPackageImage = async (file, { packageId } = {}) => {
+  if (!(file instanceof File)) throw new Error('Selecciona una imagen válida para el paquete.');
+  const response = await fetch(getApiUrl('/api/uploads/lincoln/packages'), {
+    method: 'POST',
+    headers: getInternalHeaders({
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Lincoln-Package-Id': String(packageId ?? 'package').trim() || 'package',
+    }),
+    body: file,
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo subir la imagen del paquete.');
+  return response.json();
+};
+
+const deleteLincolnPackageImage = async ({ filename } = {}) => {
+  const safeFilename = String(filename ?? '').trim();
+  if (!safeFilename) return { ok: true };
+  const response = await fetch(getApiUrl(`/api/uploads/lincoln/packages/${encodeURIComponent(safeFilename)}`), {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo eliminar la imagen del paquete.');
+  return response.json();
+};
+
 
 const uploadAttendancePhoto = async (file, { recordId } = {}) => {
   if (!(file instanceof Blob)) {
@@ -2206,24 +2446,7 @@ const resetContractEconomicsOnServer = async (payload = {}) => {
 
 
 
-const updateContractNoteOnServer = async (payload = {}) => {
-  if (!shouldUseServerState()) return null;
-  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
-  if (!requestedId) throw new Error('Debes indicar el contrato para guardar la nota.');
-
-  const response = await fetch(
-    getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/note`),
-    {
-      method: 'PUT',
-      cache: 'no-store',
-      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-    },
-  );
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo guardar la nota del contrato.');
-  }
-  const result = await response.json();
+const applyContractNoteMutationResult = async (result, requestedId, method) => {
   if (result && Object.prototype.hasOwnProperty.call(result, 'revision')) {
     lastSharedRevision = result.revision;
     setCachedServerRevision(result.revision);
@@ -2241,14 +2464,62 @@ const updateContractNoteOnServer = async (payload = {}) => {
     forgetFullRecordCache(fullContractCache, [requestedId, result.contract.id]);
   }
 
-  markServerStateStale('contracts.updateNote:direct');
+  markServerStateStale(`contracts.${method}:direct`);
   announceDataChange({
     domain: 'contracts',
-    method: 'updateNote',
+    method,
     collections: ['contracts', 'systemAuditLog'],
   });
   return result;
 };
+
+const mutateContractNoteOnServer = async ({ method, payload = {}, noteId = null, actionName }) => {
+  if (!shouldUseServerState()) return null;
+  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
+  if (!requestedId) throw new Error('Debes indicar el contrato para guardar la nota.');
+
+  const cleanNoteId = String(noteId ?? payload?.noteId ?? '').trim();
+  const suffix = cleanNoteId
+    ? `/contracts/${encodeURIComponent(requestedId)}/notes/${encodeURIComponent(cleanNoteId)}`
+    : `/contracts/${encodeURIComponent(requestedId)}/notes`;
+  const requestPayload = {
+    ...payload,
+    revision: Object.prototype.hasOwnProperty.call(payload, 'revision')
+      ? payload.revision
+      : lastSharedRevision ?? getCachedServerRevision() ?? null,
+  };
+
+  const response = await fetch(getServerStateUrl(suffix), {
+    method,
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(requestPayload),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar la nota del contrato.');
+  }
+  return applyContractNoteMutationResult(await response.json(), requestedId, actionName);
+};
+
+const createContractNoteOnServer = (payload = {}) => mutateContractNoteOnServer({
+  method: 'POST',
+  payload,
+  actionName: 'addNote',
+});
+
+const updateContractNoteOnServer = (payload = {}) => mutateContractNoteOnServer({
+  method: 'PATCH',
+  payload,
+  noteId: payload?.noteId,
+  actionName: 'updateNote',
+});
+
+const deleteContractNoteOnServer = (payload = {}) => mutateContractNoteOnServer({
+  method: 'DELETE',
+  payload,
+  noteId: payload?.noteId,
+  actionName: 'deleteNote',
+});
 
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
@@ -2520,6 +2791,10 @@ export const api = {
   uploads: {
     productImage: uploadProductImage,
     attendancePhoto: uploadAttendancePhoto,
+    roomImage: uploadLincolnRoomImage,
+    deleteRoomImage: deleteLincolnRoomImage,
+    packageImage: uploadLincolnPackageImage,
+    deletePackageImage: deleteLincolnPackageImage,
   },
   categories: {
     list: () => callBridge('categories', 'list', false),
@@ -2561,7 +2836,9 @@ export const api = {
       forgetFullRecordCache(fullContractCache, updated);
       return updated;
     },
+    addNote: (payload) => createContractNoteOnServer(payload),
     updateNote: (payload) => updateContractNoteOnServer(payload),
+    deleteNote: (payload) => deleteContractNoteOnServer(payload),
     resetEconomics: (payload) => resetContractEconomicsOnServer(payload),
     remove: (payload) => callBridge('contracts', 'remove', true, payload),
     restore: (payload) => callBridge('contracts', 'restore', true, payload),
@@ -2946,7 +3223,27 @@ export const api = {
   },
   lincoln: {
     getState: () => fetchLincolnState(),
+    getCommercialOverview: (payload) => fetchLincolnCommercialOverview(payload),
+    getClientsOverview: (payload) => fetchLincolnClientsOverview(payload),
+    getRoomsOverview: (payload) => fetchLincolnRoomsOverview(payload),
+    getPackagesOverview: (payload) => fetchLincolnPackagesOverview(payload),
+    getAgendaMonth: (payload) => fetchLincolnAgendaMonth(payload),
+    getAgendaYear: (payload) => fetchLincolnAgendaYear(payload),
+    getSettlements: (payload) => fetchLincolnSettlements(payload),
+    getSettlementDetail: (payload) => fetchLincolnSettlementDetail(payload),
+    getMonthlyReport: (payload) => fetchLincolnMonthlyReport(payload),
+    getAnnualReport: (payload) => fetchLincolnAnnualReport(payload),
+    getEventReport: (payload) => fetchLincolnEventReport(payload),
+    setSettlementStatus: (payload) => setLincolnSettlementStatus(payload),
     replaceState: (payload) => replaceLincolnState(payload),
+    createRecord: (payload) => mutateLincolnRecord(payload),
+    updateRecord: (payload) => mutateLincolnRecord(payload),
+    convertReservation: (payload) => convertLincolnReservation(payload),
+    createEventPayment: (payload) => createLincolnEventPayment(payload),
+    voidEventPayment: (payload) => voidLincolnEventPayment(payload),
+    returnGuarantee: (payload) => returnLincolnEventGuarantee(payload),
+    createExpense: (payload) => mutateLincolnExpense(payload),
+    updateExpense: (payload) => mutateLincolnExpense(payload),
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),

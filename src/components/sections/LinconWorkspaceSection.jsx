@@ -1,709 +1,496 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import AttendanceSection from './AttendanceSection';
+import LincolnAgenda from '../lincoln/agenda/LincolnAgenda';
+import LincolnSettlements from '../lincoln/settlements/LincolnSettlements';
+import LincolnReports from '../lincoln/reports/LincolnReports';
+import LincolnCommercialWorkspace from '../lincoln/commercial/LincolnCommercialWorkspace';
+import LincolnClients from '../lincoln/clients/LincolnClients';
+import LincolnRooms from '../lincoln/rooms/LincolnRooms';
+import LincolnPackages from '../lincoln/packages/LincolnPackages';
+import '../lincoln/styles/lincoln-base.css';
+import '../lincoln/styles/lincoln-agenda.css';
+import '../lincoln/styles/lincoln-settlements.css';
+import '../lincoln/styles/lincoln-reports.css';
+import '../lincoln/styles/lincoln-commercial.css';
+import { lincolnEnabledViews, lincolnSidebarItems } from '../lincoln/config/navigation';
+import LincolnWorkspaceLayout from '../lincoln/layout/LincolnWorkspaceLayout';
+import LinconIcon from '../lincoln/shared/LinconIcon';
 
-const upcomingReservations = [
-  { client: 'Corporacion Andina', eventType: 'Cena de Gala', date: '07 Jun 2026', time: 'Sab, 19:00', room: 'Lincoln Salon Principal', status: 'Confirmado' },
-  { client: 'Maria Fernanda Rojas', eventType: 'Matrimonio', date: '14 Jun 2026', time: 'Sab, 16:00', room: 'Jardin Lincoln', status: 'Confirmado' },
-  { client: 'Banco del Norte', eventType: 'Evento Corporativo', date: '19 Jun 2026', time: 'Vie, 18:30', room: 'Lincoln Salon Principal', status: 'Opcion' },
-  { client: 'Claudia Mercado', eventType: 'Quince Anos', date: '27 Jun 2026', time: 'Sab, 17:00', room: 'Salon Espejos', status: 'Pendiente' },
-];
-
-const agendaItems = [
-  { day: '07', month: 'Jun', title: 'Cena de Gala Lincoln 2026', detail: '19:00 - 23:59 - Lincoln Salon Principal' },
-  { day: '14', month: 'Jun', title: 'Matrimonio - Maria & Luis', detail: '16:00 - 23:30 - Jardin Lincoln' },
-  { day: '19', month: 'Jun', title: 'Evento Corporativo BDN', detail: '18:30 - 23:00 - Lincoln Salon Principal' },
-  { day: '21', month: 'Jun', title: 'Showroom de Proveedores', detail: '10:00 - 14:00 - Salon Espejos' },
-];
-
-const pendingOperations = [
-  { title: 'Seguimientos por realizar', detail: '4 seguimientos en riesgo', accent: 'risk' },
-  { title: 'Contratos por enviar', detail: '3 contratos listos para envio', accent: 'warning' },
-  { title: 'Pagos por cobrar', detail: '8 reservas con saldo pendiente', accent: 'money' },
-  { title: 'Documentos por completar', detail: '2 reservas con docs incompletos', accent: 'docs' },
-];
-
-const sidebarItems = [
-  { id: 'panel', label: 'Panel', icon: 'home' },
-  { id: 'agenda', label: 'Agenda', icon: 'calendar' },
-  { id: 'reservas', label: 'Reservas', icon: 'panel' },
-  { id: 'eventos', label: 'Eventos', icon: 'calendar' },
-  { id: 'salones', label: 'Salones', icon: 'home' },
-  { id: 'clientes', label: 'Clientes', icon: 'users' },
-  { id: 'proveedores', label: 'Proveedores', icon: 'chart' },
-  { id: 'inventario', label: 'Inventario', icon: 'panel' },
-  { id: 'reportes', label: 'Reportes', icon: 'chart' },
-  { id: 'configuracion', label: 'Configuracion', icon: 'panel' },
-  { id: 'usuarios', label: 'Usuarios', icon: 'users' },
-  { id: 'asistencia', label: 'Asistencia compartida', icon: 'users' },
-];
-
-const linconEnabledViews = new Set(['panel', 'agenda', 'reservas', 'asistencia']);
-const linconMobilePrimaryItems = sidebarItems.filter((item) => linconEnabledViews.has(item.id));
-const linconMobileMoreItems = sidebarItems.filter((item) => !linconEnabledViews.has(item.id));
-
-const agendaKpis = [
-  ['Eventos del mes', '1', 'Junio de 2026', 'calendar'],
-  ['Interesados', '1', 'Este mes', 'users'],
-  ['Reservados', '1', 'Este mes', 'bookmark'],
-  ['Facturacion estimada', 'Bs 10.200,00', 'Proyeccion del mes seleccionado', 'wallet'],
-];
-
-const reservationKpis = [
-  ['Reservas activas', '24', 'En curso', 'calendar'],
-  ['Pendientes de confirmacion', '6', 'Requieren atencion', 'hourglass'],
-  ['Eventos proximos', '8', 'En los proximos 30 dias', 'calendar'],
-  ['Ingresos confirmados', 'Bs 145.600,00', 'Este mes', 'wallet'],
-  ['Saldo pendiente', 'Bs 32.800,00', 'Por cobrar este mes', 'wallet'],
-];
-
-const reservationRecords = [
-  {
-    id: 'RES-2026-0042',
-    client: 'Ernesto Rodriguez',
-    event: 'Boda',
-    date: '18 jun 2026',
-    time: '18:00',
-    room: 'Salon 1',
-    packageName: 'Paquete Plata',
-    guests: 150,
-    amount: 'Bs 10.200,00',
-    paid: 'Pagado 70%',
-    balance: 'Bs 3.060,00',
-    status: 'Confirmada',
-    payment: 'Pagado 70%',
-    email: 'ernesto.rodriguez@gmail.com',
-    phone: '75470080',
-  },
-  {
-    id: 'RES-2026-0043',
-    client: 'Maria & Juan Perez',
-    event: 'Matrimonio',
-    date: '20 jun 2026',
-    time: '16:00',
-    room: 'Salon 2',
-    packageName: 'Paquete Oro',
-    guests: 120,
-    amount: 'Bs 8.500,00',
-    paid: 'Sin pago',
-    balance: 'Bs 8.500,00',
-    status: 'Pendiente',
-    payment: 'Sin pago',
-  },
-  {
-    id: 'RES-2026-0044',
-    client: 'Andrea Morales',
-    event: 'Cumpleanos 15 anos',
-    date: '21 jun 2026',
-    time: '15:00',
-    room: 'Salon 1',
-    packageName: 'Paquete Base',
-    guests: 80,
-    amount: 'Bs 6.800,00',
-    paid: 'Pagado 50%',
-    balance: 'Bs 3.400,00',
-    status: 'Confirmada',
-    payment: 'Pagado 50%',
-  },
-  {
-    id: 'RES-2026-0045',
-    client: 'Corporacion Andina S.A.',
-    event: 'Evento Corporativo',
-    date: '25 jun 2026',
-    time: '09:00',
-    room: 'Salon 3',
-    packageName: 'Premium',
-    guests: 200,
-    amount: 'Bs 18.000,00',
-    paid: 'Pagado 100%',
-    balance: 'Bs 0,00',
-    status: 'Confirmada',
-    payment: 'Pagado 100%',
-  },
-  {
-    id: 'RES-2026-0046',
-    client: 'Sofia Villarroel',
-    event: 'Baby Shower',
-    date: '27 jun 2026',
-    time: '14:00',
-    room: 'Salon 2',
-    packageName: 'Base',
-    guests: 45,
-    amount: 'Bs 3.200,00',
-    paid: 'Sin pago',
-    balance: 'Bs 3.200,00',
-    status: 'Pendiente',
-    payment: 'Sin pago',
-  },
-  {
-    id: 'RES-2026-0047',
-    client: 'Carlos Mendez',
-    event: 'Graduacion',
-    date: '02 jul 2026',
-    time: '17:00',
-    room: 'Salon 1',
-    packageName: 'Plata',
-    guests: 90,
-    amount: 'Bs 7.500,00',
-    paid: 'Pagado 30%',
-    balance: 'Bs 5.250,00',
-    status: 'Confirmada',
-    payment: 'Pagado 30%',
-  },
-  {
-    id: 'RES-2026-0048',
-    client: 'Laura & Diego Ortega',
-    event: 'Boda',
-    date: '04 jul 2026',
-    time: '18:30',
-    room: 'Salon 3',
-    packageName: 'Oro',
-    guests: 160,
-    amount: 'Bs 12.800,00',
-    paid: 'Pagado 80%',
-    balance: 'Bs 2.560,00',
-    status: 'Confirmada',
-    payment: 'Pagado 80%',
-  },
-  {
-    id: 'RES-2026-0049',
-    client: 'Tech Solutions',
-    event: 'Lanzamiento de producto',
-    date: '08 jul 2026',
-    time: '10:00',
-    room: 'Salon 1',
-    packageName: 'Premium',
-    guests: 60,
-    amount: 'Bs 9.600,00',
-    paid: 'Sin pago',
-    balance: 'Bs 9.600,00',
-    status: 'Pendiente',
-    payment: 'Sin pago',
-  },
-];
-
-const months = [
-  ['Ene', 'Enero', 0, 0],
-  ['Feb', 'Febrero', 0, 0],
-  ['Mar', 'Marzo', 0, 0],
-  ['Abr', 'Abril', 0, 0],
-  ['May', 'Mayo', 0, 0],
-  ['Jun', 'Junio', 1, 1],
-  ['Jul', 'Julio', 0, 0],
-  ['Ago', 'Agosto', 0, 0],
-  ['Sep', 'Septiembre', 0, 0],
-  ['Oct', 'Octubre', 0, 0],
-  ['Nov', 'Noviembre', 0, 0],
-  ['Dic', 'Diciembre', 0, 0],
-];
-
-const calendarEvents = {
-  4: [{ title: '1 reservado(s)', type: 'reserved' }],
-  5: [{ title: '2 interesados', type: 'lead' }],
-  18: [
-    { title: '1 interesado', type: 'lead' },
-    { title: '1 reservado', type: 'reserved' },
-  ],
-  25: [{ title: '1 interesado', type: 'lead' }],
+const emptyState = {
+  reservations: [],
+  leads: [],
+  events: [],
+  rooms: [],
+  packages: [],
+  clients: [],
+  suppliers: [],
+  inventory: [],
+  payments: [],
+  receipts: [],
+  incomeEntries: [],
+  expenseEntries: [],
+  eventSettlements: [],
+  auditLog: [],
+  settings: {},
 };
 
-const weekDays = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+const toNumber = (value) => {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
-const buildJuneCalendarDays = () => [
-  ...Array.from({ length: 30 }, (_, index) => ({
-    day: index + 1,
-    currentMonth: true,
-    events: calendarEvents[index + 1] ?? [],
-  })),
-  ...Array.from({ length: 12 }, (_, index) => ({
-    day: index + 1,
-    currentMonth: false,
-    events: [],
-  })),
-];
+const formatBs = (value) => new Intl.NumberFormat('es-BO', {
+  style: 'currency',
+  currency: 'BOB',
+  minimumFractionDigits: 2,
+}).format(Number(value ?? 0));
 
-function LinconIcon({ name }) {
-  const paths = {
-    panel: ['M4 5h16v14H4z', 'M4 10h16', 'M9 19v-9'],
-    calendar: ['M7 3v4', 'M17 3v4', 'M4 8h16', 'M5 5h14v16H5z'],
-    wallet: ['M4 7h16v12H4z', 'M16 12h4', 'M7 7V5h10v2'],
-    hourglass: ['M6 3h12', 'M6 21h12', 'M8 3v5a4 4 0 0 0 2 3.46L12 13l2-1.54A4 4 0 0 0 16 8V3', 'M8 21v-5a4 4 0 0 1 2-3.46L12 11l2 1.54A4 4 0 0 1 16 16v5'],
-    bookmark: ['M6 4h12v17l-6-4-6 4z'],
-    chart: ['M4 19V5', 'M8 16l3-4 4 2 5-7', 'M20 19H4'],
-    users: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8', 'M22 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'],
-    home: ['M3 11l9-7 9 7', 'M5 10v10h14V10', 'M9 20v-6h6v6'],
-    bell: ['M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7', 'M13.73 21a2 2 0 0 1-3.46 0'],
-    star: ['M12 3l2.7 5.47 6.03.88-4.36 4.25 1.03 6-5.4-2.84L6.6 19.6l1.03-6-4.36-4.25 6.03-.88z'],
-  };
+const formatDate = (value) => {
+  if (!value) return 'Sin fecha';
+  const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
+const statusLabel = (status) => ({
+  lead: 'Interesado',
+  tentative: 'Tentativa',
+  pending: 'Pendiente',
+  confirmed: 'Confirmada',
+  converted: 'Convertida',
+  cancelled: 'Cancelada',
+  contract_pending: 'Contrato pendiente',
+  contracted: 'Contratado',
+  completed: 'Realizado',
+}[String(status ?? '').toLowerCase()] ?? String(status || 'Pendiente'));
+
+const sum = (rows, selector) => rows.reduce((total, row) => total + Number(selector(row) ?? 0), 0);
+
+const servicePaymentTypes = new Set(['advance', 'installment', 'balance']);
+const paymentTypeLabel = (type) => ({
+  advance: 'Anticipo',
+  installment: 'A cuenta',
+  balance: 'Saldo',
+  guarantee: 'Garantía',
+  replacement: 'Reposición',
+  guarantee_return: 'Devolución garantía',
+}[type] ?? type ?? 'Movimiento');
+const paymentMethodLabel = (method) => ({ cash: 'Efectivo', transfer: 'Transferencia', qr: 'QR' }[method] ?? method ?? '—');
+const activeRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => !row?.voidedAt && row?.status !== 'voided');
+
+
+function EmptyBlock({ title, detail, actionLabel, onAction }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      {(paths[name] ?? paths.panel).map((path) => <path key={path} d={path} />)}
-    </svg>
-  );
-}
-
-function MonthRadar() {
-  const center = 150;
-  const radius = 106;
-  const interestedValues = [0, 0, 0, 0.24, 0.56, 1, 0.18, 0, 0, 0, 0, 0];
-  const reservedValues = [0, 0, 0, 0.12, 0.18, 1, 0, 0, 0, 0, 0, 0];
-  const pointFor = (index, value) => {
-    const angle = ((index / 12) * Math.PI * 2) - (Math.PI / 2);
-    return {
-      x: center + Math.cos(angle) * radius * value,
-      y: center + Math.sin(angle) * radius * value,
-    };
-  };
-  const pathFor = (values) => values
-    .map((value, index) => {
-      const point = pointFor(index, value);
-      return `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`;
-    })
-    .join(' ');
-
-  return (
-    <div className="lincon-month-radar">
-      <svg viewBox="0 0 300 300" aria-hidden="true" focusable="false">
-        {[28, 56, 84, 112].map((circleRadius) => (
-          <circle key={circleRadius} cx={center} cy={center} r={circleRadius} />
-        ))}
-        {months.map((month, index) => {
-          const angle = ((index / 12) * Math.PI * 2) - (Math.PI / 2);
-          return (
-            <line
-              key={month[0]}
-              x1={center}
-              y1={center}
-              x2={center + Math.cos(angle) * 124}
-              y2={center + Math.sin(angle) * 124}
-            />
-          );
-        })}
-        <path d={`${pathFor(reservedValues)} Z`} className="lincon-radar-fill lincon-radar-fill--reserved" />
-        <path d={`${pathFor(interestedValues)} Z`} className="lincon-radar-fill lincon-radar-fill--interested" />
-        <path d={`${pathFor(reservedValues)} Z`} className="lincon-radar-line lincon-radar-line--reserved" />
-        <path d={`${pathFor(interestedValues)} Z`} className="lincon-radar-line lincon-radar-line--interested" />
-        <circle cx={center} cy={center} r="5" className="lincon-radar-dot" />
-        {[interestedValues, reservedValues].flatMap((values, seriesIndex) =>
-          values.map((value, index) => {
-            if (!value) return null;
-            const point = pointFor(index, value);
-            return (
-              <circle
-                key={`${seriesIndex}-${months[index][0]}`}
-                cx={point.x}
-                cy={point.y}
-                r={seriesIndex === 0 ? 4.8 : 4}
-                className={seriesIndex === 0 ? 'lincon-radar-end' : 'lincon-radar-end lincon-radar-end--reserved'}
-              />
-            );
-          })
-        )}
-      </svg>
-      {months.map((month, index) => {
-        const angle = ((index / 12) * Math.PI * 2) - (Math.PI / 2);
-        return (
-          <span
-            key={month[0]}
-            style={{ left: `${50 + Math.cos(angle) * 43}%`, top: `${50 + Math.sin(angle) * 43}%` }}
-          >
-            <strong>{month[0]}</strong>
-            <em>{month[2]} / {month[3]}</em>
-          </span>
-        );
-      })}
+    <div className="lincoln-empty">
+      <strong>{title}</strong>
+      <p>{detail}</p>
+      {onAction ? <button type="button" onClick={onAction}>{actionLabel}</button> : null}
     </div>
   );
 }
 
-function LinconPanelView({ onOpenAgenda }) {
+function KpiCard({ icon, label, value, detail }) {
   return (
-    <>
-      <section className="lincon-hero">
-        <div className="lincon-hero-copy">
-          <span>Control comercial y operativo</span>
-          <h1>Panel maestro del salon</h1>
-          <p>Centro de Eventos Lincoln - Mes de trabajo: Junio de 2026 - Evento activo: Cena de Gala Lincoln 2026</p>
-          <div className="lincon-progress">
-            <div><span>Ocupacion del mes</span><strong>78%</strong></div>
-            <progress value="78" max="100">78%</progress>
-          </div>
-          <div className="lincon-actions">
-            <button type="button" onClick={onOpenAgenda}>Gestionar agenda</button>
-            <button type="button">Nueva reserva</button>
-            <button type="button">Ver eventos</button>
-            <button type="button">Abrir CRM</button>
-          </div>
-        </div>
-        <div className="lincon-hero-panels">
-          <article><span>Conversion comercial</span><strong>32%</strong><small>12 oportunidades cerradas de 38</small></article>
-          <article><span>Seguimientos en riesgo</span><strong>4</strong><small>Sin actividad en 7 dias</small></article>
-          <article><span>Cobro pendiente</span><strong>Bs 18.450,00</strong><small>8 reservas en cartera</small></article>
-        </div>
-      </section>
-
-      <section className="lincon-kpis">
-        {[
-          ['Reservas del mes', '16', '+3 vs mes anterior', 'calendar'],
-          ['Eventos proximos', '5', 'Proximos 30 dias', 'star'],
-          ['Cobros pendientes', 'Bs 18.450,00', '8 reserva(s) pendientes', 'wallet'],
-          ['Conversion comercial', '32%', '12 cerradas de 38 oportunidades', 'chart'],
-          ['Ocupacion mensual', '78%', '22 dias ocupados de 30', 'panel'],
-        ].map(([label, value, detail, icon]) => (
-          <article key={label}>
-            <span><LinconIcon name={icon} /></span>
-            <div><small>{label}</small><strong>{value}</strong><p>{detail}</p><button type="button">Ver detalle</button></div>
-          </article>
-        ))}
-      </section>
-
-      <section className="lincon-dashboard-grid">
-        <article className="lincon-panel lincon-reservations">
-          <header><h2>Proximos eventos / reservas</h2><button type="button">Ver todos</button></header>
-          <div className="lincon-table">
-            <div className="lincon-table-head">
-              <span>Cliente</span><span>Tipo de evento</span><span>Fecha</span><span>Salon</span><span>Estado</span>
-            </div>
-            {upcomingReservations.map((reservation) => (
-              <div className="lincon-table-row" key={`${reservation.client}-${reservation.date}`}>
-                <span>{reservation.client}</span>
-                <span>{reservation.eventType}</span>
-                <span><strong>{reservation.date}</strong><small>{reservation.time}</small></span>
-                <span>{reservation.room}</span>
-                <span className={`lincon-status lincon-status--${reservation.status.toLowerCase().replace(' ', '-')}`}>{reservation.status}</span>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="lincon-panel lincon-agenda">
-          <header><h2>Agenda proximos dias</h2></header>
-          {agendaItems.map((item) => (
-            <div className="lincon-agenda-item" key={item.title}>
-              <time><strong>{item.day}</strong><span>{item.month}</span></time>
-              <div><strong>{item.title}</strong><span>{item.detail}</span></div>
-            </div>
-          ))}
-          <button type="button" onClick={onOpenAgenda}>Ver agenda completa</button>
-        </article>
-
-        <article className="lincon-panel lincon-pending">
-          <header><h2>Operaciones pendientes</h2></header>
-          {pendingOperations.map((operation) => (
-            <div className={`lincon-pending-item lincon-pending-item--${operation.accent}`} key={operation.title}>
-              <span><LinconIcon name="panel" /></span>
-              <div><strong>{operation.title}</strong><small>{operation.detail}</small></div>
-              <button type="button">Ver</button>
-            </div>
-          ))}
-        </article>
-      </section>
-    </>
+    <article className="lincoln-kpi">
+      <span className="lincoln-kpi-icon"><LinconIcon name={icon} /></span>
+      <div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div>
+    </article>
   );
 }
 
-function LinconAgendaView() {
-  const calendarDays = useMemo(() => buildJuneCalendarDays(), []);
+function DataTable({ columns, rows, onSelect, emptyText }) {
+  if (!rows.length) return <EmptyBlock title="Sin registros" detail={emptyText} />;
+  return (
+    <div className="lincoln-table-wrap">
+      <table className="lincoln-data-table">
+        <thead>
+          <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} onClick={() => onSelect?.(row)} className={onSelect ? 'is-clickable' : ''}>
+              {columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key] || '—'}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Modal({ title, children, saving, onClose, onSubmit }) {
+  return (
+    <div className="lincoln-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <form className="lincoln-modal" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
+        <header><div><small>Centro de Eventos Lincoln</small><h2>{title}</h2></div><button type="button" onClick={onClose}>×</button></header>
+        <div className="lincoln-modal-body">{children}</div>
+        <footer><button type="button" className="is-secondary" onClick={onClose}>Cancelar</button><button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button></footer>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, children, wide = false }) {
+  return <label className={wide ? 'lincoln-form-field is-wide' : 'lincoln-form-field'}><span>{label}</span>{children}</label>;
+}
+
+function RecordModal({ mode, record, state, saving, onClose, onSave }) {
+  const isEdit = Boolean(record?.id);
+  const [form, setForm] = useState(() => ({ ...(record ?? {}) }));
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const roomOptions = state.rooms ?? [];
+  const clientOptions = state.clients ?? [];
+  const packageOptions = state.packages ?? [];
+  const submit = (event) => {
+    event.preventDefault();
+    onSave(form);
+  };
+
+  if (mode === 'clients') {
+    return (
+      <Modal title={`${isEdit ? 'Editar' : 'Nuevo'} cliente`} saving={saving} onClose={onClose} onSubmit={submit}>
+        <Field label="Nombre completo" wide><input required value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} /></Field>
+        <Field label="C.I."><input value={form.ci ?? ''} onChange={(e) => set('ci', e.target.value)} /></Field>
+        <Field label="Teléfono"><input required value={form.phone ?? ''} onChange={(e) => set('phone', e.target.value)} /></Field>
+        <Field label="Segundo teléfono"><input value={form.secondaryPhone ?? ''} onChange={(e) => set('secondaryPhone', e.target.value)} /></Field>
+        <Field label="Correo"><input type="email" value={form.email ?? ''} onChange={(e) => set('email', e.target.value)} /></Field>
+        <Field label="Notas" wide><textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
+      </Modal>
+    );
+  }
+
+  if (mode === 'rooms') {
+    return (
+      <Modal title={`${isEdit ? 'Editar' : 'Nuevo'} salón`} saving={saving} onClose={onClose} onSubmit={submit}>
+        <Field label="Nombre del salón" wide><input required value={form.name ?? ''} onChange={(e) => set('name', e.target.value)} placeholder="Ej. SALÓN GRANDE" /></Field>
+        <Field label="Capacidad"><input type="number" min="0" value={form.capacity ?? ''} onChange={(e) => set('capacity', toNumber(e.target.value))} /></Field>
+        <Field label="Estado"><select value={form.status ?? 'active'} onChange={(e) => set('status', e.target.value)}><option value="active">Activo</option><option value="inactive">Inactivo</option></select></Field>
+        <Field label="Descripción" wide><textarea value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} /></Field>
+      </Modal>
+    );
+  }
+
+
+  if (mode === 'reservations') {
+    return (
+      <Modal title={`${isEdit ? 'Editar' : 'Nueva'} reserva`} saving={saving} onClose={onClose} onSubmit={submit}>
+        <Field label="Cliente" wide>
+          <select required value={form.clientId ?? ''} onChange={(e) => {
+            const client = clientOptions.find((item) => item.id === e.target.value);
+            setForm((current) => ({
+              ...current,
+              clientId: client?.id ?? '',
+              clientName: client?.name ?? '',
+              clientPhone: client?.phone ?? '',
+            }));
+          }}>
+            <option value="">Seleccionar cliente</option>
+            {clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Tipo de evento"><input required value={form.eventType ?? ''} onChange={(e) => set('eventType', e.target.value)} placeholder="BODA, 15 AÑOS..." /></Field>
+        <Field label="Fecha"><input required type="date" value={form.eventDate ?? ''} onChange={(e) => set('eventDate', e.target.value)} /></Field>
+        <Field label="Hora de inicio"><input type="time" value={form.startTime ?? ''} onChange={(e) => set('startTime', e.target.value)} /></Field>
+        <Field label="Duración (horas)"><input type="number" min="1" value={form.durationHours ?? 8} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field>
+        <Field label="Salón">
+          <select required value={form.roomId ?? ''} onChange={(e) => {
+            const room = roomOptions.find((item) => item.id === e.target.value);
+            setForm((current) => ({ ...current, roomId: room?.id ?? '', roomName: room?.name ?? '' }));
+          }}>
+            <option value="">Seleccionar salón</option>
+            {roomOptions.filter((room) => room.status !== 'inactive').map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Paquete">
+          <select value={form.packageId ?? ''} onChange={(e) => {
+            const item = packageOptions.find((pkg) => pkg.id === e.target.value);
+            setForm((current) => ({
+              ...current,
+              packageId: item?.id ?? '',
+              packageName: item?.name ?? '',
+              packagePricePerPersonBs: Number(item?.pricePerPersonBs ?? 0),
+            }));
+          }}>
+            <option value="">Sin definir</option>
+            {packageOptions.filter((pkg) => pkg.status !== 'inactive').map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Invitados"><input type="number" min="0" value={form.guestCount ?? ''} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field>
+        <Field label="Total estimado (Bs)"><input type="number" min="0" step="0.01" value={form.estimatedTotalBs ?? ''} onChange={(e) => set('estimatedTotalBs', toNumber(e.target.value))} /></Field>
+        <Field label="Estado"><select value={form.status ?? 'pending'} onChange={(e) => set('status', e.target.value)}><option value="pending">Pendiente</option><option value="confirmed">Confirmada</option><option value="cancelled">Cancelada</option></select></Field>
+        <Field label="Observaciones" wide><textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
+      </Modal>
+    );
+  }
 
   return (
-    <div className="lincon-agenda-view">
-      <section className="lincon-agenda-kpis">
-        {agendaKpis.map(([label, value, detail, icon]) => (
-          <article key={label}>
-            <i><LinconIcon name={icon} /></i>
-            <div>
-              <span>{label}</span>
-              <strong>{value}</strong>
-              <p>{detail}</p>
-            </div>
-          </article>
-        ))}
-      </section>
+    <Modal title={`${isEdit ? 'Editar' : 'Nuevo'} contrato`} saving={saving} onClose={onClose} onSubmit={submit}>
+      <Field label="Cliente / contratante" wide>
+        <select value={form.clientId ?? ''} onChange={(e) => {
+          const client = clientOptions.find((item) => item.id === e.target.value);
+          setForm((current) => ({
+            ...current,
+            clientId: client?.id ?? '',
+            clientName: client?.name ?? '',
+            clientPhone: client?.phone ?? '',
+            clientCi: client?.ci ?? '',
+          }));
+        }}>
+          <option value="">Seleccionar cliente</option>
+          {clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Segundo contratante"><input value={form.secondContractorName ?? ''} onChange={(e) => set('secondContractorName', e.target.value)} /></Field>
+      <Field label="C.I. segundo contratante"><input value={form.secondContractorCi ?? ''} onChange={(e) => set('secondContractorCi', e.target.value)} /></Field>
+      <Field label="Tipo de evento"><input required value={form.eventType ?? ''} onChange={(e) => set('eventType', e.target.value)} /></Field>
+      <Field label="Fecha"><input required type="date" value={form.eventDate ?? ''} onChange={(e) => set('eventDate', e.target.value)} /></Field>
+      <Field label="Hora"><input type="time" value={form.startTime ?? ''} onChange={(e) => set('startTime', e.target.value)} /></Field>
+      <Field label="Duración (horas)"><input type="number" min="1" value={form.durationHours ?? 8} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field>
+      <Field label="Salón">
+        <select required value={form.roomId ?? ''} onChange={(e) => {
+          const room = roomOptions.find((item) => item.id === e.target.value);
+          setForm((current) => ({ ...current, roomId: room?.id ?? '', roomName: room?.name ?? '' }));
+        }}>
+          <option value="">Seleccionar salón</option>
+          {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Invitados"><input type="number" min="0" value={form.guestCount ?? ''} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field>
+      <Field label="Costo total (Bs)"><input type="number" min="0" step="0.01" value={form.estimatedTotalBs ?? ''} onChange={(e) => set('estimatedTotalBs', toNumber(e.target.value))} /></Field>
+      <Field label="Garantía (Bs)"><input type="number" min="0" step="0.01" value={form.guaranteeBs ?? 0} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field>
+      <Field label="Estado"><select value={form.status ?? 'contract_pending'} onChange={(e) => set('status', e.target.value)}><option value="contract_pending">Contrato pendiente</option><option value="contracted">Contratado</option><option value="completed">Realizado</option><option value="cancelled">Cancelado</option></select></Field>
+      <Field label="Observaciones / acuerdos" wide><textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
+    </Modal>
+  );
+}
 
-      <section className="lincon-agenda-core">
-        <article className="lincon-agenda-radar lincon-green-panel">
-          <div className="lincon-green-panel-head">
-            <div>
-              <h1>Radar anual</h1>
-              <p>Comparativa de interesados y reservados por mes</p>
-            </div>
-          </div>
-          <div className="lincon-radar-legend">
-            <span><i /> Interesados</span>
-            <span><i /> Reservados</span>
-          </div>
-          <div className="lincon-radar-layout">
-            <MonthRadar />
-            <div className="lincon-month-table">
-              <header><span>Mes</span><span>Interesados</span><span>Reservados</span></header>
-              {months.map((month) => (
-                <article key={month[1]} className={month[1] === 'Junio' ? 'is-selected' : ''}>
-                  <strong>{month[1]}</strong>
-                  <span>{month[2]}</span>
-                  <em>{month[3]}</em>
-                </article>
-              ))}
-            </div>
+function LinconPanelView({ state, onNavigate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = state.events
+    .filter((event) => String(event.eventDate ?? '') >= today && event.status !== 'cancelled')
+    .sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)))
+    .slice(0, 6);
+  const activeReservations = state.reservations.filter((row) => !['cancelled', 'converted'].includes(row.status));
+  const projected = sum(activeReservations, (row) => row.estimatedTotalBs);
+  return (
+    <div className="lincoln-content">
+      <section className="lincoln-kpi-grid">
+        <KpiCard icon="calendar" label="Próximos eventos" value={String(upcoming.length)} detail="Eventos registrados desde hoy" />
+        <KpiCard icon="bookmark" label="Reservas activas" value={String(activeReservations.length)} detail="Pendientes o confirmadas" />
+        <KpiCard icon="users" label="Clientes" value={String(state.clients.length)} detail="Base propia de Lincoln" />
+        <KpiCard icon="wallet" label="Facturación proyectada" value={formatBs(projected)} detail="Reservas activas" />
+      </section>
+      <section className="lincoln-two-cols">
+        <article className="lincoln-card">
+          <header><div><small>Operación</small><h2>Próximos eventos</h2></div><button type="button" onClick={() => onNavigate('comercial')}>Ver contratos</button></header>
+          {upcoming.length ? upcoming.map((event) => (
+            <button type="button" className="lincoln-list-row" key={event.id} onClick={() => onNavigate('comercial')}>
+              <span><strong>{formatDate(event.eventDate)}</strong><small>{event.startTime || 'Hora pendiente'}</small></span>
+              <span><strong>{event.clientName || 'Sin cliente'}</strong><small>{event.eventType || 'Evento'}</small></span>
+              <span><strong>{event.roomName || 'Sin salón'}</strong><small>{statusLabel(event.status)}</small></span>
+            </button>
+          )) : <EmptyBlock title="Aún no hay eventos" detail="Cuando conviertas una reserva o registres un evento aparecerá aquí." />}
+        </article>
+        <article className="lincoln-card">
+          <header><div><small>Configuración base</small><h2>Lincoln listo para operar</h2></div></header>
+          <div className="lincoln-health-list">
+            <span><i className={state.rooms.length ? 'is-ok' : ''} />Salones configurados <strong>{state.rooms.length}</strong></span>
+            <span><i className={state.packages.length ? 'is-ok' : ''} />Paquetes configurados <strong>{state.packages.length}</strong></span>
+            <span><i className={state.clients.length ? 'is-ok' : ''} />Clientes registrados <strong>{state.clients.length}</strong></span>
+            <span><i className={state.reservations.length ? 'is-ok' : ''} />Reservas registradas <strong>{state.reservations.length}</strong></span>
           </div>
         </article>
-
-        <article className="lincon-calendar-panel lincon-green-panel">
-          <div className="lincon-green-panel-head">
-            <h1>Calendario de reservas</h1>
-            <div className="lincon-calendar-controls">
-              <button type="button" aria-label="Mes anterior">&lt;</button>
-              <select defaultValue="junio-2026"><option value="junio-2026">Junio de 2026</option></select>
-              <button type="button" aria-label="Mes siguiente">&gt;</button>
-              <select defaultValue="all"><option value="all">Todos los salones</option><option value="principal">Lincoln Salon Principal</option></select>
-            </div>
-          </div>
-          <div className="lincon-calendar-weekdays">{weekDays.map((day) => <span key={day}>{day}</span>)}</div>
-          <div className="lincon-calendar-grid">
-            {calendarDays.slice(0, 35).map((day, index) => (
-              <article
-                key={`${day.currentMonth ? 'current' : 'next'}-${day.day}-${index}`}
-                className={`${!day.currentMonth ? 'is-muted' : ''} ${day.day === 18 && day.currentMonth ? 'is-selected' : ''}`}
-              >
-                <header><strong>{day.day}</strong></header>
-                {day.events.map((event) => <em key={event.title} className={`lincon-calendar-event lincon-calendar-event--${event.type}`}>{event.title}</em>)}
-              </article>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      <section className="lincon-day-detail lincon-green-panel">
-        <div className="lincon-green-panel-head">
-          <h1>Detalle del dia seleccionado - 18 de junio de 2026</h1>
-        </div>
-        <div className="lincon-day-layout">
-          <aside className="lincon-day-actions">
-            <div className="lincon-day-date">
-              <span><LinconIcon name="calendar" /></span>
-              <small>Jueves</small>
-              <strong>18 de junio de 2026</strong>
-            </div>
-            <button type="button"><LinconIcon name="users" /> Registrar interesado</button>
-            <button type="button"><LinconIcon name="bookmark" /> Registrar reserva</button>
-          </aside>
-
-          <article className="lincon-day-card lincon-day-card--lead">
-            <header>
-              <h2>Interesados del dia (1)</h2>
-              <span>Interesado</span>
-            </header>
-            <strong>Ernesto - Interesado</strong>
-            <p>Contacto: 75470080</p>
-            <p>Evento: 18 jun 2026 | Proxima accion: 18 jun 2026</p>
-            <p>Salon: Salon 1 | Paquete: Plata | Invitados: 10</p>
-            <p>Cotizacion: Bs 10.200,00</p>
-            <div className="lincon-progress-steps">
-              {['Registro', 'Contacto', 'Cotizacion enviada', 'Visita', 'Cierre'].map((step, index) => (
-                <span key={step} className={index < 3 ? 'is-done' : ''}><i />{step}</span>
-              ))}
-            </div>
-            <button type="button">Ver detalles</button>
-          </article>
-
-          <article className="lincon-day-card lincon-day-card--reserved">
-            <header>
-              <h2>Reservados del dia (1)</h2>
-              <span>Reservado</span>
-            </header>
-            <strong>Ernesto - Boda</strong>
-            <p>Contacto: 75470080</p>
-            <p>Evento: 18 jun 2026 | Invitados: 10</p>
-            <p>Salon: Salon 1 | Paquete: Plata</p>
-            <p>Monto: Bs 10.200,00</p>
-            <div className="lincon-progress-steps lincon-progress-steps--green">
-              {['Reserva', 'Confirmado', 'Contrato firmado', 'Deposito', 'Evento'].map((step, index) => (
-                <span key={step} className={index < 3 ? 'is-done' : ''}><i />{step}</span>
-              ))}
-            </div>
-            <button type="button">Ver detalles</button>
-          </article>
-        </div>
       </section>
     </div>
   );
 }
 
-function LinconReservationsView() {
-  const selectedReservation = reservationRecords[0];
-  const history = [
-    ['16/06/2026', '10:24', 'Reserva confirmada', 'La reserva fue confirmada por el cliente.', 'Yordy Copa', 'done'],
-    ['13/06/2026', '16:45', 'Cotizacion enviada', 'Se envio la cotizacion #COT-2026-0158 al cliente.', 'Yordy Copa', 'done'],
-    ['12/06/2026', '11:32', 'Nuevo interesado registrado', 'Ernesto Rodriguez mostro interes en el salon.', 'Yordy Copa', 'done'],
-    ['25/06/2026', 'Todo el dia', 'Pago programado', 'Segundo pago programado por Bs 2.040,00 (20%).', 'Pendiente', 'pending'],
-  ];
-
+function PaymentModal({ eventRecord, state, saving, onClose, onSave }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const destinations = Array.isArray(state.settings?.paymentDestinations) ? state.settings.paymentDestinations : ['CAJA CHICA', 'SRA. LIA'];
+  const [form, setForm] = useState({
+    type: 'installment',
+    amountBs: '',
+    date: today,
+    method: 'cash',
+    destination: destinations[0] ?? 'CAJA CHICA',
+    payerName: eventRecord?.clientName ?? '',
+    description: '',
+    reference: '',
+  });
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   return (
-    <div className="lincon-reservas-view lincon-reservas-view--list">
-      <section className="lincon-reserva-kpis lincon-reserva-kpis--five">
-        {reservationKpis.map(([label, value, detail, icon]) => (
-          <article key={label}>
-            <i><LinconIcon name={icon} /></i>
-            <div>
-              <span>{label}</span>
-              <strong>{value}</strong>
-              <p>{detail}</p>
-            </div>
-          </article>
-        ))}
+    <Modal title={`Registrar movimiento · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: toNumber(form.amountBs) }); }}>
+      <Field label="Tipo"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="advance">Anticipo</option><option value="installment">A cuenta</option><option value="balance">Saldo</option><option value="guarantee">Garantía</option><option value="replacement">Reposición</option></select></Field>
+      <Field label="Monto (Bs)"><input required type="number" min="0.01" step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field>
+      <Field label="Fecha"><input required type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></Field>
+      <Field label="Medio de pago"><select value={form.method} onChange={(e) => set('method', e.target.value)}><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="qr">QR</option></select></Field>
+      <Field label="Destino"><input list="lincoln-payment-destinations" value={form.destination} onChange={(e) => set('destination', e.target.value)} /><datalist id="lincoln-payment-destinations">{destinations.map((item) => <option key={item} value={item} />)}</datalist></Field>
+      <Field label="Pagado por"><input value={form.payerName} onChange={(e) => set('payerName', e.target.value)} /></Field>
+      <Field label="Concepto" wide><input value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Opcional; si queda vacío se usa el tipo de movimiento." /></Field>
+      <Field label="Referencia / respaldo" wide><input value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="N° transferencia, QR, observación, etc." /></Field>
+    </Modal>
+  );
+}
+
+function ExpenseModal({ record, state, saving, onClose, onSave }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const categories = Array.isArray(state.settings?.expenseCategories) ? state.settings.expenseCategories : ['PERSONAL', 'COMIDA', 'BEBIDAS', 'OTROS'];
+  const destinations = Array.isArray(state.settings?.paymentDestinations) ? state.settings.paymentDestinations : ['CAJA CHICA', 'SRA. LIA'];
+  const [form, setForm] = useState(() => ({
+    date: today,
+    category: categories[0] ?? 'OTROS',
+    method: 'cash',
+    destination: destinations[0] ?? 'CAJA CHICA',
+    eventId: '',
+    description: '',
+    supplierName: '',
+    reference: '',
+    amountBs: '',
+    ...(record ?? {}),
+  }));
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <Modal title={`${record?.id ? 'Editar' : 'Nuevo'} egreso Lincoln`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: toNumber(form.amountBs) }); }}>
+      <Field label="Fecha"><input required type="date" value={form.date ?? today} onChange={(e) => set('date', e.target.value)} /></Field>
+      <Field label="Categoría"><input required list="lincoln-expense-categories" value={form.category ?? ''} onChange={(e) => set('category', e.target.value)} /><datalist id="lincoln-expense-categories">{categories.map((item) => <option key={item} value={item} />)}</datalist></Field>
+      <Field label="Evento"><select value={form.eventId ?? ''} onChange={(e) => set('eventId', e.target.value)}><option value="">Gasto general Lincoln</option>{state.events.map((event) => <option key={event.id} value={event.id}>{event.code} · {event.clientName || event.eventType}</option>)}</select></Field>
+      <Field label="Monto (Bs)"><input required type="number" min="0.01" step="0.01" value={form.amountBs ?? ''} onChange={(e) => set('amountBs', e.target.value)} /></Field>
+      <Field label="Medio"><select value={form.method ?? 'cash'} onChange={(e) => set('method', e.target.value)}><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="qr">QR</option></select></Field>
+      <Field label="Origen / caja"><input list="lincoln-expense-destinations" value={form.destination ?? ''} onChange={(e) => set('destination', e.target.value)} /><datalist id="lincoln-expense-destinations">{destinations.map((item) => <option key={item} value={item} />)}</datalist></Field>
+      <Field label="Proveedor / beneficiario"><input value={form.supplierName ?? ''} onChange={(e) => set('supplierName', e.target.value)} /></Field>
+      <Field label="Descripción" wide><textarea required value={form.description ?? ''} onChange={(e) => set('description', e.target.value)} /></Field>
+      <Field label="Referencia / respaldo" wide><input value={form.reference ?? ''} onChange={(e) => set('reference', e.target.value)} /></Field>
+    </Modal>
+  );
+}
+
+function GuaranteeReturnModal({ eventRecord, summary, state, saving, onClose, onSave }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const destinations = Array.isArray(state.settings?.paymentDestinations) ? state.settings.paymentDestinations : ['CAJA CHICA', 'SRA. LIA'];
+  const [form, setForm] = useState({ amountBs: summary.guaranteeHeldBs, date: today, method: 'cash', destination: destinations[0] ?? 'CAJA CHICA', description: 'DEVOLUCION DE GARANTIA', reference: '' });
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  return (
+    <Modal title={`Devolver garantía · ${eventRecord.code}`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: toNumber(form.amountBs) }); }}>
+      <Field label="Garantía retenida"><input disabled value={formatBs(summary.guaranteeHeldBs)} /></Field>
+      <Field label="Monto a devolver"><input required type="number" min="0.01" max={summary.guaranteeHeldBs} step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field>
+      <Field label="Fecha"><input required type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></Field>
+      <Field label="Medio"><select value={form.method} onChange={(e) => set('method', e.target.value)}><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="qr">QR</option></select></Field>
+      <Field label="Sale de"><input list="lincoln-return-destinations" value={form.destination} onChange={(e) => set('destination', e.target.value)} /><datalist id="lincoln-return-destinations">{destinations.map((item) => <option key={item} value={item} />)}</datalist></Field>
+      <Field label="Referencia"><input value={form.reference} onChange={(e) => set('reference', e.target.value)} /></Field>
+      <Field label="Descripción" wide><input value={form.description} onChange={(e) => set('description', e.target.value)} /></Field>
+    </Modal>
+  );
+}
+
+const getEventFinancialSummary = (state, eventRecord) => {
+  const payments = activeRows(state.payments).filter((row) => row.eventId === eventRecord.id);
+  const servicePaidBs = sum(payments.filter((row) => servicePaymentTypes.has(row.type)), (row) => row.amountBs);
+  const guaranteeCollectedBs = sum(payments.filter((row) => row.type === 'guarantee'), (row) => row.amountBs);
+  const guaranteeReturnedBs = sum(payments.filter((row) => row.type === 'guarantee_return'), (row) => row.amountBs);
+  const replacementBs = sum(payments.filter((row) => row.type === 'replacement'), (row) => row.amountBs);
+  const eventTotalBs = Number(eventRecord.totalBs ?? eventRecord.estimatedTotalBs ?? 0);
+  const guaranteeRequiredBs = Number(eventRecord.guaranteeBs ?? 0);
+  return {
+    payments,
+    eventTotalBs,
+    servicePaidBs,
+    serviceBalanceBs: Math.max(0, eventTotalBs - servicePaidBs),
+    guaranteeRequiredBs,
+    guaranteeCollectedBs,
+    guaranteePendingBs: Math.max(0, guaranteeRequiredBs - guaranteeCollectedBs),
+    guaranteeReturnedBs,
+    guaranteeHeldBs: Math.max(0, guaranteeCollectedBs - guaranteeReturnedBs),
+    replacementBs,
+  };
+};
+
+function EventEconomicView({ state, eventRecord, onBack, onNewPayment, onVoidPayment, onReturnGuarantee, onPrintReceipt }) {
+  const summary = getEventFinancialSummary(state, eventRecord);
+  const history = [...summary.payments].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
+  return (
+    <div className="lincoln-content">
+      <article className="lincoln-card">
+        <header><div><small>Economía del evento</small><h2>{eventRecord.code} · {eventRecord.clientName || eventRecord.eventType}</h2></div><div className="lincoln-header-actions"><button type="button" className="is-secondary" onClick={onBack}>← Volver</button><button type="button" onClick={onNewPayment}>+ Registrar ingreso</button></div></header>
+        <div className="lincoln-event-summary">
+          <div><small>Costo servicio</small><strong>{formatBs(summary.eventTotalBs)}</strong></div>
+          <div><small>Pagado servicio</small><strong>{formatBs(summary.servicePaidBs)}</strong></div>
+          <div className={summary.serviceBalanceBs > 0 ? 'has-warning' : 'has-ok'}><small>Saldo servicio</small><strong>{formatBs(summary.serviceBalanceBs)}</strong></div>
+          <div><small>Garantía requerida</small><strong>{formatBs(summary.guaranteeRequiredBs)}</strong></div>
+          <div><small>Garantía retenida</small><strong>{formatBs(summary.guaranteeHeldBs)}</strong></div>
+          <div><small>Reposiciones</small><strong>{formatBs(summary.replacementBs)}</strong></div>
+        </div>
+        {summary.guaranteeHeldBs > 0 ? <div className="lincoln-inline-actions"><span>Hay {formatBs(summary.guaranteeHeldBs)} de garantía retenida.</span><button type="button" onClick={onReturnGuarantee}>Devolver garantía</button></div> : null}
+        <DataTable rows={history} emptyText="Registra el primer pago, garantía o reposición del evento." columns={[
+          { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
+          { key: 'code', label: 'Movimiento' },
+          { key: 'type', label: 'Concepto', render: (row) => paymentTypeLabel(row.type) },
+          { key: 'method', label: 'Medio', render: (row) => paymentMethodLabel(row.method) },
+          { key: 'destination', label: 'Destino' },
+          { key: 'receipt', label: 'Recibo', render: (row) => row.receiptCode ? <button type="button" className="lincoln-link-action" onClick={(e) => { e.stopPropagation(); onPrintReceipt(row.receiptId); }}>{row.receiptCode}</button> : '—' },
+          { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
+          { key: 'action', label: '', render: (row) => row.type !== 'guarantee_return' ? <button type="button" className="lincoln-danger-action" onClick={(e) => { e.stopPropagation(); onVoidPayment(row); }}>Anular</button> : null },
+        ]} />
+      </article>
+    </div>
+  );
+}
+
+function CajaView({ state, onNewExpense, onEditExpense, onOpenEvent, onPrintReceipt }) {
+  const [tab, setTab] = useState('movimientos');
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [eventId, setEventId] = useState('all');
+  const activeIncome = activeRows(state.incomeEntries);
+  const activeExpenses = activeRows(state.expenseEntries);
+  const filterRow = (row) => (!month || String(row.date ?? '').startsWith(month)) && (eventId === 'all' || row.eventId === eventId);
+  const income = activeIncome.filter(filterRow);
+  const expenses = activeExpenses.filter(filterRow);
+  const incomeTotal = sum(income, (row) => row.amountBs);
+  const expenseTotal = sum(expenses, (row) => row.amountBs);
+  const receipts = state.receipts.filter((row) => row.status !== 'voided' && filterRow(row));
+  const movements = [
+    ...income.map((row) => ({ ...row, movementKind: 'Ingreso' })),
+    ...expenses.map((row) => ({ ...row, movementKind: 'Egreso' })),
+  ].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
+  return (
+    <div className="lincoln-content">
+      <section className="lincoln-kpi-grid">
+        <KpiCard icon="wallet" label="Ingresos" value={formatBs(incomeTotal)} detail="Periodo filtrado" />
+        <KpiCard icon="chart" label="Egresos" value={formatBs(expenseTotal)} detail="Periodo filtrado" />
+        <KpiCard icon="wallet" label="Saldo de caja" value={formatBs(incomeTotal - expenseTotal)} detail="Ingresos menos egresos" />
+        <KpiCard icon="bookmark" label="Recibos activos" value={String(receipts.length)} detail="Periodo filtrado" />
       </section>
+      <article className="lincoln-card">
+        <header><div><small>Economía independiente</small><h2>Caja Lincoln</h2></div><button type="button" onClick={onNewExpense}>+ Nuevo egreso</button></header>
+        <div className="lincoln-cash-toolbar"><div className="lincoln-tabs"><button type="button" className={tab === 'movimientos' ? 'is-active' : ''} onClick={() => setTab('movimientos')}>Movimientos</button><button type="button" className={tab === 'egresos' ? 'is-active' : ''} onClick={() => setTab('egresos')}>Egresos</button><button type="button" className={tab === 'recibos' ? 'is-active' : ''} onClick={() => setTab('recibos')}>Recibos</button></div><div className="lincoln-filters"><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} /><select value={eventId} onChange={(e) => setEventId(e.target.value)}><option value="all">Todos los eventos</option>{state.events.map((event) => <option key={event.id} value={event.id}>{event.code} · {event.clientName || event.eventType}</option>)}</select></div></div>
+        {tab === 'movimientos' ? <DataTable rows={movements} emptyText="Los pagos de eventos y los egresos aparecerán aquí." columns={[
+          { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
+          { key: 'kind', label: 'Tipo', render: (row) => <span className={`lincoln-movement-pill is-${row.movementKind === 'Ingreso' ? 'income' : 'expense'}`}>{row.movementKind}</span> },
+          { key: 'event', label: 'Evento', render: (row) => row.eventCode ? <button type="button" className="lincoln-link-action" onClick={() => onOpenEvent(row.eventId)}>{row.eventCode}</button> : 'GENERAL' },
+          { key: 'category', label: 'Categoría' },
+          { key: 'description', label: 'Detalle' },
+          { key: 'destination', label: 'Destino / caja' },
+          { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
+        ]} /> : null}
+        {tab === 'egresos' ? <DataTable rows={expenses} onSelect={(row) => !row.paymentId && onEditExpense(row)} emptyText="Registra el primer egreso de Lincoln." columns={[
+          { key: 'code', label: 'Egreso' }, { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) }, { key: 'event', label: 'Evento', render: (row) => row.eventCode || 'GENERAL' }, { key: 'category', label: 'Categoría' }, { key: 'description', label: 'Descripción' }, { key: 'supplierName', label: 'Proveedor / beneficiario' }, { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
+        ]} /> : null}
+        {tab === 'recibos' ? <DataTable rows={receipts} emptyText="Cada ingreso de un evento generará automáticamente su recibo Lincoln." columns={[
+          { key: 'code', label: 'Recibo', render: (row) => <button type="button" className="lincoln-link-action" onClick={() => onPrintReceipt(row.id)}>{row.code}</button> }, { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) }, { key: 'eventCode', label: 'Evento' }, { key: 'clientName', label: 'Cliente' }, { key: 'concept', label: 'Concepto' }, { key: 'method', label: 'Medio', render: (row) => paymentMethodLabel(row.method) }, { key: 'destination', label: 'Destino' }, { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
+        ]} /> : null}
+      </article>
+    </div>
+  );
+}
 
-      <section className="lincon-reservas-workspace">
-        <article className="lincon-green-panel lincon-reservas-list lincon-reservas-list--wide">
-          <div className="lincon-green-panel-head">
-            <h1>Lista de reservas</h1>
-          </div>
-
-          <div className="lincon-reserva-tabs lincon-reserva-tabs--boxed">
-            <button type="button" className="is-active">Todas</button>
-            <button type="button">Pendientes</button>
-            <button type="button">Confirmadas</button>
-            <button type="button">Finalizadas</button>
-            <button type="button">Canceladas</button>
-          </div>
-
-          <div className="lincon-reserva-filters">
-            <label className="lincon-reserva-search">
-              <LinconIcon name="panel" />
-              <input type="search" placeholder="Buscar por cliente o evento..." />
-            </label>
-            <label className="lincon-reserva-filter-field">
-              <span>Estado</span>
-              <select defaultValue="all">
-                <option value="all">Todos</option>
-                <option value="pending">Pendientes</option>
-                <option value="confirmed">Confirmadas</option>
-              </select>
-            </label>
-            <label className="lincon-reserva-filter-field">
-              <span>Salon</span>
-              <select defaultValue="all">
-                <option value="all">Todos</option>
-                <option value="salon-1">Salon 1</option>
-                <option value="salon-2">Salon 2</option>
-              </select>
-            </label>
-            <label className="lincon-reserva-filter-field">
-              <span>Mes</span>
-              <select defaultValue="junio">
-                <option value="junio">Junio 2026</option>
-                <option value="julio">Julio 2026</option>
-              </select>
-            </label>
-            <button type="button" className="lincon-reserva-filter-button"><LinconIcon name="chart" /> Filtros</button>
-          </div>
-
-          <div className="lincon-reserva-table lincon-reserva-table--full">
-            <header>
-              <span>Cliente / evento</span>
-              <span>Fecha</span>
-              <span>Salon</span>
-              <span>Estado</span>
-              <span>Pago</span>
-              <span>Monto</span>
-              <span>Acciones</span>
-            </header>
-            {reservationRecords.map((reservation, index) => (
-              <button key={reservation.id} type="button" className={index === 0 ? 'is-selected' : ''}>
-                <span><strong>{reservation.client}</strong><small>{reservation.event} - {reservation.packageName}</small></span>
-                <span><strong>{reservation.date}</strong><small>{reservation.time}</small></span>
-                <span><strong>{reservation.room}</strong><small>{reservation.packageName.replace('Paquete ', '')}</small></span>
-                <em className={`lincon-reserva-state lincon-reserva-state--${reservation.status.toLowerCase()}`}>{reservation.status}</em>
-                <span className={`lincon-payment ${reservation.paid === 'Sin pago' ? 'is-empty' : reservation.paid.includes('100') ? 'is-full' : 'is-partial'}`}>{reservation.paid}</span>
-                <span><strong>{reservation.amount}</strong></span>
-                <span className="lincon-reserva-actions-dot">...</span>
-              </button>
-            ))}
-          </div>
-
-          <footer className="lincon-reserva-pagination">
-            <span>Mostrando 1 a 8 de 32 reservas</span>
-            <div>
-              <button type="button" aria-label="Anterior">&lt;</button>
-              <button type="button" className="is-active">1</button>
-              <button type="button">2</button>
-              <button type="button">3</button>
-              <button type="button">4</button>
-              <button type="button" aria-label="Siguiente">&gt;</button>
-            </div>
-          </footer>
-        </article>
-
-        <aside className="lincon-reserva-side">
-          <article className="lincon-green-panel lincon-reserva-detail lincon-reserva-detail--profile">
-            <div className="lincon-reserva-detail-title">
-              <h1>Detalle de reserva</h1>
-              <em className="lincon-reserva-state lincon-reserva-state--confirmada">Confirmada</em>
-            </div>
-            <div className="lincon-reserva-profile-head">
-              <span className="lincon-reserva-avatar"><LinconIcon name="users" /></span>
-              <div>
-                <h1>{selectedReservation.client}</h1>
-                <p>{selectedReservation.event}</p>
-              </div>
-              <div>
-                <small>Reserva #{selectedReservation.id}</small>
-                <small>Creada el 12/06/2026</small>
-              </div>
-            </div>
-
-            <div className="lincon-reserva-detail-matrix">
-              <article><i><LinconIcon name="calendar" /></i><div><span>Fecha y hora</span><strong>18 de junio de 2026</strong><small>18:00 - 01:00</small></div></article>
-              <article><i><LinconIcon name="users" /></i><div><span>Contacto</span><strong>{selectedReservation.phone}</strong><small>{selectedReservation.email}</small></div></article>
-              <article className="lincon-reserva-money-cell"><i><LinconIcon name="wallet" /></i><div><span>Monto total</span><strong>{selectedReservation.amount}</strong></div></article>
-              <article><i><LinconIcon name="home" /></i><div><span>Salon y paquete</span><strong>{selectedReservation.room}</strong><small>{selectedReservation.packageName}</small></div></article>
-              <article><i><LinconIcon name="panel" /></i><div><span>Organizacion</span><strong>Particular</strong></div></article>
-              <article className="lincon-reserva-money-cell"><i><LinconIcon name="wallet" /></i><div><span>Pagado</span><strong>Bs 7.140,00</strong><small>(70%)</small></div></article>
-              <article><i><LinconIcon name="users" /></i><div><span>Asistentes</span><strong>{selectedReservation.guests} personas</strong><small>100 adultos / 50 ninos</small></div></article>
-              <article><i><LinconIcon name="bookmark" /></i><div><span>Observaciones</span><strong>Mesa de honor frente al escenario.</strong><small>Alergicos: 2 personas.</small></div></article>
-              <article className="lincon-reserva-money-cell lincon-reserva-money-cell--debt"><i><LinconIcon name="wallet" /></i><div><span>Saldo pendiente</span><strong>{selectedReservation.balance}</strong></div></article>
-            </div>
-
-            <div className="lincon-progress-steps lincon-reserva-detail-timeline">
-              {[
-                ['Interesado', '12/06/2026', true],
-                ['Cotizacion', '13/06/2026', true],
-                ['Reserva', '16/06/2026', true],
-                ['Contrato', 'Pendiente', false],
-                ['Evento', '18/06/2026', false],
-              ].map(([step, date, done]) => (
-                <span key={step} className={done ? 'is-done' : ''}><i />{step}<small>{date}</small></span>
-              ))}
-            </div>
-
-            <div className="lincon-reserva-actions lincon-reserva-actions--inline">
-              <button type="button"><LinconIcon name="wallet" /> Registrar pago</button>
-              <button type="button"><LinconIcon name="bookmark" /> Ver contrato</button>
-              <button type="button"><LinconIcon name="panel" /> Editar reserva</button>
-            </div>
-          </article>
-
-          <article className="lincon-green-panel lincon-reserva-history">
-            <div className="lincon-green-panel-head">
-              <h1>Historial y proximas acciones</h1>
-            </div>
-            <div className="lincon-reserva-history-list">
-              {history.map(([date, hour, title, detail, owner, state]) => (
-                <article key={`${date}-${title}`} className={state === 'pending' ? 'is-pending' : ''}>
-                  <time><strong>{date}</strong><span>{hour}</span></time>
-                  <i />
-                  <div>
-                    <strong>{title}</strong>
-                    <p>{detail}</p>
-                  </div>
-                  <small>{owner}</small>
-                </article>
-              ))}
-            </div>
-            <button type="button" className="lincon-history-more">Ver todas las acciones</button>
-          </article>
-        </aside>
-      </section>
+function SimpleCollectionView({ title, eyebrow, rows, columns, onNew, onEdit, emptyText }) {
+  return (
+    <div className="lincoln-content">
+      <article className="lincoln-card">
+        <header><div><small>{eyebrow}</small><h2>{title}</h2></div><button type="button" onClick={onNew}>+ Nuevo</button></header>
+        <DataTable rows={rows} columns={columns} onSelect={onEdit} emptyText={emptyText} />
+      </article>
     </div>
   );
 }
@@ -719,159 +506,284 @@ function LinconWorkspaceSection({
   const [activeView, setActiveView] = useState('panel');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [databaseStatus, setDatabaseStatus] = useState({ loading: true, error: '', snapshot: null });
-  const userName = currentUser?.fullName ?? currentUser?.name ?? 'Yordy Copa Cerezo';
+  const [modal, setModal] = useState(null);
+  const [economicEventId, setEconomicEventId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const userName = currentUser?.fullName ?? currentUser?.name ?? 'Usuario Lincoln';
   const userInitials = userName.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'US';
-  const workspaceTitle = {
-    agenda: 'Agenda / Centro de Eventos Lincoln',
-    reservas: 'Reservas / Centro de Eventos Lincoln',
-  }[activeView] ?? 'Lincoln Workspace';
-  const workspaceAction = {
-    agenda: '+ Nuevo registro',
-    reservas: '+ Nueva reserva',
-  }[activeView];
-  const activeItem = sidebarItems.find((item) => item.id === activeView) ?? sidebarItems[0];
+  const snapshot = databaseStatus.snapshot;
+  const state = { ...emptyState, ...(snapshot?.state ?? {}) };
+  const economicEvent = state.events.find((row) => row.id === economicEventId) ?? null;
+
+  const loadLincoln = useCallback(async () => {
+    setDatabaseStatus((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const next = await api.lincoln.getState();
+      setDatabaseStatus({ loading: false, error: '', snapshot: next });
+      return next;
+    } catch (error) {
+      setDatabaseStatus((current) => ({ ...current, loading: false, error: error.message || 'No se pudo abrir la base Lincoln.' }));
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLincoln();
+  }, [loadLincoln]);
 
   const openView = (viewId) => {
-    if (!linconEnabledViews.has(viewId)) return;
+    if (!lincolnEnabledViews.has(viewId)) return;
     setActiveView(viewId);
+    if (viewId !== 'comercial') setEconomicEventId('');
     setIsMobileMenuOpen(false);
     if (viewId === 'asistencia') onOpenAttendance?.();
   };
 
-  useEffect(() => {
-    let disposed = false;
-    api.lincoln.getState()
-      .then((snapshot) => {
-        if (!disposed) setDatabaseStatus({ loading: false, error: '', snapshot });
-      })
-      .catch((error) => {
-        if (!disposed) setDatabaseStatus({ loading: false, error: error.message || 'No se pudo abrir la base Lincoln.', snapshot: null });
+  const actor = { id: currentUser?.id ?? null, name: userName };
+
+  const saveRecord = async (collection, form) => {
+    if (!snapshot?.revision) return;
+    setSaving(true);
+    try {
+      const payload = {
+        collection,
+        id: form.id ?? '',
+        record: form,
+        revision: snapshot.revision,
+        actor,
+      };
+      if (form.id) await api.lincoln.updateRecord(payload);
+      else await api.lincoln.createRecord(payload);
+      setModal(null);
+      await loadLincoln();
+    } catch (error) {
+      if (error?.status === 409 || error?.payload?.code === 'LINCOLN_REVISION_CONFLICT') {
+        await loadLincoln();
+        window.alert('Lincoln fue actualizado por otro usuario. La información se recargó; revisa el registro y vuelve a guardar.');
+      } else {
+        window.alert(error.message || 'No se pudo guardar el registro de Lincoln.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const convertReservation = async (reservation) => {
+    if (!snapshot?.revision) return;
+    const accepted = window.confirm(`¿Convertir la reserva ${reservation.code} de ${reservation.clientName || 'este cliente'} en contrato?`);
+    if (!accepted) return;
+    setSaving(true);
+    try {
+      await api.lincoln.convertReservation({
+        reservationId: reservation.id,
+        event: { guaranteeBs: 0 },
+        revision: snapshot.revision,
+        actor,
       });
-    return () => {
-      disposed = true;
-    };
-  }, []);
+      await loadLincoln();
+      setActiveView('comercial');
+    } catch (error) {
+      if (error?.status === 409 || error?.payload?.code === 'LINCOLN_REVISION_CONFLICT') await loadLincoln();
+      window.alert(error.message || 'No se pudo convertir la reserva en contrato.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
+  const handleLincolnMutationError = async (error, fallback) => {
+    if (error?.status === 409 || error?.payload?.code === 'LINCOLN_REVISION_CONFLICT') {
+      await loadLincoln();
+      window.alert('Lincoln fue actualizado por otro usuario. La información se recargó; revisa los datos y vuelve a intentar.');
+      return;
+    }
+    window.alert(error.message || fallback);
+  };
+
+  const savePayment = async (eventRecord, payment) => {
+    if (!snapshot?.revision) return;
+    setSaving(true);
+    try {
+      await api.lincoln.createEventPayment({ eventId: eventRecord.id, payment, revision: snapshot.revision, actor });
+      setModal(null);
+      await loadLincoln();
+      setEconomicEventId(eventRecord.id);
+      setActiveView('comercial');
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo registrar el movimiento del evento.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const voidPayment = async (payment) => {
+    if (!snapshot?.revision || !payment?.id) return;
+    const reason = window.prompt(`Motivo de anulación para ${payment.code}:`, 'CORRECCION ADMINISTRATIVA');
+    if (reason === null) return;
+    setSaving(true);
+    try {
+      await api.lincoln.voidEventPayment({ paymentId: payment.id, reason, revision: snapshot.revision, actor });
+      await loadLincoln();
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo anular el pago.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const returnGuarantee = async (eventRecord, refund) => {
+    if (!snapshot?.revision) return;
+    setSaving(true);
+    try {
+      await api.lincoln.returnGuarantee({ eventId: eventRecord.id, refund, revision: snapshot.revision, actor });
+      setModal(null);
+      await loadLincoln();
+      setEconomicEventId(eventRecord.id);
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo devolver la garantía.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveExpense = async (expense) => {
+    if (!snapshot?.revision) return;
+    setSaving(true);
+    try {
+      const payload = { expense, revision: snapshot.revision, actor };
+      if (expense.id) await api.lincoln.updateExpense({ ...payload, id: expense.id });
+      else await api.lincoln.createExpense(payload);
+      setModal(null);
+      await loadLincoln();
+      setActiveView('caja');
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo guardar el egreso.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const printReceipt = (receiptId) => {
+    const receipt = state.receipts.find((row) => row.id === receiptId);
+    if (!receipt) {
+      window.alert('Recibo Lincoln no encontrado.');
+      return;
+    }
+    const popup = window.open('', '_blank', 'width=820,height=760');
+    if (!popup) {
+      window.alert('Habilita ventanas emergentes para imprimir el recibo.');
+      return;
+    }
+    const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+    try { popup.opener = null; } catch (error) { void error; }
+    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(receipt.code)}</title><style>@page{size:Letter portrait;margin:16mm}body{font-family:Arial,sans-serif;color:#173a29}.sheet{border:1px solid #dfe7e2;border-radius:14px;padding:22px}.head{display:flex;justify-content:space-between;border-bottom:3px solid #276342;padding-bottom:14px}.head h1{font-size:22px;margin:0}.code{font-size:22px;font-weight:800;color:#276342}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.grid div{padding:10px;border:1px solid #e2e8e4;border-radius:8px}.grid small{display:block;color:#738078;text-transform:uppercase;font-weight:700}.amount{margin-top:20px;padding:16px;border-radius:10px;background:#edf5ef;text-align:right}.amount strong{font-size:28px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:60px;text-align:center}.line{border-top:1px solid #333;padding-top:7px}button{margin-top:20px;padding:10px 14px}@media print{button{display:none}}</style></head><body><section class="sheet"><div class="head"><div><small>Centro de Eventos Lincoln</small><h1>RECIBO DE INGRESO</h1></div><div class="code">${safe(receipt.code)}</div></div><div class="grid"><div><small>Evento</small><strong>${safe(receipt.eventCode)}</strong></div><div><small>Fecha</small><strong>${safe(formatDate(receipt.date))}</strong></div><div><small>Cliente</small><strong>${safe(receipt.clientName)}</strong></div><div><small>Concepto</small><strong>${safe(receipt.concept)}</strong></div><div><small>Medio</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div><div><small>Destino</small><strong>${safe(receipt.destination)}</strong></div><div><small>Pagado por</small><strong>${safe(receipt.payerName)}</strong></div><div><small>Recibido por</small><strong>${safe(receipt.createdByName)}</strong></div></div><div class="amount"><small>TOTAL RECIBIDO</small><br><strong>${safe(formatBs(receipt.amountBs))}</strong></div><div class="sign"><div class="line">Entregué</div><div class="line">Recibí</div></div><button onclick="window.print()">Imprimir</button></section></body></html>`);
+    popup.document.close();
+    popup.focus();
+  };
+
+  const titleByView = {
+    panel: 'Panel / Centro de Eventos Lincoln',
+    agenda: 'Agenda / Centro de Eventos Lincoln',
+    comercial: 'Reservas y Contratos / Centro de Eventos Lincoln',
+    clientes: 'Clientes / Centro de Eventos Lincoln',
+    salones: 'Salones / Centro de Eventos Lincoln',
+    paquetes: 'Paquetes / Centro de Eventos Lincoln',
+    caja: 'Caja Lincoln / Centro de Eventos Lincoln',
+    rendiciones: 'Rendiciones / Centro de Eventos Lincoln',
+    reportes: 'Reportes / Centro de Eventos Lincoln',
+    asistencia: 'Asistencia compartida',
+  };
+  const activeItem = lincolnSidebarItems.find((item) => item.id === activeView) ?? lincolnSidebarItems[0];
+
+  const overlay = (
+    <>
+      {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
+      {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
+      {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
+      {modal && !['payment', 'expense', 'guaranteeReturn'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+    </>
+  );
 
   return (
-    <div className={`lincon-shell ${activeView !== 'panel' ? 'lincon-shell--agenda' : ''}`}>
-      <aside className="lincon-sidebar">
-        <div className="lincon-logo"><span /><small>Centro de Eventos</small><strong>Lincoln</strong></div>
-
-        <label className="lincon-workspace-select">
-          <span>Workspace activo</span>
-          <select defaultValue="lincoln"><option value="lincoln">Centro de Eventos Lincoln</option></select>
-        </label>
-
-        <div className="lincon-user-card"><span>YC</span><div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div></div>
-
-        <nav className="lincon-nav" aria-label="Lincoln">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={activeView === item.id ? 'is-active' : ''}
-              onClick={() => openView(item.id)}
-              disabled={!linconEnabledViews.has(item.id)}
-            >
-              <LinconIcon name={item.icon} />
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {availableCompanies.includes('copetin') ? (
-          <div className="lincon-switcher">
-            <span>Espacios habilitados</span>
-            <p>Selecciona tu area de trabajo</p>
-            <div><button type="button" onClick={() => onSwitchWorkspace('copetin')}>Copetin</button><button type="button" className="is-current">Lincoln</button></div>
-          </div>
-        ) : null}
-      </aside>
-
-      <main className="lincon-main">
-        <header className="lincon-mobile-header">
-          <div className="lincon-mobile-brand">
-            <small>Centro de Eventos</small>
-            <strong>Lincoln</strong>
-          </div>
-          <div className="lincon-mobile-heading">
-            <span>{activeItem.label}</span>
-            <small className={databaseStatus.error ? 'has-error' : ''}>
-              <i />{databaseStatus.loading ? 'Conectando' : databaseStatus.error ? 'Sin conexion' : 'Base Lincoln'}
-            </small>
-          </div>
-          <button type="button" className="lincon-mobile-account" onClick={() => setIsMobileMenuOpen(true)} aria-label="Abrir menu de usuario">
-            {userInitials}
-          </button>
-        </header>
-
-        <header className="lincon-topbar">
-          <div className="lincon-topbar-brand">
-            <LinconIcon name="home" />
-            <strong>{workspaceTitle}</strong>
-          </div>
-          <div className={`lincon-topbar-status ${databaseStatus.error ? 'has-error' : ''}`}>
-            <span />
-            <div>
-              <strong>{databaseStatus.loading ? 'Conectando base Lincoln' : databaseStatus.error ? 'Base Lincoln no disponible' : 'Base Lincoln separada'}</strong>
-              <small>{databaseStatus.error || (databaseStatus.snapshot ? `Revision ${databaseStatus.snapshot.version}` : 'Sin mezclar datos con El Copetin')}</small>
-            </div>
-          </div>
-          <button type="button" className="lincon-icon-button" aria-label="Notificaciones"><LinconIcon name="bell" /></button>
-          {workspaceAction ? <button type="button" className="lincon-new-record">{workspaceAction}</button> : null}
-          <div className="lincon-account"><div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div><span>YC</span></div>
-          <button type="button" className="lincon-logout" onClick={onLogout}>Salir</button>
-        </header>
-
-        {activeView === 'agenda' ? <LinconAgendaView /> : null}
-        {activeView === 'reservas' ? <LinconReservationsView /> : null}
-        {activeView === 'asistencia' ? <AttendanceSection {...attendanceProps} /> : null}
-        {activeView === 'panel' ? <LinconPanelView onOpenAgenda={() => openView('agenda')} /> : null}
-      </main>
-
-      <nav className="lincon-mobile-nav" aria-label="Navegacion principal de Lincoln">
-        {linconMobilePrimaryItems.map((item) => (
-          <button key={item.id} type="button" className={activeView === item.id ? 'is-active' : ''} onClick={() => openView(item.id)}>
-            <LinconIcon name={item.icon} />
-            <span>{item.id === 'asistencia' ? 'Asistencia' : item.label}</span>
-          </button>
-        ))}
-        <button type="button" className={isMobileMenuOpen ? 'is-active' : ''} onClick={() => setIsMobileMenuOpen(true)}>
-          <span className="lincon-mobile-more-icon"><i /><i /><i /></span>
-          <span>Mas</span>
-        </button>
-      </nav>
-
-      {isMobileMenuOpen ? (
-        <div className="lincon-mobile-menu-backdrop" role="presentation" onClick={() => setIsMobileMenuOpen(false)}>
-          <section className="lincon-mobile-menu" role="dialog" aria-modal="true" aria-label="Mas opciones de Lincoln" onClick={(event) => event.stopPropagation()}>
-            <header>
-              <div><small>Lincoln</small><strong>Mas opciones</strong></div>
-              <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Cerrar menu">×</button>
-            </header>
-            <div className="lincon-mobile-user-summary">
-              <span>{userInitials}</span>
-              <div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div>
-            </div>
-            <div className="lincon-mobile-more-grid">
-              {linconMobileMoreItems.map((item) => (
-                <button key={item.id} type="button" disabled title="Disponible proximamente">
-                  <LinconIcon name={item.icon} />
-                  <span>{item.label}</span>
-                  <small>Proximamente</small>
-                </button>
-              ))}
-            </div>
-            <div className="lincon-mobile-menu-actions">
-              {availableCompanies.includes('copetin') ? (
-                <button type="button" onClick={() => onSwitchWorkspace('copetin')}><LinconIcon name="home" /> Ir a El Copetin</button>
-              ) : null}
-              <button type="button" className="is-logout" onClick={onLogout}>Salir de la sesion</button>
-            </div>
-          </section>
-        </div>
+    <LincolnWorkspaceLayout
+      activeView={activeView}
+      activeItem={activeItem}
+      title={titleByView[activeView] ?? 'Lincoln'}
+      databaseStatus={databaseStatus}
+      snapshot={snapshot}
+      currentUser={currentUser}
+      userName={userName}
+      userInitials={userInitials}
+      availableCompanies={availableCompanies}
+      isMobileMenuOpen={isMobileMenuOpen}
+      onOpenView={openView}
+      onSwitchWorkspace={onSwitchWorkspace}
+      onReload={() => void loadLincoln()}
+      onLogout={onLogout}
+      onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+      onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
+      overlay={overlay}
+    >
+      {databaseStatus.error ? <div className="lincoln-db-error">{databaseStatus.error}</div> : null}
+      {databaseStatus.loading && !snapshot ? <div className="lincoln-loading">Cargando la base independiente de Lincoln...</div> : null}
+      {!databaseStatus.loading || snapshot ? (
+        <>
+          {activeView === 'panel' ? <LinconPanelView state={state} onNavigate={openView} /> : null}
+          {activeView === 'agenda' ? <LincolnAgenda /> : null}
+          {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onVoidPayment={voidPayment} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
+          {activeView === 'comercial' && !economicEvent ? (
+            <LincolnCommercialWorkspace
+              refreshKey={snapshot?.revision}
+              onNewReservation={() => setModal({ mode: 'reservations', record: null })}
+              onNewContract={() => setModal({ mode: 'events', record: null })}
+              onEditReservation={(row) => {
+                const record = state.reservations.find((item) => item.id === row.id);
+                if (record) setModal({ mode: 'reservations', record });
+              }}
+              onEditContract={(row) => {
+                const record = state.events.find((item) => item.id === row.id);
+                if (record) setModal({ mode: 'events', record });
+              }}
+              onConvertReservation={(row) => {
+                const record = state.reservations.find((item) => item.id === row.id);
+                if (record) void convertReservation(record);
+              }}
+              onOpenEconomic={(row) => setEconomicEventId(row.eventId || row.id)}
+            />
+          ) : null}
+          {activeView === 'caja' ? <CajaView state={state} onNewExpense={() => setModal({ mode: 'expense', record: null })} onEditExpense={(record) => setModal({ mode: 'expense', record })} onOpenEvent={(eventId) => { setEconomicEventId(eventId); setActiveView('comercial'); }} onPrintReceipt={printReceipt} /> : null}
+          {activeView === 'rendiciones' ? <LincolnSettlements refreshKey={snapshot?.revision} revision={snapshot?.revision} actor={actor} onNewExpense={(eventId) => setModal({ mode: 'expense', record: { eventId } })} /> : null}
+          {activeView === 'reportes' ? <LincolnReports events={state.events} refreshKey={snapshot?.revision} /> : null}
+          {activeView === 'clientes' ? (
+            <LincolnClients
+              refreshKey={snapshot?.revision}
+              onNew={() => setModal({ mode: 'clients', record: null })}
+              onEdit={(row) => {
+                const record = state.clients.find((item) => item.id === row.id);
+                if (record) setModal({ mode: 'clients', record });
+              }}
+            />
+          ) : null}
+          {activeView === 'salones' ? (
+            <LincolnRooms
+              revision={snapshot?.revision}
+              actor={actor}
+              refreshKey={snapshot?.revision}
+              onRefresh={loadLincoln}
+            />
+          ) : null}
+          {activeView === 'paquetes' ? (
+            <LincolnPackages
+              revision={snapshot?.revision}
+              actor={actor}
+              refreshKey={snapshot?.revision}
+              onRefresh={loadLincoln}
+            />
+          ) : null}
+          {activeView === 'asistencia' ? <AttendanceSection {...attendanceProps} /> : null}
+        </>
       ) : null}
-    </div>
+    </LincolnWorkspaceLayout>
   );
 }
 
