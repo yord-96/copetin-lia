@@ -7994,22 +7994,35 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
     align-items: start;
     margin-bottom: 1.45mm;
   }
-  .rc-economic-head .rc-bottom-title { margin-bottom: 0; }
+  .rc-economic-head .rc-bottom-title {
+    margin-bottom: 0;
+    font-size: 9.4px;
+    line-height: 1.05;
+  }
   .rc-economic-status {
-    display: inline-flex;
+    display: grid;
     align-items: center;
-    justify-content: center;
-    min-width: 24mm;
-    min-height: 5.6mm;
-    padding: .6mm 1.6mm;
+    justify-items: center;
+    min-width: 43mm;
+    min-height: 8.2mm;
+    padding: .7mm 1.8mm;
     border: .25mm solid #c9a46f;
-    border-radius: 99mm;
+    border-radius: 2.2mm;
     background: #f8ecd9;
     color: #73430f;
-    font: 900 7.4px Arial, Helvetica, sans-serif;
-    line-height: 1;
     text-align: center;
     text-transform: uppercase;
+  }
+  .rc-economic-status b {
+    font: 900 8.7px Arial, Helvetica, sans-serif;
+    line-height: 1.05;
+  }
+  .rc-economic-status small {
+    margin-top: .55mm;
+    color: inherit;
+    font: 800 6.8px Arial, Helvetica, sans-serif;
+    line-height: 1.12;
+    white-space: nowrap;
   }
   .rc-economic-status.is-paid { border-color: #8ac6a1; background: #e8f6ed; color: #17643a; }
   .rc-economic-status.is-pending { border-color: #e0a08d; background: #fff0eb; color: #a33120; }
@@ -8022,21 +8035,21 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-economic-summary span {
     display: grid;
     align-content: center;
-    min-height: 8.8mm;
-    padding: .9mm 1mm;
+    min-height: 10.2mm;
+    padding: 1.05mm 1.15mm;
     border: .2mm solid #e4d3bb;
     background: #fffaf2;
   }
   .rc-economic-summary small {
     color: #795a36;
-    font: 800 6.6px Arial, Helvetica, sans-serif;
-    line-height: 1.05;
+    font: 800 7.5px Arial, Helvetica, sans-serif;
+    line-height: 1.08;
     text-transform: uppercase;
   }
   .rc-economic-summary strong {
-    margin-top: .45mm;
+    margin-top: .55mm;
     color: #171717;
-    font: 900 9.3px Arial, Helvetica, sans-serif;
+    font: 900 10.6px Arial, Helvetica, sans-serif;
     line-height: 1;
     white-space: nowrap;
   }
@@ -8059,26 +8072,26 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-economic-line:last-child { border-bottom: 0; }
   .rc-economic-line time {
     color: #5f4a2f;
-    font: 800 6.7px Arial, Helvetica, sans-serif;
+    font: 800 7.4px Arial, Helvetica, sans-serif;
     line-height: 1.15;
     text-transform: uppercase;
   }
   .rc-economic-line b {
     color: #633c12;
-    font: 900 7.05px Arial, Helvetica, sans-serif;
+    font: 900 7.8px Arial, Helvetica, sans-serif;
     line-height: 1.1;
     text-transform: uppercase;
   }
   .rc-economic-line strong {
     color: #111;
-    font: 900 8.35px Arial, Helvetica, sans-serif;
+    font: 900 9.2px Arial, Helvetica, sans-serif;
     line-height: 1;
     white-space: nowrap;
   }
   .rc-economic-line em {
     min-width: 0;
     color: #343434;
-    font: 700 7px Arial, Helvetica, sans-serif;
+    font: 700 7.7px Arial, Helvetica, sans-serif;
     font-style: normal;
     line-height: 1.15;
     text-transform: uppercase;
@@ -8086,7 +8099,7 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   }
   .rc-economic-line small {
     color: #73552f;
-    font: 800 6.6px Arial, Helvetica, sans-serif;
+    font: 800 7.2px Arial, Helvetica, sans-serif;
     line-height: 1.1;
     text-align: right;
     text-transform: uppercase;
@@ -8943,6 +8956,40 @@ export const buildContractDocumentHtml = ({
     if (entry?.type === 'refund') totals.refundsBs += amountBs;
     return totals;
   }, { collectedBs: 0, guaranteeBs: 0, chargesBs: 0, refundsBs: 0 });
+
+  // El ledger no siempre contiene una línea "charge" por cada daño/faltante
+  // registrado en Devolución. Para el documento tomamos también el total real
+  // del retorno, sin crear movimientos ni alterar contabilidad.
+  const returnReportDamageChargesBs = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    .reduce((sum, line) => {
+      const owner = String(line?.chargeOwner ?? 'cliente').trim().toLowerCase();
+      if (owner !== 'cliente') return sum;
+      const linePenaltyBs = Math.max(
+        0,
+        Number(
+          line?.penaltyBs
+          ?? (
+            Number(line?.damagedFeeBs ?? 0)
+            + Number(line?.missingFeeBs ?? 0)
+          ),
+        ),
+      );
+      return sum + linePenaltyBs;
+    }, 0);
+  const returnDamageChargesBs = Math.max(
+    0,
+    Number(
+      rental?.returnSettlement?.penaltiesBs
+      ?? rental?.penaltiesBs
+      ?? returnReportDamageChargesBs,
+    ),
+    returnReportDamageChargesBs,
+  );
+  economicTotalsForDocument.chargesBs = Math.max(
+    economicTotalsForDocument.chargesBs,
+    returnDamageChargesBs,
+  );
+
   const economicPendingBs = Math.max(
     0,
     Number(
@@ -8952,13 +8999,30 @@ export const buildContractDocumentHtml = ({
       ?? printedPendingBs,
     ),
   );
+  const economicPendingItemsBs = Math.max(
+    0,
+    Math.min(
+      economicPendingBs,
+      Number(rental?.returnSettlement?.outstandingRentalBs ?? printedPendingBs ?? 0),
+    ),
+  );
+  const economicPendingDamageBs = Math.max(
+    0,
+    Math.min(
+      economicTotalsForDocument.chargesBs,
+      economicPendingBs - economicPendingItemsBs,
+    ),
+  );
   const economicStatusLabel = economicPendingBs > 0.005
-    ? `PENDIENTE ${formatBs(economicPendingBs)}`
+    ? `PENDIENTE TOTAL ${formatBs(economicPendingBs)}`
     : economicTotalsForDocument.refundsBs > 0
       ? 'LIQUIDADO Y DEVUELTO'
       : economicTotalsForDocument.guaranteeBs > economicTotalsForDocument.refundsBs + 0.005
         ? 'PAGADO · GARANTIA RETENIDA'
         : 'PAGADO';
+  const economicStatusDetailHtml = economicPendingBs > 0.005
+    ? `<small>Items ${formatBs(economicPendingItemsBs)} · Daños / faltantes ${formatBs(economicPendingDamageBs)}</small>`
+    : '';
   const economicStatusClass = economicPendingBs > 0.005 ? 'is-pending' : 'is-paid';
   const economicTypeLabel = (entry) => ({
     deposit: 'Deposito / pago',
@@ -8997,7 +9061,10 @@ export const buildContractDocumentHtml = ({
   const economicControlHtml = `
     <div class="rc-economic-head">
       <h3 class="rc-bottom-title">Estado economico del contrato</h3>
-      <span class="rc-economic-status ${economicStatusClass}">${escapeHtml(economicStatusLabel)}</span>
+      <span class="rc-economic-status ${economicStatusClass}">
+        <b>${escapeHtml(economicStatusLabel)}</b>
+        ${economicStatusDetailHtml}
+      </span>
     </div>
     <div class="rc-economic-summary">
       <span><small>Cobrado / pagos</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
