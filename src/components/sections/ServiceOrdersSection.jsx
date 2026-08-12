@@ -4213,10 +4213,124 @@ function ServiceOrdersSection({
     return map;
   }, [isDailyScheduleMode, normalizedScheduleDays, selectedItems]);
 
-  const getEditableAvailableStock = useCallback((line) => Math.max(
-    0,
-    Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
-  ), []);
+  const editingContractCommitment = useMemo(() => {
+    if (draft.entityType !== 'contract' || !draft.recordId) {
+      return {
+        enabled: false,
+        quantityByItemId: new Map(),
+        sourceStartDate: '',
+        sourceEndDate: '',
+      };
+    }
+
+    const contract = contracts.find(
+      (entry) => String(entry?.id ?? '') === String(draft.recordId),
+    ) ?? null;
+    if (!contract) {
+      return {
+        enabled: false,
+        quantityByItemId: new Map(),
+        sourceStartDate: '',
+        sourceEndDate: '',
+      };
+    }
+
+    const contractCode = String(contract?.contractCode ?? '').trim();
+    const rentalId = String(contract?.rentalId ?? '').trim();
+    const orderCode = String(contract?.orderCode ?? '').trim();
+    const linkedRental = rentals.find((rental) => (
+      (rentalId && String(rental?.id ?? '') === rentalId)
+      || String(rental?.contractId ?? '') === String(contract?.id ?? '')
+      || (contractCode && String(rental?.contractCode ?? '').trim() === contractCode)
+      || (orderCode && String(rental?.orderCode ?? '').trim() === orderCode)
+    )) ?? null;
+
+    const normalizedStatus = normalizeText(contract?.status);
+    const hasOperationalCommitment = Boolean(
+      linkedRental
+      || contract?.rentalId
+      || contract?.orderCode
+      || normalizedStatus === 'aprobado'
+      || normalizedStatus === 'approved'
+    );
+    if (!hasOperationalCommitment) {
+      return {
+        enabled: false,
+        quantityByItemId: new Map(),
+        sourceStartDate: '',
+        sourceEndDate: '',
+      };
+    }
+
+    const quantityByItemId = new Map();
+    (Array.isArray(contract?.items) ? contract.items : []).forEach((line) => {
+      const itemId = String(line?.itemId ?? '').trim();
+      if (!itemId) return;
+      const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+      quantityByItemId.set(itemId, (quantityByItemId.get(itemId) ?? 0) + quantity);
+    });
+
+    const sourceStartDate = getDateKey(
+      contract?.deliveryDate
+      || linkedRental?.rentalDate
+      || contract?.eventDate,
+    );
+    const sourceEndDate = getDateKey(
+      contract?.pickupDate
+      || linkedRental?.dueDate
+      || contract?.eventDate,
+    );
+
+    return {
+      enabled: quantityByItemId.size > 0,
+      quantityByItemId,
+      sourceStartDate,
+      sourceEndDate,
+    };
+  }, [contracts, draft.entityType, draft.recordId, rentals]);
+
+  const editingCommitmentMatchesCurrentPeriod = useMemo(() => {
+    if (!editingContractCommitment.enabled) return false;
+
+    const currentStartDate = getDateKey(draft.deliveryDate || draft.eventDate);
+    const currentEndDate = getDateKey(
+      draft.pickupTimeMode === 'coordinate'
+        ? draft.eventDate
+        : draft.pickupDate || draft.eventDate,
+    );
+
+    return Boolean(
+      currentStartDate
+      && currentEndDate
+      && currentStartDate === editingContractCommitment.sourceStartDate
+      && currentEndDate === editingContractCommitment.sourceEndDate
+    );
+  }, [
+    draft.deliveryDate,
+    draft.eventDate,
+    draft.pickupDate,
+    draft.pickupTimeMode,
+    editingContractCommitment,
+  ]);
+
+  const getExistingCommittedQtyForEdit = useCallback((line) => {
+    if (!editingCommitmentMatchesCurrentPeriod) return 0;
+    const itemId = String(line?.itemId ?? line?.item?.id ?? '').trim();
+    if (!itemId) return 0;
+    return Math.max(
+      0,
+      Math.trunc(Number(editingContractCommitment.quantityByItemId.get(itemId) ?? 0)),
+    );
+  }, [editingCommitmentMatchesCurrentPeriod, editingContractCommitment]);
+
+  const getEditableAvailableStock = useCallback((line) => {
+    const projectedAvailable = Math.max(
+      0,
+      Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
+    );
+    const existingCommittedQty = getExistingCommittedQtyForEdit(line);
+    return projectedAvailable + existingCommittedQty;
+  }, [getExistingCommittedQtyForEdit]);
 
   const isHistoricalReconstruction = useMemo(() => {
     if (!canChooseResponsibles || draft.entityType !== 'contract' || draft.recordId) return false;
@@ -14496,6 +14610,7 @@ function ServiceOrdersSection({
                           const comboGroupTotalBs = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.lineTotalBs ?? 0), 0);
                           const comboGroupUnits = comboSiblingLines.reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
                           const availableStock = getEditableAvailableStock(line);
+                          const existingCommittedQtyForEdit = getExistingCommittedQtyForEdit(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
                           const shortageForItem = isHistoricalReconstruction
                             ? 0
@@ -14703,9 +14818,16 @@ function ServiceOrdersSection({
                                   Item operativo: se guarda y vuelve en la orden, pero aun no descuenta stock.
                                 </small>
                               ) : (
-                                <small className={`orders-available-note${hasUncoveredShortage ? ' is-error' : ''}`}>
-                                  Fecha {availableStock} · ahora {Math.max(0, Number(line.item.availableStock ?? 0))}
-                                </small>
+                                <>
+                                  <small className={`orders-available-note${hasUncoveredShortage ? ' is-error' : ''}`}>
+                                    Fecha {availableStock} · ahora {Math.max(0, Number(line.item.availableStock ?? 0))}
+                                  </small>
+                                  {existingCommittedQtyForEdit > 0 ? (
+                                    <small className="orders-available-note is-positive">
+                                      {existingCommittedQtyForEdit} u. ya comprometidas en este contrato; solo los aumentos se revalidan.
+                                    </small>
+                                  ) : null}
+                                </>
                               )}
                               {returningRecords.length > 0 ? (
                                 <small className="orders-available-note is-positive orders-return-contract-note">
