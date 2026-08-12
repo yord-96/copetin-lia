@@ -2205,6 +2205,68 @@ const callDirectRentalReturnOperation = async (payload = {}) => {
 };
 
 
+const updateRentalReturnChargeOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    throw new Error('La edición del cargo requiere conexión con el servidor.');
+  }
+
+  const rentalId = String(payload?.rentalId ?? payload?.id ?? '').trim();
+  if (!rentalId) throw new Error('No se pudo identificar la devolución.');
+
+  const response = await fetch(
+    getServerStateUrl(`/rentals/${encodeURIComponent(rentalId)}/return-charge`),
+    {
+      method: 'PATCH',
+      cache: 'no-store',
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        ...payload,
+        revision: Object.prototype.hasOwnProperty.call(payload, 'revision')
+          ? payload.revision
+          : lastSharedRevision ?? getCachedServerRevision() ?? null,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar el cargo de devolución.');
+  }
+
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+
+  const rental = result?.rental ?? null;
+  if (rental?.id) {
+    const localSnapshot = await exportLocalCollections(['rentals']);
+    const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
+    const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
+      ? currentRentals.map((entry) => (
+        String(entry?.id ?? '') === String(rental.id) ? rental : entry
+      ))
+      : [rental, ...currentRentals];
+
+    await mergeLocalState({ rentals: nextRentals });
+    forgetFullRecordCache(fullRentalCache, [
+      rentalId,
+      rental.id,
+      rental.orderCode,
+      rental.contractCode,
+    ]);
+    rememberFullRecordCache(fullRentalCache, rental, [
+      rentalId,
+      rental.orderCode,
+      rental.contractCode,
+    ]);
+  }
+
+  announceDataChange({
+    domain: 'rentals',
+    method: 'updateReturnCharge',
+    collections: ['rentals', 'cashMovements', 'systemAuditLog'],
+  });
+  return result;
+};
+
+
 const cancelContractOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) return null;
 
@@ -3012,6 +3074,7 @@ export const api = {
       if (shouldUseServerState()) return callDirectRentalReturnOperation(payload);
       return callBridge('rentals', 'registerReturn', true, payload);
     },
+    updateReturnCharge: (payload) => updateRentalReturnChargeOnServer(payload),
   },
   cash: {
     getSummary: async () => {

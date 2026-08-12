@@ -2212,6 +2212,357 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
   }
 });
 
+
+const isReturnChargeLineSettled = (line = {}) => {
+  const penaltyBs = directMoney(
+    line?.penaltyBs
+    ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)),
+  );
+  const appliedBs = Math.max(
+    directMoney(line?.chargedBs),
+    directMoney(line?.paidBs),
+    directMoney(line?.collectedBs),
+    directMoney(line?.appliedToGuaranteeBs),
+    directMoney(line?.guaranteeAppliedBs),
+  );
+  const statuses = [
+    line?.chargeStatus,
+    line?.paymentStatus,
+    line?.accountingStatus,
+  ].map((value) => String(value ?? '').trim().toLowerCase());
+
+  return Boolean(
+    line?.isPaid
+    || line?.isCollected
+    || line?.paidAt
+    || line?.collectedAt
+    || line?.settledAt
+    || line?.cashMovementId
+    || line?.receiptCode
+    || (penaltyBs > 0 && appliedBs + 0.009 >= penaltyBs)
+    || statuses.some((status) => [
+      'paid',
+      'pagado',
+      'collected',
+      'cobrado',
+      'settled',
+      'liquidado',
+      'cancelado',
+      'cancelled',
+      'aplicado_garantia',
+      'cubierto_garantia',
+    ].includes(status))
+  );
+};
+
+const findReturnChargeLineIndex = (report, payload = {}) => {
+  const lineKey = String(payload?.lineKey ?? '').trim();
+  const itemId = String(payload?.itemId ?? '').trim();
+  const reportIndex = Number.isInteger(Number(payload?.reportIndex))
+    ? Number(payload.reportIndex)
+    : null;
+
+  if (lineKey) {
+    const matches = report
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => String(line?.lineKey ?? '').trim() === lineKey);
+    if (matches.length === 1) return matches[0].index;
+    if (matches.length > 1) {
+      const error = new Error('La línea de devolución no es única. Vuelve a abrir el económico antes de editar.');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  if (reportIndex != null && reportIndex >= 0 && reportIndex < report.length) {
+    const line = report[reportIndex];
+    if (!itemId || String(line?.itemId ?? '').trim() === itemId) return reportIndex;
+  }
+
+  if (itemId) {
+    const matches = report
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => String(line?.itemId ?? '').trim() === itemId);
+    if (matches.length === 1) return matches[0].index;
+    if (matches.length > 1) {
+      const error = new Error('Hay más de una línea del mismo producto. Vuelve a abrir el económico para identificar la línea correcta.');
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  return -1;
+};
+
+const updateAutomaticReturnMovementDescriptions = (state, rental) => {
+  const settlement = rental?.returnSettlement ?? {};
+  const customerName = String(rental?.customerName ?? 'Cliente');
+  const penaltiesBs = directMoney(settlement?.penaltiesBs ?? rental?.penaltiesBs);
+  const internalPenaltiesBs = directMoney(settlement?.internalPenaltiesBs ?? rental?.internalPenaltiesBs);
+  const outstandingRentalBs = directMoney(settlement?.outstandingRentalBs);
+  const pendingCollectionBs = directMoney(settlement?.pendingCollectionBs);
+  const refundBs = directMoney(settlement?.refundBs ?? rental?.refundBs);
+
+  (Array.isArray(state.cashMovements) ? state.cashMovements : []).forEach((movement) => {
+    if (String(movement?.sourceId ?? '') !== String(rental?.id ?? '')) return;
+    if (Number(movement?.amountBs ?? 0) !== 0) return;
+
+    if (movement?.type === 'liquidacion_devolucion') {
+      movement.description = `Liquidacion devolucion (${customerName}) | Penalidad cliente: Bs ${penaltiesBs.toFixed(2)} | Perdida interna: Bs ${internalPenaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`;
+    } else if (movement?.type === 'saldo_pendiente_cobro') {
+      movement.description = `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`;
+    } else if (movement?.type === 'perdida_interna_devolucion') {
+      movement.description = `Perdida interna por devolucion (${customerName}): Bs ${internalPenaltiesBs.toFixed(2)}`;
+    }
+  });
+};
+
+router.patch('/__copetin_db/rentals/:id/return-charge', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body
+      : {};
+    const rentalId = String(req.params.id ?? '').trim();
+
+    if (!rentalId) {
+      res.status(400).json({ error: 'Debes indicar la orden de devolución.' });
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(payload, 'revision')) {
+      res.status(400).json({ error: 'Debes enviar la revisión actual para editar el cargo.' });
+      return;
+    }
+
+    const hasDamagedCharge = Object.prototype.hasOwnProperty.call(payload, 'damagedUnitChargeBs');
+    const hasMissingCharge = Object.prototype.hasOwnProperty.call(payload, 'missingUnitChargeBs');
+    if (!hasDamagedCharge && !hasMissingCharge) {
+      res.status(400).json({ error: 'Debes indicar al menos un precio de daño o faltante.' });
+      return;
+    }
+
+    let responseRental = null;
+    let responseLine = null;
+
+    const result = await updateStateSnapshot((state) => {
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+
+      const rental = state.rentals.find((entry) => (
+        !entry?.deletedAt
+        && (
+          String(entry?.id ?? '') === rentalId
+          || String(entry?.orderCode ?? '') === rentalId
+          || String(entry?.contractCode ?? '') === rentalId
+        )
+      ));
+      if (!rental) {
+        const error = new Error('No se encontró la orden de devolución.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const report = Array.isArray(rental.returnReport) ? rental.returnReport : [];
+      const lineIndex = findReturnChargeLineIndex(report, payload);
+      if (lineIndex < 0) {
+        const error = new Error('No se encontró la línea de daño o faltante que deseas editar.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const line = report[lineIndex];
+      const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+      const missingQty = Math.max(0, Math.trunc(Number(line?.missingQty ?? 0)));
+      if (damagedQty <= 0 && missingQty <= 0) {
+        const error = new Error('La línea seleccionada no tiene daño ni faltante registrado.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      // Si ya existe cobro/aplicación de garantía asociado a esta línea, cambiar
+      // el precio reescribiría historia contable. Se bloquea para proteger recibos.
+      if (isReturnChargeLineSettled(line)) {
+        const error = new Error('Este cargo ya fue cobrado o aplicado. No se puede cambiar el precio sin modificar un movimiento contable histórico.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const collectedDamageBs = directMoney(Math.max(
+        Number(rental?.payment?.damageCollectedBs ?? 0),
+        Number(rental?.totals?.damageCollectedBs ?? 0),
+        Number(rental?.payment?.penaltiesCollectedBs ?? 0),
+        Number(rental?.totals?.penaltiesCollectedBs ?? 0),
+        Number(rental?.payment?.returnChargesCollectedBs ?? 0),
+        Number(rental?.totals?.returnChargesCollectedBs ?? 0),
+      ));
+      if (collectedDamageBs > 0) {
+        const error = new Error('Ya existen cobros de daños/faltantes en esta devolución. Para evitar alterar recibos históricos, el precio debe corregirse antes del cobro.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const damagedUnitChargeBs = damagedQty > 0
+        ? directMoney(hasDamagedCharge ? payload.damagedUnitChargeBs : line?.damagedUnitChargeBs)
+        : 0;
+      const missingUnitChargeBs = missingQty > 0
+        ? directMoney(hasMissingCharge ? payload.missingUnitChargeBs : line?.missingUnitChargeBs)
+        : 0;
+
+      const damagedFeeBs = directMoney(damagedQty * damagedUnitChargeBs);
+      const missingFeeBs = directMoney(missingQty * missingUnitChargeBs);
+      const penaltyBs = directMoney(damagedFeeBs + missingFeeBs);
+      const now = new Date().toISOString();
+
+      report[lineIndex] = {
+        ...line,
+        damagedUnitChargeBs,
+        missingUnitChargeBs,
+        damagedFeeBs,
+        missingFeeBs,
+        penaltyBs,
+        chargeUpdatedAt: now,
+        chargeUpdatedById: payload.updatedById ?? payload.userId ?? null,
+        chargeUpdatedByName: String(payload.updatedByName ?? payload.userName ?? 'Sistema').trim() || 'Sistema',
+      };
+      rental.returnReport = report;
+
+      const normalizeOwner = (value) => {
+        const normalized = String(value ?? '').trim().toLowerCase();
+        return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
+      };
+      const totals = report.reduce((acc, entry) => {
+        const entryPenalty = directMoney(
+          entry?.penaltyBs
+          ?? (directMoney(entry?.damagedFeeBs) + directMoney(entry?.missingFeeBs)),
+        );
+        if (normalizeOwner(entry?.chargeOwner) === 'cliente') {
+          acc.penaltiesBs = directMoney(acc.penaltiesBs + entryPenalty);
+        } else {
+          acc.internalPenaltiesBs = directMoney(acc.internalPenaltiesBs + entryPenalty);
+        }
+        return acc;
+      }, { penaltiesBs: 0, internalPenaltiesBs: 0 });
+
+      rental.penaltiesBs = totals.penaltiesBs;
+      rental.internalPenaltiesBs = totals.internalPenaltiesBs;
+
+      const settlement = rental.returnSettlement ?? {};
+      const outstandingRentalBs = directMoney(settlement?.outstandingRentalBs);
+      const depositBs = directMoney(rental?.depositBs);
+      const originalDiscountCoveredByDepositBs = directMoney(settlement?.discountCoveredByDepositBs);
+      const economicResetApplied = Boolean(settlement?.economicResetAt);
+
+      let totalDiscountAgainstDepositBs;
+      let discountCoveredByDepositBs;
+      let pendingCollectionBs;
+      let refundBs;
+
+      if (economicResetApplied) {
+        // Tras Reset económico la garantía ya no se reaplica automáticamente:
+        // únicamente cambia el saldo pendiente de daño/faltante.
+        totalDiscountAgainstDepositBs = directMoney(outstandingRentalBs + totals.penaltiesBs);
+        discountCoveredByDepositBs = originalDiscountCoveredByDepositBs;
+        pendingCollectionBs = directMoney(Math.max(
+          0,
+          outstandingRentalBs + totals.penaltiesBs - discountCoveredByDepositBs,
+        ));
+        refundBs = directMoney(settlement?.refundBs ?? rental?.refundBs);
+      } else {
+        totalDiscountAgainstDepositBs = directMoney(outstandingRentalBs + totals.penaltiesBs);
+        discountCoveredByDepositBs = directMoney(Math.min(depositBs, totalDiscountAgainstDepositBs));
+        pendingCollectionBs = directMoney(Math.max(0, totalDiscountAgainstDepositBs - depositBs));
+        // No se reescribe un egreso de garantía ya emitido. El valor sugerido solo
+        // cambia si todavía no existe una devolución efectiva registrada.
+        const hasGuaranteeRefundMovement = state.cashMovements.some((movement) => (
+          !movement?.voidedAt
+          && String(movement?.linkedRentalId ?? movement?.sourceId ?? '') === String(rental.id)
+          && (
+            isGuaranteeRefundMovement(movement)
+            || String(movement?.type ?? '').toLowerCase() === 'devolucion_garantia'
+          )
+          && Math.abs(Number(movement?.amountBs ?? 0)) > 0
+        ));
+        refundBs = hasGuaranteeRefundMovement
+          ? directMoney(settlement?.refundBs ?? rental?.refundBs)
+          : directMoney(Math.max(0, depositBs - totalDiscountAgainstDepositBs));
+      }
+
+      rental.refundBs = refundBs;
+      rental.returnSettlement = {
+        ...settlement,
+        outstandingRentalBs,
+        penaltiesBs: totals.penaltiesBs,
+        internalPenaltiesBs: totals.internalPenaltiesBs,
+        totalDiscountAgainstDepositBs,
+        discountCoveredByDepositBs,
+        pendingCollectionBs,
+        refundBs,
+        accountingStatus: pendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente',
+        chargeUpdatedAt: now,
+        chargeUpdatedById: payload.updatedById ?? payload.userId ?? null,
+        chargeUpdatedByName: String(payload.updatedByName ?? payload.userName ?? 'Sistema').trim() || 'Sistema',
+      };
+      rental.payment = {
+        ...(rental.payment ?? {}),
+        pendingPaymentBs: pendingCollectionBs,
+        status: pendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente',
+      };
+      rental.totals = {
+        ...(rental.totals ?? {}),
+        pendingPaymentBs: pendingCollectionBs,
+      };
+      rental.accountingStatus = pendingCollectionBs <= 0.009
+        ? 'cobrado_finalizado'
+        : 'finalizado_pendiente_cobro';
+      rental.updatedAt = now;
+
+      // Solo se actualizan movimientos informativos automáticos de monto 0.
+      // Nunca se crea, borra o reescribe un recibo/cobro real.
+      updateAutomaticReturnMovementDescriptions(state, rental);
+
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.systemAuditLog.unshift({
+        id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        type: 'return_charge_updated',
+        action: 'editar_cargo_devolucion',
+        entityType: 'rental',
+        entityId: rental.id,
+        entityCode: rental.orderCode ?? rental.contractCode ?? '',
+        lineKey: report[lineIndex]?.lineKey ?? '',
+        itemId: report[lineIndex]?.itemId ?? '',
+        itemName: report[lineIndex]?.itemName ?? '',
+        penaltyBs,
+        userId: payload.updatedById ?? payload.userId ?? null,
+        userName: String(payload.updatedByName ?? payload.userName ?? 'Sistema').trim() || 'Sistema',
+        createdAt: now,
+      });
+
+      responseRental = structuredClone(rental);
+      responseLine = structuredClone(report[lineIndex]);
+      return state;
+    }, payload.revision);
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      rental: responseRental,
+      returnLine: responseLine,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      sendRevisionConflict(req, res, error);
+      return;
+    }
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};

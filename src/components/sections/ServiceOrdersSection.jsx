@@ -1522,6 +1522,10 @@ function ServiceOrdersSection({
   const [contractEconomicsContextMovements, setContractEconomicsContextMovements] = useState([]);
   const [isLoadingContractEconomics, setIsLoadingContractEconomics] = useState(false);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
+  const [returnChargeEditIssue, setReturnChargeEditIssue] = useState(null);
+  const [returnChargeEditDraft, setReturnChargeEditDraft] = useState({ damagedUnitChargeBs: '', missingUnitChargeBs: '' });
+  const [isSavingReturnCharge, setIsSavingReturnCharge] = useState(false);
+  const [returnChargeEditError, setReturnChargeEditError] = useState('');
   const [contractEconomicsCollectionDraft, setContractEconomicsCollectionDraft] = useState({
     target: 'rental',
     targets: ['rental'],
@@ -2862,7 +2866,10 @@ function ServiceOrdersSection({
         || toMoneyNumber(line?.penaltyBs) > 0,
       )
       .map((line, index) => ({
-        id: `${rental?.id ?? contract?.id ?? 'contract'}-${line?.itemId ?? index}`,
+        id: `${rental?.id ?? contract?.id ?? 'contract'}-${line?.lineKey ?? line?.itemId ?? index}`,
+        lineKey: String(line?.lineKey ?? '').trim(),
+        itemId: String(line?.itemId ?? '').trim(),
+        reportIndex: index,
         itemName: line?.itemName ?? line?.name ?? 'Item',
         damagedQty: toMoneyNumber(line?.damagedQty),
         missingQty: toMoneyNumber(line?.missingQty),
@@ -7525,6 +7532,9 @@ function ServiceOrdersSection({
   };
 
   const closeContractEconomics = () => {
+    setReturnChargeEditIssue(null);
+    setReturnChargeEditDraft({ damagedUnitChargeBs: '', missingUnitChargeBs: '' });
+    setReturnChargeEditError('');
     setActiveEconomicResetLedger(null);
     setContractEconomicsTarget(null);
     setContractEconomicsFullRental(null);
@@ -8112,6 +8122,90 @@ function ServiceOrdersSection({
     }
   };
 
+
+  const openReturnChargeEditor = (issue) => {
+    if (!issue || contractEconomicsData?.damagesSettled || readOnly) return;
+    setReturnChargeEditIssue(issue);
+    setReturnChargeEditDraft({
+      damagedUnitChargeBs: issue.damagedQty > 0 ? String(issue.damagedUnitChargeBs ?? 0) : '',
+      missingUnitChargeBs: issue.missingQty > 0 ? String(issue.missingUnitChargeBs ?? 0) : '',
+    });
+    setReturnChargeEditError('');
+  };
+
+  const closeReturnChargeEditor = () => {
+    if (isSavingReturnCharge) return;
+    setReturnChargeEditIssue(null);
+    setReturnChargeEditDraft({ damagedUnitChargeBs: '', missingUnitChargeBs: '' });
+    setReturnChargeEditError('');
+  };
+
+  const handleSaveReturnCharge = async () => {
+    if (!returnChargeEditIssue || !contractEconomicsData?.rental || isSavingReturnCharge) return;
+
+    const damagedUnitChargeBs = returnChargeEditIssue.damagedQty > 0
+      ? Number(returnChargeEditDraft.damagedUnitChargeBs)
+      : undefined;
+    const missingUnitChargeBs = returnChargeEditIssue.missingQty > 0
+      ? Number(returnChargeEditDraft.missingUnitChargeBs)
+      : undefined;
+
+    if (
+      (returnChargeEditIssue.damagedQty > 0 && (!Number.isFinite(damagedUnitChargeBs) || damagedUnitChargeBs < 0))
+      || (returnChargeEditIssue.missingQty > 0 && (!Number.isFinite(missingUnitChargeBs) || missingUnitChargeBs < 0))
+    ) {
+      setReturnChargeEditError('Ingresa un precio válido igual o mayor a Bs 0,00.');
+      return;
+    }
+
+    setIsSavingReturnCharge(true);
+    setReturnChargeEditError('');
+    try {
+      const userName = String(
+        currentUser?.fullName
+        ?? currentUser?.name
+        ?? currentUser?.username
+        ?? currentUser?.email
+        ?? 'Sistema',
+      ).trim() || 'Sistema';
+
+      const result = await api.rentals.updateReturnCharge({
+        rentalId: contractEconomicsData.rental.id,
+        lineKey: returnChargeEditIssue.lineKey,
+        itemId: returnChargeEditIssue.itemId,
+        reportIndex: returnChargeEditIssue.reportIndex,
+        ...(returnChargeEditIssue.damagedQty > 0 ? { damagedUnitChargeBs } : {}),
+        ...(returnChargeEditIssue.missingQty > 0 ? { missingUnitChargeBs } : {}),
+        updatedById: currentUser?.id ?? null,
+        updatedByName: userName,
+      });
+
+      if (result?.rental) {
+        setContractEconomicsFullRental(result.rental);
+      }
+
+      // Se recarga únicamente el contexto económico pequeño para reflejar
+      // movimientos informativos y saldos derivados del servidor.
+      const identifier = contractEconomicsData.contract?.id
+        ?? contractEconomicsData.contract?.contractCode
+        ?? contractEconomicsData.contract?.orderCode;
+      if (identifier) {
+        const context = await api.contracts.getEconomicContext(identifier);
+        setContractEconomicsTarget(context?.contract ?? contractEconomicsData.contract);
+        setContractEconomicsFullRental(context?.rental ?? result?.rental ?? contractEconomicsData.rental);
+        setContractEconomicsContextMovements(
+          Array.isArray(context?.cashMovements) ? context.cashMovements : [],
+        );
+      }
+
+      setActionFeedback(`Cargo de ${returnChargeEditIssue.itemName} actualizado.`);
+      closeReturnChargeEditor();
+    } catch (error) {
+      setReturnChargeEditError(error?.message || 'No se pudo actualizar el cargo.');
+    } finally {
+      setIsSavingReturnCharge(false);
+    }
+  };
 
   const handleResetContractEconomics = async () => {
     if (!contractEconomicsData || readOnly || isResettingContractEconomics) return;
@@ -11585,6 +11679,98 @@ function ServiceOrdersSection({
                             ? `CANCELADO | Cargo cobrado: ${formatBs(issue.penaltyBs)}`
                             : `Cargo: ${formatBs(issue.penaltyBs)} | Origen: ${issue.owner}`}
                         </span>
+                        {!contractEconomicsData.damagesSettled && !readOnly ? (
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => openReturnChargeEditor(issue)}
+                            disabled={isSavingReturnCharge}
+                            style={{
+                              minHeight: 30,
+                              padding: '0 10px',
+                              fontSize: 12,
+                              justifySelf: 'end',
+                            }}
+                          >
+                            <Pencil size={13} aria-hidden="true" />
+                            Editar cargo
+                          </button>
+                        ) : null}
+                        {returnChargeEditIssue?.id === issue.id ? (
+                          <div
+                            style={{
+                              gridColumn: '1 / -1',
+                              display: 'grid',
+                              gridTemplateColumns: issue.damagedQty > 0 && issue.missingQty > 0
+                                ? 'repeat(2, minmax(0, 1fr)) auto'
+                                : 'minmax(0, 1fr) auto',
+                              gap: 10,
+                              alignItems: 'end',
+                              padding: 10,
+                              borderRadius: 9,
+                              background: '#fff',
+                              border: '1px solid #fed7aa',
+                            }}
+                          >
+                            {issue.damagedQty > 0 ? (
+                              <label style={{ display: 'grid', gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 800 }}>Precio unitario dañado</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={returnChargeEditDraft.damagedUnitChargeBs}
+                                  onChange={(event) => setReturnChargeEditDraft((current) => ({
+                                    ...current,
+                                    damagedUnitChargeBs: event.target.value,
+                                  }))}
+                                  disabled={isSavingReturnCharge}
+                                  style={{ minHeight: 34, border: '1px solid #cbd5e1', borderRadius: 8, padding: '0 9px' }}
+                                />
+                              </label>
+                            ) : null}
+                            {issue.missingQty > 0 ? (
+                              <label style={{ display: 'grid', gap: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 800 }}>Precio unitario faltante</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={returnChargeEditDraft.missingUnitChargeBs}
+                                  onChange={(event) => setReturnChargeEditDraft((current) => ({
+                                    ...current,
+                                    missingUnitChargeBs: event.target.value,
+                                  }))}
+                                  disabled={isSavingReturnCharge}
+                                  style={{ minHeight: 34, border: '1px solid #cbd5e1', borderRadius: 8, padding: '0 9px' }}
+                                />
+                              </label>
+                            ) : null}
+                            <div style={{ display: 'flex', gap: 7 }}>
+                              <button
+                                type="button"
+                                className="ghost-button"
+                                onClick={closeReturnChargeEditor}
+                                disabled={isSavingReturnCharge}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleSaveReturnCharge}
+                                disabled={isSavingReturnCharge}
+                              >
+                                {isSavingReturnCharge ? 'Guardando...' : 'Guardar'}
+                              </button>
+                            </div>
+                            {returnChargeEditError ? (
+                              <small style={{ gridColumn: '1 / -1', color: '#b91c1c', fontWeight: 700 }}>
+                                {returnChargeEditError}
+                              </small>
+                            ) : null}
+                          </div>
+                        ) : null}
                         {issue.note ? <small>{issue.note}</small> : null}
                       </div>
                     ))}
