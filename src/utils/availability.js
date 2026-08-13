@@ -135,6 +135,22 @@ const recordItemLines = (record) =>
     .filter(Boolean)
     .filter((line) => line.itemId && line.quantity > 0);
 
+const mergeRecordItemLines = (primaryLines = [], fallbackLines = []) => {
+  const merged = new Map();
+
+  fallbackLines.forEach((line) => {
+    if (!line?.itemId) return;
+    merged.set(line.itemId, line);
+  });
+
+  primaryLines.forEach((line) => {
+    if (!line?.itemId) return;
+    merged.set(line.itemId, line);
+  });
+
+  return Array.from(merged.values());
+};
+
 const isActiveRental = (rental) => rental && !rental.deletedAt && rental.status !== 'returned' && rental.status !== 'cancelled';
 
 const sameId = (left, right) => String(left ?? '').trim() && String(left ?? '').trim() === String(right ?? '').trim();
@@ -218,7 +234,15 @@ export function getProjectedInventoryAvailability({
 
   rentals.filter(isActiveRental).forEach((rental) => {
     const contract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
-    const lines = recordItemLines(rental);
+    const rentalLines = recordItemLines(rental);
+    const contractLines = recordItemLines(contract);
+
+    // El contrato aprobado es el respaldo comercial más reciente de cantidades.
+    // La orden/rental conserva la trazabilidad operativa y sus fechas. Si ambos
+    // existen, se fusionan por itemId para no perder líneas por desincronización
+    // histórica entre contrato y orden, sin duplicar el mismo producto.
+    const lines = mergeRecordItemLines(contractLines, rentalLines);
+
     if (isExcluded(rental, exclude)) {
       releaseExcludedLines(lines);
       return;
@@ -230,7 +254,7 @@ export function getProjectedInventoryAvailability({
       contractCode: contract?.contractCode || rental.contractCode || '',
       rentalId: rental.id,
       contractId: contract?.id || rental.contractId || '',
-      customerName: rental.customerName,
+      customerName: contract?.customerName || rental.customerName,
       type: 'orden',
       period: periodFromRental(rental, contract),
       lines,
