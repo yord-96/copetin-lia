@@ -438,6 +438,7 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     editedByName: String(entry?.editedByName ?? '').trim(),
     cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
     cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+    isCashRegistered: Boolean(entry?.isCashRegistered),
     cashRegisteredAt: entry?.cashRegisteredAt ?? null,
     cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
@@ -2311,7 +2312,7 @@ function ServiceOrdersSection({
         if (entry.type === 'deposit') totals.receivedBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'guarantee') totals.guaranteeBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += toMoneyNumber(entry.amountBs);
-        if (entry.type === 'refund') {
+        if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) {
           totals.refundedBs += toMoneyNumber(entry.amountBs);
           if (entry.refundSource !== 'surplus') totals.guaranteeRefundedBs += toMoneyNumber(entry.amountBs);
         }
@@ -3257,7 +3258,7 @@ function ServiceOrdersSection({
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
       if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
-      if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
+      if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) totals.refundedBs += entry.amountBs;
       return totals;
     }, {
       receivedBs: 0,
@@ -3424,12 +3425,12 @@ function ServiceOrdersSection({
       Number((ledgerFundsAvailableForRentalBs - ledgerChargeTargetBs).toFixed(2)),
     );
     const ledgerSurplusRefundedBs = economicLedger.reduce((sum, entry) => (
-      entry.type === 'refund' && entry.refundSource === 'surplus'
+      entry.type === 'refund' && entry.refundSource === 'surplus' && isEconomicLedgerEntryConfirmedInCash(entry)
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
     const ledgerGuaranteeRefundedBs = economicLedger.reduce((sum, entry) => (
-      entry.type === 'refund' && entry.refundSource !== 'surplus'
+      entry.type === 'refund' && entry.refundSource !== 'surplus' && isEconomicLedgerEntryConfirmedInCash(entry)
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
@@ -3801,7 +3802,7 @@ function ServiceOrdersSection({
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
       if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
-      if (entry.type === 'refund') totals.refundedBs += entry.amountBs;
+      if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) totals.refundedBs += entry.amountBs;
       return totals;
     }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, refundedBs: 0 });
     const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
@@ -11600,9 +11601,11 @@ function ServiceOrdersSection({
                         defaultValue="deposit"
                         disabled={readOnly || isSavingContractEconomicsLedger}
                       >
-                        {Object.entries(ECONOMIC_LEDGER_TYPE_META).map(([value, meta]) => (
+                        {Object.entries(ECONOMIC_LEDGER_TYPE_META)
+                          .filter(([value]) => value !== 'refund' || Boolean(contractEconomicsLedgerEditingId))
+                          .map(([value, meta]) => (
                           <option key={value} value={value}>{meta.label}</option>
-                        ))}
+                          ))}
                       </select>
                     </label>
                     <label className="contract-economics-ledger-amount">
@@ -11751,7 +11754,9 @@ function ServiceOrdersSection({
                                 className="contract-economics-refund-pill"
                                 title={moneyFlowTitle}
                               >
-                                {entry.cashReceiptCode ? `Devuelto - ${entry.cashReceiptCode}` : 'Devuelto en caja'}
+                                {entry.isCashRegistered || entry.cashMovementId || entry.cashReceiptCode
+                                  ? entry.cashReceiptCode ? `Devuelto - ${entry.cashReceiptCode}` : 'Devuelto en caja'
+                                  : 'Anotado sin recibo'}
                               </b>
                             ) : null}
                           </span>

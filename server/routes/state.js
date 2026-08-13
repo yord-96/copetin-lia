@@ -100,6 +100,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
     'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
     'collectionTargets', 'collectionBreakdown', 'receiptDetail', 'receivedAmountBs',
+    'receiptCustomerName', 'receiptIssuedAt',
     'contractAllocationBs', 'guaranteeAllocationBs', 'surplusAllocationBs',
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
   ];
@@ -196,6 +197,7 @@ const normalizeEconomicLedgerRows = (rows) => {
       cashMovementId: String(entry?.cashMovementId ?? '').trim() || null,
       cashReceiptCode: String(entry?.cashReceiptCode ?? '').trim(),
       isCashRegistered: Boolean(entry?.isCashRegistered),
+      cashRegisteredAt: String(entry?.cashRegisteredAt ?? '').trim() || null,
       cashCollectionTarget: String(entry?.cashCollectionTarget ?? '').trim().toLowerCase(),
       reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
       refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
@@ -4837,6 +4839,23 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
         savedLedger = existingLedger;
       }
 
+      const existingRefundIds = new Set(existingLedger
+        .filter((entry) => entry.type === 'refund')
+        .map((entry) => String(entry.id)));
+      const unsupportedRefund = savedLedger.find((entry) => (
+        !entry.deletedAt
+        && entry.type === 'refund'
+        && !existingRefundIds.has(String(entry.id))
+        && !entry.isCashRegistered
+        && !String(entry.cashMovementId ?? '').trim()
+        && !String(entry.cashReceiptCode ?? '').trim()
+      ));
+      if (unsupportedRefund) {
+        const error = new Error('Las devoluciones deben registrarse desde "Devolver dinero" para generar el egreso y recibo de Caja Grande.');
+        error.statusCode = 409;
+        throw error;
+      }
+
       updatedContract = {
         ...existingContract,
         economicLedger: savedLedger,
@@ -5447,6 +5466,7 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   cashMovementId: entry.cashMovementId ?? null,
   cashReceiptCode: entry.cashReceiptCode ?? '',
   isCashRegistered: Boolean(entry.isCashRegistered),
+  cashRegisteredAt: entry.cashRegisteredAt ?? null,
   cashCollectionTarget: entry.cashCollectionTarget ?? '',
   reclassifiedFromPayment: Boolean(entry.reclassifiedFromPayment),
   refundSource: entry.refundSource ?? '',
