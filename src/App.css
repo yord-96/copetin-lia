@@ -23,6 +23,66 @@
   --nav-to: var(--c500);
 }
 
+/* Caja Grande: alternar la misma grilla entre saldos pendientes e historial cerrado. */
+.accounting-bigcash-view .bigcash-receivables-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, auto));
+  gap: 0.35rem;
+  margin: 0.9rem 0 0.25rem;
+  padding: 0.3rem;
+  border: 1px solid #d9e3f1;
+  border-radius: 0.8rem;
+  background: #f3f7fc;
+}
+
+.accounting-bigcash-view .bigcash-receivables-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.45rem;
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  border-radius: 0.62rem;
+  background: transparent;
+  color: #52637b;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.accounting-bigcash-view .bigcash-receivables-switch button.is-active {
+  background: #123d78;
+  color: #fff;
+  box-shadow: 0 0.25rem 0.7rem rgba(18, 61, 120, 0.2);
+}
+
+.accounting-bigcash-view .bigcash-receivables-switch b {
+  display: inline-grid;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0 0.35rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff;
+  color: #123d78;
+  font-size: 0.72rem;
+}
+
+.accounting-bigcash-view .bigcash-finalized-receivable-row > td:last-child small {
+  display: block;
+  margin-top: 0.25rem;
+  color: #708097;
+}
+
+@media (max-width: 700px) {
+  .accounting-bigcash-view .bigcash-receivables-switch {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Caja Grande · rediseño final operativo */
 .accounting-bigcash-view {
   width: min(100%, 1320px);

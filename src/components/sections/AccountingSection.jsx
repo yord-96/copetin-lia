@@ -345,6 +345,7 @@ function AccountingSection({
   const [bigCashQuery, setBigCashQuery] = useState('');
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
+  const [receivablesView, setReceivablesView] = useState('pending');
   const [bigCashWorkspaceRanges, setBigCashWorkspaceRanges] = useState(() => {
     const today = getInputDate();
     const recent = getPeriodRange(today, 'recent');
@@ -1377,6 +1378,37 @@ function AccountingSection({
     [pendingReceivableRows],
   );
 
+  const finalizedReceivableRows = useMemo(
+    () => rentals
+      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() !== 'cancelled')
+      .map((rental) => {
+        const contract = getRentalContract(rental);
+        if (!contract?.isFinalized) return null;
+        const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
+        const settlement = rental?.returnSettlement ?? {};
+        const pendingBs = isReturned
+          ? toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs)
+          : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
+        if (pendingBs > 0.009) return null;
+        const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
+        const penaltiesBs = toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
+        return {
+          id: rental.id,
+          orderCode: rental.orderCode ?? rental.id,
+          contractCode: contract.contractCode ?? rental.contractCode ?? '',
+          customerName: rental.customerName ?? contract.customerName ?? 'Cliente',
+          responsibleName: getRentalResponsibleName(rental, contract),
+          eventDate: rental.eventDate ?? contract.eventDate ?? rental.deliveryDate ?? rental.createdAt,
+          finalizedAt: contract.finalizedAt ?? rental.finalizedAt ?? rental.returnedAt ?? rental.updatedAt,
+          finalizedByName: contract.finalizedByName ?? '',
+          settledBs: Math.max(0, totalBs + penaltiesBs),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
+    [getRentalContract, getRentalResponsibleName, rentals],
+  );
+
   const derivedReturnIssueRows = useMemo(
     () => rentals
       .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
@@ -1450,6 +1482,11 @@ function AccountingSection({
     });
   };
   const visibleReceivableRows = filterBigCashWorkspaceRows(pendingReceivableRows, 'receivables', (row) => row.eventDate);
+  const visibleFinalizedReceivableRows = filterBigCashWorkspaceRows(
+    finalizedReceivableRows,
+    'receivables',
+    (row) => row.eventDate,
+  );
   const visibleGuaranteeRows = filterBigCashWorkspaceRows(guaranteesToReturnRows, 'guarantees', (row) => row.eventDate);
   const visibleReturnIssueRows = filterBigCashWorkspaceRows(
     returnIssueRows,
@@ -1458,6 +1495,7 @@ function AccountingSection({
   );
   const visiblePrepaidRows = filterBigCashWorkspaceRows(prepaidLedgerRows, 'prepaid', (row) => row.createdAt);
   const visibleReceivableTotalBs = sumBy(visibleReceivableRows, (row) => row.pendingBs);
+  const visibleFinalizedReceivableTotalBs = sumBy(visibleFinalizedReceivableRows, (row) => row.settledBs);
   const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.validatedBs) + toNumber(row.unvalidatedBs));
   const visibleReturnIssueTotalBs = sumBy(visibleReturnIssueRows, (row) => row.penaltyBs);
 
@@ -3929,36 +3967,94 @@ function AccountingSection({
             <header>
               <div>
                 <span>01 · Seguimiento</span>
-                <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Contratos por cobrar</h3>
-                <p>Contratos con saldo pendiente, cliente, responsable y fecha de evento.</p>
+                <h3>
+                  <span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>
+                  {receivablesView === 'pending' ? 'Contratos por cobrar' : 'Contratos cobrados y finalizados'}
+                </h3>
+                <p>
+                  {receivablesView === 'pending'
+                    ? 'Contratos con saldo pendiente, cliente, responsable y fecha de evento.'
+                    : 'Historial de contratos sin saldo pendiente y finalizados administrativamente.'}
+                </p>
               </div>
-              <div className="bigcash-header-total"><small>Pendiente en resultados</small><strong>{formatBs(visibleReceivableTotalBs)}</strong></div>
+              <div className="bigcash-header-total">
+                <small>{receivablesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
+                <strong>{formatBs(receivablesView === 'pending' ? visibleReceivableTotalBs : visibleFinalizedReceivableTotalBs)}</strong>
+              </div>
             </header>
+            <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de cobro de contratos">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={receivablesView === 'pending'}
+                className={receivablesView === 'pending' ? 'is-active' : ''}
+                onClick={() => setReceivablesView('pending')}
+              >
+                Por cobrar <b>{pendingReceivableRows.length}</b>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={receivablesView === 'finalized'}
+                className={receivablesView === 'finalized' ? 'is-active' : ''}
+                onClick={() => setReceivablesView('finalized')}
+              >
+                Cobrados y finalizados <b>{finalizedReceivableRows.length}</b>
+              </button>
+            </div>
             {renderBigCashWorkspaceSearch('Buscar contrato, cliente o responsable...', 'receivables', 'Fecha del evento')}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
                 <thead>
-                  <tr>
-                    <th>Contrato</th>
-                    <th>Cliente</th>
-                    <th>Responsable</th>
-                    <th>Fecha evento</th>
-                    <th>A cobrar</th>
-                    <th />
-                  </tr>
+                  {receivablesView === 'pending' ? (
+                    <tr>
+                      <th>Contrato</th>
+                      <th>Cliente</th>
+                      <th>Responsable</th>
+                      <th>Fecha evento</th>
+                      <th>A cobrar</th>
+                      <th />
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th>Contrato</th>
+                      <th>Cliente</th>
+                      <th>Responsable</th>
+                      <th>Fecha evento</th>
+                      <th>Total liquidado</th>
+                      <th>Finalizado</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody>
-                  {visibleReceivableRows.map((row) => (
-                    <tr key={row.id}>
-                      <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
-                      <td><strong>{row.customerName}</strong></td>
-                      <td>{row.responsibleName}</td>
-                      <td>{formatDate(row.eventDate)}</td>
-                      <td className="amount">{formatBs(row.pendingBs)}</td>
-                      <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
-                    </tr>
-                  ))}
-                  {visibleReceivableRows.length === 0 ? <tr><td colSpan={6}><p className="status">No se encontraron contratos con ese criterio.</p></td></tr> : null}
+                  {receivablesView === 'pending' ? visibleReceivableRows.map((row) => (
+                      <tr key={row.id}>
+                        <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                        <td><strong>{row.customerName}</strong></td>
+                        <td>{row.responsibleName}</td>
+                        <td>{formatDate(row.eventDate)}</td>
+                        <td className="amount">{formatBs(row.pendingBs)}</td>
+                        <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
+                      </tr>
+                    )) : visibleFinalizedReceivableRows.map((row) => (
+                      <tr key={row.id} className="bigcash-finalized-receivable-row">
+                        <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                        <td><strong>{row.customerName}</strong></td>
+                        <td>{row.responsibleName}</td>
+                        <td>{formatDate(row.eventDate)}</td>
+                        <td className="amount">{formatBs(row.settledBs)}</td>
+                        <td>
+                          <span className="bigcash-status-pill ready">Cobrado y finalizado</span>
+                          <small>{formatDate(row.finalizedAt)}{row.finalizedByName ? ` · ${row.finalizedByName}` : ''}</small>
+                        </td>
+                      </tr>
+                    ))}
+                  {receivablesView === 'pending' && visibleReceivableRows.length === 0 ? (
+                    <tr><td colSpan={6}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
+                  ) : null}
+                  {receivablesView === 'finalized' && visibleFinalizedReceivableRows.length === 0 ? (
+                    <tr><td colSpan={6}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
