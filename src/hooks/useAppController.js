@@ -162,6 +162,8 @@ export const useAppController = () => {
   const calendarOverviewLoadedRef = useRef(false);
   const ordersOverviewLoadedRef = useRef(false);
   const ordersOverviewRequestRef = useRef(null);
+  const availabilityOverviewLoadedRef = useRef(false);
+  const availabilityOverviewRequestRef = useRef(null);
   const fullWorkspaceLoadedRef = useRef(false);
   const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
 
@@ -271,7 +273,36 @@ export const useAppController = () => {
   }, []);
 
   const prepareTabData = useCallback(async (targetTab) => {
-    if (String(targetTab) !== 'alquiler' || ordersOverviewLoadedRef.current) return;
+    const requestedTab = String(targetTab);
+    if (requestedTab === 'disponibilidad') {
+      if (availabilityOverviewLoadedRef.current) return;
+      if (availabilityOverviewRequestRef.current) {
+        await availabilityOverviewRequestRef.current;
+        return;
+      }
+      const request = api.sync.getAvailabilityOverview()
+        .then((overview) => {
+          setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
+          setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
+          setQuotes(Array.isArray(overview?.quotes) ? overview.quotes : []);
+          setClients(Array.isArray(overview?.clients) ? overview.clients : []);
+          setItems(Array.isArray(overview?.items) ? overview.items : []);
+          setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
+          availabilityOverviewLoadedRef.current = true;
+        })
+        .catch((availabilityError) => {
+          setError(availabilityError.message || 'No se pudo cargar Disponibilidad.');
+          throw availabilityError;
+        })
+        .finally(() => {
+          availabilityOverviewRequestRef.current = null;
+        });
+      availabilityOverviewRequestRef.current = request;
+      await request;
+      return;
+    }
+
+    if (requestedTab !== 'alquiler' || ordersOverviewLoadedRef.current) return;
     if (ordersOverviewRequestRef.current) {
       await ordersOverviewRequestRef.current;
       return;
@@ -319,7 +350,7 @@ export const useAppController = () => {
   }, []);
 
   useEffect(() => {
-    if (!authReady || !currentUser || activeTab !== 'alquiler') return;
+    if (!authReady || !currentUser || !['alquiler', 'disponibilidad'].includes(String(activeTab))) return;
     prepareTabData(activeTab).catch(() => {});
   }, [activeTab, authReady, currentUser, prepareTabData]);
 
@@ -328,7 +359,7 @@ export const useAppController = () => {
     // Calendario, Ordenes y Asistencia tienen endpoints pequenos propios. El
     // resto del sistema conserva la carga completa, pero ya de forma diferida.
     if (
-      ['caja', 'alquiler', 'asistencia'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'asistencia'].includes(String(activeTab))
       || String(activeTab).startsWith('inventario')
     ) return;
     loadData({ forceComplete: true }).catch(() => {});
@@ -757,6 +788,8 @@ export const useAppController = () => {
       calendarOverviewLoadedRef.current = false;
       ordersOverviewLoadedRef.current = false;
       ordersOverviewRequestRef.current = null;
+      availabilityOverviewLoadedRef.current = false;
+      availabilityOverviewRequestRef.current = null;
       fullWorkspaceLoadedRef.current = false;
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));

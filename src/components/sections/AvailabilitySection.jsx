@@ -374,6 +374,9 @@ function AvailabilitySection({
 
   const calendarCells = useMemo(() => getMonthGrid(calendarDate), [calendarDate]);
   const calendarStats = useMemo(() => {
+    // El calendario ejecuta 42 consultas de disponibilidad. No debemos pagar
+    // ese costo mientras el usuario esta en la consulta por fecha.
+    if (mode !== 'calendar') return new Map();
     const stats = new Map();
     calendarCells.forEach((cell) => {
       const dayPeriod = buildAvailabilityPeriod({
@@ -399,7 +402,7 @@ function AvailabilitySection({
       stats.set(cell.key, { committedProducts, committedUnits, limited, empty, tentative });
     });
     return stats;
-  }, [calendarCells, items, rentals, contracts, quotes]);
+  }, [mode, calendarCells, items, rentals, contracts, quotes]);
 
   const selectedDayPeriod = useMemo(
     () => buildAvailabilityPeriod({
@@ -412,12 +415,13 @@ function AvailabilitySection({
   );
 
   const selectedDayRows = useMemo(() => {
+    if (mode !== 'calendar') return [];
     const dayAvailability = getProjectedInventoryAvailability({ items, rentals, contracts, quotes, period: selectedDayPeriod });
     return items
       .map((item) => ({ item, summary: dayAvailability.get(item.id) }))
       .filter(({ summary }) => summary?.hardReservedQty > 0 || summary?.softReservedQty > 0)
       .sort((a, b) => (b.summary.hardReservedQty + b.summary.softReservedQty) - (a.summary.hardReservedQty + a.summary.softReservedQty));
-  }, [items, rentals, contracts, quotes, selectedDayPeriod]);
+  }, [mode, items, rentals, contracts, quotes, selectedDayPeriod]);
 
   const resetFilters = () => {
     setQuery('');

@@ -5636,6 +5636,55 @@ const summarizeInventoryLine = (line = {}, index = 0) => ({
   comboPricingRole: line.comboPricingRole ?? '',
 });
 
+const summarizeAvailabilityLine = (line = {}, index = 0) => {
+  const summary = summarizeInventoryLine(line, index);
+  // Ausente significa "cantidad - proveedor" en el motor de disponibilidad;
+  // convertirlo a null haria que Number(null) reserve cero unidades.
+  if (line?.internalReservedQty === undefined || line?.internalReservedQty === null) {
+    delete summary.internalReservedQty;
+  }
+  return summary;
+};
+
+const summarizeAvailabilityRecord = (record = {}) => ({
+  id: record.id ?? '',
+  rentalId: record.rentalId ?? '',
+  contractId: record.contractId ?? '',
+  quoteId: record.quoteId ?? '',
+  contractCode: record.contractCode ?? '',
+  orderCode: record.orderCode ?? '',
+  quoteCode: record.quoteCode ?? '',
+  code: record.code ?? '',
+  status: record.status ?? '',
+  deletedAt: record.deletedAt ?? null,
+  createdAt: record.createdAt ?? record.rentalAt ?? null,
+  updatedAt: record.updatedAt ?? null,
+  clientId: record.clientId ?? record.customerId ?? '',
+  customerName: record.customerName ?? record.clientName ?? '',
+  customerPhone: record.customerPhone ?? record.phone ?? '',
+  eventType: record.eventType ?? '',
+  eventDate: record.eventDate ?? null,
+  eventTime: record.eventTime ?? '',
+  rentalDate: record.rentalDate ?? null,
+  deliveryDate: record.deliveryDate ?? null,
+  pickupDate: record.pickupDate ?? null,
+  dueDate: record.dueDate ?? null,
+  validUntil: record.validUntil ?? null,
+  dueTime: record.dueTime ?? '',
+  deliveryWindowStart: record.deliveryWindowStart ?? '',
+  pickupWindowEnd: record.pickupWindowEnd ?? '',
+  pickupTimeMode: record.pickupTimeMode ?? '',
+  eventAddress: record.eventAddress ?? '',
+  deliveryAddress: record.deliveryAddress ?? '',
+  serviceAddress: record.serviceAddress ?? '',
+  address: record.address ?? '',
+  destination: record.destination ?? '',
+  city: record.city ?? '',
+  items: (Array.isArray(record.items) ? record.items : []).map(summarizeAvailabilityLine),
+  _summaryOnly: true,
+  _availabilitySummaryOnly: true,
+});
+
 const summarizeInventoryRental = (rental = {}) => ({
   id: rental.id ?? '',
   contractId: rental.contractId ?? '',
@@ -5718,6 +5767,53 @@ const summarizeInventoryMovement = (movement = {}) => {
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
     .map((field) => [field, movement[field]]));
 };
+
+router.get('/__copetin_db/availability/overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const activeRentals = (Array.isArray(state.rentals) ? state.rentals : []).filter((rental) => {
+      const status = String(rental?.status ?? '').trim().toLowerCase();
+      return !rental?.deletedAt && !['returned', 'cancelled', 'anulado'].includes(status);
+    });
+    const activeRentalIds = new Set(activeRentals.map((rental) => String(rental?.id ?? '')).filter(Boolean));
+    const activeOrderCodes = new Set(activeRentals.map((rental) => String(rental?.orderCode ?? '')).filter(Boolean));
+    const activeContractIds = new Set(activeRentals.map((rental) => String(rental?.contractId ?? '')).filter(Boolean));
+    const availabilityContracts = (Array.isArray(state.contracts) ? state.contracts : []).filter((contract) => {
+      if (!contract || contract.deletedAt) return false;
+      const status = String(contract.status ?? '').trim().toLowerCase();
+      const linkedToActiveRental = activeRentalIds.has(String(contract.rentalId ?? ''))
+        || activeOrderCodes.has(String(contract.orderCode ?? ''))
+        || activeContractIds.has(String(contract.id ?? ''));
+      return linkedToActiveRental || (
+        !contract.rentalId
+        && !contract.orderCode
+        && ['aprobado', 'pendiente', 'borrador'].includes(status)
+      );
+    });
+    const availabilityQuotes = (Array.isArray(state.quotes) ? state.quotes : []).filter((quote) => {
+      const status = String(quote?.status ?? '').trim().toLowerCase();
+      return quote && !quote.deletedAt && !quote.rentalId && !quote.orderCode
+        && ['enviada', 'borrador'].includes(status);
+    });
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        items: Array.isArray(state.items) ? state.items : [],
+        categories: Array.isArray(state.categories) ? state.categories : [],
+        clients: Array.isArray(state.clients) ? state.clients : [],
+        contracts: availabilityContracts.map(summarizeAvailabilityRecord),
+        rentals: activeRentals.map(summarizeAvailabilityRecord),
+        quotes: availabilityQuotes.map(summarizeAvailabilityRecord),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) => {
   try {

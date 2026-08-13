@@ -613,6 +613,27 @@ const fetchMobileOrdersOverview = async () => {
   return overview;
 };
 
+const fetchAvailabilityOverview = async () => {
+  const response = await fetch(getServerStateUrl('/availability/overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar la informacion de disponibilidad.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) {
+    lastSharedRevision = payload.revision;
+    setCachedServerRevision(payload.revision);
+  }
+  const overview = payload?.overview ?? {
+    contracts: [], rentals: [], quotes: [], clients: [], items: [], categories: [],
+  };
+  await mergeLocalState(overview);
+  serverStateIsPartial = true;
+  return overview;
+};
+
 const fetchInventoryMovementsOverview = async () => {
   if (!shouldUseServerState()) {
     await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements');
@@ -2941,6 +2962,7 @@ export const api = {
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getMobileCalendarOverview: fetchMobileCalendarOverview,
     getMobileOrdersOverview: fetchMobileOrdersOverview,
+    getAvailabilityOverview: fetchAvailabilityOverview,
     getInventoryMovementsOverview: fetchInventoryMovementsOverview,
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
