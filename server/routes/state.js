@@ -2701,6 +2701,17 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         0,
         repairedRentalTotalBs - storedRentalTotalBs,
       ));
+      const breakdown = Array.isArray(payload.collectionBreakdown) && payload.collectionBreakdown.length
+        ? payload.collectionBreakdown.map((entry) => ({ ...entry, amountBs: directMoney(entry?.amountBs) })).filter((entry) => entry.amountBs > 0)
+        : [{ target: String(payload.collectionTarget ?? 'balance'), amountBs }];
+      const isDamageOnlyCollection = breakdown.length > 0
+        && breakdown.every((entry) => String(entry?.target ?? '').trim() === 'damage');
+      const requestedDamageBs = directMoney(
+        breakdown
+          .filter((entry) => String(entry?.target ?? '').trim() === 'damage')
+          .reduce((sum, entry) => sum + directMoney(entry?.amountBs), 0),
+      );
+
       const storedPendingBs = Number(isReturned
         ? settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0
         : rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
@@ -2711,13 +2722,96 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const currentPending = directMoney(
         Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
       );
-      if (currentPending <= 0) { const error = new Error('Esta orden no tiene saldo pendiente por cobrar.'); error.statusCode = 409; throw error; }
-      if (amountBs - currentPending > 0.01) { const error = new Error(`El saldo pendiente es Bs ${currentPending.toFixed(2)}.`); error.statusCode = 409; throw error; }
 
-      const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
-      const breakdown = Array.isArray(payload.collectionBreakdown) && payload.collectionBreakdown.length
-        ? payload.collectionBreakdown.map((entry) => ({ ...entry, amountBs: directMoney(entry?.amountBs) })).filter((entry) => entry.amountBs > 0)
-        : [{ target: String(payload.collectionTarget ?? 'balance'), amountBs }];
+      // Los daños/faltantes son una obligación económica separada del saldo de
+      // alquiler. Un contrato puede estar totalmente pagado y, aun así, tener un
+      // faltante cobrado después de la devolución. En ese caso NO se debe usar
+      // pendingPaymentBs como límite, porque ese campo representa el saldo
+      // comercial del contrato y puede ser 0.
+      let pendingDamageBs = 0;
+      if (isDamageOnlyCollection) {
+        const normalizeChargeOwner = (value) => {
+          const normalized = String(value ?? '').trim().toLowerCase();
+          return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
+        };
+        const reportPenaltyBs = directMoney((Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+          .reduce((sum, line) => {
+            if (normalizeChargeOwner(line?.chargeOwner) !== 'cliente') return sum;
+            return sum + directMoney(
+              line?.penaltyBs
+              ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)),
+            );
+          }, 0));
+        const totalDamageBs = reportPenaltyBs > 0
+          ? reportPenaltyBs
+          : directMoney(rental?.penaltiesBs ?? settlement?.penaltiesBs ?? 0);
+
+        const contractLedger = Array.isArray(linkedContract?.economicLedger)
+          ? linkedContract.economicLedger
+          : [];
+        // Una linea "charge" sin movimiento de Caja representa aplicación
+        // explícita de garantía. Las líneas charge vinculadas a Caja son cobros
+        // reales y se contabilizan abajo desde cashMovements, no dos veces.
+        const guaranteeAppliedToDamageBs = directMoney(contractLedger.reduce((sum, entry) => {
+          if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return sum;
+          const cashMovementId = String(entry?.cashMovementId ?? '').trim();
+          const isCashDamage = String(entry?.cashCollectionTarget ?? '').trim().toLowerCase() === 'damage';
+          if (cashMovementId || isCashDamage || entry?.isCashRegistered) return sum;
+          return sum + Math.max(0, directMoney(entry?.amountBs));
+        }, 0));
+
+        const collectedDamageBs = directMoney(state.cashMovements.reduce((sum, movement) => {
+          if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return sum;
+          const sameRental = String(movement?.linkedRentalId ?? movement?.sourceId ?? '') === String(rental.id);
+          const sameContract = linkedContract && String(movement?.linkedContractId ?? '') === String(linkedContract.id);
+          const sameOrder = String(movement?.linkedOrderCode ?? '') === String(rental?.orderCode ?? linkedContract?.orderCode ?? '');
+          if (!sameRental && !sameContract && !sameOrder) return sum;
+
+          const movementBreakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
+          const breakdownDamageBs = directMoney(movementBreakdown
+            .filter((entry) => String(entry?.target ?? '').trim() === 'damage')
+            .reduce((subtotal, entry) => subtotal + directMoney(entry?.amountBs), 0));
+          if (breakdownDamageBs > 0) return sum + breakdownDamageBs;
+
+          const storedDamageBs = Math.max(0, directMoney(movement?.damageCollectedBs));
+          if (storedDamageBs > 0) return sum + storedDamageBs;
+
+          const target = String(movement?.collectionTarget ?? '').trim().toLowerCase();
+          const category = String(movement?.category ?? '').trim().toLowerCase();
+          const tag = String(movement?.accountingTag ?? '').trim().toLowerCase();
+          const type = String(movement?.type ?? '').trim().toLowerCase();
+          const isDamageMovement = target === 'damage'
+            || category === 'cobro_danos_faltantes'
+            || tag === 'contract_damage_collection'
+            || type.includes('dano')
+            || type.includes('faltante');
+          return isDamageMovement ? sum + Math.max(0, directMoney(movement?.amountBs)) : sum;
+        }, 0));
+
+        pendingDamageBs = directMoney(Math.max(
+          0,
+          totalDamageBs - guaranteeAppliedToDamageBs - collectedDamageBs,
+        ));
+        if (pendingDamageBs <= 0) {
+          const error = new Error('Esta orden no tiene daños o faltantes pendientes por cobrar.');
+          error.statusCode = 409;
+          throw error;
+        }
+        if (requestedDamageBs - pendingDamageBs > 0.01 || amountBs - pendingDamageBs > 0.01) {
+          const error = new Error(`Los daños/faltantes pendientes son Bs ${pendingDamageBs.toFixed(2)}.`);
+          error.statusCode = 409;
+          throw error;
+        }
+      } else {
+        if (currentPending <= 0) { const error = new Error('Esta orden no tiene saldo pendiente por cobrar.'); error.statusCode = 409; throw error; }
+        if (amountBs - currentPending > 0.01) { const error = new Error(`El saldo pendiente es Bs ${currentPending.toFixed(2)}.`); error.statusCode = 409; throw error; }
+      }
+
+      // Un cobro exclusivo de daños no modifica el saldo comercial. Para cobros
+      // normales se mantiene exactamente la lógica previa.
+      const remainingBs = isDamageOnlyCollection
+        ? currentPending
+        : Number(Math.max(0, currentPending - amountBs).toFixed(2));
       const deliveryFeeBs = !isReturned ? directMoney(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs) : 0;
       const previousTransport = directMoney(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs);
       const remainingTransport = directMoney(deliveryFeeBs - previousTransport);
@@ -2730,13 +2824,20 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const rentalNow = directMoney(explicitRental + Math.max(0, balance - balanceTransport));
       const now = new Date().toISOString();
       const previousPaid = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs);
+      const commercialAppliedNow = directMoney(rentalNow + transportNow);
+      const nextPaymentStatus = isDamageOnlyCollection
+        ? String(rental?.payment?.status ?? rental?.totals?.status ?? '').trim()
+        : remainingBs > 0 ? 'saldo_pendiente' : (isReturned ? 'cobrado_finalizado' : 'cancelado');
+      const nextPaymentMode = isDamageOnlyCollection
+        ? String(rental?.payment?.mode ?? rental?.totals?.mode ?? '').trim()
+        : remainingBs > 0 ? 'a_cuenta' : 'cancelado';
 
-      rental.payment = { ...(rental.payment ?? {}), paidAtRentalBs: directMoney(previousPaid + amountBs), pendingPaymentBs: remainingBs,
+      rental.payment = { ...(rental.payment ?? {}), paidAtRentalBs: directMoney(previousPaid + commercialAppliedNow), pendingPaymentBs: remainingBs,
         deliveryFeeCollectedBs: directMoney(previousTransport + transportNow),
         rentalCollectedBs: directMoney(Number(rental?.payment?.rentalCollectedBs ?? rental?.totals?.rentalCollectedBs ?? 0) + rentalNow),
         damageCollectedBs: directMoney(Number(rental?.payment?.damageCollectedBs ?? rental?.totals?.damageCollectedBs ?? 0) + explicitDamage),
-        status: remainingBs > 0 ? 'saldo_pendiente' : (isReturned ? 'cobrado_finalizado' : 'cancelado'),
-        mode: remainingBs > 0 ? 'a_cuenta' : 'cancelado', lastCollectionAt: now, lastCollectionBy: String(payload.createdBy ?? 'Sistema') };
+        status: nextPaymentStatus,
+        mode: nextPaymentMode, lastCollectionAt: now, lastCollectionBy: String(payload.createdBy ?? 'Sistema') };
       rental.totals = {
         ...(rental.totals ?? {}),
         ...(repairedRentalTotalBs > storedRentalTotalBs
@@ -2765,13 +2866,17 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
           paidBs: directMoney(
             Number(settlement.paidBs ?? previousPaid) + rentalNow + transportNow,
           ),
+          damageCollectedBs: directMoney(Number(settlement.damageCollectedBs ?? 0) + explicitDamage),
+          penaltiesCollectedBs: directMoney(Number(settlement.penaltiesCollectedBs ?? 0) + explicitDamage),
           collectedAfterReturnBs: directMoney(Number(settlement.collectedAfterReturnBs ?? 0) + amountBs),
-          collectedAt: remainingBs === 0 ? now : settlement.collectedAt ?? null,
-          collectedBy: remainingBs === 0 ? String(payload.createdBy ?? 'Sistema') : settlement.collectedBy ?? null,
+          collectedAt: !isDamageOnlyCollection && remainingBs === 0 ? now : settlement.collectedAt ?? null,
+          collectedBy: !isDamageOnlyCollection && remainingBs === 0 ? String(payload.createdBy ?? 'Sistema') : settlement.collectedBy ?? null,
         };
-        rental.accountingStatus = remainingBs === 0 ? 'cobrado_finalizado' : 'finalizado_pendiente_cobro';
-        rental.finalizedAt = remainingBs === 0 ? now : rental.finalizedAt ?? null;
-      } else rental.accountingStatus = remainingBs === 0 ? 'cobrado' : 'saldo_pendiente';
+        if (!isDamageOnlyCollection) {
+          rental.accountingStatus = remainingBs === 0 ? 'cobrado_finalizado' : 'finalizado_pendiente_cobro';
+          rental.finalizedAt = remainingBs === 0 ? now : rental.finalizedAt ?? null;
+        }
+      } else if (!isDamageOnlyCollection) rental.accountingStatus = remainingBs === 0 ? 'cobrado' : 'saldo_pendiente';
       rental.updatedAt = now;
 
       state.contracts.forEach((contract) => {
@@ -2794,12 +2899,20 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
               subtotalBs: directMoney(Math.max(0, repairedRentalTotalBs - deliveryFeeBs)),
             };
           }
-          contract.accountingStatus = rental.accountingStatus; contract.paymentStatus = rental.payment.status; contract.updatedAt = now;
+          if (!isDamageOnlyCollection) {
+            contract.accountingStatus = rental.accountingStatus;
+            contract.paymentStatus = rental.payment.status;
+          }
+          contract.updatedAt = now;
         }
       });
       state.serviceOrders.forEach((order) => {
         if (String(order?.rentalId ?? '') === rental.id || String(order?.id ?? '') === rental.id || order?.codigo === rental.orderCode) {
-          order.saldo_pendiente = remainingBs; order.estado = isReturned && remainingBs === 0 ? 'cobrado_finalizado' : remainingBs === 0 ? 'cobrada' : 'pendiente_cobro'; order.updated_at = now;
+          if (!isDamageOnlyCollection) {
+            order.saldo_pendiente = remainingBs;
+            order.estado = isReturned && remainingBs === 0 ? 'cobrado_finalizado' : remainingBs === 0 ? 'cobrada' : 'pendiente_cobro';
+          }
+          order.updated_at = now;
         }
       });
 
@@ -2818,7 +2931,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
         linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? matchedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
         transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note,
-        contractAllocationBs: amountBs,
+        contractAllocationBs: commercialAppliedNow,
         guaranteeAllocationBs: directMoney(payload.guaranteeAllocationBs),
         surplusAllocationBs: directMoney(payload.surplusAllocationBs),
         receivedAmountBs });
