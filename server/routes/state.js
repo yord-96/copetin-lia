@@ -4461,6 +4461,122 @@ router.put('/__copetin_db/contracts/:id/note', async (req, res, next) => {
   }
 });
 
+router.patch('/__copetin_db/contracts/:id/finalized', async (req, res, next) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'La solicitud debe enviarse como objeto JSON.' });
+      return;
+    }
+
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato.' });
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body, 'isFinalized')) {
+      res.status(400).json({ error: 'Debes indicar el estado finalizado.' });
+      return;
+    }
+
+    const nextFinalized = Boolean(req.body.isFinalized);
+    const actor = getContractNoteActor(req.body);
+    let responseContract = null;
+    const result = await updateStateSnapshot((state) => {
+      const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      const contractIndex = findContractIndexForNoteMutation(contracts, requestedId);
+      if (contractIndex < 0) {
+        const error = new Error('Contrato no encontrado para actualizar su finalizacion.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const now = new Date().toISOString();
+      const existingContract = contracts[contractIndex];
+      const updatedContract = {
+        ...existingContract,
+        isFinalized: nextFinalized,
+        finalizedAt: nextFinalized
+          ? (req.body.finalizedAt ?? existingContract.finalizedAt ?? now)
+          : null,
+        finalizedById: nextFinalized ? actor.userId : null,
+        finalizedByName: nextFinalized ? actor.userName : '',
+        finalizedByRole: nextFinalized ? actor.userRole : '',
+        updatedAt: now,
+      };
+
+      const changed = Boolean(existingContract.isFinalized) !== nextFinalized;
+      if (changed) {
+        const changeText = nextFinalized
+          ? 'Contrato marcado como finalizado'
+          : 'Contrato desmarcado como finalizado';
+        updatedContract.revisionHistory = Array.isArray(existingContract.revisionHistory)
+          ? [...existingContract.revisionHistory]
+          : [];
+        updatedContract.revisionHistory.push({
+          id: `rev-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+          updatedAt: now,
+          updatedById: actor.userId,
+          updatedByName: actor.userName,
+          updatedByRole: actor.userRole,
+          changes: [changeText],
+        });
+
+        state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+        state.systemAuditLog.unshift({
+          id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+          type: 'contract_updated',
+          action: 'actualizar_contrato',
+          module: 'Contratos',
+          entityType: 'contract',
+          entityId: updatedContract.id,
+          entityCode: updatedContract.contractCode ?? '',
+          title: `${nextFinalized ? 'Finalizo' : 'Reabrio'} contrato ${updatedContract.contractCode ?? ''}`.trim(),
+          detail: updatedContract.customerName ?? '',
+          changes: [changeText],
+          userId: actor.userId,
+          userName: actor.userName,
+          userRole: actor.userRole,
+          createdAt: now,
+        });
+      }
+
+      contracts[contractIndex] = updatedContract;
+      responseContract = {
+        id: updatedContract.id,
+        contractCode: updatedContract.contractCode ?? '',
+        orderCode: updatedContract.orderCode ?? '',
+        isFinalized: updatedContract.isFinalized,
+        finalizedAt: updatedContract.finalizedAt,
+        finalizedById: updatedContract.finalizedById,
+        finalizedByName: updatedContract.finalizedByName,
+        finalizedByRole: updatedContract.finalizedByRole,
+        updatedAt: updatedContract.updatedAt,
+      };
+      return state;
+    });
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json({
+      ok: true,
+      contract: responseContract,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 
 router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next) => {
   try {

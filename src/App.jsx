@@ -757,6 +757,7 @@ function AdminApp() {
             onCancelOrderContract={canWriteOrders ? controller.handleCancelOrderContract : undefined}
             onCreateContract={canWriteOrders ? controller.handleCreateContract : undefined}
             onUpdateContract={canWriteOrders ? controller.handleUpdateContract : undefined}
+            onSetContractFinalized={canWriteOrders ? controller.handleSetContractFinalized : undefined}
             onUpdateEconomicLedger={canWriteOrders ? controller.handleUpdateContractEconomicLedger : undefined}
             onRemoveContract={canWriteOrders ? controller.handleRemoveContract : undefined}
             onRestoreContract={canWriteOrders ? controller.handleRestoreContract : undefined}

@@ -1472,6 +1472,7 @@ function ServiceOrdersSection({
   onCancelOrderContract,
   onCreateContract,
   onUpdateContract,
+  onSetContractFinalized,
   onUpdateEconomicLedger,
   onRemoveContract,
   onRestoreContract,
@@ -1534,6 +1535,7 @@ function ServiceOrdersSection({
   const [submitStatusMessage, setSubmitStatusMessage] = useState('');
   const [contractActionStatus, setContractActionStatus] = useState('');
   const [finalizedContractOverrides, setFinalizedContractOverrides] = useState(() => new Map());
+  const [finalizingContractIds, setFinalizingContractIds] = useState(() => new Set());
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const deferredDocumentsOrder = useDeferredValue(documentsOrder);
@@ -7244,7 +7246,7 @@ function ServiceOrdersSection({
   };
 
   const handleToggleContractFinalized = async (contract, checked) => {
-    if (!contract?.id || !beginSubmit()) return;
+    if (!contract?.id || finalizingContractIds.has(contract.id)) return;
     const previousValue = finalizedContractOverrides.has(contract.id)
       ? finalizedContractOverrides.get(contract.id)
       : Boolean(contract.isFinalized);
@@ -7253,9 +7255,16 @@ function ServiceOrdersSection({
       next.set(contract.id, checked);
       return next;
     });
+    setFinalizingContractIds((current) => {
+      const next = new Set(current);
+      next.add(contract.id);
+      return next;
+    });
     setFormError('');
     try {
-      await onUpdateContract?.({
+      const updateFinalized = onSetContractFinalized ?? onUpdateContract;
+      if (!updateFinalized) throw new Error('No tienes permiso para actualizar el contrato.');
+      await updateFinalized({
         id: contract.id,
         isFinalized: checked,
         finalizedAt: checked ? new Date().toISOString() : null,
@@ -7273,7 +7282,11 @@ function ServiceOrdersSection({
       });
       setFormError(requestError.message || 'No se pudo actualizar el finalizado del contrato.');
     } finally {
-      endSubmit();
+      setFinalizingContractIds((current) => {
+        const next = new Set(current);
+        next.delete(contract.id);
+        return next;
+      });
       setMenuState(null);
     }
   };
@@ -10287,7 +10300,7 @@ function ServiceOrdersSection({
                             type="button"
                             className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
                             onClick={() => handleToggleContractFinalized(row, !isRowFinalized)}
-                            disabled={isSubmitting || row.status === 'oculto'}
+                            disabled={finalizingContractIds.has(row.id) || row.status === 'oculto'}
                             title={isRowFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
                             aria-pressed={isRowFinalized}
                             aria-label={`${isRowFinalized ? 'Desmarcar' : 'Marcar'} finalizado contrato ${row.contractCode}`}
@@ -10445,7 +10458,7 @@ function ServiceOrdersSection({
                         type="button"
                         className={`orders-finalized-check ${isRowFinalized ? 'is-checked' : ''}`}
                         onClick={() => handleToggleContractFinalized(row, !isRowFinalized)}
-                        disabled={isSubmitting || row.status === 'oculto'}
+                        disabled={finalizingContractIds.has(row.id) || row.status === 'oculto'}
                         title={isRowFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
                         aria-pressed={isRowFinalized}
                         aria-label={`${isRowFinalized ? 'Desmarcar' : 'Marcar'} finalizado contrato ${row.contractCode}`}
@@ -12403,7 +12416,10 @@ function ServiceOrdersSection({
                       type="button"
                       className={`orders-finalized-check ${selectedDocumentsClosureSummary.isFinalized ? 'is-checked' : ''}`}
                       onClick={() => handleToggleContractFinalized(selectedDocumentsContractRow ?? selectedDocumentsContract, !selectedDocumentsClosureSummary.isFinalized)}
-                      disabled={isSubmitting || (!selectedDocumentsContractRow && !selectedDocumentsContract)}
+                      disabled={
+                        (!selectedDocumentsContractRow && !selectedDocumentsContract)
+                        || finalizingContractIds.has((selectedDocumentsContractRow ?? selectedDocumentsContract)?.id)
+                      }
                       title={selectedDocumentsClosureSummary.isFinalized ? 'Contrato finalizado' : 'Marcar contrato finalizado'}
                       aria-pressed={selectedDocumentsClosureSummary.isFinalized}
                     >

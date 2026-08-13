@@ -1575,6 +1575,31 @@ export const useAppController = () => {
     }
   };
 
+  const handleSetContractFinalized = async (payload) => {
+    setError('');
+    try {
+      const trace = getCurrentUserTrace();
+      const updated = await api.contracts.setFinalized({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
+      if (!updated?.id) {
+        throw new Error('El servidor no devolvio el contrato actualizado.');
+      }
+      const mergeUpdated = (contract) => String(contract?.id) === String(updated.id)
+        ? { ...contract, ...updated }
+        : contract;
+      setContracts((current) => current.map(mergeUpdated));
+      setHiddenContracts((current) => current.map(mergeUpdated));
+      return updated;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo actualizar el finalizado del contrato.');
+      throw requestError;
+    }
+  };
+
   const handleUpdateContractEconomicLedger = async (payload) => {
     setError('');
     try {
@@ -2885,6 +2910,7 @@ export const useAppController = () => {
     handleCancelOrderContract,
     handleCreateContract,
     handleUpdateContract,
+    handleSetContractFinalized,
     handleUpdateContractEconomicLedger,
     handleRemoveContract,
     handleRestoreContract,

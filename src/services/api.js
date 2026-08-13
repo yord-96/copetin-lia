@@ -2583,6 +2583,58 @@ const deleteContractNoteOnServer = (payload = {}) => mutateContractNoteOnServer(
   actionName: 'deleteNote',
 });
 
+const setContractFinalizedOnServer = async (payload = {}) => {
+  const requestedId = String(payload?.id ?? payload?.contractId ?? payload?.contractCode ?? '').trim();
+  if (!requestedId) throw new Error('Debes indicar el contrato para actualizar su finalizacion.');
+
+  if (!shouldUseServerState()) {
+    return callBridge('contracts', 'update', true, payload);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  let response;
+  try {
+    response = await fetch(
+      getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/finalized`),
+      {
+        method: 'PATCH',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      },
+    );
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en actualizar el contrato.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar el finalizado del contrato.');
+  }
+
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+  if (result?.contract?.id) {
+    forgetFullRecordCache(fullContractCache, [requestedId, result.contract.id]);
+  }
+  // React recibe el parche pequeno y actualiza la fila de inmediato. La copia
+  // local completa queda marcada para refrescarse antes de la proxima mutacion,
+  // evitando serializar cientos de contratos por este unico booleano.
+  markServerStateStale('contracts.setFinalized:direct');
+  announceDataChange({
+    domain: 'contracts',
+    method: 'setFinalized',
+    collections: ['contracts', 'systemAuditLog'],
+  });
+  return result?.contract ?? null;
+};
+
 const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return null;
@@ -2892,6 +2944,7 @@ export const api = {
       forgetFullRecordCache(fullContractCache, updated);
       return updated;
     },
+    setFinalized: setContractFinalizedOnServer,
     updateEconomicLedger: async (payload) => {
       forgetFullRecordCache(fullContractCache, payload);
       const updated = await updateContractEconomicLedgerOnServer(payload);
