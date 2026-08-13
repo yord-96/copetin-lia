@@ -30,12 +30,14 @@ const normalizePresenceList = (value) => {
   return [];
 };
 
-const isMobileStartup = () => {
+const shouldWaitForCompanyChoice = (user) => {
   if (typeof window === 'undefined') return false;
-  const narrowScreen = window.matchMedia?.('(max-width: 900px)')?.matches ?? window.innerWidth <= 900;
-  const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
-  // Un equipo de escritorio con pantalla tactil no debe entrar al flujo movil.
-  return narrowScreen && coarsePointer;
+  const companies = getUserCompanyAccess(user);
+  if (companies.length <= 1) return false;
+  const selectedCompany = String(
+    window.sessionStorage.getItem('copetin-developer-company-choice-v1') ?? '',
+  ).trim();
+  return !companies.includes(selectedCompany);
 };
 
 
@@ -155,33 +157,38 @@ export const useAppController = () => {
   const [generatedReports, setGeneratedReports] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const deferredGroupsLoadedRef = useRef(new Set());
-  const mobileInitialLoadCompletedRef = useRef(false);
-  const mobileOrdersLoadedRef = useRef(false);
-  const mobileOrdersRequestRef = useRef(null);
+  const calendarOverviewLoadedRef = useRef(false);
+  const ordersOverviewLoadedRef = useRef(false);
+  const ordersOverviewRequestRef = useRef(null);
+  const fullWorkspaceLoadedRef = useRef(false);
   const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
 
   const [imagePreview, setImagePreview] = useState(null);
 
   const loadData = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
-    const mobileProgressive = isMobileStartup() && !mobileInitialLoadCompletedRef.current;
+    const calendarFirst = !options?.forceComplete && !calendarOverviewLoadedRef.current;
     if (!silent) {
       setLoading(true);
       setError('');
     }
     try {
-      if (mobileProgressive) {
-        const mobileOverview = await api.sync.getMobileCalendarOverview();
-        setContracts(Array.isArray(mobileOverview?.contracts) ? mobileOverview.contracts : []);
-        setRentals(Array.isArray(mobileOverview?.rentals) ? mobileOverview.rentals : []);
-        setDeliveries(Array.isArray(mobileOverview?.deliveries) ? mobileOverview.deliveries : []);
-        setCalendarEvents(Array.isArray(mobileOverview?.calendarEvents) ? mobileOverview.calendarEvents : []);
-        mobileInitialLoadCompletedRef.current = true;
+      if (calendarFirst) {
+        const calendarOverview = await api.sync.getMobileCalendarOverview();
+        setContracts(Array.isArray(calendarOverview?.contracts) ? calendarOverview.contracts : []);
+        setRentals(Array.isArray(calendarOverview?.rentals) ? calendarOverview.rentals : []);
+        setDeliveries(Array.isArray(calendarOverview?.deliveries) ? calendarOverview.deliveries : []);
+        setCalendarEvents(Array.isArray(calendarOverview?.calendarEvents) ? calendarOverview.calendarEvents : []);
+        calendarOverviewLoadedRef.current = true;
 
         return;
       }
 
       await api.sync.ensureLoaded({ background: !options?.forceComplete });
+      // Los resumenes de Calendario y Ordenes omiten las lineas pesadas. Los
+      // modulos operativos que si las necesitan las reciben completas solo al
+      // abrirse; nunca se elimina informacion de Inventario o Disponibilidad.
+      await api.sync.refreshCollections(['contracts', 'rentals'], 'full-workspace-details');
       const [
         dashboardData,
         inventoryData,
@@ -246,6 +253,7 @@ export const useAppController = () => {
       setCalendarEvents(calendarEventsData);
       setSettingsBundle(settingsData);
       setUserPresence(normalizePresenceList(presenceData));
+      fullWorkspaceLoadedRef.current = true;
 
       // Las colecciones historicas se cargan al abrir su modulo.
 
@@ -260,15 +268,15 @@ export const useAppController = () => {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authReady || !currentUser || activeTab !== 'alquiler' || !isMobileStartup()) return;
-    if (mobileOrdersLoadedRef.current || mobileOrdersRequestRef.current) return;
-
-    let disposed = false;
+  const prepareTabData = useCallback(async (targetTab) => {
+    if (String(targetTab) !== 'alquiler' || ordersOverviewLoadedRef.current) return;
+    if (ordersOverviewRequestRef.current) {
+      await ordersOverviewRequestRef.current;
+      return;
+    }
     setOrdersModuleLoading(true);
     const request = api.sync.getMobileOrdersOverview()
       .then((overview) => {
-        if (disposed) return;
         setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
         setHiddenContracts(Array.isArray(overview?.hiddenContracts) ? overview.hiddenContracts : []);
         setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
@@ -293,23 +301,33 @@ export const useAppController = () => {
           ...current,
           settings: overview?.settings ?? current?.settings ?? null,
         }));
-        mobileOrdersLoadedRef.current = true;
+        ordersOverviewLoadedRef.current = true;
       })
       .catch((ordersError) => {
-        if (!disposed) {
-          setError(ordersError.message || 'No se pudo cargar Ordenes.');
-        }
+        setError(ordersError.message || 'No se pudo cargar Ordenes.');
+        throw ordersError;
       })
       .finally(() => {
-        mobileOrdersRequestRef.current = null;
-        if (!disposed) setOrdersModuleLoading(false);
+        ordersOverviewRequestRef.current = null;
+        setOrdersModuleLoading(false);
       });
 
-    mobileOrdersRequestRef.current = request;
-    return () => {
-      disposed = true;
-    };
-  }, [activeTab, authReady, currentUser]);
+    ordersOverviewRequestRef.current = request;
+    await request;
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !currentUser || activeTab !== 'alquiler') return;
+    prepareTabData(activeTab).catch(() => {});
+  }, [activeTab, authReady, currentUser, prepareTabData]);
+
+  useEffect(() => {
+    if (!authReady || !currentUser || fullWorkspaceLoadedRef.current) return;
+    // Calendario, Ordenes y Asistencia tienen endpoints pequenos propios. El
+    // resto del sistema conserva la carga completa, pero ya de forma diferida.
+    if (['caja', 'alquiler', 'asistencia'].includes(String(activeTab))) return;
+    loadData({ forceComplete: true }).catch(() => {});
+  }, [activeTab, authReady, currentUser, loadData]);
 
   useEffect(() => {
     if (!authReady || !currentUser) return;
@@ -592,6 +610,12 @@ export const useAppController = () => {
       setLoading(false);
       return;
     }
+    // Si el usuario puede entrar a dos empresas, primero mostramos el selector.
+    // Evita descargar, descomprimir y procesar la base de Copetin detras del modal.
+    if (shouldWaitForCompanyChoice(currentUser)) {
+      setLoading(false);
+      return;
+    }
     loadData();
   }, [authReady, currentUser, loadData]);
 
@@ -711,9 +735,10 @@ export const useAppController = () => {
     try {
       const session = await api.auth.login(payload);
       deferredGroupsLoadedRef.current.clear();
-      mobileInitialLoadCompletedRef.current = false;
-      mobileOrdersLoadedRef.current = false;
-      mobileOrdersRequestRef.current = null;
+      calendarOverviewLoadedRef.current = false;
+      ordersOverviewLoadedRef.current = false;
+      ordersOverviewRequestRef.current = null;
+      fullWorkspaceLoadedRef.current = false;
       setCurrentUser(session);
       setActiveTab(getDefaultTabForUser(session));
       return session;
@@ -2804,6 +2829,7 @@ export const useAppController = () => {
     authError,
     loading,
     ordersModuleLoading,
+    prepareTabData,
     error,
     loadData,
     dashboard,

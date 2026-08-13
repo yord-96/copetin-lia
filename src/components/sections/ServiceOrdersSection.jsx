@@ -1584,6 +1584,9 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
   const [generatingDepositReceiptId, setGeneratingDepositReceiptId] = useState(null);
+  const [ledgerDateEditEntry, setLedgerDateEditEntry] = useState(null);
+  const [ledgerDateEditValue, setLedgerDateEditValue] = useState('');
+  const [ledgerDateEditError, setLedgerDateEditError] = useState('');
   const [receiptEditMovement, setReceiptEditMovement] = useState(null);
   const [receiptEditDraft, setReceiptEditDraft] = useState({
     receiptCode: '',
@@ -1922,13 +1925,18 @@ function ServiceOrdersSection({
     };
   }, [contractEconomicsTarget]);
 
-  const deliveryByRentalId = useMemo(() => {
+  const deliveriesByOrderReference = useMemo(() => {
     const map = new Map();
     deliveries.forEach((entry) => {
-      if (entry.rentalId && !map.has(entry.rentalId)) {
-        map.set(entry.rentalId, entry);
-      }
+      [entry?.rentalId, entry?.orderCode]
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+        .forEach((key) => {
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(entry);
+        });
     });
+    map.forEach((rows) => rows.sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate)));
     return map;
   }, [deliveries]);
 
@@ -1947,15 +1955,17 @@ function ServiceOrdersSection({
 
     return rentals.map((rental) => {
       const orderCode = String(rental.orderCode ?? rental.id).trim();
-      const linkedDeliveries = deliveries
-        .filter((entry) => entry.rentalId === rental.id || (entry.orderCode && entry.orderCode === orderCode))
+      const linkedDeliveriesById = new Map();
+      [...(deliveriesByOrderReference.get(String(rental.id)) ?? []),
+        ...(deliveriesByOrderReference.get(orderCode) ?? [])]
+        .forEach((entry) => linkedDeliveriesById.set(String(entry.id), entry));
+      const linkedDeliveries = [...linkedDeliveriesById.values()]
         .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
-      const delivery = linkedDeliveries[0]
-        ?? deliveryByRentalId.get(rental.id)
-        ?? deliveries.find((entry) => entry.orderCode && entry.orderCode === orderCode)
-        ?? null;
+      const delivery = linkedDeliveries[0] ?? null;
       const firstItem = rental.items?.[0];
-      const itemsCount = (rental.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
+      const itemsCount = Number.isFinite(Number(rental.itemsCount))
+        ? Number(rental.itemsCount)
+        : (rental.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
       const linkedContract = contractByRentalId.get(rental.id) ?? contractByOrderCode.get(orderCode) ?? null;
       const contractStatus = linkedContract?.status ?? 'sin_contrato';
       const contractMeta = CONTRACT_STATUS_META[contractStatus];
@@ -2024,7 +2034,7 @@ function ServiceOrdersSection({
             : [],
       };
     });
-  }, [contracts, deliveries, deliveryByRentalId, rentals]);
+  }, [contracts, deliveriesByOrderReference, rentals]);
 
   const documentsByOrderId = useMemo(() => {
     const bySourceId = new Map();
@@ -2251,7 +2261,9 @@ function ServiceOrdersSection({
 
   const buildContractRows = useCallback((sourceContracts) => {
     return sourceContracts.map((contract) => {
-      const itemsCount = (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
+      const itemsCount = Number.isFinite(Number(contract.itemsCount))
+        ? Number(contract.itemsCount)
+        : (contract.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
       const status = CONTRACT_STATUS_META[contract.status] ? contract.status : 'borrador';
       const deletionRevision = Array.isArray(contract?.revisionHistory)
         ? contract.revisionHistory.slice().reverse().find((revision) => (
@@ -3897,7 +3909,15 @@ function ServiceOrdersSection({
 
   const selectedOperationalOrder = useMemo(() => {
     if (!operationalOrder) return null;
-    return orderRowsWithMeta.find((row) => row.id === operationalOrder.id) ?? operationalOrder;
+    const currentRow = orderRowsWithMeta.find((row) => row.id === operationalOrder.id);
+    if (!currentRow) return operationalOrder;
+    return {
+      ...operationalOrder,
+      ...currentRow,
+      items: (operationalOrder.items ?? []).length > 0
+        ? operationalOrder.items
+        : currentRow.items ?? [],
+    };
   }, [operationalOrder, orderRowsWithMeta]);
 
   const toggleActionsMenu = (type, id, event) => {
@@ -7913,6 +7933,23 @@ function ServiceOrdersSection({
         )));
       }
       if (result?.contract?.id) {
+        const updatedLedger = Array.isArray(result.contract.economicLedger)
+          ? result.contract.economicLedger
+          : null;
+        if (updatedLedger) {
+          const updatedLedgerKey = String(
+            result.contract.id
+            ?? result.contract.contractCode
+            ?? '',
+          ).trim();
+          setActiveEconomicResetLedger(updatedLedger);
+          if (updatedLedgerKey) {
+            setEconomicResetLedgerByContract((current) => ({
+              ...current,
+              [updatedLedgerKey]: updatedLedger,
+            }));
+          }
+        }
         setContractEconomicsTarget((current) => (
           current && String(current?.id ?? '') === String(result.contract.id)
             ? { ...current, ...result.contract }
@@ -8732,23 +8769,55 @@ function ServiceOrdersSection({
 
   const handleEditContractEconomicLedgerEntry = (entry) => {
     if (!canManageContractEconomicLedger) return;
-    setContractEconomicsLedgerEditingId(entry.id);
-    setContractEconomicsLedgerDraft({
-      date: getDateKey(entry.createdAt) || getInputDate(new Date()),
-      paymentMethod: entry.paymentMethod || 'efectivo',
-      paymentAccount: entry.paymentAccount || '',
-    });
+    setLedgerDateEditEntry(entry);
+    setLedgerDateEditValue(getInputDateTime(entry.createdAt));
+    setLedgerDateEditError('');
+  };
 
-    if (contractEconomicsLedgerTypeRef.current) {
-      contractEconomicsLedgerTypeRef.current.value = entry.type || 'deposit';
+  const closeLedgerDateEditor = () => {
+    if (isSavingContractEconomicsLedger) return;
+    setLedgerDateEditEntry(null);
+    setLedgerDateEditValue('');
+    setLedgerDateEditError('');
+  };
+
+  const handleSubmitLedgerDateEdit = async (event) => {
+    event.preventDefault();
+    if (!ledgerDateEditEntry?.id || isSavingContractEconomicsLedger) return;
+    const parsedDate = new Date(ledgerDateEditValue);
+    if (!ledgerDateEditValue || Number.isNaN(parsedDate.getTime())) {
+      setLedgerDateEditError('Selecciona una fecha y hora validas.');
+      return;
     }
-    if (contractEconomicsLedgerAmountRef.current) {
-      contractEconomicsLedgerAmountRef.current.value = entry.type === 'note' ? '' : String(entry.amountBs ?? '');
+
+    const nextCreatedAt = parsedDate.toISOString();
+    const nextLedger = (contractEconomicsData?.economicLedger ?? []).map((entry) => (
+      String(entry?.id ?? '') === String(ledgerDateEditEntry.id)
+        ? { ...entry, createdAt: nextCreatedAt }
+        : entry
+    ));
+    const updated = await saveContractEconomicLedgerRows(
+      nextLedger,
+      'Fecha del movimiento actualizada sin modificar sus demas datos.',
+    );
+    if (!updated) {
+      setLedgerDateEditError('No se pudo actualizar la fecha. Intenta nuevamente.');
+      return;
     }
-    if (contractEconomicsLedgerNoteRef.current) {
-      contractEconomicsLedgerNoteRef.current.value = entry.note ?? '';
-      contractEconomicsLedgerNoteRef.current.focus();
+
+    const linkedMovementId = String(ledgerDateEditEntry.cashMovementId ?? '').trim();
+    if (linkedMovementId) {
+      const applyDate = (movement) => (
+        String(movement?.id ?? '') === linkedMovementId
+          ? { ...movement, createdAt: nextCreatedAt, receiptIssuedAt: nextCreatedAt }
+          : movement
+      );
+      setContractEconomicsContextMovements((current) => current.map(applyDate));
+      setRecentEconomicCashMovements((current) => current.map(applyDate));
     }
+    setLedgerDateEditEntry(null);
+    setLedgerDateEditValue('');
+    setLedgerDateEditError('');
   };
 
   const handleDeleteContractEconomicLedgerEntry = async (entry) => {
@@ -9364,16 +9433,29 @@ function ServiceOrdersSection({
     }
   };
 
-  const handleOpenOperationalPanel = (orderRow) => {
+  const handleOpenOperationalPanel = async (orderRow) => {
+    let fullOrder = orderRow;
+    if (orderRow?._summaryOnly || !(orderRow?.items ?? []).length) {
+      try {
+        const fullRental = await api.rentals.getFull(
+          orderRow?.rentalId ?? orderRow?.id ?? orderRow?.orderCode,
+        );
+        fullOrder = { ...orderRow, ...fullRental };
+      } catch (requestError) {
+        setFormError(requestError.message || 'No se pudo cargar el detalle operativo de la orden.');
+        setMenuState(null);
+        return;
+      }
+    }
     if (orderRow.status === 'cancelled') {
       setFormError('La orden esta anulada y ya no admite gestion operativa.');
       setMenuState(null);
       return;
     }
-    setOperationalOrder(orderRow);
+    setOperationalOrder(fullOrder);
     setOperationalDraft({
-      inventoryNote: orderRow.inventoryNote ?? '',
-      transportNote: orderRow.transportNote ?? '',
+      inventoryNote: fullOrder.inventoryNote ?? fullOrder.operational?.inventoryNote ?? '',
+      transportNote: fullOrder.transportNote ?? fullOrder.operational?.transportNote ?? '',
     });
     setMenuState(null);
   };
@@ -11728,12 +11810,12 @@ function ServiceOrdersSection({
                               type="button"
                               className="contract-economics-row-action"
                               onClick={() => handleEditContractEconomicLedgerEntry(entry)}
-                              disabled={readOnly || isSavingContractEconomicsLedger || (canHaveDepositReceipt && Boolean(entry.cashMovementId))}
-                              title={canHaveDepositReceipt && entry.cashMovementId ? 'Un deposito con recibo oficial no puede cambiar de monto desde la hoja.' : ''}
-                              aria-label={`Editar linea ${meta.label}`}
+                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              title="Cambia solamente la fecha y hora de esta linea y de su recibo vinculado."
+                              aria-label={`Editar fecha de ${meta.label}`}
                             >
                               <Pencil aria-hidden="true" />
-                              Editar
+                              Editar fecha
                             </button>
                             <button
                               type="button"
@@ -11978,6 +12060,55 @@ function ServiceOrdersSection({
               </button>
             </footer>
           </section>
+        </div>
+      ) : null}
+
+      {ledgerDateEditEntry ? (
+        <div className="orders-modal-backdrop receipt-editor-backdrop" onClick={closeLedgerDateEditor}>
+          <form
+            className="orders-modal receipt-editor-modal ledger-date-editor-modal"
+            onSubmit={handleSubmitLedgerDateEdit}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="orders-modal-head">
+              <div>
+                <h3>Editar fecha del movimiento</h3>
+                <p>Solo cambiaran la fecha y la hora. El monto, metodo, detalle y saldos permaneceran iguales.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeLedgerDateEditor} disabled={isSavingContractEconomicsLedger}>
+                x
+              </button>
+            </header>
+
+            <div className="receipt-editor-body ledger-date-editor-body">
+              <div className="ledger-date-editor-summary">
+                <span>Movimiento</span>
+                <strong>{ECONOMIC_LEDGER_TYPE_META[ledgerDateEditEntry.type]?.label ?? 'Movimiento economico'}</strong>
+                <small>{ledgerDateEditEntry.type === 'note' ? ledgerDateEditEntry.note : formatBs(ledgerDateEditEntry.amountBs)}</small>
+              </div>
+              <label>
+                <span>Nueva fecha y hora</span>
+                <input
+                  type="datetime-local"
+                  value={ledgerDateEditValue}
+                  onChange={(event) => setLedgerDateEditValue(event.target.value)}
+                  autoFocus
+                  required
+                />
+                <small>{ledgerDateEditEntry.cashMovementId ? 'El recibo vinculado mostrara esta misma fecha.' : 'Los demas datos de la linea no se modificaran.'}</small>
+              </label>
+              {ledgerDateEditError ? <p className="receipt-editor-error receipt-editor-field-wide">{ledgerDateEditError}</p> : null}
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button type="button" className="ghost-button" onClick={closeLedgerDateEditor} disabled={isSavingContractEconomicsLedger}>
+                Cancelar
+              </button>
+              <button type="submit" className="primary-button" disabled={isSavingContractEconomicsLedger}>
+                {isSavingContractEconomicsLedger ? 'Guardando...' : 'Guardar fecha'}
+              </button>
+            </footer>
+          </form>
         </div>
       ) : null}
 

@@ -1,4 +1,4 @@
-import { Suspense, lazy, memo, useEffect, useMemo, useState, useTransition } from 'react';
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import { useAppController } from './hooks/useAppController';
 import { runtimeInfo } from './services/api';
@@ -301,7 +301,7 @@ function AdminApp() {
   const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [developerCompanyChoice, setDeveloperCompanyChoice] = useState(readDeveloperCompanyChoice);
   const [pendingNavigationTab, setPendingNavigationTab] = useState('');
-  const [isNavigationPending, startNavigationTransition] = useTransition();
+  const navigationRequestRef = useRef(0);
   const allowedTabRoots = useMemo(
     () => (controller.currentUser
       ? Array.from(getAllowedTabRoots(controller.currentUser)).filter((tab) => canAccessTab(controller.currentUser, tab))
@@ -309,7 +309,7 @@ function AdminApp() {
     [controller.currentUser],
   );
   const navigationDisplayTab = pendingNavigationTab || controller.activeTab;
-  const isNavigating = Boolean(pendingNavigationTab && pendingNavigationTab !== controller.activeTab) || isNavigationPending;
+  const isNavigating = Boolean(pendingNavigationTab);
   const availableCompanies = useMemo(
     () => (controller.currentUser ? getUserCompanyAccess(controller.currentUser) : []),
     [controller.currentUser],
@@ -335,18 +335,11 @@ function AdminApp() {
   }, [controller.currentUser]);
 
   useEffect(() => {
-    if (pendingNavigationTab && pendingNavigationTab === controller.activeTab) {
-      const timeoutId = window.setTimeout(() => setPendingNavigationTab(''), 0);
-      return () => window.clearTimeout(timeoutId);
-    }
-    return undefined;
-  }, [controller.activeTab, pendingNavigationTab]);
-
-  useEffect(() => {
     if (
       !controller.authReady
       || !controller.currentUser
       || controller.loading
+      || selectedCompany !== 'copetin'
       || typeof window === 'undefined'
     ) return undefined;
     const mobileStartup = window.matchMedia?.('(max-width: 900px), (pointer: coarse)')?.matches ?? window.innerWidth <= 900;
@@ -375,7 +368,7 @@ function AdminApp() {
       }
       timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
-  }, [allowedTabRoots, controller.authReady, controller.currentUser, controller.loading]);
+  }, [allowedTabRoots, controller.authReady, controller.currentUser, controller.loading, selectedCompany]);
 
   useEffect(() => {
     if (!controller.currentUser || canAccessTab(controller.currentUser, controller.activeTab)) return;
@@ -442,20 +435,39 @@ function AdminApp() {
 
   const handleSidebarTabChange = (targetTab) => {
     if (!canAccessTab(controller.currentUser, targetTab)) {
+      navigationRequestRef.current += 1;
       setPendingNavigationTab('');
       controller.setActiveTab(getDefaultTabForUser(controller.currentUser));
       return;
     }
     markSidebarModuleAsSeen(targetTab);
     if (targetTab === controller.activeTab) {
+      navigationRequestRef.current += 1;
       setPendingNavigationTab('');
       return;
     }
+    const requestId = navigationRequestRef.current + 1;
+    navigationRequestRef.current = requestId;
     setPendingNavigationTab(targetTab);
-    preloadTabModule(targetTab);
-    startNavigationTransition(() => {
-      controller.setActiveTab(targetTab);
-    });
+
+    // Primero dejamos que React pinte la confirmacion de navegacion. Despues
+    // cargamos y montamos el modulo pesado en otra tarea, para que el clic no
+    // parezca congelado ni mantenga Calendario trabajando debajo.
+    Promise.all([
+      Promise.resolve(preloadTabModule(targetTab)).catch(() => {}),
+      Promise.resolve(controller.prepareTabData?.(targetTab)).catch(() => {}),
+    ])
+      .catch(() => {})
+      .then(() => new Promise((resolve) => window.requestAnimationFrame(resolve)))
+      .then(() => {
+        if (navigationRequestRef.current !== requestId) return;
+        controller.setActiveTab(targetTab);
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            if (navigationRequestRef.current === requestId) setPendingNavigationTab('');
+          });
+        });
+      });
   };
 
   const openResetDialog = () => {
@@ -471,6 +483,11 @@ function AdminApp() {
     if (!canAccessCompany(controller.currentUser, choice)) return;
     saveDeveloperCompanyChoice(choice);
     setDeveloperCompanyChoice(choice);
+    if (choice === 'copetin') {
+      // La carga fue diferida mientras el selector estaba abierto. Iniciarla
+      // despues del clic mantiene el acceso empresarial ligero e inmediato.
+      controller.loadData();
+    }
   };
 
   const handleCompanyChooserOpen = () => {
@@ -891,9 +908,11 @@ function AdminApp() {
                   Abriendo {getTabLabel(pendingNavigationTab || controller.activeTab)}...
                 </p>
               ) : null}
-              <Suspense fallback={<p className="status">Preparando vista...</p>}>
-                {renderWorkspaceContent()}
-              </Suspense>
+              {isNavigating || shouldShowDeveloperCompanyModal ? null : (
+                <Suspense fallback={<p className="status">Preparando vista...</p>}>
+                  {renderWorkspaceContent()}
+                </Suspense>
+              )}
             </section>
           </main>
         </section>

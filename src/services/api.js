@@ -568,7 +568,12 @@ const fetchMobileCalendarOverview = async () => {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
   }
-  return payload?.overview ?? { contracts: [], rentals: [], deliveries: [], calendarEvents: [] };
+  const overview = payload?.overview ?? { contracts: [], rentals: [], deliveries: [], calendarEvents: [] };
+  await mergeLocalState(overview);
+  // Es una vista parcial: cualquier mutacion que necesite contratos o
+  // alquileres completos debe ejecutar su precarga de seguridad habitual.
+  serverStateIsPartial = true;
+  return overview;
 };
 
 
@@ -585,7 +590,7 @@ const fetchMobileOrdersOverview = async () => {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
   }
-  return payload?.overview ?? {
+  const overview = payload?.overview ?? {
     contracts: [],
     hiddenContracts: [],
     rentals: [],
@@ -603,6 +608,9 @@ const fetchMobileOrdersOverview = async () => {
     personnelEmployees: [],
     settings: {},
   };
+  await mergeLocalState(overview);
+  serverStateIsPartial = true;
+  return overview;
 };
 
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {

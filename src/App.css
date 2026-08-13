@@ -11959,6 +11959,36 @@ textarea:focus {
   max-height: min(88vh, 760px);
 }
 
+.ledger-date-editor-modal {
+  width: min(560px, calc(100vw - 2rem));
+}
+
+.ledger-date-editor-body {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  align-items: stretch;
+}
+
+.ledger-date-editor-summary {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 1rem;
+  border: 1px solid #dbe6f5;
+  border-radius: 0.75rem;
+  background: #f7faff;
+  color: #10254f;
+}
+
+.ledger-date-editor-summary span,
+.ledger-date-editor-summary small {
+  color: #687997;
+}
+
+.ledger-date-editor-summary strong {
+  font-size: 1rem;
+}
+
 .receipt-editor-body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -3471,6 +3471,7 @@ router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next)
           return {
             ...entry,
             cashReceiptCode: receiptCode,
+            createdAt: movement.receiptIssuedAt,
             receiptIssuedAt: movement.receiptIssuedAt,
             editedAt: now,
             editedByName: editorName,
@@ -4660,6 +4661,7 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
               );
               if (linkedMovement) {
                 linkedMovement.createdAt = mergedEntry.createdAt;
+                linkedMovement.receiptIssuedAt = mergedEntry.createdAt;
                 linkedMovement.updatedAt = now;
                 linkedMovement.editedAt = now;
                 linkedMovement.editedById = req.body.updatedById ?? req.body.userId ?? null;
@@ -4679,6 +4681,7 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
                   if (reportMovementId !== linkedCashMovementId) return;
                   report.generatedAt = mergedEntry.createdAt;
                   report.createdAt = mergedEntry.createdAt;
+                  report.receiptIssuedAt = mergedEntry.createdAt;
                   report.updatedAt = now;
                 });
               }
@@ -5301,18 +5304,30 @@ const summarizeCalendarDelivery = (delivery = {}) => ({
 });
 
 
-const summarizeOrdersItemLine = (line = {}) => ({
-  itemId: line.itemId ?? '',
-  itemName: line.itemName ?? line.name ?? '',
-  name: line.name ?? line.itemName ?? '',
-  quantity: Number(line.quantity ?? 0),
-  lineTotalBs: Number(line.lineTotalBs ?? 0),
-  serviceDate: line.serviceDate ?? null,
-  serviceDayId: line.serviceDayId ?? null,
-  serviceDayLabel: line.serviceDayLabel ?? '',
-  controlsStock: line.controlsStock,
-  supplierBackedQty: Number(line.supplierBackedQty ?? 0),
-  internalReservedQty: line.internalReservedQty ?? null,
+// El listado economico solo necesita estos campos para calcular saldos,
+// garantia y notas. El cuaderno completo permanece en el servidor y se
+// descarga de forma atomica al abrir o editar un contrato.
+const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
+  id: entry.id ?? '',
+  type: entry.type ?? '',
+  amountBs: Number(entry.amountBs ?? 0),
+  paymentMethod: entry.paymentMethod ?? '',
+  paymentAccount: entry.paymentAccount ?? '',
+  note: entry.type === 'note' ? (entry.note ?? '') : '',
+  createdAt: entry.createdAt ?? null,
+  createdByName: entry.createdByName ?? entry.createdBy ?? '',
+  cashMovementId: entry.cashMovementId ?? null,
+  cashReceiptCode: entry.cashReceiptCode ?? '',
+  isCashRegistered: Boolean(entry.isCashRegistered),
+  cashCollectionTarget: entry.cashCollectionTarget ?? '',
+  reclassifiedFromPayment: Boolean(entry.reclassifiedFromPayment),
+  refundSource: entry.refundSource ?? '',
+  sourceDepositId: entry.sourceDepositId ?? null,
+  contractAllocationBs: Number(entry.contractAllocationBs ?? 0),
+  guaranteeAllocationBs: Number(entry.guaranteeAllocationBs ?? 0),
+  surplusAllocationBs: Number(entry.surplusAllocationBs ?? 0),
+  deletedAt: entry.deletedAt ?? null,
+  deletedByName: entry.deletedByName ?? '',
 });
 
 const summarizeOrdersContract = (contract = {}) => ({
@@ -5381,8 +5396,13 @@ const summarizeOrdersContract = (contract = {}) => ({
   services: (Array.isArray(contract.services) ? contract.services : []).map((service) => ({
     lineTotalBs: Number(service?.lineTotalBs ?? 0),
   })),
-  items: (Array.isArray(contract.items) ? contract.items : []).map(summarizeOrdersItemLine),
-  economicLedger: Array.isArray(contract.economicLedger) ? contract.economicLedger : [],
+  // Los miles de lineas de items duplicaban mas de un megabyte en cada
+  // arranque. Para el listado basta el total; la edicion usa ensureFull().
+  itemsCount: (Array.isArray(contract.items) ? contract.items : [])
+    .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
+  items: [],
+  economicLedger: (Array.isArray(contract.economicLedger) ? contract.economicLedger : [])
+    .map(summarizeOrdersEconomicLedgerEntry),
   economicResetAt: contract.economicResetAt ?? null,
   economicResetVersion: contract.economicResetVersion ?? null,
   isFinalized: Boolean(contract.isFinalized),
@@ -5446,7 +5466,9 @@ const summarizeOrdersRental = (rental = {}) => ({
         accountingStatus: rental.returnSettlement.accountingStatus ?? '',
       }
     : null,
-  items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeOrdersItemLine),
+  itemsCount: (Array.isArray(rental.items) ? rental.items : [])
+    .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
+  items: [],
   _summaryOnly: true,
   _ordersSummaryOnly: true,
 });
