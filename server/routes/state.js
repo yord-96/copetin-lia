@@ -5542,6 +5542,18 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   deletedByName: entry.deletedByName ?? '',
 });
 
+
+const summarizeAvailabilityItemLine = (line = {}) => ({
+  itemId: line.itemId ?? '',
+  itemName: line.itemName ?? line.name ?? '',
+  name: line.name ?? line.itemName ?? '',
+  quantity: Number(line.quantity ?? 0),
+  internalReservedQty: line.internalReservedQty ?? null,
+  supplierBackedQty: Number(line.supplierBackedQty ?? 0),
+  controlsStock: line.controlsStock !== false,
+  verificationStatus: line.verificationStatus ?? '',
+});
+
 const summarizeOrdersContract = (contract = {}) => ({
   id: contract.id ?? '',
   rentalId: contract.rentalId ?? '',
@@ -5608,11 +5620,12 @@ const summarizeOrdersContract = (contract = {}) => ({
   services: (Array.isArray(contract.services) ? contract.services : []).map((service) => ({
     lineTotalBs: Number(service?.lineTotalBs ?? 0),
   })),
-  // Los miles de lineas de items duplicaban mas de un megabyte en cada
-  // arranque. Para el listado basta el total; la edicion usa ensureFull().
+  // El bootstrap conserva solo las lineas minimas que necesita la
+  // disponibilidad por fecha. La edicion sigue descargando el contrato completo.
   itemsCount: (Array.isArray(contract.items) ? contract.items : [])
     .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
-  items: [],
+  items: (Array.isArray(contract.items) ? contract.items : [])
+    .map(summarizeAvailabilityItemLine),
   economicLedger: (Array.isArray(contract.economicLedger) ? contract.economicLedger : [])
     .map(summarizeOrdersEconomicLedgerEntry),
   economicResetAt: contract.economicResetAt ?? null,
@@ -5680,7 +5693,8 @@ const summarizeOrdersRental = (rental = {}) => ({
     : null,
   itemsCount: (Array.isArray(rental.items) ? rental.items : [])
     .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
-  items: [],
+  items: (Array.isArray(rental.items) ? rental.items : [])
+    .map(summarizeAvailabilityItemLine),
   _summaryOnly: true,
   _ordersSummaryOnly: true,
 });
