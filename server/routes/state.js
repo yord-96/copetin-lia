@@ -1891,6 +1891,134 @@ router.post('/__copetin_db/suppliers/create', async (req, res, next) => {
   }
 });
 
+router.patch('/__copetin_db/rentals/:id/operational', async (req, res, next) => {
+  try {
+    const rentalId = String(req.params.id ?? '').trim();
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (!rentalId) return res.status(400).json({ error: 'No se pudo identificar la orden de servicio.' });
+
+    let responseRental = null;
+    const result = await updateStateSnapshot((state) => {
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      const rental = state.rentals.find((entry) => String(entry?.id ?? '') === rentalId && !entry?.deletedAt);
+      if (!rental) { const error = new Error('Orden de servicio no encontrada.'); error.statusCode = 404; throw error; }
+      if (rental.status === 'cancelled') { const error = new Error('La orden esta anulada y ya no admite cambios operativos.'); error.statusCode = 409; throw error; }
+
+      const now = new Date().toISOString();
+      const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+      const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+      rental.operational = {
+        inventoryStatus: rental.operational?.inventoryStatus ?? 'pendiente',
+        transportStatus: rental.operational?.transportStatus ?? 'pendiente',
+        inventoryNote: rental.operational?.inventoryNote ?? '',
+        transportNote: rental.operational?.transportNote ?? '',
+        inventorySentAt: rental.operational?.inventorySentAt ?? null,
+        inventoryDispatchedAt: rental.operational?.inventoryDispatchedAt ?? null,
+        inventoryDispatchedByName: rental.operational?.inventoryDispatchedByName ?? null,
+        inventoryDispatchedByRole: rental.operational?.inventoryDispatchedByRole ?? null,
+        transportSentAt: rental.operational?.transportSentAt ?? null,
+        inventoryConfirmedAt: rental.operational?.inventoryConfirmedAt ?? null,
+        transportConfirmedAt: rental.operational?.transportConfirmedAt ?? null,
+        inventoryConfirmedByName: rental.operational?.inventoryConfirmedByName ?? null,
+        inventoryConfirmedByRole: rental.operational?.inventoryConfirmedByRole ?? null,
+        inventoryReturnedAt: rental.operational?.inventoryReturnedAt ?? null,
+        inventoryReturnedByName: rental.operational?.inventoryReturnedByName ?? null,
+        inventoryReturnedByRole: rental.operational?.inventoryReturnedByRole ?? null,
+        transportConfirmedByName: rental.operational?.transportConfirmedByName ?? null,
+        transportConfirmedByRole: rental.operational?.transportConfirmedByRole ?? null,
+        dispatchReview: rental.operational?.dispatchReview ?? null,
+        returnReview: rental.operational?.returnReview ?? null,
+        revisionAlert: rental.operational?.revisionAlert ?? null,
+        clientPendingPickup: rental.operational?.clientPendingPickup ?? null,
+      };
+
+      if (payload.inventoryStatus !== undefined) {
+        const previousStatus = rental.operational.inventoryStatus;
+        const nextStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
+        if (nextStatus === 'salio' && previousStatus !== 'confirmado' && !rental.operational.inventoryConfirmedAt) {
+          const error = new Error('Primero debes marcar la orden como lista antes de registrar su salida.');
+          error.statusCode = 409;
+          throw error;
+        }
+        rental.operational.inventoryStatus = nextStatus;
+        if (nextStatus === 'enviado' && !rental.operational.inventorySentAt) rental.operational.inventorySentAt = now;
+        if (nextStatus === 'confirmado') {
+          rental.operational.inventoryConfirmedAt = now;
+          rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
+          rental.operational.inventoryConfirmedByName = userName;
+          rental.operational.inventoryConfirmedByRole = userRole;
+        }
+        if (nextStatus === 'salio') {
+          rental.operational.inventoryDispatchedAt = now;
+          rental.operational.inventoryDispatchedByName = userName;
+          rental.operational.inventoryDispatchedByRole = userRole;
+        }
+      }
+      if (payload.transportStatus !== undefined) {
+        const nextStatus = String(payload.transportStatus ?? 'pendiente').trim() || 'pendiente';
+        rental.operational.transportStatus = nextStatus;
+        if (nextStatus === 'enviado' && !rental.operational.transportSentAt) rental.operational.transportSentAt = now;
+        if (nextStatus === 'confirmado') {
+          rental.operational.transportConfirmedAt = now;
+          rental.operational.transportSentAt = rental.operational.transportSentAt ?? now;
+          rental.operational.transportConfirmedByName = userName;
+          rental.operational.transportConfirmedByRole = userRole;
+        }
+      }
+      if (payload.inventoryNote !== undefined) rental.operational.inventoryNote = String(payload.inventoryNote ?? '').trim();
+      if (payload.transportNote !== undefined) rental.operational.transportNote = String(payload.transportNote ?? '').trim();
+      if (payload.dispatchReview !== undefined) {
+        rental.operational.dispatchReview = {
+          status: String(payload.dispatchReview?.status ?? 'complete').trim() || 'complete',
+          note: String(payload.dispatchReview?.note ?? '').trim(),
+          items: (Array.isArray(payload.dispatchReview?.items) ? payload.dispatchReview.items : []).map((line) => ({
+            lineKey: String(line?.lineKey ?? '').trim(), itemId: String(line?.itemId ?? '').trim(),
+            itemName: String(line?.itemName ?? '').trim(), expectedQty: Math.max(0, Math.trunc(Number(line?.expectedQty ?? 0))),
+            dispatchedQty: Math.max(0, Math.trunc(Number(line?.dispatchedQty ?? 0))),
+            pendingQty: Math.max(0, Math.trunc(Number(line?.pendingQty ?? 0))), note: String(line?.note ?? '').trim(),
+          })),
+          reviewedAt: now, reviewedByName: userName, reviewedByRole: userRole,
+        };
+      }
+      if (payload.returnReview !== undefined) {
+        rental.operational.returnReview = {
+          status: String(payload.returnReview?.status ?? 'complete').trim() || 'complete',
+          note: String(payload.returnReview?.note ?? '').trim(), reviewedAt: now,
+          reviewedByName: userName, reviewedByRole: userRole,
+        };
+      }
+      if (payload.clientPendingPickup !== undefined) {
+        const active = Boolean(payload.clientPendingPickup?.active);
+        rental.operational.clientPendingPickup = active ? {
+          active: true,
+          note: String(payload.clientPendingPickup?.note ?? '').trim(),
+          items: (Array.isArray(payload.clientPendingPickup?.items) ? payload.clientPendingPickup.items : []).map((line) => ({
+            lineKey: String(line?.lineKey ?? '').trim(), itemId: String(line?.itemId ?? '').trim(),
+            itemName: String(line?.itemName ?? '').trim(), expectedQty: Math.max(0, Math.trunc(Number(line?.expectedQty ?? 0))),
+            pendingQty: Math.max(0, Math.trunc(Number(line?.pendingQty ?? 0))), note: String(line?.note ?? '').trim(),
+          })).filter((line) => line.pendingQty > 0),
+          registeredAt: now, registeredByName: userName, registeredByRole: userRole,
+        } : null;
+      }
+      if (payload.revisionAlert !== undefined) rental.operational.revisionAlert = payload.revisionAlert ?? null;
+      if (payload.clearOperationalRevisionAlert && rental.operational.revisionAlert) {
+        rental.operational.revisionAlert = {
+          ...rental.operational.revisionAlert, active: false, resolvedAt: now,
+          resolvedByName: userName, resolvedByRole: userRole,
+        };
+      }
+      rental.updatedAt = now;
+      responseRental = summarizeInventoryRental(rental);
+      return state;
+    });
+
+    res.json({ ok: true, rental: responseRental, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
@@ -2135,7 +2263,7 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
           },
         };
         rental.updatedAt = now;
-        responseData = { rental: structuredClone(rental) };
+        responseData = { rental: summarizeInventoryRental(rental) };
         return state;
       }
 
@@ -2201,7 +2329,7 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
         }
       });
       addDirectReturnCashMovements(state, rental);
-      responseData = { rental: structuredClone(rental) };
+      responseData = { rental: summarizeInventoryRental(rental) };
       return state;
     });
 
@@ -5483,6 +5611,170 @@ const summarizeOrdersDelivery = (delivery = {}) => ({
   address: delivery.address ?? '',
   city: delivery.city ?? '',
   deletedAt: delivery.deletedAt ?? null,
+});
+
+const summarizeInventoryLine = (line = {}, index = 0) => ({
+  lineKey: line.lineKey ?? '',
+  itemId: line.itemId ?? '',
+  itemName: line.itemName ?? line.name ?? 'Item',
+  quantity: Number(line.quantity ?? 0),
+  internalReservedQty: line.internalReservedQty ?? null,
+  supplierBackedQty: Number(line.supplierBackedQty ?? 0),
+  controlsStock: line.controlsStock !== false,
+  verificationStatus: line.verificationStatus ?? '',
+  rentalPriceBs: Number(line.rentalPriceBs ?? line.unitPriceBs ?? 0),
+  unitPriceBs: Number(line.unitPriceBs ?? line.rentalPriceBs ?? 0),
+  lineTotalBs: Number(line.lineTotalBs ?? 0),
+  damagedUnitChargeBs: line.damagedUnitChargeBs ?? null,
+  missingUnitChargeBs: line.missingUnitChargeBs ?? null,
+  comboId: line.comboId ?? null,
+  comboName: line.comboName ?? '',
+  comboLineKey: line.comboLineKey ?? null,
+  comboComponentName: line.comboComponentName ?? '',
+  comboRuleIndex: line.comboRuleIndex ?? index,
+  comboQuantity: line.comboQuantity ?? null,
+  comboPricingRole: line.comboPricingRole ?? '',
+});
+
+const summarizeInventoryRental = (rental = {}) => ({
+  id: rental.id ?? '',
+  contractId: rental.contractId ?? '',
+  contractCode: rental.contractCode ?? '',
+  orderCode: rental.orderCode ?? '',
+  status: rental.status ?? '',
+  deletedAt: rental.deletedAt ?? null,
+  createdAt: rental.createdAt ?? rental.rentalAt ?? null,
+  updatedAt: rental.updatedAt ?? null,
+  cancelledAt: rental.cancelledAt ?? null,
+  rentalDate: rental.rentalDate ?? null,
+  dueDate: rental.dueDate ?? null,
+  dueTime: rental.dueTime ?? '',
+  deliveryWindowStart: rental.deliveryWindowStart ?? '',
+  deliveryWindowEnd: rental.deliveryWindowEnd ?? '',
+  pickupWindowStart: rental.pickupWindowStart ?? '',
+  pickupWindowEnd: rental.pickupWindowEnd ?? '',
+  customerName: rental.customerName ?? '',
+  customerPhone: rental.customerPhone ?? rental.phone ?? '',
+  companyName: rental.companyName ?? '',
+  logisticsMode: rental.logisticsMode ?? 'envio',
+  eventAddress: rental.eventAddress ?? rental.address ?? '',
+  address: rental.address ?? '',
+  city: rental.city ?? '',
+  createdBy: rental.createdBy ?? '',
+  createdByName: rental.createdByName ?? '',
+  createdByRole: rental.createdByRole ?? '',
+  cancellationPenaltyBs: Number(rental.cancellationPenaltyBs ?? 0),
+  depositBs: Number(rental.depositBs ?? 0),
+  penaltiesBs: Number(rental.penaltiesBs ?? 0),
+  internalPenaltiesBs: Number(rental.internalPenaltiesBs ?? 0),
+  refundBs: Number(rental.refundBs ?? 0),
+  payment: rental.payment ? structuredClone(rental.payment) : null,
+  totals: rental.totals ? structuredClone(rental.totals) : null,
+  returnSettlement: rental.returnSettlement ? structuredClone(rental.returnSettlement) : null,
+  operational: rental.operational ? structuredClone(rental.operational) : { inventoryStatus: 'pendiente' },
+  pickupChecklist: rental.pickupChecklist ? structuredClone(rental.pickupChecklist) : null,
+  partialReturnReport: rental.partialReturnReport ? structuredClone(rental.partialReturnReport) : null,
+  returnReport: Array.isArray(rental.returnReport) ? rental.returnReport.map((line) => ({
+    lineKey: line.lineKey ?? '', itemId: line.itemId ?? '', itemName: line.itemName ?? '',
+    returnedQty: Number(line.returnedQty ?? 0), damagedQty: Number(line.damagedQty ?? 0),
+    missingQty: Number(line.missingQty ?? 0), damageNote: line.damageNote ?? '',
+  })) : null,
+  items: (Array.isArray(rental.items) ? rental.items : []).map(summarizeInventoryLine),
+  _summaryOnly: true,
+  _inventorySummaryOnly: true,
+});
+
+const summarizeInventoryContract = (contract = {}) => ({
+  id: contract.id ?? '',
+  rentalId: contract.rentalId ?? '',
+  contractCode: contract.contractCode ?? '',
+  orderCode: contract.orderCode ?? '',
+  status: contract.status ?? '',
+  deletedAt: contract.deletedAt ?? null,
+  customerName: contract.customerName ?? contract.clientName ?? '',
+  eventType: contract.eventType ?? '',
+  logisticsMode: contract.logisticsMode ?? 'envio',
+  deliveryDate: contract.deliveryDate ?? null,
+  pickupDate: contract.pickupDate ?? null,
+  deliveryWindowStart: contract.deliveryWindowStart ?? '',
+  deliveryWindowEnd: contract.deliveryWindowEnd ?? '',
+  pickupWindowStart: contract.pickupWindowStart ?? '',
+  pickupWindowEnd: contract.pickupWindowEnd ?? '',
+  address: contract.address ?? contract.deliveryAddress ?? contract.serviceAddress ?? '',
+  city: contract.city ?? '',
+  _summaryOnly: true,
+  _inventorySummaryOnly: true,
+});
+
+const summarizeInventoryMovement = (movement = {}) => {
+  const fields = [
+    'id', 'itemId', 'itemName', 'category', 'type', 'reason', 'detail', 'reference',
+    'contractCode', 'deltaUnits', 'beforeTotalStock', 'afterTotalStock',
+    'beforeAvailableStock', 'afterAvailableStock', 'reservedStockAfter', 'userName',
+    'userRole', 'createdAt', 'operationDate', 'deliveryDate', 'status', 'valueAmount',
+    'imageUrl', 'imageDataUrl',
+  ];
+  return Object.fromEntries(fields
+    .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
+    .map((field) => [field, movement[field]]));
+};
+
+router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const allRentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const operationalRentals = allRentals.filter((rental) => {
+      const status = String(rental?.status ?? '').trim().toLowerCase();
+      return !rental?.deletedAt && status !== 'returned' && status !== 'cancelled' && status !== 'anulado';
+    });
+    const recentClosedRentals = allRentals
+      .filter((rental) => {
+        const status = String(rental?.status ?? '').trim().toLowerCase();
+        return !rental?.deletedAt && ['returned', 'cancelled', 'anulado'].includes(status);
+      })
+      .sort((a, b) => new Date(b?.updatedAt ?? b?.cancelledAt ?? b?.createdAt ?? 0)
+        - new Date(a?.updatedAt ?? a?.cancelledAt ?? a?.createdAt ?? 0))
+      .slice(0, 100);
+    const overviewRentals = [...operationalRentals, ...recentClosedRentals];
+    const overviewRentalIds = new Set(overviewRentals.map((rental) => String(rental?.id ?? '')).filter(Boolean));
+    const overviewContractIds = new Set(overviewRentals.map((rental) => String(rental?.contractId ?? '')).filter(Boolean));
+    const allMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+    const movementStats = allMovements.reduce((counts, movement) => {
+      counts.total += 1;
+      if (movement?.type === 'entrada' || movement?.type === 'reinsercion') counts.entrada += 1;
+      else if (movement?.type === 'salida' || movement?.type === 'reserva') counts.salida += 1;
+      else counts.ajuste += 1;
+      return counts;
+    }, { total: 0, entrada: 0, salida: 0, ajuste: 0 });
+    const recentMovements = allMovements
+      .slice()
+      .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0))
+      .slice(0, 300)
+      .map(summarizeInventoryMovement);
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        items: Array.isArray(state.items) ? state.items : [],
+        inventoryCombos: Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [],
+        categories: Array.isArray(state.categories) ? state.categories : [],
+        contracts: (Array.isArray(state.contracts) ? state.contracts : [])
+          .filter((contract) => overviewContractIds.has(String(contract?.id ?? '')))
+          .map(summarizeInventoryContract),
+        rentals: overviewRentals.map(summarizeInventoryRental),
+        deliveries: (Array.isArray(state.deliveries) ? state.deliveries : [])
+          .filter((delivery) => overviewRentalIds.has(String(delivery?.rentalId ?? '')))
+          .map(summarizeOrdersDelivery),
+        inventoryMovements: recentMovements,
+        movementStats,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {

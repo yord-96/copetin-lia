@@ -122,6 +122,8 @@ export const useAppController = () => {
   const [supplierBundle, setSupplierBundle] = useState({ suppliers: [], quotes: [], loans: [] });
   const [personnelBundle, setPersonnelBundle] = useState({ employees: [], attendance: [], incidents: [] });
   const [inventoryMovements, setInventoryMovements] = useState([]);
+  const [inventoryMovementStats, setInventoryMovementStats] = useState(null);
+  const [inventoryModuleLoading, setInventoryModuleLoading] = useState(false);
   const [stockRecoveries, setStockRecoveries] = useState([]);
   const [rentals, setRentals] = useState([]);
   const [cashSummary, setCashSummary] = useState(null);
@@ -325,7 +327,10 @@ export const useAppController = () => {
     if (!authReady || !currentUser || fullWorkspaceLoadedRef.current) return;
     // Calendario, Ordenes y Asistencia tienen endpoints pequenos propios. El
     // resto del sistema conserva la carga completa, pero ya de forma diferida.
-    if (['caja', 'alquiler', 'asistencia'].includes(String(activeTab))) return;
+    if (
+      ['caja', 'alquiler', 'asistencia'].includes(String(activeTab))
+      || String(activeTab).startsWith('inventario')
+    ) return;
     loadData({ forceComplete: true }).catch(() => {});
   }, [activeTab, authReady, currentUser, loadData]);
 
@@ -366,17 +371,31 @@ export const useAppController = () => {
         setGeneratedReports(reportsData);
         setAuditLog(auditData);
       };
-    } else if (activeInventoryTab === 'inventario_movimientos' || activeInventoryTab === 'inventario_ajustes') {
-      group = 'inventory-movements';
+    } else if (activeInventoryTab.startsWith('inventario')) {
+      group = activeInventoryTab === 'inventario_mantenimiento'
+        ? 'inventory-overview-maintenance'
+        : 'inventory-overview';
       loader = async () => {
-        const movementsData = await api.inventory.listMovements();
-        setInventoryMovements(movementsData);
-      };
-    } else if (activeInventoryTab === 'inventario_mantenimiento') {
-      group = 'inventory-recoveries';
-      loader = async () => {
-        const recoveriesData = await api.inventory.listRecoveries();
-        setStockRecoveries(recoveriesData);
+        setInventoryModuleLoading(true);
+        try {
+          const [overview, recoveriesData] = await Promise.all([
+            api.sync.getInventoryMovementsOverview(),
+            activeInventoryTab === 'inventario_mantenimiento'
+              ? api.inventory.listRecoveries()
+              : Promise.resolve(null),
+          ]);
+          setItems(Array.isArray(overview?.items) ? overview.items : []);
+          setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
+          setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
+          setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
+          setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
+          setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+          setInventoryMovements(Array.isArray(overview?.inventoryMovements) ? overview.inventoryMovements : []);
+          setInventoryMovementStats(overview?.movementStats ?? null);
+          if (Array.isArray(recoveriesData)) setStockRecoveries(recoveriesData);
+        } finally {
+          setInventoryModuleLoading(false);
+        }
       };
     } else if (String(activeTab).startsWith('contabilidad')) {
       group = 'accounting-operations';
@@ -942,7 +961,13 @@ export const useAppController = () => {
         requireCashSession: false,
       });
       setRentals((current) => current.map((rental) => (
-        rental.id === returned.id ? returned : rental
+        rental.id === returned.id
+          ? {
+              ...rental,
+              ...returned,
+              operational: { ...(rental.operational ?? {}), ...(returned.operational ?? {}) },
+            }
+          : rental
       )));
       return returned;
     } catch (requestError) {
@@ -1510,7 +1535,13 @@ export const useAppController = () => {
         ...getCurrentUserTrace(),
       });
       setRentals((current) => current.map((rental) => (
-        rental.id === updated.id ? updated : rental
+        rental.id === updated.id
+          ? {
+              ...rental,
+              ...updated,
+              operational: { ...(rental.operational ?? {}), ...(updated.operational ?? {}) },
+            }
+          : rental
       )));
       return updated;
     } catch (requestError) {
@@ -2845,6 +2876,8 @@ export const useAppController = () => {
     supplierBundle,
     personnelBundle,
     inventoryMovements,
+    inventoryMovementStats,
+    inventoryModuleLoading,
     stockRecoveries,
     rentals,
     activeRentals,

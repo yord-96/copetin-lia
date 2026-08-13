@@ -1144,6 +1144,8 @@ function InventoryDashboardSection({
   deliveries = [],
   stockRecoveries = [],
   inventoryMovements = [],
+  inventoryMovementStats = null,
+  moduleLoading = false,
   formatBs,
   formatDateTime,
   onSwitchInventoryModule,
@@ -2141,13 +2143,22 @@ function InventoryDashboardSection({
   }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
 
   const movementStats = useMemo(() => {
-    const counts = { total: 0, entrada: 0, salida: 0, ajuste: 0 };
+    const counts = inventoryMovementStats
+      ? {
+          total: Number(inventoryMovementStats.total ?? 0),
+          entrada: Number(inventoryMovementStats.entrada ?? 0),
+          salida: Number(inventoryMovementStats.salida ?? 0),
+          ajuste: Number(inventoryMovementStats.ajuste ?? 0),
+        }
+      : { total: 0, entrada: 0, salida: 0, ajuste: 0 };
+    if (!inventoryMovementStats) {
     inventoryMovements.forEach((movement) => {
       counts.total += 1;
       if (movement.type === 'entrada' || movement.type === 'reinsercion') counts.entrada += 1;
       else if (movement.type === 'salida' || movement.type === 'reserva') counts.salida += 1;
       else counts.ajuste += 1;
     });
+    }
     activeRentals.forEach((rental) => {
       const lines = Array.isArray(rental?.items) ? rental.items : [];
       const status = rental?.operational?.inventoryStatus ?? 'pendiente';
@@ -2159,7 +2170,7 @@ function InventoryDashboardSection({
       });
     });
     return counts;
-  }, [activeRentals, inventoryMovements]);
+  }, [activeRentals, inventoryMovements, inventoryMovementStats]);
 
   const detailMovementTrace = useMemo(() => {
     if (!detailRow?.id) return [];
@@ -4212,6 +4223,7 @@ function InventoryDashboardSection({
         {feedback ? (
           <p className={`status ${feedbackType === 'error' ? 'error' : ''}`}>{feedback}</p>
         ) : null}
+        {moduleLoading ? <p className="status">Cargando inventario...</p> : null}
         {returnProcessingMessage ? <p className="status">{returnProcessingMessage}</p> : null}
 
         <InventoryOpsSection
@@ -4331,6 +4343,8 @@ function InventoryDashboardSection({
           ) : null}
         </div>
       </header>
+
+      {moduleLoading ? <p className="status">Cargando movimientos y ordenes...</p> : null}
 
       <input ref={importInputRef} type="file" accept=".csv,text/csv" hidden onChange={handleImportFile} />
 

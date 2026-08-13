@@ -700,6 +700,8 @@ function AdminApp() {
             deliveries={controller.deliveries}
             stockRecoveries={controller.stockRecoveries}
             inventoryMovements={controller.inventoryMovements}
+            inventoryMovementStats={controller.inventoryMovementStats}
+            moduleLoading={controller.inventoryModuleLoading}
             formatBs={formatBs}
             formatDateTime={formatDateTime}
             onSwitchInventoryModule={controller.setActiveTab}

@@ -613,6 +613,34 @@ const fetchMobileOrdersOverview = async () => {
   return overview;
 };
 
+const fetchInventoryMovementsOverview = async () => {
+  if (!shouldUseServerState()) {
+    await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements');
+    return {
+      items: await callBridge('inventory', 'list', false),
+      inventoryCombos: await callBridge('inventory', 'listCombos', false),
+      inventoryMovements: await callBridge('inventory', 'listMovements', false),
+      movementStats: null,
+    };
+  }
+  const response = await fetch(getServerStateUrl('/inventory/movements-overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el resumen de movimientos de inventario.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  const overview = payload?.overview ?? {
+    items: [], inventoryCombos: [], categories: [], contracts: [], rentals: [],
+    deliveries: [], inventoryMovements: [], movementStats: null,
+  };
+  await mergeLocalState(overview);
+  serverStateIsPartial = true;
+  return overview;
+};
+
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
   if (!shouldUseServerState()) return;
   const missingNames = (Array.isArray(names) ? names : [])
@@ -2194,12 +2222,9 @@ const callDirectRentalReturnOperation = async (payload = {}) => {
     const rental = result?.rental ?? null;
     if (result?.revision) rememberServerRevision(result.revision);
     if (rental?.id) {
-      const localSnapshot = await exportLocalCollections(['rentals']);
-      const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
-      const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
-        ? currentRentals.map((entry) => (String(entry?.id ?? '') === String(rental.id) ? rental : entry))
-        : [rental, ...currentRentals];
-      await mergeLocalState({ rentals: nextRentals });
+      // En modo servidor el controlador ya aplica esta respuesta en memoria.
+      // Reescribir aqui toda la coleccion local de alquileres hacia que un clic
+      // sencillo quedara congelado mientras serializaba cientos de ordenes.
       rememberFullRecordCache(fullRentalCache, rental, [rental.id, rental.orderCode, rental.contractCode]);
     }
     announceDataChange({ domain: 'rentals', method: 'registerReturn', collections: RENTAL_RETURN_PATCH_COLLECTIONS });
@@ -2210,6 +2235,30 @@ const callDirectRentalReturnOperation = async (payload = {}) => {
   } finally {
     clearTimeout(timeoutId);
   }
+};
+
+const updateRentalOperationalOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) return callBridge('rentals', 'updateOperational', true, payload);
+  const rentalId = String(payload?.id ?? payload?.rentalId ?? '').trim();
+  if (!rentalId) throw new Error('No se pudo identificar la orden de servicio.');
+
+  const response = await fetch(getServerStateUrl(`/rentals/${encodeURIComponent(rentalId)}/operational`), {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar la orden operativa.');
+  }
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+  const rental = result?.rental ?? null;
+  if (rental?.id) {
+    forgetFullRecordCache(fullRentalCache, [rentalId, rental.id, rental.orderCode, rental.contractCode]);
+  }
+  announceDataChange({ domain: 'rentals', method: 'updateOperational', collections: ['rentals'] });
+  return rental ?? result;
 };
 
 
@@ -2892,6 +2941,7 @@ export const api = {
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getMobileCalendarOverview: fetchMobileCalendarOverview,
     getMobileOrdersOverview: fetchMobileOrdersOverview,
+    getInventoryMovementsOverview: fetchInventoryMovementsOverview,
     getRevision: fetchServerMeta,
     batchMutations: runBatchedMutations,
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),
@@ -3120,7 +3170,7 @@ export const api = {
     list: () => callBridge('rentals', 'list', false),
     getFull: (identifier) => fetchFullServerRental(identifier, 'rental-report'),
     create: (payload) => callBridge('rentals', 'create', true, payload),
-    updateOperational: (payload) => callBridge('rentals', 'updateOperational', true, payload),
+    updateOperational: updateRentalOperationalOnServer,
     cancel: async (payload) => {
       try {
         const cancelled = await cancelContractOnServer(payload);
