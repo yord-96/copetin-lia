@@ -516,6 +516,26 @@ const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
   return allocations;
 };
 
+const isEconomicLedgerEntryConfirmedInCash = (entry) => Boolean(
+  entry?.isCashRegistered
+  || String(entry?.cashMovementId ?? '').trim()
+  || String(entry?.cashReceiptCode ?? '').trim()
+);
+
+const isEconomicGuaranteeBackedByCash = (entry, ledgerById = new Map()) => {
+  if (entry?.type !== 'guarantee') return false;
+  if (isEconomicLedgerEntryConfirmedInCash(entry)) return true;
+
+  // Apartar una garantia desde un deposito es una reclasificacion del mismo
+  // dinero, no un segundo ingreso. Por eso la garantia queda respaldada cuando
+  // el deposito origen tiene movimiento/recibo oficial en Caja Grande.
+  const sourceDepositId = String(entry?.sourceDepositId ?? '').trim();
+  if (!sourceDepositId) return false;
+  const sourceDeposit = ledgerById.get(sourceDepositId);
+  return sourceDeposit?.type === 'deposit'
+    && isEconomicLedgerEntryConfirmedInCash(sourceDeposit);
+};
+
 const isCashCollectedDamageLedgerEntry = (entry) => (
   entry?.type === 'charge'
   && entry?.cashCollectionTarget === 'damage'
@@ -2277,14 +2297,19 @@ function ServiceOrdersSection({
         if (entry.type === 'deposit') totals.receivedBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'guarantee') totals.guaranteeBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += toMoneyNumber(entry.amountBs);
-        if (entry.type === 'refund') totals.refundedBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'refund') {
+          totals.refundedBs += toMoneyNumber(entry.amountBs);
+          if (entry.refundSource !== 'surplus') totals.guaranteeRefundedBs += toMoneyNumber(entry.amountBs);
+        }
         return totals;
       }, {
         receivedBs: 0,
         guaranteeBs: 0,
         chargesBs: 0,
         refundedBs: 0,
+        guaranteeRefundedBs: 0,
       });
+      const rowLedgerById = new Map(economicLedger.map((entry) => [String(entry.id), entry]));
       const contractReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -2321,7 +2346,16 @@ function ServiceOrdersSection({
           ? sum + toMoneyNumber(entry.amountBs)
           : sum;
       }, 0);
-      const rowGuaranteeReserveBs = Math.max(guaranteeBs, rowLedgerTotals.guaranteeBs);
+      const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+      const rowLedgerBackedGuaranteeBs = economicLedger.reduce((sum, entry) => (
+        isEconomicGuaranteeBackedByCash(entry, rowLedgerById)
+          ? sum + toMoneyNumber(entry.amountBs)
+          : sum
+      ), 0);
+      const rowGuaranteeReserveBs = Math.max(
+        rawGuaranteeStatus === 'validado' ? guaranteeBs : 0,
+        rowLedgerBackedGuaranteeBs,
+      );
       const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowLedgerTotals.chargesBs);
       // La columna "Debe" del listado de contratos representa únicamente el
       // saldo comercial del contrato. Los daños/faltantes se consultan y cobran
@@ -2391,10 +2425,18 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText);
-      const hasReturnedGuarantee = guaranteeReferenceKeys.some((key) => key && returnedGuaranteeReferences.has(key))
-        || rowLedgerTotals.refundedBs > 0;
-      const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
-      const isGuaranteeValidated = rawGuaranteeStatus === 'validado' || (!rawGuaranteeStatus && guaranteeBs > 0);
+      const hasReturnedGuaranteeReference = guaranteeReferenceKeys
+        .some((key) => key && returnedGuaranteeReferences.has(key));
+      const rowGuaranteeRefundableBs = Math.max(
+        0,
+        Number((rowGuaranteeReserveBs - rowGuaranteeAppliedBs).toFixed(2)),
+      );
+      const hasReturnedGuarantee = rowLedgerBackedGuaranteeBs > 0
+        ? rowGuaranteeRefundableBs > 0
+          && rowLedgerTotals.guaranteeRefundedBs > 0
+          && rowLedgerTotals.guaranteeRefundedBs + 0.009 >= rowGuaranteeRefundableBs
+        : hasReturnedGuaranteeReference;
+      const isGuaranteeValidated = rowGuaranteeReserveBs > 0;
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
         : hasReturnedGuarantee
@@ -3209,13 +3251,9 @@ function ServiceOrdersSection({
       chargesBs: 0,
       refundedBs: 0,
     });
-    const isLedgerEntryConfirmedInCash = (entry) => Boolean(
-      entry?.isCashRegistered
-      || String(entry?.cashMovementId ?? '').trim()
-      || String(entry?.cashReceiptCode ?? '').trim(),
-    );
+    const economicLedgerById = new Map(economicLedger.map((entry) => [String(entry.id), entry]));
     const ledgerConfirmedRentalBs = economicLedger.reduce((sum, entry) => (
-      entry.type === 'deposit' && !entry.reclassifiedFromPayment && isLedgerEntryConfirmedInCash(entry)
+      entry.type === 'deposit' && !entry.reclassifiedFromPayment && isEconomicLedgerEntryConfirmedInCash(entry)
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
@@ -3225,10 +3263,14 @@ function ServiceOrdersSection({
         : sum
     ), 0);
     const ledgerConfirmedGuaranteeBs = economicLedger.reduce((sum, entry) => (
-      entry.type === 'guarantee' && isLedgerEntryConfirmedInCash(entry)
+      isEconomicGuaranteeBackedByCash(entry, economicLedgerById)
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
+    const backedGuaranteeEntries = economicLedger.filter((entry) => (
+      isEconomicGuaranteeBackedByCash(entry, economicLedgerById)
+    ));
+    const latestBackedGuaranteeEntry = backedGuaranteeEntries.at(-1) ?? null;
     const ledgerAnnotatedGuaranteeBs = economicLedger.reduce((sum, entry) => (
       entry.type === 'guarantee'
         ? sum + toMoneyNumber(entry.amountBs)
@@ -3407,7 +3449,12 @@ function ServiceOrdersSection({
       Number(rentalReceivedBs.toFixed(2)),
       Number(collectionRegisteredBs.toFixed(2)),
     );
-    const ledgerCashRegisteredBs = Number((ledgerConfirmedRentalBs + ledgerConfirmedGuaranteeBs).toFixed(2));
+    const separatelyCollectedGuaranteeBs = backedGuaranteeEntries.reduce((sum, entry) => (
+      entry.reclassifiedFromPayment
+        ? sum
+        : sum + toMoneyNumber(entry.amountBs)
+    ), 0);
+    const ledgerCashRegisteredBs = Number((ledgerConfirmedRentalBs + separatelyCollectedGuaranteeBs).toFixed(2));
     const cashRegisteredBs = Math.max(incomeBs, ledgerCashRegisteredBs);
     // El cobro general pendiente combina únicamente el saldo comercial real
     // y los daños todavía no cobrados. Nunca vuelve a incluir pagos ya recibidos.
@@ -3501,8 +3548,14 @@ function ServiceOrdersSection({
               ? 'Retenida'
               : 'Debe',
       guaranteeMethod: formatPaymentMethodLabel(
-        contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.guarantee?.paymentMethod,
-        contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.guarantee?.paymentAccount,
+        latestBackedGuaranteeEntry?.paymentMethod
+          ?? contract?.guarantee?.paymentMethod
+          ?? contract?.payment?.guaranteePaymentMethod
+          ?? rental?.guarantee?.paymentMethod,
+        latestBackedGuaranteeEntry?.paymentAccount
+          ?? contract?.guarantee?.paymentAccount
+          ?? contract?.payment?.guaranteePaymentAccount
+          ?? rental?.guarantee?.paymentAccount,
       ),
       penaltiesBs,
       outstandingRentalBs,
