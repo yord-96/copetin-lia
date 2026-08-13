@@ -2339,7 +2339,7 @@ export const useAppController = () => {
       if (!contract) {
         throw new Error('No se encontro el contrato seleccionado.');
       }
-      if (contract.status === 'aprobado' && contract.rentalId) {
+      if (contract.status === 'aprobado') {
         throw new Error('Este contrato ya fue aprobado.');
       }
 

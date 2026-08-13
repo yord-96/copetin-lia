@@ -7199,6 +7199,7 @@ function ServiceOrdersSection({
   };
 
   const handleApproveContractClick = async (contract) => {
+    if (!contract || contract.status === 'aprobado' || contract.status === 'anulado') return;
     if (!beginSubmit()) return;
     try {
       await onApproveContract?.({ contractId: contract.id });
@@ -10768,13 +10769,14 @@ function ServiceOrdersSection({
               <>
                 {!readOnly ? (
                   <>
-                    <button
-                      type="button"
-                      onClick={() => handleApproveContractClick(activeContractMenuRow)}
-                      disabled={activeContractMenuRow.status === 'aprobado' || activeContractMenuRow.status === 'anulado'}
-                    >
-                      Aprobar contrato
-                    </button>
+                    {!['aprobado', 'anulado'].includes(activeContractMenuRow.status) ? (
+                      <button
+                        type="button"
+                        onClick={() => handleApproveContractClick(activeContractMenuRow)}
+                      >
+                        Aprobar contrato
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => handleEditContractClick(activeContractMenuRow)}
