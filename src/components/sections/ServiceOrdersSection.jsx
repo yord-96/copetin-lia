@@ -2446,11 +2446,15 @@ function ServiceOrdersSection({
         0,
         Number((rowGuaranteeReserveBs - rowGuaranteeAppliedBs).toFixed(2)),
       );
-      const hasReturnedGuarantee = rowLedgerBackedGuaranteeBs > 0
-        ? rowGuaranteeRefundableBs > 0
-          && rowLedgerTotals.guaranteeRefundedBs > 0
-          && rowLedgerTotals.guaranteeRefundedBs + 0.009 >= rowGuaranteeRefundableBs
-        : hasReturnedGuaranteeReference;
+      // En contratos antiguos la garantia puede estar validada en el contrato
+      // aunque su linea de apartado no tenga un movimiento de caja enlazado. Una
+      // devolucion posterior con recibo confirmado sigue siendo evidencia
+      // suficiente y debe reflejarse como "Devuelta" en el listado exterior.
+      const hasConfirmedFullGuaranteeRefund = rowGuaranteeRefundableBs > 0
+        && rowLedgerTotals.guaranteeRefundedBs > 0
+        && rowLedgerTotals.guaranteeRefundedBs + 0.009 >= rowGuaranteeRefundableBs;
+      const hasReturnedGuarantee = hasConfirmedFullGuaranteeRefund
+        || hasReturnedGuaranteeReference;
       const isGuaranteeValidated = rowGuaranteeReserveBs > 0;
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
