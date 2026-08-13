@@ -241,24 +241,30 @@ export function getProjectedInventoryAvailability({
   contracts.forEach((contract) => {
     if (!contract || contract.deletedAt) return;
     const status = String(contract.status ?? '').toLowerCase();
+    const linkedRental = rentals.find((rental) => (
+      sameId(rental?.id, contract.rentalId)
+      || sameId(rental?.orderCode, contract.orderCode)
+      || sameId(rental?.contractId, contract.id)
+      || sameId(rental?.contractCode, contract.contractCode)
+    )) ?? null;
+
     if (isExcluded(contract, exclude)) {
-      const hasExcludedActiveRental = rentals.filter(isActiveRental).some((rental) => {
-        const linkedContract = byRentalId.get(rental.id) ?? byOrderCode.get(rental.orderCode);
-        return isExcluded(rental, exclude)
-          && (
-            sameId(rental.id, contract.rentalId)
-            || sameId(rental.orderCode, contract.orderCode)
-            || sameId(rental.contractId, contract.id)
-            || sameId(linkedContract?.id, contract.id)
-            || sameId(linkedContract?.contractCode, contract.contractCode)
-          );
-      });
-      if (status === 'aprobado' && !hasExcludedActiveRental) {
+      const hasExcludedActiveRental = linkedRental
+        ? isActiveRental(linkedRental) && isExcluded(linkedRental, exclude)
+        : false;
+      if (status === 'aprobado' && !hasExcludedActiveRental && !linkedRental) {
         releaseExcludedLines(recordItemLines(contract));
       }
       return;
     }
-    if (contract.rentalId || contract.orderCode) return;
+
+    // Si la colección de rentals está cargada, la orden vinculada es la fuente
+    // operativa principal y evita contar dos veces el mismo compromiso.
+    // Si rentals todavía no llegó (carga diferida/parcial), el contrato aprobado
+    // actúa como respaldo temporal para que la disponibilidad por fecha no quede
+    // en cero ni pierda la trazabilidad de contratos relacionados.
+    if (linkedRental) return;
+
     const record = {
       id: contract.id,
       code: contract.contractCode,
@@ -270,7 +276,7 @@ export function getProjectedInventoryAvailability({
       type: 'contrato',
       period: periodFromCommercialRecord(contract),
       lines: recordItemLines(contract),
-      affectsCurrentStock: false,
+      affectsCurrentStock: status === 'aprobado',
     };
     if (status === 'aprobado') {
       hardRecords.push(record);
