@@ -1405,54 +1405,6 @@ const buildDirectMovement = (state, payload = {}) => ({
   createdAt: new Date().toISOString(),
 });
 
-const addDirectReturnCashMovements = (state, rental) => {
-  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
-  const activeSession = (Array.isArray(state.cashSessions) ? state.cashSessions : [])
-    .find((session) => session.status === 'open');
-  const sessionId = activeSession?.id ?? null;
-  const customerName = String(rental.customerName ?? 'Cliente');
-  const settlement = rental?.returnSettlement ?? {};
-  const penaltiesBs = directMoney(settlement?.penaltiesBs ?? rental?.penaltiesBs);
-  const internalPenaltiesBs = directMoney(settlement?.internalPenaltiesBs ?? rental?.internalPenaltiesBs);
-  const outstandingRentalBs = directMoney(settlement?.outstandingRentalBs);
-  const pendingCollectionBs = directMoney(settlement?.pendingCollectionBs);
-  const refundBs = directMoney(settlement?.refundBs ?? rental?.refundBs);
-
-  state.cashMovements.push(buildDirectMovement(state, {
-    sessionId,
-    type: 'liquidacion_devolucion',
-    amountBs: 0,
-    description: `Liquidacion devolucion (${customerName}) | Penalidad cliente: Bs ${penaltiesBs.toFixed(2)} | Perdida interna: Bs ${internalPenaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
-    sourceType: 'return',
-    sourceId: rental.id,
-    cashBoxType: 'BIG_CASH',
-  }));
-
-  if (pendingCollectionBs > 0) {
-    state.cashMovements.push(buildDirectMovement(state, {
-      sessionId,
-      type: 'saldo_pendiente_cobro',
-      amountBs: 0,
-      description: `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`,
-      sourceType: 'return',
-      sourceId: rental.id,
-      cashBoxType: 'BIG_CASH',
-    }));
-  }
-
-  if (internalPenaltiesBs > 0) {
-    state.cashMovements.push(buildDirectMovement(state, {
-      sessionId,
-      type: 'perdida_interna_devolucion',
-      amountBs: 0,
-      description: `Perdida interna por devolucion (${customerName}): Bs ${internalPenaltiesBs.toFixed(2)}`,
-      sourceType: 'return_internal_loss',
-      sourceId: rental.id,
-      cashBoxType: 'BIG_CASH',
-    }));
-  }
-};
-
 const revertDirectReturnEffects = (state, rental) => {
   const previousReport = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
   const now = new Date().toISOString();
@@ -2330,7 +2282,6 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
           delivery.updatedAt = now;
         }
       });
-      addDirectReturnCashMovements(state, rental);
       responseData = { rental: summarizeInventoryRental(rental) };
       return state;
     });

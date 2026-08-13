@@ -4895,7 +4895,6 @@ const addRentalCashMovements = (state, rental) => {
       : Math.min(cashCollectedBs, deliveryFeeBs),
   );
   const rentalCashCollectedBs = Math.max(0, Number((cashCollectedBs - deliveryFeeCollectedBs).toFixed(2)));
-  const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
   const depositBs = Number(rental?.depositBs ?? 0);
   const initialPaymentMethod = normalizePaymentMethod(rental?.payment?.initialPaymentMethod ?? rental?.payment?.paymentMethod);
   const guaranteePaymentMethod = normalizePaymentMethod(rental?.guarantee?.paymentMethod ?? rental?.payment?.guaranteePaymentMethod);
@@ -5006,73 +5005,6 @@ const addRentalCashMovements = (state, rental) => {
     );
   }
 
-  if (pendingPaymentBs > 0) {
-    state.cashMovements.push(
-      buildCashMovement({
-        sessionId,
-        type: 'saldo_alquiler_pendiente',
-        amountBs: 0,
-        description: `Saldo alquiler pendiente (${customerName}): Bs ${pendingPaymentBs.toFixed(2)}`,
-        sourceType: 'rental',
-        sourceId: rental.id,
-        createdBy: movementResponsible,
-        responsible: movementResponsible,
-        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-      }),
-    );
-  }
-};
-
-const addReturnCashMovements = (state, rental) => {
-  const activeSession = getActiveSession(state);
-  const sessionId = activeSession?.id ?? null;
-  const customerName = String(rental.customerName ?? 'Cliente');
-  const settlement = rental?.returnSettlement ?? {};
-  const penaltiesBs = Number(settlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
-  const internalPenaltiesBs = Number(settlement?.internalPenaltiesBs ?? rental?.internalPenaltiesBs ?? 0);
-  const outstandingRentalBs = Number(settlement?.outstandingRentalBs ?? 0);
-  const pendingCollectionBs = Number(settlement?.pendingCollectionBs ?? 0);
-  const refundBs = Number(settlement?.refundBs ?? rental?.refundBs ?? 0);
-
-  state.cashMovements.push(
-    buildCashMovement({
-      sessionId,
-      type: 'liquidacion_devolucion',
-      amountBs: 0,
-      description: `Liquidacion devolucion (${customerName}) | Penalidad cliente: Bs ${penaltiesBs.toFixed(2)} | Perdida interna: Bs ${internalPenaltiesBs.toFixed(2)} | Saldo alquiler: Bs ${outstandingRentalBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`,
-      sourceType: 'return',
-      sourceId: rental.id,
-      cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-    }),
-  );
-
-  if (pendingCollectionBs > 0) {
-    state.cashMovements.push(
-      buildCashMovement({
-        sessionId,
-        type: 'saldo_pendiente_cobro',
-        amountBs: 0,
-        description: `Saldo pendiente por cobrar (${customerName}): Bs ${pendingCollectionBs.toFixed(2)}`,
-        sourceType: 'return',
-        sourceId: rental.id,
-        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-      }),
-    );
-  }
-
-  if (internalPenaltiesBs > 0) {
-    state.cashMovements.push(
-      buildCashMovement({
-        sessionId,
-        type: 'perdida_interna_devolucion',
-        amountBs: 0,
-        description: `Perdida interna por devolucion (${customerName}): Bs ${internalPenaltiesBs.toFixed(2)}`,
-        sourceType: 'return_internal_loss',
-        sourceId: rental.id,
-        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-      }),
-    );
-  }
 };
 
 const revertReturnEffects = (state, rental) => {
@@ -17876,7 +17808,6 @@ const createWebBridge = () => ({
         });
 
         returnedRental = deepClone(rental);
-        addReturnCashMovements(state, rental);
         return state;
       });
 

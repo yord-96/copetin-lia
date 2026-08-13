@@ -2725,7 +2725,7 @@ function ServiceOrdersSection({
       return loose && [...looseReferenceKeys].some((key) => key && normalized.includes(key));
     };
 
-    const movements = effectiveCashMovements
+    const linkedMovements = effectiveCashMovements
       .filter((movement) => [
         movement?.linkedContractId,
         movement?.linkedRentalId,
@@ -2741,7 +2741,14 @@ function ServiceOrdersSection({
         || hasReference(movement?.description, true))
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
 
-    const postedMovements = movements.filter((movement) => !isVoidedCashMovement(movement));
+    // Esta tabla es exclusivamente de dinero confirmado. Las liquidaciones de
+    // retorno y marcadores de saldo de versiones anteriores tienen monto cero:
+    // son resúmenes operativos, no recibos ni movimientos de caja.
+    const movements = linkedMovements.filter((movement) => (
+      Math.abs(getCashMovementAmount(movement)) > 0
+    ));
+
+    const postedMovements = linkedMovements.filter((movement) => !isVoidedCashMovement(movement));
     const isGuaranteeMovement = (movement) => {
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
@@ -11856,8 +11863,8 @@ function ServiceOrdersSection({
                 <article className="contract-economics-panel contract-economics-movements-card" style={{ gridColumn: '1 / -1' }}>
                   <header>
                     <div>
-                      <h4>Pagos y movimientos</h4>
-                      <p>4. Recibos y movimientos confirmados. Desde aqui puedes abrir e imprimir los comprobantes existentes.</p>
+                      <h4>Pagos y movimientos de caja</h4>
+                      <p>4. Solo ingresos y egresos reales. El retorno físico no genera recibos ni mueve dinero automáticamente.</p>
                     </div>
                   </header>
                   <div className="contract-economics-table">
@@ -11920,7 +11927,7 @@ function ServiceOrdersSection({
                         </div>
                       );
                     }) : (
-                      <p className="contract-economics-empty">No hay movimientos de caja vinculados a este contrato.</p>
+                      <p className="contract-economics-empty">No hay ingresos ni egresos reales vinculados a este contrato.</p>
                     )}
                   </div>
                 </article>
