@@ -29,7 +29,7 @@ const getCatalogAvailabilityLabel = (item) => {
 
 const PUBLIC_CATALOG_ENDPOINTS = ['/__copetin_db/public/catalog', '/api/public/catalog'];
 
-function PublicCatalogImage({ item }) {
+function PublicCatalogImage({ item, onOpen }) {
   const [failed, setFailed] = useState(false);
 
   if (!item.imageUrl || failed) {
@@ -40,7 +40,31 @@ function PublicCatalogImage({ item }) {
     );
   }
 
-  return <img src={item.imageUrl} alt={item.name} loading="lazy" onError={() => setFailed(true)} />;
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen?.(item)}
+      aria-label={`Ver imagen ampliada de ${item.name}`}
+      title="Ver imagen en grande"
+      style={{
+        display: 'block',
+        width: '100%',
+        height: '100%',
+        padding: 0,
+        border: 0,
+        background: 'transparent',
+        cursor: 'zoom-in',
+      }}
+    >
+      <img
+        src={item.imageUrl}
+        alt={item.name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+      />
+    </button>
+  );
 }
 
 export default function PublicCatalogPage() {
@@ -50,6 +74,7 @@ export default function PublicCatalogPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [status, setStatus] = useState({ loading: true, error: '' });
+  const [previewItem, setPreviewItem] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -103,6 +128,23 @@ export default function PublicCatalogPage() {
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [query, areaFilter, categoryFilter]);
+  useEffect(() => {
+    if (!previewItem) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setPreviewItem(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [previewItem]);
+
 
   const filteredProducts = useMemo(() => {
     const tokens = normalizeText(query).split(/\s+/).filter(Boolean);
@@ -182,7 +224,7 @@ export default function PublicCatalogPage() {
             {visibleProducts.map((item) => (
               <article className="public-catalog-card" key={item.id}>
                 <div className="public-catalog-card-image">
-                  <PublicCatalogImage item={item} />
+                  <PublicCatalogImage item={item} onOpen={setPreviewItem} />
                 </div>
                 <div className="public-catalog-card-body">
                   <span className="public-catalog-card-area">{item.areaLabel || item.category || 'Catalogo'}</span>
@@ -210,6 +252,78 @@ export default function PublicCatalogPage() {
       ) : (
         <div className="public-catalog-state">No hay productos con esos filtros.</div>
       )}
+
+
+      {previewItem?.imageUrl ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Imagen ampliada de ${previewItem.name}`}
+          onClick={() => setPreviewItem(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '24px',
+            background: 'rgba(5, 10, 20, 0.88)',
+            backdropFilter: 'blur(5px)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewItem(null)}
+            aria-label="Cerrar imagen ampliada"
+            style={{
+              position: 'fixed',
+              top: '18px',
+              right: '18px',
+              width: '44px',
+              height: '44px',
+              borderRadius: '999px',
+              border: '1px solid rgba(255,255,255,.3)',
+              background: 'rgba(0,0,0,.55)',
+              color: '#fff',
+              fontSize: '28px',
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            ×
+          </button>
+
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              display: 'grid',
+              gap: '10px',
+              justifyItems: 'center',
+              maxWidth: '96vw',
+              maxHeight: '94vh',
+            }}
+          >
+            <img
+              src={previewItem.imageUrl}
+              alt={previewItem.name}
+              style={{
+                display: 'block',
+                maxWidth: '94vw',
+                maxHeight: '86vh',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: '12px',
+                boxShadow: '0 24px 70px rgba(0,0,0,.55)',
+                background: '#fff',
+              }}
+            />
+            <strong style={{ color: '#fff', fontSize: '15px', textAlign: 'center' }}>
+              {previewItem.name}
+            </strong>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
