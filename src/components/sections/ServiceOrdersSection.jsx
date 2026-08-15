@@ -1540,6 +1540,9 @@ function ServiceOrdersSection({
   const [currentStep, setCurrentStep] = useState(0);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const deferredDocumentsOrder = useDeferredValue(documentsOrder);
+  const [documentsFullContract, setDocumentsFullContract] = useState(null);
+  const [documentsHistoryLoading, setDocumentsHistoryLoading] = useState(false);
+  const [documentsHistoryError, setDocumentsHistoryError] = useState('');
   const [contractEconomicsTarget, setContractEconomicsTarget] = useState(null);
   const [contractEconomicsFullRental, setContractEconomicsFullRental] = useState(null);
   const [contractEconomicsContextMovements, setContractEconomicsContextMovements] = useState([]);
@@ -3705,16 +3708,64 @@ function ServiceOrdersSection({
       .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
   }, [deferredDocumentsOrder, documentsByOrderId, generatedReports]);
 
+  useEffect(() => {
+    const activeDocumentsOrder = deferredDocumentsOrder;
+    if (!activeDocumentsOrder) {
+      setDocumentsFullContract(null);
+      setDocumentsHistoryLoading(false);
+      setDocumentsHistoryError('');
+      return undefined;
+    }
+
+    const identifier = activeDocumentsOrder.contractId
+      ?? activeDocumentsOrder.contractCode
+      ?? activeDocumentsOrder.orderCode
+      ?? '';
+    if (!String(identifier).trim()) {
+      setDocumentsFullContract(null);
+      setDocumentsHistoryLoading(false);
+      setDocumentsHistoryError('No se pudo identificar el contrato para cargar su historial.');
+      return undefined;
+    }
+
+    let cancelled = false;
+    setDocumentsFullContract(null);
+    setDocumentsHistoryLoading(true);
+    setDocumentsHistoryError('');
+
+    api.contracts.ensureFull(identifier, 'documents-history')
+      .then((fullContract) => {
+        if (cancelled) return;
+        setDocumentsFullContract(fullContract);
+      })
+      .catch((requestError) => {
+        if (cancelled) return;
+        setDocumentsFullContract(null);
+        setDocumentsHistoryError(requestError.message || 'No se pudo cargar el historial completo del contrato.');
+      })
+      .finally(() => {
+        if (!cancelled) setDocumentsHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deferredDocumentsOrder]);
+
   const selectedDocumentsContract = useMemo(() => {
     const activeDocumentsOrder = deferredDocumentsOrder;
     if (!activeDocumentsOrder) return null;
-    return findByPriority(contracts, [
+    const priorities = [
       { field: 'id', value: activeDocumentsOrder.contractId },
       { field: 'rentalId', value: activeDocumentsOrder.rentalId },
       { field: 'contractCode', value: activeDocumentsOrder.contractCode },
       { field: 'orderCode', value: activeDocumentsOrder.orderCode },
-    ]);
-  }, [contracts, deferredDocumentsOrder]);
+    ];
+    const fullMatch = documentsFullContract
+      ? findByPriority([documentsFullContract], priorities)
+      : null;
+    return fullMatch ?? findByPriority(contracts, priorities);
+  }, [contracts, deferredDocumentsOrder, documentsFullContract]);
 
   const selectedDocumentsChangeRows = useMemo(() => {
     const revisions = Array.isArray(selectedDocumentsContract?.revisionHistory)
@@ -12498,7 +12549,7 @@ function ServiceOrdersSection({
                 </article>
                 <article>
                   <small>Tabla de cambios</small>
-                  <strong>{selectedDocumentsChangeRows.length} cambios</strong>
+                  <strong>{documentsHistoryLoading ? 'Cargando...' : `${selectedDocumentsChangeRows.length} cambios`}</strong>
                 </article>
               </section>
 
@@ -12648,7 +12699,11 @@ function ServiceOrdersSection({
                           </td>
                         </tr>
                       ))}
-                      {selectedDocumentsChangeRows.length === 0 ? (
+                      {documentsHistoryLoading ? (
+                        <tr><td colSpan={3}>Cargando historial completo del contrato...</td></tr>
+                      ) : documentsHistoryError ? (
+                        <tr><td colSpan={3}>{documentsHistoryError}</td></tr>
+                      ) : selectedDocumentsChangeRows.length === 0 ? (
                         <tr><td colSpan={3}>Sin cambios registrados para este contrato.</td></tr>
                       ) : null}
                     </tbody>
