@@ -6360,6 +6360,7 @@ function ServiceOrdersSection({
         ? {
           ...line,
           unitPriceBs: isEmptyValue ? '' : cleanedValue,
+          unitPriceInput: isEmptyValue ? '' : cleanedValue,
           grossLineTotalBs: undefined,
           lineTotalBs: line.comboId
             ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
@@ -6438,6 +6439,7 @@ function ServiceOrdersSection({
         return {
           ...line,
           unitPriceBs: Number(parsed.toFixed(2)),
+          unitPriceInput: parsed.toFixed(2),
           grossLineTotalBs: undefined,
           lineTotalBs: line.comboId
             ? Number((parsed * Math.max(1, Number(line.comboQuantity ?? 1))).toFixed(2))
