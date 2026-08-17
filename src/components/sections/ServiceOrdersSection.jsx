@@ -4504,14 +4504,10 @@ function ServiceOrdersSection({
     );
   }, [editingCommitmentMatchesCurrentPeriod, editingContractCommitment]);
 
-  const getEditableAvailableStock = useCallback((line) => {
-    const projectedAvailable = Math.max(
-      0,
-      Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
-    );
-    const existingCommittedQty = getExistingCommittedQtyForEdit(line);
-    return projectedAvailable + existingCommittedQty;
-  }, [getExistingCommittedQtyForEdit]);
+  const getEditableAvailableStock = useCallback((line) => Math.max(
+    0,
+    Number(line.availability?.projectedAvailable ?? line.item.availableStock ?? 0),
+  ), []);
 
   const isHistoricalReconstruction = useMemo(() => {
     if (!canChooseResponsibles || draft.entityType !== 'contract' || draft.recordId) return false;
