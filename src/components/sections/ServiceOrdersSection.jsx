@@ -523,6 +523,24 @@ const isEconomicLedgerEntryConfirmedInCash = (entry) => Boolean(
   || String(entry?.cashReceiptCode ?? '').trim()
 );
 
+const getEconomicCommercialCashAmount = (movement) => {
+  const amountBs = Math.max(0, getCashMovementAmount(movement));
+  if (amountBs <= 0) return 0;
+
+  // Los recibos creados desde un deposito pueden contener dinero con destinos
+  // distintos dentro de un unico movimiento fisico (contrato + garantia +
+  // excedente). Para el saldo comercial solo cuenta lo aplicado al contrato.
+  const accountingTag = normalizeText(movement?.accountingTag);
+  const category = normalizeText(movement?.category);
+  const hasDepositAllocation = accountingTag === 'contract_deposit_receipt'
+    || category === 'abono_contrato';
+  if (hasDepositAllocation) {
+    return Math.max(0, toMoneyNumber(movement?.contractAllocationBs));
+  }
+
+  return amountBs;
+};
+
 const isEconomicGuaranteeBackedByCash = (entry, ledgerById = new Map()) => {
   if (entry?.type !== 'guarantee') return false;
   if (isEconomicLedgerEntryConfirmedInCash(entry)) return true;
@@ -2207,6 +2225,9 @@ function ServiceOrdersSection({
       const indexedMovement = {
         id: String(movement?.id ?? `movement-${index}`),
         amountBs,
+        accountingTag: movement?.accountingTag ?? '',
+        category: movement?.category ?? '',
+        contractAllocationBs: Math.max(0, toMoneyNumber(movement?.contractAllocationBs)),
       };
       [
         movement?.linkedContractId,
@@ -2348,21 +2369,23 @@ function ServiceOrdersSection({
       });
       const collectionRegisteredBs = Number(
         Array.from(linkedCollectionMovements.values())
-          .reduce((sum, movement) => sum + movement.amountBs, 0)
+          .reduce((sum, movement) => sum + getEconomicCommercialCashAmount(movement), 0)
           .toFixed(2),
       );
       const linkedRental = contractReferenceKeys
         .map((key) => activeRentalByReference.get(key))
         .find(Boolean) ?? null;
+      const rowChargeTargetBs = Number(totalBs.toFixed(2));
+      const rowDepositAllocations = getEconomicDepositAllocations(economicLedger, rowChargeTargetBs);
       const rowLedgerConfirmedRentalBs = economicLedger.reduce((sum, entry) => {
         const isConfirmedInCash = Boolean(
           entry?.isCashRegistered
           || String(entry?.cashMovementId ?? '').trim()
           || String(entry?.cashReceiptCode ?? '').trim(),
         );
-        return entry.type === 'deposit' && !entry.reclassifiedFromPayment && isConfirmedInCash
-          ? sum + toMoneyNumber(entry.amountBs)
-          : sum;
+        if (entry.type !== 'deposit' || entry.reclassifiedFromPayment || !isConfirmedInCash) return sum;
+        const allocation = rowDepositAllocations.get(entry.id);
+        return sum + Math.max(0, toMoneyNumber(allocation?.contractBs));
       }, 0);
       const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
       const rowLedgerBackedGuaranteeBs = economicLedger.reduce((sum, entry) => (
@@ -2378,7 +2401,6 @@ function ServiceOrdersSection({
       // La columna "Debe" del listado de contratos representa únicamente el
       // saldo comercial del contrato. Los daños/faltantes se consultan y cobran
       // por separado dentro del sector económico.
-      const rowChargeTargetBs = Number(totalBs.toFixed(2));
       const ledgerReceivedForRentalBs = Math.min(
         rowChargeTargetBs,
         Math.max(0, Number(rowLedgerConfirmedRentalBs.toFixed(2))),
@@ -2768,7 +2790,7 @@ function ServiceOrdersSection({
       const type = normalizeText(movement?.type);
       const tag = normalizeText(movement?.accountingTag);
       if (type.includes('egreso') || tag === 'guarantee_refund' || isGuaranteeMovement(movement)) return sum;
-      return sum + Math.max(0, getCashMovementAmount(movement));
+      return sum + getEconomicCommercialCashAmount(movement);
     }, 0);
     const expenseBs = postedMovements.reduce((sum, movement) => {
       const type = normalizeText(movement?.type);
@@ -2802,7 +2824,7 @@ function ServiceOrdersSection({
         || (Boolean(receiptCode) && isBigCash && isIncome);
       if (isGuaranteeMovement(movement)) return sum;
       if (!isCollection) return sum;
-      return sum + Math.max(0, getCashMovementAmount(movement));
+      return sum + getEconomicCommercialCashAmount(movement);
     }, 0);
     const collectionByTarget = postedMovements.reduce((totals, movement) => {
       const amount = Math.max(0, getCashMovementAmount(movement));
@@ -3431,7 +3453,7 @@ function ServiceOrdersSection({
     };
     const damagePendingBs = collectionTargetPending.damageBs;
     const damagesSettled = penaltiesBs > 0 && damagePendingBs <= 0.009;
-    const ledgerFundsAvailableForRentalBs = Math.max(rentalReceivedBs, ledgerFundsAfterGuaranteeBs);
+    const ledgerFundsAvailableForRentalBs = Math.max(rentalReceivedBs, ledgerRecordedRentalBs);
     const ledgerAppliedToRentalBs = Math.min(ledgerFundsAvailableForRentalBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerFundsAvailableForRentalBs).toFixed(2)));
     const ledgerGrossSurplusBs = Math.max(
