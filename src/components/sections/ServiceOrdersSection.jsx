@@ -4529,7 +4529,10 @@ function ServiceOrdersSection({
 
   const stockIssues = useMemo(
     () => {
-      if (isHistoricalReconstruction) return [];
+      // La disponibilidad pesada se calcula desde el paso Items (currentStep >= 2).
+      // En Cliente/Evento availabilityByItemId queda vacio a proposito para no hacer
+      // trabajo innecesario; por eso no debemos interpretar availableStock=0 como faltante.
+      if (currentStep < 2 || isHistoricalReconstruction) return [];
       return selectedItems.filter((line) => {
         if (isDetachedFromInventory(line)) return false;
         const available = getEditableAvailableStock(line);
@@ -4537,7 +4540,7 @@ function ServiceOrdersSection({
         return requestedForItem > available;
       });
     },
-    [getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems],
+    [currentStep, getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems],
   );
 
   const supplierOffersByItemId = useMemo(() => {
