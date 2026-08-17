@@ -3344,6 +3344,60 @@ export const api = {
       }
       return payload;
     },
+    getAccountLedger: async ({ accountKey = 'all', dateFrom = '', dateTo = '', query = '', limit = 600 } = {}) => {
+      if (!shouldUseServerState()) {
+        const movements = await callBridge('cash', 'listMovements', false);
+        const rows = (Array.isArray(movements) ? movements : [])
+          .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH')
+          .slice(0, limit);
+        return { accounts: [], rows, total: rows.length, summary: { incomeBs: 0, outBs: 0, netBs: 0 } };
+      }
+      const params = new URLSearchParams({
+        accountKey: String(accountKey ?? 'all'),
+        limit: String(Math.min(1000, Math.max(20, Number(limit) || 600))),
+      });
+      if (dateFrom) params.set('dateFrom', String(dateFrom));
+      if (dateTo) params.set('dateTo', String(dateTo));
+      if (query) params.set('query', String(query));
+      const response = await fetch(getServerStateUrl(`/accounting/accounts-ledger?${params.toString()}`), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo cargar el movimiento de la cuenta.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return payload;
+    },
+    getReceiptProofs: async ({ accountKey = 'all', dateFrom = '', dateTo = '', query = '', limit = 160 } = {}) => {
+      if (!shouldUseServerState()) {
+        return { accounts: [], rows: [], total: 0 };
+      }
+      const params = new URLSearchParams({
+        accountKey: String(accountKey ?? 'all'),
+        limit: String(Math.min(300, Math.max(20, Number(limit) || 160))),
+      });
+      if (dateFrom) params.set('dateFrom', String(dateFrom));
+      if (dateTo) params.set('dateTo', String(dateTo));
+      if (query) params.set('query', String(query));
+      const response = await fetch(getServerStateUrl(`/accounting/comprobantes?${params.toString()}`), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudieron cargar los comprobantes.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return payload;
+    },
     getPettyHistory: async () => {
       if (!shouldUseServerState()) {
         const movements = await callBridge('cash', 'listMovements', false);

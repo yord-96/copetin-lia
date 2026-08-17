@@ -5180,6 +5180,269 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
   }
 });
 
+
+const normalizeAccountingMethod = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized.includes('qr')) return 'qr';
+  if (normalized.includes('transfer')) return 'transferencia';
+  if (normalized.includes('efect')) return 'efectivo';
+  return normalized || 'sin_metodo';
+};
+
+const getAccountingAccountDescriptor = (paymentMethod, paymentAccount) => {
+  const method = normalizeAccountingMethod(paymentMethod);
+  const account = ['qr', 'transferencia'].includes(method)
+    ? String(paymentAccount ?? '').trim().toUpperCase() || 'SIN CUENTA'
+    : '';
+  const key = `${method}:${account}`;
+  const methodLabel = method === 'efectivo'
+    ? 'Efectivo'
+    : method === 'qr'
+      ? 'QR'
+      : method === 'transferencia'
+        ? 'Transferencia'
+        : 'Sin método';
+  return {
+    key,
+    method,
+    account,
+    label: account ? `${methodLabel} · ${account}` : methodLabel,
+  };
+};
+
+const accountingDateKey = (value) => {
+  const text = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(value ?? '');
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+router.get('/__copetin_db/accounting/accounts-ledger', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const accountKey = String(req.query?.accountKey ?? 'all').trim();
+    const dateFrom = String(req.query?.dateFrom ?? '').trim();
+    const dateTo = String(req.query?.dateTo ?? '').trim();
+    const query = String(req.query?.query ?? '').trim().toLowerCase();
+    const limit = Math.min(1000, Math.max(20, Number(req.query?.limit ?? 600) || 600));
+
+    const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const contractById = new Map(contracts.map((contract) => [String(contract?.id ?? ''), contract]));
+    const rentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const rentalById = new Map(rentals.map((rental) => [String(rental?.id ?? ''), rental]));
+
+    const allRows = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement))
+      .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH')
+      .map((movement) => {
+        const descriptor = getAccountingAccountDescriptor(movement?.paymentMethod, movement?.paymentAccount);
+        const contract = movement?.linkedContractId
+          ? contractById.get(String(movement.linkedContractId))
+          : null;
+        const rental = movement?.linkedRentalId
+          ? rentalById.get(String(movement.linkedRentalId))
+          : null;
+        const linkedContract = contract
+          ?? (rental?.contractId ? contractById.get(String(rental.contractId)) : null);
+        const referenceLabel = String(
+          movement?.contractCode
+          ?? linkedContract?.contractCode
+          ?? rental?.contractCode
+          ?? movement?.linkedOrderCode
+          ?? rental?.orderCode
+          ?? movement?.receiptCode
+          ?? movement?.receipt
+          ?? movement?.sourceId
+          ?? '-'
+        ).trim() || '-';
+        return {
+          ...summarizeAccountingMovement(movement),
+          accountKey: descriptor.key,
+          accountLabel: descriptor.label,
+          referenceLabel,
+          customerName: String(
+            movement?.receiptCustomerName
+            ?? rental?.customerName
+            ?? linkedContract?.customerName
+            ?? ''
+          ).trim(),
+          userLabel: String(
+            movement?.responsible
+            ?? movement?.createdByName
+            ?? movement?.userName
+            ?? movement?.createdBy
+            ?? 'Sistema'
+          ).trim() || 'Sistema',
+        };
+      });
+
+    const accountMap = new Map();
+    allRows.forEach((movement) => {
+      const descriptor = getAccountingAccountDescriptor(movement?.paymentMethod, movement?.paymentAccount);
+      const current = accountMap.get(descriptor.key) ?? { ...descriptor, count: 0, incomeBs: 0, outBs: 0 };
+      if (!movement?.deletedAt && !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado') {
+        const amount = Number(movement?.amountBs ?? 0);
+        if (amount > 0) current.incomeBs += amount;
+        if (amount < 0) current.outBs += Math.abs(amount);
+      }
+      current.count += 1;
+      accountMap.set(descriptor.key, current);
+    });
+
+    const filtered = allRows
+      .filter((movement) => accountKey === 'all' || movement.accountKey === accountKey)
+      .filter((movement) => {
+        const dateKey = accountingDateKey(movement?.createdAt);
+        return (!dateFrom || dateKey >= dateFrom) && (!dateTo || dateKey <= dateTo);
+      })
+      .filter((movement) => {
+        if (!query) return true;
+        return [
+          movement?.description,
+          movement?.category,
+          movement?.type,
+          movement?.referenceLabel,
+          movement?.customerName,
+          movement?.userLabel,
+          movement?.receipt,
+          movement?.receiptCode,
+          movement?.receiptCustomerName,
+          movement?.paymentAccount,
+        ].some((value) => String(value ?? '').toLowerCase().includes(query));
+      })
+      .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));
+
+    const effectiveRows = filtered.filter((movement) => (
+      !movement?.deletedAt
+      && !movement?.voidedAt
+      && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado'
+    ));
+    const incomeBs = effectiveRows.reduce((sum, movement) => {
+      const amount = Number(movement?.amountBs ?? 0);
+      return sum + (amount > 0 ? amount : 0);
+    }, 0);
+    const outBs = effectiveRows.reduce((sum, movement) => {
+      const amount = Number(movement?.amountBs ?? 0);
+      return sum + (amount < 0 ? Math.abs(amount) : 0);
+    }, 0);
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+      accounts: [...accountMap.values()]
+        .map((row) => ({
+          ...row,
+          incomeBs: Math.round(row.incomeBs * 100) / 100,
+          outBs: Math.round(row.outBs * 100) / 100,
+          netBs: Math.round((row.incomeBs - row.outBs) * 100) / 100,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'es')),
+      rows: filtered.slice(0, limit),
+      total: filtered.length,
+      summary: {
+        incomeBs: Math.round(incomeBs * 100) / 100,
+        outBs: Math.round(outBs * 100) / 100,
+        netBs: Math.round((incomeBs - outBs) * 100) / 100,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const accountKey = String(req.query?.accountKey ?? 'all').trim();
+    const dateFrom = String(req.query?.dateFrom ?? '').trim();
+    const dateTo = String(req.query?.dateTo ?? '').trim();
+    const query = String(req.query?.query ?? '').trim().toLowerCase();
+    const limit = Math.min(300, Math.max(20, Number(req.query?.limit ?? 160) || 160));
+
+    const movements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+    const movementById = new Map(movements.map((movement) => [String(movement?.id ?? ''), movement]));
+    const accountMap = new Map();
+    const rows = (Array.isArray(state.contracts) ? state.contracts : [])
+      .filter((contract) => contract && !contract.deletedAt)
+      .flatMap((contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+        .filter((entry) => !entry?.deletedAt && entry?.attachment?.url && entry?.attachment?.filename)
+        .map((entry) => {
+          const movement = entry?.cashMovementId
+            ? movementById.get(String(entry.cashMovementId))
+            : null;
+          const descriptor = getAccountingAccountDescriptor(
+            entry?.paymentMethod ?? movement?.paymentMethod,
+            entry?.paymentAccount ?? movement?.paymentAccount,
+          );
+          const row = {
+            contractId: contract.id,
+            contractCode: contract.contractCode ?? contract.code ?? '',
+            customerName: contract.customerName ?? '',
+            ledgerEntryId: entry.id,
+            type: entry.type,
+            typeLabel: entry.type === 'deposit'
+              ? 'Depósito / pago'
+              : entry.type === 'guarantee'
+                ? 'Garantía'
+                : entry.type === 'refund'
+                  ? 'Devolución'
+                  : entry.type === 'charge'
+                    ? 'Cargo'
+                    : 'Movimiento',
+            amountBs: Number(entry.amountBs ?? movement?.amountBs ?? 0),
+            paymentMethod: entry.paymentMethod ?? movement?.paymentMethod ?? 'efectivo',
+            paymentAccount: entry.paymentAccount ?? movement?.paymentAccount ?? '',
+            accountKey: descriptor.key,
+            accountLabel: descriptor.label,
+            note: entry.note ?? movement?.description ?? '',
+            createdAt: entry.createdAt ?? movement?.createdAt ?? entry?.attachment?.uploadedAt ?? null,
+            createdByName: entry.createdByName ?? movement?.createdByName ?? movement?.responsible ?? 'Sistema',
+            cashMovementId: entry.cashMovementId ?? null,
+            cashReceiptCode: entry.cashReceiptCode ?? movement?.receiptCode ?? movement?.receipt ?? '',
+            attachment: normalizeEconomicLedgerAttachment(entry.attachment),
+          };
+          const current = accountMap.get(descriptor.key) ?? { ...descriptor, count: 0 };
+          current.count += 1;
+          accountMap.set(descriptor.key, current);
+          return row;
+        }));
+
+    const filtered = rows
+      .filter((row) => accountKey === 'all' || row.accountKey === accountKey)
+      .filter((row) => {
+        const dateKey = accountingDateKey(row?.createdAt);
+        return (!dateFrom || dateKey >= dateFrom) && (!dateTo || dateKey <= dateTo);
+      })
+      .filter((row) => {
+        if (!query) return true;
+        return [
+          row.customerName,
+          row.contractCode,
+          row.note,
+          row.typeLabel,
+          row.paymentAccount,
+          row.cashReceiptCode,
+          row.createdByName,
+          row.attachment?.originalName,
+        ].some((value) => String(value ?? '').toLowerCase().includes(query));
+      })
+      .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+      accounts: [...accountMap.values()].sort((a, b) => a.label.localeCompare(b.label, 'es')),
+      rows: filtered.slice(0, limit),
+      total: filtered.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/accounting-context', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();

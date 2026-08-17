@@ -346,11 +346,31 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
+  const [accountLedgerKey, setAccountLedgerKey] = useState('all');
+  const [accountLedgerData, setAccountLedgerData] = useState({
+    accounts: [],
+    rows: [],
+    total: 0,
+    summary: { incomeBs: 0, outBs: 0, netBs: 0 },
+    loading: false,
+    error: '',
+  });
+  const [receiptBrowserView, setReceiptBrowserView] = useState('gallery');
+  const [receiptBrowserAccountKey, setReceiptBrowserAccountKey] = useState('all');
+  const [receiptBrowserData, setReceiptBrowserData] = useState({
+    accounts: [],
+    rows: [],
+    total: 0,
+    loading: false,
+    error: '',
+  });
   const [bigCashWorkspaceRanges, setBigCashWorkspaceRanges] = useState(() => {
     const today = getInputDate();
     const recent = getPeriodRange(today, 'recent');
     return {
       summary: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
+      accounts: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
+      receipts: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
       receivables: { dateFrom: '', dateTo: '' },
       guarantees: { dateFrom: '', dateTo: '' },
       issues: { dateFrom: '', dateTo: '' },
@@ -438,6 +458,73 @@ function AccountingSection({
   const [pettyExpenseActionMenuId, setPettyExpenseActionMenuId] = useState('');
   const [advancePeopleQuery, setAdvancePeopleQuery] = useState('');
   const cashSubmitLockRef = useRef(false);
+
+  const loadAccountLedger = useCallback(async () => {
+    const range = bigCashWorkspaceRanges.accounts ?? {};
+    setAccountLedgerData((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const result = await api.cash.getAccountLedger({
+        accountKey: accountLedgerKey,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        query: bigCashWorkspaceQuery,
+        limit: 600,
+      });
+      setAccountLedgerData({
+        accounts: Array.isArray(result?.accounts) ? result.accounts : [],
+        rows: Array.isArray(result?.rows) ? result.rows : [],
+        total: Number(result?.total ?? 0),
+        summary: result?.summary ?? { incomeBs: 0, outBs: 0, netBs: 0 },
+        loading: false,
+        error: '',
+      });
+    } catch (error) {
+      setAccountLedgerData((current) => ({
+        ...current,
+        loading: false,
+        error: error?.message || 'No se pudo cargar el movimiento de la cuenta.',
+      }));
+    }
+  }, [accountLedgerKey, bigCashWorkspaceQuery, bigCashWorkspaceRanges]);
+
+  const loadReceiptBrowser = useCallback(async () => {
+    const range = bigCashWorkspaceRanges.receipts ?? {};
+    setReceiptBrowserData((current) => ({ ...current, loading: true, error: '' }));
+    try {
+      const result = await api.cash.getReceiptProofs({
+        accountKey: receiptBrowserAccountKey,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        query: bigCashWorkspaceQuery,
+        limit: 160,
+      });
+      setReceiptBrowserData({
+        accounts: Array.isArray(result?.accounts) ? result.accounts : [],
+        rows: Array.isArray(result?.rows) ? result.rows : [],
+        total: Number(result?.total ?? 0),
+        loading: false,
+        error: '',
+      });
+    } catch (error) {
+      setReceiptBrowserData((current) => ({
+        ...current,
+        loading: false,
+        error: error?.message || 'No se pudieron cargar los comprobantes.',
+      }));
+    }
+  }, [bigCashWorkspaceQuery, bigCashWorkspaceRanges, receiptBrowserAccountKey]);
+
+  useEffect(() => {
+    if (bigCashWorkspaceTab !== 'accounts') return undefined;
+    const timer = window.setTimeout(() => { loadAccountLedger(); }, 180);
+    return () => window.clearTimeout(timer);
+  }, [bigCashWorkspaceTab, loadAccountLedger]);
+
+  useEffect(() => {
+    if (bigCashWorkspaceTab !== 'receipts') return undefined;
+    const timer = window.setTimeout(() => { loadReceiptBrowser(); }, 180);
+    return () => window.clearTimeout(timer);
+  }, [bigCashWorkspaceTab, loadReceiptBrowser]);
 
   const loadPettySector = useCallback(async (sector, { append = false, offset = 0, filters = {} } = {}) => {
     const requestId = (pettySectorRequestRef.current[sector] ?? 0) + 1;
@@ -2337,7 +2424,11 @@ function AccountingSection({
             <td className="amount">{meta.income}</td>
             <td className="negative amount">{meta.withdrawal}</td>
             <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
-            <td>{renderReceiptActions(movement)}</td>
+            <td>
+                          {canPrintCashMovement(movement)
+                            ? <button type="button" className="accounting-inline-action" onClick={() => printCashReceipt(movement)}>Recibo</button>
+                            : <span className="cash-receipt-muted">Sin recibo</span>}
+                        </td>
           </tr>
         );
       },
@@ -3805,6 +3896,8 @@ function AccountingSection({
         <nav className="bigcash-workspace-tabs" aria-label="Áreas de Caja Grande">
           {[
             ['summary', 'Resumen', null],
+            ['accounts', 'Cuentas', accountLedgerData.accounts.length || null],
+            ['receipts', 'Comprobantes', receiptBrowserData.total || null],
             ['receivables', 'Cobros', pendingReceivableRows.length],
             ['guarantees', 'Garantías', guaranteesToReturnRows.length],
             ['issues', 'Daños', returnIssueRows.length],
@@ -3897,6 +3990,191 @@ function AccountingSection({
               <span><small>Gastado</small><b className="value-orange">{formatBs(monthTransportExpenseBs)}</b></span>
               <span className={monthTransportMarginBs >= 0 ? 'positive' : 'negative'}><small>Resultado</small><b>{formatBs(monthTransportMarginBs)}</b></span>
             </div>
+          </article>
+        </section>
+
+        <section className="bigcash-workspace-panel" hidden={bigCashWorkspaceTab !== 'accounts'}>
+          <article className="bigcash-card bigcash-movements">
+            <header>
+              <div>
+                <span>TRAZABILIDAD POR CUENTA</span>
+                <h3><span className="bigcash-title-icon blue"><CashIcon kind="table" /></span>Cuentas receptoras y efectivo</h3>
+                <p>Consulta ingresos y egresos confirmados de cada medio sin cargar el estado completo.</p>
+              </div>
+              <div className="bigcash-header-total">
+                <small>Neto del filtro</small>
+                <strong>{formatBs(accountLedgerData.summary?.netBs ?? 0)}</strong>
+              </div>
+            </header>
+            {renderBigCashRangeOnly('accounts', 'Fecha del movimiento')}
+            <div className="bigcash-toolbar">
+              <label>
+                <select value={accountLedgerKey} onChange={(event) => setAccountLedgerKey(event.target.value)}>
+                  <option value="all">Todas las cuentas</option>
+                  {accountLedgerData.accounts.map((account) => (
+                    <option key={account.key} value={account.key}>
+                      {account.label} · {account.count} mov.
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="bigcash-search">
+                <input
+                  value={bigCashWorkspaceQuery}
+                  onChange={(event) => setBigCashWorkspaceQuery(event.target.value)}
+                  placeholder="Buscar concepto, contrato, cliente, recibo o usuario..."
+                />
+                <MiniIcon kind="search" />
+              </label>
+            </div>
+            <div className="bigcash-period-equation" style={{ marginBottom: 14 }}>
+              <span><small>Ingresos</small><strong className="value-green">{formatBs(accountLedgerData.summary?.incomeBs ?? 0)}</strong></span>
+              <i>−</i>
+              <span><small>Egresos</small><strong className="value-orange">{formatBs(accountLedgerData.summary?.outBs ?? 0)}</strong></span>
+              <i>=</i>
+              <span className="net"><small>Neto</small><strong>{formatBs(accountLedgerData.summary?.netBs ?? 0)}</strong></span>
+            </div>
+            {accountLedgerData.error ? <p className="status">{accountLedgerData.error}</p> : null}
+            <div className="bigcash-table-wrap">
+              <table className="accounting-table bigcash-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Cuenta</th>
+                    <th>Movimiento</th>
+                    <th>Origen / referencia</th>
+                    <th>Ingreso</th>
+                    <th>Egreso</th>
+                    <th>Registrado por</th>
+                    <th>Recibo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accountLedgerData.rows.map((movement) => {
+                    const amount = toNumber(movement.amountBs);
+                    return (
+                      <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
+                        <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
+                        <td><span className={`payment-method-pill ${getPaymentMethodMeta(movement.paymentMethod).className}`}>{getPaymentMethodLabel(movement)}</span></td>
+                        <td><strong>{movement.description || movement.category || 'Movimiento'}</strong><small>{movement.category || movement.type || ''}</small></td>
+                        <td><strong>{movement.referenceLabel || getMovementReference(movement)}</strong>{movement.customerName ? <small>{movement.customerName}</small> : null}</td>
+                        <td className="amount">{amount > 0 && !isVoidedCashMovement(movement) ? formatBs(amount) : '-'}</td>
+                        <td className="negative amount">{amount < 0 && !isVoidedCashMovement(movement) ? formatBs(Math.abs(amount)) : '-'}</td>
+                        <td><span className="bigcash-user-label">{movement.userLabel || getMovementUserLabel(movement)}</span></td>
+                        <td>{renderReceiptActions(movement)}</td>
+                      </tr>
+                    );
+                  })}
+                  {accountLedgerData.rows.length === 0 ? (
+                    <tr><td colSpan={8}><p className="status">{accountLedgerData.loading ? 'Cargando movimientos de cuenta...' : 'No hay movimientos para esta cuenta y período.'}</p></td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            {accountLedgerData.total > accountLedgerData.rows.length ? (
+              <small className="bigcash-action-muted">Mostrando {accountLedgerData.rows.length} de {accountLedgerData.total} movimientos. Ajusta el rango de fechas para acotar la consulta.</small>
+            ) : null}
+          </article>
+        </section>
+
+        <section className="bigcash-workspace-panel" hidden={bigCashWorkspaceTab !== 'receipts'}>
+          <article className="bigcash-card bigcash-movements">
+            <header>
+              <div>
+                <span>RESPALDO DOCUMENTAL</span>
+                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="report" /></span>Comprobantes de pago</h3>
+                <p>Imágenes adjuntas a la Hoja Flexible. Se consultan por metadatos y las imágenes cargan de forma diferida.</p>
+              </div>
+              <div className="bigcash-header-total"><small>Resultados</small><strong>{receiptBrowserData.total}</strong></div>
+            </header>
+            {renderBigCashRangeOnly('receipts', 'Fecha del movimiento')}
+            <div className="bigcash-toolbar">
+              <label>
+                <select value={receiptBrowserAccountKey} onChange={(event) => setReceiptBrowserAccountKey(event.target.value)}>
+                  <option value="all">Todas las cuentas</option>
+                  {receiptBrowserData.accounts.map((account) => (
+                    <option key={account.key} value={account.key}>{account.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="bigcash-receivables-switch" role="tablist" aria-label="Vista de comprobantes">
+                <button type="button" role="tab" aria-selected={receiptBrowserView === 'gallery'} className={receiptBrowserView === 'gallery' ? 'is-active' : ''} onClick={() => setReceiptBrowserView('gallery')}>Galería</button>
+                <button type="button" role="tab" aria-selected={receiptBrowserView === 'table'} className={receiptBrowserView === 'table' ? 'is-active' : ''} onClick={() => setReceiptBrowserView('table')}>Tabla</button>
+              </div>
+              <label className="bigcash-search">
+                <input
+                  value={bigCashWorkspaceQuery}
+                  onChange={(event) => setBigCashWorkspaceQuery(event.target.value)}
+                  placeholder="Buscar cliente, contrato, banco, nota o recibo..."
+                />
+                <MiniIcon kind="search" />
+              </label>
+            </div>
+            {receiptBrowserData.error ? <p className="status">{receiptBrowserData.error}</p> : null}
+            {receiptBrowserView === 'gallery' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+                {receiptBrowserData.rows.map((row) => (
+                  <article key={`${row.contractId}-${row.ledgerEntryId}`} className="bigcash-card" style={{ padding: 12, margin: 0, minWidth: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}
+                      style={{ width: '100%', height: 150, border: 0, borderRadius: 12, overflow: 'hidden', padding: 0, background: '#f4f6fa', cursor: 'pointer' }}
+                      title="Abrir comprobante"
+                    >
+                      <img
+                        src={row.attachment?.url}
+                        alt={`Comprobante ${row.contractCode || ''}`}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    </button>
+                    <div style={{ display: 'grid', gap: 4, marginTop: 10 }}>
+                      <strong>{row.customerName || 'Cliente'}</strong>
+                      <small>Contrato {row.contractCode || '-'} · {formatDate(row.createdAt)}</small>
+                      <small>{getPaymentMethodLabel(row)} · {formatBs(row.amountBs)}</small>
+                      <small>{row.cashReceiptCode ? `Recibo ${row.cashReceiptCode}` : 'Sin recibo de caja vinculado'}</small>
+                    </div>
+                  </article>
+                ))}
+                {receiptBrowserData.rows.length === 0 ? <p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes en este período.'}</p> : null}
+              </div>
+            ) : (
+              <div className="bigcash-table-wrap">
+                <table className="accounting-table bigcash-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Cliente / contrato</th>
+                      <th>Concepto</th>
+                      <th>Cuenta</th>
+                      <th>Monto</th>
+                      <th>Registrado por</th>
+                      <th>Recibo</th>
+                      <th>Imagen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {receiptBrowserData.rows.map((row) => (
+                      <tr key={`${row.contractId}-${row.ledgerEntryId}`}>
+                        <td>{formatDate(row.createdAt)} <small>{getHourLabel(row.createdAt)}</small></td>
+                        <td><strong>{row.customerName || 'Cliente'}</strong><small>Contrato {row.contractCode || '-'}</small></td>
+                        <td><strong>{row.note || row.typeLabel || 'Comprobante'}</strong></td>
+                        <td>{getPaymentMethodLabel(row)}</td>
+                        <td className="amount">{formatBs(row.amountBs)}</td>
+                        <td>{row.createdByName || 'Sistema'}</td>
+                        <td>{row.cashReceiptCode || '-'}</td>
+                        <td><button type="button" className="accounting-inline-action" onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}>Ver</button></td>
+                      </tr>
+                    ))}
+                    {receiptBrowserData.rows.length === 0 ? <tr><td colSpan={8}><p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes en este período.'}</p></td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {receiptBrowserData.total > receiptBrowserData.rows.length ? (
+              <small className="bigcash-action-muted">Mostrando {receiptBrowserData.rows.length} de {receiptBrowserData.total} comprobantes. Ajusta las fechas para ver otro período.</small>
+            ) : null}
           </article>
         </section>
 
