@@ -4177,10 +4177,17 @@ function ServiceOrdersSection({
         const isIncludedComboComponent = Boolean(comboLineKey && comboPricingRole !== 'price');
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
         const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
-        const rawUnitPriceBs = isIncludedComboComponent ? 0 : Math.max(
-          Math.max(0, Number(line.unitPriceBs ?? 0)),
-          Math.max(0, Number(line.rentalPriceBs ?? 0)),
-        );
+        const explicitUnitPriceBs = Number(line.unitPriceBs);
+        const hasExplicitUnitPrice = line.unitPriceBs !== undefined
+          && line.unitPriceBs !== null
+          && line.unitPriceBs !== ''
+          && Number.isFinite(explicitUnitPriceBs)
+          && explicitUnitPriceBs > 0;
+        const rawUnitPriceBs = isIncludedComboComponent
+          ? 0
+          : hasExplicitUnitPrice
+            ? Math.max(0, explicitUnitPriceBs)
+            : Math.max(0, Number(line.rentalPriceBs ?? 0));
         const recoveredUnitPriceBs = !isIncludedComboComponent && explicitLineTotalBs && quantity > 0
           ? Number((explicitLineTotalBs / quantity).toFixed(2))
           : 0;
