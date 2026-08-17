@@ -5352,6 +5352,7 @@ router.get('/__copetin_db/accounting/accounts-ledger', async (req, res, next) =>
   }
 });
 
+
 router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
@@ -5362,53 +5363,95 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
     const query = String(req.query?.query ?? '').trim().toLowerCase();
     const limit = Math.min(300, Math.max(20, Number(req.query?.limit ?? 160) || 160));
 
-    const movements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+    const movements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+      .filter((movement) => !isArchivedAccountingRecord(movement));
     const movementById = new Map(movements.map((movement) => [String(movement?.id ?? ''), movement]));
     const accountMap = new Map();
-    const rows = (Array.isArray(state.contracts) ? state.contracts : [])
+    const rows = [];
+
+    const registerAccount = (descriptor) => {
+      const key = String(descriptor?.key ?? 'sin_metodo:').trim() || 'sin_metodo:';
+      const current = accountMap.get(key) ?? {
+        key,
+        label: descriptor?.label ?? 'Sin método',
+        method: descriptor?.method ?? 'sin_metodo',
+        account: descriptor?.account ?? '',
+        count: 0,
+      };
+      current.count += 1;
+      accountMap.set(key, current);
+    };
+
+    (Array.isArray(state.contracts) ? state.contracts : [])
       .filter((contract) => contract && !contract.deletedAt)
-      .flatMap((contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-        .filter((entry) => !entry?.deletedAt && entry?.attachment?.url && entry?.attachment?.filename)
-        .map((entry) => {
-          const movement = entry?.cashMovementId
-            ? movementById.get(String(entry.cashMovementId))
-            : null;
-          const descriptor = getAccountingAccountDescriptor(
-            entry?.paymentMethod ?? movement?.paymentMethod,
-            entry?.paymentAccount ?? movement?.paymentAccount,
-          );
-          const row = {
-            contractId: contract.id,
-            contractCode: contract.contractCode ?? contract.code ?? '',
-            customerName: contract.customerName ?? '',
-            ledgerEntryId: entry.id,
-            type: entry.type,
-            typeLabel: entry.type === 'deposit'
-              ? 'Depósito / pago'
-              : entry.type === 'guarantee'
-                ? 'Garantía'
-                : entry.type === 'refund'
-                  ? 'Devolución'
-                  : entry.type === 'charge'
-                    ? 'Cargo'
-                    : 'Movimiento',
-            amountBs: Number(entry.amountBs ?? movement?.amountBs ?? 0),
-            paymentMethod: entry.paymentMethod ?? movement?.paymentMethod ?? 'efectivo',
-            paymentAccount: entry.paymentAccount ?? movement?.paymentAccount ?? '',
-            accountKey: descriptor.key,
-            accountLabel: descriptor.label,
-            note: entry.note ?? movement?.description ?? '',
-            createdAt: entry.createdAt ?? movement?.createdAt ?? entry?.attachment?.uploadedAt ?? null,
-            createdByName: entry.createdByName ?? movement?.createdByName ?? movement?.responsible ?? 'Sistema',
-            cashMovementId: entry.cashMovementId ?? null,
-            cashReceiptCode: entry.cashReceiptCode ?? movement?.receiptCode ?? movement?.receipt ?? '',
-            attachment: normalizeEconomicLedgerAttachment(entry.attachment),
-          };
-          const current = accountMap.get(descriptor.key) ?? { ...descriptor, count: 0 };
-          current.count += 1;
-          accountMap.set(descriptor.key, current);
-          return row;
-        }));
+      .forEach((contract) => {
+        const ledger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
+        ledger
+          .filter((entry) => !entry?.deletedAt && entry?.attachment)
+          .forEach((entry) => {
+            const normalizedAttachment = normalizeEconomicLedgerAttachment(entry.attachment);
+            if (!normalizedAttachment) return;
+            const movement = entry?.cashMovementId
+              ? movementById.get(String(entry.cashMovementId))
+              : null;
+            const descriptor = getAccountingAccountDescriptor(
+              entry?.paymentMethod ?? movement?.paymentMethod,
+              entry?.paymentAccount ?? movement?.paymentAccount,
+            );
+            registerAccount(descriptor);
+            rows.push({
+              browserId: `attachment:${contract.id}:${entry.id}`,
+              sourceKind: 'attachment',
+              contractId: contract.id,
+              contractCode: contract.contractCode ?? contract.code ?? '',
+              customerName: contract.customerName ?? '',
+              ledgerEntryId: entry.id,
+              type: entry.type,
+              typeLabel: 'Comprobante adjunto',
+              amountBs: Math.abs(Number(entry.amountBs ?? movement?.amountBs ?? 0)),
+              paymentMethod: entry.paymentMethod ?? movement?.paymentMethod ?? 'efectivo',
+              paymentAccount: entry.paymentAccount ?? movement?.paymentAccount ?? '',
+              accountKey: descriptor.key,
+              accountLabel: descriptor.label,
+              note: entry.note ?? movement?.description ?? '',
+              createdAt: entry.createdAt ?? movement?.createdAt ?? normalizedAttachment?.uploadedAt ?? null,
+              createdByName: entry.createdByName ?? movement?.createdByName ?? movement?.responsible ?? 'Sistema',
+              cashMovementId: entry.cashMovementId ?? null,
+              cashReceiptCode: entry.cashReceiptCode ?? movement?.receiptCode ?? movement?.receipt ?? '',
+              attachment: normalizedAttachment,
+              referenceLabel: contract.contractCode ?? contract.code ?? '',
+            });
+          });
+      });
+
+    movements
+      .filter((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
+      .forEach((movement) => {
+        const descriptor = getAccountingAccountDescriptor(movement?.paymentMethod, movement?.paymentAccount);
+        registerAccount(descriptor);
+        rows.push({
+          browserId: `receipt:${movement.id}`,
+          sourceKind: 'receipt',
+          contractId: movement?.contractId ?? movement?.relatedContractId ?? null,
+          contractCode: movement?.contractCode ?? movement?.reference ?? movement?.receiptCode ?? movement?.receipt ?? '',
+          customerName: movement?.customerName ?? movement?.clientName ?? movement?.customer ?? '',
+          ledgerEntryId: null,
+          type: movement?.type ?? 'receipt',
+          typeLabel: 'Recibo del sistema',
+          amountBs: Math.abs(Number(movement?.amountBs ?? 0)),
+          paymentMethod: movement?.paymentMethod ?? 'efectivo',
+          paymentAccount: movement?.paymentAccount ?? '',
+          accountKey: descriptor.key,
+          accountLabel: descriptor.label,
+          note: movement?.description ?? movement?.category ?? movement?.type ?? 'Recibo',
+          createdAt: movement?.createdAt ?? null,
+          createdByName: movement?.createdByName ?? movement?.responsible ?? 'Sistema',
+          cashMovementId: movement?.id ?? null,
+          cashReceiptCode: movement?.receiptCode ?? movement?.receipt ?? '',
+          attachment: null,
+          referenceLabel: movement?.referenceLabel ?? movement?.reference ?? movement?.contractCode ?? '',
+        });
+      });
 
     const filtered = rows
       .filter((row) => accountKey === 'all' || row.accountKey === accountKey)
@@ -5427,6 +5470,7 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
           row.cashReceiptCode,
           row.createdByName,
           row.attachment?.originalName,
+          row.referenceLabel,
         ].some((value) => String(value ?? '').toLowerCase().includes(query));
       })
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));

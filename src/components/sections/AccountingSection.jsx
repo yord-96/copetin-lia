@@ -2417,7 +2417,7 @@ function AccountingSection({
         const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
         return (
           <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
-            <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
+            <td style={{ verticalAlign: 'top' }}><strong style={{ display: 'block' }}>{formatDate(movement.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(movement.createdAt)}</small></td>
             <td><strong>{movement.description}</strong></td>
             <td>{getMovementReference(movement)}</td>
             <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
@@ -3893,7 +3893,7 @@ function AccountingSection({
           </div>
         </section>
 
-        <nav className="bigcash-workspace-tabs" aria-label="Áreas de Caja Grande">
+        <nav className="bigcash-workspace-tabs" aria-label="Áreas de Caja Grande" style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 12, scrollbarWidth: 'thin' }}>
           {[
             ['summary', 'Resumen', null],
             ['accounts', 'Cuentas', accountLedgerData.accounts.length || null],
@@ -3908,6 +3908,7 @@ function AccountingSection({
               key={id}
               type="button"
               className={bigCashWorkspaceTab === id ? 'active' : ''}
+              style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}
               onClick={() => {
                 setBigCashWorkspaceTab(id);
                 setBigCashWorkspaceQuery('');
@@ -4036,17 +4037,17 @@ function AccountingSection({
             </div>
             {accountLedgerData.error ? <p className="status">{accountLedgerData.error}</p> : null}
             <div className="bigcash-table-wrap">
-              <table className="accounting-table bigcash-table">
+              <table className="accounting-table bigcash-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Cuenta</th>
+                    <th style={{ width: 110 }}>Fecha</th>
+                    <th style={{ width: 140 }}>Cuenta</th>
                     <th>Movimiento</th>
-                    <th>Origen / referencia</th>
-                    <th>Ingreso</th>
-                    <th>Egreso</th>
-                    <th>Registrado por</th>
-                    <th>Recibo</th>
+                    <th style={{ width: 170 }}>Origen / referencia</th>
+                    <th style={{ width: 110 }}>Ingreso</th>
+                    <th style={{ width: 110 }}>Egreso</th>
+                    <th style={{ width: 140 }}>Registrado por</th>
+                    <th style={{ width: 110 }}>Recibo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4054,13 +4055,13 @@ function AccountingSection({
                     const amount = toNumber(movement.amountBs);
                     return (
                       <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
-                        <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
-                        <td><span className={`payment-method-pill ${getPaymentMethodMeta(movement.paymentMethod).className}`}>{getPaymentMethodLabel(movement)}</span></td>
-                        <td><strong>{movement.description || movement.category || 'Movimiento'}</strong><small>{movement.category || movement.type || ''}</small></td>
-                        <td><strong>{movement.referenceLabel || getMovementReference(movement)}</strong>{movement.customerName ? <small>{movement.customerName}</small> : null}</td>
+                        <td style={{ verticalAlign: 'top' }}><strong style={{ display: 'block' }}>{formatDate(movement.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(movement.createdAt)}</small></td>
+                        <td style={{ verticalAlign: 'top' }}><span className={`payment-method-pill ${getPaymentMethodMeta(movement.paymentMethod).className}`} style={{ display: 'inline-flex', maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word' }}>{getPaymentMethodLabel(movement)}</span></td>
+                        <td style={{ verticalAlign: 'top' }}><strong style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.25 }}>{movement.description || movement.category || 'Movimiento'}</strong><small style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.category || movement.type || ''}</small></td>
+                        <td style={{ verticalAlign: 'top' }}><strong style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.referenceLabel || getMovementReference(movement)}</strong>{movement.customerName ? <small style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.customerName}</small> : null}</td>
                         <td className="amount">{amount > 0 && !isVoidedCashMovement(movement) ? formatBs(amount) : '-'}</td>
                         <td className="negative amount">{amount < 0 && !isVoidedCashMovement(movement) ? formatBs(Math.abs(amount)) : '-'}</td>
-                        <td><span className="bigcash-user-label">{movement.userLabel || getMovementUserLabel(movement)}</span></td>
+                        <td style={{ verticalAlign: 'top' }}><span className="bigcash-user-label" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.userLabel || getMovementUserLabel(movement)}</span></td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
@@ -4077,13 +4078,14 @@ function AccountingSection({
           </article>
         </section>
 
-        <section className="bigcash-workspace-panel" hidden={bigCashWorkspaceTab !== 'receipts'}>
+        
+<section className="bigcash-workspace-panel" hidden={bigCashWorkspaceTab !== 'receipts'}>
           <article className="bigcash-card bigcash-movements">
             <header>
               <div>
                 <span>RESPALDO DOCUMENTAL</span>
-                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="report" /></span>Comprobantes de pago</h3>
-                <p>Imágenes adjuntas a la Hoja Flexible. Se consultan por metadatos y las imágenes cargan de forma diferida.</p>
+                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="report" /></span>Comprobantes y recibos</h3>
+                <p>Incluye comprobantes subidos a la Hoja Flexible y recibos generados por Caja Grande.</p>
               </div>
               <div className="bigcash-header-total"><small>Resultados</small><strong>{receiptBrowserData.total}</strong></div>
             </header>
@@ -4112,71 +4114,108 @@ function AccountingSection({
             </div>
             {receiptBrowserData.error ? <p className="status">{receiptBrowserData.error}</p> : null}
             {receiptBrowserView === 'gallery' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
-                {receiptBrowserData.rows.map((row) => (
-                  <article key={`${row.contractId}-${row.ledgerEntryId}`} className="bigcash-card" style={{ padding: 12, margin: 0, minWidth: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}
-                      style={{ width: '100%', height: 150, border: 0, borderRadius: 12, overflow: 'hidden', padding: 0, background: '#f4f6fa', cursor: 'pointer' }}
-                      title="Abrir comprobante"
-                    >
-                      <img
-                        src={row.attachment?.url}
-                        alt={`Comprobante ${row.contractCode || ''}`}
-                        loading="lazy"
-                        decoding="async"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      />
-                    </button>
-                    <div style={{ display: 'grid', gap: 4, marginTop: 10 }}>
-                      <strong>{row.customerName || 'Cliente'}</strong>
-                      <small>Contrato {row.contractCode || '-'} · {formatDate(row.createdAt)}</small>
-                      <small>{getPaymentMethodLabel(row)} · {formatBs(row.amountBs)}</small>
-                      <small>{row.cashReceiptCode ? `Recibo ${row.cashReceiptCode}` : 'Sin recibo de caja vinculado'}</small>
-                    </div>
-                  </article>
-                ))}
-                {receiptBrowserData.rows.length === 0 ? <p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes en este período.'}</p> : null}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+                {receiptBrowserData.rows.map((row) => {
+                  const linkedMovement = row.cashMovementId ? cashMovements.find((movement) => String(movement?.id ?? '') === String(row.cashMovementId)) : null;
+                  return (
+                    <article key={row.browserId || `${row.contractId || 'x'}-${row.ledgerEntryId || row.cashMovementId || 'y'}`} className="bigcash-card" style={{ padding: 12, margin: 0, minWidth: 0 }}>
+                      {row.attachment?.url ? (
+                        <button
+                          type="button"
+                          onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}
+                          style={{ width: '100%', height: 150, border: 0, borderRadius: 12, overflow: 'hidden', padding: 0, background: '#f4f6fa', cursor: 'pointer' }}
+                          title="Abrir comprobante"
+                        >
+                          <img
+                            src={row.attachment?.url}
+                            alt={`Comprobante ${row.contractCode || ''}`}
+                            loading="lazy"
+                            decoding="async"
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (linkedMovement) printCashReceipt(linkedMovement);
+                          }}
+                          disabled={!linkedMovement}
+                          style={{ width: '100%', height: 150, border: '1px dashed #cbd5e1', borderRadius: 12, overflow: 'hidden', padding: 16, background: '#f8fafc', cursor: linkedMovement ? 'pointer' : 'default', display: 'grid', alignContent: 'center', justifyItems: 'center', gap: 6 }}
+                          title="Abrir recibo"
+                        >
+                          <span className="bigcash-title-icon blue" style={{ width: 42, height: 42 }}><MiniIcon kind="report" /></span>
+                          <strong style={{ textAlign: 'center' }}>{row.cashReceiptCode || 'RECIBO'}</strong>
+                          <small style={{ textAlign: 'center' }}>Recibo generado por el sistema</small>
+                        </button>
+                      )}
+                      <div style={{ display: 'grid', gap: 4, marginTop: 10 }}>
+                        <strong style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.customerName || 'Cliente'}</strong>
+                        <small>{row.sourceKind === 'attachment' ? 'Comprobante adjunto' : 'Recibo del sistema'}</small>
+                        <small>Contrato {row.contractCode || '-'} · {formatDate(row.createdAt)}</small>
+                        <small>{getPaymentMethodLabel(row)} · {formatBs(row.amountBs)}</small>
+                        <small>{row.cashReceiptCode ? `Recibo ${row.cashReceiptCode}` : 'Sin recibo de caja vinculado'}</small>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                        {row.attachment?.url ? (
+                          <button type="button" className="accounting-inline-action" onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}>Abrir imagen</button>
+                        ) : null}
+                        {linkedMovement ? (
+                          <button type="button" className="accounting-inline-action" onClick={() => printCashReceipt(linkedMovement)}>Ver recibo</button>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+                {receiptBrowserData.rows.length === 0 ? <p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes o recibos en este período.'}</p> : null}
               </div>
             ) : (
               <div className="bigcash-table-wrap">
-                <table className="accounting-table bigcash-table">
+                <table className="accounting-table bigcash-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th>Fecha</th>
+                      <th style={{ width: 110 }}>Fecha</th>
                       <th>Cliente / contrato</th>
-                      <th>Concepto</th>
-                      <th>Cuenta</th>
-                      <th>Monto</th>
-                      <th>Registrado por</th>
-                      <th>Recibo</th>
-                      <th>Imagen</th>
+                      <th>Respaldo</th>
+                      <th style={{ width: 140 }}>Cuenta</th>
+                      <th style={{ width: 110 }}>Monto</th>
+                      <th style={{ width: 130 }}>Registrado por</th>
+                      <th style={{ width: 110 }}>Recibo</th>
+                      <th style={{ width: 120 }}>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {receiptBrowserData.rows.map((row) => (
-                      <tr key={`${row.contractId}-${row.ledgerEntryId}`}>
-                        <td>{formatDate(row.createdAt)} <small>{getHourLabel(row.createdAt)}</small></td>
-                        <td><strong>{row.customerName || 'Cliente'}</strong><small>Contrato {row.contractCode || '-'}</small></td>
-                        <td><strong>{row.note || row.typeLabel || 'Comprobante'}</strong></td>
-                        <td>{getPaymentMethodLabel(row)}</td>
-                        <td className="amount">{formatBs(row.amountBs)}</td>
-                        <td>{row.createdByName || 'Sistema'}</td>
-                        <td>{row.cashReceiptCode || '-'}</td>
-                        <td><button type="button" className="accounting-inline-action" onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}>Ver</button></td>
-                      </tr>
-                    ))}
-                    {receiptBrowserData.rows.length === 0 ? <tr><td colSpan={8}><p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes en este período.'}</p></td></tr> : null}
+                    {receiptBrowserData.rows.map((row) => {
+                      const linkedMovement = row.cashMovementId ? cashMovements.find((movement) => String(movement?.id ?? '') === String(row.cashMovementId)) : null;
+                      return (
+                        <tr key={row.browserId || `${row.contractId || 'x'}-${row.ledgerEntryId || row.cashMovementId || 'y'}`}>
+                          <td><strong style={{ display: 'block' }}>{formatDate(row.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(row.createdAt)}</small></td>
+                          <td><strong style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.customerName || 'Cliente'}</strong><small style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>Contrato {row.contractCode || '-'}</small></td>
+                          <td><strong style={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.note || row.typeLabel || 'Comprobante'}</strong><small style={{ display: 'block' }}>{row.sourceKind === 'attachment' ? 'Comprobante adjunto' : 'Recibo del sistema'}</small></td>
+                          <td><span className={`payment-method-pill ${getPaymentMethodMeta(row.paymentMethod).className}`} style={{ display: 'inline-flex', maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word' }}>{getPaymentMethodLabel(row)}</span></td>
+                          <td className="amount">{formatBs(row.amountBs)}</td>
+                          <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{row.createdByName || 'Sistema'}</td>
+                          <td>{row.cashReceiptCode || '-'}</td>
+                          <td>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {row.attachment?.url ? <button type="button" className="accounting-inline-action" onClick={() => window.open(row.attachment?.url, '_blank', 'noopener,noreferrer')}>Imagen</button> : null}
+                              {linkedMovement ? <button type="button" className="accounting-inline-action" onClick={() => printCashReceipt(linkedMovement)}>Recibo</button> : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {receiptBrowserData.rows.length === 0 ? <tr><td colSpan={8}><p className="status">{receiptBrowserData.loading ? 'Cargando comprobantes...' : 'No hay comprobantes o recibos en este período.'}</p></td></tr> : null}
                   </tbody>
                 </table>
               </div>
             )}
             {receiptBrowserData.total > receiptBrowserData.rows.length ? (
-              <small className="bigcash-action-muted">Mostrando {receiptBrowserData.rows.length} de {receiptBrowserData.total} comprobantes. Ajusta las fechas para ver otro período.</small>
+              <small className="bigcash-action-muted">Mostrando {receiptBrowserData.rows.length} de {receiptBrowserData.total} respaldos. Ajusta las fechas para ver otro período.</small>
             ) : null}
           </article>
         </section>
+
 
         <section className="bigcash-card bigcash-vip-prepaid-card" hidden={bigCashWorkspaceTab !== 'prepaid'}>
           <header>
@@ -4448,7 +4487,8 @@ function AccountingSection({
           </div>
         </section>
 
-        <section className="bigcash-operations-grid" hidden={bigCashWorkspaceTab !== 'movements'}>
+        {bigCashWorkspaceTab === 'movements' ? (
+        <section className="bigcash-operations-grid">
           <article className="bigcash-card bigcash-movements">
             <header>
               <div>
@@ -4538,7 +4578,7 @@ function AccountingSection({
                       || String(movement?.type ?? '').toLowerCase() === 'ingreso_transporte_cliente';
                     return (
                       <tr key={movement.id} className={isVoidedCashMovement(movement) ? 'cash-row-voided' : ''}>
-                        <td>{formatDate(movement.createdAt)} <small>{getHourLabel(movement.createdAt)}</small></td>
+                        <td style={{ verticalAlign: 'top' }}><strong style={{ display: 'block' }}>{formatDate(movement.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(movement.createdAt)}</small></td>
                         <td><span className={`bigcash-type-icon ${meta.className}`}><MiniIcon kind={meta.icon} /></span></td>
                         <td>
                           <strong>{movement.description}</strong>
@@ -4565,6 +4605,7 @@ function AccountingSection({
           </article>
 
         </section>
+        ) : null}
         {renderBigCashListModal()}
         {renderCashModals()}
       </section>
