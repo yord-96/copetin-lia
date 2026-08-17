@@ -4626,7 +4626,7 @@ function ServiceOrdersSection({
   }, [draft.recordId, draft.supplierFulfillmentPlan, isHistoricalReconstruction, modalOpen]);
 
   useEffect(() => {
-    if (!modalOpen) return;
+    if (!modalOpen || currentStep < 2) return;
     if (isHistoricalReconstruction) {
       setSupplierFulfillmentDraftByItem({});
       return;
@@ -4690,11 +4690,14 @@ function ServiceOrdersSection({
 
       return next;
     });
-  }, [getEditableAvailableStock, isHistoricalReconstruction, modalOpen, selectedItems, supplierOffersByItemId]);
+  }, [currentStep, getEditableAvailableStock, isHistoricalReconstruction, modalOpen, selectedItems, supplierOffersByItemId]);
 
   const supplierCoverageRows = useMemo(
     () => {
-      if (isHistoricalReconstruction) return [];
+      // Igual que stockIssues: en Cliente/Evento no existe disponibilidad proyectada
+      // porque se calcula recién desde Items. No debemos convertir el availableStock
+      // físico (que puede ser 0 por el propio contrato) en un faltante de proveedor.
+      if (currentStep < 2 || isHistoricalReconstruction) return [];
       const processedLineKeys = new Set();
       return selectedItems
         .map((line) => {
@@ -4733,7 +4736,7 @@ function ServiceOrdersSection({
       })
         .filter(Boolean);
     },
-    [getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
+    [currentStep, getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
 
   const getDisplayedItemSubtotalBs = useCallback((line) => {
