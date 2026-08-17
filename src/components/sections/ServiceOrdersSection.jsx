@@ -4177,23 +4177,20 @@ function ServiceOrdersSection({
         const isIncludedComboComponent = Boolean(comboLineKey && comboPricingRole !== 'price');
         const explicitLineTotalBs = Number.isFinite(Number(line.lineTotalBs)) ? Math.max(0, Number(line.lineTotalBs)) : null;
         const explicitGrossLineTotalBs = Number.isFinite(Number(line.grossLineTotalBs)) ? Math.max(0, Number(line.grossLineTotalBs)) : null;
-        const explicitUnitPriceBs = Number(line.unitPriceBs);
         const hasExplicitUnitPrice = line.unitPriceBs !== undefined
           && line.unitPriceBs !== null
-          && line.unitPriceBs !== ''
-          && Number.isFinite(explicitUnitPriceBs)
-          && explicitUnitPriceBs > 0;
+          && line.unitPriceBs !== '';
         const rawUnitPriceBs = isIncludedComboComponent
           ? 0
           : hasExplicitUnitPrice
-            ? Math.max(0, explicitUnitPriceBs)
-            : Math.max(0, Number(line.rentalPriceBs ?? 0));
+            ? Math.max(0, parseMoneyInput(line.unitPriceBs, 0))
+            : Math.max(0, Number(line.rentalPriceBs ?? item.rentalPriceBs ?? 0));
         const recoveredUnitPriceBs = !isIncludedComboComponent && explicitLineTotalBs && quantity > 0
           ? Number((explicitLineTotalBs / quantity).toFixed(2))
           : 0;
         const unitPriceBs = isCourtesyLine || isIncludedComboComponent
           ? 0
-          : rawUnitPriceBs > 0
+          : hasExplicitUnitPrice
             ? rawUnitPriceBs
             : recoveredUnitPriceBs > 0
               ? recoveredUnitPriceBs
@@ -4214,7 +4211,11 @@ function ServiceOrdersSection({
           quantity,
           quantityInput: line.quantity === '' ? '' : String(line.quantity ?? quantity),
           unitPriceBs,
-          unitPriceInput: line.unitPriceBs === '' ? '' : String(rawUnitPriceBs > 0 ? line.unitPriceBs : unitPriceBs),
+          unitPriceInput: line.unitPriceInput !== undefined
+            ? String(line.unitPriceInput ?? '')
+            : line.unitPriceBs === ''
+              ? ''
+              : String(line.unitPriceBs ?? unitPriceBs),
           item,
           availability,
           discountPercent,
