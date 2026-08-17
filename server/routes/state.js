@@ -168,6 +168,24 @@ const toPositiveRoundedNumber = (value) => {
   return Math.round(number * 100) / 100;
 };
 
+
+const normalizeEconomicLedgerAttachment = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const url = String(value?.url ?? '').trim();
+  const filename = String(value?.filename ?? '').trim();
+  if (!url || !filename) return null;
+  return {
+    url,
+    filename,
+    originalName: String(value?.originalName ?? filename).trim() || filename,
+    mimeType: String(value?.mimeType ?? '').trim().toLowerCase(),
+    bytes: Math.max(0, Math.trunc(Number(value?.bytes ?? 0))),
+    uploadedAt: String(value?.uploadedAt ?? '').trim() || null,
+    uploadedById: value?.uploadedById ?? null,
+    uploadedByName: String(value?.uploadedByName ?? '').trim(),
+  };
+};
+
 const normalizeEconomicLedgerRows = (rows) => {
   if (!Array.isArray(rows)) return [];
   return rows.map((entry) => {
@@ -205,6 +223,7 @@ const normalizeEconomicLedgerRows = (rows) => {
       contractAllocationBs: toPositiveRoundedNumber(entry?.contractAllocationBs),
       guaranteeAllocationBs: toPositiveRoundedNumber(entry?.guaranteeAllocationBs),
       surplusAllocationBs: toPositiveRoundedNumber(entry?.surplusAllocationBs),
+      attachment: normalizeEconomicLedgerAttachment(entry?.attachment),
       deletedAt: String(entry?.deletedAt ?? '').trim() || null,
       deletedById: entry?.deletedById ?? null,
       deletedByName: String(entry?.deletedByName ?? '').trim(),

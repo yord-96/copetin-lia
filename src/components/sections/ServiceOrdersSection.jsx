@@ -447,6 +447,18 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     contractAllocationBs: Math.max(0, toMoneyNumber(entry?.contractAllocationBs)),
     guaranteeAllocationBs: Math.max(0, toMoneyNumber(entry?.guaranteeAllocationBs)),
     surplusAllocationBs: Math.max(0, toMoneyNumber(entry?.surplusAllocationBs)),
+    attachment: entry?.attachment && typeof entry.attachment === 'object'
+      ? {
+          url: String(entry.attachment.url ?? '').trim(),
+          filename: String(entry.attachment.filename ?? '').trim(),
+          originalName: String(entry.attachment.originalName ?? entry.attachment.filename ?? '').trim(),
+          mimeType: String(entry.attachment.mimeType ?? '').trim(),
+          bytes: Math.max(0, Math.trunc(Number(entry.attachment.bytes ?? 0))),
+          uploadedAt: entry.attachment.uploadedAt ?? null,
+          uploadedById: entry.attachment.uploadedById ?? null,
+          uploadedByName: String(entry.attachment.uploadedByName ?? '').trim(),
+        }
+      : null,
     deletedAt: entry?.deletedAt ?? null,
     deletedById: entry?.deletedById ?? null,
     deletedByName: String(entry?.deletedByName ?? '').trim(),
@@ -1605,6 +1617,7 @@ function ServiceOrdersSection({
   const [isSavingContractEconomicsCollection, setIsSavingContractEconomicsCollection] = useState(false);
   const [isSavingContractEconomicsGuaranteeRefund, setIsSavingContractEconomicsGuaranteeRefund] = useState(false);
   const [isSavingContractEconomicsLedger, setIsSavingContractEconomicsLedger] = useState(false);
+  const [economicReceiptImageBusyId, setEconomicReceiptImageBusyId] = useState(null);
   const [generatingDepositReceiptId, setGeneratingDepositReceiptId] = useState(null);
   const [ledgerDateEditEntry, setLedgerDateEditEntry] = useState(null);
   const [ledgerDateEditValue, setLedgerDateEditValue] = useState('');
@@ -8863,6 +8876,75 @@ function ServiceOrdersSection({
     }
   };
 
+  const applyEconomicReceiptImageResult = (result) => {
+    const updated = result?.contract;
+    if (!updated?.id) return null;
+    const updatedLedger = Array.isArray(updated.economicLedger) ? updated.economicLedger : [];
+    const updatedLedgerKey = String(updated.id ?? updated.contractCode ?? '').trim();
+    setActiveEconomicResetLedger(updatedLedger);
+    if (updatedLedgerKey) {
+      setEconomicResetLedgerByContract((current) => ({
+        ...current,
+        [updatedLedgerKey]: updatedLedger,
+      }));
+    }
+    setContractEconomicsTarget(updated);
+    return updated;
+  };
+
+  const handleSelectEconomicReceiptImage = (entry) => {
+    if (!entry?.id || readOnly || economicReceiptImageBusyId) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setContractEconomicsError('');
+      setEconomicReceiptImageBusyId(entry.id);
+      try {
+        const result = await api.uploads.economicReceiptImage(file, {
+          contractId: contractEconomicsData?.contract?.id ?? contractEconomicsData?.contract?.contractCode,
+          ledgerEntryId: entry.id,
+          userId: currentUser?.id ?? '',
+          userName: currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema',
+        });
+        if (!applyEconomicReceiptImageResult(result)) {
+          throw new Error('El servidor guardo la imagen, pero no devolvio el contrato actualizado.');
+        }
+        setActionFeedback(`Comprobante adjuntado a la linea ${entry.note || entry.type || 'economica'}.`);
+      } catch (error) {
+        setContractEconomicsError(error.message || 'No se pudo adjuntar el comprobante.');
+      } finally {
+        setEconomicReceiptImageBusyId(null);
+      }
+    };
+    input.click();
+  };
+
+  const handleDeleteEconomicReceiptImage = async (entry) => {
+    if (!entry?.id || !entry?.attachment?.filename || readOnly || economicReceiptImageBusyId) return;
+    if (!window.confirm('Quitar el comprobante adjunto de esta linea?')) return;
+    setContractEconomicsError('');
+    setEconomicReceiptImageBusyId(entry.id);
+    try {
+      const result = await api.uploads.deleteEconomicReceiptImage({
+        contractId: contractEconomicsData?.contract?.id ?? contractEconomicsData?.contract?.contractCode,
+        ledgerEntryId: entry.id,
+        userId: currentUser?.id ?? '',
+        userName: currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema',
+      });
+      if (!applyEconomicReceiptImageResult(result)) {
+        throw new Error('El servidor quito la imagen, pero no devolvio el contrato actualizado.');
+      }
+      setActionFeedback('Comprobante quitado correctamente.');
+    } catch (error) {
+      setContractEconomicsError(error.message || 'No se pudo quitar el comprobante.');
+    } finally {
+      setEconomicReceiptImageBusyId(null);
+    }
+  };
+
   const handleEditContractEconomicLedgerEntry = (entry) => {
     if (!canManageContractEconomicLedger) return;
     setLedgerDateEditEntry(entry);
@@ -11907,6 +11989,46 @@ function ServiceOrdersSection({
                                   : entry.cashReceiptCode || (entry.cashMovementId ? 'Ver recibo' : 'Generar recibo')}
                               </button>
                             ) : null}
+                            {entry.attachment?.url ? (
+                              <>
+                                <a
+                                  className="contract-economics-row-action"
+                                  href={entry.attachment.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={`Comprobante: ${entry.attachment.originalName || entry.attachment.filename}${entry.attachment.uploadedByName ? ` · subido por ${entry.attachment.uploadedByName}` : ''}`}
+                                >
+                                  Ver comprobante
+                                </a>
+                                <button
+                                  type="button"
+                                  className="contract-economics-row-action"
+                                  onClick={() => handleSelectEconomicReceiptImage(entry)}
+                                  disabled={readOnly || economicReceiptImageBusyId === entry.id}
+                                >
+                                  {economicReceiptImageBusyId === entry.id ? 'Subiendo...' : 'Cambiar imagen'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="contract-economics-row-action danger"
+                                  onClick={() => handleDeleteEconomicReceiptImage(entry)}
+                                  disabled={readOnly || economicReceiptImageBusyId === entry.id}
+                                  title="Quita solamente la imagen; no elimina la linea economica."
+                                >
+                                  Quitar comprobante
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                className="contract-economics-row-action"
+                                onClick={() => handleSelectEconomicReceiptImage(entry)}
+                                disabled={readOnly || economicReceiptImageBusyId === entry.id}
+                                title="Adjuntar imagen del comprobante a esta linea."
+                              >
+                                {economicReceiptImageBusyId === entry.id ? 'Subiendo...' : 'Adjuntar comprobante'}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="contract-economics-row-action"

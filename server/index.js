@@ -21,6 +21,10 @@ import {
   getProductUploadInfo,
 } from './storage/productImageStore.js';
 import {
+  ensureEconomicReceiptUploadDirectory,
+  getEconomicReceiptUploadInfo,
+} from './storage/economicReceiptImageStore.js';
+import {
   ensureAttendanceUploadDirectory,
   getAttendanceUploadInfo,
 } from './storage/attendancePhotoStore.js';
@@ -160,6 +164,7 @@ app.get('/health', async (_req, res, next) => {
       lincolnStateFile: getLincolnStateStoreInfo().stateFilePath,
       uploads: {
         products: productUploadInfo.uploadDirectory,
+        economicReceipts: economicReceiptUploadInfo.uploadDirectory,
         attendance: attendanceUploadInfo.uploadDirectory,
         lincolnRooms: lincolnRoomUploadInfo.uploadDirectory,
       },
@@ -178,6 +183,16 @@ const productUploadInfo = getProductUploadInfo();
 app.use(
   '/uploads/products',
   express.static(productUploadInfo.uploadDirectory, {
+    immutable: true,
+    maxAge: '30d',
+    index: false,
+  }),
+);
+
+const economicReceiptUploadInfo = getEconomicReceiptUploadInfo();
+app.use(
+  '/uploads/economic-receipts',
+  express.static(economicReceiptUploadInfo.uploadDirectory, {
     immutable: true,
     maxAge: '30d',
     index: false,
@@ -251,6 +266,7 @@ const start = async () => {
   await runLegacyGuaranteeRefundRepair();
   await ensureLincolnStateStore();
   await ensureProductUploadDirectory();
+  await ensureEconomicReceiptUploadDirectory();
   await ensureAttendanceUploadDirectory();
   await ensureLincolnRoomUploadDirectory();
   await ensureLincolnPackageUploadDirectory();

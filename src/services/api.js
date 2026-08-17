@@ -1451,6 +1451,78 @@ const uploadProductImage = async (file, { itemId } = {}) => {
   return response.json();
 };
 
+
+const uploadEconomicReceiptImage = async (file, {
+  contractId,
+  ledgerEntryId,
+  userId = '',
+  userName = '',
+} = {}) => {
+  if (!(file instanceof File)) {
+    throw new Error('Selecciona una imagen valida para subir.');
+  }
+  const safeContractId = String(contractId ?? '').trim();
+  const safeLedgerEntryId = String(ledgerEntryId ?? '').trim();
+  if (!safeContractId || !safeLedgerEntryId) {
+    throw new Error('No se pudo identificar la linea economica para adjuntar el comprobante.');
+  }
+  const response = await fetch(getApiUrl('/api/uploads/economic-receipts'), {
+    method: 'POST',
+    headers: getInternalHeaders({
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Contract-Id': safeContractId,
+      'X-Economic-Ledger-Id': safeLedgerEntryId,
+      'X-Original-Filename': encodeURIComponent(String(file.name ?? 'comprobante')),
+      'X-User-Id': String(userId ?? '').trim(),
+      'X-User-Name': encodeURIComponent(String(userName ?? '').trim()),
+    }),
+    body: file,
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo adjuntar el comprobante.');
+  }
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+  forgetFullRecordCache(fullContractCache, [safeContractId, result?.contract?.id]);
+  markServerStateStale('contracts.economicReceiptImage:upload');
+  announceDataChange({ domain: 'contracts', method: 'economicReceiptImage.upload' });
+  return result;
+};
+
+const deleteEconomicReceiptImage = async ({
+  contractId,
+  ledgerEntryId,
+  userId = '',
+  userName = '',
+} = {}) => {
+  const safeContractId = String(contractId ?? '').trim();
+  const safeLedgerEntryId = String(ledgerEntryId ?? '').trim();
+  if (!safeContractId || !safeLedgerEntryId) {
+    throw new Error('No se pudo identificar la linea economica del comprobante.');
+  }
+  const query = new URLSearchParams({
+    userId: String(userId ?? '').trim(),
+    userName: String(userName ?? '').trim(),
+  });
+  const response = await fetch(
+    getApiUrl(`/api/uploads/economic-receipts/${encodeURIComponent(safeContractId)}/${encodeURIComponent(safeLedgerEntryId)}?${query.toString()}`),
+    {
+      method: 'DELETE',
+      cache: 'no-store',
+      headers: getInternalHeaders(),
+    },
+  );
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo quitar el comprobante.');
+  }
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+  forgetFullRecordCache(fullContractCache, [safeContractId, result?.contract?.id]);
+  markServerStateStale('contracts.economicReceiptImage:delete');
+  announceDataChange({ domain: 'contracts', method: 'economicReceiptImage.delete' });
+  return result;
+};
+
 const uploadLincolnRoomImage = async (file, { roomId } = {}) => {
   if (!(file instanceof File)) throw new Error('Selecciona una imagen válida para el salón.');
   const response = await fetch(getApiUrl('/api/uploads/lincoln/rooms'), {
@@ -2984,6 +3056,8 @@ export const api = {
   },
   uploads: {
     productImage: uploadProductImage,
+    economicReceiptImage: uploadEconomicReceiptImage,
+    deleteEconomicReceiptImage,
     attendancePhoto: uploadAttendancePhoto,
     roomImage: uploadLincolnRoomImage,
     deleteRoomImage: deleteLincolnRoomImage,
