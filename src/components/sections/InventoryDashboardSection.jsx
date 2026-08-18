@@ -1697,6 +1697,11 @@ function InventoryDashboardSection({
         const deliveryBack = linkedDeliveries.find((entry) => isPickupDeliveryRecord(entry)) ?? linkedDeliveries[1] ?? null;
         const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
         const deliveryLabel = logisticsMode === 'recojo' ? 'Alistamiento' : 'Entrega';
+        // La seleccion por rango en Movimientos debe responder a la fecha comercial
+        // del evento, no a fechas operativas de alistamiento, entrega o recojo.
+        // rentalDate se conserva solo como compatibilidad para contratos historicos
+        // donde esa era la fecha de evento disponible en la orden.
+        const eventDate = contract?.eventDate ?? rental.eventDate ?? rental.rentalDate ?? null;
         const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate ?? null;
         const deliveryWindowStart = contract?.deliveryWindowStart ?? deliveryOut?.windowStart ?? rental.deliveryWindowStart ?? '';
         const deliveryWindowEnd = contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd ?? rental.deliveryWindowEnd ?? '';
@@ -1730,6 +1735,7 @@ function InventoryDashboardSection({
           customerName: contract?.customerName ?? rental.customerName,
           address: contract?.address ?? deliveryOut?.address ?? deliveryBack?.address ?? rental.eventAddress ?? 'Direccion pendiente',
           itemsText: `${totalItems} unidades · ${lines} items`,
+          eventDate,
           deliveryLabel,
           deliveryDate,
           deliveryWindow: formatWindow(deliveryWindowStart, deliveryWindowEnd),
@@ -1781,13 +1787,12 @@ function InventoryDashboardSection({
         row.orderCode,
         row.customerName,
       ].some((value) => normalizeText(value).includes(normalizedQuery));
-      const operationDates = [row.deliveryDate, row.pickupDate]
-        .map((value) => String(value ?? '').slice(0, 10))
-        .filter(Boolean);
-      const matchesDate = (!selectedDateFrom && !selectedDateTo) || operationDates.some((date) => (
-        (!selectedDateFrom || date >= selectedDateFrom)
-        && (!selectedDateTo || date <= selectedDateTo)
-      ));
+      const eventDateKey = getDateKey(row.eventDate);
+      const matchesDate = (!selectedDateFrom && !selectedDateTo) || Boolean(
+        eventDateKey
+        && (!selectedDateFrom || eventDateKey >= selectedDateFrom)
+        && (!selectedDateTo || eventDateKey <= selectedDateTo)
+      );
       return matchesQuery && matchesDate;
     });
   }, [inventoryOperationDateFrom, inventoryOperationDateTo, inventoryOrderQuery, prepOrderRows]);
@@ -4361,7 +4366,7 @@ function InventoryDashboardSection({
               <header className="inventory-ops-head">
                 <div>
                   <h3>Ordenes operativas de inventario</h3>
-                  <span>Consulta todas las ordenes o filtra por cliente, contrato y fecha exacta.</span>
+                  <span>Consulta todas las ordenes o filtra por cliente, contrato y fecha del evento.</span>
                 </div>
                 <div className="inventory-week-actions">
                   <button type="button" className="primary-button" onClick={() => openInventoryWeekDocument('standard')}>
@@ -4380,7 +4385,7 @@ function InventoryDashboardSection({
                   />
                 </label>
                 <label className="inventory-ops-date-filter">
-                  <span>Desde</span>
+                  <span>Evento desde</span>
                   <input
                     type="date"
                     value={inventoryOperationDateFrom}
@@ -4395,7 +4400,7 @@ function InventoryDashboardSection({
                   />
                 </label>
                 <label className="inventory-ops-date-filter">
-                  <span>Hasta</span>
+                  <span>Evento hasta</span>
                   <input
                     type="date"
                     value={inventoryOperationDateTo}
@@ -4534,7 +4539,7 @@ function InventoryDashboardSection({
                 {filteredPrepOrderRows.length === 0 ? (
                   <p className="status">
                     {(inventoryOperationDateFrom || inventoryOperationDateTo)
-                      ? 'No hay entregas ni recojos programados para el rango seleccionado.'
+                      ? 'No hay eventos programados para el rango seleccionado.'
                       : 'No hay ordenes que coincidan con la busqueda.'}
                   </p>
                 ) : null}
