@@ -3087,7 +3087,17 @@ export const api = {
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
-    listRecoveries: async () => { await ensureServerCollectionsLoaded(['stockRecoveries'], 'stock-recoveries'); return callBridge('inventory', 'listRecoveries', false); },
+    listRecoveries: async () => {
+      if (shouldUseServerState()) {
+        // stockRecoveries es una coleccion diferida. Debemos leerla directamente
+        // del servidor y consultar el bridge local sin disparar luego un bootstrap,
+        // porque callBridge(..., false) puede reemplazar la copia recien cargada
+        // antes de devolverla a la vista de Lavado y Reparacion.
+        await fetchServerCollections(['stockRecoveries'], 'stock-recoveries');
+        return getBridge().inventory.listRecoveries();
+      }
+      return callBridge('inventory', 'listRecoveries', false);
+    },
     processRecovery: (payload) => callDirectInventoryRecoveryOperation(payload),
   },
   uploads: {
