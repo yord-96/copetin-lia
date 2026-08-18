@@ -6239,6 +6239,125 @@ router.get('/__copetin_db/availability/overview', async (req, res, next) => {
   }
 });
 
+router.post('/__copetin_db/inventory/recoveries/:id/process', async (req, res, next) => {
+  try {
+    const recoveryId = String(req.params.id ?? '').trim();
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const action = String(payload.action ?? '').trim();
+    const quantity = Math.trunc(Number(payload.quantity ?? 0));
+    const note = String(payload.note ?? '').trim();
+    const userName = String(payload.userName ?? payload.createdByName ?? payload.createdBy ?? '').trim() || 'Sistema';
+    const userRole = String(payload.userRole ?? payload.createdByRole ?? '').trim() || 'Operacion';
+
+    if (!recoveryId) return res.status(400).json({ error: 'Debes seleccionar un pendiente para procesar.' });
+    if (!['reinsert', 'discard'].includes(action)) return res.status(400).json({ error: 'La accion de reinsercion no es valida.' });
+    if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'La cantidad a procesar debe ser mayor a 0.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.items = Array.isArray(state.items) ? state.items : [];
+      state.stockRecoveries = Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [];
+      state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+
+      const recoveryIndex = state.stockRecoveries.findIndex((entry) => String(entry?.id ?? '') === recoveryId);
+      if (recoveryIndex < 0) {
+        const error = new Error('No se encontro el pendiente seleccionado.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const recovery = state.stockRecoveries[recoveryIndex];
+      const pendingQuantity = Math.max(0, Math.trunc(Number(recovery?.quantity ?? 0)));
+      if (quantity > pendingQuantity) {
+        const error = new Error(`La cantidad maxima para este pendiente es ${pendingQuantity}.`);
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const item = state.items.find((entry) => String(entry?.id ?? '') === String(recovery?.itemId ?? ''));
+      if (!item) {
+        const error = new Error('El item asociado ya no existe.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const beforeTotalStock = Number(item.totalStock ?? 0);
+      const beforeAvailableStock = Number(item.availableStock ?? 0);
+      const now = new Date().toISOString();
+
+      if (action === 'reinsert') {
+        const nextAvailableStock = beforeAvailableStock + quantity;
+        if (nextAvailableStock > beforeTotalStock) {
+          const error = new Error('La reinsercion supera el stock total del item.');
+          error.statusCode = 409;
+          throw error;
+        }
+        item.availableStock = nextAvailableStock;
+      } else {
+        const nextTotalStock = beforeTotalStock - quantity;
+        if (nextTotalStock < beforeAvailableStock) {
+          const error = new Error('No se puede dar de baja mas unidades de las no disponibles.');
+          error.statusCode = 409;
+          throw error;
+        }
+        item.totalStock = nextTotalStock;
+      }
+      item.updatedAt = now;
+
+      recovery.quantity = pendingQuantity - quantity;
+      recovery.updatedAt = now;
+      let remainingRecovery = recovery;
+      if (recovery.quantity <= 0) {
+        state.stockRecoveries.splice(recoveryIndex, 1);
+        remainingRecovery = null;
+      }
+
+      const movement = {
+        id: `mov-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+        itemId: item.id,
+        itemName: item.name,
+        category: item.category,
+        type: action === 'reinsert' ? 'reinsercion' : 'salida',
+        reason: note || (action === 'reinsert'
+          ? `Reinsercion desde ${recovery.stage === 'lavado' ? 'lavado' : 'reparacion'}`
+          : `Baja definitiva desde ${recovery.stage === 'lavado' ? 'lavado' : 'reparacion'}`),
+        detail: action === 'reinsert'
+          ? `Reinsertadas ${quantity} unidades (${recovery.stage})`
+          : `Baja definitiva de ${quantity} unidades (${recovery.stage})`,
+        deltaUnits: action === 'reinsert' ? 0 : -quantity,
+        beforeTotalStock,
+        afterTotalStock: Number(item.totalStock ?? 0),
+        beforeAvailableStock,
+        afterAvailableStock: Number(item.availableStock ?? 0),
+        reservedStockAfter: Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0),
+        userName,
+        userRole,
+        createdAt: now,
+      };
+      state.inventoryMovements.push(movement);
+
+      responseData = {
+        processed: { recoveryId, action, quantity, itemId: item.id },
+        item: { ...item },
+        recovery: remainingRecovery ? { ...remainingRecovery } : null,
+        movement: summarizeInventoryMovement(movement),
+      };
+      return state;
+    });
+
+    res.json({
+      ok: true,
+      ...responseData,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();

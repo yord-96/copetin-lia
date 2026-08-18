@@ -1224,18 +1224,12 @@ export const useAppController = () => {
         ...getCurrentUserTrace(),
       });
 
-      if (currentRecovery && quantity > 0) {
-        setStockRecoveries((current) => current
-          .map((entry) => (
-            entry.id === recoveryId
-              ? {
-                  ...entry,
-                  quantity: Math.max(0, Number(entry.quantity ?? 0) - quantity),
-                  updatedAt: new Date().toISOString(),
-                }
-              : entry
-          ))
-          .filter((entry) => Number(entry.quantity ?? 0) > 0));
+      if (result?.item?.id) {
+        setItems((current) => current.map((item) => (
+          String(item?.id ?? '') === String(result.item.id) ? { ...item, ...result.item } : item
+        )));
+      } else if (currentRecovery && quantity > 0) {
+        // Compatibilidad con el bridge local si se ejecuta sin servidor.
         setItems((current) => current.map((item) => {
           if (item.id !== currentRecovery.itemId) return item;
           if (action === 'reinsert') {
@@ -1259,11 +1253,45 @@ export const useAppController = () => {
         }));
       }
 
-      void api.inventory.listMovements()
-        .then(setInventoryMovements)
-        .catch((refreshError) => {
-          console.warn('[copetin] No se pudo refrescar movimientos despues de lavado/reparacion.', refreshError);
+      if (Object.prototype.hasOwnProperty.call(result ?? {}, 'recovery')) {
+        setStockRecoveries((current) => {
+          if (!result.recovery) return current.filter((entry) => entry.id !== recoveryId);
+          return current.map((entry) => (
+            entry.id === recoveryId ? { ...entry, ...result.recovery } : entry
+          ));
         });
+      } else if (currentRecovery && quantity > 0) {
+        setStockRecoveries((current) => current
+          .map((entry) => (
+            entry.id === recoveryId
+              ? {
+                  ...entry,
+                  quantity: Math.max(0, Number(entry.quantity ?? 0) - quantity),
+                  updatedAt: new Date().toISOString(),
+                }
+              : entry
+          ))
+          .filter((entry) => Number(entry.quantity ?? 0) > 0));
+      }
+
+      if (result?.movement?.id) {
+        setInventoryMovements((current) => {
+          const withoutDuplicate = current.filter((movement) => String(movement?.id ?? '') !== String(result.movement.id));
+          return [result.movement, ...withoutDuplicate].slice(0, 300);
+        });
+        setInventoryMovementStats((current) => {
+          if (!current) return current;
+          const next = { ...current, total: Number(current.total ?? 0) + 1 };
+          if (result.movement.type === 'entrada' || result.movement.type === 'reinsercion') {
+            next.entrada = Number(current.entrada ?? 0) + 1;
+          } else if (result.movement.type === 'salida' || result.movement.type === 'reserva') {
+            next.salida = Number(current.salida ?? 0) + 1;
+          } else {
+            next.ajuste = Number(current.ajuste ?? 0) + 1;
+          }
+          return next;
+        });
+      }
 
       return result;
     } catch (requestError) {

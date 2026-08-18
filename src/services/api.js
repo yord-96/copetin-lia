@@ -2298,6 +2298,42 @@ const getPersonnelOptionsFromServer = async ({ query = '', limit = 20 } = {}) =>
 
 const shouldFallbackToBridgeOperation = (error) => error?.status === 404 || error?.status === 405;
 
+const callDirectInventoryRecoveryOperation = async (payload = {}) => {
+  if (!shouldUseServerState()) return callBridge('inventory', 'processRecovery', true, payload);
+  const recoveryId = String(payload?.recoveryId ?? '').trim();
+  if (!recoveryId) throw new Error('Debes seleccionar un pendiente para procesar.');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(getServerStateUrl(`/inventory/recoveries/${encodeURIComponent(recoveryId)}/process`), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw await createServerStateError(response, 'No se pudo procesar la unidad en lavado o reparacion.');
+    }
+    const result = await response.json();
+    if (result?.revision) rememberServerRevision(result.revision);
+    announceDataChange({
+      domain: 'inventory',
+      method: 'processRecovery',
+      collections: INVENTORY_RECOVERY_PATCH_COLLECTIONS,
+    });
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en procesar el item. No repitas la operacion hasta verificar el estado del pendiente.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const callDirectRentalReturnOperation = async (payload = {}) => {
   if (!shouldUseServerState()) return null;
   const controller = new AbortController();
@@ -3052,7 +3088,7 @@ export const api = {
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     listRecoveries: async () => { await ensureServerCollectionsLoaded(['stockRecoveries'], 'stock-recoveries'); return callBridge('inventory', 'listRecoveries', false); },
-    processRecovery: (payload) => callBridge('inventory', 'processRecovery', true, payload),
+    processRecovery: (payload) => callDirectInventoryRecoveryOperation(payload),
   },
   uploads: {
     productImage: uploadProductImage,
