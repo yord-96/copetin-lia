@@ -2055,6 +2055,8 @@ function ServiceOrdersSection({
           : 'Sin contrato',
         inventoryStatus,
         transportStatus,
+        returnReview: operational.returnReview ?? null,
+        clientPendingPickup: operational.clientPendingPickup ?? null,
         inventoryNote: operational.inventoryNote ?? '',
         transportNote: operational.transportNote ?? '',
         inventorySentAt: operational.inventorySentAt ?? null,
@@ -2318,6 +2320,10 @@ function ServiceOrdersSection({
       // (naranja) y despues volvio (celeste).
       const isSent = ['salio', 'devuelto'].includes(inventoryStatus);
       const isReturned = inventoryStatus === 'devuelto';
+      const clientPendingPickup = linkedOrder?.clientPendingPickup?.active ? linkedOrder.clientPendingPickup : null;
+      const clientPendingUnits = (Array.isArray(clientPendingPickup?.items) ? clientPendingPickup.items : [])
+        .reduce((sum, line) => sum + Math.max(0, Number(line?.pendingQty ?? 0)), 0);
+      const hasClientPending = clientPendingUnits > 0;
       const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
         .map(normalizeEconomicLedgerEntry);
       const economicInternalNotes = getEconomicInternalNotes({ economicLedger });
@@ -2515,6 +2521,9 @@ function ServiceOrdersSection({
         dueBs,
         isSent,
         isReturned,
+        hasClientPending,
+        clientPendingUnits,
+        clientPendingPickup,
         hasEconomicLedger,
         economicInternalNotes,
         guaranteeBs,
@@ -2964,6 +2973,23 @@ function ServiceOrdersSection({
       toMoneyNumber(contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs),
     );
     const prepaidUsedBs = toMoneyNumber(contract?.payment?.prepaidUsedBs ?? rental?.payment?.prepaidUsedBs);
+
+    const clientPendingPickup = rental?.operational?.clientPendingPickup?.active
+      ? rental.operational.clientPendingPickup
+      : linkedOrder?.clientPendingPickup?.active
+        ? linkedOrder.clientPendingPickup
+        : null;
+    const clientPendingItems = (Array.isArray(clientPendingPickup?.items) ? clientPendingPickup.items : [])
+      .filter((line) => toMoneyNumber(line?.pendingQty) > 0)
+      .map((line, index) => ({
+        id: `${rental?.id ?? contract?.id ?? 'contract'}-client-pending-${line?.lineKey ?? line?.itemId ?? index}`,
+        lineKey: String(line?.lineKey ?? '').trim(),
+        itemId: String(line?.itemId ?? '').trim(),
+        itemName: line?.itemName ?? 'Item',
+        pendingQty: toMoneyNumber(line?.pendingQty),
+        note: line?.note ?? clientPendingPickup?.note ?? '',
+      }));
+    const clientPendingUnits = clientPendingItems.reduce((sum, line) => sum + toMoneyNumber(line.pendingQty), 0);
 
     const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
       .filter((line) =>
@@ -3544,6 +3570,9 @@ function ServiceOrdersSection({
       movements,
       receipts,
       returnIssues,
+      clientPendingPickup,
+      clientPendingItems,
+      clientPendingUnits,
       totalBs,
       rentalTotalBs,
       itemsGrossSubtotalBs,
@@ -10416,6 +10445,7 @@ function ServiceOrdersSection({
                 <div className="orders-contract-legend" aria-label="Leyenda operativa de contratos">
                   <span><i className="sent" /> Enviado</span>
                   <span><i className="returned" /> Volvió / devuelto</span>
+                  <span><i style={{ background: '#f59e0b' }} /> Volvió parcial / material con cliente</span>
                 </div>
               </div>
             </div>
@@ -10536,6 +10566,11 @@ function ServiceOrdersSection({
                         <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div className="orders-hidden-status-cell">
                             <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
+                            {row.hasClientPending ? (
+                              <small style={{ color: '#b45309', background: '#fff7ed', border: '1px solid #f5c26b', borderRadius: 999, padding: '3px 7px', fontWeight: 850 }}>
+                                {row.clientPendingUnits} con cliente
+                              </small>
+                            ) : null}
                             {row.status === 'oculto' ? (
                               <small>
                                 Eliminado por {row.deletedByName || 'Sistema'}
@@ -11356,7 +11391,7 @@ function ServiceOrdersSection({
                   <article className={contractEconomicsData.damagePendingBs > 0 ? 'is-due' : 'is-paid'}>
                     <span>Danos / faltantes</span>
                     <strong>{contractEconomicsData.damagePendingBs > 0 ? formatBs(contractEconomicsData.damagePendingBs) : 'Sin pendiente'}</strong>
-                    <small>{contractEconomicsData.returnIssues.length} observacion(es)</small>
+                    <small>{contractEconomicsData.returnIssues.length} observación(es){contractEconomicsData.clientPendingUnits > 0 ? ` · ${contractEconomicsData.clientPendingUnits} con cliente` : ''}</small>
                   </article>
                 </div>
 
@@ -12143,10 +12178,25 @@ function ServiceOrdersSection({
               <article className="contract-economics-panel">
                 <header>
                   <div>
-                    <h4>5. Danos, faltantes y observaciones de retorno</h4>
-                    <p>Informacion tomada de la recepcion y liquidacion del alquiler.</p>
+                    <h4>5. Retorno: daños, faltantes y material con cliente</h4>
+                    <p>Separa pérdidas/cargos de las unidades que todavía siguen físicamente con el cliente.</p>
                   </div>
                 </header>
+                {contractEconomicsData.clientPendingItems.length > 0 ? (
+                  <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
+                    <div style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #f5c26b', background: '#fff7ed', color: '#92400e', display: 'grid', gap: 4 }}>
+                      <strong>RETORNO PARCIAL · {contractEconomicsData.clientPendingUnits} unidad(es) todavía con el cliente</strong>
+                      <span style={{ fontSize: 12 }}>No se consideran faltantes y no generan cargo mientras sigan registradas como pendientes de recojo.</span>
+                    </div>
+                    {contractEconomicsData.clientPendingItems.map((pending) => (
+                      <div key={pending.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(180px,.9fr)', gap: 10, alignItems: 'center', padding: '9px 11px', border: '1px solid #fde3b4', borderRadius: 9, background: '#fffaf0' }}>
+                        <strong>{pending.itemName}</strong>
+                        <span style={{ fontWeight: 900, color: '#b45309' }}>{pending.pendingQty} con cliente</span>
+                        <span style={{ color: '#7c5b24', fontSize: 12 }}>{pending.note || 'Pendiente de recojo'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {contractEconomicsData.returnIssues.length > 0 ? (
                   <div className="contract-economics-issues">
                     {contractEconomicsData.returnIssues.map((issue) => (

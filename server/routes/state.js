@@ -2082,7 +2082,9 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const rentalId = String(payload.rentalId ?? '').trim();
     const lines = Array.isArray(payload.returnedItems) ? payload.returnedItems : [];
-    const isPartialReturn = Boolean(payload.partialReturn) || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client';
+    const isPartialReturn = Boolean(payload.partialReturn)
+      || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client'
+      || lines.some((line) => Math.max(0, Math.trunc(Number(line?.pendingClientQty ?? 0))) > 0);
 
     if (!rentalId) return res.status(400).json({ error: 'Debe seleccionar un alquiler para registrar la devolucion.' });
     if (!lines.length) return res.status(400).json({ error: 'Debe enviar el detalle de devolucion por item.' });
@@ -2122,9 +2124,24 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
         const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
         const damagedUnitChargeBs = Math.max(0, Number(line?.damagedUnitChargeBs ?? 0));
         const damagedFeeBs = directMoney(damagedQty * damagedUnitChargeBs);
-        if (chargeOwner === 'cliente') penaltiesBs = directMoney(penaltiesBs + damagedFeeBs);
-        else internalPenaltiesBs = directMoney(internalPenaltiesBs + damagedFeeBs);
+        const legacyPending = !Object.prototype.hasOwnProperty.call(line ?? {}, 'pendingClientQty')
+          && Boolean(rental.operational?.clientPendingPickup?.active);
+        const missingQty = legacyPending ? 0 : Math.max(0, Math.trunc(Number(line?.missingQty ?? 0)));
+        const missingUnitChargeBs = Math.max(0, Number(line?.missingUnitChargeBs ?? 0));
+        const missingFeeBs = directMoney(missingQty * missingUnitChargeBs);
+        const previousFeeBs = directMoney(damagedFeeBs + missingFeeBs);
+        if (chargeOwner === 'cliente') penaltiesBs = directMoney(penaltiesBs + previousFeeBs);
+        else internalPenaltiesBs = directMoney(internalPenaltiesBs + previousFeeBs);
       });
+      const isLegacyClientPendingLine = (entry) => (
+        !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
+        && Boolean(rental.operational?.clientPendingPickup?.active)
+      );
+      const getConfirmedMissingQty = (entry) => (
+        isLegacyClientPendingLine(entry)
+          ? 0
+          : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0)))
+      );
       const getPreviouslyProcessedQty = (rentalLine, rentalLineKey) => previousPartialItems
         .filter((entry) => (
           String(entry?.lineKey ?? '') === String(rentalLineKey)
@@ -2132,7 +2149,8 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
         ))
         .reduce((sum, entry) => sum
           + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-          + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+          + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
+          + getConfirmedMissingQty(entry), 0);
 
       const consumedReturnLineIndexes = new Set();
       const returnReport = (Array.isArray(rental.items) ? rental.items : []).map((rentalLine, index) => {
@@ -2168,17 +2186,18 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
         const returnedQty = Math.max(0, directInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
         const damagedQty = Math.max(0, directInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));
         const missingQty = Math.max(0, directInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
+        const pendingClientQty = Math.max(0, directInteger(incomingLine.pendingClientQty ?? 0, `con cliente (${rentalLine.itemName})`));
         const chargeOwner = normalizeReturnChargeOwner(incomingLine.chargeOwner);
         const damageNote = String(incomingLine.damageNote ?? '').trim();
         const originalExpectedQty = Math.max(0, Math.trunc(Number(rentalLine.quantity ?? 0)));
         const previousProcessedQty = getPreviouslyProcessedQty(rentalLine, rentalLineKey);
         const expectedQty = Math.max(0, originalExpectedQty - previousProcessedQty);
-        if (returnedQty + damagedQty + missingQty !== expectedQty) {
-          const error = new Error(`La suma de devuelto + daniado + faltante para "${rentalLine.itemName}" debe ser ${expectedQty}.`);
+        if (returnedQty + damagedQty + missingQty + pendingClientQty !== expectedQty) {
+          const error = new Error(`La suma de devuelto + daniado + faltante + con cliente para "${rentalLine.itemName}" debe ser ${expectedQty}.`);
           error.statusCode = 400;
           throw error;
         }
-        if ((damagedQty > 0 || missingQty > 0) && !damageNote) {
+        if ((damagedQty > 0 || missingQty > 0 || pendingClientQty > 0) && !damageNote) {
           const error = new Error(`Debes registrar la observacion para "${rentalLine.itemName}".`);
           error.statusCode = 400;
           throw error;
@@ -2232,7 +2251,7 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
           // Dañado es baja física al confirmarse. Faltante solo es baja definitiva
           // cuando se cierra la devolución; en una devolución parcial sigue con cliente.
           damagedStockLossQty = internalDamagedQty;
-          missingStockLossQty = isPartialReturn ? 0 : internalMissingQty;
+          missingStockLossQty = internalMissingQty;
           stockLossQty = damagedStockLossQty + missingStockLossQty;
           if (stockLossQty > 0) {
             const beforeTotalStock = Number(item.totalStock ?? 0);
@@ -2306,6 +2325,7 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
           stockLossQty,
           damagedQty,
           missingQty,
+          pendingClientQty,
           damageNote,
           chargeOwner,
           damagedUnitChargeBs,
@@ -2318,28 +2338,38 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
 
       if (isPartialReturn) {
         const pendingItems = returnReport
-          .filter((line) => Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0)
+          .filter((line) => Math.max(0, Math.trunc(Number(line.pendingClientQty ?? 0))) > 0)
           .map((line) => ({
             lineKey: line.lineKey,
             itemId: line.itemId,
             itemName: line.itemName,
             expectedQty: line.expectedQty,
-            pendingQty: Math.max(0, Math.trunc(Number(line.missingQty ?? 0))),
+            pendingQty: Math.max(0, Math.trunc(Number(line.pendingClientQty ?? 0))),
             note: String(line.damageNote ?? '').trim(),
           }));
         if (!pendingItems.length) { const error = new Error('Para registrar material con cliente debe existir al menos una cantidad pendiente.'); error.statusCode = 400; throw error; }
+        const partialRegisteredLines = returnReport.filter((line) => (
+          Math.max(0, Math.trunc(Number(line.returnedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line.damagedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line.pendingClientQty ?? 0))) > 0
+        )).map((line) => ({ ...line, partialRegisteredAt: now }));
         rental.partialReturnReport = {
           updatedAt: now,
           updatedByName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
-          items: [
-            ...previousPartialItems,
-            ...returnReport.filter((line) => (
-              Math.max(0, Math.trunc(Number(line.returnedQty ?? 0))) > 0
-              || Math.max(0, Math.trunc(Number(line.damagedQty ?? 0))) > 0
-              || Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0
-            )).map((line) => ({ ...line, partialRegisteredAt: now })),
-          ],
+          items: [...previousPartialItems, ...partialRegisteredLines],
         };
+        const confirmedPartialLines = partialRegisteredLines.filter((line) => (
+          Math.max(0, Math.trunc(Number(line.returnedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line.damagedQty ?? 0))) > 0
+          || Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0
+        ));
+        rental.returnReport = [
+          ...(Array.isArray(rental.returnReport) ? rental.returnReport : []),
+          ...confirmedPartialLines,
+        ];
+        rental.penaltiesBs = penaltiesBs;
+        rental.internalPenaltiesBs = internalPenaltiesBs;
         rental.operational = {
           ...(rental.operational ?? {}),
           inventoryStatus: 'salio',
@@ -2375,13 +2405,36 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
 
       rental.status = 'returned';
       rental.returnedAt = now;
-      rental.returnReport = [
-        ...previousPartialItems.filter((line) => (
-          Math.max(0, Math.trunc(Number(line?.returnedQty ?? 0))) > 0
-          || Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0))) > 0
-        )),
-        ...returnReport,
-      ];
+      const existingReturnReport = Array.isArray(rental.returnReport) ? rental.returnReport : [];
+      const existingFingerprints = new Set(existingReturnReport.map((line) => [
+        String(line?.lineKey ?? ''),
+        Number(line?.returnedQty ?? 0),
+        Number(line?.damagedQty ?? 0),
+        Number(line?.missingQty ?? 0),
+        String(line?.partialRegisteredAt ?? ''),
+      ].join('|')));
+      const legacyConfirmedPartialLines = previousPartialItems.map((line) => {
+        const legacyPending = !Object.prototype.hasOwnProperty.call(line ?? {}, 'pendingClientQty')
+          && Boolean(rental.operational?.clientPendingPickup?.active);
+        return {
+          ...line,
+          missingQty: legacyPending ? 0 : Math.max(0, Math.trunc(Number(line?.missingQty ?? 0))),
+          pendingClientQty: legacyPending
+            ? Math.max(0, Math.trunc(Number(line?.missingQty ?? 0)))
+            : Math.max(0, Math.trunc(Number(line?.pendingClientQty ?? 0))),
+        };
+      }).filter((line) => (
+        Math.max(0, Math.trunc(Number(line?.returnedQty ?? 0))) > 0
+        || Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0))) > 0
+        || Math.max(0, Math.trunc(Number(line?.missingQty ?? 0))) > 0
+      )).filter((line) => !existingFingerprints.has([
+        String(line?.lineKey ?? ''),
+        Number(line?.returnedQty ?? 0),
+        Number(line?.damagedQty ?? 0),
+        Number(line?.missingQty ?? 0),
+        String(line?.partialRegisteredAt ?? ''),
+      ].join('|')));
+      rental.returnReport = [...existingReturnReport, ...legacyConfirmedPartialLines, ...returnReport];
       rental.partialReturnReport = null;
       rental.operational = {
         ...(rental.operational ?? {}),
@@ -6277,7 +6330,7 @@ const summarizeInventoryRental = (rental = {}) => ({
   returnReport: Array.isArray(rental.returnReport) ? rental.returnReport.map((line) => ({
     lineKey: line.lineKey ?? '', itemId: line.itemId ?? '', itemName: line.itemName ?? '',
     returnedQty: Number(line.returnedQty ?? 0), damagedQty: Number(line.damagedQty ?? 0),
-    missingQty: Number(line.missingQty ?? 0), damageNote: line.damageNote ?? '',
+    missingQty: Number(line.missingQty ?? 0), pendingClientQty: Number(line.pendingClientQty ?? 0), damageNote: line.damageNote ?? '',
     damagedUnitChargeBs: Number(line.damagedUnitChargeBs ?? 0),
     missingUnitChargeBs: Number(line.missingUnitChargeBs ?? 0),
     damagedFeeBs: Number(line.damagedFeeBs ?? 0),
