@@ -1839,33 +1839,35 @@ function InventoryDashboardSection({
       ['Falta volver', count('out'), 'warning'],
       ['Con novedades', count('issues') + count('client'), 'danger'],
     ];
-    const htmlRows = enrichedRows.map((row) => `
+    const htmlRows = enrichedRows.map((row, index) => `
       <tr>
+        <td class="center row-number">${index + 1}</td>
         <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong><br><small>${escapeHtml(row.orderCode || '')}</small></td>
         <td>${escapeHtml(row.customerName || 'Sin cliente')}</td>
-        <td>${escapeHtml(formatDateKey(row.eventDate))}</td>
-        <td class="num">${row.totalUnits}</td>
-        <td>${row.inventoryConfirmedAt ? '✓' : '—'}</td>
-        <td>${row.inventoryDispatchedAt ? '✓' : '—'}</td>
-        <td>${row.inventoryReturnedAt ? '✓' : '—'}</td>
-        <td><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
+        <td class="center">${escapeHtml(formatDateKey(row.eventDate))}</td>
+        <td class="center quantity">${row.totalUnits}</td>
+        <td class="center check">${row.inventoryConfirmedAt ? '✓' : '—'}</td>
+        <td class="center check">${row.inventoryDispatchedAt ? '✓' : '—'}</td>
+        <td class="center check">${row.inventoryReturnedAt ? '✓' : '—'}</td>
+        <td class="center"><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
       </tr>`).join('');
     const attentionHtml = attentionRows.length
-      ? attentionRows.map((row) => {
+      ? attentionRows.map((row, index) => {
           const notes = [
             row.reportIssues.damaged > 0 ? `${row.reportIssues.damaged} dañada(s)` : '',
             row.reportIssues.missing > 0 ? `${row.reportIssues.missing} faltante(s)` : '',
             row.clientPendingPickup?.note || row.returnReview?.note || row.dispatchReview?.note || '',
           ].filter(Boolean).join(' · ');
           return `<tr>
+            <td class="center row-number">${index + 1}</td>
             <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong></td>
             <td>${escapeHtml(row.customerName || 'Sin cliente')}</td>
-            <td>${escapeHtml(formatDateKey(row.eventDate))}</td>
-            <td><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
+            <td class="center">${escapeHtml(formatDateKey(row.eventDate))}</td>
+            <td class="center"><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
             <td>${escapeHtml(notes || 'Requiere seguimiento operativo.')}</td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="5" class="empty">No hay contratos que requieran atención en este rango.</td></tr>';
+      : '<tr><td colspan="6" class="empty">No hay contratos que requieran atención en este rango.</td></tr>';
 
     const html = `<!doctype html>
 <html lang="es">
@@ -1873,56 +1875,320 @@ function InventoryDashboardSection({
 <meta charset="utf-8" />
 <title>Reporte operativo de inventario</title>
 <style>
-  @page { size: A4 landscape; margin: 12mm; }
+  @page { size: A4 landscape; margin: 11mm 10mm 13mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #14213d; background: #fff; font-size: 11px; }
-  .hero { background: #173a70; color: white; padding: 20px 24px; border-radius: 14px; display:flex; justify-content:space-between; gap:24px; align-items:flex-end; }
-  .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; opacity: .8; font-weight: 700; }
-  h1 { margin: 5px 0 4px; font-size: 25px; }
-  .hero p { margin: 0; opacity: .9; }
-  .hero-meta { text-align:right; min-width:240px; }
-  .hero-meta strong { display:block; font-size:14px; margin-bottom:4px; }
-  .cards { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin:12px 0; }
-  .card { border:1px solid #d9e2ef; border-radius:10px; padding:10px 12px; background:#f8fafc; }
-  .card span { display:block; color:#64748b; font-size:9px; text-transform:uppercase; font-weight:700; }
-  .card strong { display:block; margin-top:4px; font-size:20px; }
-  .card.success strong { color:#159447; } .card.warning strong { color:#d97706; } .card.danger strong { color:#cf3341; }
-  .card.info strong { color:#2563eb; } .card.muted strong { color:#64748b; }
-  .section { margin-top:14px; }
-  .section-head { display:flex; align-items:end; justify-content:space-between; margin-bottom:6px; }
-  h2 { margin:0; font-size:15px; }
-  .section-head small { color:#64748b; }
-  table { width:100%; border-collapse:collapse; table-layout:fixed; }
-  th { background:#173a70; color:#fff; padding:8px 7px; text-align:left; font-size:9px; text-transform:uppercase; }
-  td { padding:8px 7px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
-  tbody tr:nth-child(even) { background:#f8fafc; }
-  .num { text-align:right; }
-  small { color:#64748b; }
-  .pill { display:inline-block; border-radius:999px; padding:4px 8px; font-weight:700; white-space:nowrap; }
-  .pill.success { background:#dcfce7; color:#15803d; } .pill.warning { background:#fff4d6; color:#b45309; }
-  .pill.danger { background:#ffe4e6; color:#be123c; } .pill.info { background:#dbeafe; color:#1d4ed8; }
-  .pill.muted { background:#eef2f7; color:#475569; }
-  .attention { border:1px solid #f0c7c9; border-radius:10px; overflow:hidden; }
-  .attention th { background:#7f1d1d; }
-  .empty { text-align:center; color:#64748b; padding:18px; }
-  .footer { margin-top:12px; padding-top:8px; border-top:1px solid #e2e8f0; color:#64748b; display:flex; justify-content:space-between; font-size:9px; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #172033;
+    font-size: 9.5px;
+    line-height: 1.25;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .document-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 255px;
+    gap: 24px;
+    align-items: end;
+    padding: 0 0 11px;
+    border-bottom: 3px solid #173a70;
+  }
+  .brand-line {
+    margin-bottom: 5px;
+    color: #173a70;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    color: #111827;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -.025em;
+  }
+  .subtitle {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 10px;
+  }
+  .report-meta {
+    border-left: 1px solid #cbd5e1;
+    padding-left: 16px;
+  }
+  .report-meta-row {
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 8px;
+    padding: 2px 0;
+  }
+  .report-meta-row span {
+    color: #64748b;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .report-meta-row strong {
+    color: #172033;
+    font-size: 9px;
+    text-align: right;
+  }
+
+  .summary-title {
+    margin: 13px 0 6px;
+    color: #475569;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 7px;
+    margin: 0 0 13px;
+  }
+  .card {
+    min-height: 48px;
+    padding: 8px 10px;
+    border: 1px solid #d7dee8;
+    border-top: 3px solid #173a70;
+    background: #fff;
+  }
+  .card span {
+    display: block;
+    color: #64748b;
+    font-size: 7.6px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .card strong {
+    display: block;
+    margin-top: 5px;
+    color: #173a70;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .card.success { border-top-color: #16803c; }
+  .card.success strong { color: #16803c; }
+  .card.warning { border-top-color: #b86a06; }
+  .card.warning strong { color: #b86a06; }
+  .card.danger { border-top-color: #b42332; }
+  .card.danger strong { color: #b42332; }
+  .card.info { border-top-color: #2563eb; }
+  .card.info strong { color: #2563eb; }
+  .card.muted { border-top-color: #64748b; }
+  .card.muted strong { color: #475569; }
+
+  .section { margin-top: 13px; }
+  .section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #cbd5e1;
+  }
+  .section-head h2 {
+    margin: 0;
+    color: #172033;
+    font-size: 12px;
+  }
+  .section-head small {
+    color: #64748b;
+    font-size: 8px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    border: 1px solid #cbd5e1;
+  }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  th {
+    padding: 6px 6px;
+    border-right: 1px solid rgba(255,255,255,.17);
+    background: #173a70;
+    color: #fff;
+    font-size: 7.4px;
+    font-weight: 800;
+    letter-spacing: .035em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  th:last-child { border-right: 0; }
+  td {
+    padding: 6px 6px;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #dbe2ea;
+    vertical-align: middle;
+  }
+  td:last-child { border-right: 0; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .center { text-align: center; }
+  .quantity {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .row-number {
+    color: #64748b;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .check {
+    color: #173a70;
+    font-size: 11px;
+    font-weight: 900;
+  }
+  td strong { color: #172033; }
+  td small {
+    display: block;
+    margin-top: 2px;
+    color: #7b8798;
+    font-size: 7.3px;
+  }
+
+  .main-table th:nth-child(1), .main-table td:nth-child(1) { width: 4%; }
+  .main-table th:nth-child(2), .main-table td:nth-child(2) { width: 10%; }
+  .main-table th:nth-child(3), .main-table td:nth-child(3) { width: 22%; }
+  .main-table th:nth-child(4), .main-table td:nth-child(4) { width: 10%; text-align:center; }
+  .main-table th:nth-child(5), .main-table td:nth-child(5) { width: 7%; text-align:center; }
+  .main-table th:nth-child(6), .main-table td:nth-child(6),
+  .main-table th:nth-child(7), .main-table td:nth-child(7),
+  .main-table th:nth-child(8), .main-table td:nth-child(8) { width: 7%; text-align:center; }
+  .main-table th:nth-child(9), .main-table td:nth-child(9) { width: 19%; text-align:center; }
+
+  .attention-table th:nth-child(1), .attention-table td:nth-child(1) { width: 4%; }
+  .attention-table th:nth-child(2), .attention-table td:nth-child(2) { width: 11%; }
+  .attention-table th:nth-child(3), .attention-table td:nth-child(3) { width: 20%; }
+  .attention-table th:nth-child(4), .attention-table td:nth-child(4) { width: 10%; text-align:center; }
+  .attention-table th:nth-child(5), .attention-table td:nth-child(5) { width: 17%; text-align:center; }
+  .attention-table th:nth-child(6), .attention-table td:nth-child(6) { width: 38%; }
+
+  .pill {
+    display: inline-block;
+    max-width: 100%;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-size: 7.5px;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .pill.success { border-color:#a7dfb7; background:#edf9f0; color:#16753a; }
+  .pill.warning { border-color:#f0cf8c; background:#fff8e8; color:#9a5b08; }
+  .pill.danger { border-color:#efb5bc; background:#fff0f2; color:#a52634; }
+  .pill.info { border-color:#b7cff5; background:#eef5ff; color:#2159aa; }
+  .pill.muted { border-color:#d5dbe4; background:#f4f6f8; color:#596678; }
+
+  .attention {
+    margin-top: 17px;
+    break-before: auto;
+  }
+  .attention .section-head {
+    border-bottom-color: #e4b7bb;
+  }
+  .attention .section-head h2 { color: #8f202b; }
+  .attention-table th { background: #8f202b; }
+
+  .empty {
+    padding: 16px;
+    color: #64748b;
+    text-align: center;
+  }
+  .document-footer {
+    margin-top: 12px;
+    padding-top: 7px;
+    border-top: 1px solid #cbd5e1;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    color: #7b8798;
+    font-size: 7.5px;
+  }
+  .document-footer strong { color: #475569; }
+
+  @media print {
+    body { padding: 0; }
+    .section { break-inside: auto; }
+    .document-header, .cards, .section-head { break-inside: avoid; page-break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
-  <header class="hero">
-    <div><div class="eyebrow">El Copetín · Control operativo</div><h1>Reporte de Inventario</h1><p>Estado de contratos según la fecha real del evento.</p></div>
-    <div class="hero-meta"><strong>${escapeHtml(rangeLabel)}</strong><span>Generado: ${escapeHtml(formatGeneratedAt())}</span></div>
+  <header class="document-header">
+    <div>
+      <div class="brand-line">EL COPETÍN · ADMINISTRACIÓN DE INVENTARIO</div>
+      <h1>Reporte Operativo de Inventario</h1>
+      <p class="subtitle">Seguimiento de contratos según la fecha real del evento y su estado de movimiento.</p>
+    </div>
+    <div class="report-meta">
+      <div class="report-meta-row"><span>Periodo</span><strong>${escapeHtml(rangeLabel)}</strong></div>
+      <div class="report-meta-row"><span>Generado</span><strong>${escapeHtml(formatGeneratedAt())}</strong></div>
+      <div class="report-meta-row"><span>Contratos</span><strong>${enrichedRows.length}</strong></div>
+    </div>
   </header>
+
+  <div class="summary-title">Resumen ejecutivo del periodo</div>
   <section class="cards">${summaryCards.map(([label, value, tone]) => `<div class="card ${tone}"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`).join('')}</section>
+
   <section class="section">
-    <div class="section-head"><h2>Resumen de contratos del rango</h2><small>${enrichedRows.length} contrato(s)</small></div>
-    <table><thead><tr><th>Contrato</th><th>Cliente</th><th>Evento</th><th>Unid.</th><th>Alistado</th><th>Salió</th><th>Volvió</th><th>Estado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="8" class="empty">No hay contratos para el rango seleccionado.</td></tr>'}</tbody></table>
+    <div class="section-head">
+      <h2>Detalle de contratos del rango</h2>
+      <small>${enrichedRows.length} contrato(s) encontrados</small>
+    </div>
+    <table class="main-table">
+      <thead>
+        <tr>
+          <th class="center">N°</th>
+          <th>Contrato</th>
+          <th>Cliente</th>
+          <th class="center">Evento</th>
+          <th class="center">Unidades</th>
+          <th class="center">Alistado</th>
+          <th class="center">Salió</th>
+          <th class="center">Volvió</th>
+          <th class="center">Estado operativo</th>
+        </tr>
+      </thead>
+      <tbody>${htmlRows || '<tr><td colspan="9" class="empty">No hay contratos para el rango seleccionado.</td></tr>'}</tbody>
+    </table>
   </section>
+
   <section class="section attention">
-    <div class="section-head" style="padding:10px 10px 4px"><h2>Contratos que requieren atención</h2><small>${attentionRows.length} pendiente(s)</small></div>
-    <table><thead><tr><th>Contrato</th><th>Cliente</th><th>Evento</th><th>Situación</th><th>Detalle</th></tr></thead><tbody>${attentionHtml}</tbody></table>
+    <div class="section-head">
+      <h2>Contratos que requieren atención</h2>
+      <small>${attentionRows.length} pendiente(s) de seguimiento</small>
+    </div>
+    <table class="attention-table">
+      <thead>
+        <tr>
+          <th class="center">N°</th>
+          <th>Contrato</th>
+          <th>Cliente</th>
+          <th class="center">Evento</th>
+          <th class="center">Situación</th>
+          <th>Detalle / observación</th>
+        </tr>
+      </thead>
+      <tbody>${attentionHtml}</tbody>
+    </table>
   </section>
-  <footer class="footer"><span>EL COPETÍN · Inventario</span><span>Reporte generado desde el rango visible en Movimientos de Stock.</span></footer>
+
+  <footer class="document-footer">
+    <span><strong>EL COPETÍN</strong> · Control y trazabilidad de inventario</span>
+    <span>Documento generado desde Movimientos de Stock · ${escapeHtml(rangeLabel)}</span>
+  </footer>
 </body>
 </html>`;
 
