@@ -67678,3 +67678,29 @@ body:has(.accounting-bigcash-view) .workspace {
     background: rgba(255, 255, 255, 0.58);
   }
 }
+
+
+/* Kardex de daños y faltantes: reemplaza el flujo antiguo de lavado/reparación. */
+.inventory-loss-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.inventory-loss-cards .stat-card small { color: var(--c700); font-size: .76rem; }
+.inventory-loss-card { display: grid; gap: .85rem; }
+.inventory-loss-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.inventory-loss-head h2 { margin: 0; }
+.inventory-loss-head p { margin: .3rem 0 0; color: var(--c700); }
+.inventory-loss-head > strong { white-space: nowrap; color: var(--c700); }
+.inventory-loss-filters { display: grid; grid-template-columns: minmax(170px,.8fr) 150px 150px minmax(260px,1.4fr) auto; gap: .6rem; }
+.inventory-loss-filters input, .inventory-loss-filters select { min-height: 40px; border: 1px solid rgba(164,184,188,.65); border-radius: .65rem; padding: .45rem .6rem; background: #fff; }
+.inventory-loss-table-wrap { max-height: 560px; }
+.inventory-loss-table-wrap table { width: 100%; min-width: 1120px; border-collapse: collapse; }
+.inventory-loss-table-wrap th { position: sticky; top: 0; z-index: 2; background: #123b73; color: #fff; text-align: left; padding: .62rem; font-size: .74rem; }
+.inventory-loss-table-wrap td { padding: .62rem; border-bottom: 1px solid rgba(164,184,188,.35); vertical-align: top; font-size: .8rem; }
+.inventory-loss-table-wrap td small { display: block; margin-top: .16rem; color: var(--c700); }
+.inventory-loss-badge { display: inline-flex; border-radius: 999px; padding: .18rem .48rem; font-size: .7rem; font-weight: 800; text-transform: uppercase; }
+.inventory-loss-badge.danado { background: #fff3d8; color: #9a5a00; border: 1px solid #efc979; }
+.inventory-loss-badge.faltante { background: #ffe7e7; color: #aa2b2b; border: 1px solid #efabab; }
+.inventory-loss-empty { text-align: center; color: var(--c700); padding: 1.3rem !important; }
+@media (max-width: 1000px) {
+  .inventory-loss-cards { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .inventory-loss-filters { grid-template-columns: 1fr 1fr; }
+  .inventory-loss-filters input:last-of-type { grid-column: 1 / -1; }
+}

@@ -125,6 +125,7 @@ export const useAppController = () => {
   const [inventoryMovementStats, setInventoryMovementStats] = useState(null);
   const [inventoryModuleLoading, setInventoryModuleLoading] = useState(false);
   const [stockRecoveries, setStockRecoveries] = useState([]);
+  const [damageLossOverview, setDamageLossOverview] = useState({ rows: [], total: 0, summary: {} });
   const [rentals, setRentals] = useState([]);
   const [cashSummary, setCashSummary] = useState(null);
   const [cashSessions, setCashSessions] = useState([]);
@@ -402,19 +403,27 @@ export const useAppController = () => {
         setGeneratedReports(reportsData);
         setAuditLog(auditData);
       };
-    } else if (activeInventoryTab.startsWith('inventario')) {
-      group = activeInventoryTab === 'inventario_mantenimiento'
-        ? 'inventory-overview-maintenance'
-        : 'inventory-overview';
+    } else if (activeInventoryTab === 'inventario_mantenimiento') {
+      group = 'inventory-damage-loss';
       loader = async () => {
         setInventoryModuleLoading(true);
         try {
-          const [overview, recoveriesData] = await Promise.all([
-            api.sync.getInventoryMovementsOverview(),
-            activeInventoryTab === 'inventario_mantenimiento'
-              ? api.inventory.listRecoveries()
-              : Promise.resolve(null),
-          ]);
+          const overview = await api.inventory.getDamageLossOverview();
+          setDamageLossOverview({
+            rows: Array.isArray(overview?.rows) ? overview.rows : [],
+            total: Number(overview?.total ?? overview?.rows?.length ?? 0),
+            summary: overview?.summary ?? {},
+          });
+        } finally {
+          setInventoryModuleLoading(false);
+        }
+      };
+    } else if (activeInventoryTab.startsWith('inventario')) {
+      group = 'inventory-overview';
+      loader = async () => {
+        setInventoryModuleLoading(true);
+        try {
+          const overview = await api.sync.getInventoryMovementsOverview();
           setItems(Array.isArray(overview?.items) ? overview.items : []);
           setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
           setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
@@ -423,7 +432,6 @@ export const useAppController = () => {
           setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
           setInventoryMovements(Array.isArray(overview?.inventoryMovements) ? overview.inventoryMovements : []);
           setInventoryMovementStats(overview?.movementStats ?? null);
-          if (Array.isArray(recoveriesData)) setStockRecoveries(recoveriesData);
         } finally {
           setInventoryModuleLoading(false);
         }
@@ -993,16 +1001,30 @@ export const useAppController = () => {
         ...getCurrentUserTrace(),
         requireCashSession: false,
       });
+      const inventoryItems = Array.isArray(returned?.__inventoryItems) ? returned.__inventoryItems : [];
+      const lossMovements = Array.isArray(returned?.__inventoryLossMovements) ? returned.__inventoryLossMovements : [];
+      const { __inventoryItems, __inventoryLossMovements, ...returnedRental } = returned ?? {};
       setRentals((current) => current.map((rental) => (
-        rental.id === returned.id
+        rental.id === returnedRental.id
           ? {
               ...rental,
-              ...returned,
-              operational: { ...(rental.operational ?? {}), ...(returned.operational ?? {}) },
+              ...returnedRental,
+              operational: { ...(rental.operational ?? {}), ...(returnedRental.operational ?? {}) },
             }
           : rental
       )));
-      return returned;
+      if (inventoryItems.length > 0) {
+        const byId = new Map(inventoryItems.map((item) => [String(item?.id ?? ''), item]));
+        setItems((current) => current.map((item) => byId.has(String(item?.id ?? '')) ? { ...item, ...byId.get(String(item.id)) } : item));
+      }
+      if (lossMovements.length > 0) {
+        setInventoryMovements((current) => {
+          const incomingIds = new Set(lossMovements.map((movement) => String(movement?.id ?? '')));
+          return [...lossMovements, ...current.filter((movement) => !incomingIds.has(String(movement?.id ?? '')))];
+        });
+      }
+      deferredGroupsLoadedRef.current.delete('inventory-damage-loss');
+      return returnedRental;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo recibir la devolucion en inventario.');
       throw requestError;
@@ -2940,6 +2962,7 @@ export const useAppController = () => {
     inventoryMovementStats,
     inventoryModuleLoading,
     stockRecoveries,
+    damageLossOverview,
     rentals,
     activeRentals,
     returnedRentals,

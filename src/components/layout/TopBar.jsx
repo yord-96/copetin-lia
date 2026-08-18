@@ -36,7 +36,7 @@ const PAGE_LABELS = {
   inventario_combos: 'Combos',
   inventario_categorias: 'Categorias',
   inventario_movimientos: 'Movimientos',
-  inventario_mantenimiento: 'Lavado y Reparacion',
+  inventario_mantenimiento: 'Daños y Faltantes',
   inventario_ajustes: 'Ajustes stock',
   devolucion: 'Transporte',
   devolucion_entregas: 'Entregas',

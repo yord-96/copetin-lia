@@ -1,529 +1,107 @@
 import { useMemo, useState } from 'react';
-import { getProductImageSrc } from '../../utils/productImage';
-import ProductImage from '../common/ProductImage';
-
-const RECOVERY_RENDER_LIMIT = 120;
-const STOCK_TABLE_LIMIT = 220;
-const ITEM_SELECT_LIMIT = 300;
 
 const formatDateTime = (value) => {
-  if (!value) {
-    return '-';
-  }
-
+  if (!value) return '-';
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return String(value);
-  }
-
+  if (Number.isNaN(parsed.getTime())) return String(value);
   return parsed.toLocaleString('es-BO', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 };
 
+const normalize = (value) => String(value ?? '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-const normalizeRecoverySearchText = (value) =>
-  String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-    .trim();
-
-const recoveryMatchesSearch = (entry, searchValue) => {
-  const tokens = normalizeRecoverySearchText(searchValue).split(' ').filter(Boolean);
-  if (tokens.length === 0) return true;
-
-  const stageLabel = entry?.stage === 'lavado' ? 'lavado lavando' : 'reparacion reparando';
-  const searchableText = normalizeRecoverySearchText([
-    entry?.itemName,
-    entry?.name,
-    entry?.category,
-    entry?.brand,
-    entry?.itemColor,
-    entry?.sku,
-    entry?.sourceCustomerName,
-    entry?.customerName,
-    entry?.sourceContractCode,
-    entry?.contractCode,
-    entry?.sourceOrderCode,
-    entry?.orderCode,
-    stageLabel,
-    entry?.note,
-  ].filter(Boolean).join(' '));
-
-  return tokens.every((token) => searchableText.includes(token));
+const dateKey = (value) => {
+  const date = new Date(value ?? '');
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
 };
 
-const toSafeQuantity = (value, fallback = 1) => {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return parsed;
-};
+function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summary: {} }, formatBs }) {
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [query, setQuery] = useState('');
+  const filteredRows = useMemo(() => {
+    const rows = Array.isArray(damageLossOverview?.rows) ? damageLossOverview.rows : [];
+    return rows.filter((row) => {
+      if (typeFilter !== 'all' && row.lossType !== typeFilter) return false;
+      const key = dateKey(row.occurredAt);
+      if (dateFrom && key && key < dateFrom) return false;
+      if (dateTo && key && key > dateTo) return false;
+      const search = normalize(query);
+      if (!search) return true;
+      return normalize([
+        row.itemName, row.category, row.contractCode, row.orderCode, row.customerName, row.note,
+      ].filter(Boolean).join(' ')).includes(search);
+    });
+  }, [damageLossOverview, typeFilter, dateFrom, dateTo, query]);
 
-function InventoryOpsSection({
-  items,
-  activeRentals,
-  stockRecoveries,
-  inventoryMovements,
-  stockMovementForm,
-  setStockMovementForm,
-  handleStockMovementSubmit,
-  handleProcessRecovery,
-  formatBs,
-}) {
-  const [recoverySearch, setRecoverySearch] = useState('');
-  const [recoveryDrafts, setRecoveryDrafts] = useState({});
-  const [processingRecoveryId, setProcessingRecoveryId] = useState('');
-
-  const rentalUnitsByItem = useMemo(() => {
-    const map = {};
-    for (const rental of activeRentals) {
-      for (const line of rental.items ?? []) {
-        map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.quantity ?? 0);
-      }
-    }
-    return map;
-  }, [activeRentals]);
-
-  const recoveryByItem = useMemo(() => {
-    const map = {};
-    for (const recovery of stockRecoveries) {
-      if (!map[recovery.itemId]) {
-        map[recovery.itemId] = { lavado: 0, reparacion: 0 };
-      }
-      if (recovery.stage === 'lavado') {
-        map[recovery.itemId].lavado += Number(recovery.quantity ?? 0);
-      } else {
-        map[recovery.itemId].reparacion += Number(recovery.quantity ?? 0);
-      }
-    }
-    return map;
-  }, [stockRecoveries]);
-
-  const stockSummary = useMemo(() => {
-    const totalUnits = items.reduce((sum, item) => sum + item.totalStock, 0);
-    const availableUnits = items.reduce((sum, item) => sum + item.availableStock, 0);
-    const rentedUnits = Object.values(rentalUnitsByItem).reduce((sum, value) => sum + Number(value ?? 0), 0);
-    const cleaningUnits = stockRecoveries
-      .filter((entry) => entry.stage === 'lavado')
-      .reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
-    const repairUnits = stockRecoveries
-      .filter((entry) => entry.stage === 'reparacion')
-      .reduce((sum, entry) => sum + Number(entry.quantity ?? 0), 0);
-    const lowStockItems = items.filter(
-      (item) => item.totalStock > 0 && item.availableStock / item.totalStock <= 0.2,
-    ).length;
-
-    return {
-      totalUnits,
-      availableUnits,
-      rentedUnits,
-      cleaningUnits,
-      repairUnits,
-      lowStockItems,
-    };
-  }, [items, rentalUnitsByItem, stockRecoveries]);
-
-  const selectedItem = useMemo(
-    () => items.find((item) => item.id === stockMovementForm.itemId) ?? null,
-    [items, stockMovementForm.itemId],
-  );
-
-  const latestMovements = useMemo(() => inventoryMovements.slice(0, 25), [inventoryMovements]);
-
-  const filteredRecoveries = useMemo(
-    () => stockRecoveries.filter((entry) => recoveryMatchesSearch(entry, recoverySearch)),
-    [recoverySearch, stockRecoveries],
-  );
-  const visibleRecoveries = useMemo(
-    () => filteredRecoveries.slice(0, RECOVERY_RENDER_LIMIT),
-    [filteredRecoveries],
-  );
-  const visibleItems = useMemo(
-    () => items.slice(0, STOCK_TABLE_LIMIT),
-    [items],
-  );
-  const selectableItems = useMemo(
-    () => items.slice(0, ITEM_SELECT_LIMIT),
-    [items],
-  );
-
-  const updateRecoveryDraft = (recoveryId, field, value) => {
-    setRecoveryDrafts((current) => ({
-      ...current,
-      [recoveryId]: {
-        ...(current[recoveryId] ?? {}),
-        [field]: value,
-      },
-    }));
-  };
-
-  const processRecovery = async (recovery, action) => {
-    const currentDraft = recoveryDrafts[recovery.id] ?? {};
-    const desiredQuantity = toSafeQuantity(currentDraft.quantity, Number(recovery.quantity ?? 1));
-    const quantity = Math.min(Number(recovery.quantity ?? 1), desiredQuantity);
-    const note = String(currentDraft.note ?? '').trim();
-
-    setProcessingRecoveryId(`${recovery.id}:${action}`);
-    try {
-      await handleProcessRecovery({
-        recoveryId: recovery.id,
-        action,
-        quantity,
-        note,
-      });
-
-      setRecoveryDrafts((current) => {
-        const next = { ...current };
-        delete next[recovery.id];
-        return next;
-      });
-    } catch {
-      // El mensaje de error se maneja en el controlador central.
-    } finally {
-      setProcessingRecoveryId('');
-    }
-  };
+  const summary = useMemo(() => filteredRows.reduce((acc, row) => {
+    const qty = Math.max(0, Number(row.quantity ?? 0));
+    const value = Math.max(0, Number(row.totalValueBs ?? 0));
+    acc.totalUnits += qty;
+    acc.totalValueBs += value;
+    if (row.lossType === 'danado') { acc.damagedUnits += qty; acc.damagedValueBs += value; }
+    else { acc.missingUnits += qty; acc.missingValueBs += value; }
+    return acc;
+  }, { totalUnits: 0, totalValueBs: 0, damagedUnits: 0, damagedValueBs: 0, missingUnits: 0, missingValueBs: 0 }), [filteredRows]);
 
   return (
-    <section className="panel inventory-ops-panel">
-      <div className="inventory-ops-cards">
-        <article className="stat-card">
-          <h2>Unidades Totales</h2>
-          <p>{stockSummary.totalUnits}</p>
-        </article>
-        <article className="stat-card">
-          <h2>Disponibles</h2>
-          <p>{stockSummary.availableUnits}</p>
-        </article>
-        <article className="stat-card">
-          <h2>Alquiladas</h2>
-          <p>{stockSummary.rentedUnits}</p>
-        </article>
-        <article className="stat-card">
-          <h2>En Lavado</h2>
-          <p>{stockSummary.cleaningUnits}</p>
-        </article>
-        <article className="stat-card">
-          <h2>En Reparacion</h2>
-          <p>{stockSummary.repairUnits}</p>
-        </article>
-        <article className="stat-card">
-          <h2>Items Bajo Stock</h2>
-          <p>{stockSummary.lowStockItems}</p>
-        </article>
+    <section className="panel inventory-ops-panel inventory-loss-panel">
+      <div className="inventory-ops-cards inventory-loss-cards">
+        <article className="stat-card"><h2>Unidades Perdidas</h2><p>{summary.totalUnits}</p><small>Dañadas + faltantes</small></article>
+        <article className="stat-card"><h2>Dañadas</h2><p>{summary.damagedUnits}</p><small>{formatBs(summary.damagedValueBs)}</small></article>
+        <article className="stat-card"><h2>Faltantes</h2><p>{summary.missingUnits}</p><small>{formatBs(summary.missingValueBs)}</small></article>
+        <article className="stat-card"><h2>Valor Registrado</h2><p>{formatBs(summary.totalValueBs)}</p><small>Según cargos de devolución</small></article>
       </div>
 
-      <article className="inventory-ops-recovery-card">
-        <div className="inventory-ops-recovery-head">
+      <article className="inventory-ops-table-card inventory-loss-card">
+        <div className="inventory-loss-head">
           <div>
-            <h2>Reinsercion de Devueltos</h2>
-            <p>Gestiona items en estado lavado o reparacion y decide si vuelven a disponibles o se dan de baja.</p>
+            <h2>Kardex de daños y faltantes</h2>
+            <p>Solo muestra pérdidas confirmadas al recibir una orden. Los ítems que vuelven bien regresan al disponible de inmediato.</p>
           </div>
-          <label className="inventory-ops-recovery-search">
-            Buscar
-            <input
-              value={recoverySearch}
-              onChange={(event) => setRecoverySearch(event.target.value)}
-              placeholder="Item, categoria, cliente o estado"
-            />
-          </label>
+          <strong>{filteredRows.length} registro(s)</strong>
         </div>
 
-        {filteredRecoveries.length === 0 ? (
-          <p className="inventory-ops-recovery-empty">No hay unidades pendientes de reinsercion.</p>
-        ) : (
-          <>
-            {filteredRecoveries.length > visibleRecoveries.length ? (
-              <p className="inventory-ops-recovery-empty">
-                Mostrando {visibleRecoveries.length} de {filteredRecoveries.length}. Usa el buscador para ubicar un item puntual.
-              </p>
-            ) : null}
-            <div className="inventory-ops-recovery-gallery">
-              {visibleRecoveries.map((recovery) => {
-              const draft = recoveryDrafts[recovery.id] ?? {};
-              const quantityValue = draft.quantity ?? String(recovery.quantity);
-              const isBusyReinsert = processingRecoveryId === `${recovery.id}:reinsert`;
-              const isBusyDiscard = processingRecoveryId === `${recovery.id}:discard`;
-              const stageLabel = recovery.stage === 'lavado' ? 'Lavando' : 'En reparacion';
+        <div className="inventory-loss-filters">
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+            <option value="all">Daños y faltantes</option>
+            <option value="danado">Solo dañados</option>
+            <option value="faltante">Solo faltantes</option>
+          </select>
+          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Desde" />
+          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Hasta" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar item, contrato, cliente o nota..." />
+          {(typeFilter !== 'all' || dateFrom || dateTo || query) ? (
+            <button type="button" className="ghost-button" onClick={() => { setTypeFilter('all'); setDateFrom(''); setDateTo(''); setQuery(''); }}>Limpiar</button>
+          ) : null}
+        </div>
 
-              return (
-                <article key={recovery.id} className="inventory-recovery-item">
-                  <div className="inventory-recovery-media">
-                    {getProductImageSrc(recovery) ? (
-                      <ProductImage
-                        item={recovery}
-                        alt={`Imagen de ${recovery.itemName}`}
-                        fallback={<span>Sin imagen</span>}
-                      />
-                    ) : (
-                      <span>Sin imagen</span>
-                    )}
-                  </div>
-
-                  <div className="inventory-recovery-body">
-                    <header>
-                      <h3>{recovery.itemName}</h3>
-                      <span className={`inventory-recovery-stage stage-${recovery.stage}`}>{stageLabel}</span>
-                    </header>
-                    <p>{recovery.category}</p>
-                    <small>Pendiente: {recovery.quantity} unidad(es)</small>
-                    <small>Cliente: {recovery.sourceCustomerName || 'No registrado'}</small>
-                    {recovery.note && <small>Nota: {recovery.note}</small>}
-                    <small>Fecha: {formatDateTime(recovery.createdAt)}</small>
-                  </div>
-
-                  <div className="inventory-recovery-actions">
-                    <label>
-                      Cantidad
-                      <input
-                        type="number"
-                        min="1"
-                        max={recovery.quantity}
-                        value={quantityValue}
-                        onChange={(event) => updateRecoveryDraft(recovery.id, 'quantity', event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Observacion
-                      <input
-                        value={draft.note ?? ''}
-                        onChange={(event) => updateRecoveryDraft(recovery.id, 'note', event.target.value)}
-                        placeholder="Detalle opcional"
-                      />
-                    </label>
-
-                    <div className="inventory-recovery-buttons">
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={Boolean(processingRecoveryId)}
-                        onClick={() => processRecovery(recovery, 'reinsert')}
-                      >
-                        {isBusyReinsert
-                          ? 'Procesando...'
-                          : recovery.stage === 'lavado'
-                          ? 'Terminar Lavado y Reinsertar'
-                          : 'Reinsertar Reparado'}
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-button"
-                        disabled={Boolean(processingRecoveryId)}
-                        onClick={() => processRecovery(recovery, 'discard')}
-                      >
-                        {isBusyDiscard ? 'Procesando...' : 'Dar de Baja Definitiva'}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              );
-              })}
-            </div>
-          </>
-        )}
-      </article>
-
-      <div className="inventory-ops-grid">
-        <article className="form-card inventory-ops-form-card">
-          <h2>Registrar Movimiento</h2>
-          <form onSubmit={handleStockMovementSubmit} className="form-grid inventory-ops-form">
-            <label className="full-width">
-              Item
-              <select
-                value={stockMovementForm.itemId}
-                onChange={(event) =>
-                  setStockMovementForm((current) => ({ ...current, itemId: event.target.value }))
-                }
-                required
-              >
-                {items.length === 0 && <option value="">No hay items</option>}
-                {selectableItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} ({item.availableStock}/{item.totalStock})
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Tipo
-              <select
-                value={stockMovementForm.type}
-                onChange={(event) =>
-                  setStockMovementForm((current) => ({ ...current, type: event.target.value }))
-                }
-              >
-                <option value="entrada">Entrada</option>
-                <option value="salida">Salida</option>
-                <option value="ajuste">Ajuste por Conteo</option>
-              </select>
-            </label>
-
-            {stockMovementForm.type === 'ajuste' ? (
-              <label>
-                Stock Fisico Real
-                <input
-                  type="number"
-                  min="0"
-                  value={stockMovementForm.targetTotalStock}
-                  onChange={(event) =>
-                    setStockMovementForm((current) => ({
-                      ...current,
-                      targetTotalStock: event.target.value,
-                    }))
-                  }
-                  required
-                />
-              </label>
-            ) : (
-              <label>
-                Cantidad
-                <input
-                  type="number"
-                  min="1"
-                  value={stockMovementForm.quantity}
-                  onChange={(event) =>
-                    setStockMovementForm((current) => ({ ...current, quantity: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-            )}
-
-            {selectedItem && (
-              <div className="full-width inventory-ops-hint">
-                <strong>{selectedItem.name}</strong>
-                <span>
-                  Stock actual: {selectedItem.availableStock}/{selectedItem.totalStock}
-                </span>
-              </div>
-            )}
-
-            <label className="full-width">
-              Motivo del Movimiento
-              <textarea
-                rows={3}
-                value={stockMovementForm.reason}
-                onChange={(event) =>
-                  setStockMovementForm((current) => ({ ...current, reason: event.target.value }))
-                }
-                placeholder="Ej. reposicion de proveedor, baja por rotura, ajuste por conteo fisico."
-                required
-              />
-            </label>
-
-            <button type="submit" className="primary-button full-width">
-              Registrar Movimiento
-            </button>
-          </form>
-        </article>
-
-        <article className="table-card inventory-ops-table-card">
-          <h2>Kardex Reciente</h2>
-          <div className="inventory-ops-table-wrap">
-            <table className="inventory-table">
-              <thead>
-                <tr>
-                  <th>Fecha</th>
-                  <th>Item</th>
-                  <th>Tipo</th>
-                  <th>Detalle</th>
-                  <th>Delta</th>
-                  <th>Disp.</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {latestMovements.length === 0 ? (
-                  <tr>
-                    <td colSpan={7}>Aun no hay movimientos registrados.</td>
-                  </tr>
-                ) : (
-                  latestMovements.map((movement) => (
-                    <tr key={movement.id}>
-                      <td>{formatDateTime(movement.createdAt)}</td>
-                      <td>{movement.itemName}</td>
-                      <td>
-                        <span className={`movement-badge movement-${movement.type}`}>{movement.type}</span>
-                      </td>
-                      <td>{movement.reason}</td>
-                      <td>{movement.deltaUnits > 0 ? `+${movement.deltaUnits}` : movement.deltaUnits}</td>
-                      <td>
-                        {movement.beforeAvailableStock} {'->'} {movement.afterAvailableStock}
-                      </td>
-                      <td>
-                        {movement.beforeTotalStock} {'->'} {movement.afterTotalStock}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </div>
-
-      <article className="table-card inventory-ops-stock-card">
-        <h2>Estado Actual de Stock</h2>
-        <div className="inventory-ops-table-wrap">
-          <table className="inventory-table">
+        <div className="inventory-ops-table-wrap inventory-loss-table-wrap">
+          <table>
             <thead>
               <tr>
-                <th>Item</th>
-                <th>Categoria</th>
-                <th>Disponible</th>
-                <th>Alquilado</th>
-                <th>Lavado</th>
-                <th>Reparacion</th>
-                <th>No Operativo</th>
-                <th>Total</th>
-                <th>Precio</th>
-                <th>Danio</th>
-                <th>Perdida</th>
+                <th>Fecha</th><th>Tipo</th><th>Item</th><th>Cant.</th><th>Valor unit.</th><th>Valor</th><th>Contrato / orden</th><th>Cliente</th><th>Observación</th>
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((item) => {
-                const itemRecoveries = recoveryByItem[item.id] ?? { lavado: 0, reparacion: 0 };
-                const rented = Number(rentalUnitsByItem[item.id] ?? 0);
-                const inCleaning = itemRecoveries.lavado;
-                const inRepair = itemRecoveries.reparacion;
-                const nonOperative = Math.max(
-                  0,
-                  item.totalStock - item.availableStock - rented - inCleaning - inRepair,
-                );
-
-                return (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.category}</td>
-                    <td>{item.availableStock}</td>
-                    <td>{rented}</td>
-                    <td>{inCleaning}</td>
-                    <td>{inRepair}</td>
-                    <td>{nonOperative}</td>
-                    <td>{item.totalStock}</td>
-                    <td>{formatBs(item.rentalPriceBs)}</td>
-                    <td>{formatBs(item.damagedUnitChargeBs)}</td>
-                    <td>{formatBs(item.missingUnitChargeBs)}</td>
-                  </tr>
-                );
-              })}
-              {items.length > visibleItems.length ? (
-                <tr>
-                  <td colSpan={11}>Mostrando {visibleItems.length} de {items.length} productos. Usa Productos para buscar el catalogo completo.</td>
+              {filteredRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{formatDateTime(row.occurredAt)}</td>
+                  <td><span className={`inventory-loss-badge ${row.lossType}`}>{row.lossType === 'danado' ? 'Dañado' : 'Faltante'}</span></td>
+                  <td><strong>{row.itemName}</strong><small>{row.category || ''}</small></td>
+                  <td>{row.quantity}</td>
+                  <td>{formatBs(row.unitValueBs)}</td>
+                  <td><strong>{formatBs(row.totalValueBs)}</strong></td>
+                  <td><strong>{row.contractCode || '-'}</strong><small>{row.orderCode || ''}</small></td>
+                  <td>{row.customerName || '-'}</td>
+                  <td>{row.note || 'Sin observación'}</td>
                 </tr>
-              ) : null}
+              ))}
+              {filteredRows.length === 0 ? <tr><td colSpan="9" className="inventory-loss-empty">No hay daños o faltantes para este filtro.</td></tr> : null}
             </tbody>
           </table>
         </div>

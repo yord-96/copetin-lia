@@ -1142,7 +1142,7 @@ function InventoryDashboardSection({
   activeRentals = [],
   cancelledRentals = [],
   deliveries = [],
-  stockRecoveries = [],
+  damageLossOverview = { rows: [], total: 0, summary: {} },
   inventoryMovements = [],
   inventoryMovementStats = null,
   moduleLoading = false,
@@ -1157,7 +1157,6 @@ function InventoryDashboardSection({
   onUpdateInventoryCombo,
   onRemoveInventoryCombo,
   onCreateInventoryMovement,
-  onProcessStockRecovery,
   onCreateCategory,
   onUpdateCategory,
   onRemoveCategory,
@@ -1364,7 +1363,7 @@ function InventoryDashboardSection({
     : '';
 
   const moduleTitle = isMaintenanceModule
-    ? 'Lavado y Reparacion'
+    ? 'Daños y Faltantes'
     : isProductsModule
     ? 'Productos'
     : isCombosModule
@@ -1378,7 +1377,7 @@ function InventoryDashboardSection({
     : 'Inventario';
 
   const moduleSubtitle = isMaintenanceModule
-    ? 'Revisa unidades pendientes y devuelve al stock solo las que ya estan listas'
+    ? 'Kardex de pérdidas confirmadas por devolución: unidades dañadas, faltantes, valores, contratos y fechas'
     : isProductsModule
     ? 'Gestiona el catalogo de items alquilables'
     : isCombosModule
@@ -1629,13 +1628,7 @@ function InventoryDashboardSection({
     return usage;
   }, [activeRentals, contracts, deliveries]);
 
-  const maintenanceByItem = useMemo(() => {
-    const map = {};
-    stockRecoveries.forEach((entry) => {
-      map[entry.itemId] = (map[entry.itemId] ?? 0) + Number(entry.quantity ?? 0);
-    });
-    return map;
-  }, [stockRecoveries]);
+  const maintenanceByItem = useMemo(() => ({}), []);
 
   const operationalRentals = useMemo(() => {
     const source = Array.isArray(rentals) && rentals.length > 0 ? rentals : activeRentals;
@@ -4227,14 +4220,7 @@ function InventoryDashboardSection({
         {returnProcessingMessage ? <p className="status">{returnProcessingMessage}</p> : null}
 
         <InventoryOpsSection
-          items={items}
-          activeRentals={activeRentals}
-          stockRecoveries={stockRecoveries}
-          inventoryMovements={inventoryMovements}
-          stockMovementForm={movementForm}
-          setStockMovementForm={setMovementForm}
-          handleStockMovementSubmit={handleSubmitMovement}
-          handleProcessRecovery={onProcessStockRecovery}
+          damageLossOverview={damageLossOverview}
           formatBs={formatBs}
         />
       </section>

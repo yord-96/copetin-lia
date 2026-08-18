@@ -73,7 +73,7 @@ const RENTAL_RETURN_PATCH_COLLECTIONS = Object.freeze([
   'items',
   'rentals',
   'deliveries',
-  'stockRecoveries',
+  'inventoryMovements',
   'cashMovements',
 ]);
 const INVENTORY_MOVEMENT_PATCH_COLLECTIONS = Object.freeze([
@@ -660,6 +660,18 @@ const fetchInventoryMovementsOverview = async () => {
   await mergeLocalState(overview);
   serverStateIsPartial = true;
   return overview;
+};
+
+const fetchInventoryDamageLossOverview = async () => {
+  if (!shouldUseServerState()) return { rows: [], total: 0, summary: {} };
+  const response = await fetch(getServerStateUrl('/inventory/damage-loss-overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar el kardex de daños y faltantes.');
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  return payload;
 };
 
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
@@ -2357,7 +2369,9 @@ const callDirectRentalReturnOperation = async (payload = {}) => {
       rememberFullRecordCache(fullRentalCache, rental, [rental.id, rental.orderCode, rental.contractCode]);
     }
     announceDataChange({ domain: 'rentals', method: 'registerReturn', collections: RENTAL_RETURN_PATCH_COLLECTIONS });
-    return rental ?? result;
+    return rental
+      ? { ...rental, __inventoryItems: Array.isArray(result?.items) ? result.items : [], __inventoryLossMovements: Array.isArray(result?.movements) ? result.movements : [] }
+      : result;
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('El servidor tardo demasiado en cerrar la recepcion. No la repitas: vuelve a abrir movimientos para verificar el estado.');
     throw error;
@@ -3087,6 +3101,7 @@ export const api = {
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
+    getDamageLossOverview: fetchInventoryDamageLossOverview,
     listRecoveries: async () => {
       if (shouldUseServerState()) {
         // stockRecoveries es una coleccion diferida. Debemos leerla directamente

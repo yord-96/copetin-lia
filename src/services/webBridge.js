@@ -17597,48 +17597,39 @@ const createWebBridge = () => ({
               returnedQty,
               Math.max(0, internalExpectedQty - internalDamagedQty - internalMissingQty),
             );
-            const needsCleaningOnReturn = categoryRequiresCleaning(item.category) || Boolean(item.needsCleaningOnReturn);
-            const movedToCleaningQty = needsCleaningOnReturn ? internalGoodQty : 0;
-            const returnedToAvailableQty = internalGoodQty - movedToCleaningQty;
+            const movedToCleaningQty = 0;
+            const returnedToAvailableQty = internalGoodQty;
+            const damagedStockLossQty = internalDamagedQty;
+            const missingStockLossQty = isPartialReturn ? 0 : internalMissingQty;
+            const stockLossQty = damagedStockLossQty + missingStockLossQty;
 
             item.availableStock += returnedToAvailableQty;
+            if (stockLossQty > 0) {
+              const beforeTotalStock = Number(item.totalStock ?? 0);
+              const beforeAvailableStock = Number(item.availableStock ?? 0);
+              const nextTotalStock = beforeTotalStock - stockLossQty;
+              if (nextTotalStock < beforeAvailableStock) throw new Error(`El stock de "${item.name}" quedaria por debajo de sus unidades disponibles.`);
+              item.totalStock = nextTotalStock;
+              const addLossMovement = (kind, qty, unitValueBs, totalValueBs) => {
+                if (qty <= 0) return;
+                state.inventoryMovements.unshift({
+                  id: makeId('mov'), itemId: item.id, itemName: item.name, category: item.category, type: 'salida',
+                  reason: `${kind === 'danado' ? 'Daño' : 'Faltante'} en devolución · Contrato ${rental.contractCode || rental.orderCode || rental.id}`,
+                  detail: `${qty} unidad(es) · ${rental.customerName || 'Cliente'}${damageNote ? ` · ${damageNote}` : ''}`,
+                  reference: rental.orderCode ?? rental.contractCode ?? rental.id, deltaUnits: -qty,
+                  sourceType: 'rental_return_loss', sourceRentalId: rental.id, sourceId: rental.id, sourceContractId: rental.contractId ?? null,
+                  contractCode: rental.contractCode ?? '', orderCode: rental.orderCode ?? '', customerName: rental.customerName ?? '',
+                  lossType: kind, unitValueBs: Number(unitValueBs ?? 0), lossValueBs: Number(totalValueBs ?? 0), note: damageNote,
+                  beforeTotalStock, afterTotalStock: Number(item.totalStock ?? 0), beforeAvailableStock, afterAvailableStock: Number(item.availableStock ?? 0),
+                  reservedStockAfter: Math.max(0, Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0)),
+                  userName: String(payload?.userName ?? payload?.createdByName ?? 'Inventario').trim() || 'Inventario',
+                  userRole: String(payload?.userRole ?? payload?.createdByRole ?? 'Inventario').trim() || 'Inventario', createdAt: new Date().toISOString(),
+                });
+              };
+              addLossMovement('danado', damagedStockLossQty, damagedUnitChargeBs, damagedFeeBs);
+              addLossMovement('faltante', missingStockLossQty, missingUnitChargeBs, missingFeeBs);
+            }
             item.updatedAt = new Date().toISOString();
-
-            if (movedToCleaningQty > 0) {
-              state.stockRecoveries.push({
-                id: makeId('reco'),
-                itemId: item.id,
-                itemName: item.name,
-                category: item.category,
-                imageUrl: item.imageUrl ?? null,
-                imageDataUrl: item.imageDataUrl ?? null,
-                sourceRentalId: rental.id,
-                sourceCustomerName: rental.customerName,
-                stage: 'lavado',
-                quantity: movedToCleaningQty,
-                note: 'Devuelto y enviado a lavado.',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              });
-            }
-
-            if (internalDamagedQty > 0) {
-              state.stockRecoveries.push({
-                id: makeId('reco'),
-                itemId: item.id,
-                itemName: item.name,
-                category: item.category,
-                imageUrl: item.imageUrl ?? null,
-                imageDataUrl: item.imageDataUrl ?? null,
-                sourceRentalId: rental.id,
-                sourceCustomerName: rental.customerName,
-                stage: 'reparacion',
-                quantity: internalDamagedQty,
-                note: damageNote || 'Dano reportado en devolucion.',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              });
-            }
 
             return {
               lineKey: rentalLineKey,
@@ -17652,6 +17643,9 @@ const createWebBridge = () => ({
               returnedQty,
               returnedToAvailableQty,
               movedToCleaningQty,
+              damagedStockLossQty,
+              missingStockLossQty,
+              stockLossQty,
               damagedQty,
               missingQty,
               damageNote,

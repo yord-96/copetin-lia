@@ -699,6 +699,7 @@ function AdminApp() {
             cancelledRentals={controller.cancelledRentals}
             deliveries={controller.deliveries}
             stockRecoveries={controller.stockRecoveries}
+            damageLossOverview={controller.damageLossOverview}
             inventoryMovements={controller.inventoryMovements}
             inventoryMovementStats={controller.inventoryMovementStats}
             moduleLoading={controller.inventoryModuleLoading}
