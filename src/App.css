@@ -67704,3 +67704,416 @@ body:has(.accounting-bigcash-view) .workspace {
   .inventory-loss-filters { grid-template-columns: 1fr 1fr; }
   .inventory-loss-filters input:last-of-type { grid-column: 1 / -1; }
 }
+
+
+/* Daños y faltantes · acciones y documentos */
+.inventory-loss-menu-trigger {
+  border: 1px solid transparent !important;
+  background: #f7f9fc !important;
+  color: #68758c !important;
+  box-shadow: inset 0 0 0 1px rgba(18, 59, 115, 0.08);
+  transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.inventory-loss-menu-trigger:hover,
+.inventory-loss-menu-trigger.is-active {
+  border-color: rgba(18, 59, 115, 0.22) !important;
+  background: #eef4fc !important;
+  color: #123b73 !important;
+  box-shadow: 0 5px 14px rgba(18, 59, 115, 0.12);
+}
+.inventory-loss-menu-trigger span {
+  display: block;
+  transform: translateY(-1px);
+  font-size: 1.12rem;
+  line-height: 1;
+}
+.inventory-loss-menu-dismiss {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+.inventory-loss-row-menu {
+  position: fixed;
+  z-index: 10030;
+  width: 268px;
+  overflow: hidden;
+  border: 1px solid #d9e1eb;
+  border-radius: .82rem;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(16, 35, 66, .2);
+}
+.inventory-loss-row-menu-head {
+  display: grid;
+  gap: .18rem;
+  padding: .72rem .78rem;
+  border-bottom: 1px solid #e6ebf2;
+  background: linear-gradient(180deg, #fbfcfe, #f6f9fc);
+}
+.inventory-loss-row-menu-head > span {
+  color: #df4d00;
+  font-size: .62rem;
+  font-weight: 900;
+  letter-spacing: .07em;
+}
+.inventory-loss-row-menu-head strong {
+  overflow: hidden;
+  color: #102544;
+  font-size: .82rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inventory-loss-row-menu-head small {
+  color: #778399;
+  font-size: .68rem;
+}
+.inventory-loss-row-menu-body {
+  padding: .38rem;
+}
+.inventory-loss-row-action {
+  width: 100%;
+  min-height: 3.6rem;
+  display: grid;
+  grid-template-columns: 2.15rem minmax(0, 1fr);
+  gap: .58rem;
+  align-items: center;
+  border: 0;
+  border-radius: .66rem;
+  padding: .55rem .6rem;
+  background: transparent;
+  color: #152b4b;
+  text-align: left;
+}
+button.inventory-loss-row-action {
+  cursor: pointer;
+}
+button.inventory-loss-row-action:hover {
+  background: #eef8f2;
+}
+.inventory-loss-row-action-icon {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: .62rem;
+  background: #e8f7ee;
+  color: #23834f;
+  font-size: 1rem;
+  font-weight: 900;
+}
+.inventory-loss-row-action > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: .12rem;
+}
+.inventory-loss-row-action strong {
+  font-size: .76rem;
+  font-weight: 900;
+}
+.inventory-loss-row-action small {
+  color: #718096;
+  font-size: .66rem;
+  line-height: 1.35;
+}
+.inventory-loss-row-action.is-disabled {
+  background: #f7f9fb;
+  color: #5f6d80;
+}
+.inventory-loss-row-action.is-disabled .inventory-loss-row-action-icon {
+  background: #eaf1f7;
+  color: #65758a;
+}
+.inventory-loss-row-action.is-disabled.is-missing .inventory-loss-row-action-icon {
+  background: #fff0f0;
+  color: #b43c3c;
+}
+
+/* Modal de reinserción controlada */
+.inventory-repair-backdrop {
+  z-index: 10040;
+  backdrop-filter: blur(2px);
+}
+.inventory-repair-modal {
+  width: min(610px, calc(100vw - 2rem));
+  max-height: 90vh;
+  overflow: auto;
+  gap: .9rem;
+  padding: 0;
+  border-radius: 1rem;
+  border: 1px solid #d9e1eb;
+  background: #fff;
+  box-shadow: 0 26px 70px rgba(16, 35, 66, .28);
+}
+.inventory-repair-head {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.7rem minmax(0, 1fr) auto;
+  gap: .72rem;
+  align-items: start;
+  padding: 1rem 1rem .92rem;
+  border-bottom: 1px solid #e5eaf1;
+  background: linear-gradient(180deg, #fbfdfc, #f6faf8);
+}
+.inventory-repair-icon {
+  width: 2.7rem;
+  height: 2.7rem;
+  display: grid;
+  place-items: center;
+  border-radius: .82rem;
+  background: #e5f6ec;
+  color: #23834f;
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+.inventory-repair-head > div:nth-child(2) {
+  min-width: 0;
+}
+.inventory-repair-head span {
+  color: #23834f;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .07em;
+}
+.inventory-repair-head h3 {
+  margin: .13rem 0 .22rem;
+  color: #102544;
+  font-size: 1.2rem;
+}
+.inventory-repair-head p {
+  color: #718096;
+  font-size: .78rem;
+}
+.inventory-repair-close {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3ec;
+  border-radius: .62rem;
+  background: #fff;
+  color: #69778d;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.inventory-repair-item,
+.inventory-repair-summary,
+.inventory-repair-fields,
+.inventory-repair-notice,
+.inventory-repair-actions {
+  margin-inline: 1rem;
+}
+.inventory-repair-item {
+  display: grid;
+  grid-template-columns: 1.45fr .75fr;
+  gap: .65rem;
+}
+.inventory-repair-item > div {
+  min-width: 0;
+  display: grid;
+  gap: .16rem;
+  padding: .72rem .78rem;
+  border: 1px solid #e1e7ef;
+  border-radius: .72rem;
+  background: #fbfcfe;
+}
+.inventory-repair-item span,
+.inventory-repair-summary span,
+.inventory-repair-fields label > span {
+  color: #778399;
+  font-size: .65rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.inventory-repair-item strong {
+  overflow: hidden;
+  color: #142845;
+  font-size: .82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inventory-repair-item small {
+  color: #8a95a5;
+  font-size: .67rem;
+}
+.inventory-repair-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .55rem;
+}
+.inventory-repair-summary > div {
+  display: grid;
+  gap: .18rem;
+  padding: .67rem .72rem;
+  border: 1px solid #e1e7ef;
+  border-radius: .68rem;
+  background: #f8fafc;
+}
+.inventory-repair-summary strong {
+  color: #18355e;
+  font-size: 1.05rem;
+}
+.inventory-repair-summary .is-available {
+  border-color: #cde8d7;
+  background: #f1faf4;
+}
+.inventory-repair-summary .is-available strong {
+  color: #23834f;
+}
+.inventory-repair-fields {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: .65rem;
+}
+.inventory-repair-fields label {
+  display: grid;
+  gap: .32rem;
+}
+.inventory-repair-fields input,
+.inventory-repair-fields textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #d9e1eb;
+  border-radius: .66rem;
+  background: #fff;
+  color: #172b47;
+  font: inherit;
+  padding: .58rem .65rem;
+}
+.inventory-repair-fields textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.inventory-repair-fields input:focus,
+.inventory-repair-fields textarea:focus {
+  border-color: #7ba590;
+  outline: 3px solid rgba(35, 131, 79, .1);
+}
+.inventory-repair-notice {
+  display: grid;
+  gap: .2rem;
+  padding: .68rem .75rem;
+  border: 1px solid #d8e7df;
+  border-left: 3px solid #23834f;
+  border-radius: .65rem;
+  background: #f5faf7;
+}
+.inventory-repair-notice strong {
+  color: #245c3d;
+  font-size: .74rem;
+}
+.inventory-repair-notice span {
+  color: #627568;
+  font-size: .7rem;
+  line-height: 1.4;
+}
+.inventory-repair-actions {
+  margin-bottom: 1rem;
+  padding-top: .15rem;
+}
+
+/* Vista previa interna del reporte de daños y faltantes */
+.inventory-report-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(22, 30, 42, .6);
+  backdrop-filter: blur(2px);
+}
+.inventory-report-preview-modal {
+  width: min(1180px, 96vw);
+  height: min(840px, 94vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid #d7dee8;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(10, 24, 48, .34);
+}
+.inventory-report-preview-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: start;
+  padding: .9rem 1rem .8rem;
+  border-bottom: 1px solid #e4e9f0;
+  background: #fff;
+}
+.inventory-report-preview-head > div {
+  min-width: 0;
+}
+.inventory-report-preview-head span {
+  color: #df4d00;
+  font-size: .63rem;
+  font-weight: 900;
+  letter-spacing: .075em;
+}
+.inventory-report-preview-head h2 {
+  margin: .14rem 0 .18rem;
+  overflow: hidden;
+  color: #102544;
+  font-size: 1.28rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inventory-report-preview-head p {
+  margin: 0;
+  color: #778399;
+  font-size: .78rem;
+}
+.inventory-report-preview-close {
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3ec;
+  border-radius: .62rem;
+  background: #fff;
+  color: #69778d;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.inventory-report-preview-stage {
+  min-height: 0;
+  overflow: hidden;
+  padding: .65rem;
+  background: #eef2f6;
+}
+.inventory-report-preview-frame {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid #d7dee8;
+  border-radius: .45rem;
+  background: #fff;
+}
+.inventory-report-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .55rem;
+  padding: .72rem 1rem;
+  border-top: 1px solid #e4e9f0;
+  background: #fff;
+}
+
+@media (max-width: 700px) {
+  .inventory-repair-item,
+  .inventory-repair-summary,
+  .inventory-repair-fields {
+    grid-template-columns: 1fr;
+  }
+  .inventory-loss-row-menu {
+    width: min(268px, calc(100vw - 24px));
+  }
+  .inventory-report-preview-modal {
+    width: 98vw;
+    height: 95vh;
+  }
+}

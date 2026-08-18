@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 
 const formatDateTime = (value) => {
@@ -34,6 +34,9 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const [dateTo, setDateTo] = useState('');
   const [query, setQuery] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const [reportPreview, setReportPreview] = useState(null);
+  const reportFrameRef = useRef(null);
   const [repairDialog, setRepairDialog] = useState(null);
   const [repairQuantity, setRepairQuantity] = useState('1');
   const [repairNote, setRepairNote] = useState('');
@@ -96,10 +99,49 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const openRepairDialog = (row) => {
     const available = Math.max(0, Math.trunc(Number(row?.repairableQuantity ?? row?.quantity ?? 0)));
     setOpenMenuId(null);
+    setMenuPosition(null);
     setRepairDialog(row);
     setRepairQuantity(String(Math.min(1, available)));
     setRepairNote('');
     setFeedback('');
+  };
+
+  const toggleRowMenu = (event, row) => {
+    const button = event.currentTarget;
+    if (openMenuId === row.id) {
+      setOpenMenuId(null);
+      setMenuPosition(null);
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 268;
+    const estimatedMenuHeight = 150;
+    const viewportPadding = 12;
+    const openUp = rect.bottom + estimatedMenuHeight + viewportPadding > window.innerHeight;
+    setMenuPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - estimatedMenuHeight - 6) : rect.bottom + 6,
+      left: Math.min(
+        window.innerWidth - menuWidth - viewportPadding,
+        Math.max(viewportPadding, rect.right - menuWidth),
+      ),
+    });
+    setOpenMenuId(row.id);
+  };
+
+  const closeRowMenu = () => {
+    setOpenMenuId(null);
+    setMenuPosition(null);
+  };
+
+  const printReportPreview = () => {
+    const frameWindow = reportFrameRef.current?.contentWindow;
+    if (!frameWindow) {
+      setFeedback('No se pudo preparar la vista de impresión.');
+      setFeedbackType('error');
+      return;
+    }
+    frameWindow.focus();
+    frameWindow.print();
   };
 
   const handleRepairSubmit = async (event) => {
@@ -159,13 +201,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
         <td>${escapeHtml(row.note || 'Sin observación')}</td>
       </tr>`).join('');
 
-    const reportWindow = window.open('', '_blank', 'noopener,noreferrer');
-    if (!reportWindow) {
-      setFeedback('El navegador bloqueó la ventana del reporte. Habilita ventanas emergentes e intenta nuevamente.');
-      setFeedbackType('error');
-      return;
-    }
-    reportWindow.document.write(`<!doctype html>
+    const reportHtml = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>Reporte de Daños y Faltantes</title>
 <style>
 @page{size:letter landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#18243a;margin:0;background:#fff;font-size:10px}.page{width:100%}.head{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #15345f;padding:0 0 12px;margin-bottom:12px}.brand{font-size:11px;font-weight:800;letter-spacing:.08em;color:#df4d00;text-transform:uppercase}.title{font-size:24px;font-weight:800;color:#15345f;margin:3px 0}.subtitle{color:#64748b}.meta{text-align:right;line-height:1.55}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.card{border:1px solid #d9e1eb;border-radius:7px;padding:9px;background:#f8fafc}.card span{display:block;color:#64748b;font-size:8px;text-transform:uppercase;font-weight:700}.card strong{display:block;font-size:17px;margin-top:3px;color:#15345f}.economic{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 14px}.economic .card{background:#fffaf6;border-color:#f1d8c6}.section-title{font-size:13px;font-weight:800;color:#15345f;margin:12px 0 7px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#15345f;color:#fff;padding:7px 5px;text-align:left;font-size:8px;text-transform:uppercase}td{border-bottom:1px solid #dbe2ea;padding:6px 5px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8fafc}td small{display:block;color:#758195;margin-top:2px}.center{text-align:center}.money{text-align:right;white-space:nowrap}.pill{display:inline-block;border-radius:999px;padding:3px 6px;font-weight:800;font-size:7px}.pill.damage{background:#fff1d6;color:#9a5a00}.pill.missing{background:#ffe7e7;color:#b42318}.note{margin-top:10px;padding:8px 10px;border-left:3px solid #15345f;background:#f8fafc;color:#526174}.footer{margin-top:12px;padding-top:8px;border-top:1px solid #dbe2ea;display:flex;justify-content:space-between;color:#7a8798;font-size:8px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -191,8 +227,12 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
 <thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Ítem</th><th>Cant.</th><th>Repar.</th><th>Valor unit.</th><th>Valor</th><th>Contrato / orden</th><th>Cliente</th><th>Observación</th></tr></thead><tbody>${reportRows || '<tr><td colspan="11" class="center">No hay registros para los filtros seleccionados.</td></tr>'}</tbody></table>
 <div class="note"><strong>Resultado de recuperación:</strong> ${escapeHtml(formatBs(Math.abs(recoveryDifference)))} ${recoveryDifference < 0 ? 'pendiente respecto a los cargos al cliente' : recoveryDifference > 0 ? 'por encima de los cargos registrados' : '— cargos recuperados completamente'}. El “valor registrado” corresponde al cargo configurado en la devolución y no debe interpretarse como costo contable de reposición ni utilidad neta.</div>
 <div class="footer"><span>EL COPETÍN · Inventario</span><span>${filteredRows.length} registro(s) incluidos</span></div>
-</main><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));</script></body></html>`);
-    reportWindow.document.close();
+</main></body></html>`;
+    setFeedback('');
+    setReportPreview({
+      title: `Reporte de daños y faltantes · ${period}`,
+      html: reportHtml,
+    });
   };
 
   return (
@@ -241,7 +281,6 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
             </thead>
             <tbody>
               {filteredRows.map((row) => {
-                const canReinsert = row.lossType === 'danado' && Number(row.repairableQuantity ?? 0) > 0;
                 return (
                   <tr key={row.id}>
                     <td>{formatDateTime(row.occurredAt)}</td>
@@ -257,27 +296,15 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
                     <td>{row.customerName || '-'}</td>
                     <td>{row.note || 'Sin observación'}</td>
                     <td className="inventory-row-menu">
-                      <div className="inventory-actions-menu-wrap">
-                        <button
-                          type="button"
-                          className="inventory-row-menu-button"
-                          aria-label={`Opciones para ${row.itemName}`}
-                          onClick={() => setOpenMenuId((current) => current === row.id ? null : row.id)}
-                        >
-                          {'\u22ee'}
-                        </button>
-                        {openMenuId === row.id ? (
-                          <div className="inventory-row-actions-menu">
-                            {canReinsert ? (
-                              <button type="button" onClick={() => openRepairDialog(row)}>Reinsertar reparado</button>
-                            ) : row.lossType === 'danado' ? (
-                              <span className="status">Daño ya reinsertado</span>
-                            ) : (
-                              <span className="status">Faltante: sin reinserción</span>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
+                      <button
+                        type="button"
+                        className={`inventory-row-menu-button inventory-loss-menu-trigger ${openMenuId === row.id ? 'is-active' : ''}`}
+                        aria-label={`Opciones para ${row.itemName}`}
+                        aria-expanded={openMenuId === row.id}
+                        onClick={(event) => toggleRowMenu(event, row)}
+                      >
+                        <span aria-hidden="true">⋮</span>
+                      </button>
                     </td>
                   </tr>
                 );
@@ -288,32 +315,146 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
         </div>
       </article>
 
-      {repairDialog ? (
-        <div className="reset-modal-backdrop" onClick={() => !processingRepair && setRepairDialog(null)}>
-          <form className="reset-modal" onSubmit={handleRepairSubmit} onClick={(event) => event.stopPropagation()}>
-            <h3>Reinsertar item reparado</h3>
-            <p><strong>{repairDialog.itemName}</strong></p>
-            <p>
-              Daño registrado: {repairDialog.quantity} · Ya reinsertado: {repairDialog.repairedQty ?? 0} · Disponible para reinsertar: {repairDialog.repairableQuantity}
-            </p>
-            <label>
-              Cantidad reparada
-              <input
-                type="number"
-                min="1"
-                max={Math.max(1, Number(repairDialog.repairableQuantity ?? 1))}
-                step="1"
-                value={repairQuantity}
-                onChange={(event) => setRepairQuantity(event.target.value)}
-                required
+      {openMenuId ? (
+        <>
+          <button
+            type="button"
+            className="inventory-loss-menu-dismiss"
+            aria-label="Cerrar opciones"
+            onClick={closeRowMenu}
+          />
+          {(() => {
+            const row = filteredRows.find((entry) => entry.id === openMenuId);
+            if (!row || !menuPosition) return null;
+            const canReinsert = row.lossType === 'danado' && Number(row.repairableQuantity ?? 0) > 0;
+            return (
+              <div
+                className="inventory-loss-row-menu"
+                style={{ top: menuPosition.top, left: menuPosition.left }}
+                role="menu"
+              >
+                <div className="inventory-loss-row-menu-head">
+                  <span>{row.lossType === 'danado' ? 'DAÑO REGISTRADO' : 'FALTANTE REGISTRADO'}</span>
+                  <strong>{row.itemName}</strong>
+                  <small>{row.contractCode ? `Contrato ${row.contractCode}` : row.orderCode || 'Sin referencia'}</small>
+                </div>
+                <div className="inventory-loss-row-menu-body">
+                  {canReinsert ? (
+                    <button type="button" className="inventory-loss-row-action" onClick={() => openRepairDialog(row)}>
+                      <span className="inventory-loss-row-action-icon" aria-hidden="true">↺</span>
+                      <span>
+                        <strong>Reinsertar reparado</strong>
+                        <small>Devuelve al stock una unidad que ya fue reparada.</small>
+                      </span>
+                    </button>
+                  ) : row.lossType === 'danado' ? (
+                    <div className="inventory-loss-row-action is-disabled">
+                      <span className="inventory-loss-row-action-icon" aria-hidden="true">✓</span>
+                      <span>
+                        <strong>Daño ya reinsertado</strong>
+                        <small>No quedan unidades dañadas pendientes de recuperar.</small>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="inventory-loss-row-action is-disabled is-missing">
+                      <span className="inventory-loss-row-action-icon" aria-hidden="true">!</span>
+                      <span>
+                        <strong>Sin reinserción</strong>
+                        <small>Los faltantes permanecen como pérdida hasta que exista una devolución real.</small>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </>
+      ) : null}
+
+      {reportPreview ? (
+        <div className="inventory-report-preview-backdrop" onClick={() => setReportPreview(null)}>
+          <div className="inventory-report-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="inventory-report-preview-head">
+              <div>
+                <span>VISTA PREVIA DEL DOCUMENTO</span>
+                <h2>{reportPreview.title}</h2>
+                <p>Revisa el reporte antes de imprimirlo o guardarlo como PDF.</p>
+              </div>
+              <button type="button" className="inventory-report-preview-close" aria-label="Cerrar reporte" onClick={() => setReportPreview(null)}>×</button>
+            </header>
+            <div className="inventory-report-preview-stage">
+              <iframe
+                ref={reportFrameRef}
+                title={reportPreview.title}
+                srcDoc={reportPreview.html}
+                className="inventory-report-preview-frame"
               />
-            </label>
-            <label>
-              Observación de reparación
-              <textarea value={repairNote} onChange={(event) => setRepairNote(event.target.value)} placeholder="Ej. costura reparada, pieza restaurada..." />
-            </label>
-            <p className="status">Esta operación aumenta el stock físico total y el stock disponible. El daño permanece en el kardex como historial.</p>
-            <div className="reset-modal-actions">
+            </div>
+            <footer className="inventory-report-preview-actions">
+              <button type="button" className="ghost-button" onClick={() => setReportPreview(null)}>Cerrar</button>
+              <button type="button" className="primary-button" onClick={printReportPreview}>Imprimir / guardar PDF</button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {repairDialog ? (
+        <div className="reset-modal-backdrop inventory-repair-backdrop" onClick={() => !processingRepair && setRepairDialog(null)}>
+          <form className="reset-modal inventory-repair-modal" onSubmit={handleRepairSubmit} onClick={(event) => event.stopPropagation()}>
+            <div className="inventory-repair-head">
+              <div className="inventory-repair-icon" aria-hidden="true">↺</div>
+              <div>
+                <span>RECUPERACIÓN DE INVENTARIO</span>
+                <h3>Reinsertar ítem reparado</h3>
+                <p>Confirma únicamente las unidades que ya están físicamente reparadas.</p>
+              </div>
+              <button type="button" className="inventory-repair-close" aria-label="Cerrar" disabled={processingRepair} onClick={() => setRepairDialog(null)}>×</button>
+            </div>
+
+            <div className="inventory-repair-item">
+              <div>
+                <span>Ítem</span>
+                <strong>{repairDialog.itemName}</strong>
+                <small>{repairDialog.category || ''}</small>
+              </div>
+              <div>
+                <span>Contrato</span>
+                <strong>{repairDialog.contractCode || '-'}</strong>
+                <small>{repairDialog.orderCode || ''}</small>
+              </div>
+            </div>
+
+            <div className="inventory-repair-summary">
+              <div><span>Daño registrado</span><strong>{repairDialog.quantity}</strong></div>
+              <div><span>Ya reinsertado</span><strong>{repairDialog.repairedQty ?? 0}</strong></div>
+              <div className="is-available"><span>Pendiente reparable</span><strong>{repairDialog.repairableQuantity}</strong></div>
+            </div>
+
+            <div className="inventory-repair-fields">
+              <label>
+                <span>Cantidad reparada</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={Math.max(1, Number(repairDialog.repairableQuantity ?? 1))}
+                  step="1"
+                  value={repairQuantity}
+                  onChange={(event) => setRepairQuantity(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Observación de reparación</span>
+                <textarea value={repairNote} onChange={(event) => setRepairNote(event.target.value)} placeholder="Ej. costura reparada, pieza restaurada..." />
+              </label>
+            </div>
+
+            <div className="inventory-repair-notice">
+              <strong>Qué ocurrirá al confirmar</strong>
+              <span>Se incrementará el stock físico total y el disponible. El daño original permanecerá en el kardex como historial.</span>
+            </div>
+
+            <div className="reset-modal-actions inventory-repair-actions">
               <button type="button" className="ghost-button" disabled={processingRepair} onClick={() => setRepairDialog(null)}>Cancelar</button>
               <button type="submit" className="primary-button" disabled={processingRepair}>{processingRepair ? 'Reinsertando...' : 'Confirmar reinserción'}</button>
             </div>
