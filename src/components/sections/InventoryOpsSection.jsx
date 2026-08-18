@@ -214,37 +214,89 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
     const period = dateFrom || dateTo
       ? `${dateFrom || 'Inicio'} — ${dateTo || 'Actualidad'}`
       : 'Todo el historial visible';
-    const recoveryDifference = Math.round((economicSummary.totalRecoveredBs - economicSummary.clientChargedBs) * 100) / 100;
     const economicsByRental = damageLossOverview?.summary?.economicsByRental ?? {};
+    const uniqueRentalIds = [...new Set(filteredRows.map((row) => String(row?.rentalId ?? '')).filter(Boolean))];
+    const statusCounts = uniqueRentalIds.reduce((acc, rentalId) => {
+      const status = getCollectionStatusMeta(economicsByRental?.[rentalId] ?? {});
+      if (['paid', 'guarantee', 'mixed'].includes(status.className)) acc.paid += 1;
+      else if (status.className === 'partial') acc.partial += 1;
+      else if (status.className === 'pending') acc.pending += 1;
+      else acc.noCharge += 1;
+      return acc;
+    }, { paid: 0, partial: 0, pending: 0, noCharge: 0 });
+
+    const paymentMethodLabel = (entry = {}) => {
+      if (entry?.source === 'guarantee') return 'Garantía';
+      const method = String(entry?.paymentMethod ?? '').trim().toLowerCase();
+      if (method === 'qr') return `QR${entry?.paymentAccount ? ` · ${entry.paymentAccount}` : ''}`;
+      if (method === 'transferencia') return `Transferencia${entry?.paymentAccount ? ` · ${entry.paymentAccount}` : ''}`;
+      return 'Efectivo';
+    };
+
+    const recoverySummaryText = (economic = {}) => {
+      const entries = Array.isArray(economic?.recoveryBreakdown) ? economic.recoveryBreakdown : [];
+      if (!entries.length) return moneyNumber(economic?.clientChargedBs) > 0 ? 'Sin recuperación registrada' : 'Sin cargo al cliente';
+      return entries.map((entry) => `${paymentMethodLabel(entry)} ${formatBs(entry?.amountBs)}`).join(' + ');
+    };
+
     const reportRows = filteredRows.map((row, index) => {
       const economic = economicsByRental?.[String(row?.rentalId ?? '')] ?? {};
       const collectionStatus = getCollectionStatusMeta(economic);
-      const collectionDetail = moneyNumber(economic?.clientChargedBs) > 0
-        ? `${formatBs(economic?.totalRecoveredBs)} / ${formatBs(economic?.clientChargedBs)}`
-        : 'Sin cargo al cliente';
+      const rowClass = ['paid', 'guarantee', 'mixed'].includes(collectionStatus.className)
+        ? 'settled-row'
+        : collectionStatus.className === 'partial'
+          ? 'partial-row'
+          : collectionStatus.className === 'pending'
+            ? 'pending-row'
+            : '';
+      const collectionDetail = recoverySummaryText(economic);
       return `
-      <tr>
+      <tr class="${rowClass}">
         <td class="center">${index + 1}</td>
         <td>${escapeHtml(formatDateTime(row.occurredAt))}</td>
         <td><span class="pill ${row.lossType === 'danado' ? 'damage' : 'missing'}">${row.lossType === 'danado' ? 'DAÑADO' : 'FALTANTE'}</span></td>
         <td><strong>${escapeHtml(row.itemName)}</strong><small>${escapeHtml(row.category || '')}</small></td>
-        <td class="center">${escapeHtml(row.quantity)}</td>
-        <td class="center">${row.lossType === 'danado' ? escapeHtml(row.repairedQty ?? 0) : '—'}</td>
-        <td class="money">${escapeHtml(formatBs(row.unitValueBs))}</td>
+        <td class="center strong-number">${escapeHtml(row.quantity)}</td>
         <td class="money"><strong>${escapeHtml(formatBs(row.totalValueBs))}</strong></td>
-        <td><span class="collection ${collectionStatus.className}">${escapeHtml(collectionStatus.label)}</span><small>${escapeHtml(collectionDetail)}</small></td>
-        <td><strong>${escapeHtml(row.contractCode || '-')}</strong><small>${escapeHtml(row.orderCode || '')}</small></td>
-        <td>${escapeHtml(row.customerName || '-')}</td>
+        <td class="collection-cell"><span class="collection ${collectionStatus.className}">${escapeHtml(collectionStatus.label)}</span><small>${escapeHtml(collectionDetail)}</small></td>
+        <td><strong>${escapeHtml(row.contractCode || '-')}</strong><small>${escapeHtml(row.orderCode || '')} · ${escapeHtml(row.customerName || '-')}</small></td>
         <td>${escapeHtml(row.note || 'Sin observación')}</td>
       </tr>`;
+    }).join('');
+
+    const financialRows = uniqueRentalIds.map((rentalId, index) => {
+      const economic = economicsByRental?.[rentalId] ?? {};
+      const firstRow = filteredRows.find((row) => String(row?.rentalId ?? '') === rentalId) ?? {};
+      const status = getCollectionStatusMeta(economic);
+      const entries = Array.isArray(economic?.recoveryBreakdown) ? economic.recoveryBreakdown : [];
+      const recoveryLines = entries.length
+        ? entries.map((entry) => {
+          const receipt = entry?.receiptCode ? ` · Recibo ${entry.receiptCode}` : '';
+          const by = entry?.registeredBy ? ` · ${entry.registeredBy}` : '';
+          const when = entry?.occurredAt ? ` · ${formatDateTime(entry.occurredAt)}` : '';
+          return `<div class="recovery-line"><strong>${escapeHtml(paymentMethodLabel(entry))}</strong><span>${escapeHtml(formatBs(entry?.amountBs))}${escapeHtml(receipt)}${escapeHtml(when)}${escapeHtml(by)}</span></div>`;
+        }).join('')
+        : '<div class="recovery-line muted">Sin movimientos de recuperación.</div>';
+      return `
+        <div class="finance-record ${['paid', 'guarantee', 'mixed'].includes(status.className) ? 'is-paid' : status.className === 'partial' ? 'is-partial' : status.className === 'pending' ? 'is-pending' : ''}">
+          <div class="finance-no">${index + 1}</div>
+          <div class="finance-contract"><span>CONTRATO</span><strong>${escapeHtml(firstRow?.contractCode || '-')}</strong><small>${escapeHtml(firstRow?.orderCode || '')}</small></div>
+          <div class="finance-client"><span>CLIENTE</span><strong>${escapeHtml(firstRow?.customerName || '-')}</strong></div>
+          <div class="finance-amount"><span>CARGO</span><strong>${escapeHtml(formatBs(economic?.clientChargedBs))}</strong></div>
+          <div class="finance-amount recovered"><span>RECUPERADO</span><strong>${escapeHtml(formatBs(economic?.totalRecoveredBs))}</strong></div>
+          <div class="finance-amount pending"><span>PENDIENTE</span><strong>${escapeHtml(formatBs(economic?.pendingRecoveryBs))}</strong></div>
+          <div class="finance-status"><span class="collection ${status.className}">${escapeHtml(status.label)}</span></div>
+          <div class="finance-recovery">${recoveryLines}</div>
+        </div>`;
     }).join('');
 
     const reportHtml = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>Reporte de Daños y Faltantes</title>
 <style>
-@page{size:letter landscape;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#18243a;margin:0;background:#fff;font-size:10px}.page{width:100%}.head{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #15345f;padding:0 0 12px;margin-bottom:12px}.brand{font-size:11px;font-weight:800;letter-spacing:.08em;color:#df4d00;text-transform:uppercase}.title{font-size:24px;font-weight:800;color:#15345f;margin:3px 0}.subtitle{color:#64748b}.meta{text-align:right;line-height:1.55}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}.card{border:1px solid #d9e1eb;border-radius:7px;padding:9px;background:#f8fafc}.card span{display:block;color:#64748b;font-size:8px;text-transform:uppercase;font-weight:700}.card strong{display:block;font-size:17px;margin-top:3px;color:#15345f}.economic{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 14px}.economic .card{background:#fffaf6;border-color:#f1d8c6}.section-title{font-size:13px;font-weight:800;color:#15345f;margin:12px 0 7px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#15345f;color:#fff;padding:7px 5px;text-align:left;font-size:8px;text-transform:uppercase}td{border-bottom:1px solid #dbe2ea;padding:6px 5px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8fafc}td small{display:block;color:#758195;margin-top:2px}.center{text-align:center}.money{text-align:right;white-space:nowrap}.pill,.collection{display:inline-block;border-radius:999px;padding:3px 6px;font-weight:800;font-size:7px;white-space:nowrap}.pill.damage{background:#fff1d6;color:#9a5a00}.pill.missing{background:#ffe7e7;color:#b42318}.collection.paid{background:#dcfce7;color:#166534}.collection.guarantee{background:#ede9fe;color:#6d28d9}.collection.mixed{background:#dbeafe;color:#1d4ed8}.collection.partial{background:#fef3c7;color:#92400e}.collection.pending{background:#fee2e2;color:#b91c1c}.collection.neutral{background:#eef2f7;color:#526174}.note{margin-top:10px;padding:8px 10px;border-left:3px solid #15345f;background:#f8fafc;color:#526174}.footer{margin-top:12px;padding-top:8px;border-top:1px solid #dbe2ea;display:flex;justify-content:space-between;color:#7a8798;font-size:8px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@page{size:letter landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17233a;margin:0;background:#fff;font-size:9.5px}.page{width:100%}.head{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #15345f;padding:0 0 11px;margin-bottom:10px}.brand{font-size:10px;font-weight:800;letter-spacing:.09em;color:#df4d00;text-transform:uppercase}.title{font-size:23px;font-weight:800;color:#15345f;margin:3px 0}.subtitle{color:#64748b}.meta{text-align:right;line-height:1.55;min-width:210px}.section-kicker{font-size:8px;font-weight:800;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin:11px 0 5px}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:8px 0 10px}.card{border:1px solid #d9e1eb;border-radius:7px;padding:8px;background:#f8fafc}.card span{display:block;color:#64748b;font-size:7.5px;text-transform:uppercase;font-weight:700}.card strong{display:block;font-size:16px;margin-top:2px;color:#15345f}.economic{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:11px}.economic .card{background:#fffaf6;border-color:#f1d8c6}.economic .card.good{background:#f0fdf4;border-color:#bbf7d0}.economic .card.warn{background:#fffbeb;border-color:#fde68a}.section-title{font-size:13px;font-weight:800;color:#15345f;margin:12px 0 6px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#15345f;color:#fff;padding:6px 5px;text-align:left;font-size:7.5px;text-transform:uppercase}td{border-bottom:1px solid #dbe2ea;padding:5px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8fafc}tbody tr.settled-row{background:#f0fdf4!important}tbody tr.partial-row{background:#fffbeb!important}tbody tr.pending-row{background:#fffafa!important}td small{display:block;color:#758195;margin-top:2px;line-height:1.25}.center{text-align:center}.money{text-align:right;white-space:nowrap}.strong-number{font-weight:800}.pill,.collection{display:inline-block;border-radius:999px;padding:3px 6px;font-weight:800;font-size:7px;white-space:nowrap}.pill.damage{background:#fff1d6;color:#9a5a00}.pill.missing{background:#ffe7e7;color:#b42318}.collection.paid{background:#dcfce7;color:#166534}.collection.guarantee{background:#dcfce7;color:#166534}.collection.mixed{background:#dcfce7;color:#166534}.collection.partial{background:#fef3c7;color:#92400e}.collection.pending{background:#fee2e2;color:#b91c1c}.collection.neutral{background:#eef2f7;color:#526174}.collection-cell small{margin-top:4px}.finance-list{display:grid;gap:6px}.finance-record{display:grid;grid-template-columns:28px 90px 1.25fr 82px 82px 82px 82px 2.15fr;align-items:stretch;border:1px solid #dbe2ea;border-left:4px solid #94a3b8;border-radius:7px;overflow:hidden;break-inside:avoid;background:#fff}.finance-record.is-paid{border-left-color:#16a34a;background:#f7fff9}.finance-record.is-partial{border-left-color:#d97706;background:#fffdf5}.finance-record.is-pending{border-left-color:#dc2626;background:#fffafa}.finance-record>div{padding:7px 6px;border-right:1px solid #e5eaf0}.finance-record>div:last-child{border-right:0}.finance-no{display:flex;align-items:center;justify-content:center;font-weight:800;color:#64748b}.finance-record span{display:block;color:#64748b;font-size:7px;text-transform:uppercase;font-weight:700}.finance-record strong{display:block;margin-top:2px}.finance-status{display:flex;align-items:center;justify-content:center}.finance-recovery{padding:5px 7px!important}.recovery-line{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px dashed #d9e1eb;line-height:1.25}.recovery-line:last-child{border-bottom:0}.recovery-line strong{min-width:96px;margin:0}.recovery-line span{font-size:7.5px;text-transform:none;font-weight:500;text-align:right}.muted{color:#7a8798}.note{margin-top:10px;padding:8px 10px;border-left:3px solid #15345f;background:#f8fafc;color:#526174}.footer{margin-top:12px;padding-top:8px;border-top:1px solid #dbe2ea;display:flex;justify-content:space-between;color:#7a8798;font-size:8px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.finance-record{break-inside:avoid}.section-title{break-after:avoid}}
 </style></head><body><main class="page">
-<div class="head"><div><div class="brand">EL COPETÍN · CONTROL DE INVENTARIO</div><div class="title">Reporte de Daños y Faltantes</div><div class="subtitle">Kardex de pérdidas, reparaciones y recuperación económica</div></div><div class="meta"><strong>Periodo</strong><br>${escapeHtml(period)}<br><strong>Generado</strong><br>${escapeHtml(generatedAt)}</div></div>
+<div class="head"><div><div class="brand">EL COPETÍN · CONTROL DE INVENTARIO</div><div class="title">Reporte de Daños y Faltantes</div><div class="subtitle">Incidencias físicas y recuperación económica vinculada a cada contrato</div></div><div class="meta"><strong>Periodo</strong><br>${escapeHtml(period)}<br><strong>Generado</strong><br>${escapeHtml(generatedAt)}</div></div>
+<div class="section-kicker">Resumen físico</div>
 <div class="cards">
 <div class="card"><span>Registros</span><strong>${filteredRows.length}</strong></div>
 <div class="card"><span>Unidades afectadas</span><strong>${summary.totalUnits}</strong></div>
@@ -252,19 +304,21 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
 <div class="card"><span>Faltantes</span><strong>${summary.missingUnits}</strong></div>
 <div class="card"><span>Reparadas / reinsertadas</span><strong>${summary.repairedUnits}</strong></div>
 </div>
-<div class="section-title">Resumen económico</div>
+<div class="section-kicker">Resumen económico</div>
 <div class="economic">
 <div class="card"><span>Cargos al cliente</span><strong>${escapeHtml(formatBs(economicSummary.clientChargedBs))}</strong></div>
-<div class="card"><span>Cobrado en caja</span><strong>${escapeHtml(formatBs(economicSummary.cashCollectedBs))}</strong></div>
-<div class="card"><span>Aplicado de garantía</span><strong>${escapeHtml(formatBs(economicSummary.guaranteeAppliedBs))}</strong></div>
-<div class="card"><span>Total recuperado</span><strong>${escapeHtml(formatBs(economicSummary.totalRecoveredBs))}</strong></div>
-<div class="card"><span>Pendiente por recuperar</span><strong>${escapeHtml(formatBs(economicSummary.pendingRecoveryBs))}</strong></div>
+<div class="card good"><span>Total recuperado</span><strong>${escapeHtml(formatBs(economicSummary.totalRecoveredBs))}</strong></div>
+<div class="card warn"><span>Pendiente por recuperar</span><strong>${escapeHtml(formatBs(economicSummary.pendingRecoveryBs))}</strong></div>
+<div class="card"><span>Contratos cobrados</span><strong>${statusCounts.paid}</strong></div>
+<div class="card"><span>Parciales / pendientes</span><strong>${statusCounts.partial + statusCounts.pending}</strong></div>
 </div>
-<div class="section-title">Detalle de incidencias</div>
-<table><colgroup><col style="width:3%"><col style="width:7%"><col style="width:6%"><col style="width:13%"><col style="width:4%"><col style="width:4%"><col style="width:6%"><col style="width:6%"><col style="width:9%"><col style="width:8%"><col style="width:11%"><col style="width:23%"></colgroup>
-<thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Ítem</th><th>Cant.</th><th>Repar.</th><th>Valor unit.</th><th>Valor</th><th>Estado cobro</th><th>Contrato / orden</th><th>Cliente</th><th>Observación</th></tr></thead><tbody>${reportRows || '<tr><td colspan="12" class="center">No hay registros para los filtros seleccionados.</td></tr>'}</tbody></table>
-<div class="note"><strong>Resultado de recuperación:</strong> ${escapeHtml(formatBs(Math.abs(recoveryDifference)))} ${recoveryDifference < 0 ? 'pendiente respecto a los cargos al cliente' : recoveryDifference > 0 ? 'por encima de los cargos registrados' : '— cargos recuperados completamente'}. El estado de cobro se calcula por contrato/orden usando los cobros de daños registrados en Caja Grande y las aplicaciones de garantía del sector económico. Si un contrato tiene varias incidencias, el mismo estado económico se muestra en cada una como referencia del contrato. El “valor registrado” no representa costo contable de reposición ni utilidad neta.</div>
-<div class="footer"><span>EL COPETÍN · Inventario</span><span>${filteredRows.length} registro(s) incluidos</span></div>
+<div class="section-title">1. Detalle de incidencias</div>
+<table><colgroup><col style="width:3%"><col style="width:8%"><col style="width:7%"><col style="width:17%"><col style="width:5%"><col style="width:7%"><col style="width:16%"><col style="width:15%"><col style="width:22%"></colgroup>
+<thead><tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Ítem</th><th>Cant.</th><th>Cargo</th><th>Cobro</th><th>Contrato / cliente</th><th>Observación</th></tr></thead><tbody>${reportRows || '<tr><td colspan="9" class="center">No hay registros para los filtros seleccionados.</td></tr>'}</tbody></table>
+<div class="section-title">2. Detalle de cobros y recuperaciones</div>
+<div class="finance-list">${financialRows || '<div class="note">No hay contratos con incidencias para los filtros seleccionados.</div>'}</div>
+<div class="note"><strong>Lectura del reporte:</strong> “Cobrado” indica que el cargo por daños/faltantes ya fue recuperado. Debajo se detalla cómo se recuperó: garantía, efectivo, QR o transferencia, incluyendo cuenta, recibo, fecha y responsable cuando esos datos existen. Los importes son cargos de devolución; no equivalen automáticamente al costo contable de reposición ni a utilidad neta.</div>
+<div class="footer"><span>EL COPETÍN · Inventario</span><span>${filteredRows.length} incidencia(s) · ${uniqueRentalIds.length} contrato(s)</span></div>
 </main></body></html>`;
     setFeedback('');
     setReportPreview({

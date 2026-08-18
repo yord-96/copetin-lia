@@ -6487,23 +6487,21 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
     const rentalById = new Map((Array.isArray(state.rentals) ? state.rentals : [])
       .map((rental) => [String(rental?.id ?? ''), rental]));
 
-    const collectDamageCashForKeys = ({ rentalId, contractId, orderCode }) => directMoney(cashMovements.reduce((sum, movement) => {
-      if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return sum;
+    const collectDamageCashEntriesForKeys = ({ rentalId, contractId, orderCode }) => cashMovements.flatMap((movement) => {
+      if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return [];
       const movementRentalId = String(movement?.linkedRentalId ?? movement?.sourceId ?? '').trim();
       const movementContractId = String(movement?.linkedContractId ?? '').trim();
       const movementOrderCode = String(movement?.linkedOrderCode ?? movement?.orderCode ?? movement?.reference ?? '').trim();
       const matches = (rentalId && movementRentalId === rentalId)
         || (contractId && movementContractId === contractId)
         || (orderCode && movementOrderCode === orderCode);
-      if (!matches) return sum;
+      if (!matches) return [];
 
       const breakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
       const breakdownDamageBs = directMoney(breakdown
         .filter((entry) => String(entry?.target ?? '').trim().toLowerCase() === 'damage')
         .reduce((subtotal, entry) => subtotal + Math.max(0, Number(entry?.amountBs ?? 0)), 0));
-      if (breakdownDamageBs > 0) return sum + breakdownDamageBs;
       const storedDamageBs = Math.max(0, directMoney(movement?.damageCollectedBs));
-      if (storedDamageBs > 0) return sum + storedDamageBs;
       const target = String(movement?.collectionTarget ?? '').trim().toLowerCase();
       const category = String(movement?.category ?? '').trim().toLowerCase();
       const tag = String(movement?.accountingTag ?? '').trim().toLowerCase();
@@ -6513,20 +6511,50 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
         || tag === 'contract_damage_collection'
         || type.includes('dano')
         || type.includes('faltante');
-      return isDamageMovement ? sum + Math.max(0, directMoney(movement?.amountBs)) : sum;
-    }, 0));
+      const amountBs = breakdownDamageBs > 0
+        ? breakdownDamageBs
+        : storedDamageBs > 0
+          ? storedDamageBs
+          : isDamageMovement
+            ? Math.max(0, directMoney(movement?.amountBs))
+            : 0;
+      if (amountBs <= 0.009) return [];
 
-    const guaranteeAppliedForContract = (contractId) => {
+      return [{
+        source: 'cash',
+        amountBs,
+        paymentMethod: String(movement?.paymentMethod ?? '').trim().toLowerCase() || 'efectivo',
+        paymentAccount: String(movement?.paymentAccount ?? '').trim().toUpperCase(),
+        receiptCode: String(movement?.receiptCode ?? movement?.receipt ?? '').trim(),
+        occurredAt: movement?.createdAt ?? movement?.receiptIssuedAt ?? null,
+        registeredBy: String(movement?.responsible ?? movement?.createdByName ?? movement?.userName ?? movement?.createdBy ?? '').trim(),
+        movementId: String(movement?.id ?? '').trim(),
+      }];
+    });
+
+    const guaranteeEntriesForContract = (contractId) => {
       const contract = contractsById.get(String(contractId ?? ''));
-      if (!contract) return 0;
+      if (!contract) return [];
       const ledger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
-      return directMoney(ledger.reduce((subtotal, entry) => {
-        if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return subtotal;
+      return ledger.flatMap((entry) => {
+        if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return [];
         const cashMovementId = String(entry?.cashMovementId ?? '').trim();
         const isCashDamage = String(entry?.cashCollectionTarget ?? '').trim().toLowerCase() === 'damage';
-        if (cashMovementId || isCashDamage || entry?.isCashRegistered) return subtotal;
-        return subtotal + Math.max(0, directMoney(entry?.amountBs));
-      }, 0));
+        if (cashMovementId || isCashDamage || entry?.isCashRegistered) return [];
+        const amountBs = Math.max(0, directMoney(entry?.amountBs));
+        if (amountBs <= 0.009) return [];
+        return [{
+          source: 'guarantee',
+          amountBs,
+          paymentMethod: 'garantia',
+          paymentAccount: '',
+          receiptCode: String(entry?.cashReceiptCode ?? '').trim(),
+          occurredAt: entry?.createdAt ?? null,
+          registeredBy: String(entry?.createdByName ?? '').trim(),
+          note: String(entry?.note ?? '').trim(),
+          ledgerId: String(entry?.id ?? '').trim(),
+        }];
+      });
     };
 
     summary.economicsByRental = {};
@@ -6540,8 +6568,12 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
           ? sum + Math.max(0, Number(row?.totalValueBs ?? 0))
           : sum
       ), 0));
-      const cashCollectedBs = collectDamageCashForKeys({ rentalId, contractId, orderCode });
-      const guaranteeAppliedBs = guaranteeAppliedForContract(contractId);
+      const cashRecoveryEntries = collectDamageCashEntriesForKeys({ rentalId, contractId, orderCode });
+      const guaranteeRecoveryEntries = guaranteeEntriesForContract(contractId);
+      const recoveryBreakdown = [...guaranteeRecoveryEntries, ...cashRecoveryEntries]
+        .sort((a, b) => new Date(a?.occurredAt ?? 0) - new Date(b?.occurredAt ?? 0));
+      const cashCollectedBs = directMoney(cashRecoveryEntries.reduce((sum, entry) => sum + Number(entry?.amountBs ?? 0), 0));
+      const guaranteeAppliedBs = directMoney(guaranteeRecoveryEntries.reduce((sum, entry) => sum + Number(entry?.amountBs ?? 0), 0));
       const totalRecoveredBs = directMoney(cashCollectedBs + guaranteeAppliedBs);
       const pendingRecoveryBs = directMoney(Math.max(0, clientChargedBs - totalRecoveredBs));
       let collectionStatus = 'pendiente';
@@ -6563,6 +6595,7 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
         pendingRecoveryBs,
         recoveryDifferenceBs: directMoney(totalRecoveredBs - clientChargedBs),
         collectionStatus,
+        recoveryBreakdown,
       };
     });
 
