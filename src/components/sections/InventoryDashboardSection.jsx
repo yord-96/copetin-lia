@@ -1262,25 +1262,6 @@ function InventoryDashboardSection({
     }
   }, [productForm.imageFile, productForm.imagePreviewUrl]);
 
-  const openInventoryWeekDocument = async (format = 'standard') => {
-    try {
-      const preview = await onPrintInventoryWeekDocument?.({
-        weekStart: getInventoryDocumentWeekStart(inventoryOperationDateFrom || inventoryOperationDateTo),
-        format,
-      });
-      if (preview?.html) {
-        setDocumentPreview({
-          title: preview.title ?? 'Control semanal de inventario',
-          html: preview.html,
-          format,
-        });
-      }
-    } catch (error) {
-      setFeedback(error.message || 'No se pudo abrir la hoja semanal de inventario.');
-      setFeedbackType('error');
-    }
-  };
-
   const openInventorySingleOrderDocument = async (row) => {
     try {
       const operationDate = inventoryOperationDateFrom
@@ -1801,6 +1782,156 @@ function InventoryDashboardSection({
   const visiblePrepOrderRows = inventoryFiltersAreCleared
     ? filteredPrepOrderRows.slice(0, 7)
     : filteredPrepOrderRows;
+
+  const openOperationalRangeReport = () => {
+    const rows = filteredPrepOrderRows;
+    const from = String(inventoryOperationDateFrom ?? '').slice(0, 10);
+    const to = String(inventoryOperationDateTo ?? '').slice(0, 10);
+    const formatDateKey = (value) => {
+      const key = getDateKey(value);
+      if (!key) return 'Sin fecha';
+      const [year, month, day] = key.split('-');
+      return `${day}/${month}/${year}`;
+    };
+    const formatGeneratedAt = () => new Intl.DateTimeFormat('es-BO', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date());
+    const getReturnIssueCounts = (row) => {
+      const items = Array.isArray(row?.returnReview?.items) ? row.returnReview.items : [];
+      const damaged = items.reduce((sum, item) => sum + Math.max(0, Number(item?.damagedQty ?? item?.damageQty ?? 0)), 0);
+      const missingFromReview = items.reduce((sum, item) => sum + Math.max(0, Number(item?.missingQty ?? item?.missing ?? 0)), 0);
+      const pendingItems = Array.isArray(row?.clientPendingPickup?.items) ? row.clientPendingPickup.items : [];
+      const pendingClient = pendingItems.reduce((sum, item) => sum + Math.max(0, Number(item?.pendingQty ?? item?.quantity ?? 0)), 0);
+      return { damaged, missing: Math.max(missingFromReview, pendingClient) };
+    };
+    const classify = (row) => {
+      const status = normalizeText(row?.inventoryStatus);
+      const returnStatus = normalizeText(row?.returnReview?.status);
+      const { damaged, missing } = getReturnIssueCounts(row);
+      const hasIssues = damaged > 0 || missing > 0 || returnStatus === 'issues' || Boolean(row?.revisionAlert);
+      const withClient = returnStatus === 'left_with_client' || Boolean(row?.clientPendingPickup);
+      if (status === 'devuelto') {
+        if (withClient) return { key: 'client', label: 'Material con cliente', tone: 'danger' };
+        if (hasIssues) return { key: 'issues', label: 'Devuelto con novedades', tone: 'warning' };
+        return { key: 'complete', label: 'Completo', tone: 'success' };
+      }
+      if (status === 'salio') return { key: 'out', label: 'Falta volver', tone: 'warning' };
+      if (status === 'confirmado') return { key: 'ready', label: 'Listo para salir', tone: 'info' };
+      return { key: 'pending', label: 'Falta alistar', tone: 'muted' };
+    };
+    const enrichedRows = rows.map((row) => {
+      const state = classify(row);
+      const issues = getReturnIssueCounts(row);
+      const totalUnits = (row?.rental?.items ?? []).reduce((sum, line) => sum + Math.max(0, Number(line?.quantity ?? 0)), 0);
+      return { ...row, reportState: state, reportIssues: issues, totalUnits };
+    });
+    const count = (key) => enrichedRows.filter((row) => row.reportState.key === key).length;
+    const attentionRows = enrichedRows.filter((row) => row.reportState.key !== 'complete');
+    const rangeLabel = from || to
+      ? `${from ? formatDateKey(from) : 'Inicio'} — ${to ? formatDateKey(to) : 'Fin'}`
+      : 'Todos los eventos visibles';
+    const summaryCards = [
+      ['Contratos', enrichedRows.length, 'navy'],
+      ['Completos', count('complete'), 'success'],
+      ['Falta alistar', count('pending'), 'muted'],
+      ['Listos para salir', count('ready'), 'info'],
+      ['Falta volver', count('out'), 'warning'],
+      ['Con novedades', count('issues') + count('client'), 'danger'],
+    ];
+    const htmlRows = enrichedRows.map((row) => `
+      <tr>
+        <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong><br><small>${escapeHtml(row.orderCode || '')}</small></td>
+        <td>${escapeHtml(row.customerName || 'Sin cliente')}</td>
+        <td>${escapeHtml(formatDateKey(row.eventDate))}</td>
+        <td class="num">${row.totalUnits}</td>
+        <td>${row.inventoryConfirmedAt ? '✓' : '—'}</td>
+        <td>${row.inventoryDispatchedAt ? '✓' : '—'}</td>
+        <td>${row.inventoryReturnedAt ? '✓' : '—'}</td>
+        <td><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
+      </tr>`).join('');
+    const attentionHtml = attentionRows.length
+      ? attentionRows.map((row) => {
+          const notes = [
+            row.reportIssues.damaged > 0 ? `${row.reportIssues.damaged} dañada(s)` : '',
+            row.reportIssues.missing > 0 ? `${row.reportIssues.missing} faltante(s)` : '',
+            row.clientPendingPickup?.note || row.returnReview?.note || row.dispatchReview?.note || '',
+          ].filter(Boolean).join(' · ');
+          return `<tr>
+            <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong></td>
+            <td>${escapeHtml(row.customerName || 'Sin cliente')}</td>
+            <td>${escapeHtml(formatDateKey(row.eventDate))}</td>
+            <td><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
+            <td>${escapeHtml(notes || 'Requiere seguimiento operativo.')}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="5" class="empty">No hay contratos que requieran atención en este rango.</td></tr>';
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Reporte operativo de inventario</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #14213d; background: #fff; font-size: 11px; }
+  .hero { background: #173a70; color: white; padding: 20px 24px; border-radius: 14px; display:flex; justify-content:space-between; gap:24px; align-items:flex-end; }
+  .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; opacity: .8; font-weight: 700; }
+  h1 { margin: 5px 0 4px; font-size: 25px; }
+  .hero p { margin: 0; opacity: .9; }
+  .hero-meta { text-align:right; min-width:240px; }
+  .hero-meta strong { display:block; font-size:14px; margin-bottom:4px; }
+  .cards { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin:12px 0; }
+  .card { border:1px solid #d9e2ef; border-radius:10px; padding:10px 12px; background:#f8fafc; }
+  .card span { display:block; color:#64748b; font-size:9px; text-transform:uppercase; font-weight:700; }
+  .card strong { display:block; margin-top:4px; font-size:20px; }
+  .card.success strong { color:#159447; } .card.warning strong { color:#d97706; } .card.danger strong { color:#cf3341; }
+  .card.info strong { color:#2563eb; } .card.muted strong { color:#64748b; }
+  .section { margin-top:14px; }
+  .section-head { display:flex; align-items:end; justify-content:space-between; margin-bottom:6px; }
+  h2 { margin:0; font-size:15px; }
+  .section-head small { color:#64748b; }
+  table { width:100%; border-collapse:collapse; table-layout:fixed; }
+  th { background:#173a70; color:#fff; padding:8px 7px; text-align:left; font-size:9px; text-transform:uppercase; }
+  td { padding:8px 7px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+  tbody tr:nth-child(even) { background:#f8fafc; }
+  .num { text-align:right; }
+  small { color:#64748b; }
+  .pill { display:inline-block; border-radius:999px; padding:4px 8px; font-weight:700; white-space:nowrap; }
+  .pill.success { background:#dcfce7; color:#15803d; } .pill.warning { background:#fff4d6; color:#b45309; }
+  .pill.danger { background:#ffe4e6; color:#be123c; } .pill.info { background:#dbeafe; color:#1d4ed8; }
+  .pill.muted { background:#eef2f7; color:#475569; }
+  .attention { border:1px solid #f0c7c9; border-radius:10px; overflow:hidden; }
+  .attention th { background:#7f1d1d; }
+  .empty { text-align:center; color:#64748b; padding:18px; }
+  .footer { margin-top:12px; padding-top:8px; border-top:1px solid #e2e8f0; color:#64748b; display:flex; justify-content:space-between; font-size:9px; }
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div><div class="eyebrow">El Copetín · Control operativo</div><h1>Reporte de Inventario</h1><p>Estado de contratos según la fecha real del evento.</p></div>
+    <div class="hero-meta"><strong>${escapeHtml(rangeLabel)}</strong><span>Generado: ${escapeHtml(formatGeneratedAt())}</span></div>
+  </header>
+  <section class="cards">${summaryCards.map(([label, value, tone]) => `<div class="card ${tone}"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`).join('')}</section>
+  <section class="section">
+    <div class="section-head"><h2>Resumen de contratos del rango</h2><small>${enrichedRows.length} contrato(s)</small></div>
+    <table><thead><tr><th>Contrato</th><th>Cliente</th><th>Evento</th><th>Unid.</th><th>Alistado</th><th>Salió</th><th>Volvió</th><th>Estado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="8" class="empty">No hay contratos para el rango seleccionado.</td></tr>'}</tbody></table>
+  </section>
+  <section class="section attention">
+    <div class="section-head" style="padding:10px 10px 4px"><h2>Contratos que requieren atención</h2><small>${attentionRows.length} pendiente(s)</small></div>
+    <table><thead><tr><th>Contrato</th><th>Cliente</th><th>Evento</th><th>Situación</th><th>Detalle</th></tr></thead><tbody>${attentionHtml}</tbody></table>
+  </section>
+  <footer class="footer"><span>EL COPETÍN · Inventario</span><span>Reporte generado desde el rango visible en Movimientos de Stock.</span></footer>
+</body>
+</html>`;
+
+    setDocumentPreview({
+      title: `Reporte de inventario · ${rangeLabel}`,
+      html,
+      format: 'range-report',
+    });
+  };
 
   const cancelledOrderRows = useMemo(() => {
     return cancelledRentals
@@ -4369,8 +4500,8 @@ function InventoryDashboardSection({
                   <span>Consulta todas las ordenes o filtra por cliente, contrato y fecha del evento.</span>
                 </div>
                 <div className="inventory-week-actions">
-                  <button type="button" className="primary-button" onClick={() => openInventoryWeekDocument('standard')}>
-                    Ver documento semanal
+                  <button type="button" className="primary-button" onClick={openOperationalRangeReport}>
+                    Generar reporte
                   </button>
                 </div>
               </header>
