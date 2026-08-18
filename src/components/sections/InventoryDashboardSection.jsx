@@ -1824,7 +1824,19 @@ function InventoryDashboardSection({
       const state = classify(row);
       const issues = getReturnIssueCounts(row);
       const totalUnits = (row?.rental?.items ?? []).reduce((sum, line) => sum + Math.max(0, Number(line?.quantity ?? 0)), 0);
-      return { ...row, reportState: state, reportIssues: issues, totalUnits };
+      const inventoryStatus = normalizeText(row?.inventoryStatus);
+      const reportReady = Boolean(row?.inventoryConfirmedAt) || ['confirmado', 'salio', 'devuelto'].includes(inventoryStatus);
+      const reportDispatched = Boolean(row?.inventoryDispatchedAt) || ['salio', 'devuelto'].includes(inventoryStatus);
+      const reportReturned = Boolean(row?.inventoryReturnedAt) || inventoryStatus === 'devuelto';
+      return {
+        ...row,
+        reportState: state,
+        reportIssues: issues,
+        totalUnits,
+        reportReady,
+        reportDispatched,
+        reportReturned,
+      };
     });
     const count = (key) => enrichedRows.filter((row) => row.reportState.key === key).length;
     const attentionRows = enrichedRows.filter((row) => row.reportState.key !== 'complete');
@@ -1846,9 +1858,9 @@ function InventoryDashboardSection({
         <td>${escapeHtml(row.customerName || 'Sin cliente')}</td>
         <td class="center">${escapeHtml(formatDateKey(row.eventDate))}</td>
         <td class="center quantity">${row.totalUnits}</td>
-        <td class="center check">${row.inventoryConfirmedAt ? '✓' : '—'}</td>
-        <td class="center check">${row.inventoryDispatchedAt ? '✓' : '—'}</td>
-        <td class="center check">${row.inventoryReturnedAt ? '✓' : '—'}</td>
+        <td class="center check">${row.reportReady ? '✓' : '—'}</td>
+        <td class="center check">${row.reportDispatched ? '✓' : '—'}</td>
+        <td class="center check">${row.reportReturned ? '✓' : '—'}</td>
         <td class="center"><span class="pill ${row.reportState.tone}">${escapeHtml(row.reportState.label)}</span></td>
       </tr>`).join('');
     const attentionHtml = attentionRows.length
@@ -7050,27 +7062,30 @@ function InventoryDashboardSection({
         const finalTone = operationalReportRow.inventoryStatus === 'devuelto'
           ? (damagedTotal > 0 || finalMissingTotal > 0 ? 'warning' : 'success')
           : 'pending';
+        const reportInventoryStatus = normalizeText(operationalReportRow.inventoryStatus);
         const timeline = [
           {
             key: 'ready',
             label: 'Alistado',
             date: operationalReportRow.inventoryConfirmedAt,
             person: operationalReportRow.inventoryConfirmedByName,
-            done: Boolean(operationalReportRow.inventoryConfirmedAt),
+            done: Boolean(operationalReportRow.inventoryConfirmedAt)
+              || ['confirmado', 'salio', 'devuelto'].includes(reportInventoryStatus),
           },
           {
             key: 'out',
             label: 'Salida',
             date: operationalReportRow.inventoryDispatchedAt,
             person: operationalReportRow.inventoryDispatchedByName,
-            done: Boolean(operationalReportRow.inventoryDispatchedAt),
+            done: Boolean(operationalReportRow.inventoryDispatchedAt)
+              || ['salio', 'devuelto'].includes(reportInventoryStatus),
           },
           {
             key: 'back',
             label: 'Retorno',
             date: operationalReportRow.inventoryReturnedAt,
             person: operationalReportRow.inventoryReturnedByName,
-            done: Boolean(operationalReportRow.inventoryReturnedAt),
+            done: Boolean(operationalReportRow.inventoryReturnedAt) || reportInventoryStatus === 'devuelto',
           },
         ];
         const metrics = [
@@ -7128,8 +7143,8 @@ function InventoryDashboardSection({
                         <div className="inventory-report-step-marker">{step.done ? '✓' : index + 1}</div>
                         <div>
                           <span>{step.label}</span>
-                          <strong>{step.date ? formatDateTime(step.date) : 'Pendiente'}</strong>
-                          <small>{step.person || 'Sin responsable registrado'}</small>
+                          <strong>{step.date ? formatDateTime(step.date) : step.done ? 'Confirmado por estado posterior' : 'Pendiente'}</strong>
+                          <small>{step.person || (step.done ? 'Validado por la trazabilidad de la orden' : 'Sin responsable registrado')}</small>
                         </div>
                       </article>
                     ))}
