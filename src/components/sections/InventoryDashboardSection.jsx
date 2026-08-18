@@ -437,6 +437,262 @@ const downloadBlob = (name, blob) => {
   URL.revokeObjectURL(url);
 };
 
+
+const exportOperationalRangeWorkbook = async (report = {}) => {
+  const excelModule = await import('exceljs');
+  const ExcelJS = excelModule.default ?? excelModule;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'El Copetin';
+  workbook.company = 'Copetin SRL';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const navy = 'FF173A70';
+  const dark = 'FF172033';
+  const muted = 'FF64748B';
+  const border = 'FFD7DEE8';
+  const soft = 'FFF8FAFC';
+  const success = 'FF16803C';
+  const successBg = 'FFEDF9F0';
+  const warning = 'FFB86A06';
+  const warningBg = 'FFFFF8E8';
+  const danger = 'FFB42332';
+  const dangerBg = 'FFFFF0F2';
+  const info = 'FF2563EB';
+  const infoBg = 'FFEEF5FF';
+  const mutedBg = 'FFF4F6F8';
+
+  const tonePalette = {
+    success: { fg: success, bg: successBg },
+    warning: { fg: warning, bg: warningBg },
+    danger: { fg: danger, bg: dangerBg },
+    info: { fg: info, bg: infoBg },
+    muted: { fg: muted, bg: mutedBg },
+    navy: { fg: navy, bg: 'FFEAF0F8' },
+  };
+
+  const setThinBorders = (cell) => {
+    cell.border = {
+      top: { style: 'thin', color: { argb: border } },
+      left: { style: 'thin', color: { argb: border } },
+      bottom: { style: 'thin', color: { argb: border } },
+      right: { style: 'thin', color: { argb: border } },
+    };
+  };
+
+  const sheet = workbook.addWorksheet('Reporte operativo', {
+    properties: { defaultRowHeight: 19 },
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.25, right: 0.25, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.25 },
+    },
+    views: [{ state: 'frozen', ySplit: 10 }],
+  });
+
+  sheet.columns = [
+    { width: 6 },
+    { width: 15 },
+    { width: 32 },
+    { width: 15 },
+    { width: 12 },
+    { width: 11 },
+    { width: 11 },
+    { width: 11 },
+    { width: 25 },
+  ];
+
+  sheet.mergeCells('A1:I1');
+  sheet.getCell('A1').value = 'EL COPETÍN · ADMINISTRACIÓN DE INVENTARIO';
+  sheet.getCell('A1').font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+  sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+  sheet.getRow(1).height = 23;
+
+  sheet.mergeCells('A2:F2');
+  sheet.getCell('A2').value = 'Reporte Operativo de Inventario';
+  sheet.getCell('A2').font = { name: 'Calibri', size: 21, bold: true, color: { argb: dark } };
+  sheet.getCell('A2').alignment = { vertical: 'middle' };
+  sheet.mergeCells('G2:I2');
+  sheet.getCell('G2').value = `Periodo: ${report.rangeLabel || '—'}`;
+  sheet.getCell('G2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: dark } };
+  sheet.getCell('G2').alignment = { vertical: 'middle', horizontal: 'right' };
+  sheet.getRow(2).height = 31;
+
+  sheet.mergeCells('A3:F3');
+  sheet.getCell('A3').value = 'Seguimiento de contratos según la fecha real del evento y su estado de movimiento.';
+  sheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
+  sheet.mergeCells('G3:I3');
+  sheet.getCell('G3').value = `Generado: ${report.generatedAt || '—'}`;
+  sheet.getCell('G3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
+  sheet.getCell('G3').alignment = { horizontal: 'right' };
+
+  sheet.mergeCells('A5:I5');
+  sheet.getCell('A5').value = 'RESUMEN EJECUTIVO DEL PERIODO';
+  sheet.getCell('A5').font = { name: 'Calibri', size: 9, bold: true, color: { argb: muted } };
+
+  const cards = Array.isArray(report.summaryCards) ? report.summaryCards : [];
+  cards.forEach((card, index) => {
+    const col = index + 1;
+    const cell = sheet.getCell(6, col);
+    const palette = tonePalette[card.tone] ?? tonePalette.navy;
+    cell.value = `${card.label}\n${card.value}`;
+    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: palette.fg } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.bg } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    setThinBorders(cell);
+  });
+  if (cards.length > 0) sheet.mergeCells(6, cards.length + 1, 6, 9);
+  sheet.getRow(6).height = 38;
+
+  sheet.mergeCells('A8:I8');
+  sheet.getCell('A8').value = 'DETALLE DE CONTRATOS DEL RANGO';
+  sheet.getCell('A8').font = { name: 'Calibri', size: 12, bold: true, color: { argb: dark } };
+
+  const headers = ['N°', 'Contrato', 'Cliente', 'Evento', 'Unidades', 'Alistado', 'Salió', 'Volvió', 'Estado operativo'];
+  const headerRow = sheet.getRow(10);
+  headerRow.values = headers;
+  headerRow.height = 27;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    setThinBorders(cell);
+  });
+
+  const rows = Array.isArray(report.rows) ? report.rows : [];
+  rows.forEach((row, index) => {
+    const excelRow = sheet.getRow(11 + index);
+    excelRow.values = [
+      index + 1,
+      row.contractCode || row.orderCode || '—',
+      row.customerName || 'Sin cliente',
+      row.eventDateLabel || 'Sin fecha',
+      Number(row.totalUnits ?? 0),
+      row.reportReady ? '✓' : '—',
+      row.reportDispatched ? '✓' : '—',
+      row.reportReturned ? '✓' : '—',
+      row.stateLabel || '—',
+    ];
+    excelRow.height = 23;
+    excelRow.eachCell((cell, columnNumber) => {
+      cell.font = { name: 'Calibri', size: 9, color: { argb: dark }, bold: columnNumber === 2 || columnNumber === 5 };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: [1, 4, 5, 6, 7, 8, 9].includes(columnNumber) ? 'center' : 'left',
+        wrapText: true,
+      };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFFFFFFF' : soft } };
+      setThinBorders(cell);
+    });
+    const palette = tonePalette[row.stateTone] ?? tonePalette.muted;
+    const statusCell = excelRow.getCell(9);
+    statusCell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: palette.fg } };
+    statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.bg } };
+    excelRow.getCell(5).numFmt = '0';
+  });
+
+  const lastMainRow = Math.max(10, 10 + rows.length);
+  sheet.autoFilter = { from: { row: 10, column: 1 }, to: { row: lastMainRow, column: 9 } };
+  sheet.pageSetup.printTitlesRow = '1:10';
+  sheet.pageSetup.printArea = `A1:I${lastMainRow}`;
+  sheet.headerFooter.oddFooter = '&LEl Copetín · Inventario&C&P de &N&RDocumento interno';
+
+  const attention = workbook.addWorksheet('Requieren atención', {
+    properties: { defaultRowHeight: 20 },
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.25, right: 0.25, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.25 },
+    },
+    views: [{ state: 'frozen', ySplit: 5 }],
+  });
+  attention.columns = [
+    { width: 6 },
+    { width: 16 },
+    { width: 31 },
+    { width: 15 },
+    { width: 24 },
+    { width: 55 },
+  ];
+  attention.mergeCells('A1:F1');
+  attention.getCell('A1').value = 'EL COPETÍN · CONTRATOS QUE REQUIEREN ATENCIÓN';
+  attention.getCell('A1').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+  attention.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: danger } };
+  attention.getCell('A1').alignment = { vertical: 'middle' };
+  attention.getRow(1).height = 25;
+  attention.mergeCells('A2:C2');
+  attention.getCell('A2').value = `Periodo: ${report.rangeLabel || '—'}`;
+  attention.mergeCells('D2:F2');
+  attention.getCell('D2').value = `${(report.attentionRows ?? []).length} pendiente(s) de seguimiento`;
+  attention.getCell('D2').alignment = { horizontal: 'right' };
+  ['A2', 'D2'].forEach((address) => {
+    attention.getCell(address).font = { name: 'Calibri', size: 9, bold: true, color: { argb: muted } };
+  });
+  const attentionHeader = attention.getRow(4);
+  attentionHeader.values = ['N°', 'Contrato', 'Cliente', 'Evento', 'Situación', 'Detalle / observación'];
+  attentionHeader.height = 27;
+  attentionHeader.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: danger } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    setThinBorders(cell);
+  });
+
+  const attentionRows = Array.isArray(report.attentionRows) ? report.attentionRows : [];
+  attentionRows.forEach((row, index) => {
+    const excelRow = attention.getRow(5 + index);
+    excelRow.values = [
+      index + 1,
+      row.contractCode || row.orderCode || '—',
+      row.customerName || 'Sin cliente',
+      row.eventDateLabel || 'Sin fecha',
+      row.stateLabel || '—',
+      row.notes || 'Requiere seguimiento operativo.',
+    ];
+    excelRow.height = Math.max(24, Math.min(50, 20 + Math.ceil(String(row.notes || '').length / 55) * 8));
+    excelRow.eachCell((cell, columnNumber) => {
+      cell.font = { name: 'Calibri', size: 9, color: { argb: dark }, bold: columnNumber === 2 };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: [1, 4, 5].includes(columnNumber) ? 'center' : 'left',
+        wrapText: true,
+      };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFFFFFFF' : 'FFFFF8F8' } };
+      setThinBorders(cell);
+    });
+    const palette = tonePalette[row.stateTone] ?? tonePalette.danger;
+    const statusCell = excelRow.getCell(5);
+    statusCell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: palette.fg } };
+    statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.bg } };
+  });
+
+  if (attentionRows.length === 0) {
+    attention.mergeCells('A5:F5');
+    attention.getCell('A5').value = 'No hay contratos que requieran atención en este rango.';
+    attention.getCell('A5').alignment = { horizontal: 'center', vertical: 'middle' };
+    attention.getCell('A5').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
+  } else {
+    attention.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + attentionRows.length, column: 6 } };
+  }
+  attention.pageSetup.printTitlesRow = '1:4';
+  attention.pageSetup.printArea = `A1:F${Math.max(5, 4 + attentionRows.length)}`;
+  attention.headerFooter.oddFooter = '&LEl Copetín · Seguimiento operativo&C&P de &N&RDocumento interno';
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const safeRange = String(report.rangeFileLabel || new Date().toISOString().slice(0, 10)).replace(/[^0-9A-Za-z_-]+/g, '-');
+  downloadBlob(
+    `reporte-inventario-${safeRange}.xlsx`,
+    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+  );
+};
+
 const getExcelImageExtension = (dataUrl) => {
   const match = /^data:image\/(png|jpe?g);base64,/i.exec(String(dataUrl ?? ''));
   if (!match) return null;
@@ -1311,6 +1567,21 @@ function InventoryDashboardSection({
     const frame = document.getElementById('inventory-document-preview-frame');
     frame?.contentWindow?.focus();
     frame?.contentWindow?.print();
+  };
+
+
+  const exportInventoryPreviewToExcel = async () => {
+    if (documentPreview?.format !== 'range-report' || !documentPreview?.reportData) return;
+    try {
+      setFeedback('Generando Excel profesional del reporte...');
+      setFeedbackType('success');
+      await exportOperationalRangeWorkbook(documentPreview.reportData);
+      setFeedback('Reporte Excel exportado correctamente.');
+      setFeedbackType('success');
+    } catch (error) {
+      setFeedback(error?.message || 'No se pudo generar el reporte Excel.');
+      setFeedbackType('error');
+    }
   };
   const importInputRef = useRef(null);
   const productImageInputRef = useRef(null);
@@ -2200,10 +2471,40 @@ function InventoryDashboardSection({
 </body>
 </html>`;
 
+    const toExcelRow = (row) => ({
+      contractCode: row.contractCode || '',
+      orderCode: row.orderCode || '',
+      customerName: row.customerName || '',
+      eventDateLabel: formatDateKey(row.eventDate),
+      totalUnits: row.totalUnits,
+      reportReady: row.reportReady,
+      reportDispatched: row.reportDispatched,
+      reportReturned: row.reportReturned,
+      stateLabel: row.reportState.label,
+      stateTone: row.reportState.tone,
+    });
+    const excelAttentionRows = attentionRows.map((row) => ({
+      ...toExcelRow(row),
+      notes: [
+        row.reportIssues.damaged > 0 ? `${row.reportIssues.damaged} dañada(s)` : '',
+        row.reportIssues.missing > 0 ? `${row.reportIssues.missing} faltante(s)` : '',
+        row.reportIssues.pendingClient > 0 ? `${row.reportIssues.pendingClient} con cliente` : '',
+        row.clientPendingPickup?.note || row.returnReview?.note || row.dispatchReview?.note || '',
+      ].filter(Boolean).join(' · ') || 'Requiere seguimiento operativo.',
+    }));
+
     setDocumentPreview({
       title: `Reporte de inventario · ${rangeLabel}`,
       html,
       format: 'range-report',
+      reportData: {
+        rangeLabel,
+        rangeFileLabel: `${from || 'inicio'}_${to || 'fin'}`,
+        generatedAt: formatGeneratedAt(),
+        summaryCards: summaryCards.map(([label, value, tone]) => ({ label, value, tone })),
+        rows: enrichedRows.map(toExcelRow),
+        attentionRows: excelAttentionRows,
+      },
     });
   };
 
@@ -7517,6 +7818,11 @@ function InventoryDashboardSection({
               <button type="button" className="ghost-button" onClick={() => setDocumentPreview(null)}>
                 Cerrar
               </button>
+              {documentPreview.format === 'range-report' ? (
+                <button type="button" className="ghost-button" onClick={exportInventoryPreviewToExcel}>
+                  Exportar a Excel
+                </button>
+              ) : null}
               <button type="button" className="primary-button" onClick={printInventoryPreview}>
                 Imprimir / guardar PDF
               </button>
