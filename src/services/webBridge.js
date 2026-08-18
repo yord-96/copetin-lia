@@ -65,6 +65,31 @@ const getInventoryLineKey = (line, index = 0) => String(
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
 
+const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) => {
+  if (!line || line?.controlsStock === false) return 0;
+  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+  const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
+  const hasStoredReservedQty = line?.internalReservedQty !== undefined
+    && line?.internalReservedQty !== null
+    && line?.internalReservedQty !== '';
+  const reservedQty = hasStoredReservedQty
+    ? Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)))
+    : Math.max(0, quantity - supplierBackedQty);
+  if (reservedQty <= 0) return 0;
+
+  const lineKey = getInventoryLineKey(line, index);
+  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+    .filter((entry) => (
+      String(entry?.lineKey ?? '') === String(lineKey)
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
+    ))
+    .reduce((sum, entry) => sum
+      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+
+  return Math.max(0, reservedQty - processedQty);
+};
+
 const rentalAffectsCurrentStock = (rental, todayKey = toDateKey(new Date())) => {
   if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
   const status = normalizeRentalStatus(rental?.status);
@@ -85,19 +110,11 @@ const getActiveReservedStockForItem = (state, itemId) => {
   return (Array.isArray(state?.rentals) ? state.rentals : [])
     .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
     .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
-      .filter((line) => String(line?.itemId ?? '').trim() === requestedItemId)
-      .reduce((lineTotal, line) => {
-        if (line?.controlsStock === false) return lineTotal;
-        const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
-        const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
-        const hasStoredReservedQty = line?.internalReservedQty !== undefined
-          && line?.internalReservedQty !== null
-          && line?.internalReservedQty !== '';
-        const reservedQty = hasStoredReservedQty
-          ? Math.max(0, Math.trunc(Number(line.internalReservedQty ?? 0)))
-          : Math.max(0, quantity - supplierBackedQty);
-        return lineTotal + reservedQty;
-      }, 0), 0);
+      .reduce((lineTotal, line, index) => (
+        String(line?.itemId ?? '').trim() === requestedItemId
+          ? lineTotal + getOutstandingReservedQtyForRentalLine(rental, line, index)
+          : lineTotal
+      ), 0), 0);
 };
 
 const getRecoveryStockForItem = (state, itemId) => {
@@ -3625,10 +3642,10 @@ const normalizeState = (state) => {
   source.rentals
     .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
     .forEach((rental) => {
-      (Array.isArray(rental?.items) ? rental.items : []).forEach((line) => {
+      (Array.isArray(rental?.items) ? rental.items : []).forEach((line, index) => {
         const itemId = String(line?.itemId ?? '').trim();
         if (!itemId) return;
-        const reservedQty = Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? line?.quantity ?? 0)));
+        const reservedQty = getOutstandingReservedQtyForRentalLine(rental, line, index);
         if (reservedQty <= 0) return;
         activeReservedByItem.set(itemId, Number(activeReservedByItem.get(itemId) ?? 0) + reservedQty);
       });
@@ -17603,6 +17620,11 @@ const createWebBridge = () => ({
             const missingStockLossQty = isPartialReturn ? 0 : internalMissingQty;
             const stockLossQty = damagedStockLossQty + missingStockLossQty;
 
+            const stockCommitment = getInventoryStockCommitment(state, item.id);
+            item.availableStock = Math.max(
+              0,
+              Number(item.totalStock ?? 0) - Number(stockCommitment.minimumPhysicalStock ?? 0),
+            );
             item.availableStock += returnedToAvailableQty;
             if (stockLossQty > 0) {
               const beforeTotalStock = Number(item.totalStock ?? 0);

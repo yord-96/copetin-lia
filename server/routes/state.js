@@ -1350,6 +1350,83 @@ const directInventoryLineKey = (line, index = 0) => String(
   ?? line?.returnLineKey
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
+
+const directDateKey = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const exact = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (exact) return exact[1];
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const directRentalAffectsCurrentStock = (rental, todayKey = directDateKey(new Date())) => {
+  if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
+  const status = directNormalizeText(rental?.status);
+  if (!['active', 'confirmed', 'pending'].includes(status)) return false;
+  const inventoryStatus = directNormalizeText(rental?.operational?.inventoryStatus);
+  if (inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return false;
+  if (inventoryStatus === 'salio') return true;
+  const startKey = directDateKey(rental?.rentalDate ?? rental?.deliveryDate);
+  const endKey = directDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
+  return Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+};
+const directOutstandingReservedQty = (rental, line, index = 0) => {
+  if (!line || line?.controlsStock === false) return 0;
+  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+  const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
+  const hasStoredReservedQty = line?.internalReservedQty !== undefined
+    && line?.internalReservedQty !== null
+    && line?.internalReservedQty !== '';
+  const reservedQty = hasStoredReservedQty
+    ? Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)))
+    : Math.max(0, quantity - supplierBackedQty);
+  if (reservedQty <= 0) return 0;
+
+  const lineKey = directInventoryLineKey(line, index);
+  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+    .filter((entry) => (
+      String(entry?.lineKey ?? '') === String(lineKey)
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
+    ))
+    .reduce((sum, entry) => sum
+      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+
+  return Math.max(0, reservedQty - processedQty);
+};
+const directActiveReservedStockForItem = (state, itemId) => {
+  const requestedItemId = String(itemId ?? '').trim();
+  if (!requestedItemId) return 0;
+  const todayKey = directDateKey(new Date());
+  return (Array.isArray(state?.rentals) ? state.rentals : [])
+    .filter((rental) => directRentalAffectsCurrentStock(rental, todayKey))
+    .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
+      .reduce((lineTotal, line, index) => (
+        String(line?.itemId ?? '').trim() === requestedItemId
+          ? lineTotal + directOutstandingReservedQty(rental, line, index)
+          : lineTotal
+      ), 0), 0);
+};
+const directRecoveryStockForItem = (state, itemId) => {
+  const requestedItemId = String(itemId ?? '').trim();
+  if (!requestedItemId) return 0;
+  return (Array.isArray(state?.stockRecoveries) ? state.stockRecoveries : [])
+    .filter((entry) => String(entry?.itemId ?? '').trim() === requestedItemId)
+    .reduce((total, entry) => total + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))), 0);
+};
+const directNormalizeAvailableStockForItem = (state, item) => {
+  if (!item || item?.controlsStock === false) return Number(item?.availableStock ?? 0);
+  const totalStock = Math.max(0, Math.trunc(Number(item?.totalStock ?? 0)));
+  const reservedStock = directActiveReservedStockForItem(state, item?.id);
+  const recoveryStock = directRecoveryStockForItem(state, item?.id);
+  const canonicalAvailableStock = Math.max(0, totalStock - reservedStock - recoveryStock);
+  item.availableStock = canonicalAvailableStock;
+  return canonicalAvailableStock;
+};
 const directInteger = (value, fieldName) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -2141,6 +2218,11 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
           const internalDamagedQty = Math.min(damagedQty, internalExpectedQty);
           const internalMissingQty = Math.min(missingQty, Math.max(0, internalExpectedQty - internalDamagedQty));
           const internalGoodQty = Math.min(returnedQty, Math.max(0, internalExpectedQty - internalDamagedQty - internalMissingQty));
+
+          // Antes de aplicar la devolución, reconstruimos el disponible desde el
+          // stock físico y los compromisos activos. Esto evita que saldos históricos
+          // inflados (availableStock > totalStock) bloqueen una devolución válida.
+          directNormalizeAvailableStockForItem(state, item);
 
           // Nuevo flujo: todo lo que vuelve bien se reinserta inmediatamente.
           // Ya no existe una segunda etapa de lavado/reparacion.
