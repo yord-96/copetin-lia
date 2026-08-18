@@ -6543,13 +6543,26 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
       const cashCollectedBs = collectDamageCashForKeys({ rentalId, contractId, orderCode });
       const guaranteeAppliedBs = guaranteeAppliedForContract(contractId);
       const totalRecoveredBs = directMoney(cashCollectedBs + guaranteeAppliedBs);
+      const pendingRecoveryBs = directMoney(Math.max(0, clientChargedBs - totalRecoveredBs));
+      let collectionStatus = 'pendiente';
+      if (clientChargedBs <= 0.009) {
+        collectionStatus = 'sin_cargo';
+      } else if (pendingRecoveryBs <= 0.009) {
+        if (cashCollectedBs > 0.009 && guaranteeAppliedBs > 0.009) collectionStatus = 'cubierto_mixto';
+        else if (cashCollectedBs > 0.009) collectionStatus = 'cobrado_caja';
+        else if (guaranteeAppliedBs > 0.009) collectionStatus = 'cubierto_garantia';
+        else collectionStatus = 'cubierto';
+      } else if (totalRecoveredBs > 0.009) {
+        collectionStatus = 'parcial';
+      }
       summary.economicsByRental[rentalId] = {
         clientChargedBs,
         cashCollectedBs,
         guaranteeAppliedBs,
         totalRecoveredBs,
-        pendingRecoveryBs: directMoney(Math.max(0, clientChargedBs - totalRecoveredBs)),
+        pendingRecoveryBs,
         recoveryDifferenceBs: directMoney(totalRecoveredBs - clientChargedBs),
+        collectionStatus,
       };
     });
 
