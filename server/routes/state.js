@@ -1498,31 +1498,54 @@ const buildDirectMovement = (state, payload = {}) => ({
 });
 
 const revertDirectReturnEffects = (state, rental) => {
-  const previousReport = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
+  const partialReport = Array.isArray(rental?.partialReturnReport?.items)
+    ? rental.partialReturnReport.items
+    : [];
+  const finalReport = Array.isArray(rental?.returnReport) ? rental.returnReport : [];
+  const previousReport = partialReport.length > 0 ? partialReport : finalReport;
   const now = new Date().toISOString();
+
   previousReport.forEach((line) => {
     const returnedToAvailableQty = Math.max(0, Math.trunc(Number(line?.returnedToAvailableQty ?? 0)));
-    if (returnedToAvailableQty <= 0) return;
+    const stockLossQty = Math.max(0, Math.trunc(Number(
+      line?.stockLossQty
+      ?? (
+        Number(line?.damagedStockLossQty ?? line?.damagedQty ?? 0)
+        + Number(line?.missingStockLossQty ?? line?.missingQty ?? 0)
+      )
+    )));
+    if (returnedToAvailableQty <= 0 && stockLossQty <= 0) return;
+
     const item = (Array.isArray(state.items) ? state.items : [])
       .find((entry) => String(entry?.id ?? '') === String(line?.itemId ?? ''));
     if (!item) return;
-    item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - returnedToAvailableQty);
-    const stockLossQty = Math.max(0, Math.trunc(Number(
-      line?.stockLossQty
-      ?? (Number(line?.damagedQty ?? 0) + Number(line?.missingQty ?? 0))
-    )));
+
+    // Revertimos exactamente lo que esta recepción había aplicado:
+    // - lo bueno deja nuevamente el disponible;
+    // - daños/faltantes recuperan el stock físico que fue dado de baja.
+    if (returnedToAvailableQty > 0) {
+      item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - returnedToAvailableQty);
+    }
     if (stockLossQty > 0) {
-      item.totalStock = Math.max(Number(item.availableStock ?? 0), Number(item.totalStock ?? 0) + stockLossQty);
+      item.totalStock = Math.max(
+        Number(item.availableStock ?? 0),
+        Number(item.totalStock ?? 0) + stockLossQty,
+      );
     }
     item.updatedAt = now;
   });
+
   state.inventoryMovements = (Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [])
     .filter((movement) => !(
       String(movement?.sourceType ?? '') === 'rental_return_loss'
       && String(movement?.sourceRentalId ?? movement?.sourceId ?? '') === String(rental.id)
     ));
+
   state.stockRecoveries = (Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [])
     .filter((entry) => String(entry?.sourceRentalId ?? '') !== String(rental.id));
+
+  // Solo se eliminan movimientos automáticos sin dinero real. Cobros efectivos/QR
+  // ya realizados se conservan para no borrar caja ni recibos por un retroceso operativo.
   const automaticTypes = new Set(['liquidacion_devolucion', 'saldo_pendiente_cobro', 'perdida_interna_devolucion']);
   state.cashMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
     .filter((movement) => !(
@@ -1530,6 +1553,45 @@ const revertDirectReturnEffects = (state, rental) => {
       && automaticTypes.has(String(movement?.type ?? ''))
       && Number(movement?.amountBs ?? 0) === 0
     ));
+};
+
+const clearDirectReturnState = (state, rental) => {
+  const hasReturnEffects = Boolean(
+    (Array.isArray(rental?.returnReport) && rental.returnReport.length > 0)
+    || (Array.isArray(rental?.partialReturnReport?.items) && rental.partialReturnReport.items.length > 0)
+    || rental?.returnedAt
+    || rental?.returnSettlement
+    || rental?.operational?.returnReview
+    || rental?.operational?.clientPendingPickup?.active
+    || rental?.operational?.inventoryReturnedAt
+  );
+
+  if (!hasReturnEffects) return false;
+
+  revertDirectReturnEffects(state, rental);
+
+  rental.returnReport = [];
+  rental.partialReturnReport = null;
+  rental.returnSettlement = null;
+  rental.returnedAt = null;
+  rental.penaltiesBs = 0;
+  rental.internalPenaltiesBs = 0;
+  rental.refundBs = 0;
+
+  if (rental.status === 'returned') {
+    rental.status = 'active';
+  }
+
+  rental.operational = {
+    ...(rental.operational ?? {}),
+    inventoryReturnedAt: null,
+    inventoryReturnedByName: null,
+    inventoryReturnedByRole: null,
+    returnReview: null,
+    clientPendingPickup: null,
+  };
+
+  return true;
 };
 
 const findDirectOperation = (state, clientOperationId) => {
@@ -1991,21 +2053,56 @@ router.patch('/__copetin_db/rentals/:id/operational', async (req, res, next) => 
       };
 
       if (payload.inventoryStatus !== undefined) {
-        const previousStatus = rental.operational.inventoryStatus;
+        const previousStatus = String(rental.operational.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
         const nextStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
+
         if (nextStatus === 'salio' && previousStatus !== 'confirmado' && !rental.operational.inventoryConfirmedAt) {
           const error = new Error('Primero debes marcar la orden como lista antes de registrar su salida.');
           error.statusCode = 409;
           throw error;
         }
+
+        // Retroceder desde una devolución (total o parcial) debe deshacer TODA la
+        // recepción: stock reinsertado, bajas por daño/faltante y marcas de
+        // "pendiente con cliente". Así la orden queda realmente en el paso elegido.
+        if (nextStatus !== 'devuelto') {
+          clearDirectReturnState(state, rental);
+        }
+
         rental.operational.inventoryStatus = nextStatus;
-        if (nextStatus === 'enviado' && !rental.operational.inventorySentAt) rental.operational.inventorySentAt = now;
+
+        if (nextStatus === 'pendiente') {
+          rental.operational.inventorySentAt = null;
+          rental.operational.inventoryConfirmedAt = null;
+          rental.operational.inventoryConfirmedByName = null;
+          rental.operational.inventoryConfirmedByRole = null;
+          rental.operational.inventoryDispatchedAt = null;
+          rental.operational.inventoryDispatchedByName = null;
+          rental.operational.inventoryDispatchedByRole = null;
+          rental.operational.dispatchReview = null;
+        }
+
+        if (nextStatus === 'enviado') {
+          rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
+          rental.operational.inventoryConfirmedAt = null;
+          rental.operational.inventoryConfirmedByName = null;
+          rental.operational.inventoryConfirmedByRole = null;
+          rental.operational.inventoryDispatchedAt = null;
+          rental.operational.inventoryDispatchedByName = null;
+          rental.operational.inventoryDispatchedByRole = null;
+          rental.operational.dispatchReview = null;
+        }
+
         if (nextStatus === 'confirmado') {
           rental.operational.inventoryConfirmedAt = now;
           rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
           rental.operational.inventoryConfirmedByName = userName;
           rental.operational.inventoryConfirmedByRole = userRole;
+          rental.operational.inventoryDispatchedAt = null;
+          rental.operational.inventoryDispatchedByName = null;
+          rental.operational.inventoryDispatchedByRole = null;
         }
+
         if (nextStatus === 'salio') {
           rental.operational.inventoryDispatchedAt = now;
           rental.operational.inventoryDispatchedByName = userName;
