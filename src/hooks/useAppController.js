@@ -556,6 +556,33 @@ export const useAppController = () => {
     const unsubscribe = api.sync.subscribe((event) => {
       if (disposed) return;
 
+      if (
+        String(activeTab) === 'inventario_mantenimiento'
+        && event?.domain === 'inventory'
+        && event?.method === 'damageRepairReinsert'
+      ) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(async () => {
+          try {
+            const [overview, inventoryData] = await Promise.all([
+              api.inventory.getDamageLossOverview(),
+              api.inventory.list(),
+            ]);
+            if (!disposed) {
+              setDamageLossOverview({
+                rows: Array.isArray(overview?.rows) ? overview.rows : [],
+                total: Number(overview?.total ?? overview?.rows?.length ?? 0),
+                summary: overview?.summary ?? {},
+              });
+              setItems(Array.isArray(inventoryData) ? inventoryData : []);
+            }
+          } catch (refreshError) {
+            console.warn('[copetin] No se pudo refrescar Daños y Faltantes.', refreshError);
+          }
+        }, 50);
+        return;
+      }
+
       if (event?.domain === 'presence') {
         window.clearTimeout(presenceTimer);
         presenceTimer = window.setTimeout(() => {

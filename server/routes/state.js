@@ -6380,20 +6380,40 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
     const rows = [];
-    const contractsById = new Map((Array.isArray(state.contracts) ? state.contracts : [])
-      .map((contract) => [String(contract?.id ?? ''), contract]));
+    const inventoryItems = Array.isArray(state.items) ? state.items : [];
+    const contracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const contractsById = new Map(contracts.map((contract) => [String(contract?.id ?? ''), contract]));
 
-    const appendIssue = (rental, line, lossType, quantity, unitValueBs, totalValueBs, occurredAt, isPartial = false) => {
+    const appendIssue = (
+      rental,
+      line,
+      lossType,
+      quantity,
+      unitValueBs,
+      totalValueBs,
+      occurredAt,
+      isPartial = false,
+      reportIndex = -1,
+      reportKind = 'final',
+    ) => {
       const qty = Math.max(0, Math.trunc(Number(quantity ?? 0)));
       if (qty <= 0) return;
       const contract = contractsById.get(String(rental?.contractId ?? '')) ?? null;
+      const repairedQty = lossType === 'danado'
+        ? Math.min(qty, Math.max(0, Math.trunc(Number(line?.damageRepairedQty ?? 0))))
+        : 0;
       rows.push({
-        id: `${rental?.id ?? 'rental'}:${line?.lineKey ?? line?.itemId ?? 'item'}:${lossType}:${occurredAt ?? ''}`,
+        id: `${rental?.id ?? 'rental'}:${reportKind}:${reportIndex}:${line?.lineKey ?? line?.itemId ?? 'item'}:${lossType}:${occurredAt ?? ''}`,
         lossType,
         quantity: qty,
+        repairedQty,
+        repairableQuantity: lossType === 'danado' ? Math.max(0, qty - repairedQty) : 0,
+        repairedAt: line?.damageRepairedAt ?? null,
+        repairedByName: String(line?.damageRepairedByName ?? '').trim(),
+        repairNote: String(line?.damageRepairNote ?? '').trim(),
         itemId: line?.itemId ?? '',
         itemName: line?.itemName ?? 'Item',
-        category: (Array.isArray(state.items) ? state.items : []).find((item) => String(item?.id ?? '') === String(line?.itemId ?? ''))?.category ?? '',
+        category: inventoryItems.find((item) => String(item?.id ?? '') === String(line?.itemId ?? ''))?.category ?? '',
         unitValueBs: directMoney(unitValueBs),
         totalValueBs: directMoney(totalValueBs),
         contractId: rental?.contractId ?? '',
@@ -6405,23 +6425,26 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
         chargeOwner: String(line?.chargeOwner ?? 'cliente').trim(),
         occurredAt: occurredAt ?? rental?.returnedAt ?? rental?.updatedAt ?? null,
         isPartial,
+        reportIndex,
+        reportKind,
+        lineKey: String(line?.lineKey ?? '').trim(),
       });
     };
 
     (Array.isArray(state.rentals) ? state.rentals : []).forEach((rental) => {
       if (!rental || rental.deletedAt) return;
       const finalReport = Array.isArray(rental.returnReport) ? rental.returnReport : [];
-      finalReport.forEach((line) => {
+      finalReport.forEach((line, reportIndex) => {
         const occurredAt = line?.partialRegisteredAt ?? rental?.returnedAt ?? rental?.updatedAt ?? null;
-        appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, false);
-        appendIssue(rental, line, 'faltante', line?.missingQty, line?.missingUnitChargeBs, line?.missingFeeBs, occurredAt, false);
+        appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, false, reportIndex, 'final');
+        appendIssue(rental, line, 'faltante', line?.missingQty, line?.missingUnitChargeBs, line?.missingFeeBs, occurredAt, false, reportIndex, 'final');
       });
 
       // Mientras una devolución siga parcial, solo el daño ya recibido es una pérdida.
       if (!finalReport.length && Array.isArray(rental?.partialReturnReport?.items)) {
-        rental.partialReturnReport.items.forEach((line) => {
+        rental.partialReturnReport.items.forEach((line, reportIndex) => {
           const occurredAt = line?.partialRegisteredAt ?? rental?.partialReturnReport?.updatedAt ?? rental?.updatedAt ?? null;
-          appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, true);
+          appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, true, reportIndex, 'partial');
         });
       }
     });
@@ -6430,12 +6453,114 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
     const summary = rows.reduce((acc, row) => {
       const qty = Number(row.quantity ?? 0);
       const value = Number(row.totalValueBs ?? 0);
+      const repairedQty = Number(row.repairedQty ?? 0);
+      const repairedValue = directMoney(repairedQty * Number(row.unitValueBs ?? 0));
       acc.totalUnits += qty;
       acc.totalValueBs += value;
-      if (row.lossType === 'danado') { acc.damagedUnits += qty; acc.damagedValueBs += value; }
-      else { acc.missingUnits += qty; acc.missingValueBs += value; }
+      acc.repairedUnits += repairedQty;
+      acc.repairedValueBs += repairedValue;
+      if (String(row.chargeOwner ?? 'cliente').trim().toLowerCase() === 'cliente') acc.clientChargedBs += value;
+      else acc.internalChargedBs += value;
+      if (row.lossType === 'danado') {
+        acc.damagedUnits += qty;
+        acc.damagedValueBs += value;
+      } else {
+        acc.missingUnits += qty;
+        acc.missingValueBs += value;
+      }
       return acc;
-    }, { totalUnits: 0, totalValueBs: 0, damagedUnits: 0, damagedValueBs: 0, missingUnits: 0, missingValueBs: 0 });
+    }, {
+      totalUnits: 0,
+      totalValueBs: 0,
+      damagedUnits: 0,
+      damagedValueBs: 0,
+      missingUnits: 0,
+      missingValueBs: 0,
+      repairedUnits: 0,
+      repairedValueBs: 0,
+      clientChargedBs: 0,
+      internalChargedBs: 0,
+    });
+
+    const affectedRentalIds = new Set(rows.map((row) => String(row.rentalId ?? '')).filter(Boolean));
+    const cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+    const rentalById = new Map((Array.isArray(state.rentals) ? state.rentals : [])
+      .map((rental) => [String(rental?.id ?? ''), rental]));
+
+    const collectDamageCashForKeys = ({ rentalId, contractId, orderCode }) => directMoney(cashMovements.reduce((sum, movement) => {
+      if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return sum;
+      const movementRentalId = String(movement?.linkedRentalId ?? movement?.sourceId ?? '').trim();
+      const movementContractId = String(movement?.linkedContractId ?? '').trim();
+      const movementOrderCode = String(movement?.linkedOrderCode ?? movement?.orderCode ?? movement?.reference ?? '').trim();
+      const matches = (rentalId && movementRentalId === rentalId)
+        || (contractId && movementContractId === contractId)
+        || (orderCode && movementOrderCode === orderCode);
+      if (!matches) return sum;
+
+      const breakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
+      const breakdownDamageBs = directMoney(breakdown
+        .filter((entry) => String(entry?.target ?? '').trim().toLowerCase() === 'damage')
+        .reduce((subtotal, entry) => subtotal + Math.max(0, Number(entry?.amountBs ?? 0)), 0));
+      if (breakdownDamageBs > 0) return sum + breakdownDamageBs;
+      const storedDamageBs = Math.max(0, directMoney(movement?.damageCollectedBs));
+      if (storedDamageBs > 0) return sum + storedDamageBs;
+      const target = String(movement?.collectionTarget ?? '').trim().toLowerCase();
+      const category = String(movement?.category ?? '').trim().toLowerCase();
+      const tag = String(movement?.accountingTag ?? '').trim().toLowerCase();
+      const type = String(movement?.type ?? '').trim().toLowerCase();
+      const isDamageMovement = target === 'damage'
+        || category === 'cobro_danos_faltantes'
+        || tag === 'contract_damage_collection'
+        || type.includes('dano')
+        || type.includes('faltante');
+      return isDamageMovement ? sum + Math.max(0, directMoney(movement?.amountBs)) : sum;
+    }, 0));
+
+    const guaranteeAppliedForContract = (contractId) => {
+      const contract = contractsById.get(String(contractId ?? ''));
+      if (!contract) return 0;
+      const ledger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
+      return directMoney(ledger.reduce((subtotal, entry) => {
+        if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return subtotal;
+        const cashMovementId = String(entry?.cashMovementId ?? '').trim();
+        const isCashDamage = String(entry?.cashCollectionTarget ?? '').trim().toLowerCase() === 'damage';
+        if (cashMovementId || isCashDamage || entry?.isCashRegistered) return subtotal;
+        return subtotal + Math.max(0, directMoney(entry?.amountBs));
+      }, 0));
+    };
+
+    summary.economicsByRental = {};
+    affectedRentalIds.forEach((rentalId) => {
+      const rentalRows = rows.filter((row) => String(row.rentalId ?? '') === rentalId);
+      const rental = rentalById.get(rentalId) ?? null;
+      const contractId = String(rentalRows[0]?.contractId ?? rental?.contractId ?? '').trim();
+      const orderCode = String(rentalRows[0]?.orderCode ?? rental?.orderCode ?? '').trim();
+      const clientChargedBs = directMoney(rentalRows.reduce((sum, row) => (
+        String(row?.chargeOwner ?? 'cliente').trim().toLowerCase() === 'cliente'
+          ? sum + Math.max(0, Number(row?.totalValueBs ?? 0))
+          : sum
+      ), 0));
+      const cashCollectedBs = collectDamageCashForKeys({ rentalId, contractId, orderCode });
+      const guaranteeAppliedBs = guaranteeAppliedForContract(contractId);
+      const totalRecoveredBs = directMoney(cashCollectedBs + guaranteeAppliedBs);
+      summary.economicsByRental[rentalId] = {
+        clientChargedBs,
+        cashCollectedBs,
+        guaranteeAppliedBs,
+        totalRecoveredBs,
+        pendingRecoveryBs: directMoney(Math.max(0, clientChargedBs - totalRecoveredBs)),
+        recoveryDifferenceBs: directMoney(totalRecoveredBs - clientChargedBs),
+      };
+    });
+
+    summary.cashCollectedBs = directMoney(Object.values(summary.economicsByRental)
+      .reduce((sum, entry) => sum + Number(entry?.cashCollectedBs ?? 0), 0));
+    summary.guaranteeAppliedBs = directMoney(Object.values(summary.economicsByRental)
+      .reduce((sum, entry) => sum + Number(entry?.guaranteeAppliedBs ?? 0), 0));
+    summary.totalRecoveredBs = directMoney(summary.cashCollectedBs + summary.guaranteeAppliedBs);
+    summary.pendingRecoveryBs = directMoney(Math.max(0, summary.clientChargedBs - summary.totalRecoveredBs));
+    summary.recoveryDifferenceBs = directMoney(summary.totalRecoveredBs - summary.clientChargedBs);
+    summary.remainingPhysicalValueBs = directMoney(Math.max(0, summary.totalValueBs - summary.repairedValueBs));
     Object.keys(summary).filter((key) => key.endsWith('Bs')).forEach((key) => { summary[key] = directMoney(summary[key]); });
 
     await sendJsonPayload(req, res, {
@@ -6447,6 +6572,123 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
       summary,
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/inventory/damage-loss/reinsert', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rentalId = String(payload.rentalId ?? '').trim();
+    const itemId = String(payload.itemId ?? '').trim();
+    const reportKind = String(payload.reportKind ?? 'final').trim() === 'partial' ? 'partial' : 'final';
+    const reportIndex = Math.trunc(Number(payload.reportIndex ?? -1));
+    const quantity = Math.trunc(Number(payload.quantity ?? 0));
+    const note = String(payload.note ?? '').trim();
+    const userName = String(payload.userName ?? payload.createdByName ?? payload.createdBy ?? 'Inventario').trim() || 'Inventario';
+    const userRole = String(payload.userRole ?? payload.createdByRole ?? 'Inventario').trim() || 'Inventario';
+
+    if (!rentalId || !itemId || reportIndex < 0) return res.status(400).json({ error: 'La incidencia dañada seleccionada no es válida.' });
+    if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'La cantidad reparada debe ser mayor a 0.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.items = Array.isArray(state.items) ? state.items : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+
+      const rental = state.rentals.find((entry) => String(entry?.id ?? '') === rentalId && !entry?.deletedAt);
+      if (!rental) { const error = new Error('No se encontró la devolución asociada al daño.'); error.statusCode = 404; throw error; }
+      const report = reportKind === 'partial'
+        ? (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+        : (Array.isArray(rental?.returnReport) ? rental.returnReport : []);
+      const line = report[reportIndex];
+      if (!line || String(line?.itemId ?? '') !== itemId) {
+        const error = new Error('La incidencia cambió desde que se cargó la pantalla. Actualiza la vista e inténtalo nuevamente.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+      const repairedBefore = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageRepairedQty ?? 0))));
+      const pendingRepairQty = Math.max(0, damagedQty - repairedBefore);
+      if (damagedQty <= 0 || pendingRepairQty <= 0) {
+        const error = new Error('Este daño ya fue reinsertado completamente o no tiene unidades dañadas.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (quantity > pendingRepairQty) {
+        const error = new Error(`Solo quedan ${pendingRepairQty} unidad(es) dañada(s) disponibles para reinsertar.`);
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const item = state.items.find((entry) => String(entry?.id ?? '') === itemId && !entry?.deletedAt);
+      if (!item) { const error = new Error('El ítem asociado ya no existe en inventario.'); error.statusCode = 404; throw error; }
+
+      const now = new Date().toISOString();
+      const beforeTotalStock = Math.max(0, Number(item.totalStock ?? 0));
+      const beforeAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
+      item.totalStock = beforeTotalStock + quantity;
+      item.availableStock = beforeAvailableStock + quantity;
+      item.updatedAt = now;
+
+      line.damageRepairedQty = repairedBefore + quantity;
+      line.damageRepairedAt = now;
+      line.damageRepairedByName = userName;
+      line.damageRepairedByRole = userRole;
+      line.damageRepairNote = note;
+      line.damageRepairHistory = Array.isArray(line.damageRepairHistory) ? line.damageRepairHistory : [];
+      line.damageRepairHistory.unshift({ quantity, note, repairedAt: now, repairedByName: userName, repairedByRole: userRole });
+      rental.updatedAt = now;
+
+      const movement = {
+        id: directId('mov'),
+        itemId: item.id,
+        itemName: item.name,
+        category: item.category,
+        type: 'reinsercion',
+        reason: `Reparación de daño · Contrato ${rental.contractCode || rental.orderCode || rental.id}`,
+        detail: `${quantity} unidad(es) reparada(s) reinsertada(s)${note ? ` · ${note}` : ''}`,
+        reference: rental.orderCode ?? rental.contractCode ?? rental.id,
+        deltaUnits: quantity,
+        beforeTotalStock,
+        afterTotalStock: item.totalStock,
+        beforeAvailableStock,
+        afterAvailableStock: item.availableStock,
+        reservedStockAfter: Math.max(0, Number(item.totalStock ?? 0) - Number(item.availableStock ?? 0)),
+        sourceType: 'damage_repair_reinsert',
+        sourceRentalId: rental.id,
+        sourceId: rental.id,
+        sourceContractId: rental.contractId ?? null,
+        sourceOrderCode: rental.orderCode ?? null,
+        lossType: 'danado',
+        repairedQuantity: quantity,
+        userName,
+        userRole,
+        createdAt: now,
+        status: 'aprobado',
+      };
+      state.inventoryMovements.unshift(movement);
+      responseData = {
+        item: structuredClone(item),
+        rentalId: rental.id,
+        reportKind,
+        reportIndex,
+        remainingRepairQty: pendingRepairQty - quantity,
+        movement: structuredClone(movement),
+      };
+      return state;
+    });
+
+    await sendJsonPayload(req, res, {
+      ...(responseData ?? {}),
+      revision: result?.revision ?? null,
+      version: result?.version ?? null,
+      updatedAt: result?.updatedAt ?? null,
+    });
+  } catch (error) {
+    if (error?.statusCode) { res.status(error.statusCode).json({ error: error.message }); return; }
     next(error);
   }
 });

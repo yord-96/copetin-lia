@@ -2310,6 +2310,57 @@ const getPersonnelOptionsFromServer = async ({ query = '', limit = 20 } = {}) =>
 
 const shouldFallbackToBridgeOperation = (error) => error?.status === 404 || error?.status === 405;
 
+const callDirectDamageRepairReinsert = async (payload = {}) => {
+  if (!shouldUseServerState()) throw new Error('La reinsercion de daños reparados requiere conexion con el servidor.');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(getServerStateUrl('/inventory/damage-loss/reinsert'), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw await createServerStateError(response, 'No se pudo reinsertar el item reparado.');
+    }
+    const result = await response.json();
+    if (result?.revision) rememberServerRevision(result.revision);
+
+    if (result?.item?.id) {
+      const snapshot = await exportLocalCollections(['items']);
+      const rows = Array.isArray(snapshot?.items) ? snapshot.items : [];
+      const exists = rows.some((entry) => String(entry?.id ?? '') === String(result.item.id));
+      await mergeLocalState({
+        items: exists
+          ? rows.map((entry) => (String(entry?.id ?? '') === String(result.item.id) ? result.item : entry))
+          : [result.item, ...rows],
+      });
+    }
+    if (result?.movement?.id && loadedServerCollections.has('inventoryMovements')) {
+      const snapshot = await exportLocalCollections(['inventoryMovements']);
+      const rows = Array.isArray(snapshot?.inventoryMovements) ? snapshot.inventoryMovements : [];
+      await mergeLocalState({ inventoryMovements: [result.movement, ...rows.filter((entry) => String(entry?.id ?? '') !== String(result.movement.id))] });
+    }
+
+    markServerStateStale('inventory.damageRepairReinsert');
+    announceDataChange({
+      domain: 'inventory',
+      method: 'damageRepairReinsert',
+      collections: ['items', 'rentals', 'inventoryMovements'],
+    });
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardo demasiado en confirmar la reinsercion. Verifica el kardex antes de repetir la operacion.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const callDirectInventoryRecoveryOperation = async (payload = {}) => {
   if (!shouldUseServerState()) return callBridge('inventory', 'processRecovery', true, payload);
   const recoveryId = String(payload?.recoveryId ?? '').trim();
@@ -3102,6 +3153,7 @@ export const api = {
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     getDamageLossOverview: fetchInventoryDamageLossOverview,
+    reinsertRepairedDamage: (payload) => callDirectDamageRepairReinsert(payload),
     listRecoveries: async () => {
       if (shouldUseServerState()) {
         // stockRecoveries es una coleccion diferida. Debemos leerla directamente
