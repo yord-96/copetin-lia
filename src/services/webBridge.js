@@ -5055,6 +5055,59 @@ const revertReturnEffects = (state, rental) => {
   });
 };
 
+
+// Revierte únicamente los efectos físicos de una recepción PARCIAL cuando una
+// orden se retrocede desde "Salió / volvió parcial" a una etapa anterior.
+// No toca caja ni liquidaciones porque una devolución parcial todavía no cierra
+// económicamente el contrato. Sí devuelve al stock el daño descontado y vuelve
+// a reservar las unidades que se habían marcado como retornadas.
+const revertPartialReturnEffects = (state, rental) => {
+  const partialItems = Array.isArray(rental?.partialReturnReport?.items)
+    ? rental.partialReturnReport.items
+    : [];
+  const now = new Date().toISOString();
+
+  partialItems.forEach((line) => {
+    const item = state.items.find((entry) => String(entry.id) === String(line?.itemId));
+    if (!item) return;
+
+    const returnedToAvailableQty = Math.max(
+      0,
+      Math.trunc(Number(line?.returnedToAvailableQty ?? line?.returnedQty ?? 0)),
+    );
+    const stockLossQty = Math.max(
+      0,
+      Math.trunc(Number(
+        line?.stockLossQty
+        ?? (Number(line?.damagedStockLossQty ?? 0) + Number(line?.missingStockLossQty ?? 0)),
+      )),
+    );
+
+    if (returnedToAvailableQty > 0) {
+      if (Number(item.availableStock ?? 0) < returnedToAvailableQty) {
+        throw new Error(
+          `No se puede retroceder la recepción de "${item.name}" porque parte del material retornado ya fue comprometido en otra operación.`,
+        );
+      }
+      item.availableStock = Math.max(0, Number(item.availableStock ?? 0) - returnedToAvailableQty);
+    }
+
+    if (stockLossQty > 0) {
+      item.totalStock = Math.max(0, Number(item.totalStock ?? 0) + stockLossQty);
+    }
+    item.updatedAt = now;
+  });
+
+  // Los movimientos de pérdida por daño/faltante creados por esa recepción
+  // dejan de ser válidos si la operación se rehace desde una etapa anterior.
+  state.inventoryMovements = (state.inventoryMovements ?? []).filter((movement) => !(
+    String(movement?.sourceType ?? '') === 'rental_return_loss'
+    && String(movement?.sourceRentalId ?? movement?.sourceId ?? '') === String(rental.id)
+  ));
+
+  rental.partialReturnReport = null;
+};
+
 const getDueTimestamp = (rental) => {
   if (rental?.dueAt) {
     const parsed = new Date(rental.dueAt).getTime();
@@ -17082,18 +17135,69 @@ const createWebBridge = () => ({
         };
 
         if (payload.inventoryStatus !== undefined) {
-          const previousInventoryStatus = rental.operational.inventoryStatus;
-          rental.operational.inventoryStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
-          if (rental.operational.inventoryStatus === 'enviado' && !rental.operational.inventorySentAt) {
-            rental.operational.inventorySentAt = now;
+          const previousInventoryStatus = String(rental.operational.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
+          const nextInventoryStatus = String(payload.inventoryStatus ?? 'pendiente').trim() || 'pendiente';
+          const inventoryStageWeight = {
+            pendiente: 0,
+            enviado: 1,
+            confirmado: 2,
+            salio: 3,
+            devuelto: 4,
+          };
+          const previousStage = inventoryStageWeight[previousInventoryStatus] ?? 0;
+          const nextStage = inventoryStageWeight[nextInventoryStatus] ?? 0;
+          const isRollingBackInventory = nextStage < previousStage;
+          const hasPartialReturnEvidence = Boolean(
+            rental.partialReturnReport
+            || rental.operational.clientPendingPickup?.active
+            || String(rental.operational.returnReview?.status ?? '') === 'left_with_client',
+          );
+
+          // Si una devolución parcial fue registrada por error y la orden vuelve
+          // a una etapa anterior, se revierten sus efectos de stock y se eliminan
+          // las banderas que alimentan "Retorno parcial / Pendiente con cliente".
+          if (isRollingBackInventory && hasPartialReturnEvidence) {
+            revertPartialReturnEffects(state, rental);
+            rental.operational.returnReview = null;
+            rental.operational.clientPendingPickup = null;
+            rental.operational.inventoryReturnedAt = null;
+            rental.operational.inventoryReturnedByName = null;
+            rental.operational.inventoryReturnedByRole = null;
           }
-          if (rental.operational.inventoryStatus === 'confirmado') {
+
+          // Retroceder por debajo de "Salió" invalida toda evidencia de despacho.
+          if (isRollingBackInventory && nextStage < inventoryStageWeight.salio) {
+            rental.operational.inventoryDispatchedAt = null;
+            rental.operational.inventoryDispatchedByName = null;
+            rental.operational.inventoryDispatchedByRole = null;
+            rental.operational.dispatchReview = null;
+          }
+
+          // Retroceder por debajo de "Alistado" obliga a volver a confirmar el
+          // inventario. Así las casillas visuales quedan realmente reiniciadas.
+          if (isRollingBackInventory && nextStage < inventoryStageWeight.confirmado) {
+            rental.operational.inventoryConfirmedAt = null;
+            rental.operational.inventoryConfirmedByName = null;
+            rental.operational.inventoryConfirmedByRole = null;
+          }
+
+          if (isRollingBackInventory && nextStage < inventoryStageWeight.enviado) {
+            rental.operational.inventorySentAt = null;
+          }
+
+          rental.operational.inventoryStatus = nextInventoryStatus;
+          if (nextInventoryStatus === 'enviado') {
+            if (isRollingBackInventory || !rental.operational.inventorySentAt) {
+              rental.operational.inventorySentAt = now;
+            }
+          }
+          if (nextInventoryStatus === 'confirmado') {
             rental.operational.inventoryConfirmedAt = now;
             rental.operational.inventorySentAt = rental.operational.inventorySentAt ?? now;
             rental.operational.inventoryConfirmedByName = userName;
             rental.operational.inventoryConfirmedByRole = userRole;
           }
-          if (rental.operational.inventoryStatus === 'salio') {
+          if (nextInventoryStatus === 'salio') {
             if (previousInventoryStatus !== 'confirmado' && !rental.operational.inventoryConfirmedAt) {
               throw new Error('Primero debes marcar la orden como lista antes de registrar su salida.');
             }
