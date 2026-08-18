@@ -1701,7 +1701,7 @@ function InventoryDashboardSection({
         // del evento, no a fechas operativas de alistamiento, entrega o recojo.
         // rentalDate se conserva solo como compatibilidad para contratos historicos
         // donde esa era la fecha de evento disponible en la orden.
-        const eventDate = contract?.eventDate ?? rental.eventDate ?? rental.rentalDate ?? null;
+        const eventDate = contract?.eventDate ?? rental.eventDate ?? null;
         const deliveryDate = contract?.deliveryDate ?? deliveryOut?.scheduledDate ?? rental.rentalDate ?? null;
         const deliveryWindowStart = contract?.deliveryWindowStart ?? deliveryOut?.windowStart ?? rental.deliveryWindowStart ?? '';
         const deliveryWindowEnd = contract?.deliveryWindowEnd ?? deliveryOut?.windowEnd ?? rental.deliveryWindowEnd ?? '';
@@ -4415,8 +4415,8 @@ function InventoryDashboardSection({
                   />
                 </label>
                 <div className="inventory-ops-filter-summary">
-                  <strong>{filteredPrepOrderRows.length}</strong>
-                  <span>{filteredPrepOrderRows.length === 1 ? 'orden visible' : 'ordenes visibles'}</span>
+                  <strong>{moduleLoading ? '…' : filteredPrepOrderRows.length}</strong>
+                  <span>{moduleLoading ? 'cargando ordenes' : filteredPrepOrderRows.length === 1 ? 'orden visible' : 'ordenes visibles'}</span>
                 </div>
                 {(inventoryOrderQuery || inventoryOperationDateFrom || inventoryOperationDateTo) ? (
                   <button
@@ -4433,6 +4433,10 @@ function InventoryDashboardSection({
                 ) : null}
               </div>
               <div className="inventory-ops-list">
+                {moduleLoading ? (
+                  <p className="status">Cargando órdenes operativas con la fecha real del evento...</p>
+                ) : (
+                  <>
                 <div className="inventory-ops-table-head" aria-hidden="true">
                   <span>Contrato y cliente</span>
                   <span>Inventario</span>
@@ -4551,6 +4555,8 @@ function InventoryDashboardSection({
                     </button>
                   </div>
                 ) : null}
+                  </>
+                )}
               </div>
             </article>
           ) : null}

@@ -5818,6 +5818,7 @@ const summarizeCalendarContract = (contract = {}) => ({
   deliveryWindowEnd: contract.deliveryWindowEnd ?? '',
   customerName: contract.customerName ?? '',
   eventType: contract.eventType ?? '',
+  eventDate: contract.eventDate ?? null,
   logisticsMode: contract.logisticsMode ?? 'envio',
   address: contract.address ?? contract.deliveryAddress ?? contract.serviceAddress ?? '',
   city: contract.city ?? '',
@@ -5939,7 +5940,7 @@ const summarizeOrdersContract = (contract = {}) => ({
   customerReferencePhone: contract.customerReferencePhone ?? contract.referencePhone ?? '',
   clientId: contract.clientId ?? contract.customerId ?? '',
   companyName: contract.companyName ?? '',
-  eventDate: contract.eventDate ?? contract.deliveryDate ?? contract.pickupDate ?? null,
+  eventDate: contract.eventDate ?? null,
   deliveryDate: contract.deliveryDate ?? null,
   pickupDate: contract.pickupDate ?? null,
   eventType: contract.eventType ?? '',
@@ -6014,6 +6015,7 @@ const summarizeOrdersRental = (rental = {}) => ({
   deletedAt: rental.deletedAt ?? null,
   status: rental.status ?? '',
   createdAt: rental.createdAt ?? rental.rentalAt ?? null,
+  eventDate: rental.eventDate ?? null,
   rentalDate: rental.rentalDate ?? null,
   dueDate: rental.dueDate ?? null,
   dueTime: rental.dueTime ?? '',
@@ -6489,19 +6491,15 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
     const allRentals = Array.isArray(state.rentals) ? state.rentals : [];
-    const operationalRentals = allRentals.filter((rental) => {
+    // Movimientos filtra por fecha real del evento en el cliente. Por eso el
+    // overview no puede recortar devoluciones antiguas a "las últimas 100": ese
+    // límite hacía que un mismo rango devolviera cantidades distintas según qué
+    // devoluciones hubieran ocurrido después. Enviamos todas las órdenes válidas
+    // en forma resumida; canceladas/anuladas no forman parte del flujo operativo.
+    const overviewRentals = allRentals.filter((rental) => {
       const status = String(rental?.status ?? '').trim().toLowerCase();
-      return !rental?.deletedAt && status !== 'returned' && status !== 'cancelled' && status !== 'anulado';
+      return !rental?.deletedAt && status !== 'cancelled' && status !== 'anulado';
     });
-    const recentClosedRentals = allRentals
-      .filter((rental) => {
-        const status = String(rental?.status ?? '').trim().toLowerCase();
-        return !rental?.deletedAt && ['returned', 'cancelled', 'anulado'].includes(status);
-      })
-      .sort((a, b) => new Date(b?.updatedAt ?? b?.cancelledAt ?? b?.createdAt ?? 0)
-        - new Date(a?.updatedAt ?? a?.cancelledAt ?? a?.createdAt ?? 0))
-      .slice(0, 100);
-    const overviewRentals = [...operationalRentals, ...recentClosedRentals];
     const overviewRentalIds = new Set(overviewRentals.map((rental) => String(rental?.id ?? '')).filter(Boolean));
     const overviewContractIds = new Set(overviewRentals.map((rental) => String(rental?.contractId ?? '')).filter(Boolean));
     const allMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
