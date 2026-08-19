@@ -217,6 +217,15 @@ const getPaymentMethodLabel = (movement) => {
   return method === 'qr' && account ? `${meta.label} - ${account}` : meta.label;
 };
 
+const getCollectionConceptLabel = (movement) => {
+  const target = normalizeText(movement?.collectionTarget ?? movement?.accountingTag ?? movement?.category ?? movement?.type);
+  if (target.includes('damage') || target.includes('dano') || target.includes('faltante')) return 'Daños / faltantes';
+  if (target.includes('transport')) return 'Transporte';
+  if (target.includes('guarantee') || target.includes('garantia')) return 'Garantía';
+  if (target.includes('rental') || target.includes('alquiler') || target.includes('contract') || target.includes('adelanto')) return 'Alquiler / contrato';
+  return String(movement?.description ?? 'Cobro').trim() || 'Cobro';
+};
+
 function CashIcon({ kind }) {
   if (kind === 'safe') {
     return <img className="asset-icon safe-asset-icon" src="/imagenes/caja-fuerte.png" alt="" aria-hidden="true" />;
@@ -384,6 +393,7 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
+  const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [accountLedgerKey, setAccountLedgerKey] = useState('all');
   const [accountLedgerData, setAccountLedgerData] = useState({
     accounts: [],
@@ -1517,6 +1527,39 @@ function AccountingSection({
         if (pendingBs > 0.009) return null;
         const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
         const penaltiesBs = toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
+        const collectionMovements = postedMovements
+          .filter((movement) => {
+            if (toNumber(movement?.amountBs) <= 0 || movement?.isInternalTransfer) return false;
+            const linkedToRental = String(movement?.linkedRentalId ?? '') === String(rental.id)
+              || String(movement?.sourceId ?? '') === String(rental.id);
+            const linkedToContract = String(movement?.linkedContractId ?? '') === String(contract.id)
+              || String(movement?.sourceId ?? '') === String(contract.id);
+            const linkedToOrder = rental?.orderCode
+              && String(movement?.linkedOrderCode ?? '') === String(rental.orderCode);
+            if (!linkedToRental && !linkedToContract && !linkedToOrder) return false;
+
+            const breakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
+            const hasOperationalBreakdown = breakdown.some((entry) => {
+              const target = normalizeText(entry?.target);
+              return target && !target.includes('guarantee') && !target.includes('garantia') && toNumber(entry?.amountBs) > 0;
+            });
+            const hasOperationalAllocation = toNumber(movement?.contractAllocationBs) > 0
+              || toNumber(movement?.damageCollectedBs) > 0
+              || toNumber(movement?.transportRevenueBs) > 0;
+
+            return !isGuaranteeMovement(movement) || hasOperationalBreakdown || hasOperationalAllocation;
+          })
+          .map((movement) => ({
+            id: movement.id,
+            concept: getCollectionConceptLabel(movement),
+            description: String(movement?.receiptDetail ?? movement?.description ?? '').trim(),
+            amountBs: toNumber(movement.amountBs),
+            createdAt: movement.receiptIssuedAt ?? movement.createdAt,
+            paymentMethodLabel: getPaymentMethodLabel(movement),
+            registeredBy: getMovementUserLabel(movement),
+            receiptCode: String(movement?.receiptCode ?? movement?.receipt ?? '').trim(),
+          }))
+          .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
         return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
@@ -1527,11 +1570,12 @@ function AccountingSection({
           finalizedAt: contract.finalizedAt ?? rental.finalizedAt ?? rental.returnedAt ?? rental.updatedAt,
           finalizedByName: contract.finalizedByName ?? '',
           settledBs: Math.max(0, totalBs + penaltiesBs),
+          collectionMovements,
         };
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [getRentalContract, getRentalResponsibleName, rentals],
+    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, postedMovements, rentals],
   );
 
   const derivedReturnIssueRows = useMemo(
@@ -4391,19 +4435,70 @@ function AccountingSection({
                         <td className="amount">{formatBs(row.pendingBs)}</td>
                         <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
                       </tr>
-                    )) : visibleFinalizedReceivableRows.map((row) => (
-                      <tr key={row.id} className="bigcash-finalized-receivable-row">
-                        <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
-                        <td><strong>{row.customerName}</strong></td>
-                        <td>{row.responsibleName}</td>
-                        <td>{formatDate(row.eventDate)}</td>
-                        <td className="amount">{formatBs(row.settledBs)}</td>
-                        <td>
-                          <span className="bigcash-status-pill ready">Cobrado y finalizado</span>
-                          <small>{formatDate(row.finalizedAt)}{row.finalizedByName ? ` · ${row.finalizedByName}` : ''}</small>
-                        </td>
-                      </tr>
-                    ))}
+                    )) : visibleFinalizedReceivableRows.flatMap((row) => {
+                      const isExpanded = expandedFinalizedReceivableId === row.id;
+                      return [
+                        <tr key={row.id} className="bigcash-finalized-receivable-row">
+                          <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                          <td><strong>{row.customerName}</strong></td>
+                          <td>{row.responsibleName}</td>
+                          <td>{formatDate(row.eventDate)}</td>
+                          <td className="amount">{formatBs(row.settledBs)}</td>
+                          <td>
+                            <span className="bigcash-status-pill ready">Cobrado y finalizado</span>
+                            <small>{formatDate(row.finalizedAt)}{row.finalizedByName ? ` · ${row.finalizedByName}` : ''}</small>
+                            <button
+                              type="button"
+                              className="accounting-inline-action"
+                              onClick={() => setExpandedFinalizedReceivableId((current) => current === row.id ? '' : row.id)}
+                              style={{ marginTop: 6 }}
+                            >
+                              {isExpanded ? 'Ocultar cobros' : `Ver cobros (${row.collectionMovements.length})`}
+                            </button>
+                          </td>
+                        </tr>,
+                        isExpanded ? (
+                          <tr key={`${row.id}-collections`}>
+                            <td colSpan={6} style={{ padding: '10px 16px 16px' }}>
+                              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de cobros registrados en Caja Grande</div>
+                              {row.collectionMovements.length ? (
+                                <div className="bigcash-table-wrap">
+                                  <table className="accounting-table bigcash-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Fecha</th>
+                                        <th>Qué se cobró</th>
+                                        <th>Cómo</th>
+                                        <th>Monto</th>
+                                        <th>Recibo</th>
+                                        <th>Registrado por</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {row.collectionMovements.map((movement) => (
+                                        <tr key={movement.id}>
+                                          <td>{formatDate(movement.createdAt)}<small>{getHourLabel(movement.createdAt)}</small></td>
+                                          <td>
+                                            <strong>{movement.concept}</strong>
+                                            {movement.description ? <small style={{ whiteSpace: 'pre-line' }}>{movement.description}</small> : null}
+                                          </td>
+                                          <td>{movement.paymentMethodLabel}</td>
+                                          <td className="amount">{formatBs(movement.amountBs)}</td>
+                                          <td>{movement.receiptCode || '-'}</td>
+                                          <td>{movement.registeredBy || '-'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="status">No se encontraron movimientos reales de Caja vinculados a este contrato.</p>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null,
+                      ].filter(Boolean);
+                    })}
                   {receivablesView === 'pending' && visibleReceivableRows.length === 0 ? (
                     <tr><td colSpan={6}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
                   ) : null}
