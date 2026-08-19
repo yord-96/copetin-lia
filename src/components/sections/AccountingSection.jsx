@@ -60,7 +60,12 @@ const normalizeText = (value) =>
     .trim();
 
 const getDateKey = (value) => {
-  const parsed = new Date(value ?? '');
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) return '';
+  // Las fechas comerciales YYYY-MM-DD no tienen zona horaria. Convertirlas con
+  // new Date() puede moverlas al dia anterior segun el huso horario del navegador.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
+  const parsed = new Date(rawValue);
   if (Number.isNaN(parsed.getTime())) return '';
   return getInputDate(parsed);
 };
@@ -78,9 +83,8 @@ const getLongHourLabel = (value) => {
 };
 
 const getMonthKey = (value) => {
-  const parsed = new Date(value ?? '');
-  if (Number.isNaN(parsed.getTime())) return '';
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  const dateKey = getDateKey(value);
+  return dateKey ? dateKey.slice(0, 7) : '';
 };
 
 const MONTH_SHORT_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
