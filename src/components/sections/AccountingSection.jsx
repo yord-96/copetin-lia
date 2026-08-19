@@ -14,6 +14,44 @@ const toNumber = (value) => {
 
 const sumBy = (rows, getter) => Number(rows.reduce((sum, row) => sum + toNumber(getter(row)), 0).toFixed(2));
 
+const getReturnedPendingCollectionBs = (rental) => {
+  const settlement = rental?.returnSettlement ?? {};
+  const storedPendingBs = toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
+  const hasSettlementBreakdown = [
+    settlement.outstandingRentalBs,
+    settlement.penaltiesBs,
+    settlement.discountCoveredByDepositBs,
+  ].some((value) => value !== undefined && value !== null);
+
+  if (!hasSettlementBreakdown) return Math.max(0, Number(storedPendingBs.toFixed(2)));
+
+  const outstandingRentalBs = Math.max(0, toNumber(settlement.outstandingRentalBs));
+  const penaltiesBs = Math.max(0, toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs));
+  const coveredByDepositBs = Math.max(0, toNumber(settlement.discountCoveredByDepositBs));
+  // Estos campos representan el mismo dinero desde distintas capas del estado.
+  // Se usa el mayor valor, no la suma, para evitar contar dos veces un mismo cobro.
+  const damageCollectedBs = Math.max(
+    0,
+    toNumber(settlement.damageCollectedBs),
+    toNumber(settlement.penaltiesCollectedBs),
+    toNumber(rental?.payment?.damageCollectedBs),
+    toNumber(rental?.payment?.penaltiesCollectedBs),
+    toNumber(rental?.payment?.returnChargesCollectedBs),
+    toNumber(rental?.totals?.damageCollectedBs),
+    toNumber(rental?.totals?.penaltiesCollectedBs),
+    toNumber(rental?.totals?.returnChargesCollectedBs),
+  );
+  const derivedPendingBs = Math.max(
+    0,
+    Number((outstandingRentalBs + penaltiesBs - coveredByDepositBs - damageCollectedBs).toFixed(2)),
+  );
+
+  // Para devoluciones antiguas el pendingCollectionBs puede haber quedado sin
+  // descontar un cobro real de daños. El menor valor conserva cualquier saldo
+  // ya corregido por servidor y, a la vez, evita revivir deudas ya cobradas.
+  return Math.max(0, Number(Math.min(storedPendingBs, derivedPendingBs).toFixed(2)));
+};
+
 const normalizeText = (value) =>
   String(value ?? '')
     .normalize('NFD')
@@ -1434,7 +1472,7 @@ function AccountingSection({
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
         const pendingBs = isReturned
-          ? toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs)
+          ? getReturnedPendingCollectionBs(rental)
           : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
         if (pendingBs <= 0) return null;
         const contract = contractByRentalId.get(rental.id);
@@ -1474,7 +1512,7 @@ function AccountingSection({
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
         const pendingBs = isReturned
-          ? toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs)
+          ? getReturnedPendingCollectionBs(rental)
           : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
         if (pendingBs > 0.009) return null;
         const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
