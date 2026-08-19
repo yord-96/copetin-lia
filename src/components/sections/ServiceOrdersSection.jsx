@@ -10732,7 +10732,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     </button>
                   ) : null}
                 </div>
-                <button type="button" className="primary-button orders-export-btn" onClick={openOrdersRangeReport}>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={openOrdersRangeReport}
+                  style={{ minWidth: '118px', whiteSpace: 'nowrap' }}
+                >
                   Generar reporte
                 </button>
               </header>
