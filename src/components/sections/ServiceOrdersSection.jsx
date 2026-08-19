@@ -10487,8 +10487,25 @@ function ServiceOrdersSection({
               </div>
             </div>
 
-            <div className="orders-table-wrap orders-commercial-table-wrap">
-              <table className="orders-table orders-commercial-table orders-contracts-table">
+            <div className="orders-table-wrap orders-commercial-table-wrap" style={{ overflowX: 'hidden' }}>
+              <table
+                className="orders-table orders-commercial-table orders-contracts-table"
+                style={{ width: '100%', minWidth: 0, tableLayout: 'fixed' }}
+              >
+                <colgroup>
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '7%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '8%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Contrato</th>
@@ -10671,14 +10688,6 @@ function ServiceOrdersSection({
                             </button>
                             <button
                               type="button"
-                              className="whatsapp-bubble-button"
-                              onClick={() => openWhatsAppModal('contract', row)}
-                              aria-label={`Enviar contrato ${row.contractCode} por WhatsApp`}
-                            >
-                              <WhatsAppGlyph />
-                            </button>
-                            <button
-                              type="button"
                               className="transport-row-menu-button"
                               onClick={(event) => toggleActionsMenu('contract', row.id, event)}
                               aria-label={`Mas acciones para ${row.contractCode}`}
@@ -10692,7 +10701,7 @@ function ServiceOrdersSection({
                   })}
                   {filteredContracts.length === 0 ? (
                     <tr>
-                      <td colSpan={11}>
+                      <td colSpan={12}>
                         <div className="orders-empty-state">
                           <span className="orders-empty-icon"><OrdersKpiIcon kind="contract" /></span>
                           <strong>No hay contratos con esos filtros</strong>
