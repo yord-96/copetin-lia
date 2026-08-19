@@ -4109,20 +4109,168 @@ router.delete('/__copetin_db/cash/petty-expense/:movementId', async (req, res, n
 router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const amountBs = directMoney(payload.amountBs);
-    if (amountBs <= 0) return res.status(400).json({ error: 'El monto del movimiento debe ser mayor a 0.' });
+    const requestedAmountBs = directMoney(payload.amountBs);
+    if (requestedAmountBs <= 0) return res.status(400).json({ error: 'El monto del movimiento debe ser mayor a 0.' });
     if (!String(payload.description ?? '').trim()) return res.status(400).json({ error: 'Debes escribir una descripcion para el movimiento.' });
+    const isGuaranteeRefund = isGuaranteeRefundMovement(payload);
+    const paymentMethod = String(payload?.paymentMethod ?? '').trim().toLowerCase();
+    if (isGuaranteeRefund && paymentMethod === 'qr' && !String(payload?.paymentAccount ?? '').trim()) {
+      return res.status(400).json({ error: 'Debes seleccionar la cuenta QR usada para devolver la garantia.' });
+    }
+
     let movement = null;
+    let updatedRental = null;
+    let reconciliation = null;
     const result = await updateStateSnapshot((state) => {
       state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
       const duplicate = findDirectOperation(state, payload.clientOperationId);
       if (duplicate) { movement = duplicate; return state; }
-      movement = buildDirectMovement(state, { ...payload, type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual', amountBs: payload.type === 'egreso' ? -amountBs : amountBs });
+
+      let amountBs = requestedAmountBs;
+      if (isGuaranteeRefund) {
+        const rentalId = String(payload?.linkedRentalId ?? payload?.sourceId ?? '').trim();
+        const contractId = String(payload?.linkedContractId ?? '').trim();
+        const orderCode = String(payload?.linkedOrderCode ?? '').trim();
+        const rental = state.rentals.find((row) => (
+          (rentalId && String(row?.id ?? '') === rentalId)
+          || (contractId && String(row?.contractId ?? '') === contractId)
+          || (orderCode && String(row?.orderCode ?? '') === orderCode)
+        ));
+        if (!rental) {
+          const error = new Error('No se encontro el alquiler vinculado a esta garantia.');
+          error.statusCode = 404;
+          throw error;
+        }
+        if (String(rental?.status ?? '').trim().toLowerCase() !== 'returned') {
+          const error = new Error('La garantia solo puede devolverse cuando el material ya fue devuelto.');
+          error.statusCode = 409;
+          throw error;
+        }
+        const contract = state.contracts.find((row) => (
+          String(row?.id ?? '') === String(rental?.contractId ?? '')
+          || (contractId && String(row?.id ?? '') === contractId)
+          || (String(row?.contractCode ?? '') && String(row?.contractCode ?? '') === String(rental?.contractCode ?? ''))
+        )) ?? null;
+        const linkedKeys = new Set([rental?.id, rental?.orderCode, rental?.contractCode, contract?.id, contract?.contractCode, contract?.orderCode]
+          .map((value) => String(value ?? '').trim()).filter(Boolean));
+        const matchesLinked = (row) => [row?.linkedRentalId, row?.sourceId, row?.linkedContractId, row?.linkedOrderCode, row?.contractCode, row?.orderCode]
+          .map((value) => String(value ?? '').trim()).some((value) => value && linkedKeys.has(value));
+        const previousRefund = state.cashMovements.find((row) => (
+          !row?.voidedAt
+          && !row?.deletedAt
+          && isGuaranteeRefundMovement(row)
+          && matchesLinked(row)
+          && Math.abs(Number(row?.amountBs ?? 0)) > 0.009
+        ));
+        if (previousRefund) {
+          const error = new Error(`La garantia de este contrato ya tiene una devolucion registrada${previousRefund?.receiptCode ? ` (${previousRefund.receiptCode})` : ''}.`);
+          error.statusCode = 409;
+          throw error;
+        }
+
+        const guaranteeIncomeBs = directMoney(state.cashMovements.reduce((sum, row) => {
+          if (row?.voidedAt || row?.deletedAt || !matchesLinked(row)) return sum;
+          const type = String(row?.type ?? '').trim().toLowerCase();
+          const category = String(row?.category ?? '').trim().toLowerCase();
+          const isIncome = type === 'ingreso_garantia' || category === 'garantia';
+          return isIncome && Number(row?.amountBs ?? 0) > 0 ? sum + Number(row.amountBs) : sum;
+        }, 0));
+        const storedGuaranteeBs = directMoney(Math.max(
+          Number(rental?.depositBs ?? 0),
+          Number(rental?.guarantee?.validatedBs ?? 0),
+          String(rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim().toLowerCase() === 'validado'
+            ? Number(rental?.guaranteeDeclaredBs ?? rental?.guarantee?.amountBs ?? 0)
+            : 0,
+        ));
+        const guaranteePaidBs = guaranteeIncomeBs > 0 ? guaranteeIncomeBs : storedGuaranteeBs;
+        if (guaranteePaidBs <= 0) {
+          const error = new Error('Esta garantia no tiene dinero recibido para devolver.');
+          error.statusCode = 409;
+          throw error;
+        }
+
+        const totalBs = directMoney(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
+        const prepaidAppliedBs = directMoney(rental?.payment?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs);
+        const storedPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? contract?.payment?.paidAtApprovalBs);
+        const effectivePaidBs = storedPaidBs + 0.01 >= prepaidAppliedBs
+          ? storedPaidBs
+          : directMoney(storedPaidBs + prepaidAppliedBs);
+        const outstandingRentalBs = directMoney(Math.max(0, totalBs - effectivePaidBs));
+        const normalizeOwner = (value) => {
+          const normalized = String(value ?? '').trim().toLowerCase();
+          return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
+        };
+        const penaltiesBs = directMoney((Array.isArray(rental?.returnReport) ? rental.returnReport : []).reduce((sum, line) => {
+          if (normalizeOwner(line?.chargeOwner) !== 'cliente') return sum;
+          return sum + directMoney(line?.penaltyBs ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)));
+        }, 0));
+        const collectedDamageBs = directMoney(state.cashMovements.reduce((sum, row) => {
+          if (row?.voidedAt || row?.deletedAt || !matchesLinked(row) || isGuaranteeRefundMovement(row)) return sum;
+          const breakdown = Array.isArray(row?.collectionBreakdown) ? row.collectionBreakdown : [];
+          const breakdownDamageBs = directMoney(breakdown
+            .filter((entry) => String(entry?.target ?? '').trim().toLowerCase() === 'damage')
+            .reduce((subtotal, entry) => subtotal + directMoney(entry?.amountBs), 0));
+          if (breakdownDamageBs > 0) return sum + breakdownDamageBs;
+          const storedDamageBs = directMoney(row?.damageCollectedBs);
+          if (storedDamageBs > 0) return sum + storedDamageBs;
+          const marker = [row?.collectionTarget, row?.category, row?.accountingTag, row?.type]
+            .map((value) => String(value ?? '').trim().toLowerCase()).join(' ');
+          return /(damage|dano|daño|faltante)/.test(marker) && Number(row?.amountBs ?? 0) > 0
+            ? sum + Number(row.amountBs)
+            : sum;
+        }, 0));
+        const pendingDamageBs = directMoney(Math.max(0, penaltiesBs - collectedDamageBs));
+        const totalDiscountAgainstDepositBs = directMoney(outstandingRentalBs + pendingDamageBs);
+        const discountCoveredByDepositBs = directMoney(Math.min(guaranteePaidBs, totalDiscountAgainstDepositBs));
+        const pendingCollectionBs = directMoney(Math.max(0, totalDiscountAgainstDepositBs - guaranteePaidBs));
+        const refundBs = directMoney(Math.max(0, guaranteePaidBs - discountCoveredByDepositBs));
+        if (refundBs <= 0) {
+          const error = new Error('No existe saldo de garantia para devolver despues de cubrir las obligaciones pendientes.');
+          error.statusCode = 409;
+          throw error;
+        }
+
+        amountBs = refundBs;
+        rental.refundBs = refundBs;
+        rental.returnSettlement = {
+          ...(rental.returnSettlement ?? {}),
+          outstandingRentalBs,
+          penaltiesBs,
+          totalDiscountAgainstDepositBs,
+          discountCoveredByDepositBs,
+          pendingCollectionBs,
+          refundBs,
+          guaranteeReconciledAt: new Date().toISOString(),
+          guaranteeReconciledBy: String(payload?.createdBy ?? payload?.responsible ?? 'Sistema').trim() || 'Sistema',
+        };
+        rental.updatedAt = new Date().toISOString();
+        updatedRental = structuredClone(rental);
+        reconciliation = { guaranteePaidBs, outstandingRentalBs, penaltiesBs, collectedDamageBs, pendingDamageBs, discountCoveredByDepositBs, pendingCollectionBs, refundBs };
+      }
+
+      movement = buildDirectMovement(state, {
+        ...payload,
+        type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
+        amountBs: payload.type === 'egreso' ? -amountBs : amountBs,
+        receivedAmountBs: payload.type === 'egreso' ? 0 : amountBs,
+      });
+      if (isGuaranteeRefund && reconciliation) {
+        movement.guaranteePaidBs = reconciliation.guaranteePaidBs;
+        movement.guaranteeAppliedBs = reconciliation.discountCoveredByDepositBs;
+        movement.guaranteeRefundBs = reconciliation.refundBs;
+        movement.receiptDetail = String(payload?.receiptDetail ?? '').trim()
+          || `Garantia pagada Bs ${reconciliation.guaranteePaidBs.toFixed(2)} | Aplicado Bs ${reconciliation.discountCoveredByDepositBs.toFixed(2)} | Devuelto Bs ${reconciliation.refundBs.toFixed(2)}`;
+      }
       state.cashMovements.push(movement);
       return state;
     });
-    res.json({ ok: true, movement, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
-  } catch (error) { next(error); }
+    res.json({ ok: true, movement, rental: updatedRental, reconciliation, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
 });
 
 router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next) => {

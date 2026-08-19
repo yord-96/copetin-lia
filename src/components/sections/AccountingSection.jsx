@@ -512,6 +512,8 @@ function AccountingSection({
   });
   const [collectModal, setCollectModal] = useState(null);
   const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', receipt: '', note: '' });
+  const [guaranteeRefundModal, setGuaranteeRefundModal] = useState(null);
+  const [guaranteeRefundForm, setGuaranteeRefundForm] = useState({ paymentMethod: 'efectivo', paymentAccount: '', note: '' });
   const [isSubmittingCash, setIsSubmittingCash] = useState(false);
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
@@ -1477,14 +1479,91 @@ function AccountingSection({
       const contract = getRentalContract(rental);
       const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
       const guaranteeBs = guaranteeInfo.declaredBs;
-      const settlement = rental?.returnSettlement ?? {};
       const status = String(rental?.status ?? '').toLowerCase();
       const isReturned = status === 'returned';
-      const refundBs = guaranteeInfo.isValidated && isReturned
-        ? toNumber(settlement?.refundBs ?? rental?.refundBs ?? guaranteeInfo.validatedBs)
-        : guaranteeInfo.validatedBs;
       if (!['active', 'returned'].includes(status)) return null;
       if (guaranteeBs <= 0 || hasReturnedGuarantee(rental, contract)) return null;
+
+      const referenceKeys = new Set([
+        rental?.id,
+        rental?.orderCode,
+        rental?.contractCode,
+        contract?.id,
+        contract?.contractCode,
+        contract?.orderCode,
+      ].map(normalizeText).filter(Boolean));
+      const linkedGuaranteeMovements = postedMovements
+        .filter((movement) => {
+          if (!isGuaranteeMovement(movement) || isVoidedCashMovement(movement)) return false;
+          return [
+            movement?.linkedRentalId,
+            movement?.linkedContractId,
+            movement?.linkedOrderCode,
+            movement?.contractCode,
+            movement?.reference,
+            movement?.sourceId,
+          ].map(normalizeText).some((key) => key && referenceKeys.has(key));
+        })
+        .sort((a, b) => new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0));
+      const paidMethodLabels = [...new Set(linkedGuaranteeMovements
+        .map((movement) => getPaymentMethodLabel(movement))
+        .filter(Boolean))];
+      const fallbackMethod = rental?.guarantee?.paymentMethod
+        ?? rental?.payment?.guaranteePaymentMethod
+        ?? contract?.guarantee?.paymentMethod
+        ?? contract?.payment?.guaranteePaymentMethod
+        ?? '';
+      const fallbackAccount = rental?.guarantee?.paymentAccount
+        ?? rental?.payment?.guaranteePaymentAccount
+        ?? contract?.guarantee?.paymentAccount
+        ?? contract?.payment?.guaranteePaymentAccount
+        ?? '';
+      const paymentMethodLabel = paidMethodLabels.length
+        ? paidMethodLabels.join(' + ')
+        : fallbackMethod
+          ? getPaymentMethodLabel({ paymentMethod: fallbackMethod, paymentAccount: fallbackAccount })
+          : 'Sin método';
+      const refundDefaultMethod = normalizePaymentMethod(linkedGuaranteeMovements[0]?.paymentMethod ?? fallbackMethod);
+      const refundDefaultAccount = String(linkedGuaranteeMovements[0]?.paymentAccount ?? fallbackAccount ?? '').trim();
+
+      const totalBs = Math.max(0, toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs));
+      const prepaidAppliedBs = Math.max(0, toNumber(rental?.payment?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs));
+      const storedPaidBs = Math.max(0, toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? contract?.payment?.paidAtApprovalBs));
+      const effectivePaidBs = storedPaidBs + 0.01 >= prepaidAppliedBs ? storedPaidBs : storedPaidBs + prepaidAppliedBs;
+      const currentOutstandingRentalBs = Math.max(0, Number((totalBs - effectivePaidBs).toFixed(2)));
+      const clientPenaltyBs = Math.max(0, Number((Array.isArray(rental?.returnReport) ? rental.returnReport : []).reduce((sum, line) => {
+        const owner = normalizeText(line?.chargeOwner);
+        if (owner === 'transporte' || owner === 'lavado') return sum;
+        return sum + Math.max(0, toNumber(line?.penaltyBs ?? (toNumber(line?.damagedFeeBs) + toNumber(line?.missingFeeBs))));
+      }, 0).toFixed(2)));
+      const collectedDamageBs = Math.max(0, Number(postedMovements.reduce((sum, movement) => {
+        if (isVoidedCashMovement(movement)) return sum;
+        const sameReference = [movement?.linkedRentalId, movement?.linkedContractId, movement?.linkedOrderCode, movement?.sourceId]
+          .map(normalizeText)
+          .some((key) => key && referenceKeys.has(key));
+        if (!sameReference) return sum;
+        const breakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
+        const breakdownDamage = breakdown
+          .filter((entry) => normalizeText(entry?.target) === 'damage')
+          .reduce((subtotal, entry) => subtotal + Math.max(0, toNumber(entry?.amountBs)), 0);
+        if (breakdownDamage > 0) return sum + breakdownDamage;
+        const storedDamage = Math.max(0, toNumber(movement?.damageCollectedBs));
+        if (storedDamage > 0) return sum + storedDamage;
+        const targetText = normalizeText([movement?.collectionTarget, movement?.category, movement?.accountingTag, movement?.type].join(' '));
+        return /(damage|dano|faltante)/.test(targetText) ? sum + Math.max(0, toNumber(movement?.amountBs)) : sum;
+      }, 0).toFixed(2)));
+      const pendingDamageBs = Math.max(0, Number((clientPenaltyBs - collectedDamageBs).toFixed(2)));
+      const cashGuaranteePaidBs = Number(linkedGuaranteeMovements.reduce((sum, movement) => sum + Math.max(0, toNumber(movement?.amountBs)), 0).toFixed(2));
+      const guaranteePaidBs = guaranteeInfo.isValidated
+        ? (cashGuaranteePaidBs > 0 ? cashGuaranteePaidBs : guaranteeInfo.validatedBs)
+        : 0;
+      const appliedBs = guaranteeInfo.isValidated && isReturned
+        ? Math.min(guaranteePaidBs, Number((currentOutstandingRentalBs + pendingDamageBs).toFixed(2)))
+        : 0;
+      const refundableBs = guaranteeInfo.isValidated
+        ? Math.max(0, Number((guaranteePaidBs - appliedBs).toFixed(2)))
+        : 0;
+
       return {
         id: rental.id,
         rentalId: rental.id,
@@ -1494,21 +1573,29 @@ function AccountingSection({
         customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
         responsibleName: getRentalResponsibleName(rental, contract),
         eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
-        amountBs: guaranteeInfo.isValidated ? refundBs : guaranteeInfo.unvalidatedBs,
+        amountBs: guaranteeInfo.isValidated ? refundableBs : guaranteeInfo.unvalidatedBs,
         declaredBs: guaranteeInfo.declaredBs,
-        validatedBs: guaranteeInfo.isValidated ? refundBs : 0,
+        guaranteePaidBs,
+        validatedBs: refundableBs,
+        appliedBs,
+        refundableBs,
         unvalidatedBs: guaranteeInfo.unvalidatedBs,
+        currentOutstandingRentalBs,
+        pendingDamageBs,
+        paymentMethodLabel,
+        refundDefaultMethod: ['efectivo', 'qr', 'transferencia'].includes(refundDefaultMethod) ? refundDefaultMethod : 'efectivo',
+        refundDefaultAccount,
         guaranteeStatus: guaranteeInfo.status,
-        isMoneyHeld: guaranteeInfo.isValidated && refundBs > 0,
-        isReadyToReturn: isReturned && guaranteeInfo.isValidated && refundBs > 0,
+        isMoneyHeld: guaranteeInfo.isValidated && refundableBs > 0,
+        isReadyToReturn: isReturned && guaranteeInfo.isValidated && refundableBs > 0,
         statusLabel: guaranteeInfo.isValidated
-          ? isReturned ? refundBs > 0 ? 'Lista para devolver' : 'Sin devolucion' : 'Material pendiente'
+          ? isReturned ? refundableBs > 0 ? 'Lista para devolver' : 'Sin devolución' : 'Material pendiente'
           : 'Debe',
       };
     })
     .filter(Boolean)
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
-  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, rentals]);
+  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, postedMovements, rentals]);
 
   const calculatedGuaranteesHeldBs = useMemo(
     () => sumBy(activeGuaranteeRows, (rental) => {
@@ -2091,7 +2178,7 @@ function AccountingSection({
     popup.document.close();
     popup.focus();
   };
-  const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.validatedBs) + toNumber(row.unvalidatedBs));
+  const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.guaranteePaidBs) + toNumber(row.unvalidatedBs));
   const visibleReturnIssueTotalBs = sumBy(visibleReturnIssueRows, (row) => row.penaltyBs);
 
   const getReturnIssueOwnerLabel = (owner) => {
@@ -2759,28 +2846,53 @@ function AccountingSection({
     }
   };
 
-  const handleReturnGuarantee = async (row) => {
+  const openGuaranteeRefund = (row) => {
     if (row && !row.isMoneyHeld) {
-      setCashActionError('Esta garantia figura como debe: no hay dinero recibido para devolver.');
+      setCashActionError('Esta garantía figura como debe: no hay dinero recibido para devolver.');
       return;
     }
     if (row && !row.isReadyToReturn) {
-      setCashActionError('Todavia no se puede devolver esta garantia: primero debe volver el material.');
+      setCashActionError('Todavía no se puede devolver esta garantía: primero debe volver el material.');
       return;
     }
+    if (!row) return;
+    setCashActionError('');
+    setGuaranteeRefundForm({
+      paymentMethod: row.refundDefaultMethod || 'efectivo',
+      paymentAccount: row.refundDefaultMethod === 'qr' ? row.refundDefaultAccount : '',
+      note: '',
+    });
+    setGuaranteeRefundModal(row);
+  };
+
+  const closeGuaranteeRefund = () => {
+    if (isSubmittingCash) return;
+    setGuaranteeRefundModal(null);
+    setGuaranteeRefundForm({ paymentMethod: 'efectivo', paymentAccount: '', note: '' });
+  };
+
+  const handleReturnGuarantee = async (event) => {
+    event?.preventDefault?.();
+    const row = guaranteeRefundModal;
     if (!row || !beginCashSubmit()) return;
+    if (guaranteeRefundForm.paymentMethod === 'qr' && !guaranteeRefundForm.paymentAccount) {
+      setCashActionError('Selecciona la cuenta QR desde la que se devolverá la garantía.');
+      endCashSubmit();
+      return;
+    }
     setCashActionError('');
     try {
       const created = await onCreateCashMovement?.({
         type: 'egreso',
         cashBoxType: 'BIG_CASH',
-        amountBs: row.validatedBs,
+        amountBs: row.refundableBs,
         description: `Devolucion garantia: ${row.customerName}`,
         category: 'garantia_devuelta_manual',
-        paymentMethod: 'efectivo',
+        paymentMethod: guaranteeRefundForm.paymentMethod,
+        paymentAccount: guaranteeRefundForm.paymentMethod === 'qr' ? guaranteeRefundForm.paymentAccount : '',
         responsible: currentUserName,
         receipt: '',
-        notes: `Devolucion de garantia del contrato ${row.contractCode}`,
+        notes: guaranteeRefundForm.note || `Devolucion de garantia del contrato ${row.contractCode}`,
         linkedRentalId: row.rentalId,
         linkedContractId: row.contractId,
         linkedOrderCode: row.orderCode,
@@ -2788,9 +2900,11 @@ function AccountingSection({
         createdBy: currentUserName,
       });
       await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
-      setCashActionFeedback(`Garantia devuelta para contrato ${row.contractCode}.`);
+      setCashActionFeedback(`Garantía devuelta para contrato ${row.contractCode}.`);
+      setGuaranteeRefundModal(null);
+      setGuaranteeRefundForm({ paymentMethod: 'efectivo', paymentAccount: '', note: '' });
     } catch (error) {
-      setCashActionError(error.message || 'No se pudo devolver la garantia.');
+      setCashActionError(error.message || 'No se pudo devolver la garantía.');
     } finally {
       endCashSubmit();
     }
@@ -3007,7 +3121,7 @@ function AccountingSection({
         title: 'Garantias por devolver',
         subtitle: 'Garantias pagadas y pendientes de cobro separadas por contrato.',
         rows: guaranteesToReturnRows,
-        colSpan: 8,
+        colSpan: 11,
         searchText: (row) => [
           row.contractCode,
           row.orderCode,
@@ -3015,7 +3129,10 @@ function AccountingSection({
           row.responsibleName,
           row.eventDate,
           row.statusLabel,
-          row.validatedBs,
+          row.paymentMethodLabel,
+          row.guaranteePaidBs,
+          row.appliedBs,
+          row.refundableBs,
           row.unvalidatedBs,
         ].join(' '),
         renderHeader: () => (
@@ -3025,7 +3142,10 @@ function AccountingSection({
             <th>Responsable</th>
             <th>Fecha evento</th>
             <th>Estado</th>
-            <th>Pagada</th>
+            <th>Garantía pagada</th>
+            <th>Método</th>
+            <th>Aplicado</th>
+            <th>A devolver</th>
             <th>Debe</th>
             <th />
           </tr>
@@ -3037,15 +3157,18 @@ function AccountingSection({
             <td>{row.responsibleName}</td>
             <td>{formatDate(row.eventDate)}</td>
             <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
-            <td className="amount">{formatBs(row.validatedBs)}</td>
+            <td className="amount">{formatBs(row.guaranteePaidBs)}</td>
+            <td><small>{row.paymentMethodLabel}</small></td>
+            <td className="amount">{formatBs(row.appliedBs)}</td>
+            <td className="amount"><strong>{formatBs(row.refundableBs)}</strong></td>
             <td className="amount">{formatBs(row.unvalidatedBs)}</td>
             <td>
               <button
                 type="button"
                 className="accounting-inline-action"
-                onClick={() => handleReturnGuarantee(row)}
+                onClick={() => openGuaranteeRefund(row)}
                 disabled={!row.isReadyToReturn || !row.isMoneyHeld || isSubmittingCash}
-                title={row.isMoneyHeld ? 'Devolver garantia y generar recibo' : 'Garantia pendiente de cobro, no hay dinero para devolver'}
+                title={row.isMoneyHeld ? 'Devolver garantía y generar recibo' : 'Garantía pendiente de cobro, no hay dinero para devolver'}
               >
                 {row.isReadyToReturn && row.isMoneyHeld ? 'Devolver' : row.isMoneyHeld ? 'No listo' : 'Sin dinero'}
               </button>
@@ -3358,7 +3481,7 @@ function AccountingSection({
     <>
       {renderPettyHistoryModal()}
       {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
-      {cashActionError && !cashModal && !collectModal && !voidReceiptModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
+      {cashActionError && !cashModal && !collectModal && !voidReceiptModal && !guaranteeRefundModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
       {voidReceiptModal ? (
         <div className="accounting-modal-backdrop" onClick={closeVoidReceiptAction}>
           {voidReceiptStep === 'reason' ? (
@@ -3881,6 +4004,62 @@ function AccountingSection({
                   : cashModal === 'debt'
                   ? 'Registrar deuda'
                   : 'Guardar movimiento'}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+
+      {guaranteeRefundModal ? (
+        <div className="accounting-modal-backdrop" onClick={closeGuaranteeRefund}>
+          <form className="accounting-modal is-collect" onSubmit={handleReturnGuarantee} onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <h3>Devolver garantía</h3>
+                <small>{guaranteeRefundModal.contractCode} | {guaranteeRefundModal.customerName}</small>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={closeGuaranteeRefund}>x</button>
+            </header>
+
+            <section className="accounting-collect-summary">
+              <div className="accounting-verify-money compact">
+                <span><small>Garantía pagada</small><strong>{formatBs(guaranteeRefundModal.guaranteePaidBs)}</strong></span>
+                <span><small>Método recibido</small><strong>{guaranteeRefundModal.paymentMethodLabel}</strong></span>
+                <span><small>Aplicado</small><strong>{formatBs(guaranteeRefundModal.appliedBs)}</strong></span>
+                <span className="highlight"><small>A devolver</small><strong>{formatBs(guaranteeRefundModal.refundableBs)}</strong></span>
+              </div>
+            </section>
+
+            <div className="accounting-form-grid two">
+              <label>
+                Método de devolución
+                <select value={guaranteeRefundForm.paymentMethod} onChange={(event) => setGuaranteeRefundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="qr">QR</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
+              </label>
+              {guaranteeRefundForm.paymentMethod === 'qr' ? (
+                <label>
+                  Cuenta QR
+                  <select value={guaranteeRefundForm.paymentAccount} onChange={(event) => setGuaranteeRefundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                    <option value="">Seleccionar cuenta</option>
+                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  </select>
+                </label>
+              ) : <span />}
+            </div>
+            <label>
+              Nota / referencia
+              <textarea rows={3} value={guaranteeRefundForm.note} onChange={(event) => setGuaranteeRefundForm((current) => ({ ...current, note: event.target.value }))} placeholder="Ej. Devolución por QR al titular del contrato" />
+            </label>
+
+            {cashActionError ? <p className="status error">{cashActionError}</p> : null}
+
+            <footer>
+              <button type="button" className="ghost-button" onClick={closeGuaranteeRefund}>Cancelar</button>
+              <button type="submit" className="primary-button" disabled={isSubmittingCash}>
+                {isSubmittingCash ? 'Registrando...' : `Devolver ${formatBs(guaranteeRefundModal.refundableBs)}`}
               </button>
             </footer>
           </form>
@@ -5188,7 +5367,10 @@ function AccountingSection({
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Estado</th>
-                    <th>Pagada</th>
+                    <th>Garantía pagada</th>
+                    <th>Método</th>
+                    <th>Aplicado</th>
+                    <th>A devolver</th>
                     <th>Debe</th>
                     <th />
                   </tr>
@@ -5200,16 +5382,19 @@ function AccountingSection({
                       <td><strong>{row.customerName}</strong></td>
                       <td>{row.responsibleName}</td>
                       <td><span className={`bigcash-status-pill ${row.isReadyToReturn ? 'ready' : 'waiting'}`}>{row.statusLabel}</span></td>
-                      <td className="amount">{formatBs(row.validatedBs)}</td>
+                      <td className="amount"><strong>{formatBs(row.guaranteePaidBs)}</strong></td>
+                      <td><small>{row.paymentMethodLabel}</small></td>
+                      <td className="amount">{formatBs(row.appliedBs)}</td>
+                      <td className="amount"><strong>{formatBs(row.refundableBs)}</strong></td>
                       <td className="amount">{formatBs(row.unvalidatedBs)}</td>
                       <td>
                         {row.isReadyToReturn && row.isMoneyHeld ? (
                           <button
                             type="button"
                             className="accounting-inline-action"
-                            onClick={() => handleReturnGuarantee(row)}
+                            onClick={() => openGuaranteeRefund(row)}
                             disabled={isSubmittingCash}
-                            title="Devolver garantia y generar recibo"
+                            title="Devolver garantía y generar recibo"
                           >
                             Devolver
                           </button>
@@ -5219,7 +5404,7 @@ function AccountingSection({
                       </td>
                     </tr>
                   ))}
-                  {visibleGuaranteeRows.length === 0 ? <tr><td colSpan={7}><p className="status">No se encontraron garantías con ese criterio.</p></td></tr> : null}
+                  {visibleGuaranteeRows.length === 0 ? <tr><td colSpan={10}><p className="status">No se encontraron garantías con ese criterio.</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
