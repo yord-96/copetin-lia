@@ -323,6 +323,10 @@ export const useAppController = () => {
         setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
         setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
         setQuotes(Array.isArray(overview?.quotes) ? overview.quotes : []);
+        setSettingsBundle((current) => ({
+          ...current,
+          settings: overview?.settings ?? current?.settings ?? null,
+        }));
         ordersOverviewLoadedRef.current = true;
       })
       .catch((ordersError) => {
