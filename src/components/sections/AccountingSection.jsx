@@ -394,6 +394,8 @@ function AccountingSection({
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
+  const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
+  const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
   const [accountLedgerKey, setAccountLedgerKey] = useState('all');
   const [accountLedgerData, setAccountLedgerData] = useState({
     accounts: [],
@@ -1665,6 +1667,271 @@ function AccountingSection({
   const visiblePrepaidRows = filterBigCashWorkspaceRows(prepaidLedgerRows, 'prepaid', (row) => row.createdAt);
   const visibleReceivableTotalBs = sumBy(visibleReceivableRows, (row) => row.pendingBs);
   const visibleFinalizedReceivableTotalBs = sumBy(visibleFinalizedReceivableRows, (row) => row.settledBs);
+  const finalizedReceivablesReportRange = useMemo(() => {
+    const range = bigCashWorkspaceRanges.receivables ?? { dateFrom: '', dateTo: '' };
+    const formatRangeDate = (value) => {
+      if (!value) return '';
+      const [year, month, day] = String(value).split('-');
+      return year && month && day ? `${day}/${month}/${year}` : value;
+    };
+    if (!range.dateFrom && !range.dateTo) return 'Todos los eventos filtrados';
+    return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
+  }, [bigCashWorkspaceRanges]);
+
+  const finalizedReceivablesCollectionRows = useMemo(
+    () => visibleFinalizedReceivableRows.flatMap((row) =>
+      row.collectionMovements.map((movement) => ({ ...movement, contractRow: row }))),
+    [visibleFinalizedReceivableRows],
+  );
+
+  const exportFinalizedReceivablesWorkbook = async () => {
+    if (isExportingFinalizedReceivables) return;
+    setIsExportingFinalizedReceivables(true);
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'Copetín SRL';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      const navy = 'FF173A70';
+      const ink = 'FF172033';
+      const muted = 'FF64748B';
+      const border = 'FFD7DEE8';
+      const soft = 'FFF8FAFC';
+      const green = 'FF16803C';
+      const orange = 'FFE84A00';
+      const moneyFormat = '[$Bs-es-BO] #,##0.00';
+      const generatedAt = new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date());
+      const setBorders = (cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: border } },
+          left: { style: 'thin', color: { argb: border } },
+          bottom: { style: 'thin', color: { argb: border } },
+          right: { style: 'thin', color: { argb: border } },
+        };
+      };
+      const styleHeader = (row) => {
+        row.height = 26;
+        row.eachCell((cell) => {
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+          setBorders(cell);
+        });
+      };
+      const styleDataRows = (sheet, startRow, endRow, moneyColumns = []) => {
+        for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+          const row = sheet.getRow(rowNumber);
+          row.height = 22;
+          row.eachCell((cell) => {
+            cell.font = { name: 'Calibri', size: 10, color: { argb: ink } };
+            cell.alignment = { vertical: 'middle', wrapText: true };
+            if (rowNumber % 2 === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: soft } };
+            setBorders(cell);
+          });
+          moneyColumns.forEach((column) => {
+            row.getCell(column).numFmt = moneyFormat;
+            row.getCell(column).alignment = { vertical: 'middle', horizontal: 'right' };
+          });
+        }
+      };
+
+      const contractsSheet = workbook.addWorksheet('Contratos finalizados', {
+        views: [{ state: 'frozen', ySplit: 8 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      contractsSheet.columns = [
+        { width: 7 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 24 },
+        { width: 15 }, { width: 18 }, { width: 20 }, { width: 25 },
+      ];
+      contractsSheet.mergeCells('A1:I1');
+      contractsSheet.getCell('A1').value = 'EL COPETÍN · CAJA GRANDE';
+      contractsSheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      contractsSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+      contractsSheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+      contractsSheet.getRow(1).height = 24;
+      contractsSheet.mergeCells('A2:F2');
+      contractsSheet.getCell('A2').value = 'Reporte de Cobros y Contratos Finalizados';
+      contractsSheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: ink } };
+      contractsSheet.mergeCells('G2:I2');
+      contractsSheet.getCell('G2').value = `Periodo: ${finalizedReceivablesReportRange}`;
+      contractsSheet.getCell('G2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: muted } };
+      contractsSheet.getCell('G2').alignment = { horizontal: 'right', vertical: 'middle' };
+      contractsSheet.getRow(2).height = 30;
+      contractsSheet.mergeCells('A3:F3');
+      contractsSheet.getCell('A3').value = 'Historial de contratos sin saldo pendiente y finalizados administrativamente.';
+      contractsSheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
+      contractsSheet.mergeCells('G3:I3');
+      contractsSheet.getCell('G3').value = `Generado: ${generatedAt}`;
+      contractsSheet.getCell('G3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
+      contractsSheet.getCell('G3').alignment = { horizontal: 'right' };
+
+      contractsSheet.mergeCells('A5:C5');
+      contractsSheet.getCell('A5').value = `CONTRATOS EN RESULTADO\n${visibleFinalizedReceivableRows.length}`;
+      contractsSheet.mergeCells('D5:F5');
+      contractsSheet.getCell('D5').value = `TOTAL LIQUIDADO\n${visibleFinalizedReceivableTotalBs}`;
+      contractsSheet.mergeCells('G5:I5');
+      contractsSheet.getCell('G5').value = `MOVIMIENTOS DE COBRO\n${finalizedReceivablesCollectionRows.filter((row) => row.amountBs > 0).length}`;
+      ['A5', 'D5', 'G5'].forEach((address, index) => {
+        const cell = contractsSheet.getCell(address);
+        cell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: index === 1 ? green : navy } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index === 1 ? 'FFEDF9F0' : 'FFF1F5FA' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      contractsSheet.getCell('D5').numFmt = moneyFormat;
+      contractsSheet.getRow(5).height = 42;
+
+      const contractHeaderRow = 7;
+      contractsSheet.getRow(contractHeaderRow).values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total liquidado', 'Finalizado', 'Finalizado por'];
+      styleHeader(contractsSheet.getRow(contractHeaderRow));
+      visibleFinalizedReceivableRows.forEach((row, index) => {
+        const excelRow = contractsSheet.addRow([
+          index + 1,
+          row.contractCode || row.orderCode || '',
+          row.orderCode || '',
+          row.customerName || '',
+          row.responsibleName || '',
+          row.eventDate ? new Date(row.eventDate) : '',
+          toNumber(row.settledBs),
+          row.finalizedAt ? new Date(row.finalizedAt) : '',
+          row.finalizedByName || '',
+        ]);
+        excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
+        excelRow.getCell(8).numFmt = 'dd/mm/yyyy hh:mm';
+      });
+      const contractEndRow = Math.max(contractHeaderRow, contractHeaderRow + visibleFinalizedReceivableRows.length);
+      styleDataRows(contractsSheet, contractHeaderRow + 1, contractEndRow, [7]);
+      if (visibleFinalizedReceivableRows.length) {
+        contractsSheet.autoFilter = { from: { row: contractHeaderRow, column: 1 }, to: { row: contractEndRow, column: 9 } };
+      }
+      contractsSheet.pageSetup.printTitlesRow = `1:${contractHeaderRow}`;
+      contractsSheet.headerFooter.oddFooter = '&LEl Copetín · Caja Grande&C&P de &N&RDocumento interno';
+
+      const movementsSheet = workbook.addWorksheet('Detalle de cobros', {
+        views: [{ state: 'frozen', ySplit: 7 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      movementsSheet.columns = [
+        { width: 7 }, { width: 15 }, { width: 15 }, { width: 28 }, { width: 15 },
+        { width: 19 }, { width: 24 }, { width: 22 }, { width: 15 }, { width: 16 }, { width: 24 }, { width: 42 },
+      ];
+      movementsSheet.mergeCells('A1:L1');
+      movementsSheet.getCell('A1').value = 'EL COPETÍN · DETALLE DE COBROS REGISTRADOS';
+      movementsSheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      movementsSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+      movementsSheet.mergeCells('A2:H2');
+      movementsSheet.getCell('A2').value = 'Trazabilidad de cobros de contratos finalizados';
+      movementsSheet.getCell('A2').font = { name: 'Calibri', size: 19, bold: true, color: { argb: ink } };
+      movementsSheet.mergeCells('I2:L2');
+      movementsSheet.getCell('I2').value = `Periodo: ${finalizedReceivablesReportRange}`;
+      movementsSheet.getCell('I2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: muted } };
+      movementsSheet.getCell('I2').alignment = { horizontal: 'right' };
+      movementsSheet.mergeCells('A4:L4');
+      movementsSheet.getCell('A4').value = `${finalizedReceivablesCollectionRows.filter((row) => row.amountBs > 0).length} movimientos de cobro vinculados a ${visibleFinalizedReceivableRows.length} contrato(s).`;
+      movementsSheet.getCell('A4').font = { name: 'Calibri', size: 10, bold: true, color: { argb: orange } };
+
+      const movementHeaderRow = 6;
+      movementsSheet.getRow(movementHeaderRow).values = [
+        'N°', 'Contrato', 'OS', 'Cliente', 'Fecha evento', 'Fecha / hora cobro', 'Qué se cobró', 'Cómo se cobró', 'Monto', 'Recibo', 'Registrado por', 'Detalle',
+      ];
+      styleHeader(movementsSheet.getRow(movementHeaderRow));
+      finalizedReceivablesCollectionRows.forEach((movement, index) => {
+        const row = movement.contractRow;
+        const excelRow = movementsSheet.addRow([
+          index + 1,
+          row.contractCode || row.orderCode || '',
+          row.orderCode || '',
+          row.customerName || '',
+          row.eventDate ? new Date(row.eventDate) : '',
+          movement.createdAt ? new Date(movement.createdAt) : '',
+          movement.concept || '',
+          movement.paymentMethodLabel || '-',
+          toNumber(movement.amountBs),
+          movement.receiptCode || '-',
+          movement.registeredBy || '-',
+          movement.description || '',
+        ]);
+        excelRow.getCell(5).numFmt = 'dd/mm/yyyy';
+        excelRow.getCell(6).numFmt = 'dd/mm/yyyy hh:mm';
+      });
+      const movementEndRow = Math.max(movementHeaderRow, movementHeaderRow + finalizedReceivablesCollectionRows.length);
+      styleDataRows(movementsSheet, movementHeaderRow + 1, movementEndRow, [9]);
+      if (finalizedReceivablesCollectionRows.length) {
+        movementsSheet.autoFilter = { from: { row: movementHeaderRow, column: 1 }, to: { row: movementEndRow, column: 12 } };
+      }
+      movementsSheet.pageSetup.printTitlesRow = `1:${movementHeaderRow}`;
+      movementsSheet.headerFooter.oddFooter = '&LEl Copetín · Caja Grande&C&P de &N&RDocumento interno';
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const range = bigCashWorkspaceRanges.receivables ?? {};
+      const rangeFile = `${range.dateFrom || 'inicio'}-${range.dateTo || 'fin'}`;
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `reporte-cobros-finalizados-${rangeFile}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('No se pudo exportar el reporte de cobros finalizados.', error);
+      window.alert('No se pudo generar el Excel. Intenta nuevamente.');
+    } finally {
+      setIsExportingFinalizedReceivables(false);
+    }
+  };
+
+  const printFinalizedReceivablesReport = () => {
+    const escapeHtml = (value) => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+    const popup = window.open('', '_blank', 'width=1400,height=900');
+    if (!popup) {
+      window.alert('El navegador bloqueó la ventana de impresión. Habilita ventanas emergentes e intenta nuevamente.');
+      return;
+    }
+    const contractRows = visibleFinalizedReceivableRows.map((row, index) => `
+      <tr>
+        <td class="center">${index + 1}</td>
+        <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong><br><small>${escapeHtml(row.orderCode || '')}</small></td>
+        <td>${escapeHtml(row.customerName || '—')}</td>
+        <td>${escapeHtml(row.responsibleName || '—')}</td>
+        <td class="center">${escapeHtml(formatDate(row.eventDate))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.settledBs))}</td>
+        <td>${escapeHtml(formatDate(row.finalizedAt))}<br><small>${escapeHtml(row.finalizedByName || '—')}</small></td>
+      </tr>`).join('');
+    const collectionRows = finalizedReceivablesCollectionRows.map((movement, index) => {
+      const row = movement.contractRow;
+      return `<tr>
+        <td class="center">${index + 1}</td>
+        <td><strong>${escapeHtml(row.contractCode || row.orderCode || '—')}</strong><br><small>${escapeHtml(row.customerName || '')}</small></td>
+        <td>${movement.createdAt ? `${escapeHtml(formatDate(movement.createdAt))}<br><small>${escapeHtml(getHourLabel(movement.createdAt))}</small>` : '—'}</td>
+        <td><strong>${escapeHtml(movement.concept || '—')}</strong>${movement.description ? `<br><small>${escapeHtml(movement.description)}</small>` : ''}</td>
+        <td>${escapeHtml(movement.paymentMethodLabel || '—')}</td>
+        <td class="amount">${escapeHtml(formatBs(movement.amountBs))}</td>
+        <td>${escapeHtml(movement.receiptCode || '—')}</td>
+        <td>${escapeHtml(movement.registeredBy || '—')}</td>
+      </tr>`;
+    }).join('');
+    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de cobros y contratos finalizados</title><style>
+      @page{size:A4 landscape;margin:10mm;}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.head{display:grid;grid-template-columns:1fr 260px;gap:20px;border-bottom:3px solid #173a70;padding-bottom:10px}.brand{font-size:8px;letter-spacing:.14em;color:#173a70;font-weight:800;text-transform:uppercase}.head h1{font-size:23px;margin:4px 0}.head p{color:#64748b;margin:0}.meta{border-left:1px solid #cbd5e1;padding-left:14px}.meta div{display:flex;justify-content:space-between;gap:10px;margin:3px 0}.meta span{color:#64748b;text-transform:uppercase;font-size:7px;font-weight:700}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.card{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:8px 10px}.card span{display:block;color:#64748b;font-size:7px;font-weight:800;text-transform:uppercase}.card strong{display:block;font-size:17px;color:#173a70;margin-top:4px}.card.money{border-top-color:#16803c}.card.money strong{color:#16803c}.section{margin-top:13px}.section h2{font-size:12px;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #cbd5e1}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:white;text-transform:uppercase;font-size:7px;padding:6px;border-right:1px solid rgba(255,255,255,.2)}td{padding:6px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.center{text-align:center}.amount{text-align:right;font-weight:800;white-space:nowrap}small{color:#64748b}.no-print{margin-top:12px;text-align:right}.no-print button{padding:9px 14px;border:0;border-radius:8px;background:#e84a00;color:white;font-weight:700}@media print{.no-print{display:none}}
+    </style></head><body>
+      <header class="head"><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte de Cobros y Contratos Finalizados</h1><p>Historial con trazabilidad de cobros registrados.</p></div><div class="meta"><div><span>Periodo</span><strong>${escapeHtml(finalizedReceivablesReportRange)}</strong></div><div><span>Generado</span><strong>${escapeHtml(new Intl.DateTimeFormat('es-BO',{dateStyle:'medium',timeStyle:'short'}).format(new Date()))}</strong></div><div><span>Contratos</span><strong>${visibleFinalizedReceivableRows.length}</strong></div></div></header>
+      <section class="cards"><div class="card"><span>Contratos encontrados</span><strong>${visibleFinalizedReceivableRows.length}</strong></div><div class="card money"><span>Total liquidado</span><strong>${escapeHtml(formatBs(visibleFinalizedReceivableTotalBs))}</strong></div><div class="card"><span>Movimientos de cobro</span><strong>${finalizedReceivablesCollectionRows.filter((row)=>row.amountBs>0).length}</strong></div></section>
+      <section class="section"><h2>Contratos finalizados</h2><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total liquidado</th><th>Finalizado</th></tr></thead><tbody>${contractRows || '<tr><td colspan="7">Sin resultados.</td></tr>'}</tbody></table></section>
+      <section class="section"><h2>Detalle de cobros realizados</h2><table><thead><tr><th>N°</th><th>Contrato / cliente</th><th>Fecha / hora</th><th>Qué se cobró</th><th>Cómo</th><th>Monto</th><th>Recibo</th><th>Registrado por</th></tr></thead><tbody>${collectionRows || '<tr><td colspan="8">Sin movimientos vinculados.</td></tr>'}</tbody></table></section>
+      <div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
+    </body></html>`);
+    popup.document.close();
+    popup.focus();
+  };
   const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.validatedBs) + toNumber(row.unvalidatedBs));
   const visibleReturnIssueTotalBs = sumBy(visibleReturnIssueRows, (row) => row.penaltyBs);
 
@@ -3563,7 +3830,7 @@ function AccountingSection({
     }));
   };
 
-  const renderBigCashWorkspaceSearch = (placeholder, rangeKey, dateCaption) => {
+  const renderBigCashWorkspaceSearch = (placeholder, rangeKey, dateCaption, resultCount = null, resultLabel = 'resultados') => {
     const range = bigCashWorkspaceRanges[rangeKey] ?? { dateFrom: '', dateTo: '' };
     return (
       <div className="bigcash-workspace-filters">
@@ -3582,6 +3849,7 @@ function AccountingSection({
           <span>{dateCaption}</span>
           <label><small>Desde</small><input type="date" value={range.dateFrom} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateFrom', event.target.value)} /></label>
           <label><small>Hasta</small><input type="date" value={range.dateTo} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateTo', event.target.value)} /></label>
+          {resultCount !== null ? <span className="bigcash-filter-result-count"><strong>{resultCount}</strong> {resultCount === 1 && resultLabel === 'contratos encontrados' ? 'contrato encontrado' : resultLabel}</span> : null}
           {(range.dateFrom || range.dateTo) ? <button type="button" onClick={() => clearBigCashWorkspaceRange(rangeKey)}>Limpiar fechas</button> : null}
         </div>
       </div>
@@ -3612,6 +3880,110 @@ function AccountingSection({
             --bigcash-surface: #ffffff;
           }
 
+          .bigcash-receivables-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+          .bigcash-generate-report-button {
+            min-height: 42px;
+            padding-inline: 18px;
+            white-space: nowrap;
+          }
+          .bigcash-filter-result-count {
+            min-height: 38px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 12px;
+            border: 1px solid #cfe8d7;
+            border-radius: 10px;
+            background: #eefbf2;
+            color: #287542;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+          }
+          .bigcash-filter-result-count strong {
+            font-size: 17px;
+            line-height: 1;
+          }
+          .bigcash-report-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(15, 23, 42, .62);
+          }
+          .bigcash-report-modal {
+            width: min(1240px, 96vw);
+            max-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 18px;
+            background: #fff;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+          }
+          .bigcash-report-modal-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid #e2e8f0;
+          }
+          .bigcash-report-modal-head h2 { margin: 0; font-size: 24px; color: #111827; }
+          .bigcash-report-modal-head p { margin: 4px 0 0; color: #64748b; }
+          .bigcash-report-close {
+            width: 34px; height: 34px; border: 1px solid #dbe3ee; border-radius: 9px; background: #fff; color: #64748b; font-size: 20px; cursor: pointer;
+          }
+          .bigcash-report-document {
+            flex: 1;
+            overflow: auto;
+            padding: 18px 20px 24px;
+            background: #f4f7fb;
+          }
+          .bigcash-report-page {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #dbe3ee;
+            box-shadow: 0 3px 12px rgba(15,23,42,.06);
+          }
+          .bigcash-report-doc-head { display: grid; grid-template-columns: minmax(0,1fr) 270px; gap: 22px; align-items: end; padding-bottom: 12px; border-bottom: 3px solid #173a70; }
+          .bigcash-report-brand { color: #173a70; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+          .bigcash-report-doc-head h3 { margin: 5px 0 4px; font-size: 27px; color: #111827; }
+          .bigcash-report-doc-head p { margin: 0; color: #64748b; }
+          .bigcash-report-meta { border-left: 1px solid #cbd5e1; padding-left: 15px; }
+          .bigcash-report-meta div { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; font-size: 11px; }
+          .bigcash-report-meta span { color: #64748b; font-weight: 700; text-transform: uppercase; }
+          .bigcash-report-summary { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; margin: 15px 0; }
+          .bigcash-report-summary article { border: 1px solid #d7dee8; border-top: 3px solid #173a70; padding: 10px 12px; }
+          .bigcash-report-summary article.money { border-top-color: #16803c; }
+          .bigcash-report-summary small { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; }
+          .bigcash-report-summary strong { display:block; margin-top:5px; color:#173a70; font-size:21px; }
+          .bigcash-report-summary article.money strong { color:#16803c; }
+          .bigcash-report-section { margin-top: 17px; }
+          .bigcash-report-section h4 { margin:0 0 7px; padding-bottom:5px; border-bottom:1px solid #cbd5e1; color:#172033; font-size:14px; }
+          .bigcash-report-table { width:100%; border-collapse:collapse; font-size:11px; }
+          .bigcash-report-table th { padding:7px 6px; background:#173a70; color:#fff; font-size:9px; text-transform:uppercase; text-align:left; }
+          .bigcash-report-table td { padding:7px 6px; border:1px solid #dbe2ea; vertical-align:top; }
+          .bigcash-report-table tbody tr:nth-child(even) { background:#f8fafc; }
+          .bigcash-report-table .amount { text-align:right; font-weight:800; white-space:nowrap; }
+          .bigcash-report-table small { display:block; margin-top:2px; color:#64748b; }
+          .bigcash-report-footer { display:flex; justify-content:flex-end; gap:9px; padding:13px 18px; border-top:1px solid #e2e8f0; background:#fff; }
+          @media (max-width: 900px) {
+            .bigcash-report-doc-head { grid-template-columns: 1fr; }
+            .bigcash-report-meta { border-left: 0; border-top: 1px solid #cbd5e1; padding: 10px 0 0; }
+            .bigcash-report-summary { grid-template-columns: 1fr; }
+          }
           .bigcash-balanced-layout .accounting-bigcash-head {
             min-height: auto;
             padding: 22px 24px;
@@ -3875,7 +4247,111 @@ function AccountingSection({
           }
 
           @media (max-width: 760px) {
-            .bigcash-balanced-layout .accounting-bigcash-head {
+            .bigcash-receivables-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+          }
+          .bigcash-generate-report-button {
+            min-height: 42px;
+            padding-inline: 18px;
+            white-space: nowrap;
+          }
+          .bigcash-filter-result-count {
+            min-height: 38px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 12px;
+            border: 1px solid #cfe8d7;
+            border-radius: 10px;
+            background: #eefbf2;
+            color: #287542;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+          }
+          .bigcash-filter-result-count strong {
+            font-size: 17px;
+            line-height: 1;
+          }
+          .bigcash-report-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(15, 23, 42, .62);
+          }
+          .bigcash-report-modal {
+            width: min(1240px, 96vw);
+            max-height: 92vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 18px;
+            background: #fff;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
+          }
+          .bigcash-report-modal-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid #e2e8f0;
+          }
+          .bigcash-report-modal-head h2 { margin: 0; font-size: 24px; color: #111827; }
+          .bigcash-report-modal-head p { margin: 4px 0 0; color: #64748b; }
+          .bigcash-report-close {
+            width: 34px; height: 34px; border: 1px solid #dbe3ee; border-radius: 9px; background: #fff; color: #64748b; font-size: 20px; cursor: pointer;
+          }
+          .bigcash-report-document {
+            flex: 1;
+            overflow: auto;
+            padding: 18px 20px 24px;
+            background: #f4f7fb;
+          }
+          .bigcash-report-page {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+            border: 1px solid #dbe3ee;
+            box-shadow: 0 3px 12px rgba(15,23,42,.06);
+          }
+          .bigcash-report-doc-head { display: grid; grid-template-columns: minmax(0,1fr) 270px; gap: 22px; align-items: end; padding-bottom: 12px; border-bottom: 3px solid #173a70; }
+          .bigcash-report-brand { color: #173a70; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+          .bigcash-report-doc-head h3 { margin: 5px 0 4px; font-size: 27px; color: #111827; }
+          .bigcash-report-doc-head p { margin: 0; color: #64748b; }
+          .bigcash-report-meta { border-left: 1px solid #cbd5e1; padding-left: 15px; }
+          .bigcash-report-meta div { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0; font-size: 11px; }
+          .bigcash-report-meta span { color: #64748b; font-weight: 700; text-transform: uppercase; }
+          .bigcash-report-summary { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; margin: 15px 0; }
+          .bigcash-report-summary article { border: 1px solid #d7dee8; border-top: 3px solid #173a70; padding: 10px 12px; }
+          .bigcash-report-summary article.money { border-top-color: #16803c; }
+          .bigcash-report-summary small { display:block; color:#64748b; font-size:10px; font-weight:800; text-transform:uppercase; }
+          .bigcash-report-summary strong { display:block; margin-top:5px; color:#173a70; font-size:21px; }
+          .bigcash-report-summary article.money strong { color:#16803c; }
+          .bigcash-report-section { margin-top: 17px; }
+          .bigcash-report-section h4 { margin:0 0 7px; padding-bottom:5px; border-bottom:1px solid #cbd5e1; color:#172033; font-size:14px; }
+          .bigcash-report-table { width:100%; border-collapse:collapse; font-size:11px; }
+          .bigcash-report-table th { padding:7px 6px; background:#173a70; color:#fff; font-size:9px; text-transform:uppercase; text-align:left; }
+          .bigcash-report-table td { padding:7px 6px; border:1px solid #dbe2ea; vertical-align:top; }
+          .bigcash-report-table tbody tr:nth-child(even) { background:#f8fafc; }
+          .bigcash-report-table .amount { text-align:right; font-weight:800; white-space:nowrap; }
+          .bigcash-report-table small { display:block; margin-top:2px; color:#64748b; }
+          .bigcash-report-footer { display:flex; justify-content:flex-end; gap:9px; padding:13px 18px; border-top:1px solid #e2e8f0; background:#fff; }
+          @media (max-width: 900px) {
+            .bigcash-report-doc-head { grid-template-columns: 1fr; }
+            .bigcash-report-meta { border-left: 0; border-top: 1px solid #cbd5e1; padding: 10px 0 0; }
+            .bigcash-report-summary { grid-template-columns: 1fr; }
+          }
+          .bigcash-balanced-layout .accounting-bigcash-head {
               padding: 18px;
             }
 
@@ -4376,9 +4852,21 @@ function AccountingSection({
                     : 'Historial de contratos sin saldo pendiente y finalizados administrativamente.'}
                 </p>
               </div>
-              <div className="bigcash-header-total">
-                <small>{receivablesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
-                <strong>{formatBs(receivablesView === 'pending' ? visibleReceivableTotalBs : visibleFinalizedReceivableTotalBs)}</strong>
+              <div className="bigcash-receivables-header-actions">
+                <div className="bigcash-header-total">
+                  <small>{receivablesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
+                  <strong>{formatBs(receivablesView === 'pending' ? visibleReceivableTotalBs : visibleFinalizedReceivableTotalBs)}</strong>
+                </div>
+                {receivablesView === 'finalized' ? (
+                  <button
+                    type="button"
+                    className="primary-button bigcash-generate-report-button"
+                    onClick={() => setShowFinalizedReceivablesReport(true)}
+                    disabled={visibleFinalizedReceivableRows.length === 0}
+                  >
+                    Generar reporte
+                  </button>
+                ) : null}
               </div>
             </header>
             <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de cobro de contratos">
@@ -4401,7 +4889,13 @@ function AccountingSection({
                 Cobrados y finalizados <b>{finalizedReceivableRows.length}</b>
               </button>
             </div>
-            {renderBigCashWorkspaceSearch('Buscar contrato, cliente o responsable...', 'receivables', 'Fecha del evento')}
+            {renderBigCashWorkspaceSearch(
+              'Buscar contrato, cliente o responsable...',
+              'receivables',
+              'Fecha del evento',
+              receivablesView === 'pending' ? visibleReceivableRows.length : visibleFinalizedReceivableRows.length,
+              'contratos encontrados',
+            )}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
                 <thead>
@@ -4738,6 +5232,93 @@ function AccountingSection({
           </article>
 
         </section>
+        ) : null}
+        {showFinalizedReceivablesReport ? (
+          <div className="bigcash-report-backdrop" onClick={() => setShowFinalizedReceivablesReport(false)}>
+            <section className="bigcash-report-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="bigcash-report-modal-head">
+                <div>
+                  <h2>Reporte de cobros y contratos finalizados</h2>
+                  <p>Vista previa del rango y filtros actualmente aplicados en Caja Grande.</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setShowFinalizedReceivablesReport(false)} aria-label="Cerrar reporte">×</button>
+              </header>
+              <div className="bigcash-report-document">
+                <div className="bigcash-report-page">
+                  <header className="bigcash-report-doc-head">
+                    <div>
+                      <div className="bigcash-report-brand">EL COPETÍN · CAJA GRANDE</div>
+                      <h3>Reporte de Cobros y Contratos Finalizados</h3>
+                      <p>Seguimiento de contratos liquidados y trazabilidad de los cobros registrados.</p>
+                    </div>
+                    <div className="bigcash-report-meta">
+                      <div><span>Periodo</span><strong>{finalizedReceivablesReportRange}</strong></div>
+                      <div><span>Generado</span><strong>{new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</strong></div>
+                      <div><span>Contratos</span><strong>{visibleFinalizedReceivableRows.length}</strong></div>
+                    </div>
+                  </header>
+                  <section className="bigcash-report-summary">
+                    <article><small>Contratos encontrados</small><strong>{visibleFinalizedReceivableRows.length}</strong></article>
+                    <article className="money"><small>Total liquidado</small><strong>{formatBs(visibleFinalizedReceivableTotalBs)}</strong></article>
+                    <article><small>Movimientos de cobro</small><strong>{finalizedReceivablesCollectionRows.filter((row) => row.amountBs > 0).length}</strong></article>
+                  </section>
+                  <section className="bigcash-report-section">
+                    <h4>Detalle de contratos del rango</h4>
+                    <div className="bigcash-table-wrap">
+                      <table className="bigcash-report-table">
+                        <thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total liquidado</th><th>Finalizado</th></tr></thead>
+                        <tbody>
+                          {visibleFinalizedReceivableRows.map((row, index) => (
+                            <tr key={`report-contract-${row.id}`}>
+                              <td>{index + 1}</td>
+                              <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                              <td>{row.customerName}</td>
+                              <td>{row.responsibleName}</td>
+                              <td>{formatDate(row.eventDate)}</td>
+                              <td className="amount">{formatBs(row.settledBs)}</td>
+                              <td>{formatDate(row.finalizedAt)}<small>{row.finalizedByName || 'Sin usuario registrado'}</small></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                  <section className="bigcash-report-section">
+                    <h4>Cobros y recuperaciones realizadas</h4>
+                    <div className="bigcash-table-wrap">
+                      <table className="bigcash-report-table">
+                        <thead><tr><th>N°</th><th>Contrato / cliente</th><th>Fecha / hora</th><th>Qué se cobró</th><th>Cómo</th><th>Monto</th><th>Recibo</th><th>Registrado por</th></tr></thead>
+                        <tbody>
+                          {finalizedReceivablesCollectionRows.map((movement, index) => (
+                            <tr key={`report-movement-${movement.contractRow.id}-${movement.id}`}>
+                              <td>{index + 1}</td>
+                              <td><strong>{movement.contractRow.contractCode || movement.contractRow.orderCode}</strong><small>{movement.contractRow.customerName}</small></td>
+                              <td>{movement.createdAt ? formatDate(movement.createdAt) : '-'}<small>{movement.createdAt ? getHourLabel(movement.createdAt) : ''}</small></td>
+                              <td><strong>{movement.concept}</strong>{movement.description ? <small>{movement.description}</small> : null}</td>
+                              <td>{movement.paymentMethodLabel || '-'}</td>
+                              <td className="amount">{formatBs(movement.amountBs)}</td>
+                              <td>{movement.receiptCode || '-'}</td>
+                              <td>{movement.registeredBy || '-'}</td>
+                            </tr>
+                          ))}
+                          {finalizedReceivablesCollectionRows.length === 0 ? (
+                            <tr><td colSpan={8}>No se encontraron movimientos reales de Caja vinculados a estos contratos.</td></tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <footer className="bigcash-report-footer">
+                <button type="button" className="ghost-button" onClick={() => setShowFinalizedReceivablesReport(false)}>Cerrar</button>
+                <button type="button" className="ghost-button" onClick={exportFinalizedReceivablesWorkbook} disabled={isExportingFinalizedReceivables}>
+                  {isExportingFinalizedReceivables ? 'Generando Excel...' : 'Exportar a Excel'}
+                </button>
+                <button type="button" className="primary-button" onClick={printFinalizedReceivablesReport}>Imprimir / guardar PDF</button>
+              </footer>
+            </section>
+          </div>
         ) : null}
         {renderBigCashListModal()}
         {renderCashModals()}
