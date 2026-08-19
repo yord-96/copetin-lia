@@ -396,6 +396,13 @@ function AccountingSection({
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
   const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
+  const [vipTopUpModalOpen, setVipTopUpModalOpen] = useState(false);
+  const [vipTopUpSubmitting, setVipTopUpSubmitting] = useState(false);
+  const [vipTopUpError, setVipTopUpError] = useState('');
+  const [vipTopUpForm, setVipTopUpForm] = useState(() => ({ clientId: '', date: getInputDate(), amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', reason: '', notes: '' }));
+  const [vipReportClientId, setVipReportClientId] = useState('');
+  const [showVipReport, setShowVipReport] = useState(false);
+  const [isExportingVipReport, setIsExportingVipReport] = useState(false);
   const [accountLedgerKey, setAccountLedgerKey] = useState('all');
   const [accountLedgerData, setAccountLedgerData] = useState({
     accounts: [],
@@ -757,6 +764,10 @@ function AccountingSection({
           balanceAfterBs: toNumber(movement.balanceAfterBs),
           createdAt: movement.createdAt,
           description: movement.description ?? '',
+          paymentMethodLabel: movement?.paymentMethod
+            ? (movement.paymentMethod === 'qr' ? `QR${movement.paymentAccount ? ` - ${movement.paymentAccount}` : ''}` : movement.paymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo')
+            : '',
+          receiptCode: movement?.cashReceiptCode ?? '',
           reference: contract?.contractCode ?? rental?.contractCode ?? movement.orderCode ?? rental?.orderCode ?? '-',
           eventDate: contract?.eventDate ?? rental?.rentalDate ?? '',
         };
@@ -764,6 +775,48 @@ function AccountingSection({
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
     [contractById, contractByRentalId, prepaidClientRows, rentalById],
   );
+
+  const prepaidChargeByRentalId = useMemo(() => {
+    const map = new Map();
+    prepaidLedgerRows.forEach((row) => {
+      if (row.amountBs >= 0) return;
+      const rentalId = String(row?.rental?.id ?? row?.movement?.sourceId ?? '').trim();
+      if (!rentalId) return;
+      map.set(rentalId, Number(((map.get(rentalId) ?? 0) + Math.abs(toNumber(row.amountBs))).toFixed(2)));
+    });
+    return map;
+  }, [prepaidLedgerRows]);
+
+  const getVipAdjustedPendingBs = useCallback((rental, contract = null) => {
+    const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
+    if (isReturned || rental?.returnSettlement) return getReturnedPendingCollectionBs(rental);
+    const storedPendingBs = Math.max(0, toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs));
+    const vipChargedBs = Math.max(0, toNumber(prepaidChargeByRentalId.get(String(rental?.id ?? ''))));
+    if (vipChargedBs <= 0) return storedPendingBs;
+    const totalBs = Math.max(
+      0,
+      toNumber(rental?.totals?.totalBs),
+      toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
+    );
+    if (totalBs <= 0) return storedPendingBs;
+    const storedPrepaidBs = Math.max(
+      0,
+      toNumber(rental?.payment?.prepaidAppliedBs),
+      toNumber(rental?.totals?.prepaidAppliedBs),
+      toNumber(rental?.prepaidAppliedBs),
+      toNumber(contract?.payment?.prepaidAppliedBs),
+      toNumber(contract?.prepaidAppliedBs),
+      vipChargedBs,
+    );
+    const storedPaidBs = Math.max(0, toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs));
+    const nonVipPaidBs = storedPaidBs + 0.01 >= storedPrepaidBs
+      ? Math.max(0, storedPaidBs - storedPrepaidBs)
+      : storedPaidBs;
+    const derivedPendingBs = Math.max(0, Number((totalBs - nonVipPaidBs - vipChargedBs).toFixed(2)));
+    // El prepago real vinculado manda sobre saldos históricos inflados, pero
+    // nunca revive una deuda que ya fue reducida por otro cobro posterior.
+    return Math.max(0, Number(Math.min(storedPendingBs, derivedPendingBs).toFixed(2)));
+  }, [prepaidChargeByRentalId]);
 
   const totalPrepaidBalanceBs = useMemo(
     () => sumBy(prepaidClientRows, (row) => row.balanceBs),
@@ -1483,11 +1536,9 @@ function AccountingSection({
       .map((rental) => {
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
-        const pendingBs = isReturned
-          ? getReturnedPendingCollectionBs(rental)
-          : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
-        if (pendingBs <= 0) return null;
         const contract = contractByRentalId.get(rental.id);
+        const pendingBs = getVipAdjustedPendingBs(rental, contract);
+        if (pendingBs <= 0) return null;
         return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
@@ -1507,7 +1558,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => b.pendingBs - a.pendingBs),
-    [contractByRentalId, getRentalResponsibleName, rentals],
+    [contractByRentalId, getRentalResponsibleName, getVipAdjustedPendingBs, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -1521,11 +1572,8 @@ function AccountingSection({
       .map((rental) => {
         const contract = getRentalContract(rental);
         if (!contract?.isFinalized) return null;
-        const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
-        const pendingBs = isReturned
-          ? getReturnedPendingCollectionBs(rental)
-          : toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
+        const pendingBs = getVipAdjustedPendingBs(rental, contract);
         if (pendingBs > 0.009) return null;
         const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
         const penaltiesBs = toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
@@ -1577,7 +1625,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, postedMovements, rentals],
+    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, rentals],
   );
 
   const derivedReturnIssueRows = useMemo(
@@ -1667,6 +1715,113 @@ function AccountingSection({
   const visiblePrepaidRows = filterBigCashWorkspaceRows(prepaidLedgerRows, 'prepaid', (row) => row.createdAt);
   const visibleReceivableTotalBs = sumBy(visibleReceivableRows, (row) => row.pendingBs);
   const visibleFinalizedReceivableTotalBs = sumBy(visibleFinalizedReceivableRows, (row) => row.settledBs);
+  const selectedVipReportClient = useMemo(
+    () => prepaidClientRows.find((row) => String(row.id) === String(vipReportClientId)) ?? prepaidClientRows[0] ?? null,
+    [prepaidClientRows, vipReportClientId],
+  );
+  const vipReportRows = useMemo(() => {
+    if (!selectedVipReportClient) return [];
+    const range = bigCashWorkspaceRanges.prepaid ?? { dateFrom: '', dateTo: '' };
+    return prepaidLedgerRows
+      .filter((row) => String(row.client?.id ?? '') === String(selectedVipReportClient.id))
+      .filter((row) => {
+        const key = getDateKey(row.createdAt);
+        if (range.dateFrom && key < range.dateFrom) return false;
+        if (range.dateTo && key > range.dateTo) return false;
+        return true;
+      })
+      .slice()
+      .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
+  }, [bigCashWorkspaceRanges.prepaid, prepaidLedgerRows, selectedVipReportClient]);
+  const vipReportSummary = useMemo(() => {
+    const depositsBs = sumBy(vipReportRows.filter((row) => row.amountBs > 0), (row) => row.amountBs);
+    const usedBs = sumBy(vipReportRows.filter((row) => row.amountBs < 0), (row) => Math.abs(row.amountBs));
+    const first = vipReportRows[0];
+    const openingBs = first ? Number((toNumber(first.balanceAfterBs) - toNumber(first.amountBs)).toFixed(2)) : toNumber(selectedVipReportClient?.balanceBs);
+    const closingBs = vipReportRows.length ? toNumber(vipReportRows[vipReportRows.length - 1].balanceAfterBs) : toNumber(selectedVipReportClient?.balanceBs);
+    return { depositsBs, usedBs, openingBs, closingBs };
+  }, [selectedVipReportClient, vipReportRows]);
+
+  const openVipTopUp = () => {
+    const firstClientId = vipReportClientId || prepaidClientRows[0]?.id || '';
+    setVipTopUpForm({ clientId: firstClientId, date: getInputDate(), amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', reason: '', notes: '' });
+    setVipTopUpError('');
+    setVipTopUpModalOpen(true);
+  };
+
+  const submitVipTopUp = async (event) => {
+    event.preventDefault();
+    if (vipTopUpSubmitting) return;
+    setVipTopUpError('');
+    const amountBs = Math.max(0, toNumber(vipTopUpForm.amountBs));
+    if (!vipTopUpForm.clientId || amountBs <= 0 || !String(vipTopUpForm.reason ?? '').trim()) {
+      setVipTopUpError('Completa cliente, monto y motivo de la recarga.');
+      return;
+    }
+    if (vipTopUpForm.paymentMethod === 'qr' && !vipTopUpForm.paymentAccount) {
+      setVipTopUpError('Selecciona la cuenta QR que recibio el dinero.');
+      return;
+    }
+    setVipTopUpSubmitting(true);
+    try {
+      const result = await api.cash.topUpVipPrepaid({
+        ...vipTopUpForm,
+        amountBs,
+        createdBy: currentUserName,
+        responsible: currentUserName,
+      });
+      if (result?.movement) await printCashReceipt(result.movement);
+      setVipTopUpModalOpen(false);
+      setVipReportClientId(vipTopUpForm.clientId);
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('copetin:vip-prepaid-updated', { detail: result }));
+    } catch (error) {
+      setVipTopUpError(error?.message || 'No se pudo registrar la recarga VIP.');
+    } finally {
+      setVipTopUpSubmitting(false);
+    }
+  };
+
+  const exportVipReportWorkbook = async () => {
+    if (isExportingVipReport || !selectedVipReportClient) return;
+    setIsExportingVipReport(true);
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'Copetín SRL';
+      const sheet = workbook.addWorksheet('Estado de cuenta VIP', { views: [{ state: 'frozen', ySplit: 8 }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+      sheet.columns = [{ width: 7 }, { width: 19 }, { width: 30 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 18 }, { width: 18 }];
+      sheet.mergeCells('A1:H1'); sheet.getCell('A1').value = 'EL COPETÍN · ESTADO DE CUENTA PREPAGO VIP';
+      sheet.getCell('A1').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 }; sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+      sheet.mergeCells('A2:H2'); sheet.getCell('A2').value = selectedVipReportClient.name; sheet.getCell('A2').font = { bold: true, size: 18 };
+      const range = bigCashWorkspaceRanges.prepaid ?? {};
+      sheet.mergeCells('A3:H3'); sheet.getCell('A3').value = `Periodo: ${range.dateFrom || 'Inicio'} — ${range.dateTo || 'Fin'} · Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getRow(5).values = ['Saldo inicial', vipReportSummary.openingBs, 'Recargas', vipReportSummary.depositsBs, 'Consumos', vipReportSummary.usedBs, 'Saldo final', vipReportSummary.closingBs];
+      [2,4,6,8].forEach((c) => { sheet.getRow(5).getCell(c).numFmt = '[$Bs-es-BO] #,##0.00'; });
+      sheet.getRow(7).values = ['N°', 'Fecha / hora', 'Movimiento', 'Contrato / OS', 'Evento', 'Recarga', 'Consumo', 'Saldo'];
+      sheet.getRow(7).eachCell((cell) => { cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } }; cell.alignment = { wrapText: true, horizontal: 'center' }; });
+      vipReportRows.forEach((row, index) => {
+        const excelRow = sheet.addRow([index + 1, row.createdAt ? new Date(row.createdAt) : '', row.description || (row.amountBs >= 0 ? 'Recarga VIP' : 'Consumo VIP'), row.reference || '-', row.eventDate ? new Date(row.eventDate) : '', row.amountBs > 0 ? row.amountBs : 0, row.amountBs < 0 ? Math.abs(row.amountBs) : 0, row.balanceAfterBs]);
+        excelRow.getCell(2).numFmt = 'dd/mm/yyyy hh:mm'; excelRow.getCell(5).numFmt = 'dd/mm/yyyy'; [6,7,8].forEach((c) => { excelRow.getCell(c).numFmt = '[$Bs-es-BO] #,##0.00'; });
+      });
+      if (vipReportRows.length) sheet.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7 + vipReportRows.length, column: 8 } };
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `estado-cuenta-vip-${String(selectedVipReportClient.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.xlsx`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (error) { console.error(error); window.alert('No se pudo generar el Excel VIP.'); }
+    finally { setIsExportingVipReport(false); }
+  };
+
+  const printVipReport = () => {
+    if (!selectedVipReportClient) return;
+    const popup = window.open('', '_blank', 'width=1200,height=850');
+    if (!popup) return window.alert('Habilita ventanas emergentes para imprimir el reporte.');
+    const esc = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+    const rows = vipReportRows.map((row) => `<tr><td>${esc(formatDate(row.createdAt))}<br><small>${esc(getHourLabel(row.createdAt))}</small></td><td>${esc(row.description || (row.amountBs >= 0 ? 'Recarga VIP' : 'Consumo VIP'))}</td><td>${esc(row.reference || '-')}</td><td>${row.eventDate ? esc(formatDate(row.eventDate)) : '-'}</td><td class="money">${row.amountBs > 0 ? esc(formatBs(row.amountBs)) : '-'}</td><td class="money">${row.amountBs < 0 ? esc(formatBs(Math.abs(row.amountBs))) : '-'}</td><td class="money">${esc(formatBs(row.balanceAfterBs))}</td></tr>`).join('');
+    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Estado de cuenta VIP</title><style>body{font-family:Arial,sans-serif;color:#172033;padding:28px}h1{margin:0;color:#173a70}p{color:#64748b}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}.kpis div{border:1px solid #d7dee8;border-radius:8px;padding:12px}.kpis small{display:block;color:#64748b}.kpis strong{font-size:18px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#173a70;color:white;padding:9px;text-align:left}td{padding:8px;border-bottom:1px solid #e5e7eb}.money{text-align:right;font-weight:700}@media print{body{padding:0}}</style></head><body><h1>EL COPETÍN · Estado de Cuenta Prepago VIP</h1><h2>${esc(selectedVipReportClient.name)}</h2><p>Rendición de recargas y consumos vinculados a contratos / órdenes.</p><div class="kpis"><div><small>Saldo inicial</small><strong>${esc(formatBs(vipReportSummary.openingBs))}</strong></div><div><small>Recargas</small><strong>${esc(formatBs(vipReportSummary.depositsBs))}</strong></div><div><small>Consumos</small><strong>${esc(formatBs(vipReportSummary.usedBs))}</strong></div><div><small>Saldo final</small><strong>${esc(formatBs(vipReportSummary.closingBs))}</strong></div></div><table><thead><tr><th>Fecha</th><th>Movimiento</th><th>Contrato / OS</th><th>Evento</th><th>Recarga</th><th>Consumo</th><th>Saldo</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Sin movimientos en el rango.</td></tr>'}</tbody></table><script>window.onload=()=>window.print();</script></body></html>`); popup.document.close();
+  };
+
   const finalizedReceivablesReportRange = useMemo(() => {
     const range = bigCashWorkspaceRanges.receivables ?? { dateFrom: '', dateTo: '' };
     const formatRangeDate = (value) => {
@@ -4782,13 +4937,19 @@ function AccountingSection({
               <h3><span className="bigcash-title-icon blue"><MiniIcon kind="lock" /></span>Saldos prepago no físicos</h3>
               <p>Crédito de clientes VIP. Se consume en contratos, pero no representa dinero nuevo en Caja Grande.</p>
             </div>
-            <div className="bigcash-vip-summary">
+            <div className="bigcash-vip-summary" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <span><small>Saldo disponible</small><strong>{formatBs(totalPrepaidBalanceBs)}</strong></span>
               <span><small>Consumido</small><strong>{formatBs(totalPrepaidUsedBs)}</strong></span>
+              <button type="button" className="primary-button" onClick={openVipTopUp}>+ Recargar saldo VIP</button>
             </div>
           </header>
 
           {renderBigCashWorkspaceSearch('Buscar cliente VIP, contrato o movimiento...', 'prepaid', 'Fecha del movimiento')}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap', margin: '0 0 14px' }}>
+            <label style={{ minWidth: 280, display: 'grid', gap: 5 }}><small>Cliente para estado de cuenta</small><select value={vipReportClientId || prepaidClientRows[0]?.id || ''} onChange={(event) => setVipReportClientId(event.target.value)}>{prepaidClientRows.map((row) => <option key={row.id} value={row.id}>{row.name} · {formatBs(row.balanceBs)}</option>)}</select></label>
+            <button type="button" className="ghost-button" onClick={() => setShowVipReport(true)} disabled={!prepaidClientRows.length}>Generar reporte</button>
+            <button type="button" className="ghost-button" onClick={exportVipReportWorkbook} disabled={!prepaidClientRows.length || isExportingVipReport}>{isExportingVipReport ? 'Generando Excel...' : 'Exportar a Excel'}</button>
+          </div>
           <div className="bigcash-table-wrap bigcash-vip-table-wrap">
             <table className="accounting-table bigcash-table bigcash-vip-table">
               <thead>
@@ -4811,6 +4972,7 @@ function AccountingSection({
                     </td>
                     <td>
                       <strong>{row.description || (row.amountBs >= 0 ? 'Abono prepago' : 'Consumo prepago')}</strong>
+                      {row.paymentMethodLabel ? <small>{row.paymentMethodLabel}{row.receiptCode ? ` · ${row.receiptCode}` : ''}</small> : null}
                       {row.amountBs > 0 && !row.rental ? (
                         <small className="cash-linked-reference">Saldo inicial o abono registrado en cliente</small>
                       ) : null}
@@ -4898,7 +5060,7 @@ function AccountingSection({
             )}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 6, background: '#fff', boxShadow: '0 1px 0 rgba(15,23,42,.08)' }}>
                   {receivablesView === 'pending' ? (
                     <tr>
                       <th>Contrato</th>
@@ -5232,6 +5394,39 @@ function AccountingSection({
           </article>
 
         </section>
+        ) : null}
+        {vipTopUpModalOpen ? (
+          <div className="bigcash-report-backdrop" onClick={() => !vipTopUpSubmitting && setVipTopUpModalOpen(false)}>
+            <section className="bigcash-report-modal" style={{ maxWidth: 760 }} onClick={(event) => event.stopPropagation()}>
+              <header className="bigcash-report-modal-head"><div><h2>Recargar saldo Prepago VIP</h2><p>El dinero entra una sola vez a Caja Grande y aumenta el crédito disponible del cliente.</p></div><button type="button" className="bigcash-report-close" onClick={() => setVipTopUpModalOpen(false)} disabled={vipTopUpSubmitting}>×</button></header>
+              <form onSubmit={submitVipTopUp} style={{ padding: 22, display: 'grid', gap: 16 }}>
+                <div className="accounting-form-grid two">
+                  <label>Cliente VIP<select value={vipTopUpForm.clientId} onChange={(event) => setVipTopUpForm((current) => ({ ...current, clientId: event.target.value }))} required><option value="">Seleccionar cliente</option>{prepaidClientRows.map((row) => <option key={row.id} value={row.id}>{row.name} · saldo {formatBs(row.balanceBs)}</option>)}</select></label>
+                  <label>Fecha<input type="date" value={vipTopUpForm.date} onChange={(event) => setVipTopUpForm((current) => ({ ...current, date: event.target.value }))} required /></label>
+                  <label>Monto (Bs)<input type="number" min="0.01" step="0.01" value={vipTopUpForm.amountBs} onChange={(event) => setVipTopUpForm((current) => ({ ...current, amountBs: event.target.value }))} required /></label>
+                  <label>Método<select value={vipTopUpForm.paymentMethod} onChange={(event) => setVipTopUpForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}><option value="efectivo">Efectivo</option><option value="qr">QR</option><option value="transferencia">Transferencia</option></select></label>
+                  {vipTopUpForm.paymentMethod === 'qr' ? <label>Cuenta QR<select value={vipTopUpForm.paymentAccount} onChange={(event) => setVipTopUpForm((current) => ({ ...current, paymentAccount: event.target.value }))} required><option value="">Seleccionar</option>{['CIDRE','BCP','MERCANTIL','BNB','BANCO FIE'].map((account) => <option key={account} value={account}>{account}</option>)}</select></label> : null}
+                  <label style={{ gridColumn: '1 / -1' }}>Motivo<input value={vipTopUpForm.reason} onChange={(event) => setVipTopUpForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Ej: RECARGA PARA EVENTOS DE AGOSTO" required /></label>
+                  <label style={{ gridColumn: '1 / -1' }}>Observación adicional<textarea value={vipTopUpForm.notes} onChange={(event) => setVipTopUpForm((current) => ({ ...current, notes: event.target.value }))} rows={3} /></label>
+                </div>
+                {vipTopUpError ? <p className="status error">{vipTopUpError}</p> : null}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button type="button" className="ghost-button" onClick={() => setVipTopUpModalOpen(false)} disabled={vipTopUpSubmitting}>Cancelar</button><button type="submit" className="primary-button" disabled={vipTopUpSubmitting}>{vipTopUpSubmitting ? 'Registrando...' : 'Registrar recarga y generar recibo'}</button></div>
+              </form>
+            </section>
+          </div>
+        ) : null}
+        {showVipReport && selectedVipReportClient ? (
+          <div className="bigcash-report-backdrop" onClick={() => setShowVipReport(false)}>
+            <section className="bigcash-report-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="bigcash-report-modal-head"><div><h2>Estado de Cuenta Prepago VIP</h2><p>{selectedVipReportClient.name} · rendición de recargas y consumos.</p></div><button type="button" className="bigcash-report-close" onClick={() => setShowVipReport(false)}>×</button></header>
+              <div className="bigcash-report-document"><div className="bigcash-report-page">
+                <header className="bigcash-report-doc-head"><div><div className="bigcash-report-brand">EL COPETÍN · CAJA GRANDE</div><h3>Estado de Cuenta Prepago VIP</h3><p>{selectedVipReportClient.name}</p></div></header>
+                <section className="bigcash-report-summary"><article><small>Saldo inicial</small><strong>{formatBs(vipReportSummary.openingBs)}</strong></article><article><small>Recargas</small><strong>{formatBs(vipReportSummary.depositsBs)}</strong></article><article><small>Consumos</small><strong>{formatBs(vipReportSummary.usedBs)}</strong></article><article><small>Saldo final</small><strong>{formatBs(vipReportSummary.closingBs)}</strong></article></section>
+                <div className="bigcash-table-wrap"><table className="accounting-table bigcash-table"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Contrato / OS</th><th>Evento</th><th>Recarga</th><th>Consumo</th><th>Saldo</th></tr></thead><tbody>{vipReportRows.map((row) => <tr key={row.id}><td>{formatDate(row.createdAt)}<small>{getHourLabel(row.createdAt)}</small></td><td><strong>{row.description || (row.amountBs >= 0 ? 'Recarga VIP' : 'Consumo VIP')}</strong>{row.paymentMethodLabel ? <small>{row.paymentMethodLabel}{row.receiptCode ? ` · ${row.receiptCode}` : ''}</small> : null}</td><td>{row.reference}</td><td>{row.eventDate ? formatDate(row.eventDate) : '-'}</td><td className="amount">{row.amountBs > 0 ? formatBs(row.amountBs) : '-'}</td><td className="negative amount">{row.amountBs < 0 ? formatBs(Math.abs(row.amountBs)) : '-'}</td><td className="amount">{formatBs(row.balanceAfterBs)}</td></tr>)}{!vipReportRows.length ? <tr><td colSpan={7}><p className="status">Sin movimientos VIP en este rango.</p></td></tr> : null}</tbody></table></div>
+              </div></div>
+              <footer className="bigcash-report-modal-actions"><button type="button" className="ghost-button" onClick={() => setShowVipReport(false)}>Cerrar</button><button type="button" className="ghost-button" onClick={exportVipReportWorkbook} disabled={isExportingVipReport}>{isExportingVipReport ? 'Generando...' : 'Exportar a Excel'}</button><button type="button" className="primary-button" onClick={printVipReport}>Imprimir / guardar PDF</button></footer>
+            </section>
+          </div>
         ) : null}
         {showFinalizedReceivablesReport ? (
           <div className="bigcash-report-backdrop" onClick={() => setShowFinalizedReceivablesReport(false)}>

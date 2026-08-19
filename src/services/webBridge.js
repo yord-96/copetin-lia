@@ -623,6 +623,11 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
         orderCode: String(movement?.orderCode ?? '').trim() || null,
         balanceAfterBs: Number(Number(movement?.balanceAfterBs ?? runningBalance ?? fallbackBalance).toFixed(2)),
         nonPhysical: Boolean(movement?.nonPhysical),
+        paymentMethod: String(movement?.paymentMethod ?? '').trim().toLowerCase(),
+        paymentAccount: String(movement?.paymentAccount ?? '').trim().toUpperCase(),
+        createdBy: String(movement?.createdBy ?? '').trim(),
+        cashMovementId: String(movement?.cashMovementId ?? '').trim() || null,
+        cashReceiptCode: String(movement?.cashReceiptCode ?? '').trim(),
         createdAt: movement?.createdAt ?? new Date().toISOString(),
       };
     })

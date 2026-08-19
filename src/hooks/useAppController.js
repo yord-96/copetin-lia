@@ -465,6 +465,29 @@ export const useAppController = () => {
     });
   }, [activeTab, authReady, currentUser]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleVipPrepaidRefresh = async () => {
+      try {
+        const [overview, context] = await Promise.all([
+          api.sync.getMobileOrdersOverview(),
+          api.cash.getAccountingContext(),
+        ]);
+        if (Array.isArray(overview?.clients)) setClients(overview.clients);
+        if (Array.isArray(overview?.contracts)) setContracts(overview.contracts);
+        if (Array.isArray(overview?.rentals)) setRentals(overview.rentals);
+        if (Array.isArray(context?.movements)) setCashMovements(context.movements);
+        if (Array.isArray(context?.debts)) setCashDebts(context.debts);
+        if (Array.isArray(context?.paymentChannels)) setCashPaymentChannels(context.paymentChannels);
+        if (Array.isArray(context?.returnIssues)) setCashReturnIssues(context.returnIssues);
+      } catch (refreshError) {
+        console.warn('[copetin] No se pudo refrescar el estado VIP.', refreshError);
+      }
+    };
+    window.addEventListener('copetin:vip-prepaid-updated', handleVipPrepaidRefresh);
+    return () => window.removeEventListener('copetin:vip-prepaid-updated', handleVipPrepaidRefresh);
+  }, []);
+
   const publishPresence = useCallback(async () => {
     if (!currentUser) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;

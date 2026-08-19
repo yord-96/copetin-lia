@@ -1497,6 +1497,124 @@ const buildDirectMovement = (state, payload = {}) => ({
   createdAt: new Date().toISOString(),
 });
 
+const reconcileVipPrepaidRental = (state, rental, contract = null) => {
+  if (!rental || rental?.deletedAt || String(rental?.status ?? '').toLowerCase() === 'cancelled') return null;
+  // Las liquidaciones de devolución tienen su propio desglose (alquiler + daños).
+  // No se reescriben aquí para no mezclar el prepago comercial con penalidades.
+  if (String(rental?.status ?? '').toLowerCase() === 'returned' || rental?.returnSettlement) return null;
+
+  const clients = Array.isArray(state?.clients) ? state.clients : [];
+  const client = clients.find((entry) => String(entry?.id ?? '') === String(rental?.clientId ?? ''))
+    ?? clients.find((entry) => String(entry?.name ?? '').trim().toLowerCase() === String(rental?.customerName ?? '').trim().toLowerCase());
+  if (!client?.prepaidEnabled) return null;
+
+  const charges = (Array.isArray(client?.prepaidMovements) ? client.prepaidMovements : [])
+    .filter((movement) => movement?.type === 'charge')
+    .filter((movement) => (
+      String(movement?.sourceId ?? '') === String(rental.id)
+      || (movement?.orderCode && String(movement.orderCode) === String(rental?.orderCode ?? ''))
+    ));
+  const prepaidChargedBs = directMoney(charges.reduce((sum, movement) => sum + Math.abs(Number(movement?.amountBs ?? 0)), 0));
+  if (prepaidChargedBs <= 0) return null;
+
+  const storedPrepaidBs = directMoney(Math.max(
+    Number(rental?.payment?.prepaidAppliedBs ?? 0),
+    Number(rental?.totals?.prepaidAppliedBs ?? 0),
+    Number(rental?.prepaidAppliedBs ?? 0),
+    Number(contract?.payment?.prepaidAppliedBs ?? 0),
+    Number(contract?.prepaidAppliedBs ?? 0),
+  ));
+  const prepaidAppliedBs = directMoney(Math.max(storedPrepaidBs, prepaidChargedBs));
+  const totalBs = directMoney(Math.max(
+    Number(rental?.totals?.totalBs ?? 0),
+    Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0),
+  ));
+  if (totalBs <= 0) return null;
+
+  const storedPaidBs = directMoney(Math.max(
+    Number(rental?.payment?.paidAtRentalBs ?? 0),
+    Number(rental?.totals?.paidAtRentalBs ?? 0),
+  ));
+  // En registros correctos paidAtRentalBs ya incluye el prepago; en los defectuosos
+  // puede ser 0. Se separa la parte no VIP solo cuando el total pagado ya contiene
+  // al menos el prepago realmente consumido, evitando duplicarlo.
+  const nonVipPaidBs = storedPaidBs + 0.01 >= prepaidAppliedBs
+    ? directMoney(Math.max(0, storedPaidBs - prepaidAppliedBs))
+    : storedPaidBs;
+  const correctedPaidBs = directMoney(Math.min(totalBs, nonVipPaidBs + prepaidAppliedBs));
+  const correctedPendingBs = directMoney(Math.max(0, totalBs - correctedPaidBs));
+  const currentPendingBs = directMoney(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+  const contractPendingBs = directMoney(contract?.payment?.pendingPaymentBs ?? contract?.payment?.pendingBs ?? correctedPendingBs);
+  const contractPrepaidBs = directMoney(contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs ?? prepaidAppliedBs);
+  const needsRepair = Math.abs(currentPendingBs - correctedPendingBs) > 0.01
+    || Math.abs(storedPaidBs - correctedPaidBs) > 0.01
+    || Math.abs(Number(rental?.totals?.totalBs ?? 0) - totalBs) > 0.01
+    || (contract && Math.abs(contractPendingBs - correctedPendingBs) > 0.01)
+    || (contract && Math.abs(contractPrepaidBs - prepaidAppliedBs) > 0.01);
+  if (!needsRepair) return { repaired: false, prepaidAppliedBs, correctedPaidBs, correctedPendingBs };
+
+  const now = new Date().toISOString();
+  const paymentStatus = correctedPendingBs <= 0.009 ? 'cancelado' : correctedPaidBs > 0 ? 'saldo_pendiente' : 'sin_pago';
+  const paymentMode = correctedPendingBs <= 0.009 ? 'cancelado' : correctedPaidBs > 0 ? 'a_cuenta' : 'sin_pago';
+  rental.payment = {
+    ...(rental.payment ?? {}),
+    prepaidAppliedBs,
+    paidAtRentalBs: correctedPaidBs,
+    pendingPaymentBs: correctedPendingBs,
+    status: paymentStatus,
+    mode: paymentMode,
+  };
+  rental.totals = {
+    ...(rental.totals ?? {}),
+    totalBs,
+    prepaidAppliedBs,
+    paidAtRentalBs: correctedPaidBs,
+    pendingPaymentBs: correctedPendingBs,
+    status: paymentStatus,
+    mode: paymentMode,
+  };
+  rental.prepaidAppliedBs = prepaidAppliedBs;
+  rental.updatedAt = now;
+
+  if (contract) {
+    contract.payment = {
+      ...(contract.payment ?? {}),
+      prepaidAppliedBs,
+      paidAtApprovalBs: directMoney(Math.max(Number(contract?.payment?.paidAtApprovalBs ?? 0), correctedPaidBs)),
+      pendingBs: correctedPendingBs,
+      pendingPaymentBs: correctedPendingBs,
+      status: paymentStatus,
+      mode: paymentMode,
+    };
+    contract.prepaidAppliedBs = prepaidAppliedBs;
+    contract.paymentStatus = paymentStatus;
+    contract.updatedAt = now;
+  }
+  (Array.isArray(state?.serviceOrders) ? state.serviceOrders : []).forEach((order) => {
+    if (String(order?.rentalId ?? order?.id ?? '') === String(rental.id)
+      || String(order?.codigo ?? order?.orderCode ?? '') === String(rental?.orderCode ?? '')) {
+      order.saldo_pendiente = correctedPendingBs;
+      order.updated_at = now;
+    }
+  });
+  return { repaired: true, prepaidAppliedBs, correctedPaidBs, correctedPendingBs };
+};
+
+const repairVipPrepaidBalances = (state) => {
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : [];
+  const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const contractByRentalId = new Map(contracts.filter((row) => row?.rentalId).map((row) => [String(row.rentalId), row]));
+  const repairs = [];
+  rentals.forEach((rental) => {
+    const contract = contractByRentalId.get(String(rental?.id ?? ''))
+      ?? contracts.find((row) => String(row?.id ?? '') === String(rental?.contractId ?? ''))
+      ?? null;
+    const result = reconcileVipPrepaidRental(state, rental, contract);
+    if (result?.repaired) repairs.push({ rentalId: rental.id, orderCode: rental.orderCode, contractCode: rental.contractCode ?? contract?.contractCode ?? '', ...result });
+  });
+  return repairs;
+};
+
 const revertDirectReturnEffects = (state, rental) => {
   const partialReport = Array.isArray(rental?.partialReturnReport?.items)
     ? rental.partialReturnReport.items
@@ -2981,6 +3099,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       ) ?? null;
       const rental = resolveActiveRentalForContract(state.rentals, linkedContract, linkedOrder, payload);
       if (!rental) { const error = new Error('No se encontro la orden seleccionada.'); error.statusCode = 404; throw error; }
+      reconcileVipPrepaidRental(state, rental, linkedContract);
       const isReturned = rental.status === 'returned';
       const settlement = rental.returnSettlement ?? {};
       const storedRentalTotalBs = directMoney(
@@ -3100,6 +3219,10 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         if (amountBs - currentPending > 0.01) { const error = new Error(`El saldo pendiente es Bs ${currentPending.toFixed(2)}.`); error.statusCode = 409; throw error; }
       }
 
+      const explicitTransport = directMoney(breakdown.filter((e) => e.target === 'transport').reduce((s,e)=>s+e.amountBs,0));
+      const explicitDamage = directMoney(breakdown.filter((e) => e.target === 'damage').reduce((s,e)=>s+e.amountBs,0));
+      const explicitRental = directMoney(breakdown.filter((e) => e.target === 'rental').reduce((s,e)=>s+e.amountBs,0));
+      const balance = directMoney(breakdown.filter((e) => e.target === 'balance').reduce((s,e)=>s+e.amountBs,0));
       // En una devolución, pendingCollectionBs representa el saldo total aún
       // pendiente (alquiler + daños/faltantes no cubiertos). Un cobro exclusivo
       // de daños no cambia outstandingRentalBs, pero sí debe reducir ese saldo
@@ -3112,10 +3235,6 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const deliveryFeeBs = !isReturned ? directMoney(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs) : 0;
       const previousTransport = directMoney(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs);
       const remainingTransport = directMoney(deliveryFeeBs - previousTransport);
-      const explicitTransport = directMoney(breakdown.filter((e) => e.target === 'transport').reduce((s,e)=>s+e.amountBs,0));
-      const explicitDamage = directMoney(breakdown.filter((e) => e.target === 'damage').reduce((s,e)=>s+e.amountBs,0));
-      const explicitRental = directMoney(breakdown.filter((e) => e.target === 'rental').reduce((s,e)=>s+e.amountBs,0));
-      const balance = directMoney(breakdown.filter((e) => e.target === 'balance').reduce((s,e)=>s+e.amountBs,0));
       const balanceTransport = Math.min(balance, remainingTransport);
       const transportNow = directMoney(explicitTransport + balanceTransport);
       const rentalNow = directMoney(explicitRental + Math.max(0, balance - balanceTransport));
@@ -3241,6 +3360,124 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
 });
 
 
+
+router.post('/__copetin_db/cash/vip-prepaid/top-up', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const clientId = String(payload.clientId ?? '').trim();
+    const amountBs = directMoney(payload.amountBs);
+    const reason = String(payload.reason ?? payload.notes ?? '').trim();
+    const requestedDate = String(payload.date ?? '').trim();
+    if (!clientId) return res.status(400).json({ error: 'Selecciona un cliente VIP.' });
+    if (amountBs <= 0) return res.status(400).json({ error: 'El monto de la recarga debe ser mayor a 0.' });
+    if (!reason) return res.status(400).json({ error: 'Indica el motivo de la recarga.' });
+    if (!requestedDate || !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return res.status(400).json({ error: 'Indica una fecha valida para la recarga.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.clients = Array.isArray(state.clients) ? state.clients : [];
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      state.cashSessions = Array.isArray(state.cashSessions) ? state.cashSessions : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      state.serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+
+      const duplicate = findDirectOperation(state, payload.clientOperationId);
+      if (duplicate) {
+        const duplicateClient = state.clients.find((entry) => String(entry?.id ?? '') === clientId) ?? null;
+        responseData = { client: structuredClone(duplicateClient), movement: structuredClone(duplicate), movements: [structuredClone(duplicate)], duplicate: true, repairs: [] };
+        return state;
+      }
+
+      const repairs = repairVipPrepaidBalances(state);
+      const client = state.clients.find((entry) => String(entry?.id ?? '') === clientId && !entry?.deletedAt);
+      if (!client) { const error = new Error('No se encontro el cliente seleccionado.'); error.statusCode = 404; throw error; }
+      if (!client.prepaidEnabled) { const error = new Error('El cliente no tiene una cuenta prepago VIP activa.'); error.statusCode = 409; throw error; }
+
+      client.prepaidMovements = Array.isArray(client.prepaidMovements) ? client.prepaidMovements : [];
+      const previousBalanceBs = directMoney(client.prepaidBalanceBs);
+      const nextBalanceBs = directMoney(previousBalanceBs + amountBs);
+      const now = new Date();
+      const [year, month, day] = requestedDate.split('-').map(Number);
+      const requestedAt = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      const createdAt = Number.isNaN(requestedAt.getTime()) ? now.toISOString() : requestedAt.toISOString();
+      const movementId = directId('pre');
+      client.prepaidEnabled = true;
+      client.prepaidBalanceBs = nextBalanceBs;
+      client.prepaidTotalDepositedBs = directMoney(Number(client.prepaidTotalDepositedBs ?? 0) + amountBs);
+      client.prepaidTotalUsedBs = directMoney(client.prepaidTotalUsedBs);
+      client.prepaidMovements.push({
+        id: movementId,
+        type: 'deposit',
+        amountBs,
+        description: reason,
+        sourceType: 'client_topup',
+        sourceId: client.id,
+        orderCode: null,
+        balanceAfterBs: nextBalanceBs,
+        nonPhysical: false,
+        createdAt,
+        paymentMethod: directPaymentMethod(payload.paymentMethod),
+        paymentAccount: directPaymentAccount(payload.paymentMethod, payload.paymentAccount),
+        createdBy: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+      });
+      client.updatedAt = now.toISOString();
+
+      const activeSession = state.cashSessions.find((session) => String(session?.status ?? '').toLowerCase() === 'open') ?? null;
+      const cashMovement = buildDirectMovement(state, {
+        ...payload,
+        sessionId: activeSession?.id ?? null,
+        type: 'ingreso_prepago_cliente',
+        amountBs,
+        description: `Recarga cuenta VIP: ${client.name ?? client.companyName ?? 'Cliente'}`,
+        sourceType: 'client_prepaid',
+        sourceId: client.id,
+        cashBoxType: 'BIG_CASH',
+        category: 'prepago_cliente_vip',
+        accountingTag: 'vip_prepaid_topup',
+        receiptDetail: `Cliente VIP: ${client.name ?? ''}\nMotivo: ${reason}${String(payload.notes ?? '').trim() ? `\nObservacion: ${String(payload.notes).trim()}` : ''}\nSaldo anterior: Bs ${previousBalanceBs.toFixed(2)}\nNuevo saldo: Bs ${nextBalanceBs.toFixed(2)}`,
+        notes: [reason, String(payload.notes ?? '').trim()].filter(Boolean).join(' | '),
+        clientOperationId: payload.clientOperationId,
+      });
+      cashMovement.createdAt = createdAt;
+      cashMovement.vipClientId = client.id;
+      cashMovement.vipPrepaidMovementId = movementId;
+      cashMovement.vipPreviousBalanceBs = previousBalanceBs;
+      cashMovement.vipNewBalanceBs = nextBalanceBs;
+      state.cashMovements.push(cashMovement);
+      const prepaidMovement = client.prepaidMovements[client.prepaidMovements.length - 1];
+      prepaidMovement.cashMovementId = cashMovement.id;
+      prepaidMovement.cashReceiptCode = cashMovement.receiptCode;
+
+      responseData = {
+        client: structuredClone(client),
+        movement: structuredClone(cashMovement),
+        movements: [structuredClone(cashMovement)],
+        prepaidMovement: structuredClone(client.prepaidMovements[client.prepaidMovements.length - 1]),
+        previousBalanceBs,
+        newBalanceBs: nextBalanceBs,
+        repairs,
+      };
+      return state;
+    });
+    res.json({ ok: true, ...responseData, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) { if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
+});
+
+router.post('/__copetin_db/accounting/vip-prepaid/repair', async (req, res, next) => {
+  try {
+    let repairs = [];
+    const result = await updateStateSnapshot((state) => {
+      state.clients = Array.isArray(state.clients) ? state.clients : [];
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
+      state.serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+      repairs = repairVipPrepaidBalances(state);
+      return state;
+    });
+    res.json({ ok: true, repaired: repairs.length, repairs, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) { next(error); }
+});
 
 router.get('/__copetin_db/accounting/summary', async (req, res, next) => {
   try {

@@ -5057,8 +5057,11 @@ function ServiceOrdersSection({
   const selectedClientPrepaidBalanceBs = selectedClientForDraft?.prepaidEnabled
     ? Math.max(0, Number(selectedClientForDraft.prepaidBalanceBs ?? 0))
     : 0;
-  const selectedClientPrepaidCoverageBs = Math.min(selectedClientPrepaidBalanceBs, quoteTotalBs);
-  const selectedClientPrepaidPendingBs = Math.max(0, quoteTotalBs - selectedClientPrepaidCoverageBs);
+  const selectedClientPrepaidCoverageBs = Math.min(
+    selectedClientPrepaidBalanceBs,
+    Math.max(0, quoteTotalBs - paidAtApprovalBs),
+  );
+  const selectedClientPrepaidPendingBs = Math.max(0, Number((quoteTotalBs - paidAtApprovalBs - selectedClientPrepaidCoverageBs).toFixed(2)));
 
   const itemCategoryOptions = useMemo(
     () => Array.from(new Set([
@@ -6977,6 +6980,7 @@ function ServiceOrdersSection({
       guaranteePaymentMethod: draft.guaranteePaymentMethod || 'efectivo',
       guaranteePaymentAccount: draft.guaranteePaymentMethod === 'qr' ? draft.guaranteePaymentAccount : '',
       paidAtApprovalBs,
+      prepaidAppliedBs: selectedClientForDraft?.prepaidEnabled ? selectedClientPrepaidCoverageBs : 0,
       initialPaymentMethod: draft.initialPaymentMethod || 'efectivo',
       initialPaymentAccount: draft.initialPaymentMethod === 'qr' ? draft.initialPaymentAccount : '',
       pricingPlan: quotePricingPlan,

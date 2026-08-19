@@ -3648,6 +3648,14 @@ export const api = {
       if (shouldUseServerState()) return callDirectCashOperation('/cash/collect-receivable', payload);
       return callBridge('cash', 'collectReceivable', true, payload);
     },
+    topUpVipPrepaid: async (payload) => {
+      if (!shouldUseServerState()) throw new Error('La recarga VIP atomica requiere conexion con el servidor.');
+      return callDirectCashOperation('/cash/vip-prepaid/top-up', payload);
+    },
+    repairVipPrepaid: async () => {
+      if (!shouldUseServerState()) return { ok: true, repaired: 0, repairs: [] };
+      return callDirectCashOperation('/accounting/vip-prepaid/repair', {});
+    },
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
     payDebt: (payload) => callBridge('cash', 'payDebt', true, payload),
     deleteDebt: (payload) => callBridge('cash', 'deleteDebt', true, payload),
