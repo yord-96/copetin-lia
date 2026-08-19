@@ -897,136 +897,6 @@ const buildDocumentFileBase = (customerName, documentCode, fallback = 'copetin')
   return [customer, code].filter(Boolean).join(' ').toUpperCase() || cleanFilePart(fallback).toUpperCase() || 'COPETIN';
 };
 
-const buildQuoteApprovalDocumentHtml = ({ quote, formatDate, formatBs }) => {
-  const pricingPlan = quote?.pricingPlan ?? {};
-  const durationPricing = calculateDurationPricing({
-    mode: pricingPlan.mode,
-    days: pricingPlan.days,
-    tiers: pricingPlan.tiers,
-    baseSubtotalBs: quote?.totals?.baseSubtotalBs ?? pricingPlan.baseSubtotalBs ?? 0,
-  });
-  const hasDuration = durationPricing.mode === 'duration';
-  const deliveryFeeBs = Number(quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0);
-  const itemRows = (quote?.items ?? []).map((line) => `
-    <tr>
-      <td>${escapeDocText(line.itemName)}</td>
-      <td>${Number(line.quantity ?? 0)}</td>
-      <td>${formatBs(Number(line.unitPriceBs ?? 0))}</td>
-      <td>${formatBs(Number(line.lineTotalBs ?? 0))}</td>
-    </tr>
-  `).join('');
-  const serviceRows = (quote?.services ?? []).map((service) => `
-    <tr>
-      <td>SERVICIO: ${escapeDocText(service.name)}${service.detail ? `<br /><small>${escapeDocText(service.detail)}</small>` : ''}</td>
-      <td>${Number(service.quantity ?? 0)}</td>
-      <td>${formatBs(Number(service.unitPriceBs ?? 0))}</td>
-      <td>${formatBs(Number(service.lineTotalBs ?? Number(service.quantity ?? 0) * Number(service.unitPriceBs ?? 0)))}</td>
-    </tr>
-  `).join('');
-  const rows = `${itemRows}${serviceRows}`;
-  const subtotalBs = Number(quote?.totals?.subtotalBs ?? 0);
-  const discountBs = Number(quote?.totals?.discountBs ?? 0);
-  const guaranteeBs = Number(quote?.totals?.guaranteeBs ?? 0);
-  const totalBs = Number(quote?.totals?.totalBs ?? 0);
-  const totalWithGuaranteeBs = totalBs + guaranteeBs;
-  const durationRows = hasDuration
-    ? durationPricing.breakdown.map((day) => `
-      <tr>
-        <td>Dia ${day.day}</td>
-        <td>${day.percent}%</td>
-        <td>${formatBs(durationPricing.baseSubtotalBs)}</td>
-        <td>${formatBs(day.amountBs)}</td>
-      </tr>
-    `).join('')
-    : '';
-
-  const documentCode = quote?.quoteCode ?? quote?.id ?? '';
-  const documentTitle = buildDocumentFileBase(quote?.customerName, documentCode, 'cotizacion');
-
-  return `<!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeDocText(documentTitle)}</title>
-        <style>
-          * { box-sizing: border-box; }
-          body { margin: 0; padding: 32px; color: #1f1f1f; font-family: Inter, Arial, sans-serif; background: #faf7f3; }
-          .page { max-width: 860px; margin: 0 auto; background: #fff; border: 1px solid #eaded4; border-radius: 18px; padding: 30px; }
-          header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #e65a00; padding-bottom: 18px; margin-bottom: 22px; }
-          h1 { margin: 0; font-size: 30px; color: #b84300; }
-          h2 { margin: 26px 0 10px; font-size: 16px; color: #1f1f1f; }
-          p { margin: 4px 0; color: #5f5047; }
-          .code { text-align: right; color: #6b7280; }
-          .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; padding: 14px; border: 1px solid #eaded4; border-radius: 12px; background: #fffaf5; }
-          .grid strong { display: block; color: #3c2f28; font-size: 12px; text-transform: uppercase; }
-          table { width: 100%; border-collapse: collapse; }
-          th { text-align: left; background: #fff3e8; color: #7a3a13; font-size: 12px; text-transform: uppercase; }
-          th, td { border-bottom: 1px solid #eaded4; padding: 10px; font-size: 13px; }
-          td:nth-child(n+2), th:nth-child(n+2) { text-align: right; }
-          .totals { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 18px; width: 100%; }
-          .line { min-height: 70px; display: flex; flex-direction: column; justify-content: center; gap: 6px; border: 1px solid #eaded4; border-radius: 12px; padding: 10px; color: #5f5047; background: #fffdfb; text-align: center; }
-          .line span { font-size: 11px; font-weight: 800; text-transform: uppercase; }
-          .line strong { color: #3c2f28; font-size: 15px; white-space: nowrap; }
-          .line.total { color: #1f1f1f; background: #fff7ef; border-color: #efc7a5; }
-          .line.managed { color: #1f1f1f; background: #f5fff8; border-color: #adddc0; }
-          .line.managed strong { color: #087a36; }
-          @media print {
-            body { padding: 18px; }
-            .page { max-width: none; border-radius: 12px; padding: 24px; }
-            .totals { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-          }
-        </style>
-      </head>
-      <body>
-        <main class="page">
-          <header>
-            <div>
-              <h1>Cotizacion de servicio</h1>
-              <p>Documento previo para revision y aprobacion comercial.</p>
-            </div>
-            <div class="code">
-              <strong>${escapeDocText(documentCode)}</strong>
-              <p>${formatDate(quote?.createdAt)}</p>
-            </div>
-          </header>
-
-          <section class="grid">
-            <div><strong>Cliente</strong>${escapeDocText(quote?.customerName)}</div>
-            <div><strong>WhatsApp / Celular</strong>${escapeDocText(quote?.customerPhone)}</div>
-            <div><strong>Evento</strong>${escapeDocText(quote?.eventType)} - ${formatDate(quote?.eventDate)} ${escapeDocText(quote?.eventTime)}</div>
-            <div><strong>Direccion</strong>${escapeDocText(quote?.address)} ${escapeDocText(quote?.city)}</div>
-            <div><strong>Facturacion</strong>${escapeDocText(BILLING_MODE_META[quote?.billingMode] ?? 'Sin factura')}</div>
-            <div><strong>Logistica</strong>${escapeDocText(LOGISTICS_MODE_META[quote?.logisticsMode] ?? 'Envio por equipo')}</div>
-          </section>
-
-          <h2>Items cotizados</h2>
-          <table>
-            <thead><tr><th>Item</th><th>Cantidad</th><th>Precio unit.</th><th>Subtotal</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="4">Sin items registrados.</td></tr>'}</tbody>
-          </table>
-
-          ${hasDuration ? `
-            <h2>Cobro por duracion</h2>
-            <table>
-              <thead><tr><th>Dia</th><th>% cobro</th><th>Base</th><th>Monto</th></tr></thead>
-              <tbody>${durationRows}</tbody>
-            </table>
-          ` : ''}
-
-          <section class="totals">
-            <div class="line"><span>Subtotal</span><strong>${formatBs(subtotalBs)}</strong></div>
-            ${hasDuration ? `<div class="line"><span>Promocion duracion</span><strong>${formatBs(Number(quote?.totals?.durationDiscountBs ?? 0))}</strong></div>` : ''}
-            <div class="line"><span>Descuento</span><strong>${formatBs(discountBs)}</strong></div>
-            <div class="line"><span>Garantia</span><strong>${formatBs(guaranteeBs)}</strong></div>
-            ${quote?.logisticsMode === 'envio' ? `<div class="line"><span>Envio por equipo</span><strong>${deliveryFeeBs > 0 ? formatBs(deliveryFeeBs) : 'Incluido'}</strong></div>` : ''}
-            <div class="line total"><span>Total</span><strong>${formatBs(totalBs)}</strong></div>
-            <div class="line managed"><span>Total + garantia</span><strong>${formatBs(totalWithGuaranteeBs)}</strong></div>
-          </section>
-        </main>
-      </body>
-    </html>`;
-};
-
 const buildSupplierInternalDocumentHtml = ({ order, contract, formatDate, formatBs }) => {
   const contractPlan = Array.isArray(contract?.supplierFulfillmentPlan) ? contract.supplierFulfillmentPlan : [];
   const orderPlan = Array.isArray(order?.supplierFulfillmentPlan) ? order.supplierFulfillmentPlan : [];
@@ -7279,7 +7149,23 @@ function ServiceOrdersSection({
 
   const handleApproveQuoteClick = async (quote) => {
     setMenuState(null);
-    setQuoteApprovalPreview(quote);
+    setFormError('');
+    setQuoteApprovalPreview({ ...quote, __previewLoading: true, __previewBlobUrl: '' });
+    try {
+      const renderedPdf = await fetchQuotePdf({
+        identifier: quote.id ?? quote.quoteCode,
+        paperSize: 'oficio',
+      });
+      setQuoteApprovalPreview({
+        ...quote,
+        __previewLoading: false,
+        __previewBlobUrl: renderedPdf.blobUrl,
+        __previewViewerUrl: renderedPdf.viewerUrl,
+      });
+    } catch (requestError) {
+      setQuoteApprovalPreview({ ...quote, __previewLoading: false, __previewBlobUrl: '' });
+      setFormError(requestError.message || 'No se pudo preparar la cotizacion para aprobar.');
+    }
   };
 
   const confirmApproveQuoteClick = async () => {
@@ -7337,15 +7223,30 @@ function ServiceOrdersSection({
     openCreateModal('quote', 'quote', quote);
   };
 
-  const handleOpenQuoteDocument = (quote) => {
+  const handleOpenQuoteDocument = async (quote, paperSize = 'oficio') => {
     setMenuState(null);
-    setDocumentPreview({
-      kind: 'quote',
-      orderCode: quote.quoteCode ?? quote.id,
-      title: `Cotizacion ${quote.quoteCode || quote.id}`,
-      fileName: buildDocumentFileBase(quote.customerName, quote.quoteCode || quote.id, 'cotizacion'),
-      html: buildQuoteApprovalDocumentHtml({ quote, formatDate, formatBs }),
-    });
+    setFormError('');
+    try {
+      const renderedPdf = await fetchQuotePdf({
+        identifier: quote.id ?? quote.quoteCode,
+        paperSize,
+      });
+      setDocumentPreview({
+        kind: 'quote',
+        orderCode: quote.quoteCode ?? quote.id,
+        title: `Cotizacion ${quote.quoteCode || quote.id}`,
+        fileName: buildDocumentFileBase(quote.customerName, quote.quoteCode || quote.id, 'cotizacion'),
+        html: '',
+        blobUrl: renderedPdf.blobUrl,
+        viewerUrl: renderedPdf.viewerUrl,
+        mimeType: 'application/pdf',
+        paperSize,
+        sourceRow: quote,
+        loading: false,
+      });
+    } catch (requestError) {
+      setFormError(requestError.message || 'No se pudo abrir la cotizacion.');
+    }
   };
 
   const handleDeleteQuoteClick = async (quote) => {
@@ -7699,6 +7600,72 @@ function ServiceOrdersSection({
       endSubmit();
       setMenuState(null);
     }
+  };
+
+  const requestQuotePdfViewerUrl = async ({ identifier, paperSize = 'oficio' }) => {
+    const requestedId = String(identifier ?? '').trim();
+    if (!requestedId) {
+      throw new Error('No se pudo identificar la cotizacion.');
+    }
+
+    const response = await fetch(
+      getDocumentApiUrl(`/__copetin_db/quotes/${encodeURIComponent(requestedId)}/pdf-access?paper=${encodeURIComponent(paperSize)}`),
+      {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'No se pudo preparar el visor de la cotizacion.');
+    }
+
+    const payload = await response.json();
+    const relativeUrl = String(payload?.url ?? '').trim();
+    if (!relativeUrl) {
+      throw new Error('El servidor no devolvio una URL valida para el PDF.');
+    }
+    return getDocumentApiUrl(relativeUrl);
+  };
+
+  const fetchQuotePdf = async ({ identifier, paperSize = 'oficio' }) => {
+    const requestedId = String(identifier ?? '').trim();
+    if (!requestedId) {
+      throw new Error('No se pudo identificar la cotizacion.');
+    }
+
+    const response = await fetch(
+      getDocumentApiUrl(`/__copetin_db/quotes/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}`),
+      {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'No se pudo obtener el PDF de la cotizacion.');
+    }
+
+    const pdfBlob = await response.blob();
+    if (pdfBlob.type && pdfBlob.type !== 'application/pdf') {
+      throw new Error('El servidor no devolvio un documento PDF valido.');
+    }
+
+    const viewerUrl = await requestQuotePdfViewerUrl({ identifier: requestedId, paperSize });
+    return {
+      blobUrl: URL.createObjectURL(pdfBlob),
+      viewerUrl,
+      cacheStatus: response.headers.get('X-Document-Cache') ?? '',
+      durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
+    };
   };
 
   const requestContractPdfViewerUrl = async ({ identifier, paperSize = 'oficio' }) => {
@@ -9479,7 +9446,12 @@ function ServiceOrdersSection({
   const handleContractPaperSizeChange = async (event) => {
     const paperSize = event.target.value === 'carta' ? 'carta' : 'oficio';
     const current = documentPreview;
-    if (!current || current.kind !== 'contract' || !current.sourceRow || current.paperSize === paperSize) return;
+    if (!current || !current.sourceRow || current.paperSize === paperSize) return;
+    if (current.kind === 'quote') {
+      await handleOpenQuoteDocument(current.sourceRow, paperSize);
+      return;
+    }
+    if (current.kind !== 'contract') return;
     await handlePrintOrderDocument('contract', current.sourceRow, paperSize);
   };
 
@@ -9615,13 +9587,7 @@ function ServiceOrdersSection({
 
     try {
       if (recordType === 'quote') {
-        setDocumentPreview({
-          kind: 'quote',
-          orderCode: row.quoteCode,
-          title: `Cotizacion ${row.quoteCode || row.id}`,
-          fileName: buildDocumentFileBase(row.customerName, row.quoteCode || row.id, 'cotizacion'),
-          html: buildQuoteApprovalDocumentHtml({ quote: row, formatDate, formatBs }),
-        });
+        await handleOpenQuoteDocument(row);
         return;
       }
 
@@ -13152,18 +13118,24 @@ function ServiceOrdersSection({
               </button>
             </header>
             <div className="orders-preview-body">
-              <iframe
-                title={`Cotizacion ${quoteApprovalPreview.quoteCode}`}
-                srcDoc={buildQuoteApprovalDocumentHtml({ quote: quoteApprovalPreview, formatDate, formatBs })}
-                className="orders-document-frame"
-              />
+              {quoteApprovalPreview.__previewLoading ? (
+                <div className="orders-document-loading">Generando cotizacion...</div>
+              ) : quoteApprovalPreview.__previewBlobUrl ? (
+                <iframe
+                  title={`Cotizacion ${quoteApprovalPreview.quoteCode}`}
+                  src={quoteApprovalPreview.__previewBlobUrl}
+                  className="orders-document-frame"
+                />
+              ) : (
+                <div className="orders-document-loading">No se pudo cargar la vista previa.</div>
+              )}
             </div>
             {formError ? <p className="status error orders-modal-error">{formError}</p> : null}
             <footer className="orders-modal-foot">
               <button type="button" className="ghost-button" onClick={() => setQuoteApprovalPreview(null)} disabled={isSubmitting}>
                 Cerrar
               </button>
-              <button type="button" className="primary-button" onClick={confirmApproveQuoteClick} disabled={isSubmitting}>
+              <button type="button" className="primary-button" onClick={confirmApproveQuoteClick} disabled={isSubmitting || quoteApprovalPreview.__previewLoading || !quoteApprovalPreview.__previewBlobUrl}>
                 {isSubmitting ? 'Aprobando...' : 'Aprobar y crear contrato'}
               </button>
             </footer>
@@ -13294,7 +13266,7 @@ function ServiceOrdersSection({
               <button type="button" className="ghost-button" onClick={closeDocumentPreview}>
                 Cerrar
               </button>
-              {documentPreview.kind === 'contract' ? (
+              {['contract', 'quote'].includes(documentPreview.kind) ? (
                 <label
                   style={{
                     display: 'inline-flex',

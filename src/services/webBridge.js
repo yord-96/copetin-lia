@@ -8337,7 +8337,9 @@ export const buildContractDocumentHtml = ({
   settings,
   items = [],
   paperSize = 'oficio',
+  documentKind = 'contract',
 }) => {
+  const isQuoteDocument = String(documentKind ?? '').trim().toLowerCase() === 'quote';
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
   const company = getDocumentCompany(settings);
@@ -8515,7 +8517,9 @@ export const buildContractDocumentHtml = ({
       settled,
     };
   };
-  const mainCode = contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO';
+  const mainCode = isQuoteDocument
+    ? (contract?.quoteCode ?? contract?.contractCode ?? contract?.orderCode ?? 'SIN-CODIGO')
+    : (contract?.contractCode ?? rental?.orderCode ?? contract?.orderCode ?? 'SIN-CODIGO');
   const documentCustomerName = contract?.customerName ?? rental?.customerName ?? '';
   const documentCustomerPhone = contract?.customerPhone ?? rental?.customerPhone ?? '';
   const documentCustomerReferencePhone = String(contract?.customerReferencePhone ?? rental?.customerReferencePhone ?? rental?.referencePhone ?? '').trim();
@@ -8523,7 +8527,7 @@ export const buildContractDocumentHtml = ({
     .map((phone) => String(phone ?? '').trim())
     .filter(Boolean);
   const documentCustomerCi = String(contract?.customerCi ?? contract?.nitCi ?? rental?.customerCi ?? rental?.nitCi ?? '').trim();
-  const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, 'contrato');
+  const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, isQuoteDocument ? 'cotizacion' : 'contrato');
   const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
@@ -9083,7 +9087,21 @@ export const buildContractDocumentHtml = ({
     <div class="rc-economic-lines">${economicLinesHtml}</div>
     ${economicHiddenCount > 0 ? `<p class="rc-economic-more">+ ${economicHiddenCount} movimiento(s) anterior(es) conservado(s) en el historial</p>` : ''}`;
 
-  const financialSummaryHtml = `
+  const financialSummaryHtml = isQuoteDocument
+    ? `
+          <div class="rc-financial-summary">
+            ${durationFinancialItemsHtml}
+            ${dailyScheduleFinancialItemsHtml}
+            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsGrossSubtotalBs)}</strong></div>
+            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento items</span><strong>- ${formatBs(itemDiscountsBs)}</strong></div>` : ''}
+            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Items neto</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>` : ''}
+            <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
+            <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
+            ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
+            ${Number(guaranteeBs ?? 0) > 0 ? `<div class="rc-financial-item guarantee"><span>Garantia prevista</span><strong>${formatBs(guaranteeBs)}</strong></div>` : ''}
+            <div class="rc-financial-item total"><span>Total cotizacion</span><strong>${formatBs(totalBs)}</strong></div>
+          </div>`
+    : `
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
             ${dailyScheduleFinancialItemsHtml}
@@ -9135,7 +9153,7 @@ export const buildContractDocumentHtml = ({
       </header>
 
       <section class="rc-title">
-        <h1>CONTRATO DE ALQUILER</h1>
+        <h1>${isQuoteDocument ? 'COTIZACIÓN DE ALQUILER' : 'CONTRATO DE ALQUILER'}</h1>
         <i></i>
       </section>
 
@@ -9168,13 +9186,13 @@ export const buildContractDocumentHtml = ({
       </section>
 
       <section class="rc-items">
-        <h2 class="rc-block-title">Detalle de items contratados</h2>
+        <h2 class="rc-block-title">${isQuoteDocument ? 'Detalle de items cotizados' : 'Detalle de items contratados'}</h2>
         ${itemTablesHtml}
         ${manualBlockHtml}
         <section class="rc-continuation-head">
           <div>
-            <h2>Resumen y cierre del contrato</h2>
-            <p>Totales, observaciones, control de garantia y conformidad</p>
+            <h2>${isQuoteDocument ? 'Resumen de la cotizacion' : 'Resumen y cierre del contrato'}</h2>
+            <p>${isQuoteDocument ? 'Totales, observaciones y condiciones comerciales' : 'Totales, observaciones, control de garantia y conformidad'}</p>
           </div>
           <strong>N&deg; ${escapeHtml(mainCode)}</strong>
         </section>
@@ -9188,12 +9206,12 @@ export const buildContractDocumentHtml = ({
               <strong>Observaciones:</strong>
               <p>${escapeHtml(observations)}</p>
             </div>
-            <div class="rc-economic-control">
+            ${isQuoteDocument ? '' : `<div class="rc-economic-control">
               ${economicControlHtml}
-            </div>
+            </div>`}
           </section>
 
-          <section class="rc-client-materials">
+          ${isQuoteDocument ? '' : `<section class="rc-client-materials">
             <div class="rc-material-grid">
               <div class="rc-material-box">
                 <h4>Material dejado al cliente</h4>
@@ -9204,7 +9222,7 @@ export const buildContractDocumentHtml = ({
                 <div class="rc-material-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
               </div>
             </div>
-          </section>
+          </section>`}
         </div>
 
         <section class="rc-financial-block">
@@ -9215,8 +9233,9 @@ export const buildContractDocumentHtml = ({
       <div class="rc-page-bottom">
         <section class="rc-page-bottom-signatures">
           <section class="rc-signatures">
-            <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div>
-            <div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>
+            ${isQuoteDocument
+              ? `<div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - conformidad comercial</strong><span>${escapeHtml(documentCustomerName)} | Cotizacion revisada</span></div></div><div class="rc-signature"><div class="rc-signature-line"><strong>El Copetin</strong><span>${escapeHtml(responsibleName)} | Responsable</span></div></div>`
+              : `<div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - recibe conforme</strong><span>${escapeHtml(rental.customerName)} | Entrega revisada</span></div></div><div class="rc-signature"><div class="rc-signature-line"><strong>Cliente - devuelve conforme</strong><span>${escapeHtml(rental.customerName)} | Devolucion revisada</span></div></div>`}
           </section>
         </section>
 

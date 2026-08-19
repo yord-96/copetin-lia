@@ -23,6 +23,12 @@ const CONTRACT_CREATE_PATCH_COLLECTIONS = Object.freeze([
   'contracts',
   'systemAuditLog',
 ]);
+
+const QUOTE_MUTATION_PATCH_COLLECTIONS = Object.freeze([
+  'clients',
+  'items',
+  'quotes',
+]);
 const CONTRACT_UPDATE_PATCH_COLLECTIONS = Object.freeze([
   'clients',
   'items',
@@ -2059,6 +2065,9 @@ const getTargetedMutationCollections = (domain, method) => {
   }
   if (domain === 'rentals' && method === 'cancel') {
     return RENTAL_CANCEL_PATCH_COLLECTIONS;
+  }
+  if (domain === 'quotes' && ['create', 'update', 'remove'].includes(method)) {
+    return QUOTE_MUTATION_PATCH_COLLECTIONS;
   }
   if (domain !== 'contracts') return null;
   if (method === 'create') return CONTRACT_CREATE_PATCH_COLLECTIONS;

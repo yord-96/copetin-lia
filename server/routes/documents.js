@@ -186,11 +186,28 @@ const requireContractPdfAccess = (req, res, next) => {
   requireInternalKey(req, res, next);
 };
 
+const requireQuotePdfAccess = (req, res, next) => {
+  const requestedId = String(req.params.id ?? '').trim();
+  const token = String(req.query?.access_token ?? '').trim();
+
+  if (token && hasValidDocumentAccessToken({
+    token,
+    kind: 'quote',
+    identifier: requestedId,
+  })) {
+    next();
+    return;
+  }
+
+  requireInternalKey(req, res, next);
+};
+
 const matchesIdentifier = (entry, requestedId) => [
   entry?.id,
   entry?.contractId,
   entry?.rentalId,
   entry?.contractCode,
+  entry?.quoteCode,
   entry?.orderCode,
   entry?.number,
 ].some((value) => String(value ?? '').trim() === requestedId);
@@ -211,6 +228,16 @@ const buildContractPdfFileName = (contract, rental) => {
     contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? 'contrato',
   );
   return [customer, code].filter(Boolean).join(' ').toUpperCase() || 'CONTRATO';
+};
+
+const buildQuotePdfFileName = (quote) => {
+  const customer = sanitizeFilePart(quote?.customerName ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(' ');
+  const code = sanitizeFilePart(quote?.quoteCode ?? 'cotizacion');
+  return [customer, code].filter(Boolean).join(' ').toUpperCase() || 'COTIZACION';
 };
 
 const normalizeContractPaperSize = (value) => (
@@ -317,6 +344,14 @@ const resolveContractContext = (state, requestedId) => {
     );
 
   return { contract, rental, deliveries };
+};
+
+const resolveQuoteContext = (state, requestedId) => {
+  const quotes = Array.isArray(state?.quotes) ? state.quotes : [];
+  const quote = quotes.find((entry) => !entry?.deletedAt && matchesIdentifier(entry, requestedId))
+    ?? quotes.find((entry) => matchesIdentifier(entry, requestedId))
+    ?? null;
+  return quote ? { quote } : null;
 };
 
 const resolveInventoryContext = (state, requestedId) => {
@@ -477,6 +512,88 @@ router.get(
       res.setHeader('X-Document-Key', result.cacheKey);
       res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
       res.setHeader('X-Contract-Paper-Size', paperSize);
+      res.send(result.buffer);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/__copetin_db/quotes/:id/pdf-access',
+  requireInternalKey,
+  (req, res) => {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar la cotizacion.' });
+      return;
+    }
+
+    const paperSize = normalizeContractPaperSize(req.query?.paper ?? req.body?.paper);
+    const token = createDocumentAccessToken({
+      kind: 'quote',
+      identifier: requestedId,
+    });
+    const encodedId = encodeURIComponent(requestedId);
+    const encodedToken = encodeURIComponent(token);
+    const encodedPaperSize = encodeURIComponent(paperSize);
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      paperSize,
+      url: `/__copetin_db/quotes/${encodedId}/pdf?paper=${encodedPaperSize}&access_token=${encodedToken}`,
+      expiresInMs: DOCUMENT_ACCESS_TOKEN_TTL_MS,
+    });
+  },
+);
+
+router.get(
+  '/__copetin_db/quotes/:id/pdf',
+  requireQuotePdfAccess,
+  async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const requestedId = String(req.params.id ?? '').trim();
+      const paperSize = normalizeContractPaperSize(req.query?.paper);
+      if (!requestedId) {
+        res.status(400).json({ error: 'Debes indicar la cotizacion.' });
+        return;
+      }
+
+      const snapshot = await getStateSnapshot();
+      const context = resolveQuoteContext(snapshot?.state, requestedId);
+      if (!context?.quote) {
+        res.status(404).json({ error: 'Cotizacion no encontrada.' });
+        return;
+      }
+
+      const quote = context.quote;
+      const rawHtml = buildContractDocumentHtml({
+        contract: quote,
+        rental: quote,
+        deliveries: [],
+        settings: snapshot?.state?.settings ?? {},
+        items: Array.isArray(snapshot?.state?.items) ? snapshot.state.items : [],
+        paperSize,
+        documentKind: 'quote',
+      });
+      const html = await embedContractAssets(rawHtml);
+
+      const result = await renderHtmlDocumentToPdf({
+        html,
+        baseUrl: `${req.protocol}://${req.get('host')}`,
+        fileName: buildQuotePdfFileName(quote),
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+      res.setHeader('Content-Length', String(result.buffer.length));
+      res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
+      res.setHeader('X-Document-Key', result.cacheKey);
+      res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+      res.setHeader('X-Quote-Paper-Size', paperSize);
       res.send(result.buffer);
     } catch (error) {
       next(error);
