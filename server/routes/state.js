@@ -6284,15 +6284,27 @@ const summarizeOrdersRental = (rental = {}) => ({
     ? {
         status: rental.payment.status ?? '',
         pendingPaymentBs: rental.payment.pendingPaymentBs ?? null,
+        damageCollectedBs: Number(rental.payment.damageCollectedBs ?? 0),
+        penaltiesCollectedBs: Number(rental.payment.penaltiesCollectedBs ?? 0),
+        returnChargesCollectedBs: Number(rental.payment.returnChargesCollectedBs ?? 0),
       }
     : null,
   totals: {
     totalBs: Number(rental?.totals?.totalBs ?? 0),
     pendingPaymentBs: rental?.totals?.pendingPaymentBs ?? null,
+    damageCollectedBs: Number(rental?.totals?.damageCollectedBs ?? 0),
+    penaltiesCollectedBs: Number(rental?.totals?.penaltiesCollectedBs ?? 0),
+    returnChargesCollectedBs: Number(rental?.totals?.returnChargesCollectedBs ?? 0),
   },
+  penaltiesBs: Number(rental.penaltiesBs ?? rental?.returnSettlement?.penaltiesBs ?? 0),
   returnSettlement: rental.returnSettlement
     ? {
         pendingCollectionBs: rental.returnSettlement.pendingCollectionBs ?? null,
+        penaltiesBs: Number(rental.returnSettlement.penaltiesBs ?? rental.penaltiesBs ?? 0),
+        damageCollectedBs: Number(rental.returnSettlement.damageCollectedBs ?? 0),
+        penaltiesCollectedBs: Number(rental.returnSettlement.penaltiesCollectedBs ?? 0),
+        discountCoveredByDepositBs: Number(rental.returnSettlement.discountCoveredByDepositBs ?? 0),
+        totalDiscountAgainstDepositBs: Number(rental.returnSettlement.totalDiscountAgainstDepositBs ?? 0),
         refundBs: Number(rental.returnSettlement.refundBs ?? 0),
         accountingStatus: rental.returnSettlement.accountingStatus ?? '',
       }

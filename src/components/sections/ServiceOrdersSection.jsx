@@ -2417,6 +2417,38 @@ function ServiceOrdersSection({
         rowLedgerBackedGuaranteeBs,
       );
       const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowLedgerTotals.chargesBs);
+      const damageChargeBs = Math.max(
+        0,
+        toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs),
+      );
+      const damageCollectedBs = Math.max(
+        0,
+        toMoneyNumber(linkedRental?.returnSettlement?.damageCollectedBs),
+        toMoneyNumber(linkedRental?.returnSettlement?.penaltiesCollectedBs),
+        toMoneyNumber(linkedRental?.payment?.damageCollectedBs),
+        toMoneyNumber(linkedRental?.payment?.penaltiesCollectedBs),
+        toMoneyNumber(linkedRental?.payment?.returnChargesCollectedBs),
+        toMoneyNumber(linkedRental?.totals?.damageCollectedBs),
+        toMoneyNumber(linkedRental?.totals?.penaltiesCollectedBs),
+        toMoneyNumber(linkedRental?.totals?.returnChargesCollectedBs),
+      );
+      const damageCoveredByGuaranteeBs = Math.min(
+        damageChargeBs,
+        Math.max(
+          0,
+          rowLedgerTotals.chargesBs,
+          toMoneyNumber(linkedRental?.returnSettlement?.discountCoveredByDepositBs),
+        ),
+      );
+      const damagePendingBs = Math.max(
+        0,
+        Number((damageChargeBs - damageCoveredByGuaranteeBs - damageCollectedBs).toFixed(2)),
+      );
+      const damageStatus = damageChargeBs <= 0.009
+        ? 'none'
+        : damagePendingBs <= 0.009
+          ? 'paid'
+          : 'pending';
       // La columna "Debe" del listado de contratos representa únicamente el
       // saldo comercial del contrato. Los daños/faltantes se consultan y cobran
       // por separado dentro del sector económico.
@@ -2528,6 +2560,11 @@ function ServiceOrdersSection({
         economicInternalNotes,
         guaranteeBs,
         guaranteeStatus,
+        damageChargeBs,
+        damageCollectedBs,
+        damageCoveredByGuaranteeBs,
+        damagePendingBs,
+        damageStatus,
         deletedByName: String(contract?.deletedByName ?? deletionRevision?.updatedByName ?? '').trim(),
         deletedByRole: String(contract?.deletedByRole ?? deletionRevision?.updatedByRole ?? '').trim(),
         deletedAt: contract?.deletedAt ?? deletionRevision?.updatedAt ?? null,
@@ -10459,6 +10496,7 @@ function ServiceOrdersSection({
                     <th>Cliente</th>
                     <th>Responsable</th>
                     <th>Servicio</th>
+                    <th>Daños y faltantes</th>
                     <th>Nota</th>
                     <th>Estado</th>
                     <th>Garantía</th>
@@ -10519,6 +10557,27 @@ function ServiceOrdersSection({
                                 <strong>{row.address || 'Sin direccion registrada'}</strong>
                                 <span>Envio por mi equipo</span>
                               </>
+                            )}
+                          </div>
+                        </td>
+                        <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 32 }}>
+                            {row.damageStatus === 'none' ? (
+                              <span style={{ color: '#64748b', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>NO TIENE</span>
+                            ) : row.damageStatus === 'paid' ? (
+                              <span
+                                title={`Daños/faltantes: ${formatBs(row.damageChargeBs)} · Recuperado: ${formatBs(row.damageChargeBs)}`}
+                                style={{ color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '4px 8px', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}
+                              >
+                                PAGADO
+                              </span>
+                            ) : (
+                              <span
+                                title={`Cargo total: ${formatBs(row.damageChargeBs)} · Pendiente: ${formatBs(row.damagePendingBs)}`}
+                                style={{ color: '#b45309', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 999, padding: '4px 8px', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}
+                              >
+                                {formatBs(row.damagePendingBs)}
+                              </span>
                             )}
                           </div>
                         </td>
