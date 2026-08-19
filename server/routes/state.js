@@ -7477,8 +7477,10 @@ router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
         rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeOrdersRental),
         deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeOrdersDelivery),
         // Cotizaciones permanecen disponibles porque comparten esta misma vista.
-        // Catálogo, proveedores y demás datos pesados se cargan solo al abrir el editor.
+        // La numeración es configuración liviana y debe viajar desde el primer render
+        // para no mostrar temporalmente 1/2 cuando el correlativo real ya está avanzado.
         quotes: Array.isArray(state.quotes) ? state.quotes : [],
+        settings: state.settings ?? {},
       },
     });
   } catch (error) {
