@@ -611,14 +611,23 @@ const getResponsibleDisplayName = (record) => {
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.name) : [];
   if (responsibles.length > 1) return `${responsibles[0].name} + ${responsibles.length - 1} mas`;
   if (responsibles.length === 1) return responsibles[0].name;
-  return record?.createdByName ?? record?.userName ?? record?.createdBy ?? 'Sistema';
+  return record?.responsibleName
+    ?? record?.assignedToName
+    ?? record?.createdByName
+    ?? record?.userName
+    ?? record?.createdBy
+    ?? 'Sistema';
 };
 
 const getResponsibleDisplayRole = (record) => {
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.role) : [];
   if (responsibles.length > 1) return 'Responsables multiples';
   if (responsibles.length === 1) return responsibles[0].role;
-  return record?.createdByRole ?? record?.userRole ?? 'Operacion';
+  return record?.responsibleRole
+    ?? record?.assignedToRole
+    ?? record?.createdByRole
+    ?? record?.userRole
+    ?? 'Operacion';
 };
 
 const buildResponsibleOption = ({ id, name, role, source }) => {
@@ -1565,6 +1574,7 @@ function ServiceOrdersSection({
   onOpenImage,
   onPrintContractDocument,
   onPrintRouteSheetDocument,
+  onPrepareEditorData,
   canAccessInventory = true,
   canAccessTransport = true,
 }) {
@@ -2042,6 +2052,7 @@ function ServiceOrdersSection({
         .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
       const delivery = linkedDeliveries[0] ?? null;
       const firstItem = rental.items?.[0];
+      const firstItemName = firstItem?.itemName ?? firstItem?.name ?? rental.firstItemName ?? '';
       const itemsCount = Number.isFinite(Number(rental.itemsCount))
         ? Number(rental.itemsCount)
         : (rental.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
@@ -2070,7 +2081,7 @@ function ServiceOrdersSection({
         client: rental.customerName,
         customerPhone: rental.customerPhone ?? rental.phone ?? '',
         clientMeta: rental.customerPhone ? `Cel: ${rental.customerPhone}` : 'Sin telefono',
-        event: firstItem?.itemName ? `Servicio de ${firstItem.itemName}` : 'Servicio de alquiler',
+        event: firstItemName ? `Servicio de ${firstItemName}` : 'Servicio de alquiler',
         eventMeta: `${itemsCount} items`,
         serviceDate: rental.dueDate,
         serviceTime: rental.dueTime ? `${rental.dueTime} (max)` : '-',
@@ -5520,8 +5531,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
   };
 
-  const openCreateModal = (mode, entityType = 'quote', sourceRecord = null) => {
+  const openCreateModal = async (mode, entityType = 'quote', sourceRecord = null) => {
     if (readOnly) return;
+    if (onPrepareEditorData) {
+      try {
+        await onPrepareEditorData();
+      } catch (prepareError) {
+        setActionFeedback(prepareError?.message || 'No se pudieron cargar los datos del editor.');
+        return;
+      }
+    }
     setActionFeedback('');
     setFormError('');
     setSupplierPlanRemovalConfirmation(null);

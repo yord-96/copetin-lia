@@ -614,6 +614,25 @@ const fetchMobileOrdersOverview = async () => {
     personnelEmployees: [],
     settings: {},
   };
+  // Este resumen vive directamente en React. No lo copiamos al bridge/local state:
+  // evita serializar varios MB antes de que la tabla pueda pintarse.
+  serverStateIsPartial = true;
+  return overview;
+};
+
+const fetchOrdersEditorOverview = async () => {
+  const response = await fetch(getServerStateUrl('/orders/editor-overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudieron cargar los datos del editor de Ordenes.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  const overview = payload?.overview ?? {};
+  // Los datos de edición sí se mezclan en el bridge porque las mutaciones y
+  // selectores los reutilizan después de abrir el wizard.
   await mergeLocalState(overview);
   serverStateIsPartial = true;
   return overview;
@@ -3144,6 +3163,7 @@ export const api = {
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getMobileCalendarOverview: fetchMobileCalendarOverview,
     getMobileOrdersOverview: fetchMobileOrdersOverview,
+    getOrdersEditorOverview: fetchOrdersEditorOverview,
     getAvailabilityOverview: fetchAvailabilityOverview,
     getInventoryMovementsOverview: fetchInventoryMovementsOverview,
     getRevision: fetchServerMeta,

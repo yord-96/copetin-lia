@@ -65,10 +65,21 @@ const getCollectionSignature = (rows, kind) => {
         row?.status,
         row?.updatedAt,
         row?.deletedAt,
+        row?._ordersSummaryOnly,
+        row?._calendarSummaryOnly,
+        row?.eventDate,
+        row?.customerName,
+        row?.responsibleName,
+        row?.responsibleRole,
+        Array.isArray(row?.responsibles) ? row.responsibles.map((entry) => `${entry?.id ?? ''}:${entry?.name ?? ''}:${entry?.role ?? ''}`).join(',') : '',
         row?.totals?.totalBs,
         row?.totals?.guaranteeBs,
+        row?.totals?.pendingPaymentBs,
         row?.payment?.paidAtApprovalBs,
+        row?.payment?.pendingPaymentBs,
         row?.guarantee?.status,
+        row?.itemsCount,
+        Array.isArray(row?.economicLedger) ? row.economicLedger.length : 0,
       ].join(':');
     }
 
@@ -79,6 +90,15 @@ const getCollectionSignature = (rows, kind) => {
       row?.orderCode,
       row?.status,
       row?.updatedAt,
+      row?._ordersSummaryOnly,
+      row?._calendarSummaryOnly,
+      row?.eventDate,
+      row?.customerName,
+      row?.responsibleName,
+      row?.responsibleRole,
+      row?.itemsCount,
+      row?.payment?.pendingPaymentBs,
+      row?.totals?.pendingPaymentBs,
       row?.paidAtRentalBs,
       row?.depositBs,
       row?.returnedAt,
@@ -484,9 +504,13 @@ function AdminApp() {
     saveDeveloperCompanyChoice(choice);
     setDeveloperCompanyChoice(choice);
     if (choice === 'copetin') {
-      // La carga fue diferida mientras el selector estaba abierto. Iniciarla
-      // despues del clic mantiene el acceso empresarial ligero e inmediato.
-      controller.loadData();
+      // Ordenes es la entrada preferida cuando el usuario tiene permiso. No
+      // cargamos Calendario detrás del selector antes de mostrar la vista útil.
+      if (String(controller.activeTab) === 'alquiler') {
+        controller.prepareTabData?.('alquiler').catch(() => {});
+      } else {
+        controller.loadData();
+      }
     }
   };
 
@@ -805,6 +829,7 @@ function AdminApp() {
             onPrintContractDocument={controller.handlePrintContractDocument}
             onPrintInventoryWeekDocument={controller.handlePrintInventoryWeekDocument}
             onPrintRouteSheetDocument={controller.handlePrintRouteSheetDocument}
+            onPrepareEditorData={controller.prepareOrdersEditorData}
             canAccessTransport={canAccessTab(controller.currentUser, 'devolucion_entregas')}
             canAccessInventory={canAccessTab(controller.currentUser, 'inventario_movimientos')}
           />

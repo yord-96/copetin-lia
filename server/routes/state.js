@@ -6533,17 +6533,6 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
 });
 
 
-const summarizeAvailabilityItemLine = (line = {}) => ({
-  itemId: line.itemId ?? '',
-  itemName: line.itemName ?? line.name ?? '',
-  name: line.name ?? line.itemName ?? '',
-  quantity: Number(line.quantity ?? 0),
-  internalReservedQty: line.internalReservedQty ?? null,
-  supplierBackedQty: Number(line.supplierBackedQty ?? 0),
-  controlsStock: line.controlsStock !== false,
-  verificationStatus: line.verificationStatus ?? '',
-});
-
 const summarizeOrdersContract = (contract = {}) => ({
   id: contract.id ?? '',
   rentalId: contract.rentalId ?? '',
@@ -6614,8 +6603,6 @@ const summarizeOrdersContract = (contract = {}) => ({
   // disponibilidad por fecha. La edicion sigue descargando el contrato completo.
   itemsCount: (Array.isArray(contract.items) ? contract.items : [])
     .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
-  items: (Array.isArray(contract.items) ? contract.items : [])
-    .map(summarizeAvailabilityItemLine),
   economicLedger: (Array.isArray(contract.economicLedger) ? contract.economicLedger : [])
     .map(summarizeOrdersEconomicLedgerEntry),
   economicResetAt: contract.economicResetAt ?? null,
@@ -6643,6 +6630,14 @@ const summarizeOrdersRental = (rental = {}) => ({
   customerName: rental.customerName ?? '',
   customerPhone: rental.customerPhone ?? rental.phone ?? '',
   companyName: rental.companyName ?? '',
+  responsibleId: rental.responsibleId ?? null,
+  responsibleName: rental.responsibleName ?? rental.assignedToName ?? '',
+  responsibleRole: rental.responsibleRole ?? rental.assignedToRole ?? '',
+  responsibles: (Array.isArray(rental.responsibles) ? rental.responsibles : []).map((entry) => ({
+    id: entry?.id ?? '',
+    name: entry?.name ?? '',
+    role: entry?.role ?? '',
+  })),
   logisticsMode: rental.logisticsMode ?? 'envio',
   eventAddress: rental.eventAddress ?? rental.address ?? '',
   address: rental.address ?? '',
@@ -6696,8 +6691,11 @@ const summarizeOrdersRental = (rental = {}) => ({
     : null,
   itemsCount: (Array.isArray(rental.items) ? rental.items : [])
     .reduce((sum, line) => sum + Number(line?.quantity ?? 0), 0),
-  items: (Array.isArray(rental.items) ? rental.items : [])
-    .map(summarizeAvailabilityItemLine),
+  firstItemName: (Array.isArray(rental.items) ? rental.items : [])
+    .find((line) => String(line?.itemName ?? line?.name ?? '').trim())?.itemName
+    ?? (Array.isArray(rental.items) ? rental.items : [])
+      .find((line) => String(line?.itemName ?? line?.name ?? '').trim())?.name
+    ?? '',
   _summaryOnly: true,
   _ordersSummaryOnly: true,
 });
@@ -7478,7 +7476,26 @@ router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
         hiddenContracts: allContracts.filter((contract) => Boolean(contract?.deletedAt)).map(summarizeOrdersContract),
         rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeOrdersRental),
         deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeOrdersDelivery),
+        // Cotizaciones permanecen disponibles porque comparten esta misma vista.
+        // Catálogo, proveedores y demás datos pesados se cargan solo al abrir el editor.
         quotes: Array.isArray(state.quotes) ? state.quotes : [],
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/orders/editor-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
         clients: Array.isArray(state.clients) ? state.clients : [],
         items: Array.isArray(state.items) ? state.items : [],
         inventoryCombos: Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [],

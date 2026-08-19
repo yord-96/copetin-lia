@@ -30,6 +30,11 @@ const normalizePresenceList = (value) => {
   return [];
 };
 
+
+const getPreferredStartupTab = (user) => (
+  user && canAccessTab(user, 'alquiler') ? 'alquiler' : getDefaultTabForUser(user)
+);
+
 const shouldWaitForCompanyChoice = (user) => {
   if (typeof window === 'undefined') return false;
   const companies = getUserCompanyAccess(user);
@@ -163,6 +168,8 @@ export const useAppController = () => {
   const calendarOverviewLoadedRef = useRef(false);
   const ordersOverviewLoadedRef = useRef(false);
   const ordersOverviewRequestRef = useRef(null);
+  const ordersEditorDataLoadedRef = useRef(false);
+  const ordersEditorDataRequestRef = useRef(null);
   const availabilityOverviewLoadedRef = useRef(false);
   const availabilityOverviewRequestRef = useRef(null);
   const fullWorkspaceLoadedRef = useRef(false);
@@ -316,6 +323,30 @@ export const useAppController = () => {
         setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
         setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
         setQuotes(Array.isArray(overview?.quotes) ? overview.quotes : []);
+        ordersOverviewLoadedRef.current = true;
+      })
+      .catch((ordersError) => {
+        setError(ordersError.message || 'No se pudo cargar Ordenes.');
+        throw ordersError;
+      })
+      .finally(() => {
+        ordersOverviewRequestRef.current = null;
+        setOrdersModuleLoading(false);
+      });
+
+    ordersOverviewRequestRef.current = request;
+    await request;
+  }, []);
+
+  const prepareOrdersEditorData = useCallback(async () => {
+    if (ordersEditorDataLoadedRef.current) return;
+    if (ordersEditorDataRequestRef.current) {
+      await ordersEditorDataRequestRef.current;
+      return;
+    }
+
+    const request = api.sync.getOrdersEditorOverview()
+      .then((overview) => {
         setClients(Array.isArray(overview?.clients) ? overview.clients : []);
         setItems(Array.isArray(overview?.items) ? overview.items : []);
         setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
@@ -335,18 +366,13 @@ export const useAppController = () => {
           ...current,
           settings: overview?.settings ?? current?.settings ?? null,
         }));
-        ordersOverviewLoadedRef.current = true;
-      })
-      .catch((ordersError) => {
-        setError(ordersError.message || 'No se pudo cargar Ordenes.');
-        throw ordersError;
+        ordersEditorDataLoadedRef.current = true;
       })
       .finally(() => {
-        ordersOverviewRequestRef.current = null;
-        setOrdersModuleLoading(false);
+        ordersEditorDataRequestRef.current = null;
       });
 
-    ordersOverviewRequestRef.current = request;
+    ordersEditorDataRequestRef.current = request;
     await request;
   }, []);
 
@@ -693,7 +719,7 @@ export const useAppController = () => {
         const session = await api.auth.getSession();
         if (!isMounted) return;
         setCurrentUser(session);
-        setActiveTab(session ? getDefaultTabForUser(session) : 'caja');
+        setActiveTab(session ? getPreferredStartupTab(session) : 'caja');
       } catch (sessionError) {
         if (!isMounted) return;
         setAuthError(sessionError.message || 'No se pudo verificar la sesion.');
@@ -724,8 +750,14 @@ export const useAppController = () => {
       setLoading(false);
       return;
     }
+    if (String(activeTab) === 'alquiler') {
+      // Ordenes es la vista inicial preferida. Evitamos cargar Calendario primero:
+      // su resumen se solicitará únicamente cuando el usuario abra esa sección.
+      setLoading(false);
+      return;
+    }
     loadData();
-  }, [authReady, currentUser, loadData]);
+  }, [activeTab, authReady, currentUser, loadData]);
 
   useEffect(() => {
     if (!currentUser || canAccessTab(currentUser, activeTab)) return;
@@ -846,11 +878,13 @@ export const useAppController = () => {
       calendarOverviewLoadedRef.current = false;
       ordersOverviewLoadedRef.current = false;
       ordersOverviewRequestRef.current = null;
+      ordersEditorDataLoadedRef.current = false;
+      ordersEditorDataRequestRef.current = null;
       availabilityOverviewLoadedRef.current = false;
       availabilityOverviewRequestRef.current = null;
       fullWorkspaceLoadedRef.current = false;
       setCurrentUser(session);
-      setActiveTab(getDefaultTabForUser(session));
+      setActiveTab(getPreferredStartupTab(session));
       return session;
     } catch (requestError) {
       setLoading(false);
@@ -2994,6 +3028,7 @@ export const useAppController = () => {
     loading,
     ordersModuleLoading,
     prepareTabData,
+    prepareOrdersEditorData,
     error,
     loadData,
     dashboard,
