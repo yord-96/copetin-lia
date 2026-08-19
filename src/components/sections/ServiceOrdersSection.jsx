@@ -1343,6 +1343,179 @@ const saveSeenCounts = (counts) => {
   }
 };
 
+
+const escapeOrdersReportHtml = (value) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
+
+const exportOrdersRangeWorkbook = async (report = {}) => {
+  const excelModule = await import('exceljs');
+  const ExcelJS = excelModule.default ?? excelModule;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'El Copetin';
+  workbook.company = 'El Copetin';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const navy = 'FF173A70';
+  const dark = 'FF172033';
+  const muted = 'FF64748B';
+  const border = 'FFD7DEE8';
+  const soft = 'FFF8FAFC';
+  const success = 'FF16803C';
+  const successBg = 'FFEDF9F0';
+  const warning = 'FFB86A06';
+  const warningBg = 'FFFFF8E8';
+  const danger = 'FFB42332';
+  const dangerBg = 'FFFFF0F2';
+  const info = 'FF2563EB';
+  const infoBg = 'FFEEF5FF';
+  const mutedBg = 'FFF4F6F8';
+
+  const tonePalette = {
+    success: { fg: success, bg: successBg },
+    warning: { fg: warning, bg: warningBg },
+    danger: { fg: danger, bg: dangerBg },
+    info: { fg: info, bg: infoBg },
+    muted: { fg: muted, bg: mutedBg },
+    navy: { fg: navy, bg: 'FFEAF0F8' },
+  };
+  const setThinBorders = (cell) => {
+    cell.border = {
+      top: { style: 'thin', color: { argb: border } },
+      left: { style: 'thin', color: { argb: border } },
+      bottom: { style: 'thin', color: { argb: border } },
+      right: { style: 'thin', color: { argb: border } },
+    };
+  };
+
+  const sheet = workbook.addWorksheet('Ordenes de servicio', {
+    properties: { defaultRowHeight: 19 },
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.2, right: 0.2, top: 0.42, bottom: 0.42, header: 0.2, footer: 0.25 },
+    },
+    views: [{ state: 'frozen', ySplit: 10 }],
+  });
+  sheet.columns = [
+    { width: 6 }, { width: 14 }, { width: 25 }, { width: 14 }, { width: 23 },
+    { width: 28 }, { width: 15 }, { width: 17 }, { width: 16 }, { width: 15 }, { width: 13 },
+  ];
+
+  sheet.mergeCells('A1:K1');
+  sheet.getCell('A1').value = 'EL COPETÍN · ÓRDENES DE SERVICIO';
+  sheet.getCell('A1').font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+  sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
+  sheet.getRow(1).height = 23;
+
+  sheet.mergeCells('A2:G2');
+  sheet.getCell('A2').value = 'Reporte de Órdenes de Servicio';
+  sheet.getCell('A2').font = { name: 'Calibri', size: 21, bold: true, color: { argb: dark } };
+  sheet.mergeCells('H2:K2');
+  sheet.getCell('H2').value = `Periodo: ${report.rangeLabel || '—'}`;
+  sheet.getCell('H2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: dark } };
+  sheet.getCell('H2').alignment = { horizontal: 'right' };
+  sheet.getRow(2).height = 31;
+
+  sheet.mergeCells('A3:G3');
+  sheet.getCell('A3').value = `Filtros aplicados: ${report.filterLabel || 'Todos'}`;
+  sheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
+  sheet.mergeCells('H3:K3');
+  sheet.getCell('H3').value = `Generado: ${report.generatedAt || '—'}`;
+  sheet.getCell('H3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
+  sheet.getCell('H3').alignment = { horizontal: 'right' };
+
+  sheet.mergeCells('A5:K5');
+  sheet.getCell('A5').value = 'RESUMEN EJECUTIVO DEL PERIODO';
+  sheet.getCell('A5').font = { name: 'Calibri', size: 9, bold: true, color: { argb: muted } };
+  const cards = Array.isArray(report.summaryCards) ? report.summaryCards : [];
+  cards.slice(0, 6).forEach((card, index) => {
+    const start = index === 0 ? 1 : (index * 2);
+    const end = index === 0 ? 1 : Math.min(11, start + 1);
+    if (start !== end) sheet.mergeCells(6, start, 6, end);
+    const cell = sheet.getCell(6, start);
+    const palette = tonePalette[card.tone] ?? tonePalette.navy;
+    cell.value = `${card.label}\n${card.value}`;
+    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: palette.fg } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: palette.bg } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    setThinBorders(cell);
+  });
+  sheet.getRow(6).height = 40;
+
+  sheet.mergeCells('A8:K8');
+  sheet.getCell('A8').value = 'DETALLE DE CONTRATOS DEL RANGO';
+  sheet.getCell('A8').font = { name: 'Calibri', size: 12, bold: true, color: { argb: dark } };
+  const headers = ['N°', 'Contrato / OS', 'Cliente', 'Evento', 'Responsable', 'Servicio', 'Estado', 'Garantía', 'Daños / faltantes', 'Debe', 'Finalizado'];
+  const headerRow = sheet.getRow(10);
+  headerRow.values = headers;
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    setThinBorders(cell);
+  });
+
+  const rows = Array.isArray(report.rows) ? report.rows : [];
+  rows.forEach((row, index) => {
+    const excelRow = sheet.getRow(11 + index);
+    excelRow.values = [
+      index + 1,
+      `${row.contractCode || '—'}${row.orderCode ? ` / ${row.orderCode}` : ''}`,
+      row.customerName || 'Sin cliente',
+      row.eventDateValue ? new Date(`${row.eventDateValue}T12:00:00`) : '',
+      row.responsibleName || 'Sistema',
+      row.serviceLabel || '—',
+      row.statusLabel || '—',
+      row.guaranteeLabel || 'Sin garantía',
+      row.damageLabel || 'NO TIENE',
+      Number(row.dueBs ?? 0),
+      row.finalizedLabel || 'No',
+    ];
+    excelRow.height = 26;
+    excelRow.eachCell((cell, columnNumber) => {
+      cell.font = { name: 'Calibri', size: 9, color: { argb: dark }, bold: [2, 3, 10].includes(columnNumber) };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: [1, 4, 7, 8, 9, 10, 11].includes(columnNumber) ? 'center' : 'left',
+        wrapText: true,
+      };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFFFFFFF' : soft } };
+      setThinBorders(cell);
+    });
+    if (row.eventDateValue) excelRow.getCell(4).numFmt = 'dd/mm/yyyy';
+    excelRow.getCell(10).numFmt = '[$Bs ]#,##0.00;[Red]-[$Bs ]#,##0.00';
+    const statusPalette = tonePalette[row.statusTone] ?? tonePalette.muted;
+    excelRow.getCell(7).font = { name: 'Calibri', size: 9, bold: true, color: { argb: statusPalette.fg } };
+    excelRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusPalette.bg } };
+  });
+  const lastRow = Math.max(10, 10 + rows.length);
+  sheet.autoFilter = { from: { row: 10, column: 1 }, to: { row: lastRow, column: 11 } };
+  sheet.pageSetup.printTitlesRow = '1:10';
+  sheet.pageSetup.printArea = `A1:K${lastRow}`;
+  sheet.headerFooter.oddFooter = '&LEl Copetín · Órdenes de Servicio&C&P de &N&RDocumento interno';
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `reporte-ordenes-${report.rangeFileLabel || 'todo-el-periodo'}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
+
 function ServiceOrdersSection({
   quotes = [],
   contracts = [],
@@ -1518,6 +1691,7 @@ function ServiceOrdersSection({
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [isExportingOrdersReport, setIsExportingOrdersReport] = useState(false);
   const documentPreviewCacheRef = useRef(new Map());
   const documentPreviewUrlRef = useRef('');
   const deferredItemSearch = useDeferredValue(itemSearch);
@@ -2522,6 +2696,142 @@ function ServiceOrdersSection({
   );
 
   const hasMoreFilteredContracts = visibleContractsForRender.length < filteredContracts.length;
+
+
+  const openOrdersRangeReport = () => {
+    const rows = filteredContracts;
+    const from = String(contractDateFrom ?? '').slice(0, 10);
+    const to = String(contractDateTo ?? '').slice(0, 10);
+    const formatDateKey = (value) => {
+      const key = getDateKey(value);
+      if (!key) return 'Sin fecha';
+      const [year, month, day] = key.split('-');
+      return `${day}/${month}/${year}`;
+    };
+    const generatedAt = new Intl.DateTimeFormat('es-BO', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date());
+    const rangeLabel = from || to
+      ? `${from ? formatDateKey(from) : 'Inicio'} — ${to ? formatDateKey(to) : 'Fin'}`
+      : 'Todos los eventos visibles';
+    const statusLabels = {
+      borrador: 'Borrador', pendiente: 'Pendiente', aprobado: 'Aprobado',
+      rechazado: 'Rechazado', anulado: 'Anulado', oculto: 'Oculto',
+    };
+    const statusTones = {
+      aprobado: 'success', pendiente: 'warning', borrador: 'muted',
+      rechazado: 'danger', anulado: 'danger', oculto: 'muted',
+    };
+    const filterParts = [];
+    if (contractFilter !== 'all') filterParts.push(`Estado: ${statusLabels[contractFilter] || contractFilter}`);
+    if (String(contractQuery ?? '').trim()) filterParts.push(`Búsqueda: ${String(contractQuery).trim()}`);
+    const filterLabel = filterParts.length ? filterParts.join(' · ') : 'Todos los estados';
+
+    const reportRows = rows.map((row) => {
+      const isRowFinalized = finalizedContractOverrides.has(row.id)
+        ? finalizedContractOverrides.get(row.id)
+        : Boolean(row.isFinalized);
+      const serviceLabel = normalizeText(row.logisticsMode) === 'recojo'
+        ? 'Recojo por cliente'
+        : row.address || 'Envío por mi equipo';
+      const damageLabel = row.damageStatus === 'none'
+        ? 'NO TIENE'
+        : row.damageStatus === 'paid'
+          ? 'PAGADO'
+          : formatBs(row.damagePendingBs);
+      const guaranteeLabel = row.guaranteeBs > 0
+        ? `${formatBs(row.guaranteeBs)} · ${row.guaranteeSecondary || 'Pagada'}`
+        : 'Sin garantía';
+      return {
+        contractCode: row.contractCode || '',
+        orderCode: row.orderCode || '',
+        customerName: row.customerName || '',
+        eventDateValue: getDateKey(row.eventDate),
+        eventDateLabel: formatDateKey(row.eventDate),
+        responsibleName: row.responsibleName || 'Sistema',
+        serviceLabel,
+        statusLabel: statusLabels[row.status] || row.status || '—',
+        statusTone: statusTones[row.status] || 'muted',
+        guaranteeLabel,
+        damageLabel,
+        dueBs: Math.max(0, Number(row.dueBs ?? 0)),
+        finalizedLabel: isRowFinalized ? 'Sí' : 'No',
+        isPaid: Number(row.dueBs ?? 0) <= 0.009,
+        hasGuarantee: Number(row.guaranteeBs ?? 0) > 0,
+        hasDamage: row.damageStatus !== 'none',
+        isFinalized: isRowFinalized,
+      };
+    });
+    const count = (predicate) => reportRows.filter(predicate).length;
+    const totalPendingBs = reportRows.reduce((sum, row) => sum + Math.max(0, Number(row.dueBs ?? 0)), 0);
+    const summaryCards = [
+      { label: 'Contratos', value: reportRows.length, tone: 'navy' },
+      { label: 'Aprobados', value: count((row) => row.statusLabel === 'Aprobado'), tone: 'success' },
+      { label: 'Pagados', value: count((row) => row.isPaid), tone: 'success' },
+      { label: 'Con saldo', value: count((row) => !row.isPaid), tone: 'warning' },
+      { label: 'Con garantía', value: count((row) => row.hasGuarantee), tone: 'info' },
+      { label: 'Daños / faltantes', value: count((row) => row.hasDamage), tone: 'danger' },
+    ];
+    const htmlRows = reportRows.map((row, index) => `
+      <tr>
+        <td class="center">${index + 1}</td>
+        <td><strong>${escapeOrdersReportHtml(row.contractCode || '—')}</strong><br><small>${escapeOrdersReportHtml(row.orderCode || '')}</small></td>
+        <td>${escapeOrdersReportHtml(row.customerName || 'Sin cliente')}</td>
+        <td class="center">${escapeOrdersReportHtml(row.eventDateLabel)}</td>
+        <td>${escapeOrdersReportHtml(row.responsibleName)}</td>
+        <td>${escapeOrdersReportHtml(row.serviceLabel)}</td>
+        <td class="center"><span class="pill ${row.statusTone}">${escapeOrdersReportHtml(row.statusLabel)}</span></td>
+        <td class="center">${escapeOrdersReportHtml(row.guaranteeLabel)}</td>
+        <td class="center">${escapeOrdersReportHtml(row.damageLabel)}</td>
+        <td class="amount ${row.isPaid ? 'paid' : 'due'}">${escapeOrdersReportHtml(row.isPaid ? 'Pagado' : formatBs(row.dueBs))}</td>
+        <td class="center">${row.isFinalized ? '✓' : '—'}</td>
+      </tr>`).join('');
+
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" />
+<title>Reporte de Órdenes de Servicio</title>
+<style>
+@page{size:A4 landscape;margin:10mm 8mm 12mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}body{font-family:Arial,Helvetica,sans-serif;color:#172033;font-size:8.8px;line-height:1.25;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.header{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:24px;align-items:end;padding-bottom:11px;border-bottom:3px solid #173a70}.brand{margin-bottom:5px;color:#173a70;font-size:9px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}h1{margin:0;color:#111827;font-size:24px;line-height:1;letter-spacing:-.025em}.subtitle{margin:5px 0 0;color:#64748b;font-size:10px}.meta{border-left:1px solid #cbd5e1;padding-left:16px}.meta-row{display:grid;grid-template-columns:75px 1fr;gap:8px;padding:2px 0}.meta-row span{color:#64748b;font-size:8px;font-weight:700;text-transform:uppercase}.meta-row strong{text-align:right;font-size:9px}.summary-title{margin:13px 0 6px;color:#475569;font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:13px}.card{min-height:48px;padding:8px 10px;border:1px solid #d7dee8;border-top:3px solid #173a70}.card span{display:block;color:#64748b;font-size:7.4px;font-weight:800;text-transform:uppercase}.card strong{display:block;margin-top:5px;color:#173a70;font-size:18px}.card.success{border-top-color:#16803c}.card.success strong{color:#16803c}.card.warning{border-top-color:#b86a06}.card.warning strong{color:#b86a06}.card.danger{border-top-color:#b42332}.card.danger strong{color:#b42332}.card.info{border-top-color:#2563eb}.card.info strong{color:#2563eb}.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.section-head h2{margin:0;font-size:12px}.section-head small{color:#64748b}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{padding:6px 5px;background:#173a70;color:#fff;border:1px solid #d7dee8;font-size:7.2px;text-transform:uppercase}td{padding:5px;border:1px solid #d7dee8;vertical-align:middle;overflow-wrap:anywhere}tbody tr:nth-child(even) td{background:#f8fafc}.center{text-align:center}.amount{text-align:right;font-weight:800}.paid{color:#16803c}.due{color:#b86a06}.pill{display:inline-block;border:1px solid transparent;border-radius:999px;padding:2px 6px;font-size:7.2px;font-weight:800;white-space:nowrap}.pill.success{border-color:#a7dfb7;background:#edf9f0;color:#16753a}.pill.warning{border-color:#f0cf8c;background:#fff8e8;color:#9a5b08}.pill.danger{border-color:#efb5bc;background:#fff0f2;color:#a52634}.pill.muted{border-color:#d5dbe4;background:#f4f6f8;color:#596678}small{color:#64748b}.footer{margin-top:10px;padding-top:7px;border-top:1px solid #cbd5e1;display:flex;justify-content:space-between;color:#7b8798;font-size:7.4px}
+th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8%}th:nth-child(3),td:nth-child(3){width:12%}th:nth-child(4),td:nth-child(4){width:7%}th:nth-child(5),td:nth-child(5){width:11%}th:nth-child(6),td:nth-child(6){width:17%}th:nth-child(7),td:nth-child(7){width:8%}th:nth-child(8),td:nth-child(8){width:10%}th:nth-child(9),td:nth-child(9){width:10%}th:nth-child(10),td:nth-child(10){width:8%}th:nth-child(11),td:nth-child(11){width:6%}
+@media print{tr{break-inside:avoid}.header,.cards,.section-head{break-inside:avoid}}
+</style></head><body>
+<header class="header"><div><div class="brand">EL COPETÍN · ÓRDENES DE SERVICIO</div><h1>Reporte de Órdenes de Servicio</h1><p class="subtitle">Control comercial de contratos según los filtros visibles en la vista de Órdenes.</p></div><div class="meta"><div class="meta-row"><span>Periodo</span><strong>${escapeOrdersReportHtml(rangeLabel)}</strong></div><div class="meta-row"><span>Generado</span><strong>${escapeOrdersReportHtml(generatedAt)}</strong></div><div class="meta-row"><span>Contratos</span><strong>${reportRows.length}</strong></div><div class="meta-row"><span>Pendiente</span><strong>${escapeOrdersReportHtml(formatBs(totalPendingBs))}</strong></div></div></header>
+<div class="summary-title">Resumen ejecutivo del periodo</div><section class="cards">${summaryCards.map((card) => `<div class="card ${card.tone}"><span>${escapeOrdersReportHtml(card.label)}</span><strong>${escapeOrdersReportHtml(card.value)}</strong></div>`).join('')}</section>
+<section><div class="section-head"><h2>Detalle de contratos del rango</h2><small>${reportRows.length} contrato(s) encontrados · ${escapeOrdersReportHtml(filterLabel)}</small></div><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Evento</th><th>Responsable</th><th>Servicio</th><th>Estado</th><th>Garantía</th><th>Daños / faltantes</th><th>Debe</th><th>Finalizado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="11" class="center">No hay contratos con los filtros seleccionados.</td></tr>'}</tbody></table></section>
+<footer class="footer"><span><strong>EL COPETÍN</strong> · Gestión comercial y operativa</span><span>Filtros: ${escapeOrdersReportHtml(filterLabel)} · ${escapeOrdersReportHtml(rangeLabel)}</span></footer>
+</body></html>`;
+
+    setDocumentPreview({
+      kind: 'orders-report',
+      title: `Reporte de Órdenes · ${rangeLabel}`,
+      html,
+      mimeType: 'text/html',
+      fileName: `reporte-ordenes-${from || 'inicio'}-${to || 'fin'}.html`,
+      reportData: {
+        rangeLabel,
+        rangeFileLabel: `${from || 'inicio'}_${to || 'fin'}`,
+        generatedAt,
+        filterLabel,
+        totalPendingBs,
+        summaryCards,
+        rows: reportRows,
+      },
+    });
+  };
+
+  const exportOrdersPreviewToExcel = async () => {
+    if (documentPreview?.kind !== 'orders-report' || !documentPreview?.reportData || isExportingOrdersReport) return;
+    try {
+      setIsExportingOrdersReport(true);
+      await exportOrdersRangeWorkbook(documentPreview.reportData);
+    } catch (error) {
+      console.error('No se pudo exportar el reporte de Órdenes.', error);
+      window.alert(error?.message || 'No se pudo generar el Excel. Intenta nuevamente.');
+    } finally {
+      setIsExportingOrdersReport(false);
+    }
+  };
 
   useEffect(() => {
     if (activeView !== 'quotes' && activeView !== 'contracts') return;
@@ -10422,7 +10732,9 @@ function ServiceOrdersSection({
                     </button>
                   ) : null}
                 </div>
-                <button type="button" className="link-button orders-export-btn">Exportar</button>
+                <button type="button" className="primary-button orders-export-btn" onClick={openOrdersRangeReport}>
+                  Generar reporte
+                </button>
               </header>
 
               <div className="orders-status-tabs">
@@ -13206,7 +13518,7 @@ function ServiceOrdersSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>Vista previa del documento. Puedes revisarlo e imprimirlo desde aqui.</p>
+                <p>{documentPreview.kind === 'orders-report' ? 'Vista previa del reporte de Órdenes según los filtros actuales.' : 'Vista previa del documento. Puedes revisarlo e imprimirlo desde aqui.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={closeDocumentPreview}>
                 x
@@ -13266,6 +13578,16 @@ function ServiceOrdersSection({
               <button type="button" className="ghost-button" onClick={closeDocumentPreview}>
                 Cerrar
               </button>
+              {documentPreview.kind === 'orders-report' ? (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={exportOrdersPreviewToExcel}
+                  disabled={isExportingOrdersReport}
+                >
+                  {isExportingOrdersReport ? 'Generando Excel...' : 'Exportar a Excel'}
+                </button>
+              ) : null}
               {['contract', 'quote'].includes(documentPreview.kind) ? (
                 <label
                   style={{
