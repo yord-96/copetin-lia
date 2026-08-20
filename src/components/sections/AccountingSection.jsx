@@ -5672,8 +5672,8 @@ function AccountingSection({
               guaranteesView === 'pending' ? visibleGuaranteeRows.length : visibleReturnedGuaranteeRows.length,
               '',
             )}
-            <div className="bigcash-table-wrap bigcash-command-table-wrap">
-              <table className="accounting-table bigcash-table bigcash-command-table">
+            <div className={`bigcash-table-wrap bigcash-command-table-wrap bigcash-guarantees-table-wrap is-${guaranteesView}`}>
+              <table className={`accounting-table bigcash-table bigcash-command-table bigcash-guarantees-table is-${guaranteesView}`}>
                 <thead>
                   {guaranteesView === 'pending' ? (
                     <tr>

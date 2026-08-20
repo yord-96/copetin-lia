@@ -52975,6 +52975,45 @@ body:has(.accounting-bigcash-view) .workspace {
   background: #fffaf0 !important;
 }
 
+/* Garantías: las dos vistas tienen 10 columnas. La tabla genérica de Caja
+   Grande reparte el ancho entre 6; aquí se reserva espacio para todas para
+   evitar columnas colapsadas y filas excesivamente altas. */
+.accounting-bigcash-view .bigcash-guarantees-table th,
+.accounting-bigcash-view .bigcash-guarantees-table td {
+  min-width: 0 !important;
+  height: auto !important;
+  padding: 0.7rem 0.5rem !important;
+  line-height: 1.18 !important;
+  overflow-wrap: break-word !important;
+  word-break: normal !important;
+}
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(1) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(2) { width: 16% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(3) { width: 13% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(4) { width: 12% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(5) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(6) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(7) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(8) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(9) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-pending :is(th, td):nth-child(10) { width: 7% !important; }
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(1) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(2) { width: 15% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(3) { width: 12% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(4) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(5) { width: 11% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(6) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(7) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(8) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(9) { width: 11% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(10) { width: 7% !important; }
+
+.accounting-bigcash-view .bigcash-guarantees-table :is(th, td):nth-child(n + 6) {
+  text-align: right !important;
+}
+
 .bigcash-list-modal .bigcash-list-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
