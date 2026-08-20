@@ -798,7 +798,6 @@ function AccountingSection({
     if (isReturned || rental?.returnSettlement) return getReturnedPendingCollectionBs(rental);
     const storedPendingBs = Math.max(0, toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs));
     const vipChargedBs = Math.max(0, toNumber(prepaidChargeByRentalId.get(String(rental?.id ?? ''))));
-    if (vipChargedBs <= 0) return storedPendingBs;
     const totalBs = Math.max(
       0,
       toNumber(rental?.totals?.totalBs),
@@ -814,14 +813,23 @@ function AccountingSection({
       toNumber(contract?.prepaidAppliedBs),
       vipChargedBs,
     );
-    const storedPaidBs = Math.max(0, toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs));
+    const storedPaidBs = Math.max(
+      0,
+      toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+      toNumber(contract?.payment?.paidAtApprovalBs),
+    );
     const nonVipPaidBs = storedPaidBs + 0.01 >= storedPrepaidBs
       ? Math.max(0, storedPaidBs - storedPrepaidBs)
       : storedPaidBs;
-    const derivedPendingBs = Math.max(0, Number((totalBs - nonVipPaidBs - vipChargedBs).toFixed(2)));
-    // El prepago real vinculado manda sobre saldos históricos inflados, pero
-    // nunca revive una deuda que ya fue reducida por otro cobro posterior.
-    return Math.max(0, Number(Math.min(storedPendingBs, derivedPendingBs).toFixed(2)));
+    const derivedPendingBs = Math.max(0, Number((
+      vipChargedBs > 0
+        ? totalBs - nonVipPaidBs - vipChargedBs
+        : totalBs - storedPaidBs
+    ).toFixed(2)));
+    // El saldo se deriva del total comercial completo. Algunos contratos antiguos
+    // guardaron pendingPaymentBs solo con los items y dejaron el transporte fuera,
+    // aunque totalBs ya lo incluia; por eso el saldo almacenado no puede mandar.
+    return derivedPendingBs;
   }, [prepaidChargeByRentalId]);
 
   const totalPrepaidBalanceBs = useMemo(
@@ -1630,6 +1638,27 @@ function AccountingSection({
         const contract = contractByRentalId.get(rental.id);
         const pendingBs = getVipAdjustedPendingBs(rental, contract);
         if (pendingBs <= 0) return null;
+        const totalBs = Math.max(
+          0,
+          toNumber(rental?.totals?.totalBs),
+          toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
+        );
+        const deliveryFeeBs = Math.max(
+          0,
+          toNumber(rental?.totals?.deliveryFeeBs),
+          toNumber(rental?.deliveryFeeBs),
+          toNumber(contract?.totals?.deliveryFeeBs),
+          toNumber(contract?.deliveryFeeBs),
+        );
+        const deliveryFeeCollectedBs = Math.max(0, toNumber(
+          rental?.payment?.deliveryFeeCollectedBs
+          ?? rental?.totals?.deliveryFeeCollectedBs,
+        ));
+        const transportPendingBs = Math.min(
+          pendingBs,
+          Math.max(0, Number((deliveryFeeBs - deliveryFeeCollectedBs).toFixed(2))),
+        );
+        const contractPendingBs = Math.max(0, Number((pendingBs - transportPendingBs).toFixed(2)));
         return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
@@ -1639,8 +1668,14 @@ function AccountingSection({
           eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
           status: isReturned ? 'Liquidacion' : 'Contrato',
           pendingBs,
-          totalBs: toNumber(rental?.totals?.totalBs),
-          paidBs: toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+          contractPendingBs,
+          transportPendingBs,
+          totalBs,
+          paidBs: Math.max(
+            0,
+            toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+            toNumber(contract?.payment?.paidAtApprovalBs),
+          ),
           guaranteeBs: toNumber(rental?.depositBs),
           penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
           outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
@@ -3110,7 +3145,12 @@ function AccountingSection({
             <td>{row.customerName}</td>
             <td>{row.responsibleName}</td>
             <td>{formatDate(row.eventDate)}</td>
-            <td className="amount">{formatBs(row.pendingBs)}</td>
+            <td className="amount">
+              <strong>{formatBs(row.pendingBs)}</strong>
+              {row.transportPendingBs > 0 ? (
+                <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)}</small>
+              ) : null}
+            </td>
             <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
           </tr>
         ),
@@ -4095,6 +4135,12 @@ function AccountingSection({
                 <span><small>Garantia retenida</small><strong>{formatBs(collectModal.guaranteeBs)}</strong></span>
                 <span className="highlight"><small>Danos / perdidas</small><strong>{formatBs(collectModal.penaltiesBs)}</strong></span>
               </div>
+              {collectModal.transportPendingBs > 0 ? (
+                <div className="accounting-verify-money compact">
+                  <span><small>Contrato por cobrar</small><strong>{formatBs(collectModal.contractPendingBs)}</strong></span>
+                  <span><small>Transporte por cobrar</small><strong>{formatBs(collectModal.transportPendingBs)}</strong></span>
+                </div>
+              ) : null}
             </section>
 
             <div className="accounting-form-grid two">
@@ -5271,7 +5317,12 @@ function AccountingSection({
                         <td><strong>{row.customerName}</strong></td>
                         <td>{row.responsibleName}</td>
                         <td>{formatDate(row.eventDate)}</td>
-                        <td className="amount">{formatBs(row.pendingBs)}</td>
+                        <td className="amount">
+                          <strong>{formatBs(row.pendingBs)}</strong>
+                          {row.transportPendingBs > 0 ? (
+                            <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)}</small>
+                          ) : null}
+                        </td>
                         <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
                       </tr>
                     )) : visibleFinalizedReceivableRows.flatMap((row) => {

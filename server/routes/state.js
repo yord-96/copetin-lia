@@ -1220,12 +1220,10 @@ const getContractCurrentEconomicSeed = (contract, rental) => {
 };
 
 const getRentalChargeTargetBs = (contract, rental) => {
-  const storedTotalBs = directMoney(
-    rental?.totals?.totalBs
-    ?? contract?.totals?.totalBs
-    ?? contract?.totalBs
-    ?? 0,
-  );
+  const storedTotalBs = directMoney(Math.max(
+    Number(rental?.totals?.totalBs ?? 0),
+    Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0),
+  ));
   const pricingMode = String(
     rental?.pricingPlan?.mode
     ?? contract?.pricingPlan?.mode
@@ -3102,12 +3100,10 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       reconcileVipPrepaidRental(state, rental, linkedContract);
       const isReturned = rental.status === 'returned';
       const settlement = rental.returnSettlement ?? {};
-      const storedRentalTotalBs = directMoney(
-        rental?.totals?.totalBs
-        ?? linkedContract?.totals?.totalBs
-        ?? linkedContract?.totalBs
-        ?? 0,
-      );
+      const storedRentalTotalBs = directMoney(Math.max(
+        Number(rental?.totals?.totalBs ?? 0),
+        Number(linkedContract?.totals?.totalBs ?? linkedContract?.totalBs ?? 0),
+      ));
       const repairedRentalTotalBs = getRentalChargeTargetBs(linkedContract, rental);
       const commercialTotalCorrectionBs = directMoney(Math.max(
         0,
@@ -3127,13 +3123,24 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const storedPendingBs = Number(isReturned
         ? settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0
         : rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+      const previousPaid = directMoney(Math.max(
+        Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0),
+        Number(linkedContract?.payment?.paidAtApprovalBs ?? 0),
+      ));
+      const derivedCommercialPendingBs = directMoney(Math.max(
+        0,
+        repairedRentalTotalBs - previousPaid,
+      ));
       // Contratos daily_schedule antiguos pueden conservar pendingCollectionBs
       // calculado con un total anterior a la venta manual de proveedor. Se suma
       // solamente la diferencia comercial y, en esta misma transaccion, se
       // persiste el total reparado para que nunca vuelva a aplicarse.
-      const currentPending = directMoney(
-        Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
-      );
+      const currentPending = directMoney(isReturned
+        ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs
+        : Math.max(
+            Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
+            derivedCommercialPendingBs,
+          ));
 
       // Los daños/faltantes son una obligación económica separada del saldo de
       // alquiler. Un contrato puede estar totalmente pagado y, aun así, tener un
@@ -3232,14 +3239,18 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         0,
         currentPending - (isDamageOnlyCollection ? explicitDamage : amountBs),
       ).toFixed(2));
-      const deliveryFeeBs = !isReturned ? directMoney(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs) : 0;
+      const deliveryFeeBs = !isReturned ? directMoney(Math.max(
+        Number(rental?.deliveryFeeBs ?? 0),
+        Number(rental?.totals?.deliveryFeeBs ?? 0),
+        Number(linkedContract?.deliveryFeeBs ?? 0),
+        Number(linkedContract?.totals?.deliveryFeeBs ?? 0),
+      )) : 0;
       const previousTransport = directMoney(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs);
       const remainingTransport = directMoney(deliveryFeeBs - previousTransport);
       const balanceTransport = Math.min(balance, remainingTransport);
       const transportNow = directMoney(explicitTransport + balanceTransport);
       const rentalNow = directMoney(explicitRental + Math.max(0, balance - balanceTransport));
       const now = new Date().toISOString();
-      const previousPaid = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs);
       const commercialAppliedNow = directMoney(rentalNow + transportNow);
       const nextPaymentStatus = isReturned
         ? (remainingBs > 0 ? 'saldo_pendiente' : 'cobrado_finalizado')
