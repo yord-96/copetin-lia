@@ -32,6 +32,7 @@ import { resolveInventoryArea } from '../../utils/inventoryArea';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
+import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -2364,6 +2365,7 @@ function ServiceOrdersSection({
         accountingTag: movement?.accountingTag ?? '',
         category: movement?.category ?? '',
         contractAllocationBs: Math.max(0, toMoneyNumber(movement?.contractAllocationBs)),
+        rawMovement: movement,
       };
       [
         movement?.linkedContractId,
@@ -2497,13 +2499,22 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText).filter(Boolean);
+      const contractCashReferences = {
+        contractIds: [contract.id, linkedOrder?.contractId],
+        rentalIds: [contract.rentalId, linkedOrder?.id, linkedOrder?.rentalId],
+        contractCodes: [contract.contractCode, linkedOrder?.contractCode],
+        orderCodes: [contract.orderCode, linkedOrder?.orderCode],
+        createdAtMs: new Date(
+          contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? 0,
+        ).getTime(),
+      };
       const linkedCollectionMovements = new Map();
       contractReferenceKeys.forEach((key) => {
         (collectionMovementIndex.movementsByReference.get(key) ?? [])
           .forEach((movement) => linkedCollectionMovements.set(movement.id, movement));
       });
       collectionMovementIndex.looseTextMovements.forEach((movement) => {
-        if (contractReferenceKeys.some((key) => movement.notes.includes(key))) {
+        if (cashMovementMatchesContractReferences(movement.rawMovement, contractCashReferences)) {
           linkedCollectionMovements.set(movement.id, movement);
         }
       });
@@ -3054,59 +3065,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         ? contractEconomicsFullRental
         : matchedRental);
 
-    const referenceValues = [
-      contract.id,
-      contract.rentalId,
-      contract.contractCode,
-      contract.orderCode,
-      linkedOrder?.id,
-      linkedOrder?.rentalId,
-      linkedOrder?.contractId,
-      linkedOrder?.contractCode,
-      linkedOrder?.orderCode,
-      rental?.id,
-      rental?.contractId,
-      rental?.contractCode,
-      rental?.orderCode,
-    ];
-    const referenceKeys = new Set(referenceValues.map(normalizeText).filter(Boolean));
-    const looseReferenceValues = [
-      contract.id,
-      contract.rentalId,
-      contract.contractCode,
-      contract.orderCode,
-      linkedOrder?.id,
-      linkedOrder?.rentalId,
-      linkedOrder?.contractId,
-      linkedOrder?.contractCode,
-      linkedOrder?.orderCode,
-      rental?.id,
-      rental?.contractId,
-      rental?.contractCode,
-      rental?.orderCode,
-    ];
-    const looseReferenceKeys = new Set(looseReferenceValues.map(normalizeText).filter(Boolean));
-    const hasReference = (value, loose = false) => {
-      const normalized = normalizeText(value);
-      if (!normalized) return false;
-      if (referenceKeys.has(normalized)) return true;
-      return loose && [...looseReferenceKeys].some((key) => key && normalized.includes(key));
+    const cashReferences = {
+      contractIds: [contract.id, linkedOrder?.contractId, rental?.contractId],
+      rentalIds: [contract.rentalId, linkedOrder?.id, linkedOrder?.rentalId, rental?.id],
+      contractCodes: [contract.contractCode, linkedOrder?.contractCode, rental?.contractCode],
+      orderCodes: [contract.orderCode, linkedOrder?.orderCode, rental?.orderCode],
+      createdAtMs: new Date(
+        contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? 0,
+      ).getTime(),
     };
 
     const linkedMovements = effectiveCashMovements
-      .filter((movement) => [
-        movement?.linkedContractId,
-        movement?.linkedRentalId,
-        movement?.linkedOrderCode,
-        movement?.contractId,
-        movement?.rentalId,
-        movement?.orderCode,
-        movement?.contractCode,
-        movement?.sourceId,
-        movement?.reference,
-      ].some((value) => hasReference(value))
-        || hasReference(movement?.notes, true)
-        || hasReference(movement?.description, true))
+      .filter((movement) => cashMovementMatchesContractReferences(movement, cashReferences))
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
 
     // Esta tabla es exclusivamente de dinero confirmado. Las liquidaciones de
@@ -4213,40 +4183,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       || valuesMatch(entry.id, linkedOrder?.rentalId)
       || valuesMatch(entry.orderCode, linkedOrder?.orderCode)
     ) ?? null;
-    const referenceKeys = new Set([
-      contract.id,
-      contract.rentalId,
-      contract.contractCode,
-      contract.orderCode,
-      linkedOrder?.id,
-      linkedOrder?.rentalId,
-      linkedOrder?.contractId,
-      linkedOrder?.contractCode,
-      linkedOrder?.orderCode,
-      rental?.id,
-      rental?.contractId,
-      rental?.contractCode,
-      rental?.orderCode,
-    ].map(normalizeText).filter(Boolean));
-    const hasReference = (value) => {
-      const normalized = normalizeText(value);
-      if (!normalized) return false;
-      return referenceKeys.has(normalized) || [...referenceKeys].some((key) => normalized.includes(key));
+    const cashReferences = {
+      contractIds: [contract.id, linkedOrder?.contractId, rental?.contractId],
+      rentalIds: [contract.rentalId, linkedOrder?.id, linkedOrder?.rentalId, rental?.id],
+      contractCodes: [contract.contractCode, linkedOrder?.contractCode, rental?.contractCode],
+      orderCodes: [contract.orderCode, linkedOrder?.orderCode, rental?.orderCode],
+      createdAtMs: new Date(
+        contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? 0,
+      ).getTime(),
     };
     const relatedMovements = effectiveCashMovements
-      .filter((movement) => [
-        movement?.linkedContractId,
-        movement?.linkedRentalId,
-        movement?.linkedOrderCode,
-        movement?.contractId,
-        movement?.rentalId,
-        movement?.orderCode,
-        movement?.contractCode,
-        movement?.sourceId,
-        movement?.reference,
-        movement?.notes,
-        movement?.description,
-      ].some(hasReference))
+      .filter((movement) => cashMovementMatchesContractReferences(movement, cashReferences))
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0));
     const receiptCodes = relatedMovements
       .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())

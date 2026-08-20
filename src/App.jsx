@@ -79,7 +79,23 @@ const getCollectionSignature = (rows, kind) => {
         row?.payment?.pendingPaymentBs,
         row?.guarantee?.status,
         row?.itemsCount,
-        Array.isArray(row?.economicLedger) ? row.economicLedger.length : 0,
+        Array.isArray(row?.economicLedger)
+          ? row.economicLedger.map((entry) => [
+              entry?.id,
+              entry?.type,
+              entry?.amountBs,
+              entry?.cashMovementId,
+              entry?.cashReceiptCode,
+              entry?.cashCollectionTarget,
+              entry?.contractAllocationBs,
+              entry?.guaranteeAllocationBs,
+              entry?.surplusAllocationBs,
+              entry?.deletedAt,
+            ].join('~')).join(',')
+          : '',
+        row?.economicLedgerUpdatedAt,
+        row?.economicResetAt,
+        row?.economicResetVersion,
       ].join(':');
     }
 
@@ -103,6 +119,11 @@ const getCollectionSignature = (rows, kind) => {
       row?.depositBs,
       row?.returnedAt,
       row?.cancelledAt,
+      row?.returnSettlement?.outstandingRentalBs,
+      row?.returnSettlement?.pendingCollectionBs,
+      row?.returnSettlement?.penaltiesBs,
+      row?.returnSettlement?.damageCollectedBs,
+      row?.returnSettlement?.discountCoveredByDepositBs,
     ].join(':');
   }).join('|');
 

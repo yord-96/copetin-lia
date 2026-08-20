@@ -6840,6 +6840,14 @@ const summarizeAccountingContract = (contract = {}) => ({
     discountBs: contract?.totals?.discountBs ?? null,
     pendingPaymentBs: contract?.totals?.pendingPaymentBs ?? null,
   },
+  // Caja Grande necesita la misma evidencia economica resumida que Ordenes.
+  // Sin estas lineas, los contratos antiguos vuelven a usar saldos guardados
+  // antes del ultimo cobro o ajuste (por ejemplo 2049 y 2026).
+  economicLedger: (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
+    .map(summarizeOrdersEconomicLedgerEntry),
+  economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
+  economicResetAt: contract?.economicResetAt ?? null,
+  economicResetVersion: contract?.economicResetVersion ?? null,
   _summaryOnly: true,
   _accountingSummaryOnly: true,
 });

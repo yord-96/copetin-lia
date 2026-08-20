@@ -1,4 +1,5 @@
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
+import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
@@ -4746,58 +4747,7 @@ const getContractCashReferenceKeys = (state, contract) => {
 };
 
 const cashMovementMatchesContract = (movement, references) => {
-  if (!references || typeof references !== 'object') return false;
-
-  const movementContractId = normalizeText(movement?.linkedContractId ?? movement?.contractId);
-  const movementRentalId = normalizeText(movement?.linkedRentalId ?? movement?.rentalId);
-  const movementOrderCode = normalizeText(movement?.linkedOrderCode ?? movement?.orderCode);
-  const movementContractCode = normalizeText(movement?.contractCode ?? movement?.reference);
-  const movementSourceId = normalizeText(movement?.sourceId);
-  const movementSourceType = normalizeText(movement?.sourceType);
-
-  // Si el movimiento tiene un vínculo moderno, una discrepancia de ID es
-  // definitiva. Nunca debe caer al código reutilizable ni al texto libre.
-  if (movementContractId) {
-    return Boolean(references.contractId && movementContractId === references.contractId);
-  }
-  if (movementRentalId) {
-    return Boolean(references.rentalId && movementRentalId === references.rentalId);
-  }
-  if (movementSourceId && movementSourceType.includes('contract')) {
-    return Boolean(references.contractId && movementSourceId === references.contractId);
-  }
-  if (movementSourceId && movementSourceType.includes('rental')) {
-    return Boolean(references.rentalId && movementSourceId === references.rentalId);
-  }
-
-  // Los códigos se admiten solo para movimientos históricos sin IDs. Además,
-  // un movimiento anterior a la creación del contrato actual no puede
-  // pertenecerle, aunque ambos compartan el mismo número de contrato.
-  const movementCreatedAtMs = new Date(movement?.createdAt ?? 0).getTime();
-  if (
-    Number.isFinite(references.createdAtMs)
-    && references.createdAtMs > 0
-    && Number.isFinite(movementCreatedAtMs)
-    && movementCreatedAtMs > 0
-    && movementCreatedAtMs + 1000 < references.createdAtMs
-  ) {
-    return false;
-  }
-
-  if (movementOrderCode && references.orderCode && movementOrderCode === references.orderCode) {
-    return true;
-  }
-  if (movementContractCode && references.contractCode && movementContractCode === references.contractCode) {
-    return true;
-  }
-  if (movementSourceId && [references.orderCode, references.contractCode].includes(movementSourceId)) {
-    return true;
-  }
-
-  const legacyKeys = [references.orderCode, references.contractCode].filter(Boolean);
-  return [movement?.notes, movement?.description]
-    .map(normalizeText)
-    .some((value) => value && legacyKeys.some((key) => value.includes(key)));
+  return cashMovementMatchesContractReferences(movement, references);
 };
 
 const isContractCollectionCashMovement = (movement) => {
