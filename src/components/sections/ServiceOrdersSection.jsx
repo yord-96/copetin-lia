@@ -474,6 +474,19 @@ const isGeneratedEconomicCollectionEntry = (entry) => (
   )
 );
 
+const isEconomicLedgerEntryConfirmedInCash = (entry) => Boolean(
+  entry?.isCashRegistered
+  || String(entry?.cashMovementId ?? '').trim()
+  || String(entry?.cashReceiptCode ?? '').trim()
+);
+
+const isStandaloneEconomicGuarantee = (entry) => (
+  entry?.type === 'guarantee'
+  && !entry?.reclassifiedFromPayment
+  && !String(entry?.sourceDepositId ?? '').trim()
+  && isEconomicLedgerEntryConfirmedInCash(entry)
+);
+
 const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
   const deposits = ledger
     .filter((entry) => entry?.type === 'deposit' && !entry?.reclassifiedFromPayment && !isGeneratedEconomicCollectionEntry(entry))
@@ -485,9 +498,14 @@ const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
     map.set(sourceDepositId, toMoneyNumber(map.get(sourceDepositId)) + toMoneyNumber(entry?.amountBs));
     return map;
   }, new Map());
-  let unassignedGuaranteeBs = guarantees.reduce((sum, entry) => (
-    String(entry?.sourceDepositId ?? '').trim() ? sum : sum + toMoneyNumber(entry?.amountBs)
-  ), 0);
+  // Una garantia con movimiento/recibo propio fue pagada aparte y no debe
+  // volver a salir de un deposito del alquiler. Solo se infieren desde los
+  // depositos las garantias antiguas sin respaldo independiente.
+  let unassignedGuaranteeBs = guarantees.reduce((sum, entry) => {
+    if (String(entry?.sourceDepositId ?? '').trim()) return sum;
+    if (isStandaloneEconomicGuarantee(entry)) return sum;
+    return sum + toMoneyNumber(entry?.amountBs);
+  }, 0);
   let contractPendingBs = Math.max(0, toMoneyNumber(contractTotalBs));
   const allocations = new Map();
 
@@ -528,12 +546,6 @@ const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
 
   return allocations;
 };
-
-const isEconomicLedgerEntryConfirmedInCash = (entry) => Boolean(
-  entry?.isCashRegistered
-  || String(entry?.cashMovementId ?? '').trim()
-  || String(entry?.cashReceiptCode ?? '').trim()
-);
 
 const getEconomicCommercialCashAmount = (movement) => {
   const amountBs = Math.max(0, getCashMovementAmount(movement));
@@ -3663,17 +3675,22 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const effectiveChargesBs = Math.max(0, penaltiesBs);
     const guaranteeReserveBs = Math.max(ledgerConfirmedGuaranteeBs, effectiveGuaranteeValidatedBs);
     const explicitlyReclassifiedGuaranteeBs = economicLedger.reduce((sum, entry) => (
-      entry.type === 'guarantee' && entry.reclassifiedFromPayment
+      entry.type === 'guarantee'
+        && (entry.reclassifiedFromPayment || String(entry.sourceDepositId ?? '').trim())
         ? sum + toMoneyNumber(entry.amountBs)
         : sum
     ), 0);
     // Compatibilidad con hojas anteriores: si ya habia depositos anotados y se
     // aparto una garantia, esa garantia salio de esos fondos aunque las versiones
     // antiguas no guardaran reclassifiedFromPayment=true.
-    const guaranteeNotExplicitlyReclassifiedBs = Math.max(
-      0,
-      Number((ledgerAnnotatedGuaranteeBs - explicitlyReclassifiedGuaranteeBs).toFixed(2)),
-    );
+    const guaranteeNotExplicitlyReclassifiedBs = economicLedger.reduce((sum, entry) => (
+      entry.type === 'guarantee'
+        && !entry.reclassifiedFromPayment
+        && !String(entry.sourceDepositId ?? '').trim()
+        && !isStandaloneEconomicGuarantee(entry)
+        ? sum + toMoneyNumber(entry.amountBs)
+        : sum
+    ), 0);
     const inferredReclassifiedGuaranteeBs = Math.min(
       guaranteeNotExplicitlyReclassifiedBs,
       Math.max(0, Number((ledgerManualCustomerDepositsBs - explicitlyReclassifiedGuaranteeBs).toFixed(2))),
@@ -3820,7 +3837,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       Number(collectionRegisteredBs.toFixed(2)),
     );
     const separatelyCollectedGuaranteeBs = backedGuaranteeEntries.reduce((sum, entry) => (
-      entry.reclassifiedFromPayment
+      entry.reclassifiedFromPayment || String(entry.sourceDepositId ?? '').trim()
         ? sum
         : sum + toMoneyNumber(entry.amountBs)
     ), 0);
