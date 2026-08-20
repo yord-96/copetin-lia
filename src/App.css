@@ -83,6 +83,293 @@
   }
 }
 
+/* Disponibilidad v7: carga compacta, panorama de stock y contratos */
+.app-content .workspace:has(.availability-view) {
+  padding-top: 0.45rem !important;
+}
+
+.availability-view {
+  gap: 0.5rem !important;
+}
+
+.availability-hero {
+  padding-top: 0 !important;
+  padding-bottom: 0.1rem !important;
+}
+
+.availability-products-section > header {
+  min-height: 0 !important;
+  margin-bottom: 0 !important;
+  padding: 0.55rem 0.78rem !important;
+}
+
+.availability-loading-banner {
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #d8e5f4;
+  border-radius: 0.62rem;
+  background: #f5f9ff;
+  padding: 0.42rem 0.68rem;
+  color: #244a7b;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.availability-loading-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #2f6fd0;
+  box-shadow: 0 0 0 0 rgba(47, 111, 208, 0.35);
+  animation: availability-loading-pulse 1.25s infinite;
+}
+
+@keyframes availability-loading-pulse {
+  70% { box-shadow: 0 0 0 0.42rem rgba(47, 111, 208, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 111, 208, 0); }
+}
+
+.availability-results-grid {
+  min-width: 1320px !important;
+}
+
+.availability-results-grid th:nth-child(1),
+.availability-results-grid td:nth-child(1) { width: 22% !important; }
+.availability-results-grid th:nth-child(2),
+.availability-results-grid td:nth-child(2) { width: 9% !important; }
+.availability-results-grid th:nth-child(3),
+.availability-results-grid td:nth-child(3) { width: 10% !important; }
+.availability-results-grid th:nth-child(4),
+.availability-results-grid td:nth-child(4) { width: 12% !important; }
+.availability-results-grid th:nth-child(5),
+.availability-results-grid td:nth-child(5) { width: 13% !important; }
+.availability-results-grid th:nth-child(6),
+.availability-results-grid td:nth-child(6) { width: 9% !important; text-align: center !important; }
+.availability-results-grid th:nth-child(7),
+.availability-results-grid td:nth-child(7) { width: 7% !important; text-align: center !important; }
+.availability-results-grid th:nth-child(8),
+.availability-results-grid td:nth-child(8) { width: 8% !important; text-align: center !important; }
+.availability-results-grid th:nth-child(9),
+.availability-results-grid td:nth-child(9) { width: 10% !important; text-align: center !important; }
+
+.availability-result-stock,
+.availability-result-available {
+  display: grid;
+  justify-items: center;
+}
+
+.availability-deferred-image,
+.availability-deferred-image > img,
+.availability-deferred-image > span {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+}
+
+.availability-result-stock strong,
+.availability-result-available strong {
+  color: #102b59;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.availability-result-available strong {
+  color: #0f7a3c;
+}
+
+.availability-contracts-button {
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid #f0b58f;
+  border-radius: 0.58rem;
+  background: #fff7f1;
+  color: #cf4607;
+  padding: 0.35rem 0.52rem;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.availability-contracts-button b {
+  min-width: 1.3rem;
+  border-radius: 999px;
+  background: #e9530a;
+  color: #fff;
+  padding: 0.12rem 0.3rem;
+  font-size: 0.62rem;
+}
+
+.availability-contracts-button:disabled {
+  border-color: #dde4ed;
+  background: #f5f7fa;
+  color: #8a96a8;
+  cursor: default;
+}
+
+.availability-contracts-button:disabled b {
+  background: #9aa6b6;
+}
+
+.availability-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: grid;
+  place-items: center;
+  background: rgba(7, 20, 45, 0.58);
+  padding: 1rem;
+}
+
+.availability-contracts-modal {
+  width: min(1120px, calc(100vw - 2rem));
+  max-height: min(82vh, 760px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dce4ef;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 1.4rem 4rem rgba(5, 18, 42, 0.24);
+}
+
+.availability-contracts-modal > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #e3e8ef;
+  background: #fff9f5;
+  padding: 0.9rem 1rem;
+}
+
+.availability-contracts-modal > header span,
+.availability-contracts-modal-list small {
+  color: #758199;
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.availability-contracts-modal > header h3 {
+  margin: 0.16rem 0 0;
+  color: #102b59;
+  font-size: 1.2rem;
+}
+
+.availability-contracts-modal > header p {
+  margin: 0.2rem 0 0;
+  color: #5f6f87;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.availability-contracts-modal > header button {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid #dce3ed;
+  border-radius: 0.58rem;
+  background: #fff;
+  color: #53627a;
+  cursor: pointer;
+}
+
+.availability-contracts-modal > header button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.availability-contracts-modal-list {
+  overflow: auto;
+  padding: 0.8rem;
+}
+
+.availability-contracts-modal-list article {
+  display: grid;
+  grid-template-columns: 0.75fr 1.2fr 0.9fr 1.3fr 0.45fr;
+  gap: 0.8rem;
+  align-items: center;
+  border-bottom: 1px solid #e8edf3;
+  padding: 0.72rem 0.65rem;
+}
+
+.availability-contracts-modal-list article:nth-child(even) {
+  background: #f8fafd;
+}
+
+.availability-contracts-modal-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.availability-contracts-modal-list article strong {
+  color: #142d57;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.availability-contracts-modal-list article span {
+  color: #6c7890;
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.availability-contracts-modal-code > strong {
+  color: #d94a0b !important;
+}
+
+.availability-contracts-modal-qty {
+  text-align: center;
+}
+
+.availability-contracts-modal-qty strong {
+  font-size: 1.1rem !important;
+}
+
+.availability-contracts-empty {
+  padding: 2rem;
+  color: #728097;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .app-content .workspace:has(.availability-view) {
+    padding-top: 0 !important;
+  }
+
+  .availability-results-grid {
+    min-width: 0 !important;
+  }
+
+  .availability-results-grid tbody tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .availability-results-grid tbody td:nth-child(5),
+  .availability-results-grid tbody td:nth-child(6) {
+    grid-column: 1 / -1;
+  }
+
+  .availability-contracts-modal-list article {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .availability-contracts-modal-list article > div:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Caja Grande · rediseño final operativo */
 .accounting-bigcash-view {
   width: min(100%, 1320px);

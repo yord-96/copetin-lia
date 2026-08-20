@@ -703,7 +703,9 @@ const fetchAvailabilityOverview = async () => {
   const overview = payload?.overview ?? {
     contracts: [], rentals: [], quotes: [], clients: [], items: [], categories: [],
   };
-  await mergeLocalState(overview);
+  // Esta respuesta esta reducida exclusivamente para la vista de
+  // Disponibilidad. No reemplazamos el bridge compartido con estos resúmenes:
+  // los módulos de edición cargan sus colecciones completas al abrirse.
   serverStateIsPartial = true;
   return overview;
 };

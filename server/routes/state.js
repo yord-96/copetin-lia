@@ -6994,8 +6994,14 @@ const summarizeInventoryLine = (line = {}, index = 0) => ({
   comboPricingRole: line.comboPricingRole ?? '',
 });
 
-const summarizeAvailabilityLine = (line = {}, index = 0) => {
-  const summary = summarizeInventoryLine(line, index);
+const summarizeAvailabilityLine = (line = {}) => {
+  const summary = {
+    itemId: line.itemId ?? '',
+    quantity: Number(line.quantity ?? 0),
+    supplierBackedQty: Number(line.supplierBackedQty ?? 0),
+    controlsStock: line.controlsStock !== false,
+    verificationStatus: line.verificationStatus ?? '',
+  };
   // Ausente significa "cantidad - proveedor" en el motor de disponibilidad;
   // convertirlo a null haria que Number(null) reserve cero unidades.
   if (line?.internalReservedQty === undefined || line?.internalReservedQty === null) {
@@ -7003,6 +7009,33 @@ const summarizeAvailabilityLine = (line = {}, index = 0) => {
   }
   return summary;
 };
+
+const summarizeAvailabilityItem = (item = {}) => ({
+  id: item.id ?? '',
+  name: item.name ?? item.itemName ?? 'Producto',
+  sku: item.sku ?? '',
+  category: item.category ?? '',
+  brand: item.brand ?? '',
+  itemColor: item.itemColor ?? item.color ?? '',
+  description: item.description ?? '',
+  inventoryArea: item.inventoryArea ?? '',
+  controlsStock: item.controlsStock !== false,
+  verificationStatus: item.verificationStatus ?? '',
+  adoptionSource: item.adoptionSource ?? '',
+  totalStock: Number(item.totalStock ?? 0),
+  availableStock: Number(item.availableStock ?? 0),
+  imageUrl: item.thumbnailUrl || item.imageUrl || item.imageDataUrl || item.image || item.photo || '',
+  _summaryOnly: true,
+  _availabilitySummaryOnly: true,
+});
+
+const summarizeAvailabilityClient = (client = {}) => ({
+  id: client.id ?? '',
+  address: client.address ?? '',
+  city: client.city ?? '',
+  _summaryOnly: true,
+  _availabilitySummaryOnly: true,
+});
 
 const summarizeAvailabilityRecord = (record = {}) => ({
   id: record.id ?? '',
@@ -7169,9 +7202,9 @@ router.get('/__copetin_db/availability/overview', async (req, res, next) => {
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        items: Array.isArray(state.items) ? state.items : [],
+        items: (Array.isArray(state.items) ? state.items : []).map(summarizeAvailabilityItem),
         categories: Array.isArray(state.categories) ? state.categories : [],
-        clients: Array.isArray(state.clients) ? state.clients : [],
+        clients: (Array.isArray(state.clients) ? state.clients : []).map(summarizeAvailabilityClient),
         contracts: availabilityContracts.map(summarizeAvailabilityRecord),
         rentals: activeRentals.map(summarizeAvailabilityRecord),
         quotes: availabilityQuotes.map(summarizeAvailabilityRecord),

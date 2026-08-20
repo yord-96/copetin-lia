@@ -776,12 +776,13 @@ function AdminApp() {
 
         {controller.activeTab === 'disponibilidad' && (
           <AvailabilitySection
-            items={controller.items}
-            contracts={controller.contracts}
-            rentals={controller.rentals}
-            quotes={controller.quotes}
-            clients={controller.clients}
-            categories={controller.categories}
+            items={controller.availabilityBundle.items}
+            contracts={controller.availabilityBundle.contracts}
+            rentals={controller.availabilityBundle.rentals}
+            quotes={controller.availabilityBundle.quotes}
+            clients={controller.availabilityBundle.clients}
+            categories={controller.availabilityBundle.categories}
+            moduleLoading={controller.availabilityModuleLoading}
             formatDate={formatDate}
             onOpenImage={controller.setImagePreview}
           />

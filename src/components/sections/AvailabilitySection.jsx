@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Truck,
   UsersRound,
+  X,
   XCircle,
 } from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, toDateKey } from '../../utils/availability';
@@ -87,7 +88,7 @@ const getMonthGrid = (referenceDate) => {
 };
 
 const lineSupplierQuantity = (line) => Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
-const RESULT_BATCH_SIZE = 80;
+const RESULT_BATCH_SIZE = 30;
 
 const recordPeriod = (record = {}) =>
   buildAvailabilityPeriod({
@@ -134,6 +135,30 @@ const formatTimeRange = (record) => {
   return `${start} - ${end}`;
 };
 
+function DeferredAvailabilityImage({ item, alt, fallback }) {
+  const anchorRef = useRef(null);
+  const [shouldLoad, setShouldLoad] = useState(() => typeof IntersectionObserver === 'undefined');
+
+  useEffect(() => {
+    if (shouldLoad) return undefined;
+    const anchor = anchorRef.current;
+    if (!anchor) return undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setShouldLoad(true);
+      observer.disconnect();
+    }, { rootMargin: '180px 0px' });
+    observer.observe(anchor);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  return (
+    <span ref={anchorRef} className="availability-deferred-image">
+      {shouldLoad ? <ProductImage item={item} alt={alt} fallback={fallback} /> : fallback}
+    </span>
+  );
+}
+
 function AvailabilitySection({
   items = [],
   contracts = [],
@@ -141,6 +166,7 @@ function AvailabilitySection({
   quotes = [],
   clients = [],
   categories = [],
+  moduleLoading = false,
   formatDate,
   onOpenImage,
 }) {
@@ -155,6 +181,7 @@ function AvailabilitySection({
   const [visibleResultCount, setVisibleResultCount] = useState(RESULT_BATCH_SIZE);
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(initialDate);
+  const [selectedCommitmentRow, setSelectedCommitmentRow] = useState(null);
 
   const clientById = useMemo(
     () => new Map((Array.isArray(clients) ? clients : []).map((client) => [String(client.id), client])),
@@ -342,22 +369,16 @@ function AvailabilitySection({
   ], [resolveDetailRecord]);
 
   const resultEntries = useMemo(() => filteredRows
-    .flatMap((row) => {
+    .map((row) => {
       const commitments = getItemCommitments(row);
-      if (commitments.length === 0) {
-        return [{
-          row,
-          record: null,
-          startDate: dateFrom,
-          endDate: dateTo || dateFrom,
-        }];
-      }
-      return commitments.map((record) => ({
+      const record = commitments[0] ?? null;
+      return {
         row,
         record,
-        startDate: record.deliveryDate || record.rentalDate || record.eventDate || record.startDate || dateFrom,
-        endDate: record.pickupDate || record.dueDate || record.endDate || record.deliveryDate || dateTo || dateFrom,
-      }));
+        commitments,
+        startDate: record?.deliveryDate || record?.rentalDate || record?.eventDate || record?.startDate || dateFrom,
+        endDate: record?.pickupDate || record?.dueDate || record?.endDate || record?.deliveryDate || dateTo || dateFrom,
+      };
     })
     .sort((left, right) => {
       const byDate = String(left.startDate || '').localeCompare(String(right.startDate || ''));
@@ -371,6 +392,10 @@ function AvailabilitySection({
     [resultEntries, visibleResultCount],
   );
   const hiddenResultCount = Math.max(0, resultEntries.length - visibleResultEntries.length);
+  const selectedCommitments = useMemo(
+    () => (selectedCommitmentRow ? getItemCommitments(selectedCommitmentRow) : []),
+    [getItemCommitments, selectedCommitmentRow],
+  );
 
   const calendarCells = useMemo(() => getMonthGrid(calendarDate), [calendarDate]);
   const calendarStats = useMemo(() => {
@@ -432,7 +457,7 @@ function AvailabilitySection({
   };
 
   return (
-    <section className="availability-view">
+    <section className="availability-view" aria-busy={moduleLoading}>
       <header className="availability-hero">
         <div>
           <span className="availability-kicker">CONTROL COMERCIAL DE STOCK</span>
@@ -448,6 +473,13 @@ function AvailabilitySection({
           </button>
         </div>
       </header>
+
+      {moduleLoading ? (
+        <div className="availability-loading-banner" role="status">
+          <span className="availability-loading-dot" />
+          Actualizando inventario y compromisos...
+        </div>
+      ) : null}
 
       {mode === 'date' ? (
         <>
@@ -513,7 +545,7 @@ function AvailabilitySection({
             <header>
               <div>
                 <span>RESULTADO DEL PERIODO</span>
-                <h3>{resultEntries.length.toLocaleString('es-BO')} resultados individuales</h3>
+                <h3>{resultEntries.length.toLocaleString('es-BO')} productos</h3>
                 {hiddenResultCount > 0 ? (
                   <p>Mostrando {visibleResultEntries.length.toLocaleString('es-BO')} primero para mantener la vista fluida.</p>
                 ) : null}
@@ -530,13 +562,15 @@ function AvailabilitySection({
                     <th>Contrato / orden</th>
                     <th>Cliente y evento</th>
                     <th>Lugar</th>
+                    <th>Contratos</th>
+                    <th>Stock</th>
                     <th>Alquilado</th>
                     <th>Disponible</th>
                   </tr>
                 </thead>
                 <tbody>
 
-              {visibleResultEntries.map(({ row, record, startDate, endDate }, index) => {
+              {visibleResultEntries.map(({ row, record, commitments, startDate, endDate }, index) => {
                 const documentCode = record?.contractCode || record?.orderCode || record?.quoteCode || record?.code || 'SIN DOCUMENTO';
                 const documentType = record?.type === 'cotizacion'
                   ? 'Cotización'
@@ -546,7 +580,6 @@ function AvailabilitySection({
                       ? 'Contrato'
                       : 'Sin compromiso';
                 const location = record ? getRecordLocation(record, clientById) : 'Sin compromiso registrado para este periodo';
-                const rentedQuantity = record?.quantity ?? 0;
                 return (
                   <tr
                     key={`${row.item.id}-${documentCode}-${startDate}-${index}`}
@@ -562,7 +595,7 @@ function AvailabilitySection({
                           if (url && onOpenImage) onOpenImage({ name: row.item.name, url });
                         }}
                       >
-                        <ProductImage item={row.item} alt={row.item.name} fallback={<span>{String(row.item.name || '?').slice(0, 2)}</span>} />
+                        <DeferredAvailabilityImage item={row.item} alt={row.item.name} fallback={<span>{String(row.item.name || '?').slice(0, 2)}</span>} />
                       </button>
                         <div>
                         <small>{row.item.category || 'SIN CATEGORÍA'} · {getInventoryAreaLabel(row.area)}</small>
@@ -602,9 +635,26 @@ function AvailabilitySection({
                       </div>
                     </td>
 
+                    <td data-label="Contratos">
+                      <button
+                        type="button"
+                        className="availability-contracts-button"
+                        disabled={commitments.length === 0}
+                        onClick={() => setSelectedCommitmentRow(row)}
+                      >
+                        Contratos <b>{commitments.length}</b>
+                      </button>
+                    </td>
+
+                    <td data-label="Stock">
+                      <div className="availability-result-stock">
+                        <strong>{row.totalStock}</strong>
+                      </div>
+                    </td>
+
                     <td data-label="Alquilado">
                       <div className="availability-result-quantity">
-                      <strong>{rentedQuantity}</strong>
+                      <strong>{row.hardReservedQty}</strong>
                       </div>
                     </td>
 
@@ -686,6 +736,51 @@ function AvailabilitySection({
           </aside>
         </section>
       )}
+
+      {selectedCommitmentRow ? (
+        <div className="availability-modal-backdrop" role="presentation" onMouseDown={() => setSelectedCommitmentRow(null)}>
+          <section
+            className="availability-contracts-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="availability-contracts-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header>
+              <div>
+                <span>INVENTARIO COMPROMETIDO</span>
+                <h3 id="availability-contracts-title">{selectedCommitmentRow.item.name}</h3>
+                <p>
+                  Stock {selectedCommitmentRow.totalStock} · Alquilado {selectedCommitmentRow.hardReservedQty} · Disponible {selectedCommitmentRow.projectedAvailable}
+                </p>
+              </div>
+              <button type="button" aria-label="Cerrar" onClick={() => setSelectedCommitmentRow(null)}><X /></button>
+            </header>
+            <div className="availability-contracts-modal-list">
+              {selectedCommitments.map((record, index) => {
+                const code = record.contractCode || record.orderCode || record.quoteCode || record.code || 'Sin código';
+                const typeLabel = record.type === 'cotizacion' ? 'Cotización tentativa' : record.type === 'orden' ? 'Orden confirmada' : 'Contrato';
+                return (
+                  <article key={`${record.id}-${record.type}-${index}`}>
+                    <div className="availability-contracts-modal-code">
+                      <small>{typeLabel}</small>
+                      <strong>{code}</strong>
+                      {record.orderCode && record.contractCode ? <span>Orden {record.orderCode}</span> : null}
+                    </div>
+                    <div><small>Cliente</small><strong>{record.customerName || 'Sin cliente'}</strong><span>{record.eventType || 'Evento no especificado'}</span></div>
+                    <div><small>Periodo</small><strong>{formatDate(record.deliveryDate || record.rentalDate || record.eventDate || record.startDate)}</strong><span>hasta {formatDate(record.pickupDate || record.dueDate || record.endDate || record.deliveryDate || record.eventDate)}</span></div>
+                    <div><small>Lugar</small><strong>{getRecordLocation(record, clientById)}</strong><span>{record.city || 'Sin ciudad registrada'}</span></div>
+                    <div className="availability-contracts-modal-qty"><small>Alquilado</small><strong>{record.quantity || 0}</strong></div>
+                  </article>
+                );
+              })}
+              {selectedCommitments.length === 0 ? (
+                <div className="availability-contracts-empty">Este producto no tiene contratos comprometidos en el periodo seleccionado.</div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

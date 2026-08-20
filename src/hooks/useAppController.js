@@ -162,6 +162,9 @@ export const useAppController = () => {
   const [inventoryMovements, setInventoryMovements] = useState([]);
   const [inventoryMovementStats, setInventoryMovementStats] = useState(null);
   const [inventoryModuleLoading, setInventoryModuleLoading] = useState(false);
+  const [availabilityBundle, setAvailabilityBundle] = useState({
+    items: [], contracts: [], rentals: [], quotes: [], clients: [], categories: [],
+  });
   const [stockRecoveries, setStockRecoveries] = useState([]);
   const [damageLossOverview, setDamageLossOverview] = useState({ rows: [], total: 0, summary: {} });
   const [rentals, setRentals] = useState([]);
@@ -210,6 +213,7 @@ export const useAppController = () => {
   const accountingOverviewRequestRef = useRef(null);
   const fullWorkspaceLoadedRef = useRef(false);
   const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
+  const [availabilityModuleLoading, setAvailabilityModuleLoading] = useState(false);
 
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -377,14 +381,17 @@ export const useAppController = () => {
         await availabilityOverviewRequestRef.current;
         return;
       }
+      setAvailabilityModuleLoading(true);
       const request = api.sync.getAvailabilityOverview()
         .then((overview) => {
-          setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
-          setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
-          setQuotes(Array.isArray(overview?.quotes) ? overview.quotes : []);
-          setClients(Array.isArray(overview?.clients) ? overview.clients : []);
-          setItems(Array.isArray(overview?.items) ? overview.items : []);
-          setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
+          setAvailabilityBundle({
+            items: Array.isArray(overview?.items) ? overview.items : [],
+            contracts: Array.isArray(overview?.contracts) ? overview.contracts : [],
+            rentals: Array.isArray(overview?.rentals) ? overview.rentals : [],
+            quotes: Array.isArray(overview?.quotes) ? overview.quotes : [],
+            clients: Array.isArray(overview?.clients) ? overview.clients : [],
+            categories: Array.isArray(overview?.categories) ? overview.categories : [],
+          });
           availabilityOverviewLoadedRef.current = true;
         })
         .catch((availabilityError) => {
@@ -393,6 +400,7 @@ export const useAppController = () => {
         })
         .finally(() => {
           availabilityOverviewRequestRef.current = null;
+          setAvailabilityModuleLoading(false);
         });
       availabilityOverviewRequestRef.current = request;
       await request;
@@ -794,6 +802,15 @@ export const useAppController = () => {
         return;
       }
 
+      if (activeTab === 'disponibilidad') {
+        availabilityOverviewLoadedRef.current = false;
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => {
+          if (!disposed) prepareTabData('disponibilidad').catch(() => {});
+        }, isRemoteChange ? 250 : 0);
+        return;
+      }
+
       if (String(activeTab).startsWith('contabilidad')) {
         window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(() => {
@@ -819,7 +836,7 @@ export const useAppController = () => {
       window.clearTimeout(presenceTimer);
       unsubscribe();
     };
-  }, [activeTab, authReady, currentUser, loadAccountingData, loadData, refreshUpdateNotice]);
+  }, [activeTab, authReady, currentUser, loadAccountingData, loadData, prepareTabData, refreshUpdateNotice]);
 
   useEffect(() => {
     let isMounted = true;
@@ -860,7 +877,7 @@ export const useAppController = () => {
       setLoading(false);
       return;
     }
-    if (String(activeTab) === 'alquiler' || String(activeTab).startsWith('contabilidad')) {
+    if (['alquiler', 'disponibilidad'].includes(String(activeTab)) || String(activeTab).startsWith('contabilidad')) {
       // Ordenes es la vista inicial preferida. Evitamos cargar Calendario primero:
       // su resumen se solicitará únicamente cuando el usuario abra esa sección.
       setLoading(false);
@@ -3140,6 +3157,7 @@ export const useAppController = () => {
     authError,
     loading,
     ordersModuleLoading,
+    availabilityModuleLoading,
     prepareTabData,
     prepareOrdersEditorData,
     error,
@@ -3159,6 +3177,7 @@ export const useAppController = () => {
     inventoryMovements,
     inventoryMovementStats,
     inventoryModuleLoading,
+    availabilityBundle,
     stockRecoveries,
     damageLossOverview,
     rentals,
