@@ -10097,6 +10097,30 @@ const normalizeCommercialDocumentCode = (code) => String(code ?? '').trim();
 
 const isActiveRentalRecord = (rental) => rental && !rental.deletedAt && rental.status !== 'cancelled';
 
+const createBusinessConflictError = (message, code = 'BUSINESS_CONFLICT', details = {}) => {
+  const error = new Error(message);
+  error.code = code;
+  error.status = 409;
+  error.details = details;
+  return error;
+};
+
+const findContractLinkedToRentalByStableReferences = (state, rental) => {
+  if (!rental) return null;
+  const rentalId = String(rental.id ?? '').trim();
+  const contractId = String(rental.contractId ?? '').trim();
+  const orderCode = String(rental.orderCode ?? '').trim();
+  return (state.contracts ?? []).find((contract) => (
+    contract
+    && !contract.deletedAt
+    && (
+      (contractId && String(contract.id ?? '').trim() === contractId)
+      || (rentalId && String(contract.rentalId ?? '').trim() === rentalId)
+      || (orderCode && String(contract.orderCode ?? '').trim() === orderCode)
+    )
+  )) ?? null;
+};
+
 const commercialDocumentCodeExists = (state, collectionName, codeField, code, exclude = {}) => {
   const normalizedCode = normalizeCommercialDocumentCode(code);
   if (!normalizedCode) return false;
@@ -15537,14 +15561,36 @@ const createWebBridge = () => ({
             contractId: contract.id,
             rentalId: contract.rentalId,
           });
-          if (duplicate) throw new Error('Ya existe un contrato con ese numero.');
+          if (duplicate) {
+            throw createBusinessConflictError(
+              `No se puede usar el numero ${requestedContractCode} porque ya esta vinculado a otro contrato u orden activa.`,
+              'CONTRACT_CODE_CONFLICT',
+              { contractCode: requestedContractCode, contractId: contract.id },
+            );
+          }
           const previousContractCode = String(contract.contractCode ?? '').trim();
           contract.contractCode = requestedContractCode;
           if (Array.isArray(state.rentals)) {
+            const nowIso = new Date().toISOString();
             state.rentals.forEach((rental) => {
-              const isLinkedRental = String(rental.contractId ?? '') === String(contract.id)
-                || (previousContractCode && String(rental.contractCode ?? '').trim() === previousContractCode);
-              if (isLinkedRental) rental.contractCode = requestedContractCode;
+              const rentalId = String(rental?.id ?? '').trim();
+              const rentalContractId = String(rental?.contractId ?? '').trim();
+              const rentalOrderCode = String(rental?.orderCode ?? '').trim();
+              const isLinkedByStableReference = (
+                (rentalContractId && rentalContractId === String(contract.id))
+                || (contract.rentalId && rentalId === String(contract.rentalId))
+                || (contract.orderCode && rentalOrderCode === String(contract.orderCode))
+              );
+              const isLegacyOrphanWithPreviousCode = (
+                !rentalContractId
+                && !rental?.deletedAt
+                && rental?.status !== 'cancelled'
+                && previousContractCode
+                && String(rental?.contractCode ?? '').trim() === previousContractCode
+              );
+              if (!isLinkedByStableReference && !isLegacyOrphanWithPreviousCode) return;
+              rental.contractCode = requestedContractCode;
+              rental.updatedAt = nowIso;
             });
           }
         }
@@ -16688,38 +16734,67 @@ const createWebBridge = () => ({
       transaction((state) => {
         const contractId = String(payload?.contractId ?? '').trim();
         const requestedContractCode = String(payload?.contractCode ?? '').trim();
-        const existingContractRental = contractId || requestedContractCode
+        const nowIso = new Date().toISOString();
+        const rentalByContractId = contractId
           ? state.rentals.find((entry) => (
             isActiveRentalRecord(entry)
-            && (
-              (contractId && String(entry.contractId ?? '') === contractId)
-              || (requestedContractCode && String(entry.contractCode ?? '').trim() === requestedContractCode)
-            )
+            && String(entry.contractId ?? '').trim() === contractId
           ))
           : null;
-        if (existingContractRental) {
-          const existingContractId = String(existingContractRental.contractId ?? '').trim();
-          if (contractId && existingContractId && existingContractId !== contractId) {
-            throw new Error(`Ya existe una orden activa para el contrato ${requestedContractCode || existingContractRental.contractCode}.`);
-          }
-          const nowIso = new Date().toISOString();
+        if (rentalByContractId) {
           let repairedLink = false;
-          if (contractId && !existingContractId) {
-            existingContractRental.contractId = contractId;
+          if (requestedContractCode && String(rentalByContractId.contractCode ?? '').trim() !== requestedContractCode) {
+            rentalByContractId.contractCode = requestedContractCode;
             repairedLink = true;
           }
-          if (requestedContractCode && !String(existingContractRental.contractCode ?? '').trim()) {
-            existingContractRental.contractCode = requestedContractCode;
-            repairedLink = true;
-          }
-          if (repairedLink) {
-            existingContractRental.updatedAt = nowIso;
-          }
+          if (repairedLink) rentalByContractId.updatedAt = nowIso;
           createdRental = {
-            ...deepClone(existingContractRental),
+            ...deepClone(rentalByContractId),
             reusedExisting: true,
           };
           return state;
+        }
+
+        let rentalByRequestedCode = requestedContractCode
+          ? state.rentals.find((entry) => (
+            isActiveRentalRecord(entry)
+            && String(entry.contractCode ?? '').trim() === requestedContractCode
+          ))
+          : null;
+
+        if (rentalByRequestedCode) {
+          const linkedContract = findContractLinkedToRentalByStableReferences(state, rentalByRequestedCode);
+          const linkedContractCode = String(linkedContract?.contractCode ?? '').trim();
+
+          // Si la orden conserva un numero antiguo pero su contrato real ya fue renumerado,
+          // reparamos esa referencia antes de decidir si el numero solicitado esta ocupado.
+          if (linkedContract && linkedContractCode && linkedContractCode !== requestedContractCode) {
+            rentalByRequestedCode.contractCode = linkedContractCode;
+            rentalByRequestedCode.updatedAt = nowIso;
+            rentalByRequestedCode = null;
+          }
+        }
+
+        if (rentalByRequestedCode) {
+          const existingContractId = String(rentalByRequestedCode.contractId ?? '').trim();
+          const orderCode = String(rentalByRequestedCode.orderCode ?? '').trim();
+          const linkedContract = findContractLinkedToRentalByStableReferences(state, rentalByRequestedCode);
+          const linkedCustomer = String(linkedContract?.customerName ?? rentalByRequestedCode.customerName ?? '').trim();
+          const detailParts = [
+            orderCode ? `la ${orderCode}` : 'una orden activa',
+            linkedCustomer ? `de ${linkedCustomer}` : '',
+          ].filter(Boolean).join(' ');
+          throw createBusinessConflictError(
+            `No se puede usar el numero ${requestedContractCode} porque esta vinculado a ${detailParts}. Revisa esa orden antes de reutilizar el numero.`,
+            'CONTRACT_CODE_CONFLICT',
+            {
+              contractCode: requestedContractCode,
+              requestedContractId: contractId || null,
+              existingContractId: existingContractId || null,
+              rentalId: rentalByRequestedCode.id ?? null,
+              orderCode: orderCode || null,
+            },
+          );
         }
 
         const settings = state.settings ?? {};

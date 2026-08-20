@@ -6298,7 +6298,6 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
       .flatMap((rental) => {
         const contract = contractsById.get(String(rental?.contractId ?? ''));
-        const settlement = rental?.returnSettlement ?? {};
         return (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
           .filter((line) => (
             Number(line?.damagedQty ?? 0) > 0

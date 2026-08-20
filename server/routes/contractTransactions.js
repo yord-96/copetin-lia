@@ -466,6 +466,14 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       });
       return;
     }
+    if (error?.status === 409 || error?.code === 'CONTRACT_CODE_CONFLICT') {
+      res.status(409).json({
+        error: error?.message || 'El numero de contrato ya esta siendo utilizado.',
+        code: error?.code || 'CONTRACT_CODE_CONFLICT',
+        details: error?.details ?? null,
+      });
+      return;
+    }
     next(error);
   }
 });
