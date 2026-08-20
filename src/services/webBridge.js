@@ -17888,8 +17888,26 @@ const createWebBridge = () => ({
           return state;
         }
 
-        const totalBs = Number(rental?.totals?.totalBs ?? 0);
-        const alreadyPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+        const linkedContract = state.contracts.find((contract) => (
+          String(contract?.id ?? '') === String(rental?.contractId ?? '')
+          || String(contract?.rentalId ?? '') === String(rental.id)
+          || (rental?.orderCode && String(contract?.orderCode ?? '') === String(rental.orderCode))
+        )) ?? null;
+        const totalBs = Math.max(
+          0,
+          Number(rental?.totals?.totalBs ?? 0),
+          Number(linkedContract?.totals?.totalBs ?? linkedContract?.totalBs ?? 0),
+        );
+        const alreadyPaidBs = Math.max(
+          0,
+          Number(
+            rental?.payment?.paidAtRentalBs
+            ?? rental?.totals?.paidAtRentalBs
+            ?? linkedContract?.payment?.paidAtApprovalBs
+            ?? totalBs,
+          ),
+          Number(linkedContract?.payment?.paidAtApprovalBs ?? 0),
+        );
         const outstandingRentalBs = Number(Math.max(0, totalBs - alreadyPaidBs).toFixed(2));
         const totalDiscountAgainstDepositBs = Number((penaltiesBs + outstandingRentalBs).toFixed(2));
         const refundBs = Number(Math.max(0, rental.depositBs - totalDiscountAgainstDepositBs).toFixed(2));
@@ -18867,10 +18885,19 @@ const createWebBridge = () => ({
         if (!rental) {
           throw new Error('No se encontro la orden seleccionada.');
         }
+        const linkedContract = state.contracts.find((contract) => (
+          String(contract?.id ?? '') === String(rental?.contractId ?? '')
+          || String(contract?.rentalId ?? '') === String(rental.id)
+          || (rental?.orderCode && String(contract?.orderCode ?? '') === String(rental.orderCode))
+        )) ?? null;
 
         const isReturned = rental.status === 'returned';
         const settlement = rental.returnSettlement ?? {};
-        const storedRentalTotalBs = Math.max(0, Number(rental?.totals?.totalBs ?? 0));
+        const storedRentalTotalBs = Math.max(
+          0,
+          Number(rental?.totals?.totalBs ?? 0),
+          Number(linkedContract?.totals?.totalBs ?? linkedContract?.totalBs ?? 0),
+        );
         const rentalItemsNetSubtotalBs = Math.max(
           0,
           Number(rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs ?? 0),
@@ -18887,7 +18914,10 @@ const createWebBridge = () => ({
         const rentalDiscountBs = Math.max(0, Number(rental?.totals?.discountBs ?? 0));
         const rentalDeliveryFeeBs = Math.max(
           0,
-          Number(rental?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? 0),
+          Number(rental?.totals?.deliveryFeeBs ?? 0),
+          Number(rental?.deliveryFeeBs ?? 0),
+          Number(linkedContract?.totals?.deliveryFeeBs ?? 0),
+          Number(linkedContract?.deliveryFeeBs ?? 0),
         );
         const rentalPricingMode = normalizeText(rental?.pricingPlan?.mode);
         const repairedRentalTotalBs = rentalPricingMode === 'daily_schedule' && rentalItemsNetSubtotalBs > 0
@@ -18908,13 +18938,36 @@ const createWebBridge = () => ({
         const storedPendingBs = isReturned
           ? Number(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0)
           : Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
+        const previousPaidBs = Math.max(
+          0,
+          Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0),
+          Number(linkedContract?.payment?.paidAtApprovalBs ?? 0),
+        );
+        const derivedCommercialPendingBs = Math.max(
+          0,
+          Number((repairedRentalTotalBs - previousPaidBs).toFixed(2)),
+        );
+        const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
+        const remainingDeliveryFeeBs = Math.max(0, Number((rentalDeliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
+        const outstandingGapBs = Number((
+          derivedCommercialPendingBs - Number(settlement?.outstandingRentalBs ?? 0)
+        ).toFixed(2));
+        const historicalTransportOmissionBs = isReturned
+          && remainingDeliveryFeeBs > 0
+          && outstandingGapBs > 0
+          && Math.abs(outstandingGapBs - remainingDeliveryFeeBs) <= 0.01
+          ? outstandingGapBs
+          : 0;
         // Si el contrato viejo quedó con totalBs anterior al subalquiler manual,
         // el pendiente de devolución también quedó corto por exactamente esa
         // diferencia. Se suma una sola vez y en esta misma transacción se persiste
         // el total comercial reparado para que futuras cobranzas no lo repitan.
-        const currentPending = Number((
-          Math.max(0, storedPendingBs)
-          + commercialTotalCorrectionBs
+        const currentPending = Number((isReturned
+          ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs + historicalTransportOmissionBs
+          : Math.max(
+              Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
+              derivedCommercialPendingBs,
+            )
         ).toFixed(2));
 
         if (currentPending <= 0) {
@@ -18926,12 +18979,10 @@ const createWebBridge = () => ({
         const remainingBs = Number(Math.max(0, currentPending - amountBs).toFixed(2));
         const overpaidNowBs = Number(Math.max(0, amountBs - currentPending).toFixed(2));
         const previousOverpaidBs = Number(rental?.payment?.overpaidBs ?? rental?.totals?.overpaidBs ?? 0);
-        const previousPaidBs = Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0);
-        const deliveryFeeBs = !isReturned
-          ? Math.max(0, Number(rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0))
+        const deliveryFeeBs = !isReturned || derivedCommercialPendingBs > 0
+          ? rentalDeliveryFeeBs
           : 0;
-        const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
-        const remainingDeliveryFeeBs = Math.max(0, Number((deliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
+        const collectibleDeliveryFeeBs = Math.max(0, Number((deliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
         const collectionBreakdown = collectionBreakdownPayload.length
           ? collectionBreakdownPayload
           : [{ target: collectionTarget, amountBs, label: '', detail: '', category: '', accountingTag: '' }];
@@ -18947,7 +18998,7 @@ const createWebBridge = () => ({
         const balanceBs = collectionBreakdown
           .filter((entry) => entry.target === 'balance')
           .reduce((sum, entry) => sum + entry.amountBs, 0);
-        const balanceTransportBs = balanceBs > 0 ? Math.min(balanceBs, remainingDeliveryFeeBs) : 0;
+        const balanceTransportBs = balanceBs > 0 ? Math.min(balanceBs, collectibleDeliveryFeeBs) : 0;
         const transportCollectedNowBs = Number((explicitTransportBs + balanceTransportBs).toFixed(2));
         const damageCollectedNowBs = Number(explicitDamageBs.toFixed(2));
         const rentalCollectedNowBs = Number((explicitRentalBs + Math.max(0, balanceBs - balanceTransportBs)).toFixed(2));
@@ -18955,7 +19006,7 @@ const createWebBridge = () => ({
 
         rental.payment = {
           ...(rental.payment ?? {}),
-          paidAtRentalBs: Number((previousPaidBs + amountBs).toFixed(2)),
+          paidAtRentalBs: Number((previousPaidBs + rentalCollectedNowBs + transportCollectedNowBs).toFixed(2)),
           pendingPaymentBs: remainingBs,
           overpaidBs: Number((previousOverpaidBs + overpaidNowBs).toFixed(2)),
           deliveryFeeCollectedBs: Number((previousDeliveryFeeCollectedBs + transportCollectedNowBs).toFixed(2)),
@@ -18990,6 +19041,14 @@ const createWebBridge = () => ({
         if (isReturned) {
           rental.returnSettlement = {
             ...settlement,
+            outstandingRentalBs: Number(Math.max(
+              0,
+              Number(settlement?.outstandingRentalBs ?? 0)
+                + commercialTotalCorrectionBs
+                + historicalTransportOmissionBs
+                - rentalCollectedNowBs
+                - transportCollectedNowBs,
+            ).toFixed(2)),
             pendingCollectionBs: remainingBs,
             collectedAfterReturnBs: Number((Number(settlement.collectedAfterReturnBs ?? 0) + amountBs).toFixed(2)),
             collectedAt: remainingBs === 0 ? now : settlement.collectedAt ?? null,

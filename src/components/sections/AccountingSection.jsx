@@ -14,9 +14,47 @@ const toNumber = (value) => {
 
 const sumBy = (rows, getter) => Number(rows.reduce((sum, row) => sum + toNumber(getter(row)), 0).toFixed(2));
 
-const getReturnedPendingCollectionBs = (rental) => {
+const getReturnedPendingCollectionBs = (rental, contract = null) => {
   const settlement = rental?.returnSettlement ?? {};
   const storedPendingBs = toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
+  const totalBs = Math.max(
+    0,
+    toNumber(rental?.totals?.totalBs),
+    toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
+  );
+  const paidBs = Math.max(
+    0,
+    toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
+    toNumber(contract?.payment?.paidAtApprovalBs),
+  );
+  const deliveryFeeBs = Math.max(
+    0,
+    toNumber(rental?.deliveryFeeBs),
+    toNumber(rental?.totals?.deliveryFeeBs),
+    toNumber(contract?.deliveryFeeBs),
+    toNumber(contract?.totals?.deliveryFeeBs),
+  );
+  const deliveryCollectedBs = Math.max(
+    0,
+    toNumber(rental?.payment?.deliveryFeeCollectedBs),
+    toNumber(rental?.totals?.deliveryFeeCollectedBs),
+  );
+  const remainingTransportBs = Math.max(0, Number((deliveryFeeBs - deliveryCollectedBs).toFixed(2)));
+  const expectedOutstandingBs = Math.max(0, Number((totalBs - paidBs).toFixed(2)));
+  const storedOutstandingBs = Math.max(0, toNumber(settlement.outstandingRentalBs));
+  const outstandingGapBs = Number((expectedOutstandingBs - storedOutstandingBs).toFixed(2));
+  const historicalTransportOmissionBs = remainingTransportBs > 0
+    && outstandingGapBs > 0
+    && Math.abs(outstandingGapBs - remainingTransportBs) <= 0.01
+    ? outstandingGapBs
+    : 0;
+
+  // Corrección conservadora: solo agregamos la diferencia histórica cuando
+  // coincide exactamente con el transporte aún no cobrado. Los demás saldos,
+  // pagos, garantías y daños se conservan como fueron registrados.
+  if (historicalTransportOmissionBs > 0) {
+    return Math.max(0, Number((storedPendingBs + historicalTransportOmissionBs).toFixed(2)));
+  }
   const hasSettlementBreakdown = [
     settlement.outstandingRentalBs,
     settlement.penaltiesBs,
@@ -795,7 +833,7 @@ function AccountingSection({
 
   const getVipAdjustedPendingBs = useCallback((rental, contract = null) => {
     const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
-    if (isReturned || rental?.returnSettlement) return getReturnedPendingCollectionBs(rental);
+    if (isReturned || rental?.returnSettlement) return getReturnedPendingCollectionBs(rental, contract);
     const storedPendingBs = Math.max(0, toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs));
     const vipChargedBs = Math.max(0, toNumber(prepaidChargeByRentalId.get(String(rental?.id ?? ''))));
     const totalBs = Math.max(

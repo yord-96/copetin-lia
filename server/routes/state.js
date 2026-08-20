@@ -1267,6 +1267,38 @@ const getRentalChargeTargetBs = (contract, rental) => {
   return Math.max(storedTotalBs, reconstructedTotalBs);
 };
 
+// Algunas devoluciones históricas guardaron outstandingRentalBs sin el cargo de
+// transporte, aunque totalBs sí lo contenía. Solo corregimos esa inconsistencia
+// cuando la diferencia coincide exactamente con el transporte aún no cobrado;
+// así no reinterpretamos pagos, garantías, daños ni ajustes legítimos.
+const getHistoricalTransportOmissionBs = (contract, rental) => {
+  if (String(rental?.status ?? '').trim().toLowerCase() !== 'returned' || !rental?.returnSettlement) return 0;
+  const chargeTargetBs = getRentalChargeTargetBs(contract, rental);
+  const paidBs = directMoney(Math.max(
+    Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0),
+    Number(contract?.payment?.paidAtApprovalBs ?? 0),
+  ));
+  const expectedOutstandingBs = directMoney(Math.max(0, chargeTargetBs - paidBs));
+  const storedOutstandingBs = directMoney(rental?.returnSettlement?.outstandingRentalBs);
+  const deliveryFeeBs = directMoney(Math.max(
+    Number(rental?.deliveryFeeBs ?? 0),
+    Number(rental?.totals?.deliveryFeeBs ?? 0),
+    Number(contract?.deliveryFeeBs ?? 0),
+    Number(contract?.totals?.deliveryFeeBs ?? 0),
+  ));
+  const deliveryCollectedBs = directMoney(Math.max(
+    Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
+    Number(rental?.totals?.deliveryFeeCollectedBs ?? 0),
+  ));
+  const remainingTransportBs = directMoney(Math.max(0, deliveryFeeBs - deliveryCollectedBs));
+  const outstandingGapBs = directMoney(expectedOutstandingBs - storedOutstandingBs);
+  return remainingTransportBs > 0
+    && outstandingGapBs > 0
+    && Math.abs(outstandingGapBs - remainingTransportBs) <= 0.01
+    ? outstandingGapBs
+    : 0;
+};
+
 const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
   const rows = [];
   if (seed.initialPaymentBs > 0) {
@@ -2607,8 +2639,21 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
         return state;
       }
 
-      const totalBs = directMoney(rental?.totals?.totalBs);
-      const alreadyPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? totalBs);
+      const linkedContract = state.contracts.find((contract) => (
+        String(contract?.id ?? '') === String(rental?.contractId ?? '')
+        || String(contract?.rentalId ?? '') === String(rental.id)
+        || (rental?.orderCode && String(contract?.orderCode ?? '') === String(rental.orderCode))
+      )) ?? null;
+      const totalBs = getRentalChargeTargetBs(linkedContract, rental);
+      const alreadyPaidBs = directMoney(Math.max(
+        Number(
+          rental?.payment?.paidAtRentalBs
+          ?? rental?.totals?.paidAtRentalBs
+          ?? linkedContract?.payment?.paidAtApprovalBs
+          ?? totalBs,
+        ),
+        Number(linkedContract?.payment?.paidAtApprovalBs ?? 0),
+      ));
       const outstandingRentalBs = directMoney(Math.max(0, totalBs - alreadyPaidBs));
       const totalDiscountAgainstDepositBs = directMoney(penaltiesBs + outstandingRentalBs);
       const depositBs = directMoney(rental.depositBs);
@@ -2936,7 +2981,15 @@ router.patch('/__copetin_db/rentals/:id/return-charge', async (req, res, next) =
       rental.internalPenaltiesBs = totals.internalPenaltiesBs;
 
       const settlement = rental.returnSettlement ?? {};
-      const outstandingRentalBs = directMoney(settlement?.outstandingRentalBs);
+      const linkedContract = state.contracts.find((contract) => (
+        String(contract?.id ?? '') === String(rental?.contractId ?? '')
+        || String(contract?.rentalId ?? '') === String(rental.id)
+        || (rental?.orderCode && String(contract?.orderCode ?? '') === String(rental.orderCode))
+      )) ?? null;
+      const historicalTransportOmissionBs = getHistoricalTransportOmissionBs(linkedContract, rental);
+      const outstandingRentalBs = directMoney(
+        Number(settlement?.outstandingRentalBs ?? 0) + historicalTransportOmissionBs,
+      );
       const depositBs = directMoney(rental?.depositBs);
       const originalDiscountCoveredByDepositBs = directMoney(settlement?.discountCoveredByDepositBs);
       const economicResetApplied = Boolean(settlement?.economicResetAt);
@@ -3131,12 +3184,23 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         0,
         repairedRentalTotalBs - previousPaid,
       ));
+      const historicalTransportOmissionBs = getHistoricalTransportOmissionBs(linkedContract, rental);
+      const deliveryFeeBs = directMoney(Math.max(
+        Number(rental?.deliveryFeeBs ?? 0),
+        Number(rental?.totals?.deliveryFeeBs ?? 0),
+        Number(linkedContract?.deliveryFeeBs ?? 0),
+        Number(linkedContract?.totals?.deliveryFeeBs ?? 0),
+      ));
+      const previousTransport = directMoney(Math.max(
+        Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
+        Number(rental?.totals?.deliveryFeeCollectedBs ?? 0),
+      ));
       // Contratos daily_schedule antiguos pueden conservar pendingCollectionBs
       // calculado con un total anterior a la venta manual de proveedor. Se suma
       // solamente la diferencia comercial y, en esta misma transaccion, se
       // persiste el total reparado para que nunca vuelva a aplicarse.
       const currentPending = directMoney(isReturned
-        ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs
+        ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs + historicalTransportOmissionBs
         : Math.max(
             Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
             derivedCommercialPendingBs,
@@ -3239,14 +3303,13 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         0,
         currentPending - (isDamageOnlyCollection ? explicitDamage : amountBs),
       ).toFixed(2));
-      const deliveryFeeBs = !isReturned ? directMoney(Math.max(
-        Number(rental?.deliveryFeeBs ?? 0),
-        Number(rental?.totals?.deliveryFeeBs ?? 0),
-        Number(linkedContract?.deliveryFeeBs ?? 0),
-        Number(linkedContract?.totals?.deliveryFeeBs ?? 0),
-      )) : 0;
-      const previousTransport = directMoney(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs);
-      const remainingTransport = directMoney(deliveryFeeBs - previousTransport);
+      // Si todavía existe deuda comercial, el transporte pendiente conserva su
+      // clasificación incluso después de la devolución. No se aplica a cobros
+      // exclusivos de daños ni a contratos cuyo total comercial ya fue cubierto.
+      const collectibleTransportBs = !isReturned || derivedCommercialPendingBs > 0
+        ? deliveryFeeBs
+        : 0;
+      const remainingTransport = directMoney(collectibleTransportBs - previousTransport);
       const balanceTransport = Math.min(balance, remainingTransport);
       const transportNow = directMoney(explicitTransport + balanceTransport);
       const rentalNow = directMoney(explicitRental + Math.max(0, balance - balanceTransport));
@@ -3287,6 +3350,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
           0,
           Number(settlement.outstandingRentalBs ?? 0)
             + commercialTotalCorrectionBs
+            + historicalTransportOmissionBs
             - rentalNow
             - transportNow,
         ));
