@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 
 const getInputDate = (baseDate = new Date()) => {
@@ -360,6 +361,8 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
+  const [guaranteesView, setGuaranteesView] = useState('pending');
+  const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
   const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
@@ -1577,6 +1580,63 @@ function AccountingSection({
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
   [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, postedMovements, rentals]);
 
+  const returnedGuaranteeRows = useMemo(() => rentals
+    .filter((rental) => !rental?.deletedAt)
+    .map((rental) => {
+      const contract = getRentalContract(rental);
+      const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
+      if (guaranteeInfo.declaredBs <= 0 || !hasReturnedGuarantee(rental, contract)) return null;
+
+      const references = {
+        contractIds: [contract?.id, rental?.contractId],
+        rentalIds: [rental?.id, contract?.rentalId],
+        contractCodes: [contract?.contractCode, rental?.contractCode],
+        orderCodes: [contract?.orderCode, rental?.orderCode],
+        createdAtMs: new Date(
+          contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? rental?.createdAt ?? 0,
+        ).getTime(),
+      };
+      const refundMovements = postedMovements
+        .filter((movement) => isConfirmedGuaranteeReturnMovement(movement))
+        .filter((movement) => cashMovementMatchesContractReferences(movement, references))
+        .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+      if (!refundMovements.length) return null;
+
+      const refundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
+      const paymentMethods = [...new Set(refundMovements.map(getPaymentMethodLabel).filter(Boolean))];
+      const receiptCodes = [...new Set(refundMovements
+        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
+        .filter(Boolean))];
+      const registeredByNames = [...new Set(refundMovements
+        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? '').trim())
+        .filter(Boolean))];
+      const lastMovement = refundMovements.at(-1);
+      const guaranteePaidBs = Math.max(guaranteeInfo.validatedBs, guaranteeInfo.declaredBs, refundedBs);
+
+      return {
+        id: rental.id,
+        rentalId: rental.id,
+        contractId: contract?.id ?? rental?.contractId ?? '',
+        orderCode: rental?.orderCode ?? contract?.orderCode ?? '',
+        contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental.id,
+        customerName: rental?.customerName ?? contract?.customerName ?? 'Cliente',
+        responsibleName: getRentalResponsibleName(rental, contract),
+        eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.deliveryDate ?? rental?.createdAt,
+        returnedAt: lastMovement?.receiptIssuedAt ?? lastMovement?.createdAt ?? rental?.returnedAt,
+        guaranteePaidBs,
+        appliedBs: Math.max(0, Number((guaranteePaidBs - refundedBs).toFixed(2))),
+        refundedBs,
+        paymentMethodLabel: paymentMethods.join(' + ') || 'Sin método',
+        receiptCodes: receiptCodes.join(', '),
+        registeredBy: registeredByNames.join(', ') || '-',
+        statusLabel: 'Devuelta y finalizada',
+        refundMovements,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => new Date(right?.returnedAt ?? 0) - new Date(left?.returnedAt ?? 0)),
+  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, postedMovements, rentals]);
+
   const calculatedGuaranteesHeldBs = useMemo(
     () => sumBy(activeGuaranteeRows, (rental) => {
       const contract = getRentalContract(rental);
@@ -1783,6 +1843,11 @@ function AccountingSection({
     (row) => row.eventDate,
   );
   const visibleGuaranteeRows = filterBigCashWorkspaceRows(guaranteesToReturnRows, 'guarantees', (row) => row.eventDate);
+  const visibleReturnedGuaranteeRows = filterBigCashWorkspaceRows(
+    returnedGuaranteeRows,
+    'guarantees',
+    (row) => row.eventDate,
+  );
   const visibleReturnIssueRows = filterBigCashWorkspaceRows(
     returnIssueRows,
     'issues',
@@ -1909,6 +1974,17 @@ function AccountingSection({
     return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
   }, [bigCashWorkspaceRanges]);
 
+  const guaranteesReportRange = useMemo(() => {
+    const range = bigCashWorkspaceRanges.guarantees ?? { dateFrom: '', dateTo: '' };
+    const formatRangeDate = (value) => {
+      if (!value) return '';
+      const [year, month, day] = String(value).split('-');
+      return year && month && day ? `${day}/${month}/${year}` : value;
+    };
+    if (!range.dateFrom && !range.dateTo) return 'Todos los eventos filtrados';
+    return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
+  }, [bigCashWorkspaceRanges]);
+
   const exportPendingReceivablesWorkbook = async () => {
     try {
       const excelModule = await import('exceljs');
@@ -1978,6 +2054,114 @@ function AccountingSection({
     } catch (error) {
       console.error('No se pudo exportar el reporte unificado por cobrar.', error);
       window.alert('No se pudo generar el Excel. Intenta nuevamente.');
+    }
+  };
+
+  const exportGuaranteesWorkbook = async () => {
+    if (isExportingGuarantees) return;
+    setIsExportingGuarantees(true);
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'Copetín SRL';
+      workbook.created = new Date();
+
+      const isReturnedView = guaranteesView === 'returned';
+      const rows = isReturnedView ? visibleReturnedGuaranteeRows : visibleGuaranteeRows;
+      const totalBs = isReturnedView
+        ? sumBy(rows, (row) => row.refundedBs)
+        : sumBy(rows, (row) => toNumber(row.guaranteePaidBs) + toNumber(row.unvalidatedBs));
+      const sheet = workbook.addWorksheet(isReturnedView ? 'Garantías devueltas' : 'Por devolver', {
+        views: [{ state: 'frozen', ySplit: 6 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      sheet.columns = isReturnedView
+        ? [
+            { width: 7 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 24 }, { width: 15 },
+            { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }, { width: 20 }, { width: 24 },
+          ]
+        : [
+            { width: 7 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 24 }, { width: 15 },
+            { width: 20 }, { width: 18 }, { width: 22 }, { width: 18 }, { width: 18 }, { width: 18 },
+          ];
+      sheet.mergeCells('A1:L1');
+      sheet.getCell('A1').value = 'EL COPETÍN · CONTROL UNIFICADO DE GARANTÍAS';
+      sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+      sheet.mergeCells('A2:H2');
+      sheet.getCell('A2').value = isReturnedView ? 'Garantías devueltas y finalizadas' : 'Garantías retenidas / por devolver';
+      sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
+      sheet.mergeCells('I2:L2');
+      sheet.getCell('I2').value = `Periodo: ${guaranteesReportRange}`;
+      sheet.getCell('I2').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A3:H3');
+      sheet.getCell('A3').value = `${rows.length} garantía(s) · Total ${formatBs(totalBs)}`;
+      sheet.mergeCells('I3:L3');
+      sheet.getCell('I3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getCell('I3').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A4:L4');
+      sheet.getCell('A4').value = isReturnedView
+        ? 'Historial de devoluciones confirmadas mediante movimientos y recibos de Caja Grande.'
+        : 'Garantías pagadas o comprometidas que permanecen bajo custodia o pendientes de devolución.';
+      sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+
+      const header = sheet.getRow(6);
+      header.values = isReturnedView
+        ? ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha devolución', 'Garantía pagada', 'Aplicado', 'Devuelto', 'Método / recibo', 'Registrado por']
+        : ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Estado', 'Garantía pagada', 'Método', 'Aplicado', 'A devolver', 'Debe'];
+      header.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+
+      rows.forEach((row, index) => {
+        const eventDateKey = getDateKey(row.eventDate);
+        const returnedDate = new Date(row.returnedAt ?? '');
+        const validReturnedDate = Number.isNaN(returnedDate.getTime()) ? '' : returnedDate;
+        const values = isReturnedView
+          ? [
+              index + 1, row.contractCode || '', row.orderCode || '', row.customerName || '', row.responsibleName || '',
+              eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '',
+              validReturnedDate,
+              toNumber(row.guaranteePaidBs), toNumber(row.appliedBs), toNumber(row.refundedBs),
+              [row.paymentMethodLabel, row.receiptCodes].filter(Boolean).join(' · '), row.registeredBy || '',
+            ]
+          : [
+              index + 1, row.contractCode || '', row.orderCode || '', row.customerName || '', row.responsibleName || '',
+              eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '', row.statusLabel || '',
+              toNumber(row.guaranteePaidBs), row.paymentMethodLabel || '', toNumber(row.appliedBs),
+              toNumber(row.refundableBs), toNumber(row.unvalidatedBs),
+            ];
+        const excelRow = sheet.addRow(values);
+        excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
+        if (isReturnedView) excelRow.getCell(7).numFmt = 'dd/mm/yyyy hh:mm';
+        (isReturnedView ? [8, 9, 10] : [8, 10, 11, 12]).forEach((column) => {
+          excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00';
+        });
+      });
+      const lastRow = Math.max(6, 6 + rows.length);
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 12 } };
+      sheet.pageSetup.printTitlesRow = '1:6';
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const range = bigCashWorkspaceRanges.guarantees ?? {};
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `reporte-garantias-${isReturnedView ? 'devueltas' : 'por-devolver'}-${range.dateFrom || 'inicio'}-${range.dateTo || 'fin'}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('No se pudo exportar el reporte de garantías.', error);
+      window.alert('No se pudo generar el Excel de garantías. Intenta nuevamente.');
+    } finally {
+      setIsExportingGuarantees(false);
     }
   };
 
@@ -2236,6 +2420,7 @@ function AccountingSection({
     popup.focus();
   };
   const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.guaranteePaidBs) + toNumber(row.unvalidatedBs));
+  const visibleReturnedGuaranteeTotalBs = sumBy(visibleReturnedGuaranteeRows, (row) => row.refundedBs);
   const visibleReturnIssueTotalBs = sumBy(visibleReturnIssueRows, (row) => row.penaltyBs);
 
   const getReturnIssueOwnerLabel = (owner) => {
@@ -4253,7 +4438,11 @@ function AccountingSection({
           <span>{dateCaption}</span>
           <label><small>Desde</small><input type="date" value={range.dateFrom} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateFrom', event.target.value)} /></label>
           <label><small>Hasta</small><input type="date" value={range.dateTo} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateTo', event.target.value)} /></label>
-          {resultCount !== null ? <span className="bigcash-filter-result-count"><strong>{resultCount}</strong> {resultCount === 1 && resultLabel === 'contratos encontrados' ? 'contrato encontrado' : resultLabel}</span> : null}
+          {resultCount !== null ? (
+            <span className="bigcash-filter-result-count">
+              <strong>{resultCount}</strong>{resultLabel ? ` ${resultCount === 1 && resultLabel === 'contratos encontrados' ? 'contrato encontrado' : resultLabel}` : ''}
+            </span>
+          ) : null}
           {(range.dateFrom || range.dateTo) ? <button type="button" onClick={() => clearBigCashWorkspaceRange(rangeKey)}>Limpiar fechas</button> : null}
         </div>
       </div>
@@ -5314,7 +5503,7 @@ function AccountingSection({
               'receivables',
               'Fecha del evento',
               receivablesView === 'pending' ? visibleReceivableRows.length : visibleFinalizedReceivableRows.length,
-              'contratos encontrados',
+              '',
             )}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
@@ -5431,30 +5620,91 @@ function AccountingSection({
             <header>
               <div>
                 <span>02 · Control</span>
-                <h3><span className="bigcash-title-icon violet"><MiniIcon kind="lock" /></span>Garantías retenidas / por devolver</h3>
-                <p>Dinero ajeno pagado o comprometido como respaldo del material alquilado.</p>
+                <h3>
+                  <span className="bigcash-title-icon violet"><MiniIcon kind="lock" /></span>
+                  {guaranteesView === 'pending' ? 'Garantías retenidas / por devolver' : 'Garantías devueltas y finalizadas'}
+                </h3>
+                <p>
+                  {guaranteesView === 'pending'
+                    ? 'Dinero ajeno pagado o comprometido como respaldo del material alquilado.'
+                    : 'Historial de garantías devueltas con su movimiento y recibo de Caja Grande.'}
+                </p>
               </div>
-              <div className="bigcash-header-total"><small>Compromiso en resultados</small><strong>{formatBs(visibleGuaranteeTotalBs)}</strong></div>
+              <div className="bigcash-receivables-header-actions">
+                <div className="bigcash-header-total">
+                  <small>{guaranteesView === 'pending' ? 'Compromiso en resultados' : 'Total devuelto'}</small>
+                  <strong>{formatBs(guaranteesView === 'pending' ? visibleGuaranteeTotalBs : visibleReturnedGuaranteeTotalBs)}</strong>
+                </div>
+                <button
+                  type="button"
+                  className="primary-button bigcash-generate-report-button"
+                  onClick={exportGuaranteesWorkbook}
+                  disabled={isExportingGuarantees || (guaranteesView === 'pending' ? visibleGuaranteeRows.length === 0 : visibleReturnedGuaranteeRows.length === 0)}
+                >
+                  {isExportingGuarantees ? 'Generando...' : 'Generar reporte'}
+                </button>
+              </div>
             </header>
-            {renderBigCashWorkspaceSearch('Buscar contrato, cliente, responsable o estado...', 'guarantees', 'Fecha del evento')}
+            <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de las garantías">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={guaranteesView === 'pending'}
+                className={guaranteesView === 'pending' ? 'is-active' : ''}
+                onClick={() => setGuaranteesView('pending')}
+              >
+                Por devolver <b>{guaranteesToReturnRows.length}</b>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={guaranteesView === 'returned'}
+                className={guaranteesView === 'returned' ? 'is-active' : ''}
+                onClick={() => setGuaranteesView('returned')}
+              >
+                Devueltas y finalizadas <b>{returnedGuaranteeRows.length}</b>
+              </button>
+            </div>
+            {renderBigCashWorkspaceSearch(
+              'Buscar contrato, cliente, responsable o estado...',
+              'guarantees',
+              'Fecha del evento',
+              guaranteesView === 'pending' ? visibleGuaranteeRows.length : visibleReturnedGuaranteeRows.length,
+              '',
+            )}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
                 <thead>
-                  <tr>
-                    <th>Contrato</th>
-                    <th>Cliente</th>
-                    <th>Responsable</th>
-                    <th>Estado</th>
-                    <th>Garantía pagada</th>
-                    <th>Método</th>
-                    <th>Aplicado</th>
-                    <th>A devolver</th>
-                    <th>Debe</th>
-                    <th />
-                  </tr>
+                  {guaranteesView === 'pending' ? (
+                    <tr>
+                      <th>Contrato</th>
+                      <th>Cliente</th>
+                      <th>Responsable</th>
+                      <th>Estado</th>
+                      <th>Garantía pagada</th>
+                      <th>Método</th>
+                      <th>Aplicado</th>
+                      <th>A devolver</th>
+                      <th>Debe</th>
+                      <th />
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th>Contrato</th>
+                      <th>Cliente</th>
+                      <th>Responsable</th>
+                      <th>Fecha evento</th>
+                      <th>Fecha devolución</th>
+                      <th>Garantía pagada</th>
+                      <th>Aplicado</th>
+                      <th>Devuelto</th>
+                      <th>Método / recibo</th>
+                      <th>Registrado por</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody>
-                  {visibleGuaranteeRows.map((row) => (
+                  {guaranteesView === 'pending' ? visibleGuaranteeRows.map((row) => (
                     <tr key={row.id} className={row.isReadyToReturn ? 'guarantee-ready-row' : ''}>
                       <td><strong>{row.contractCode}</strong><small>{formatDate(row.eventDate)}</small></td>
                       <td><strong>{row.customerName}</strong></td>
@@ -5481,8 +5731,26 @@ function AccountingSection({
                         )}
                       </td>
                     </tr>
+                  )) : visibleReturnedGuaranteeRows.map((row) => (
+                    <tr key={row.id}>
+                      <td><strong>{row.contractCode}</strong><small>{row.orderCode}</small></td>
+                      <td><strong>{row.customerName}</strong></td>
+                      <td>{row.responsibleName}</td>
+                      <td>{formatDate(row.eventDate)}</td>
+                      <td><strong>{formatDate(row.returnedAt)}</strong><small>{getLongHourLabel(row.returnedAt)}</small></td>
+                      <td className="amount">{formatBs(row.guaranteePaidBs)}</td>
+                      <td className="amount">{formatBs(row.appliedBs)}</td>
+                      <td className="amount"><strong>{formatBs(row.refundedBs)}</strong></td>
+                      <td><strong>{row.paymentMethodLabel}</strong><small>{row.receiptCodes || 'Sin recibo registrado'}</small></td>
+                      <td>{row.registeredBy}</td>
+                    </tr>
                   ))}
-                  {visibleGuaranteeRows.length === 0 ? <tr><td colSpan={10}><p className="status">No se encontraron garantías con ese criterio.</p></td></tr> : null}
+                  {guaranteesView === 'pending' && visibleGuaranteeRows.length === 0 ? (
+                    <tr><td colSpan={10}><p className="status">No se encontraron garantías por devolver con ese criterio.</p></td></tr>
+                  ) : null}
+                  {guaranteesView === 'returned' && visibleReturnedGuaranteeRows.length === 0 ? (
+                    <tr><td colSpan={10}><p className="status">No se encontraron garantías devueltas con ese criterio.</p></td></tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
