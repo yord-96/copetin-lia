@@ -4212,21 +4212,37 @@ function InventoryDashboardSection({
   const openReceivingModal = (row) => {
     const pickupItems = row.rental.pickupChecklist?.items ?? [];
     const partialItems = Array.isArray(row.rental.partialReturnReport?.items) ? row.rental.partialReturnReport.items : [];
+    const isPendingContinuation = Boolean(row?.clientPendingPickup?.active)
+      || partialItems.some((entry) => Math.max(0, Math.trunc(Number(entry?.pendingClientQty ?? 0))) > 0);
+    const matchesReturnLine = (entry, line, lineKey) => (
+      String(entry?.lineKey ?? '') === String(lineKey)
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line.itemId ?? ''))
+    );
     const getPreviouslyProcessedQty = (line, lineKey) => partialItems
+      .filter((entry) => matchesReturnLine(entry, line, lineKey))
+      .reduce((sum, entry) => {
+        const legacyPending = !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
+          && Boolean(row?.clientPendingPickup?.active);
+        return sum
+          + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+          + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
+          + (legacyPending ? 0 : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0))));
+      }, 0);
+    const getPreviousPendingLine = (line, lineKey) => partialItems
       .filter((entry) => (
-        String(entry?.lineKey ?? '') === String(lineKey)
-        || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line.itemId ?? ''))
+        matchesReturnLine(entry, line, lineKey)
+        && Math.max(0, Math.trunc(Number(entry?.pendingClientQty ?? 0))) > 0
       ))
-      .reduce((sum, entry) => sum
-        + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-        + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+      .slice(-1)[0] ?? null;
     setReceivingError('');
     setReceivingModal({
       rental: {
         ...row.rental,
         contractCode: row.contractCode ?? row.rental.contractCode ?? '',
       },
-      notes: row.returnReview?.note ?? row.clientPendingPickup?.note ?? '',
+      notes: '',
+      isPendingContinuation,
+      previousPendingNote: String(row?.clientPendingPickup?.note ?? row?.returnReview?.note ?? '').trim(),
       items: (row.rental.items ?? []).map((line, index) => {
         const returnLineKey = String(
           line.lineKey
@@ -4238,6 +4254,7 @@ function InventoryDashboardSection({
         );
         const originalExpectedQty = Math.max(0, Math.trunc(Number(line.quantity ?? 0)));
         const expectedQty = Math.max(0, originalExpectedQty - getPreviouslyProcessedQty(line, returnLineKey));
+        const previousPendingLine = getPreviousPendingLine(line, returnLineKey);
         const inventoryItem = items.find((item) => String(item?.id ?? '') === String(line?.itemId ?? ''));
         const configuredDamagedUnitChargeBs = Math.max(
           0,
@@ -4286,7 +4303,8 @@ function InventoryDashboardSection({
           damagedUnitChargeBs: damagedQty > 0 ? configuredDamagedUnitChargeBs : 0,
           missingUnitChargeBs: missingQty > 0 ? configuredMissingUnitChargeBs : 0,
           chargeOwner: 'cliente',
-          damageNote: picked?.note ?? '',
+          previousPendingNote: String(previousPendingLine?.damageNote ?? previousPendingLine?.note ?? '').trim(),
+          damageNote: isPendingContinuation ? '' : picked?.note ?? '',
         };
       }),
     });
@@ -4539,6 +4557,12 @@ function InventoryDashboardSection({
       balanceQty,
     };
   };
+
+  const receivingVisibleItems = useMemo(() => {
+    if (!receivingModal) return [];
+    if (!receivingModal.isPendingContinuation) return receivingModal.items;
+    return receivingModal.items.filter((line) => Math.max(0, Math.trunc(Number(line?.expectedQty ?? 0))) > 0);
+  }, [receivingModal]);
 
   const receivingTotals = useMemo(() => {
     if (!receivingModal) {
@@ -7651,9 +7675,11 @@ function InventoryDashboardSection({
           <form className="orders-modal orders-preview-modal" onSubmit={submitReceiving} onClick={(event) => event.stopPropagation()}>
             <header className="orders-modal-head">
               <div>
-                <h3>Recepcion de contrato {receivingModal.rental.contractCode || receivingModal.rental.orderCode}</h3>
+                <h3>{receivingModal.isPendingContinuation ? 'Recepcion pendiente' : 'Recepcion'} de contrato {receivingModal.rental.contractCode || receivingModal.rental.orderCode}</h3>
                 {receivingModal.rental.contractCode && receivingModal.rental.orderCode ? <small>Orden {receivingModal.rental.orderCode}</small> : null}
-                <p>Inventario constata si todo volvio o si queda material pendiente con el cliente.</p>
+                <p>{receivingModal.isPendingContinuation
+                  ? 'Solo se muestran las unidades que siguen pendientes con el cliente. Lo ya recibido no se vuelve a procesar.'
+                  : 'Inventario constata si todo volvio o si queda material pendiente con el cliente.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setReceivingModal(null)}>
                 x
@@ -7684,11 +7710,16 @@ function InventoryDashboardSection({
                   />
                 </label>
               </div>
-              {receivingTotals.pendingClientUnits > 0 ? (
+              {receivingModal.isPendingContinuation ? (
+                <p className="status warning">
+                  Pendiente anterior: {receivingVisibleItems.reduce((sum, line) => sum + Math.max(0, Number(line.expectedQty ?? 0)), 0)} unidad(es) por resolver.
+                  {receivingModal.previousPendingNote ? ` ${receivingModal.previousPendingNote}` : ''}
+                </p>
+              ) : receivingTotals.pendingClientUnits > 0 ? (
                 <p className="status warning">Lo recibido y los daños/faltantes se registrarán ahora. Solo las unidades marcadas “Con cliente” seguirán pendientes y fuera del disponible.</p>
               ) : null}
               <div className="inventory-receiving-summary" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
-                <span><small>Ítems revisados</small><strong>{receivingModal.items.length}</strong></span>
+                <span><small>{receivingModal.isPendingContinuation ? 'Ítems pendientes' : 'Ítems revisados'}</small><strong>{receivingVisibleItems.length}</strong></span>
                 <span><small>Con novedad</small><strong>{receivingTotals.issueRows}</strong></span>
                 <span><small>Con cliente</small><strong style={{ color: receivingTotals.pendingClientUnits > 0 ? '#b45309' : undefined }}>{receivingTotals.pendingClientUnits}</strong></span>
                 <span><small>Cobra cliente / garantía</small><strong>{formatBs(receivingTotals.clientPenaltyBs)}</strong></span>
@@ -7707,7 +7738,7 @@ function InventoryDashboardSection({
                   <span>Total</span>
                   <span>Observación</span>
                 </div>
-                {receivingModal.items.map((line) => {
+                {receivingVisibleItems.map((line) => {
                   const values = getReceivingLineNumbers(line);
                   const hasMismatch = values.balanceQty !== 0;
                   return (
@@ -7716,7 +7747,14 @@ function InventoryDashboardSection({
                       className={`transport-checklist-row inventory-receiving-row ${hasMismatch ? 'has-mismatch' : ''}`}
                       style={{ gridTemplateColumns: 'minmax(190px,1.45fr) 58px 58px 58px 58px 72px 112px minmax(112px,.8fr) 82px minmax(150px,1fr)' }}
                     >
-                      <strong>{line.itemName}</strong>
+                      <div style={{ display: 'grid', gap: 3 }}>
+                        <strong>{line.itemName}</strong>
+                        {receivingModal.isPendingContinuation ? (
+                          <small style={{ color: '#b45309', fontWeight: 700 }}>
+                            Pendiente anterior: {line.expectedQty}{line.previousPendingNote ? ` · ${line.previousPendingNote}` : ''}
+                          </small>
+                        ) : null}
+                      </div>
                       <span>{line.expectedQty}</span>
                       <input type="number" min="0" max={line.expectedQty} value={line.returnedQty} onChange={(event) => updateReceivingLine(line.returnLineKey, 'returnedQty', event.target.value)} />
                       <input type="number" min="0" max={line.expectedQty} value={line.damagedQty} onChange={(event) => updateReceivingLine(line.returnLineKey, 'damagedQty', event.target.value)} />
@@ -7781,7 +7819,13 @@ function InventoryDashboardSection({
                 Cancelar
               </button>
               <button type="submit" className="primary-button" disabled={isReceiving}>
-                {isReceiving ? 'Registrando...' : receivingTotals.pendingClientUnits > 0 ? 'Registrar retorno parcial' : 'Cerrar recepción'}
+                {isReceiving
+                  ? 'Registrando...'
+                  : receivingTotals.pendingClientUnits > 0
+                    ? 'Guardar pendiente'
+                    : receivingModal.isPendingContinuation
+                      ? 'Completar retorno'
+                      : 'Cerrar recepción'}
               </button>
             </footer>
           </form>
