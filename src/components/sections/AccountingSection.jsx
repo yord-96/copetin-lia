@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 
 const getInputDate = (baseDate = new Date()) => {
   const cloned = new Date(baseDate);
@@ -13,64 +14,6 @@ const toNumber = (value) => {
 };
 
 const sumBy = (rows, getter) => Number(rows.reduce((sum, row) => sum + toNumber(getter(row)), 0).toFixed(2));
-
-const getReturnedPendingCollectionBs = (rental, contract = null) => {
-  const settlement = rental?.returnSettlement ?? {};
-  const storedPendingBs = toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs);
-  const totalBs = Math.max(
-    0,
-    toNumber(rental?.totals?.totalBs),
-    toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
-  );
-  const paidBs = Math.max(
-    0,
-    toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
-    toNumber(contract?.payment?.paidAtApprovalBs),
-  );
-  const expectedOutstandingBs = Math.max(0, Number((totalBs - paidBs).toFixed(2)));
-  const storedOutstandingBs = Math.max(0, toNumber(settlement.outstandingRentalBs));
-  const commercialSettlementDeltaBs = Number((expectedOutstandingBs - storedOutstandingBs).toFixed(2));
-  // Reemplaza únicamente la parte comercial antigua por total vigente menos
-  // pagos reales. El resto del saldo guardado (daños y garantía aplicada) se
-  // conserva sin reinterpretarlo.
-  const reconciledStoredPendingBs = Math.max(
-    0,
-    Number((storedPendingBs + commercialSettlementDeltaBs).toFixed(2)),
-  );
-  const hasSettlementBreakdown = [
-    settlement.outstandingRentalBs,
-    settlement.penaltiesBs,
-    settlement.discountCoveredByDepositBs,
-  ].some((value) => value !== undefined && value !== null);
-
-  if (!hasSettlementBreakdown) return reconciledStoredPendingBs;
-
-  const outstandingRentalBs = expectedOutstandingBs;
-  const penaltiesBs = Math.max(0, toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs));
-  const coveredByDepositBs = Math.max(0, toNumber(settlement.discountCoveredByDepositBs));
-  // Estos campos representan el mismo dinero desde distintas capas del estado.
-  // Se usa el mayor valor, no la suma, para evitar contar dos veces un mismo cobro.
-  const damageCollectedBs = Math.max(
-    0,
-    toNumber(settlement.damageCollectedBs),
-    toNumber(settlement.penaltiesCollectedBs),
-    toNumber(rental?.payment?.damageCollectedBs),
-    toNumber(rental?.payment?.penaltiesCollectedBs),
-    toNumber(rental?.payment?.returnChargesCollectedBs),
-    toNumber(rental?.totals?.damageCollectedBs),
-    toNumber(rental?.totals?.penaltiesCollectedBs),
-    toNumber(rental?.totals?.returnChargesCollectedBs),
-  );
-  const derivedPendingBs = Math.max(
-    0,
-    Number((outstandingRentalBs + penaltiesBs - coveredByDepositBs - damageCollectedBs).toFixed(2)),
-  );
-
-  // Para devoluciones antiguas el pendingCollectionBs puede haber quedado sin
-  // descontar un cobro real de daños. El menor valor conserva cualquier saldo
-  // ya corregido por servidor y, a la vez, evita revivir deudas ya cobradas.
-  return Math.max(0, Number(Math.min(reconciledStoredPendingBs, derivedPendingBs).toFixed(2)));
-};
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -813,9 +756,7 @@ function AccountingSection({
     return map;
   }, [prepaidLedgerRows]);
 
-  const getVipAdjustedPendingBs = useCallback((rental, contract = null) => {
-    const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
-    if (isReturned || rental?.returnSettlement) return getReturnedPendingCollectionBs(rental, contract);
+  const getRentalReceivableBreakdown = useCallback((rental, contract = null) => {
     const storedPendingBs = Math.max(0, toNumber(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs));
     const vipChargedBs = Math.max(0, toNumber(prepaidChargeByRentalId.get(String(rental?.id ?? ''))));
     const totalBs = Math.max(
@@ -823,7 +764,13 @@ function AccountingSection({
       toNumber(rental?.totals?.totalBs),
       toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
     );
-    if (totalBs <= 0) return storedPendingBs;
+    if (totalBs <= 0) {
+      return {
+        totalBs: 0, paidBs: 0, contractPendingBs: storedPendingBs, transportPendingBs: 0,
+        damagePendingBs: 0, commercialPendingBs: storedPendingBs, totalPendingBs: storedPendingBs,
+        status: storedPendingBs > 0.009 ? 'pending' : 'paid',
+      };
+    }
     const storedPrepaidBs = Math.max(
       0,
       toNumber(rental?.payment?.prepaidAppliedBs),
@@ -838,19 +785,24 @@ function AccountingSection({
       toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
       toNumber(contract?.payment?.paidAtApprovalBs),
     );
-    const nonVipPaidBs = storedPaidBs + 0.01 >= storedPrepaidBs
-      ? Math.max(0, storedPaidBs - storedPrepaidBs)
-      : storedPaidBs;
-    const derivedPendingBs = Math.max(0, Number((
-      vipChargedBs > 0
-        ? totalBs - nonVipPaidBs - vipChargedBs
-        : totalBs - storedPaidBs
-    ).toFixed(2)));
-    // El saldo se deriva del total comercial completo. Algunos contratos antiguos
-    // guardaron pendingPaymentBs solo con los items y dejaron el transporte fuera,
-    // aunque totalBs ya lo incluia; por eso el saldo almacenado no puede mandar.
-    return derivedPendingBs;
+    const effectiveStoredPaidBs = storedPaidBs + 0.01 >= storedPrepaidBs
+      ? storedPaidBs
+      : Number((storedPaidBs + vipChargedBs).toFixed(2));
+    const ledgerPaidBs = getConfirmedContractLedgerPaidBs(contract, totalBs);
+    return calculateReceivableBreakdown({
+      rental,
+      contract,
+      confirmedCommercialPaidBs: Math.max(
+        effectiveStoredPaidBs,
+        Number((ledgerPaidBs + vipChargedBs).toFixed(2)),
+      ),
+    });
   }, [prepaidChargeByRentalId]);
+
+  const getVipAdjustedPendingBs = useCallback(
+    (rental, contract = null) => getRentalReceivableBreakdown(rental, contract).totalPendingBs,
+    [getRentalReceivableBreakdown],
+  );
 
   const totalPrepaidBalanceBs = useMemo(
     () => sumBy(prepaidClientRows, (row) => row.balanceBs),
@@ -1656,29 +1608,10 @@ function AccountingSection({
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
         const contract = contractByRentalId.get(rental.id);
-        const pendingBs = getVipAdjustedPendingBs(rental, contract);
+        const breakdown = getRentalReceivableBreakdown(rental, contract);
+        const totalBs = breakdown.totalBs;
+        const pendingBs = breakdown.totalPendingBs;
         if (pendingBs <= 0) return null;
-        const totalBs = Math.max(
-          0,
-          toNumber(rental?.totals?.totalBs),
-          toNumber(contract?.totals?.totalBs ?? contract?.totalBs),
-        );
-        const deliveryFeeBs = Math.max(
-          0,
-          toNumber(rental?.totals?.deliveryFeeBs),
-          toNumber(rental?.deliveryFeeBs),
-          toNumber(contract?.totals?.deliveryFeeBs),
-          toNumber(contract?.deliveryFeeBs),
-        );
-        const deliveryFeeCollectedBs = Math.max(0, toNumber(
-          rental?.payment?.deliveryFeeCollectedBs
-          ?? rental?.totals?.deliveryFeeCollectedBs,
-        ));
-        const transportPendingBs = Math.min(
-          pendingBs,
-          Math.max(0, Number((deliveryFeeBs - deliveryFeeCollectedBs).toFixed(2))),
-        );
-        const contractPendingBs = Math.max(0, Number((pendingBs - transportPendingBs).toFixed(2)));
         return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
@@ -1688,14 +1621,11 @@ function AccountingSection({
           eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
           status: isReturned ? 'Liquidacion' : 'Contrato',
           pendingBs,
-          contractPendingBs,
-          transportPendingBs,
+          contractPendingBs: breakdown.contractPendingBs,
+          transportPendingBs: breakdown.transportPendingBs,
+          damagePendingBs: breakdown.damagePendingBs,
           totalBs,
-          paidBs: Math.max(
-            0,
-            toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
-            toNumber(contract?.payment?.paidAtApprovalBs),
-          ),
+          paidBs: breakdown.paidBs,
           guaranteeBs: toNumber(rental?.depositBs),
           penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
           outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
@@ -1704,7 +1634,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => b.pendingBs - a.pendingBs),
-    [contractByRentalId, getRentalResponsibleName, getVipAdjustedPendingBs, rentals],
+    [contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -1780,7 +1710,7 @@ function AccountingSection({
       .flatMap((rental) => {
         const contract = getRentalContract(rental);
         const settlement = rental?.returnSettlement ?? {};
-        const pendingCollectionBs = getReturnedPendingCollectionBs(rental, contract);
+        const pendingCollectionBs = getVipAdjustedPendingBs(rental, contract);
         const issueLines = Array.isArray(rental.returnIssueSummary)
           ? rental.returnIssueSummary
           : Array.isArray(rental.returnReport)
@@ -1822,7 +1752,7 @@ function AccountingSection({
           });
       })
       .sort((a, b) => new Date(b.returnedAt ?? 0) - new Date(a.returnedAt ?? 0)),
-    [getRentalContract, getRentalResponsibleName, rentals],
+    [getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, rentals],
   );
 
   const returnIssueRows = useMemo(
@@ -1978,6 +1908,78 @@ function AccountingSection({
     if (!range.dateFrom && !range.dateTo) return 'Todos los eventos filtrados';
     return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
   }, [bigCashWorkspaceRanges]);
+
+  const exportPendingReceivablesWorkbook = async () => {
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'Copetín SRL';
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet('Por cobrar', {
+        views: [{ state: 'frozen', ySplit: 6 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      sheet.columns = [
+        { width: 7 }, { width: 16 }, { width: 16 }, { width: 30 }, { width: 25 }, { width: 15 },
+        { width: 17 }, { width: 17 }, { width: 17 }, { width: 18 }, { width: 16 },
+      ];
+      sheet.mergeCells('A1:K1');
+      sheet.getCell('A1').value = 'EL COPETÍN · CONTROL UNIFICADO DE CUENTAS POR COBRAR';
+      sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+      sheet.mergeCells('A2:G2');
+      sheet.getCell('A2').value = 'Pendientes por fecha de evento';
+      sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
+      sheet.mergeCells('H2:K2');
+      sheet.getCell('H2').value = `Periodo: ${finalizedReceivablesReportRange}`;
+      sheet.getCell('H2').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A3:G3');
+      sheet.getCell('A3').value = `${visibleReceivableRows.length} contrato(s) con deuda real · Total ${formatBs(visibleReceivableTotalBs)}`;
+      sheet.mergeCells('H3:K3');
+      sheet.getCell('H3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getCell('H3').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A4:K4');
+      sheet.getCell('A4').value = 'El estado operativo “Finalizado” es independiente. Este reporte incluye únicamente contratos cuyo total por cobrar es mayor a cero.';
+      sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+      const header = sheet.getRow(6);
+      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Contrato', 'Transporte', 'Daños / faltantes', 'Total por cobrar', 'Estado financiero'];
+      header.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      visibleReceivableRows.forEach((row, index) => {
+        const dateKey = getDateKey(row.eventDate);
+        const excelRow = sheet.addRow([
+          index + 1, row.contractCode || row.orderCode || '', row.orderCode || '', row.customerName || '',
+          row.responsibleName || '', dateKey ? new Date(`${dateKey}T12:00:00`) : '',
+          toNumber(row.contractPendingBs), toNumber(row.transportPendingBs), toNumber(row.damagePendingBs),
+          toNumber(row.pendingBs), 'Por cobrar',
+        ]);
+        excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
+        [7, 8, 9, 10].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+      });
+      const lastRow = Math.max(6, 6 + visibleReceivableRows.length);
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 11 } };
+      sheet.pageSetup.printTitlesRow = '1:6';
+      const buffer = await workbook.xlsx.writeBuffer();
+      const range = bigCashWorkspaceRanges.receivables ?? {};
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `reporte-por-cobrar-${range.dateFrom || 'inicio'}-${range.dateTo || 'fin'}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('No se pudo exportar el reporte unificado por cobrar.', error);
+      window.alert('No se pudo generar el Excel. Intenta nuevamente.');
+    }
+  };
 
   const finalizedReceivablesCollectionRows = useMemo(
     () => visibleFinalizedReceivableRows.flatMap((row) =>
@@ -3167,9 +3169,7 @@ function AccountingSection({
             <td>{formatDate(row.eventDate)}</td>
             <td className="amount">
               <strong>{formatBs(row.pendingBs)}</strong>
-              {row.transportPendingBs > 0 ? (
-                <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)}</small>
-              ) : null}
+              <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
             </td>
             <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
           </tr>
@@ -5268,7 +5268,16 @@ function AccountingSection({
                   <small>{receivablesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
                   <strong>{formatBs(receivablesView === 'pending' ? visibleReceivableTotalBs : visibleFinalizedReceivableTotalBs)}</strong>
                 </div>
-                {receivablesView === 'finalized' ? (
+                {receivablesView === 'pending' ? (
+                  <button
+                    type="button"
+                    className="primary-button bigcash-generate-report-button"
+                    onClick={exportPendingReceivablesWorkbook}
+                    disabled={visibleReceivableRows.length === 0}
+                  >
+                    Generar reporte
+                  </button>
+                ) : (
                   <button
                     type="button"
                     className="primary-button bigcash-generate-report-button"
@@ -5277,7 +5286,7 @@ function AccountingSection({
                   >
                     Generar reporte
                   </button>
-                ) : null}
+                )}
               </div>
             </header>
             <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de cobro de contratos">
@@ -5339,9 +5348,7 @@ function AccountingSection({
                         <td>{formatDate(row.eventDate)}</td>
                         <td className="amount">
                           <strong>{formatBs(row.pendingBs)}</strong>
-                          {row.transportPendingBs > 0 ? (
-                            <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)}</small>
-                          ) : null}
+                          <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
                         </td>
                         <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
                       </tr>

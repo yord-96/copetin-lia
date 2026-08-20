@@ -31,6 +31,7 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../.
 import { resolveInventoryArea } from '../../utils/inventoryArea';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
+import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -1473,35 +1474,36 @@ const exportOrdersRangeWorkbook = async (report = {}) => {
     views: [{ state: 'frozen', ySplit: 10 }],
   });
   sheet.columns = [
-    { width: 6 }, { width: 14 }, { width: 25 }, { width: 14 }, { width: 23 },
-    { width: 28 }, { width: 15 }, { width: 17 }, { width: 16 }, { width: 15 }, { width: 13 },
+    { width: 6 }, { width: 14 }, { width: 25 }, { width: 14 }, { width: 23 }, { width: 28 },
+    { width: 15 }, { width: 17 }, { width: 16 }, { width: 15 }, { width: 16 }, { width: 17 },
+    { width: 17 }, { width: 13 },
   ];
 
-  sheet.mergeCells('A1:K1');
+  sheet.mergeCells('A1:N1');
   sheet.getCell('A1').value = 'EL COPETÍN · ÓRDENES DE SERVICIO';
   sheet.getCell('A1').font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
   sheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
   sheet.getRow(1).height = 23;
 
-  sheet.mergeCells('A2:G2');
+  sheet.mergeCells('A2:I2');
   sheet.getCell('A2').value = 'Reporte de Órdenes de Servicio';
   sheet.getCell('A2').font = { name: 'Calibri', size: 21, bold: true, color: { argb: dark } };
-  sheet.mergeCells('H2:K2');
-  sheet.getCell('H2').value = `Periodo: ${report.rangeLabel || '—'}`;
-  sheet.getCell('H2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: dark } };
-  sheet.getCell('H2').alignment = { horizontal: 'right' };
+  sheet.mergeCells('J2:N2');
+  sheet.getCell('J2').value = `Periodo: ${report.rangeLabel || '—'}`;
+  sheet.getCell('J2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: dark } };
+  sheet.getCell('J2').alignment = { horizontal: 'right' };
   sheet.getRow(2).height = 31;
 
-  sheet.mergeCells('A3:G3');
+  sheet.mergeCells('A3:I3');
   sheet.getCell('A3').value = `Filtros aplicados: ${report.filterLabel || 'Todos'}`;
   sheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
-  sheet.mergeCells('H3:K3');
-  sheet.getCell('H3').value = `Generado: ${report.generatedAt || '—'}`;
-  sheet.getCell('H3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
-  sheet.getCell('H3').alignment = { horizontal: 'right' };
+  sheet.mergeCells('J3:N3');
+  sheet.getCell('J3').value = `Generado: ${report.generatedAt || '—'}`;
+  sheet.getCell('J3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
+  sheet.getCell('J3').alignment = { horizontal: 'right' };
 
-  sheet.mergeCells('A5:K5');
+  sheet.mergeCells('A5:N5');
   sheet.getCell('A5').value = 'RESUMEN EJECUTIVO DEL PERIODO';
   sheet.getCell('A5').font = { name: 'Calibri', size: 9, bold: true, color: { argb: muted } };
   const cards = Array.isArray(report.summaryCards) ? report.summaryCards : [];
@@ -1519,10 +1521,10 @@ const exportOrdersRangeWorkbook = async (report = {}) => {
   });
   sheet.getRow(6).height = 40;
 
-  sheet.mergeCells('A8:K8');
+  sheet.mergeCells('A8:N8');
   sheet.getCell('A8').value = 'DETALLE DE CONTRATOS DEL RANGO';
   sheet.getCell('A8').font = { name: 'Calibri', size: 12, bold: true, color: { argb: dark } };
-  const headers = ['N°', 'Contrato / OS', 'Cliente', 'Evento', 'Responsable', 'Servicio', 'Estado', 'Garantía', 'Daños / faltantes', 'Debe', 'Finalizado'];
+  const headers = ['N°', 'Contrato / OS', 'Cliente', 'Evento', 'Responsable', 'Servicio', 'Estado', 'Garantía', 'Pendiente contrato', 'Pendiente transporte', 'Pendiente daños', 'Total por cobrar', 'Estado financiero', 'Finalizado'];
   const headerRow = sheet.getRow(10);
   headerRow.values = headers;
   headerRow.height = 28;
@@ -1545,31 +1547,34 @@ const exportOrdersRangeWorkbook = async (report = {}) => {
       row.serviceLabel || '—',
       row.statusLabel || '—',
       row.guaranteeLabel || 'Sin garantía',
-      row.damageLabel || 'NO TIENE',
-      Number(row.dueBs ?? 0),
+      Number(row.contractPendingBs ?? 0),
+      Number(row.transportPendingBs ?? 0),
+      Number(row.damagePendingBs ?? 0),
+      Number(row.totalReceivableBs ?? 0),
+      row.financialStatusLabel || 'Pagado',
       row.finalizedLabel || 'No',
     ];
     excelRow.height = 26;
     excelRow.eachCell((cell, columnNumber) => {
-      cell.font = { name: 'Calibri', size: 9, color: { argb: dark }, bold: [2, 3, 10].includes(columnNumber) };
+      cell.font = { name: 'Calibri', size: 9, color: { argb: dark }, bold: [2, 3, 12, 13].includes(columnNumber) };
       cell.alignment = {
         vertical: 'middle',
-        horizontal: [1, 4, 7, 8, 9, 10, 11].includes(columnNumber) ? 'center' : 'left',
+        horizontal: [1, 4, 7, 8, 9, 10, 11, 12, 13, 14].includes(columnNumber) ? 'center' : 'left',
         wrapText: true,
       };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 === 0 ? 'FFFFFFFF' : soft } };
       setThinBorders(cell);
     });
     if (row.eventDateValue) excelRow.getCell(4).numFmt = 'dd/mm/yyyy';
-    excelRow.getCell(10).numFmt = '[$Bs ]#,##0.00;[Red]-[$Bs ]#,##0.00';
+    [9, 10, 11, 12].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs ]#,##0.00;[Red]-[$Bs ]#,##0.00'; });
     const statusPalette = tonePalette[row.statusTone] ?? tonePalette.muted;
     excelRow.getCell(7).font = { name: 'Calibri', size: 9, bold: true, color: { argb: statusPalette.fg } };
     excelRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusPalette.bg } };
   });
   const lastRow = Math.max(10, 10 + rows.length);
-  sheet.autoFilter = { from: { row: 10, column: 1 }, to: { row: lastRow, column: 11 } };
+  sheet.autoFilter = { from: { row: 10, column: 1 }, to: { row: lastRow, column: 14 } };
   sheet.pageSetup.printTitlesRow = '1:10';
-  sheet.pageSetup.printArea = `A1:K${lastRow}`;
+  sheet.pageSetup.printArea = `A1:N${lastRow}`;
   sheet.headerFooter.oddFooter = '&LEl Copetín · Órdenes de Servicio&C&P de &N&RDocumento interno';
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -2572,10 +2577,12 @@ function ServiceOrdersSection({
         rowChargeTargetBs,
         Math.max(0, Number(rowLedgerConfirmedRentalBs.toFixed(2))),
       );
+      const canonicalLedgerPaidBs = getConfirmedContractLedgerPaidBs(contract, rowChargeTargetBs);
       const paidOnAccountBs = Math.max(
         0,
         Number(collectionRegisteredBs.toFixed(2)),
         Number(ledgerReceivedForRentalBs.toFixed(2)),
+        canonicalLedgerPaidBs,
       );
       const economicDueBs = Math.max(
         0,
@@ -2624,6 +2631,20 @@ function ServiceOrdersSection({
           : hasAuthoritativePending
             ? Math.max(0, Number(authoritativePendingBs.toFixed(2)))
             : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
+      const deliveryCollectedBs = Math.max(
+        0,
+        toMoneyNumber(linkedRental?.payment?.deliveryFeeCollectedBs ?? linkedRental?.totals?.deliveryFeeCollectedBs),
+      );
+      const receivableBreakdown = calculateReceivableBreakdown({
+        rental: linkedRental,
+        contract,
+        commercialPaidOverrideBs: Math.max(0, Number((totalBs - dueBs).toFixed(2))),
+        damageChargeOverrideBs: damageChargeBs,
+        damageCoveredOverrideBs: damageCoveredByGuaranteeBs,
+        damageCollectedOverrideBs: damageCollectedBs,
+        deliveryFeeOverrideBs: transportBs,
+        deliveryCollectedOverrideBs: deliveryCollectedBs,
+      });
       const guaranteeReferenceKeys = [
         contract.id,
         contract.rentalId,
@@ -2667,6 +2688,9 @@ function ServiceOrdersSection({
         managedTotalBs,
         paidOnAccountBs,
         dueBs,
+        contractPendingBs: receivableBreakdown.contractPendingBs,
+        transportPendingBs: receivableBreakdown.transportPendingBs,
+        totalReceivableBs: receivableBreakdown.totalPendingBs,
         isSent,
         isReturned,
         hasClientPending,
@@ -2828,15 +2852,20 @@ function ServiceOrdersSection({
         guaranteeLabel,
         damageLabel,
         dueBs: Math.max(0, Number(row.dueBs ?? 0)),
+        contractPendingBs: Math.max(0, Number(row.contractPendingBs ?? row.dueBs ?? 0)),
+        transportPendingBs: Math.max(0, Number(row.transportPendingBs ?? 0)),
+        damagePendingBs: Math.max(0, Number(row.damagePendingBs ?? 0)),
+        totalReceivableBs: Math.max(0, Number(row.totalReceivableBs ?? (Number(row.dueBs ?? 0) + Number(row.damagePendingBs ?? 0)))),
+        financialStatusLabel: Number(row.totalReceivableBs ?? (Number(row.dueBs ?? 0) + Number(row.damagePendingBs ?? 0))) > 0.009 ? 'Por cobrar' : 'Pagado',
         finalizedLabel: isRowFinalized ? 'Sí' : 'No',
-        isPaid: Number(row.dueBs ?? 0) <= 0.009,
+        isPaid: Number(row.totalReceivableBs ?? (Number(row.dueBs ?? 0) + Number(row.damagePendingBs ?? 0))) <= 0.009,
         hasGuarantee: Number(row.guaranteeBs ?? 0) > 0,
         hasDamage: row.damageStatus !== 'none',
         isFinalized: isRowFinalized,
       };
     });
     const count = (predicate) => reportRows.filter(predicate).length;
-    const totalPendingBs = reportRows.reduce((sum, row) => sum + Math.max(0, Number(row.dueBs ?? 0)), 0);
+    const totalPendingBs = reportRows.reduce((sum, row) => sum + Math.max(0, Number(row.totalReceivableBs ?? 0)), 0);
     const summaryCards = [
       { label: 'Contratos', value: reportRows.length, tone: 'navy' },
       { label: 'Aprobados', value: count((row) => row.statusLabel === 'Aprobado'), tone: 'success' },
@@ -2855,8 +2884,11 @@ function ServiceOrdersSection({
         <td>${escapeOrdersReportHtml(row.serviceLabel)}</td>
         <td class="center"><span class="pill ${row.statusTone}">${escapeOrdersReportHtml(row.statusLabel)}</span></td>
         <td class="center">${escapeOrdersReportHtml(row.guaranteeLabel)}</td>
-        <td class="center">${escapeOrdersReportHtml(row.damageLabel)}</td>
-        <td class="amount ${row.isPaid ? 'paid' : 'due'}">${escapeOrdersReportHtml(row.isPaid ? 'Pagado' : formatBs(row.dueBs))}</td>
+        <td class="amount">${escapeOrdersReportHtml(formatBs(row.contractPendingBs))}</td>
+        <td class="amount">${escapeOrdersReportHtml(formatBs(row.transportPendingBs))}</td>
+        <td class="amount">${escapeOrdersReportHtml(formatBs(row.damagePendingBs))}</td>
+        <td class="amount ${row.isPaid ? 'paid' : 'due'}">${escapeOrdersReportHtml(formatBs(row.totalReceivableBs))}</td>
+        <td class="center ${row.isPaid ? 'paid' : 'due'}">${escapeOrdersReportHtml(row.financialStatusLabel)}</td>
         <td class="center">${row.isFinalized ? '✓' : '—'}</td>
       </tr>`).join('');
 
@@ -2865,12 +2897,12 @@ function ServiceOrdersSection({
 <style>
 @page{size:A4 landscape;margin:10mm 8mm 12mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff}body{font-family:Arial,Helvetica,sans-serif;color:#172033;font-size:8.8px;line-height:1.25;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .header{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:24px;align-items:end;padding-bottom:11px;border-bottom:3px solid #173a70}.brand{margin-bottom:5px;color:#173a70;font-size:9px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}h1{margin:0;color:#111827;font-size:24px;line-height:1;letter-spacing:-.025em}.subtitle{margin:5px 0 0;color:#64748b;font-size:10px}.meta{border-left:1px solid #cbd5e1;padding-left:16px}.meta-row{display:grid;grid-template-columns:75px 1fr;gap:8px;padding:2px 0}.meta-row span{color:#64748b;font-size:8px;font-weight:700;text-transform:uppercase}.meta-row strong{text-align:right;font-size:9px}.summary-title{margin:13px 0 6px;color:#475569;font-size:8px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:13px}.card{min-height:48px;padding:8px 10px;border:1px solid #d7dee8;border-top:3px solid #173a70}.card span{display:block;color:#64748b;font-size:7.4px;font-weight:800;text-transform:uppercase}.card strong{display:block;margin-top:5px;color:#173a70;font-size:18px}.card.success{border-top-color:#16803c}.card.success strong{color:#16803c}.card.warning{border-top-color:#b86a06}.card.warning strong{color:#b86a06}.card.danger{border-top-color:#b42332}.card.danger strong{color:#b42332}.card.info{border-top-color:#2563eb}.card.info strong{color:#2563eb}.section-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:5px;padding-bottom:5px;border-bottom:1px solid #cbd5e1}.section-head h2{margin:0;font-size:12px}.section-head small{color:#64748b}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{padding:6px 5px;background:#173a70;color:#fff;border:1px solid #d7dee8;font-size:7.2px;text-transform:uppercase}td{padding:5px;border:1px solid #d7dee8;vertical-align:middle;overflow-wrap:anywhere}tbody tr:nth-child(even) td{background:#f8fafc}.center{text-align:center}.amount{text-align:right;font-weight:800}.paid{color:#16803c}.due{color:#b86a06}.pill{display:inline-block;border:1px solid transparent;border-radius:999px;padding:2px 6px;font-size:7.2px;font-weight:800;white-space:nowrap}.pill.success{border-color:#a7dfb7;background:#edf9f0;color:#16753a}.pill.warning{border-color:#f0cf8c;background:#fff8e8;color:#9a5b08}.pill.danger{border-color:#efb5bc;background:#fff0f2;color:#a52634}.pill.muted{border-color:#d5dbe4;background:#f4f6f8;color:#596678}small{color:#64748b}.footer{margin-top:10px;padding-top:7px;border-top:1px solid #cbd5e1;display:flex;justify-content:space-between;color:#7b8798;font-size:7.4px}
-th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8%}th:nth-child(3),td:nth-child(3){width:12%}th:nth-child(4),td:nth-child(4){width:7%}th:nth-child(5),td:nth-child(5){width:11%}th:nth-child(6),td:nth-child(6){width:17%}th:nth-child(7),td:nth-child(7){width:8%}th:nth-child(8),td:nth-child(8){width:10%}th:nth-child(9),td:nth-child(9){width:10%}th:nth-child(10),td:nth-child(10){width:8%}th:nth-child(11),td:nth-child(11){width:6%}
+th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8%}th:nth-child(3),td:nth-child(3){width:11%}th:nth-child(4),td:nth-child(4){width:7%}th:nth-child(5),td:nth-child(5){width:9%}th:nth-child(6),td:nth-child(6){width:13%}th:nth-child(7),td:nth-child(7){width:7%}th:nth-child(8),td:nth-child(8){width:9%}th:nth-child(n+9),td:nth-child(n+9){width:7%}
 @media print{tr{break-inside:avoid}.header,.cards,.section-head{break-inside:avoid}}
 </style></head><body>
 <header class="header"><div><div class="brand">EL COPETÍN · ÓRDENES DE SERVICIO</div><h1>Reporte de Órdenes de Servicio</h1><p class="subtitle">Control comercial de contratos según los filtros visibles en la vista de Órdenes.</p></div><div class="meta"><div class="meta-row"><span>Periodo</span><strong>${escapeOrdersReportHtml(rangeLabel)}</strong></div><div class="meta-row"><span>Generado</span><strong>${escapeOrdersReportHtml(generatedAt)}</strong></div><div class="meta-row"><span>Contratos</span><strong>${reportRows.length}</strong></div><div class="meta-row"><span>Pendiente</span><strong>${escapeOrdersReportHtml(formatBs(totalPendingBs))}</strong></div></div></header>
 <div class="summary-title">Resumen ejecutivo del periodo</div><section class="cards">${summaryCards.map((card) => `<div class="card ${card.tone}"><span>${escapeOrdersReportHtml(card.label)}</span><strong>${escapeOrdersReportHtml(card.value)}</strong></div>`).join('')}</section>
-<section><div class="section-head"><h2>Detalle de contratos del rango</h2><small>${reportRows.length} contrato(s) encontrados · ${escapeOrdersReportHtml(filterLabel)}</small></div><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Evento</th><th>Responsable</th><th>Servicio</th><th>Estado</th><th>Garantía</th><th>Daños / faltantes</th><th>Debe</th><th>Finalizado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="11" class="center">No hay contratos con los filtros seleccionados.</td></tr>'}</tbody></table></section>
+<section><div class="section-head"><h2>Detalle de contratos del rango</h2><small>${reportRows.length} contrato(s) encontrados · ${escapeOrdersReportHtml(filterLabel)}</small></div><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Evento</th><th>Responsable</th><th>Servicio</th><th>Estado</th><th>Garantía</th><th>Contrato</th><th>Transporte</th><th>Daños</th><th>Total por cobrar</th><th>Estado financiero</th><th>Finalizado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="14" class="center">No hay contratos con los filtros seleccionados.</td></tr>'}</tbody></table></section>
 <footer class="footer"><span><strong>EL COPETÍN</strong> · Gestión comercial y operativa</span><span>Filtros: ${escapeOrdersReportHtml(filterLabel)} · ${escapeOrdersReportHtml(rangeLabel)}</span></footer>
 </body></html>`;
 
