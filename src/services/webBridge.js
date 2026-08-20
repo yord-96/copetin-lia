@@ -9002,20 +9002,33 @@ export const buildContractDocumentHtml = ({
     returnDamageChargesBs,
   );
 
+  const storedSettlementPendingBs = Number(
+    rental?.returnSettlement?.pendingCollectionBs
+    ?? rental?.payment?.pendingPaymentBs
+    ?? rental?.totals?.pendingPaymentBs
+    ?? printedPendingBs,
+  );
+  const storedSettlementCommercialBs = Number(
+    rental?.returnSettlement?.outstandingRentalBs
+    ?? storedSettlementPendingBs,
+  );
+  const currentCommercialPendingBs = Math.max(
+    0,
+    printedTotalBs - Math.max(0, Number(paidBs ?? 0)),
+  );
   const economicPendingBs = Math.max(
     0,
-    Number(
-      rental?.returnSettlement?.pendingCollectionBs
-      ?? rental?.payment?.pendingPaymentBs
-      ?? rental?.totals?.pendingPaymentBs
-      ?? printedPendingBs,
-    ),
+    Number((
+      storedSettlementPendingBs
+      + currentCommercialPendingBs
+      - storedSettlementCommercialBs
+    ).toFixed(2)),
   );
   const economicPendingItemsBs = Math.max(
     0,
     Math.min(
       economicPendingBs,
-      Number(rental?.returnSettlement?.outstandingRentalBs ?? printedPendingBs ?? 0),
+      currentCommercialPendingBs,
     ),
   );
   const economicPendingDamageBs = Math.max(
@@ -11638,6 +11651,9 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   const totalBs = Number(contract?.totals?.totalBs ?? 0);
   const pendingPaymentBs = Math.max(0, Number((totalBs - paidAtRentalBs).toFixed(2)));
   const overpaidBs = Math.max(0, Number((paidAtRentalBs - totalBs).toFixed(2)));
+  const previousReturnSettlement = rental.returnSettlement
+    ? deepClone(rental.returnSettlement)
+    : null;
   rental.totals = {
     ...(rental.totals ?? {}),
     itemsSubtotalBs: Number(((contract.items ?? []).reduce((sum, line) => sum + Number(line.lineTotalBs ?? 0), 0) + getManualSupplierSaleTotalBs(contract.supplierFulfillmentPlan)).toFixed(2)),
@@ -11658,6 +11674,110 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     guaranteePaymentMethod: normalizePaymentMethod(contract?.guarantee?.paymentMethod ?? contract?.payment?.guaranteePaymentMethod ?? rental?.payment?.guaranteePaymentMethod),
     guaranteePaymentAccount: normalizeQrPaymentAccount(contract?.guarantee?.paymentAccount ?? contract?.payment?.guaranteePaymentAccount ?? rental?.payment?.guaranteePaymentAccount),
   };
+  if (previousReturnSettlement || String(rental.status ?? '').trim().toLowerCase() === 'returned') {
+    const settlement = previousReturnSettlement ?? {};
+    const storedSettlementPendingBs = Math.max(
+      0,
+      Number(settlement?.pendingCollectionBs ?? settlement?.outstandingRentalBs ?? 0),
+    );
+    const storedSettlementOutstandingBs = Math.max(0, Number(settlement?.outstandingRentalBs ?? 0));
+    const commercialDeltaBs = Number((pendingPaymentBs - storedSettlementOutstandingBs).toFixed(2));
+    let nextPendingCollectionBs = Math.max(
+      0,
+      Number((storedSettlementPendingBs + commercialDeltaBs).toFixed(2)),
+    );
+    let discountCoveredByDepositBs = Math.max(0, Number(settlement?.discountCoveredByDepositBs ?? 0));
+    let totalDiscountAgainstDepositBs = Math.max(
+      0,
+      Number((nextPendingCollectionBs + discountCoveredByDepositBs).toFixed(2)),
+    );
+    let refundBs = Math.max(0, Number(settlement?.refundBs ?? rental?.refundBs ?? 0));
+    const referenceKeys = new Set([
+      rental.id,
+      rental.orderCode,
+      rental.contractCode,
+      contract.id,
+      contract.orderCode,
+      contract.contractCode,
+    ].map((value) => String(value ?? '').trim()).filter(Boolean));
+    const hasGuaranteeRefundMovement = (state.cashMovements ?? []).some((movement) => {
+      if (movement?.voidedAt || movement?.deletedAt || Number(movement?.amountBs ?? 0) === 0) return false;
+      const isLinked = [
+        movement?.sourceId,
+        movement?.linkedRentalId,
+        movement?.linkedContractId,
+        movement?.linkedOrderCode,
+        movement?.contractCode,
+      ].some((value) => referenceKeys.has(String(value ?? '').trim()));
+      if (!isLinked) return false;
+      const marker = normalizeText([
+        movement?.type,
+        movement?.category,
+        movement?.accountingTag,
+      ].join(' ')).replace(/[_-]+/g, ' ');
+      return marker.includes('devolucion garantia')
+        || marker.includes('garantia devuelta')
+        || marker.includes('guarantee refund');
+    });
+    if (!settlement?.economicResetAt && !hasGuaranteeRefundMovement) {
+      const penaltiesBs = Math.max(0, Number(settlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0));
+      const collectedDamageBs = Math.max(
+        0,
+        Number(settlement?.damageCollectedBs ?? 0),
+        Number(settlement?.penaltiesCollectedBs ?? 0),
+        Number(rental?.payment?.damageCollectedBs ?? 0),
+        Number(rental?.totals?.damageCollectedBs ?? 0),
+      );
+      const pendingDamageBs = Math.max(0, Number((penaltiesBs - collectedDamageBs).toFixed(2)));
+      const validatedGuaranteeBs = Math.max(0, Number(rental?.depositBs ?? 0));
+      totalDiscountAgainstDepositBs = Number((pendingPaymentBs + pendingDamageBs).toFixed(2));
+      discountCoveredByDepositBs = Math.min(validatedGuaranteeBs, totalDiscountAgainstDepositBs);
+      nextPendingCollectionBs = Math.max(
+        0,
+        Number((totalDiscountAgainstDepositBs - discountCoveredByDepositBs).toFixed(2)),
+      );
+      refundBs = Math.max(
+        0,
+        Number((validatedGuaranteeBs - discountCoveredByDepositBs).toFixed(2)),
+      );
+    }
+    const nextAccountingStatus = nextPendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente';
+
+    rental.returnSettlement = {
+      ...settlement,
+      outstandingRentalBs: Number(pendingPaymentBs.toFixed(2)),
+      totalDiscountAgainstDepositBs: Number(totalDiscountAgainstDepositBs.toFixed(2)),
+      discountCoveredByDepositBs: Number(discountCoveredByDepositBs.toFixed(2)),
+      pendingCollectionBs: Number(nextPendingCollectionBs.toFixed(2)),
+      refundBs: Number(refundBs.toFixed(2)),
+      accountingStatus: nextAccountingStatus,
+      economicSyncedAt: now,
+      economicSyncedByName: userName,
+      economicSyncReason: 'contract_updated_after_return',
+    };
+    rental.refundBs = Number(refundBs.toFixed(2));
+    rental.payment.pendingPaymentBs = Number(nextPendingCollectionBs.toFixed(2));
+    rental.payment.status = nextPendingCollectionBs > 0.009 ? 'saldo_pendiente' : 'cobrado_finalizado';
+    rental.payment.mode = nextPendingCollectionBs > 0.009 ? 'a_cuenta' : 'cancelado';
+    rental.totals.pendingPaymentBs = Number(nextPendingCollectionBs.toFixed(2));
+    rental.totals.status = rental.payment.status;
+    rental.totals.mode = rental.payment.mode;
+    rental.accountingStatus = nextPendingCollectionBs > 0.009
+      ? 'finalizado_pendiente_cobro'
+      : 'cobrado_finalizado';
+
+    (state.cashMovements ?? []).forEach((movement) => {
+      if (Number(movement?.amountBs ?? 0) !== 0) return;
+      if (String(movement?.sourceId ?? '') !== String(rental.id)) return;
+      if (movement?.type === 'saldo_alquiler_pendiente') {
+        movement.description = `Saldo alquiler pendiente (${rental.customerName ?? 'Cliente'}): Bs ${pendingPaymentBs.toFixed(2)}`;
+      } else if (movement?.type === 'saldo_pendiente_cobro') {
+        movement.description = `Saldo pendiente por cobrar (${rental.customerName ?? 'Cliente'}): Bs ${nextPendingCollectionBs.toFixed(2)}`;
+      } else if (movement?.type === 'liquidacion_devolucion') {
+        movement.description = `Liquidacion devolucion (${rental.customerName ?? 'Cliente'}) | Penalidad cliente: Bs ${Number(settlement?.penaltiesBs ?? 0).toFixed(2)} | Perdida interna: Bs ${Number(settlement?.internalPenaltiesBs ?? 0).toFixed(2)} | Saldo alquiler: Bs ${pendingPaymentBs.toFixed(2)} | Reembolso: Bs ${refundBs.toFixed(2)}`;
+      }
+    });
+  }
   const dueAt = new Date(`${rental.dueDate}T${rental.dueTime || '23:59'}:00`);
   rental.dueAt = Number.isNaN(dueAt.getTime()) ? null : dueAt.toISOString();
   if (wasAlreadyOutOfWarehouse && operationalItemsChanged) {
@@ -18948,22 +19068,13 @@ const createWebBridge = () => ({
           Number((repairedRentalTotalBs - previousPaidBs).toFixed(2)),
         );
         const previousDeliveryFeeCollectedBs = Math.max(0, Number(rental?.payment?.deliveryFeeCollectedBs ?? rental?.totals?.deliveryFeeCollectedBs ?? 0));
-        const remainingDeliveryFeeBs = Math.max(0, Number((rentalDeliveryFeeBs - previousDeliveryFeeCollectedBs).toFixed(2)));
-        const outstandingGapBs = Number((
+        const commercialSettlementDeltaBs = Number((
           derivedCommercialPendingBs - Number(settlement?.outstandingRentalBs ?? 0)
         ).toFixed(2));
-        const historicalTransportOmissionBs = isReturned
-          && remainingDeliveryFeeBs > 0
-          && outstandingGapBs > 0
-          && Math.abs(outstandingGapBs - remainingDeliveryFeeBs) <= 0.01
-          ? outstandingGapBs
-          : 0;
-        // Si el contrato viejo quedó con totalBs anterior al subalquiler manual,
-        // el pendiente de devolución también quedó corto por exactamente esa
-        // diferencia. Se suma una sola vez y en esta misma transacción se persiste
-        // el total comercial reparado para que futuras cobranzas no lo repitan.
+        // En devoluciones se reemplaza solo la parte comercial antigua por el
+        // total vigente menos pagos, conservando danos y garantia aplicada.
         const currentPending = Number((isReturned
-          ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs + historicalTransportOmissionBs
+          ? Math.max(0, storedPendingBs + commercialSettlementDeltaBs)
           : Math.max(
               Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
               derivedCommercialPendingBs,
@@ -19043,9 +19154,7 @@ const createWebBridge = () => ({
             ...settlement,
             outstandingRentalBs: Number(Math.max(
               0,
-              Number(settlement?.outstandingRentalBs ?? 0)
-                + commercialTotalCorrectionBs
-                + historicalTransportOmissionBs
+              derivedCommercialPendingBs
                 - rentalCollectedNowBs
                 - transportCollectedNowBs,
             ).toFixed(2)),

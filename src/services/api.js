@@ -620,6 +620,55 @@ const fetchMobileOrdersOverview = async () => {
   return overview;
 };
 
+const fetchAccountingBaseOverview = async ({ includeCommercial = true } = {}) => {
+  if (!shouldUseServerState()) {
+    const [contracts, rentals, clients, cashSessions] = await Promise.all([
+      callBridge('contracts', 'list', false),
+      callBridge('rentals', 'list', false),
+      callBridge('clients', 'list', false),
+      callBridge('cash', 'listSessions', false),
+    ]);
+    return { contracts, rentals, clients, cashSessions };
+  }
+  const suffix = includeCommercial ? '' : '?scope=petty';
+  const response = await fetch(getServerStateUrl(`/accounting/base-overview${suffix}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el resumen rapido de Contabilidad.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  const overview = payload?.overview ?? {
+    contracts: [], rentals: [], clients: [], cashSessions: [],
+  };
+  // Igual que Ordenes, el resumen se entrega directamente a React. No se
+  // serializa en el bridge local ni sustituye registros completos ya cargados.
+  serverStateIsPartial = true;
+  return overview;
+};
+
+const fetchFastAccountingSummary = async () => {
+  if (!shouldUseServerState()) return callBridge('cash', 'getSummary', false);
+  const response = await fetch(getServerStateUrl('/accounting/summary'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo consultar el saldo oficial de las cajas.');
+  }
+  const summary = await response.json();
+  if (summary?.revision) rememberServerRevision(summary.revision);
+  return {
+    ...summary,
+    operationalBigCashBs: Number(summary?.bigCashBalanceBs ?? 0),
+    treasuryAccounts: [],
+    treasuryAllocatedBs: 0,
+    treasuryUnassignedBs: Number(summary?.bigCashBalanceBs ?? 0),
+  };
+};
+
 const fetchOrdersEditorOverview = async () => {
   const response = await fetch(getServerStateUrl('/orders/editor-overview'), {
     cache: 'no-store',
@@ -3163,6 +3212,7 @@ export const api = {
     refreshCollections: (names, reason = 'targeted-refresh') => fetchServerCollections(names, reason),
     getMobileCalendarOverview: fetchMobileCalendarOverview,
     getMobileOrdersOverview: fetchMobileOrdersOverview,
+    getAccountingBaseOverview: fetchAccountingBaseOverview,
     getOrdersEditorOverview: fetchOrdersEditorOverview,
     getAvailabilityOverview: fetchAvailabilityOverview,
     getInventoryMovementsOverview: fetchInventoryMovementsOverview,
@@ -3426,6 +3476,7 @@ export const api = {
     updateReturnCharge: (payload) => updateRentalReturnChargeOnServer(payload),
   },
   cash: {
+    getFastSummary: fetchFastAccountingSummary,
     getSummary: async () => {
       const localSummary = await callBridge('cash', 'getSummary', false);
       if (!shouldUseServerState()) return localSummary;

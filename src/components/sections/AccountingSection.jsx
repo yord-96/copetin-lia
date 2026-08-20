@@ -27,43 +27,25 @@ const getReturnedPendingCollectionBs = (rental, contract = null) => {
     toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
     toNumber(contract?.payment?.paidAtApprovalBs),
   );
-  const deliveryFeeBs = Math.max(
-    0,
-    toNumber(rental?.deliveryFeeBs),
-    toNumber(rental?.totals?.deliveryFeeBs),
-    toNumber(contract?.deliveryFeeBs),
-    toNumber(contract?.totals?.deliveryFeeBs),
-  );
-  const deliveryCollectedBs = Math.max(
-    0,
-    toNumber(rental?.payment?.deliveryFeeCollectedBs),
-    toNumber(rental?.totals?.deliveryFeeCollectedBs),
-  );
-  const remainingTransportBs = Math.max(0, Number((deliveryFeeBs - deliveryCollectedBs).toFixed(2)));
   const expectedOutstandingBs = Math.max(0, Number((totalBs - paidBs).toFixed(2)));
   const storedOutstandingBs = Math.max(0, toNumber(settlement.outstandingRentalBs));
-  const outstandingGapBs = Number((expectedOutstandingBs - storedOutstandingBs).toFixed(2));
-  const historicalTransportOmissionBs = remainingTransportBs > 0
-    && outstandingGapBs > 0
-    && Math.abs(outstandingGapBs - remainingTransportBs) <= 0.01
-    ? outstandingGapBs
-    : 0;
-
-  // Corrección conservadora: solo agregamos la diferencia histórica cuando
-  // coincide exactamente con el transporte aún no cobrado. Los demás saldos,
-  // pagos, garantías y daños se conservan como fueron registrados.
-  if (historicalTransportOmissionBs > 0) {
-    return Math.max(0, Number((storedPendingBs + historicalTransportOmissionBs).toFixed(2)));
-  }
+  const commercialSettlementDeltaBs = Number((expectedOutstandingBs - storedOutstandingBs).toFixed(2));
+  // Reemplaza únicamente la parte comercial antigua por total vigente menos
+  // pagos reales. El resto del saldo guardado (daños y garantía aplicada) se
+  // conserva sin reinterpretarlo.
+  const reconciledStoredPendingBs = Math.max(
+    0,
+    Number((storedPendingBs + commercialSettlementDeltaBs).toFixed(2)),
+  );
   const hasSettlementBreakdown = [
     settlement.outstandingRentalBs,
     settlement.penaltiesBs,
     settlement.discountCoveredByDepositBs,
   ].some((value) => value !== undefined && value !== null);
 
-  if (!hasSettlementBreakdown) return Math.max(0, Number(storedPendingBs.toFixed(2)));
+  if (!hasSettlementBreakdown) return reconciledStoredPendingBs;
 
-  const outstandingRentalBs = Math.max(0, toNumber(settlement.outstandingRentalBs));
+  const outstandingRentalBs = expectedOutstandingBs;
   const penaltiesBs = Math.max(0, toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs));
   const coveredByDepositBs = Math.max(0, toNumber(settlement.discountCoveredByDepositBs));
   // Estos campos representan el mismo dinero desde distintas capas del estado.
@@ -87,7 +69,7 @@ const getReturnedPendingCollectionBs = (rental, contract = null) => {
   // Para devoluciones antiguas el pendingCollectionBs puede haber quedado sin
   // descontar un cobro real de daños. El menor valor conserva cualquier saldo
   // ya corregido por servidor y, a la vez, evita revivir deudas ya cobradas.
-  return Math.max(0, Number(Math.min(storedPendingBs, derivedPendingBs).toFixed(2)));
+  return Math.max(0, Number(Math.min(reconciledStoredPendingBs, derivedPendingBs).toFixed(2)));
 };
 
 const normalizeText = (value) =>
@@ -1798,7 +1780,7 @@ function AccountingSection({
       .flatMap((rental) => {
         const contract = getRentalContract(rental);
         const settlement = rental?.returnSettlement ?? {};
-        const pendingCollectionBs = toNumber(settlement.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs);
+        const pendingCollectionBs = getReturnedPendingCollectionBs(rental, contract);
         const issueLines = Array.isArray(rental.returnIssueSummary)
           ? rental.returnIssueSummary
           : Array.isArray(rental.returnReport)

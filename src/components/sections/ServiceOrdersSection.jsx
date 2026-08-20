@@ -691,20 +691,67 @@ const getEffectiveRentalOperationalState = (rental) => {
   };
 };
 
+const getEffectiveReturnedPendingCollectionBs = (rental, contract = null) => {
+  const settlement = rental?.returnSettlement ?? {};
+  const storedPendingBs = Number(
+    settlement?.pendingCollectionBs
+    ?? rental?.payment?.pendingPaymentBs
+    ?? rental?.totals?.pendingPaymentBs
+    ?? 0,
+  );
+  if (!rental?.returnSettlement) return Math.max(0, storedPendingBs);
+
+  const currentTotalBs = Math.max(
+    Number(rental?.totals?.totalBs ?? 0),
+    Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0),
+  );
+  const currentPaidBs = Math.max(
+    Number(rental?.payment?.paidAtRentalBs ?? 0),
+    Number(rental?.totals?.paidAtRentalBs ?? 0),
+    Number(contract?.payment?.paidAtApprovalBs ?? 0),
+  );
+  const currentCommercialOutstandingBs = Math.max(0, currentTotalBs - currentPaidBs);
+  const storedCommercialOutstandingBs = Number(
+    settlement?.outstandingRentalBs
+    ?? storedPendingBs,
+  );
+  const reconciledStoredPendingBs = Math.max(
+    0,
+    Number((storedPendingBs + currentCommercialOutstandingBs - storedCommercialOutstandingBs).toFixed(2)),
+  );
+  const hasSettlementBreakdown = [
+    settlement?.outstandingRentalBs,
+    settlement?.penaltiesBs,
+    settlement?.discountCoveredByDepositBs,
+  ].some((value) => value !== undefined && value !== null);
+  if (!hasSettlementBreakdown) return reconciledStoredPendingBs;
+
+  const penaltiesBs = Math.max(0, Number(settlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0));
+  const coveredByDepositBs = Math.max(0, Number(settlement?.discountCoveredByDepositBs ?? 0));
+  const damageCollectedBs = Math.max(
+    0,
+    Number(settlement?.damageCollectedBs ?? 0),
+    Number(settlement?.penaltiesCollectedBs ?? 0),
+    Number(rental?.payment?.damageCollectedBs ?? 0),
+    Number(rental?.totals?.damageCollectedBs ?? 0),
+  );
+  const derivedPendingBs = Math.max(
+    0,
+    Number((currentCommercialOutstandingBs + penaltiesBs - coveredByDepositBs - damageCollectedBs).toFixed(2)),
+  );
+  return Math.max(0, Number(Math.min(reconciledStoredPendingBs, derivedPendingBs).toFixed(2)));
+};
+
 const toOrderStatus = (rental, delivery) => {
   if (rental.status === 'cancelled') {
     return 'cancelled';
   }
   if (rental.status === 'returned') {
+    const pendingCollectionBs = getEffectiveReturnedPendingCollectionBs(rental);
+    if (pendingCollectionBs > 0) return 'closed_pending';
     if (rental.accountingStatus === 'cobrado_finalizado' || rental?.payment?.status === 'cobrado_finalizado') {
       return 'charged';
     }
-    const pendingCollectionBs = Number(
-      rental?.returnSettlement?.pendingCollectionBs
-      ?? rental?.payment?.pendingPaymentBs
-      ?? 0,
-    );
-    if (pendingCollectionBs > 0) return 'closed_pending';
     return 'completed';
   }
 
@@ -2068,7 +2115,9 @@ function ServiceOrdersSection({
         : { ...rental, status: effectiveOperationalState.rentalStatus };
       const accountingStatus = rental.accountingStatus ?? rental.payment?.status ?? '';
       const pendingPaymentBs = Number(rental?.payment?.pendingPaymentBs ?? rental?.totals?.pendingPaymentBs ?? 0);
-      const pendingCollectionBs = Number(rental?.returnSettlement?.pendingCollectionBs ?? pendingPaymentBs);
+      const pendingCollectionBs = rental.status === 'returned'
+        ? getEffectiveReturnedPendingCollectionBs(rental, linkedContract)
+        : pendingPaymentBs;
 
       return {
         id: rental.id,
@@ -3155,19 +3204,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       )
       : 0;
     const settlement = rental?.returnSettlement ?? {};
-    const pendingPaymentBs = toMoneyNumber(
-      settlement.pendingCollectionBs
-      ?? rental?.payment?.pendingPaymentBs
-      ?? contract?.payment?.pendingPaymentBs
-      ?? contract?.totals?.pendingPaymentBs,
-    );
     const paidBs = Math.max(
       toMoneyNumber(contract?.payment?.paidAtApprovalBs),
       toMoneyNumber(rental?.payment?.paidAtRentalBs),
       paymentIncomeBs,
     );
     const penaltiesBs = toMoneyNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
-    const outstandingRentalBs = toMoneyNumber(settlement.outstandingRentalBs);
     const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
     const discountBs = toMoneyNumber(contract?.totals?.discountBs ?? rental?.totals?.discountBs);
     const itemDiscountsBs = toMoneyNumber(contract?.totals?.itemDiscountsBs ?? rental?.totals?.itemDiscountsBs);
@@ -3191,6 +3233,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // correcto pero totalBs/chargeableSubtotalBs anterior. El económico debe usar
     // el mayor total comercial válido, sin duplicar pagos ni daños.
     const totalBs = Math.max(storedTotalBs, repairedDailyScheduleTotalBs);
+    const pendingPaymentBs = rental?.status === 'returned' || rental?.returnSettlement
+      ? getEffectiveReturnedPendingCollectionBs(rental, contract)
+      : toMoneyNumber(
+        rental?.payment?.pendingPaymentBs
+        ?? contract?.payment?.pendingPaymentBs
+        ?? contract?.totals?.pendingPaymentBs,
+      );
+    const outstandingRentalBs = rental?.status === 'returned' || rental?.returnSettlement
+      ? Math.max(0, Number((totalBs - paidBs).toFixed(2)))
+      : toMoneyNumber(settlement.outstandingRentalBs);
     const rentalTotalBs = Math.max(0, Number((totalBs - servicesBs - deliveryFeeBs).toFixed(2)));
     const itemsGrossSubtotalBs = Math.max(
       rentalTotalBs + itemDiscountsBs,

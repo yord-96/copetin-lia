@@ -45,6 +45,39 @@ const shouldWaitForCompanyChoice = (user) => {
   return !companies.includes(selectedCompany);
 };
 
+const mergeProgressiveRows = (currentRows, incomingRows) => {
+  const currentById = new Map((Array.isArray(currentRows) ? currentRows : [])
+    .map((row) => [String(row?.id ?? ''), row]));
+  return (Array.isArray(incomingRows) ? incomingRows : []).map((incoming) => {
+    const current = currentById.get(String(incoming?.id ?? ''));
+    if (!current) return incoming;
+    const currentIsFull = !current?._summaryOnly && !current?._accountingSummaryOnly;
+    if (!currentIsFull) return incoming;
+    return {
+      ...current,
+      ...incoming,
+      payment: { ...(current?.payment ?? {}), ...(incoming?.payment ?? {}) },
+      totals: { ...(current?.totals ?? {}), ...(incoming?.totals ?? {}) },
+      guarantee: { ...(current?.guarantee ?? {}), ...(incoming?.guarantee ?? {}) },
+      returnSettlement: incoming?.returnSettlement
+        ? { ...(current?.returnSettlement ?? {}), ...incoming.returnSettlement }
+        : null,
+      _summaryOnly: current?._summaryOnly,
+      _accountingSummaryOnly: false,
+    };
+  });
+};
+
+const mergeProgressiveClients = (currentRows, incomingRows) => {
+  const byId = new Map((Array.isArray(currentRows) ? currentRows : [])
+    .map((row) => [String(row?.id ?? ''), row]));
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach((row) => {
+    const key = String(row?.id ?? '');
+    byId.set(key, { ...(byId.get(key) ?? {}), ...row });
+  });
+  return [...byId.values()];
+};
+
 
 
 const buildReceiptsFromRentals = (rentals) => {
@@ -172,6 +205,9 @@ export const useAppController = () => {
   const ordersEditorDataRequestRef = useRef(null);
   const availabilityOverviewLoadedRef = useRef(false);
   const availabilityOverviewRequestRef = useRef(null);
+  const accountingOverviewLoadedRef = useRef(false);
+  const accountingCommercialLoadedRef = useRef(false);
+  const accountingOverviewRequestRef = useRef(null);
   const fullWorkspaceLoadedRef = useRef(false);
   const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
 
@@ -280,8 +316,61 @@ export const useAppController = () => {
     }
   }, []);
 
+  const loadAccountingData = useCallback(async ({ force = false, includeCommercial = true } = {}) => {
+    if (
+      !force
+      && accountingOverviewLoadedRef.current
+      && (!includeCommercial || accountingCommercialLoadedRef.current)
+    ) return;
+    if (accountingOverviewRequestRef.current) {
+      await accountingOverviewRequestRef.current;
+      if (!includeCommercial || accountingCommercialLoadedRef.current) return;
+    }
+
+    deferredGroupsLoadedRef.current.add('accounting-operations');
+    setAccountingOperationsLoading(true);
+    const request = Promise.all([
+      api.sync.getAccountingBaseOverview({ includeCommercial }),
+      api.cash.getAccountingContext(),
+      api.cash.getFastSummary(),
+    ]).then(([overview, context, summary]) => {
+      if (includeCommercial) {
+        setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
+        setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
+        setClients((current) => mergeProgressiveClients(current, overview?.clients));
+        accountingCommercialLoadedRef.current = true;
+      }
+      setCashSessions(Array.isArray(overview?.cashSessions) ? overview.cashSessions : []);
+      setCashSummary(summary ?? null);
+      setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+      setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+      setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+      setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
+      setCashMovementMeta({
+        total: Number(context?.totalMovements ?? context?.movements?.length ?? 0),
+        visible: Number(context?.visibleMovements ?? context?.movements?.length ?? 0),
+        truncated: Boolean(context?.truncated),
+      });
+      accountingOverviewLoadedRef.current = true;
+    }).catch((accountingError) => {
+      deferredGroupsLoadedRef.current.delete('accounting-operations');
+      setError(accountingError?.message || 'No se pudo cargar Contabilidad.');
+      throw accountingError;
+    }).finally(() => {
+      accountingOverviewRequestRef.current = null;
+      setAccountingOperationsLoading(false);
+    });
+
+    accountingOverviewRequestRef.current = request;
+    await request;
+  }, []);
+
   const prepareTabData = useCallback(async (targetTab) => {
     const requestedTab = String(targetTab);
+    if (requestedTab.startsWith('contabilidad')) {
+      await loadAccountingData({ includeCommercial: requestedTab !== 'contabilidad_caja_chica' });
+      return;
+    }
     if (requestedTab === 'disponibilidad') {
       if (availabilityOverviewLoadedRef.current) return;
       if (availabilityOverviewRequestRef.current) {
@@ -340,7 +429,7 @@ export const useAppController = () => {
 
     ordersOverviewRequestRef.current = request;
     await request;
-  }, []);
+  }, [loadAccountingData]);
 
   const prepareOrdersEditorData = useCallback(async () => {
     if (ordersEditorDataLoadedRef.current) return;
@@ -381,7 +470,12 @@ export const useAppController = () => {
   }, []);
 
   useEffect(() => {
-    if (!authReady || !currentUser || !['alquiler', 'disponibilidad'].includes(String(activeTab))) return;
+    const requestedTab = String(activeTab);
+    if (
+      !authReady
+      || !currentUser
+      || (!['alquiler', 'disponibilidad'].includes(requestedTab) && !requestedTab.startsWith('contabilidad'))
+    ) return;
     prepareTabData(activeTab).catch(() => {});
   }, [activeTab, authReady, currentUser, prepareTabData]);
 
@@ -391,6 +485,7 @@ export const useAppController = () => {
     // resto del sistema conserva la carga completa, pero ya de forma diferida.
     if (
       ['caja', 'alquiler', 'disponibilidad', 'asistencia'].includes(String(activeTab))
+      || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) return;
     loadData({ forceComplete: true }).catch(() => {});
@@ -699,6 +794,17 @@ export const useAppController = () => {
         return;
       }
 
+      if (String(activeTab).startsWith('contabilidad')) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => {
+          if (!disposed) loadAccountingData({
+            force: true,
+            includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
+          }).catch(() => {});
+        }, isRemoteChange ? 250 : 0);
+        return;
+      }
+
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         if (!disposed) {
@@ -713,7 +819,7 @@ export const useAppController = () => {
       window.clearTimeout(presenceTimer);
       unsubscribe();
     };
-  }, [activeTab, authReady, currentUser, loadData, refreshUpdateNotice]);
+  }, [activeTab, authReady, currentUser, loadAccountingData, loadData, refreshUpdateNotice]);
 
   useEffect(() => {
     let isMounted = true;
@@ -754,7 +860,7 @@ export const useAppController = () => {
       setLoading(false);
       return;
     }
-    if (String(activeTab) === 'alquiler') {
+    if (String(activeTab) === 'alquiler' || String(activeTab).startsWith('contabilidad')) {
       // Ordenes es la vista inicial preferida. Evitamos cargar Calendario primero:
       // su resumen se solicitará únicamente cuando el usuario abra esa sección.
       setLoading(false);
@@ -886,6 +992,9 @@ export const useAppController = () => {
       ordersEditorDataRequestRef.current = null;
       availabilityOverviewLoadedRef.current = false;
       availabilityOverviewRequestRef.current = null;
+      accountingOverviewLoadedRef.current = false;
+      accountingCommercialLoadedRef.current = false;
+      accountingOverviewRequestRef.current = null;
       fullWorkspaceLoadedRef.current = false;
       setCurrentUser(session);
       setActiveTab(getPreferredStartupTab(session));

@@ -1267,36 +1267,58 @@ const getRentalChargeTargetBs = (contract, rental) => {
   return Math.max(storedTotalBs, reconstructedTotalBs);
 };
 
-// Algunas devoluciones históricas guardaron outstandingRentalBs sin el cargo de
-// transporte, aunque totalBs sí lo contenía. Solo corregimos esa inconsistencia
-// cuando la diferencia coincide exactamente con el transporte aún no cobrado;
-// así no reinterpretamos pagos, garantías, daños ni ajustes legítimos.
-const getHistoricalTransportOmissionBs = (contract, rental) => {
-  if (String(rental?.status ?? '').trim().toLowerCase() !== 'returned' || !rental?.returnSettlement) return 0;
+// La parte comercial pendiente siempre se obtiene del contrato vigente y de los
+// pagos confirmados. Daños, garantías y devoluciones viven fuera de este cálculo,
+// por lo que pueden conservarse al reemplazar una liquidación comercial antigua.
+const getCurrentCommercialOutstandingBs = (contract, rental) => {
   const chargeTargetBs = getRentalChargeTargetBs(contract, rental);
   const paidBs = directMoney(Math.max(
     Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0),
     Number(contract?.payment?.paidAtApprovalBs ?? 0),
   ));
-  const expectedOutstandingBs = directMoney(Math.max(0, chargeTargetBs - paidBs));
-  const storedOutstandingBs = directMoney(rental?.returnSettlement?.outstandingRentalBs);
-  const deliveryFeeBs = directMoney(Math.max(
-    Number(rental?.deliveryFeeBs ?? 0),
-    Number(rental?.totals?.deliveryFeeBs ?? 0),
-    Number(contract?.deliveryFeeBs ?? 0),
-    Number(contract?.totals?.deliveryFeeBs ?? 0),
+  return directMoney(Math.max(0, chargeTargetBs - paidBs));
+};
+
+// Las devoluciones antiguas guardaron una fotografia del saldo comercial. Si el
+// contrato cambia despues, conservamos la parte no comercial de esa fotografia
+// (danos/faltantes menos garantia o cobros) y sustituimos solo el saldo comercial.
+const getReconciledReturnedPendingCollectionBs = (contract, rental) => {
+  const settlement = rental?.returnSettlement ?? {};
+  const storedPendingBs = Number(
+    settlement?.pendingCollectionBs
+    ?? rental?.payment?.pendingPaymentBs
+    ?? rental?.totals?.pendingPaymentBs
+    ?? 0,
+  );
+  const storedCommercialOutstandingBs = Number(
+    settlement?.outstandingRentalBs
+    ?? storedPendingBs,
+  );
+  const currentCommercialOutstandingBs = getCurrentCommercialOutstandingBs(contract, rental);
+  const reconciledStoredPendingBs = directMoney(Math.max(
+    0,
+    storedPendingBs + currentCommercialOutstandingBs - storedCommercialOutstandingBs,
   ));
-  const deliveryCollectedBs = directMoney(Math.max(
-    Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
-    Number(rental?.totals?.deliveryFeeCollectedBs ?? 0),
+  const hasSettlementBreakdown = [
+    settlement?.outstandingRentalBs,
+    settlement?.penaltiesBs,
+    settlement?.discountCoveredByDepositBs,
+  ].some((value) => value !== undefined && value !== null);
+  if (!hasSettlementBreakdown) return reconciledStoredPendingBs;
+
+  const penaltiesBs = directMoney(settlement?.penaltiesBs ?? rental?.penaltiesBs);
+  const coveredByDepositBs = directMoney(settlement?.discountCoveredByDepositBs);
+  const damageCollectedBs = directMoney(Math.max(
+    Number(settlement?.damageCollectedBs ?? 0),
+    Number(settlement?.penaltiesCollectedBs ?? 0),
+    Number(rental?.payment?.damageCollectedBs ?? 0),
+    Number(rental?.totals?.damageCollectedBs ?? 0),
   ));
-  const remainingTransportBs = directMoney(Math.max(0, deliveryFeeBs - deliveryCollectedBs));
-  const outstandingGapBs = directMoney(expectedOutstandingBs - storedOutstandingBs);
-  return remainingTransportBs > 0
-    && outstandingGapBs > 0
-    && Math.abs(outstandingGapBs - remainingTransportBs) <= 0.01
-    ? outstandingGapBs
-    : 0;
+  const derivedPendingBs = directMoney(Math.max(
+    0,
+    currentCommercialOutstandingBs + penaltiesBs - coveredByDepositBs - damageCollectedBs,
+  ));
+  return directMoney(Math.min(reconciledStoredPendingBs, derivedPendingBs));
 };
 
 const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
@@ -2986,10 +3008,7 @@ router.patch('/__copetin_db/rentals/:id/return-charge', async (req, res, next) =
         || String(contract?.rentalId ?? '') === String(rental.id)
         || (rental?.orderCode && String(contract?.orderCode ?? '') === String(rental.orderCode))
       )) ?? null;
-      const historicalTransportOmissionBs = getHistoricalTransportOmissionBs(linkedContract, rental);
-      const outstandingRentalBs = directMoney(
-        Number(settlement?.outstandingRentalBs ?? 0) + historicalTransportOmissionBs,
-      );
+      const outstandingRentalBs = getCurrentCommercialOutstandingBs(linkedContract, rental);
       const depositBs = directMoney(rental?.depositBs);
       const originalDiscountCoveredByDepositBs = directMoney(settlement?.discountCoveredByDepositBs);
       const economicResetApplied = Boolean(settlement?.economicResetAt);
@@ -3180,11 +3199,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         Number(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0),
         Number(linkedContract?.payment?.paidAtApprovalBs ?? 0),
       ));
-      const derivedCommercialPendingBs = directMoney(Math.max(
-        0,
-        repairedRentalTotalBs - previousPaid,
-      ));
-      const historicalTransportOmissionBs = getHistoricalTransportOmissionBs(linkedContract, rental);
+      const derivedCommercialPendingBs = getCurrentCommercialOutstandingBs(linkedContract, rental);
       const deliveryFeeBs = directMoney(Math.max(
         Number(rental?.deliveryFeeBs ?? 0),
         Number(rental?.totals?.deliveryFeeBs ?? 0),
@@ -3195,12 +3210,11 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         Number(rental?.payment?.deliveryFeeCollectedBs ?? 0),
         Number(rental?.totals?.deliveryFeeCollectedBs ?? 0),
       ));
-      // Contratos daily_schedule antiguos pueden conservar pendingCollectionBs
-      // calculado con un total anterior a la venta manual de proveedor. Se suma
-      // solamente la diferencia comercial y, en esta misma transaccion, se
-      // persiste el total reparado para que nunca vuelva a aplicarse.
+      // En devoluciones, reemplazamos la parte comercial de la liquidacion por
+      // total vigente menos pagos. La diferencia no comercial (danos/garantia)
+      // permanece intacta y el resultado se persiste con el cobro.
       const currentPending = directMoney(isReturned
-        ? Math.max(0, storedPendingBs) + commercialTotalCorrectionBs + historicalTransportOmissionBs
+        ? getReconciledReturnedPendingCollectionBs(linkedContract, rental)
         : Math.max(
             Math.max(0, storedPendingBs) + commercialTotalCorrectionBs,
             derivedCommercialPendingBs,
@@ -3348,9 +3362,7 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       if (isReturned) {
         const repairedOutstandingRentalBs = directMoney(Math.max(
           0,
-          Number(settlement.outstandingRentalBs ?? 0)
-            + commercialTotalCorrectionBs
-            + historicalTransportOmissionBs
+          derivedCommercialPendingBs
             - rentalNow
             - transportNow,
         ));
@@ -6313,7 +6325,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
               ? String(line.chargeOwner).toLowerCase()
               : 'cliente',
             note: line?.damageNote ?? '',
-            pendingCollectionBs: Number(settlement?.pendingCollectionBs ?? rental?.payment?.pendingPaymentBs ?? 0),
+            pendingCollectionBs: getReconciledReturnedPendingCollectionBs(contract, rental),
           }));
       })
       .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
@@ -6774,6 +6786,170 @@ const summarizeOrdersRental = (rental = {}) => ({
   _summaryOnly: true,
   _ordersSummaryOnly: true,
 });
+
+// Contabilidad necesita todos los saldos y referencias, pero no las lineas de
+// productos, documentos ni revisiones completas de cada contrato. Este resumen
+// conserva la informacion economica exacta y reduce varios MB de transferencia.
+const summarizeAccountingContract = (contract = {}) => ({
+  id: contract.id ?? '',
+  rentalId: contract.rentalId ?? '',
+  contractCode: contract.contractCode ?? '',
+  orderCode: contract.orderCode ?? '',
+  status: contract.status ?? '',
+  customerName: contract.customerName ?? contract.clientName ?? '',
+  eventDate: contract.eventDate ?? null,
+  eventType: contract.eventType ?? '',
+  responsibleName: contract.responsibleName ?? contract.assignedToName ?? '',
+  responsibles: (Array.isArray(contract.responsibles) ? contract.responsibles : []).map((entry) => ({
+    id: entry?.id ?? '',
+    name: entry?.name ?? '',
+    role: entry?.role ?? '',
+  })),
+  createdByName: contract.createdByName ?? '',
+  isFinalized: Boolean(contract.isFinalized),
+  finalizedAt: contract.finalizedAt ?? null,
+  finalizedByName: contract.finalizedByName ?? '',
+  totalBs: Number(contract?.totalBs ?? contract?.totals?.totalBs ?? 0),
+  deliveryFeeBs: Number(contract?.deliveryFeeBs ?? contract?.totals?.deliveryFeeBs ?? 0),
+  prepaidAppliedBs: Number(contract?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? 0),
+  payment: contract?.payment
+    ? {
+        paidAtApprovalBs: Number(contract.payment.paidAtApprovalBs ?? 0),
+        pendingPaymentBs: contract.payment.pendingPaymentBs ?? null,
+        pendingBs: contract.payment.pendingBs ?? null,
+        prepaidAppliedBs: Number(contract.payment.prepaidAppliedBs ?? 0),
+        guaranteeStatus: contract.payment.guaranteeStatus ?? '',
+        guaranteePaymentMethod: contract.payment.guaranteePaymentMethod ?? '',
+        guaranteePaymentAccount: contract.payment.guaranteePaymentAccount ?? '',
+      }
+    : null,
+  guarantee: contract?.guarantee
+    ? {
+        status: contract.guarantee.status ?? '',
+        amountBs: Number(contract.guarantee.amountBs ?? contract?.totals?.guaranteeBs ?? 0),
+        validatedBs: Number(contract.guarantee.validatedBs ?? 0),
+        paymentMethod: contract.guarantee.paymentMethod ?? '',
+        paymentAccount: contract.guarantee.paymentAccount ?? '',
+      }
+    : null,
+  totals: {
+    totalBs: Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0),
+    guaranteeBs: Number(contract?.totals?.guaranteeBs ?? 0),
+    deliveryFeeBs: Number(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs ?? 0),
+    itemsNetSubtotalBs: contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? null,
+    discountBs: contract?.totals?.discountBs ?? null,
+    pendingPaymentBs: contract?.totals?.pendingPaymentBs ?? null,
+  },
+  _summaryOnly: true,
+  _accountingSummaryOnly: true,
+});
+
+const summarizeAccountingReturnLine = (line = {}) => ({
+  lineKey: line.lineKey ?? '',
+  itemId: line.itemId ?? '',
+  itemName: line.itemName ?? line.name ?? 'Item',
+  damagedQty: Number(line.damagedQty ?? 0),
+  missingQty: Number(line.missingQty ?? 0),
+  damagedUnitChargeBs: Number(line.damagedUnitChargeBs ?? 0),
+  missingUnitChargeBs: Number(line.missingUnitChargeBs ?? 0),
+  damagedFeeBs: Number(line.damagedFeeBs ?? 0),
+  missingFeeBs: Number(line.missingFeeBs ?? 0),
+  penaltyBs: Number(line.penaltyBs ?? 0),
+  chargeOwner: line.chargeOwner ?? 'cliente',
+  damageNote: line.damageNote ?? line.note ?? '',
+});
+
+const summarizeAccountingRental = (rental = {}) => {
+  const returnReport = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    .filter((line) => (
+      Number(line?.damagedQty ?? 0) > 0
+      || Number(line?.missingQty ?? 0) > 0
+      || Number(line?.penaltyBs ?? line?.damagedFeeBs ?? line?.missingFeeBs ?? 0) > 0
+    ))
+    .map(summarizeAccountingReturnLine);
+  return {
+    id: rental.id ?? '',
+    rentalId: rental.rentalId ?? rental.id ?? '',
+    contractId: rental.contractId ?? '',
+    contractCode: rental.contractCode ?? '',
+    orderCode: rental.orderCode ?? '',
+    status: rental.status ?? '',
+    createdAt: rental.createdAt ?? rental.rentalAt ?? null,
+    updatedAt: rental.updatedAt ?? null,
+    returnedAt: rental.returnedAt ?? null,
+    finalizedAt: rental.finalizedAt ?? null,
+    deliveryDate: rental.deliveryDate ?? null,
+    eventType: rental.eventType ?? '',
+    eventDate: rental.eventDate ?? null,
+    rentalDate: rental.rentalDate ?? null,
+    customerName: rental.customerName ?? '',
+    createdBy: rental.createdBy ?? '',
+    createdByName: rental.createdByName ?? '',
+    responsibleName: rental.responsibleName ?? rental.assignedToName ?? '',
+    deliveryFeeBs: Number(rental.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs ?? 0),
+    depositBs: Number(rental.depositBs ?? 0),
+    guaranteeDeclaredBs: Number(rental.guaranteeDeclaredBs ?? rental?.guarantee?.amountBs ?? 0),
+    prepaidAppliedBs: Number(rental.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? 0),
+    guarantee: rental?.guarantee
+      ? {
+          status: rental.guarantee.status ?? '',
+          amountBs: Number(rental.guarantee.amountBs ?? 0),
+          validatedBs: Number(rental.guarantee.validatedBs ?? 0),
+          paymentMethod: rental.guarantee.paymentMethod ?? '',
+          paymentAccount: rental.guarantee.paymentAccount ?? '',
+        }
+      : null,
+    payment: rental?.payment
+      ? {
+          status: rental.payment.status ?? '',
+          paidAtRentalBs: Number(rental.payment.paidAtRentalBs ?? 0),
+          pendingPaymentBs: rental.payment.pendingPaymentBs ?? null,
+          prepaidAppliedBs: Number(rental.payment.prepaidAppliedBs ?? 0),
+          deliveryFeeCollectedBs: Number(rental.payment.deliveryFeeCollectedBs ?? 0),
+          damageCollectedBs: Number(rental.payment.damageCollectedBs ?? 0),
+          penaltiesCollectedBs: Number(rental.payment.penaltiesCollectedBs ?? 0),
+          returnChargesCollectedBs: Number(rental.payment.returnChargesCollectedBs ?? 0),
+          guaranteeStatus: rental.payment.guaranteeStatus ?? '',
+          guaranteePaymentMethod: rental.payment.guaranteePaymentMethod ?? '',
+          guaranteePaymentAccount: rental.payment.guaranteePaymentAccount ?? '',
+        }
+      : null,
+    totals: rental?.totals
+      ? {
+          totalBs: Number(rental.totals.totalBs ?? 0),
+          deliveryFeeBs: Number(rental.totals.deliveryFeeBs ?? rental.deliveryFeeBs ?? 0),
+          paidAtRentalBs: Number(rental.totals.paidAtRentalBs ?? 0),
+          pendingPaymentBs: rental.totals.pendingPaymentBs ?? null,
+          prepaidAppliedBs: Number(rental.totals.prepaidAppliedBs ?? 0),
+          deliveryFeeCollectedBs: Number(rental.totals.deliveryFeeCollectedBs ?? 0),
+          damageCollectedBs: Number(rental.totals.damageCollectedBs ?? 0),
+          penaltiesCollectedBs: Number(rental.totals.penaltiesCollectedBs ?? 0),
+          returnChargesCollectedBs: Number(rental.totals.returnChargesCollectedBs ?? 0),
+        }
+      : null,
+    penaltiesBs: Number(rental.penaltiesBs ?? rental?.returnSettlement?.penaltiesBs ?? 0),
+    refundBs: Number(rental.refundBs ?? rental?.returnSettlement?.refundBs ?? 0),
+    returnSettlement: rental?.returnSettlement
+      ? {
+          outstandingRentalBs: Number(rental.returnSettlement.outstandingRentalBs ?? 0),
+          pendingCollectionBs: rental.returnSettlement.pendingCollectionBs ?? null,
+          penaltiesBs: Number(rental.returnSettlement.penaltiesBs ?? rental.penaltiesBs ?? 0),
+          damageCollectedBs: Number(rental.returnSettlement.damageCollectedBs ?? 0),
+          penaltiesCollectedBs: Number(rental.returnSettlement.penaltiesCollectedBs ?? 0),
+          discountCoveredByDepositBs: Number(rental.returnSettlement.discountCoveredByDepositBs ?? 0),
+          totalDiscountAgainstDepositBs: Number(rental.returnSettlement.totalDiscountAgainstDepositBs ?? 0),
+          paidBs: Number(rental.returnSettlement.paidBs ?? 0),
+          refundBs: Number(rental.returnSettlement.refundBs ?? 0),
+          accountingStatus: rental.returnSettlement.accountingStatus ?? '',
+          settledAt: rental.returnSettlement.settledAt ?? null,
+        }
+      : null,
+    returnReport,
+    returnIssueSummary: returnReport,
+    _summaryOnly: true,
+    _accountingSummaryOnly: true,
+  };
+};
 
 const summarizeOrdersDelivery = (delivery = {}) => ({
   id: delivery.id ?? '',
@@ -7529,6 +7705,42 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
           .map(summarizeOrdersDelivery),
         inventoryMovements: recentMovements,
         movementStats,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const includeCommercial = String(req.query?.scope ?? 'full').trim().toLowerCase() !== 'petty';
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        contracts: includeCommercial
+          ? (Array.isArray(state.contracts) ? state.contracts : [])
+            .filter((contract) => !contract?.deletedAt)
+            .map(summarizeAccountingContract)
+          : [],
+        rentals: includeCommercial
+          ? (Array.isArray(state.rentals) ? state.rentals : [])
+            .filter((rental) => !rental?.deletedAt)
+            .map(summarizeAccountingRental)
+          : [],
+        // Caja Grande solo usa clientes con prepago habilitado. El resto se
+        // carga cuando se abre Clientes u Ordenes, sin bloquear Contabilidad.
+        clients: includeCommercial
+          ? (Array.isArray(state.clients) ? state.clients : [])
+            .filter((client) => !client?.deletedAt && Boolean(client?.prepaidEnabled))
+          : [],
+        cashSessions: (Array.isArray(state.cashSessions) ? state.cashSessions : [])
+          .filter((session) => !isArchivedAccountingRecord(session)),
       },
     });
   } catch (error) {
