@@ -1774,6 +1774,7 @@ function ServiceOrdersSection({
   const [whatsAppModal, setWhatsAppModal] = useState(null);
   const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
   const [availabilityContractDetail, setAvailabilityContractDetail] = useState(null);
+  const [clientPendingDetail, setClientPendingDetail] = useState(null);
   const [supplierCoverageDraft, setSupplierCoverageDraft] = useState(buildEmptySupplierCoverageDraft);
   const [supplierCoverageError, setSupplierCoverageError] = useState('');
   const [isSavingSupplierCoverage, setIsSavingSupplierCoverage] = useState(false);
@@ -2406,60 +2407,21 @@ function ServiceOrdersSection({
     return { movementsByReference, looseTextMovements };
   }, [effectiveCashMovements]);
 
-  const rentalReferenceIndex = useMemo(() => {
-    const byId = new Map();
-    const byContractId = new Map();
-    const legacyByReference = new Map();
-
+  const activeRentalByReference = useMemo(() => {
+    const map = new Map();
     rentals.forEach((rental) => {
       if (rental?.deletedAt) return;
-
-      const rentalId = normalizeText(rental?.id);
-      const contractId = normalizeText(rental?.contractId);
-      if (rentalId && !byId.has(rentalId)) byId.set(rentalId, rental);
-      if (contractId && !byContractId.has(contractId)) byContractId.set(contractId, rental);
-
-      // Los numeros visibles pueden reutilizarse. Solo sirven como respaldo para
-      // alquileres historicos que realmente no tienen contractId estructurado.
-      if (!contractId) {
-        [rental?.contractCode, rental?.orderCode]
-          .map(normalizeText)
-          .filter(Boolean)
-          .forEach((key) => {
-            if (!legacyByReference.has(key)) legacyByReference.set(key, rental);
-          });
-      }
+      [
+        rental?.id,
+        rental?.contractId,
+        rental?.contractCode,
+        rental?.orderCode,
+      ].map(normalizeText).filter(Boolean).forEach((key) => {
+        if (!map.has(key)) map.set(key, rental);
+      });
     });
-
-    return { byId, byContractId, legacyByReference };
+    return map;
   }, [rentals]);
-
-  const resolveRentalForContract = useCallback((contract, linkedOrder = null) => {
-    const rentalId = normalizeText(contract?.rentalId ?? linkedOrder?.rentalId ?? linkedOrder?.id);
-    if (rentalId) {
-      const exactRental = rentalReferenceIndex.byId.get(rentalId);
-      if (exactRental) return exactRental;
-    }
-
-    const contractId = normalizeText(contract?.id);
-    if (contractId) {
-      const exactContractRental = rentalReferenceIndex.byContractId.get(contractId);
-      if (exactContractRental) return exactContractRental;
-    }
-
-    // Compatibilidad para registros legacy sin IDs. Nunca permite que una rental
-    // con contractId de otro contrato gane solo por compartir numero visible.
-    const legacyKeys = [
-      contract?.contractCode,
-      contract?.orderCode,
-      linkedOrder?.contractCode,
-      linkedOrder?.orderCode,
-    ].map(normalizeText).filter(Boolean);
-
-    return legacyKeys
-      .map((key) => rentalReferenceIndex.legacyByReference.get(key))
-      .find(Boolean) ?? null;
-  }, [rentalReferenceIndex]);
 
   const buildContractRows = useCallback((sourceContracts) => {
     return sourceContracts.map((contract) => {
@@ -2550,14 +2512,7 @@ function ServiceOrdersSection({
       const linkedCollectionMovements = new Map();
       contractReferenceKeys.forEach((key) => {
         (collectionMovementIndex.movementsByReference.get(key) ?? [])
-          .forEach((movement) => {
-            // Un numero de contrato u orden puede reutilizarse. Si el movimiento
-            // ya tiene IDs estructurados, estos deben coincidir con este contrato
-            // antes de participar en el calculo de "Debe".
-            if (cashMovementMatchesContractReferences(movement.rawMovement, contractCashReferences)) {
-              linkedCollectionMovements.set(movement.id, movement);
-            }
-          });
+          .forEach((movement) => linkedCollectionMovements.set(movement.id, movement));
       });
       collectionMovementIndex.looseTextMovements.forEach((movement) => {
         if (cashMovementMatchesContractReferences(movement.rawMovement, contractCashReferences)) {
@@ -2569,7 +2524,9 @@ function ServiceOrdersSection({
           .reduce((sum, movement) => sum + getEconomicCommercialCashAmount(movement), 0)
           .toFixed(2),
       );
-      const linkedRental = resolveRentalForContract(contract, linkedOrder);
+      const linkedRental = contractReferenceKeys
+        .map((key) => activeRentalByReference.get(key))
+        .find(Boolean) ?? null;
       const rowChargeTargetBs = Number(totalBs.toFixed(2));
       const rowDepositAllocations = getEconomicDepositAllocations(economicLedger, rowChargeTargetBs);
       const rowLedgerConfirmedRentalBs = economicLedger.reduce((sum, entry) => {
@@ -2737,23 +2694,8 @@ function ServiceOrdersSection({
         ...contract,
         status,
         itemsCount,
-        responsibleName: getResponsibleDisplayName(
-          (Array.isArray(contract?.responsibles) && contract.responsibles.some((entry) => entry?.name))
-            || contract?.responsibleName
-            || contract?.assignedToName
-            || contract?.createdByName
-            || contract?.createdBy
-            ? contract
-            : linkedRental ?? contract,
-        ),
-        responsibleRole: getResponsibleDisplayRole(
-          (Array.isArray(contract?.responsibles) && contract.responsibles.some((entry) => entry?.name))
-            || contract?.responsibleRole
-            || contract?.assignedToRole
-            || contract?.createdByRole
-            ? contract
-            : linkedRental ?? contract,
-        ),
+        responsibleName: getResponsibleDisplayName(contract),
+        responsibleRole: getResponsibleDisplayRole(contract),
         totalBs,
         managedTotalBs,
         paidOnAccountBs,
@@ -2787,7 +2729,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, resolveRentalForContract, returnedGuaranteeReferences]);
+  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeReferences]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
@@ -11056,9 +10998,25 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           <div className="orders-hidden-status-cell">
                             <span className={`orders-status-badge contract-${statusMeta.className}`}>{statusMeta.label}</span>
                             {row.hasClientPending ? (
-                              <small style={{ color: '#b45309', background: '#fff7ed', border: '1px solid #f5c26b', borderRadius: 999, padding: '3px 7px', fontWeight: 850 }}>
+                              <button
+                                type="button"
+                                onClick={() => setClientPendingDetail(row)}
+                                title="Ver material que todavía está con el cliente"
+                                aria-label={`Ver ${row.clientPendingUnits} unidad(es) con cliente del contrato ${row.contractCode}`}
+                                style={{
+                                  color: '#b45309',
+                                  background: '#fff7ed',
+                                  border: '1px solid #f5c26b',
+                                  borderRadius: 999,
+                                  padding: '3px 7px',
+                                  fontWeight: 850,
+                                  fontSize: 11,
+                                  lineHeight: 1.2,
+                                  cursor: 'pointer',
+                                }}
+                              >
                                 {row.clientPendingUnits} con cliente
-                              </small>
+                              </button>
                             ) : null}
                             {row.status === 'oculto' ? (
                               <small>
@@ -13202,6 +13160,78 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <button type="button" className="primary-button" onClick={saveSupplierCoverageFromModal} disabled={isSavingSupplierCoverage}>
                 {isSavingSupplierCoverage ? 'Guardando...' : 'Guardar y cubrir faltante'}
               </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {clientPendingDetail ? (
+        <div className="orders-modal-backdrop" onClick={() => setClientPendingDetail(null)}>
+          <section
+            className="orders-modal"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: 'min(680px, calc(100vw - 28px))', maxHeight: 'min(76vh, 720px)', overflow: 'hidden' }}
+          >
+            <header className="orders-modal-head">
+              <div>
+                <span style={{ color: '#b45309', fontSize: 11, fontWeight: 850, textTransform: 'uppercase' }}>Material con cliente</span>
+                <h3 style={{ marginTop: 3 }}>Contrato {clientPendingDetail.contractCode || '—'}</h3>
+                <p>{clientPendingDetail.customerName || 'Cliente'}{clientPendingDetail.orderCode ? ` · ${clientPendingDetail.orderCode}` : ''}</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setClientPendingDetail(null)} aria-label="Cerrar detalle">
+                x
+              </button>
+            </header>
+
+            <div style={{ padding: '16px 18px 18px', overflowY: 'auto', display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 9 }}>
+                <div style={{ border: '1px solid #fde3b4', background: '#fffaf0', borderRadius: 10, padding: '10px 12px' }}>
+                  <small style={{ color: '#92400e', fontWeight: 750 }}>PENDIENTE</small>
+                  <strong style={{ display: 'block', marginTop: 3, color: '#b45309', fontSize: 22 }}>{clientPendingDetail.clientPendingUnits}</strong>
+                  <small>unidad(es)</small>
+                </div>
+                <div style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 750 }}>REGISTRADO POR</small>
+                  <strong style={{ display: 'block', marginTop: 5 }}>{clientPendingDetail.clientPendingPickup?.registeredByName || clientPendingDetail.responsibleName || 'Inventario'}</strong>
+                  <small>{clientPendingDetail.clientPendingPickup?.registeredByRole || ''}</small>
+                </div>
+                <div style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 10, padding: '10px 12px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 750 }}>FECHA</small>
+                  <strong style={{ display: 'block', marginTop: 5 }}>{clientPendingDetail.clientPendingPickup?.registeredAt ? formatDateTime(clientPendingDetail.clientPendingPickup.registeredAt) : 'Sin fecha'}</strong>
+                  <small>última recepción parcial</small>
+                </div>
+              </div>
+
+              {clientPendingDetail.clientPendingPickup?.note ? (
+                <div style={{ border: '1px solid #f5c26b', background: '#fff7ed', borderRadius: 10, padding: '10px 12px', color: '#92400e' }}>
+                  <small style={{ fontWeight: 850 }}>OBSERVACIÓN GENERAL</small>
+                  <div style={{ marginTop: 4, fontWeight: 650 }}>{clientPendingDetail.clientPendingPickup.note}</div>
+                </div>
+              ) : null}
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                <strong style={{ color: '#173a70' }}>Detalle pendiente</strong>
+                {(Array.isArray(clientPendingDetail.clientPendingPickup?.items) ? clientPendingDetail.clientPendingPickup.items : []).map((item, index) => (
+                  <article
+                    key={item.lineKey || item.itemId || `${item.itemName}-${index}`}
+                    style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'center', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', background: '#fff' }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ display: 'block' }}>{item.itemName || 'Ítem'}</strong>
+                      {item.note ? <small style={{ display: 'block', marginTop: 3, color: '#64748b' }}>{item.note}</small> : null}
+                      {Number(item.expectedQty ?? 0) > 0 ? <small style={{ display: 'block', marginTop: 2, color: '#94a3b8' }}>Cantidad original: {item.expectedQty}</small> : null}
+                    </div>
+                    <div style={{ minWidth: 84, textAlign: 'center', border: '1px solid #f5c26b', background: '#fff7ed', borderRadius: 9, padding: '7px 10px' }}>
+                      <small style={{ display: 'block', color: '#92400e', fontWeight: 750 }}>CON CLIENTE</small>
+                      <strong style={{ color: '#b45309', fontSize: 20 }}>{item.pendingQty}</strong>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <footer className="orders-modal-foot">
+              <button type="button" className="primary-button" onClick={() => setClientPendingDetail(null)}>Cerrar</button>
             </footer>
           </section>
         </div>

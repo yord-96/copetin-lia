@@ -6750,8 +6750,36 @@ const summarizeOrdersRental = (rental = {}) => ({
         transportSentAt: rental.operational.transportSentAt ?? null,
         inventoryConfirmedAt: rental.operational.inventoryConfirmedAt ?? null,
         transportConfirmedAt: rental.operational.transportConfirmedAt ?? null,
+        returnReview: rental.operational.returnReview
+          ? {
+              status: rental.operational.returnReview.status ?? '',
+              note: rental.operational.returnReview.note ?? '',
+              reviewedAt: rental.operational.returnReview.reviewedAt ?? null,
+              reviewedByName: rental.operational.returnReview.reviewedByName ?? '',
+              reviewedByRole: rental.operational.returnReview.reviewedByRole ?? '',
+            }
+          : null,
+        clientPendingPickup: rental.operational.clientPendingPickup?.active
+          ? {
+              active: true,
+              note: rental.operational.clientPendingPickup.note ?? '',
+              registeredAt: rental.operational.clientPendingPickup.registeredAt ?? null,
+              registeredByName: rental.operational.clientPendingPickup.registeredByName ?? '',
+              registeredByRole: rental.operational.clientPendingPickup.registeredByRole ?? '',
+              items: (Array.isArray(rental.operational.clientPendingPickup.items)
+                ? rental.operational.clientPendingPickup.items
+                : []).map((line) => ({
+                lineKey: line?.lineKey ?? '',
+                itemId: line?.itemId ?? '',
+                itemName: line?.itemName ?? '',
+                expectedQty: Math.max(0, Number(line?.expectedQty ?? 0)),
+                pendingQty: Math.max(0, Number(line?.pendingQty ?? 0)),
+                note: line?.note ?? '',
+              })).filter((line) => line.pendingQty > 0),
+            }
+          : null,
       }
-    : { inventoryStatus: 'pendiente', transportStatus: 'pendiente' },
+    : { inventoryStatus: 'pendiente', transportStatus: 'pendiente', returnReview: null, clientPendingPickup: null },
   payment: rental.payment
     ? {
         status: rental.payment.status ?? '',
