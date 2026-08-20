@@ -2406,21 +2406,60 @@ function ServiceOrdersSection({
     return { movementsByReference, looseTextMovements };
   }, [effectiveCashMovements]);
 
-  const activeRentalByReference = useMemo(() => {
-    const map = new Map();
+  const rentalReferenceIndex = useMemo(() => {
+    const byId = new Map();
+    const byContractId = new Map();
+    const legacyByReference = new Map();
+
     rentals.forEach((rental) => {
       if (rental?.deletedAt) return;
-      [
-        rental?.id,
-        rental?.contractId,
-        rental?.contractCode,
-        rental?.orderCode,
-      ].map(normalizeText).filter(Boolean).forEach((key) => {
-        if (!map.has(key)) map.set(key, rental);
-      });
+
+      const rentalId = normalizeText(rental?.id);
+      const contractId = normalizeText(rental?.contractId);
+      if (rentalId && !byId.has(rentalId)) byId.set(rentalId, rental);
+      if (contractId && !byContractId.has(contractId)) byContractId.set(contractId, rental);
+
+      // Los numeros visibles pueden reutilizarse. Solo sirven como respaldo para
+      // alquileres historicos que realmente no tienen contractId estructurado.
+      if (!contractId) {
+        [rental?.contractCode, rental?.orderCode]
+          .map(normalizeText)
+          .filter(Boolean)
+          .forEach((key) => {
+            if (!legacyByReference.has(key)) legacyByReference.set(key, rental);
+          });
+      }
     });
-    return map;
+
+    return { byId, byContractId, legacyByReference };
   }, [rentals]);
+
+  const resolveRentalForContract = useCallback((contract, linkedOrder = null) => {
+    const rentalId = normalizeText(contract?.rentalId ?? linkedOrder?.rentalId ?? linkedOrder?.id);
+    if (rentalId) {
+      const exactRental = rentalReferenceIndex.byId.get(rentalId);
+      if (exactRental) return exactRental;
+    }
+
+    const contractId = normalizeText(contract?.id);
+    if (contractId) {
+      const exactContractRental = rentalReferenceIndex.byContractId.get(contractId);
+      if (exactContractRental) return exactContractRental;
+    }
+
+    // Compatibilidad para registros legacy sin IDs. Nunca permite que una rental
+    // con contractId de otro contrato gane solo por compartir numero visible.
+    const legacyKeys = [
+      contract?.contractCode,
+      contract?.orderCode,
+      linkedOrder?.contractCode,
+      linkedOrder?.orderCode,
+    ].map(normalizeText).filter(Boolean);
+
+    return legacyKeys
+      .map((key) => rentalReferenceIndex.legacyByReference.get(key))
+      .find(Boolean) ?? null;
+  }, [rentalReferenceIndex]);
 
   const buildContractRows = useCallback((sourceContracts) => {
     return sourceContracts.map((contract) => {
@@ -2511,7 +2550,14 @@ function ServiceOrdersSection({
       const linkedCollectionMovements = new Map();
       contractReferenceKeys.forEach((key) => {
         (collectionMovementIndex.movementsByReference.get(key) ?? [])
-          .forEach((movement) => linkedCollectionMovements.set(movement.id, movement));
+          .forEach((movement) => {
+            // Un numero de contrato u orden puede reutilizarse. Si el movimiento
+            // ya tiene IDs estructurados, estos deben coincidir con este contrato
+            // antes de participar en el calculo de "Debe".
+            if (cashMovementMatchesContractReferences(movement.rawMovement, contractCashReferences)) {
+              linkedCollectionMovements.set(movement.id, movement);
+            }
+          });
       });
       collectionMovementIndex.looseTextMovements.forEach((movement) => {
         if (cashMovementMatchesContractReferences(movement.rawMovement, contractCashReferences)) {
@@ -2523,9 +2569,7 @@ function ServiceOrdersSection({
           .reduce((sum, movement) => sum + getEconomicCommercialCashAmount(movement), 0)
           .toFixed(2),
       );
-      const linkedRental = contractReferenceKeys
-        .map((key) => activeRentalByReference.get(key))
-        .find(Boolean) ?? null;
+      const linkedRental = resolveRentalForContract(contract, linkedOrder);
       const rowChargeTargetBs = Number(totalBs.toFixed(2));
       const rowDepositAllocations = getEconomicDepositAllocations(economicLedger, rowChargeTargetBs);
       const rowLedgerConfirmedRentalBs = economicLedger.reduce((sum, entry) => {
@@ -2693,8 +2737,23 @@ function ServiceOrdersSection({
         ...contract,
         status,
         itemsCount,
-        responsibleName: getResponsibleDisplayName(contract),
-        responsibleRole: getResponsibleDisplayRole(contract),
+        responsibleName: getResponsibleDisplayName(
+          (Array.isArray(contract?.responsibles) && contract.responsibles.some((entry) => entry?.name))
+            || contract?.responsibleName
+            || contract?.assignedToName
+            || contract?.createdByName
+            || contract?.createdBy
+            ? contract
+            : linkedRental ?? contract,
+        ),
+        responsibleRole: getResponsibleDisplayRole(
+          (Array.isArray(contract?.responsibles) && contract.responsibles.some((entry) => entry?.name))
+            || contract?.responsibleRole
+            || contract?.assignedToRole
+            || contract?.createdByRole
+            ? contract
+            : linkedRental ?? contract,
+        ),
         totalBs,
         managedTotalBs,
         paidOnAccountBs,
@@ -2728,7 +2787,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeReferences]);
+  }, [collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, resolveRentalForContract, returnedGuaranteeReferences]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
