@@ -2369,7 +2369,11 @@ router.post('/__copetin_db/rentals/register-return', async (req, res, next) => {
       const rental = state.rentals.find((entry) => String(entry?.id ?? '') === rentalId && !entry?.deletedAt);
       if (!rental) { const error = new Error('No se encontro el alquiler seleccionado.'); error.statusCode = 404; throw error; }
       if (rental.status === 'cancelled') { const error = new Error('La orden esta anulada y no puede registrarse como devolucion.'); error.statusCode = 409; throw error; }
-      if (rental.status === 'returned' && !isPartialReturn) revertDirectReturnEffects(state, rental);
+      if (rental.status === 'returned' || rental.returnedAt) {
+        const error = new Error('La devolucion de esta orden ya fue registrada. No se volvera a aplicar stock ni faltantes.');
+        error.statusCode = 409;
+        throw error;
+      }
 
       const now = new Date().toISOString();
       const settings = state.settings ?? {};

@@ -193,6 +193,14 @@ const getEffectiveInventoryStatus = (rental, operational = rental?.operational ?
   if (rental?.historicalReconstruction && !hasExplicitOperationalConfirmation(rental)) {
     return 'pendiente';
   }
+
+  // El estado comercial devuelto/returnedAt es evidencia definitiva de que la
+  // recepción ya fue aplicada. No permitimos que un inventoryStatus antiguo
+  // (por ejemplo "salio" tras una edición posterior) vuelva a ofrecer Cerrar recepción.
+  if (String(rental?.status ?? '').trim().toLowerCase() === 'returned' || rental?.returnedAt) {
+    return 'devuelto';
+  }
+
   return operational?.inventoryStatus ?? 'pendiente';
 };
 
