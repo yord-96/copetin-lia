@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '../../services/api';
 
 const EMPTY_SUPPLIER = {
   name: '',
@@ -141,6 +142,39 @@ const createDocumentHtml = (loan) => `
   </html>
 `;
 
+
+const SUPPLIERS_VIEW_CACHE_KEY = 'copetin-suppliers-overview-v2';
+
+const readSuppliersViewCache = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(SUPPLIERS_VIEW_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      suppliers: Array.isArray(parsed.suppliers) ? parsed.suppliers : [],
+      quotes: Array.isArray(parsed.quotes) ? parsed.quotes : [],
+      loans: Array.isArray(parsed.loans) ? parsed.loans : [],
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeSuppliersViewCache = (bundle) => {
+  if (typeof window === 'undefined' || !bundle) return;
+  try {
+    window.sessionStorage.setItem(SUPPLIERS_VIEW_CACHE_KEY, JSON.stringify({
+      suppliers: Array.isArray(bundle.suppliers) ? bundle.suppliers : [],
+      quotes: Array.isArray(bundle.quotes) ? bundle.quotes : [],
+      loans: Array.isArray(bundle.loans) ? bundle.loans : [],
+    }));
+  } catch {
+    // La cache es solo una aceleracion visual; nunca debe bloquear la vista.
+  }
+};
+
 function SuppliersSection({
   supplierBundle,
   items = [],
@@ -151,9 +185,21 @@ function SuppliersSection({
   onCreateSupplierLoan,
   onUpdateSupplierLoanStatus,
 }) {
-  const suppliers = useMemo(() => supplierBundle?.suppliers ?? [], [supplierBundle?.suppliers]);
-  const quotes = useMemo(() => supplierBundle?.quotes ?? [], [supplierBundle?.quotes]);
-  const loans = useMemo(() => supplierBundle?.loans ?? [], [supplierBundle?.loans]);
+  const [localBundle, setLocalBundle] = useState(() => readSuppliersViewCache() ?? supplierBundle ?? null);
+  const [isOverviewLoading, setIsOverviewLoading] = useState(() => !localBundle);
+  const [overviewLoadError, setOverviewLoadError] = useState('');
+  const suppliers = useMemo(
+    () => localBundle?.suppliers ?? supplierBundle?.suppliers ?? [],
+    [localBundle?.suppliers, supplierBundle?.suppliers],
+  );
+  const quotes = useMemo(
+    () => localBundle?.quotes ?? supplierBundle?.quotes ?? [],
+    [localBundle?.quotes, supplierBundle?.quotes],
+  );
+  const loans = useMemo(
+    () => localBundle?.loans ?? supplierBundle?.loans ?? [],
+    [localBundle?.loans, supplierBundle?.loans],
+  );
 
   const [activeView, setActiveView] = useState('proveedores');
   const [supplierForm, setSupplierForm] = useState(EMPTY_SUPPLIER);
@@ -172,9 +218,57 @@ function SuppliersSection({
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
+
+  const refreshSupplierBundle = useCallback(async ({ force = false, silent = false } = {}) => {
+    if (!silent) setIsOverviewLoading(true);
+    setOverviewLoadError('');
+    try {
+      const bundle = await api.suppliers.listBundle({ force });
+      setLocalBundle(bundle);
+      writeSuppliersViewCache(bundle);
+      return bundle;
+    } catch (requestError) {
+      setOverviewLoadError(requestError?.message || 'No se pudo actualizar la vista de proveedores.');
+      return null;
+    } finally {
+      if (!silent) setIsOverviewLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const bundle = await api.suppliers.listBundle();
+      if (!active) return;
+      setLocalBundle(bundle);
+      writeSuppliersViewCache(bundle);
+      setOverviewLoadError('');
+      setIsOverviewLoading(false);
+    };
+    load().catch((requestError) => {
+      if (!active) return;
+      setOverviewLoadError(requestError?.message || 'No se pudo actualizar la vista de proveedores.');
+      setIsOverviewLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supplierBundle || typeof supplierBundle !== 'object') return;
+    const hasServerRows = ['suppliers', 'quotes', 'loans']
+      .some((key) => Array.isArray(supplierBundle?.[key]) && supplierBundle[key].length > 0);
+    if (!hasServerRows && localBundle) return;
+    setLocalBundle(supplierBundle);
+    writeSuppliersViewCache(supplierBundle);
+  }, [localBundle, supplierBundle]);
+
 
   const selectedQuoteSupplier = suppliers.find((supplier) => supplier.id === quoteForm.supplierId) ?? null;
   const selectedLoanSupplier = suppliers.find((supplier) => supplier.id === loanForm.supplierId) ?? null;
+  const selectedDirectorySupplier = suppliers.find((supplier) => String(supplier.id) === String(selectedSupplierId)) ?? null;
 
   const supplierStats = useMemo(() => {
     const bySupplier = new Map();
@@ -380,9 +474,11 @@ function SuppliersSection({
       if (editingSupplierId) {
         await onUpdateSupplier?.({ ...supplierForm, id: editingSupplierId });
         setFeedback('Proveedor actualizado.');
+        await refreshSupplierBundle({ force: true, silent: true });
       } else {
         await onCreateSupplier?.(supplierForm);
         setFeedback('Proveedor creado.');
+        await refreshSupplierBundle({ force: true, silent: true });
       }
       setSupplierForm(EMPTY_SUPPLIER);
       setEditingSupplierId('');
@@ -401,6 +497,7 @@ function SuppliersSection({
       setQuoteForm({ ...EMPTY_QUOTE, supplierId: quoteForm.supplierId });
       setQuoteLines([{ ...EMPTY_LINE }]);
       setFeedback('Cotizacion del proveedor guardada.');
+      await refreshSupplierBundle({ force: true, silent: true });
     } catch (requestError) {
       setError(requestError.message || 'No se pudo guardar la cotizacion.');
     }
@@ -420,6 +517,7 @@ function SuppliersSection({
       setLoanForm({ ...EMPTY_LOAN, supplierId: loanForm.supplierId });
       setLoanLines([{ ...EMPTY_LINE }]);
       setFeedback('Solicitud registrada.');
+      await refreshSupplierBundle({ force: true, silent: true });
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar la solicitud.');
     }
@@ -456,131 +554,352 @@ function SuppliersSection({
     try {
       await onUpdateSupplierLoanStatus?.({ id: loan.id, status });
       setFeedback(`Solicitud ${loan.loanCode} actualizada a ${status}.`);
+      await refreshSupplierBundle({ force: true, silent: true });
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la solicitud.');
     }
   };
 
   return (
-    <section className="panel suppliers-panel">
+    <section className="panel suppliers-panel suppliers-v2">
       <style>{`
-        .suppliers-panel { --sup-navy:#173a70; --sup-orange:#e74b00; --sup-border:#e6e9ef; --sup-soft:#f7f9fc; }
-        .suppliers-directory-shell { display:grid; gap:14px; }
-        .suppliers-directory-toolbar,.suppliers-directory-card,.suppliers-editor-card { background:#fff; border:1px solid var(--sup-border); border-radius:16px; }
-        .suppliers-directory-toolbar { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 20px; }
-        .suppliers-directory-toolbar h3,.suppliers-editor-head h3 { margin:3px 0 4px; color:#14213d; }
-        .suppliers-directory-toolbar p,.suppliers-editor-head p { margin:0; color:#667085; font-size:13px; }
-        .suppliers-eyebrow { color:var(--sup-orange); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
-        .suppliers-directory-actions { display:flex; align-items:end; gap:10px; min-width:min(520px,48%); }
-        .suppliers-search-field { flex:1; display:grid; gap:5px; color:#667085; font-size:11px; font-weight:700; }
-        .suppliers-search-field input { width:100%; }
-        .suppliers-new-button { white-space:nowrap; min-height:38px; }
-        .suppliers-editor-card { padding:18px 20px; box-shadow:0 10px 28px rgba(23,58,112,.08); }
-        .suppliers-editor-head { display:flex; justify-content:space-between; gap:20px; align-items:start; margin-bottom:14px; }
-        .suppliers-form-grid-compact { grid-template-columns:repeat(3,minmax(0,1fr)); }
-        .suppliers-directory-summary { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--sup-border); background:var(--sup-soft); border-radius:16px 16px 0 0; }
-        .suppliers-directory-summary span { color:var(--sup-navy); font-weight:800; }
-        .suppliers-directory-summary small { color:#7a8495; }
-        .suppliers-directory-list { display:grid; }
-        .supplier-directory-row { display:grid; grid-template-columns:46px minmax(220px,1.35fr) minmax(310px,1fr) auto; gap:16px; align-items:center; padding:14px 16px; border-bottom:1px solid #edf0f4; }
-        .supplier-directory-row:last-child { border-bottom:0; }
-        .supplier-directory-row:hover { background:#fbfcfe; }
-        .supplier-directory-avatar { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:#fff2eb; color:#c94108; border:1px solid #ffd8c6; font-weight:900; }
-        .supplier-directory-main { min-width:0; display:grid; gap:3px; }
-        .supplier-directory-name { display:flex; align-items:center; gap:8px; min-width:0; }
-        .supplier-directory-name strong { color:#17233d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .supplier-directory-main>span { color:#475467; font-size:12px; }
-        .supplier-directory-main>small { color:#8b94a5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .supplier-status-pill { display:inline-flex; padding:2px 7px; border-radius:999px; background:#eaf8ef; color:#178445; font-size:10px; font-weight:800; }
-        .supplier-status-pill.inactive { background:#f2f4f7; color:#667085; }
-        .supplier-directory-metrics { display:grid; grid-template-columns:80px 90px minmax(120px,1fr); gap:8px; }
-        .supplier-directory-metrics>div { display:grid; gap:2px; padding:7px 9px; border:1px solid #e8ebf0; border-radius:10px; background:#fafbfc; }
-        .supplier-directory-metrics span { color:#7a8495; font-size:10px; text-transform:uppercase; font-weight:700; }
-        .supplier-directory-metrics strong { color:#24324a; font-size:12px; }
-        .supplier-directory-metrics .has-balance { background:#fff7ed; border-color:#fed7aa; }
-        .supplier-directory-metrics .has-balance strong { color:#c2410c; }
-        .supplier-directory-row-actions { display:flex; gap:6px; justify-content:flex-end; }
-        .supplier-directory-row-actions button { min-height:34px; padding:0 11px; }
-        .suppliers-empty-state { display:grid; place-items:center; gap:4px; min-height:150px; color:#667085; }
-        .suppliers-empty-state strong { color:#344054; }
-        @media (max-width:1200px) {
-          .supplier-directory-row { grid-template-columns:42px 1fr auto; }
-          .supplier-directory-metrics { grid-column:2 / 4; }
-          .suppliers-directory-actions { min-width:420px; }
+        .suppliers-v2 {
+          --sup-navy:#15376a;
+          --sup-navy-2:#0f2f5e;
+          --sup-orange:#e94b00;
+          --sup-orange-soft:#fff3ed;
+          --sup-border:#e6e9ef;
+          --sup-soft:#f7f9fc;
+          --sup-text:#13213b;
+          --sup-muted:#667085;
+          display:grid;
+          gap:14px;
         }
-        @media (max-width:780px) {
-          .suppliers-directory-toolbar,.suppliers-editor-head { align-items:stretch; flex-direction:column; }
-          .suppliers-directory-actions { min-width:0; width:100%; flex-direction:column; align-items:stretch; }
-          .suppliers-form-grid-compact { grid-template-columns:1fr; }
-          .supplier-directory-row { grid-template-columns:42px 1fr; }
-          .supplier-directory-metrics,.supplier-directory-row-actions { grid-column:1 / -1; }
-          .supplier-directory-metrics { grid-template-columns:repeat(3,1fr); }
-          .supplier-directory-row-actions { justify-content:stretch; }
-          .supplier-directory-row-actions button { flex:1; }
+        .suppliers-v2 .suppliers-system-head {
+          display:flex;
+          align-items:end;
+          justify-content:space-between;
+          gap:20px;
+          padding:0 2px 4px;
+        }
+        .suppliers-v2 .suppliers-system-head h2 { margin:0; font-size:28px; color:#111827; letter-spacing:-.03em; }
+        .suppliers-v2 .suppliers-system-head p { margin:4px 0 0; color:var(--sup-muted); font-size:13px; }
+        .suppliers-v2 .suppliers-system-actions { display:flex; gap:8px; }
+        .suppliers-v2 .suppliers-summary-card {
+          background:#fff;
+          border:1px solid var(--sup-border);
+          border-radius:14px;
+          overflow:hidden;
+          box-shadow:0 8px 22px rgba(15,47,94,.05);
+        }
+        .suppliers-v2 .suppliers-view-tabs {
+          display:grid;
+          grid-template-columns:repeat(3,1fr);
+          gap:0;
+          padding:0;
+          background:#f5f7fb;
+          border-bottom:1px solid var(--sup-border);
+        }
+        .suppliers-v2 .suppliers-view-tabs button {
+          position:relative;
+          min-height:66px;
+          border:0;
+          background:transparent;
+          display:grid;
+          grid-template-columns:auto 1fr auto;
+          align-items:center;
+          gap:10px;
+          padding:10px 18px;
+          color:#344054;
+          cursor:pointer;
+          text-align:left;
+        }
+        .suppliers-v2 .suppliers-view-tabs button + button { border-left:1px solid var(--sup-border); }
+        .suppliers-v2 .suppliers-view-tabs button.active {
+          background:#fff;
+          color:var(--sup-navy);
+          box-shadow:inset 0 -3px 0 var(--sup-orange);
+        }
+        .suppliers-v2 .suppliers-tab-icon {
+          width:36px;
+          height:36px;
+          border-radius:10px;
+          display:grid;
+          place-items:center;
+          background:#fff;
+          border:1px solid #e5eaf2;
+          font-weight:900;
+          color:var(--sup-orange);
+        }
+        .suppliers-v2 .suppliers-view-tabs strong { display:block; font-size:13px; }
+        .suppliers-v2 .suppliers-view-tabs small { display:block; margin-top:2px; color:#7b8496; font-size:11px; font-weight:500; }
+        .suppliers-v2 .suppliers-tab-count {
+          min-width:30px;
+          height:30px;
+          padding:0 8px;
+          border-radius:999px;
+          display:grid;
+          place-items:center;
+          background:#eef3f9;
+          color:var(--sup-navy);
+          font-size:12px;
+          font-weight:900;
+        }
+        .suppliers-v2 .suppliers-compact-kpis {
+          display:grid;
+          grid-template-columns:repeat(4,1fr);
+          gap:0;
+          border-top:1px solid #f0f2f5;
+        }
+        .suppliers-v2 .suppliers-compact-kpis article {
+          min-height:74px;
+          padding:12px 16px;
+          display:flex;
+          flex-direction:column;
+          justify-content:center;
+        }
+        .suppliers-v2 .suppliers-compact-kpis article + article { border-left:1px solid var(--sup-border); }
+        .suppliers-v2 .suppliers-compact-kpis span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#7b8496; font-weight:800; }
+        .suppliers-v2 .suppliers-compact-kpis strong { margin-top:2px; font-size:22px; line-height:1; color:var(--sup-navy); }
+        .suppliers-v2 .suppliers-compact-kpis small { margin-top:4px; color:#98a2b3; font-size:10px; }
+        .suppliers-v2 .suppliers-work-card {
+          background:#fff;
+          border:1px solid var(--sup-border);
+          border-radius:14px;
+          overflow:hidden;
+          box-shadow:0 8px 22px rgba(15,47,94,.045);
+        }
+        .suppliers-v2 .suppliers-work-toolbar {
+          display:grid;
+          grid-template-columns:minmax(260px,1fr) auto auto;
+          gap:10px;
+          align-items:end;
+          padding:13px 14px;
+          background:#fffaf7;
+          border-bottom:1px solid #f1ddd3;
+        }
+        .suppliers-v2 .suppliers-work-toolbar label { display:grid; gap:5px; color:#6b7280; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.035em; }
+        .suppliers-v2 .suppliers-work-toolbar input { width:100%; min-height:38px; }
+        .suppliers-v2 .suppliers-refresh-button { min-height:38px; white-space:nowrap; }
+        .suppliers-v2 .suppliers-table-shell { overflow:auto; }
+        .suppliers-v2 .suppliers-directory-table { width:100%; border-collapse:collapse; min-width:980px; }
+        .suppliers-v2 .suppliers-directory-table thead th {
+          padding:10px 12px;
+          background:var(--sup-navy);
+          color:#fff;
+          font-size:10px;
+          font-weight:800;
+          text-transform:uppercase;
+          letter-spacing:.025em;
+          text-align:left;
+          white-space:nowrap;
+        }
+        .suppliers-v2 .suppliers-directory-table tbody td {
+          padding:11px 12px;
+          border-bottom:1px solid #edf0f4;
+          color:#344054;
+          font-size:12px;
+          vertical-align:middle;
+        }
+        .suppliers-v2 .suppliers-directory-table tbody tr:hover { background:#fffaf7; }
+        .suppliers-v2 .supplier-name-cell { display:grid; gap:2px; min-width:220px; }
+        .suppliers-v2 .supplier-name-cell strong { color:#15213c; font-size:13px; }
+        .suppliers-v2 .supplier-name-cell small { color:#8a94a6; }
+        .suppliers-v2 .supplier-contact-cell { display:grid; gap:2px; min-width:180px; }
+        .suppliers-v2 .supplier-contact-cell strong { font-size:12px; color:#344054; }
+        .suppliers-v2 .supplier-contact-cell small { color:#8a94a6; }
+        .suppliers-v2 .supplier-number-badge {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:34px;
+          min-height:27px;
+          border-radius:8px;
+          background:#f3f6fa;
+          color:var(--sup-navy);
+          font-weight:900;
+        }
+        .suppliers-v2 .supplier-money { font-weight:900; color:#24324a; white-space:nowrap; }
+        .suppliers-v2 .supplier-money.due { color:#b54708; }
+        .suppliers-v2 .supplier-status {
+          display:inline-flex;
+          align-items:center;
+          gap:5px;
+          border-radius:999px;
+          padding:4px 8px;
+          font-size:10px;
+          font-weight:800;
+          background:#eaf8ef;
+          color:#178445;
+        }
+        .suppliers-v2 .supplier-status::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+        .suppliers-v2 .supplier-status.inactive { background:#f2f4f7; color:#667085; }
+        .suppliers-v2 .supplier-open-btn { min-height:32px; padding:0 13px; }
+        .suppliers-v2 .suppliers-list-footer {
+          display:flex;
+          justify-content:space-between;
+          gap:12px;
+          align-items:center;
+          padding:10px 14px;
+          color:#7b8496;
+          font-size:11px;
+          background:#fafbfd;
+          border-top:1px solid var(--sup-border);
+        }
+        .suppliers-v2 .suppliers-loading-line {
+          display:flex;
+          align-items:center;
+          gap:8px;
+          color:#667085;
+          font-size:11px;
+        }
+        .suppliers-v2 .suppliers-loading-dot {
+          width:7px;
+          height:7px;
+          border-radius:50%;
+          background:var(--sup-orange);
+          animation:supplierPulse 1s ease-in-out infinite alternate;
+        }
+        @keyframes supplierPulse { from { opacity:.25; transform:scale(.8); } to { opacity:1; transform:scale(1.12); } }
+        .suppliers-v2 .suppliers-editor-card {
+          padding:16px;
+          margin:0;
+          background:#fff;
+          border:1px solid var(--sup-border);
+          border-radius:14px;
+          box-shadow:0 10px 26px rgba(15,47,94,.06);
+        }
+        .suppliers-v2 .suppliers-editor-head { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin-bottom:12px; }
+        .suppliers-v2 .suppliers-editor-head h3 { margin:2px 0 4px; color:var(--sup-text); }
+        .suppliers-v2 .suppliers-editor-head p { margin:0; color:var(--sup-muted); font-size:12px; }
+        .suppliers-v2 .suppliers-eyebrow { color:var(--sup-orange); font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
+        .suppliers-v2 .suppliers-form-grid-compact { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .suppliers-v2 .suppliers-detail-backdrop {
+          position:fixed;
+          inset:0;
+          z-index:1200;
+          background:rgba(15,23,42,.42);
+          display:flex;
+          justify-content:flex-end;
+        }
+        .suppliers-v2 .suppliers-detail-drawer {
+          width:min(480px,94vw);
+          height:100%;
+          background:#fff;
+          box-shadow:-20px 0 50px rgba(15,23,42,.2);
+          display:flex;
+          flex-direction:column;
+        }
+        .suppliers-v2 .suppliers-detail-head {
+          padding:18px 20px;
+          display:flex;
+          justify-content:space-between;
+          gap:16px;
+          border-bottom:1px solid var(--sup-border);
+          background:#fffaf7;
+        }
+        .suppliers-v2 .suppliers-detail-head h3 { margin:2px 0; color:var(--sup-text); }
+        .suppliers-v2 .suppliers-detail-head p { margin:0; color:var(--sup-muted); font-size:12px; }
+        .suppliers-v2 .suppliers-detail-body { padding:18px 20px; overflow:auto; display:grid; gap:14px; }
+        .suppliers-v2 .suppliers-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .suppliers-v2 .suppliers-detail-field {
+          padding:10px 11px;
+          border:1px solid var(--sup-border);
+          border-radius:10px;
+          background:#fafbfd;
+          display:grid;
+          gap:3px;
+        }
+        .suppliers-v2 .suppliers-detail-field.wide { grid-column:1/-1; }
+        .suppliers-v2 .suppliers-detail-field span { color:#8b95a7; font-size:9px; text-transform:uppercase; font-weight:800; }
+        .suppliers-v2 .suppliers-detail-field strong { color:#24324a; font-size:12px; font-weight:700; overflow-wrap:anywhere; }
+        .suppliers-v2 .suppliers-detail-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+        .suppliers-v2 .suppliers-detail-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+        .suppliers-v2 .suppliers-detail-metrics article { padding:11px; border:1px solid var(--sup-border); border-radius:10px; background:#fff; display:grid; gap:3px; }
+        .suppliers-v2 .suppliers-detail-metrics span { color:#8b95a7; font-size:9px; text-transform:uppercase; font-weight:800; }
+        .suppliers-v2 .suppliers-detail-metrics strong { color:var(--sup-navy); font-size:14px; }
+        .suppliers-v2 .suppliers-content-grid { align-items:start; }
+        .suppliers-v2 .suppliers-card { border-radius:14px; border-color:var(--sup-border); box-shadow:none; }
+        .suppliers-v2 .suppliers-card-head h3 { color:var(--sup-text); }
+        .suppliers-v2 .supplier-loan-filters { background:#fafbfd; border:1px solid var(--sup-border); border-radius:12px; padding:10px; }
+        .suppliers-v2 .suppliers-table thead th { background:var(--sup-navy); color:#fff; }
+        @media (max-width:1100px) {
+          .suppliers-v2 .suppliers-compact-kpis { grid-template-columns:repeat(2,1fr); }
+          .suppliers-v2 .suppliers-compact-kpis article:nth-child(3) { border-left:0; border-top:1px solid var(--sup-border); }
+          .suppliers-v2 .suppliers-compact-kpis article:nth-child(4) { border-top:1px solid var(--sup-border); }
+        }
+        @media (max-width:760px) {
+          .suppliers-v2 .suppliers-system-head { align-items:stretch; flex-direction:column; }
+          .suppliers-v2 .suppliers-view-tabs { grid-template-columns:1fr; }
+          .suppliers-v2 .suppliers-view-tabs button + button { border-left:0; border-top:1px solid var(--sup-border); }
+          .suppliers-v2 .suppliers-work-toolbar { grid-template-columns:1fr; }
+          .suppliers-v2 .suppliers-compact-kpis { grid-template-columns:1fr 1fr; }
+          .suppliers-v2 .suppliers-form-grid-compact { grid-template-columns:1fr; }
+          .suppliers-v2 .suppliers-detail-grid,.suppliers-v2 .suppliers-detail-actions,.suppliers-v2 .suppliers-detail-metrics { grid-template-columns:1fr; }
         }
       `}</style>
-      <header className="suppliers-header suppliers-hero">
-        <div className="suppliers-hero-copy">
-          <span>Abastecimiento externo</span>
+
+      <header className="suppliers-system-head">
+        <div>
           <h2>Proveedores</h2>
-          <p>Registra quién te alquila, qué items ofrece, cuánto te cobra y cuánto debes pagar cuando cubres faltantes de una orden.</p>
+          <p>Abastecimiento externo, precios, solicitudes y pagos pendientes en una sola vista.</p>
         </div>
-        <div className="suppliers-tabs" role="tablist" aria-label="Vistas de proveedores">
-          <button type="button" className={activeView === 'proveedores' ? 'active' : ''} onClick={() => setActiveView('proveedores')}>Directorio</button>
-          <button type="button" className={activeView === 'cotizaciones' ? 'active' : ''} onClick={() => setActiveView('cotizaciones')}>Items y precios</button>
-          <button type="button" className={activeView === 'prestamos' ? 'active' : ''} onClick={() => setActiveView('prestamos')}>Solicitudes</button>
+        <div className="suppliers-system-actions">
+          {activeView === 'proveedores' ? (
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => {
+                setEditingSupplierId('');
+                setSupplierForm(EMPTY_SUPPLIER);
+                setShowSupplierForm(true);
+              }}
+            >
+              + Nuevo proveedor
+            </button>
+          ) : null}
         </div>
       </header>
 
       {feedback ? <p className="status success">{feedback}</p> : null}
       {error ? <p className="status error">{error}</p> : null}
+      {overviewLoadError && suppliers.length === 0 ? <p className="status error">{overviewLoadError}</p> : null}
 
-      <div className="suppliers-kpi-grid">
-        <article><span>Proveedores activos</span><strong>{suppliers.length}</strong><small>Contactos y condiciones</small></article>
-        <article><span>Items con precio</span><strong>{supplierCatalogRows.length}</strong><small>Registrados en listas</small></article>
-        <article><span>Solicitudes activas</span><strong>{requestTotals.activeCount}</strong><small>Pendientes de cierre</small></article>
-        <article><span>Total por pagar</span><strong>{formatBs(requestTotals.totalCostBs)}</strong><small>Margen ref. {formatBs(requestTotals.marginBs)}</small></article>
-      </div>
+      <section className="suppliers-summary-card">
+        <div className="suppliers-view-tabs" role="tablist" aria-label="Vistas de proveedores">
+          <button type="button" className={activeView === 'proveedores' ? 'active' : ''} onClick={() => setActiveView('proveedores')}>
+            <span className="suppliers-tab-icon">P</span>
+            <span><strong>Directorio</strong><small>Contactos y saldos</small></span>
+            <span className="suppliers-tab-count">{suppliers.length}</span>
+          </button>
+          <button type="button" className={activeView === 'cotizaciones' ? 'active' : ''} onClick={() => setActiveView('cotizaciones')}>
+            <span className="suppliers-tab-icon">$</span>
+            <span><strong>Items y precios</strong><small>Listas registradas</small></span>
+            <span className="suppliers-tab-count">{supplierCatalogRows.length}</span>
+          </button>
+          <button type="button" className={activeView === 'prestamos' ? 'active' : ''} onClick={() => setActiveView('prestamos')}>
+            <span className="suppliers-tab-icon">S</span>
+            <span><strong>Solicitudes</strong><small>Abastecimiento operativo</small></span>
+            <span className="suppliers-tab-count">{requestTotals.activeCount}</span>
+          </button>
+        </div>
+        <div className="suppliers-compact-kpis">
+          <article><span>Proveedores activos</span><strong>{suppliers.length}</strong><small>Directorio disponible</small></article>
+          <article><span>Items con precio</span><strong>{supplierCatalogRows.length}</strong><small>Referencias de costo</small></article>
+          <article><span>Solicitudes activas</span><strong>{requestTotals.activeCount}</strong><small>Pendientes de cierre</small></article>
+          <article><span>Total por pagar</span><strong>{formatBs(requestTotals.totalCostBs)}</strong><small>Margen ref. {formatBs(requestTotals.marginBs)}</small></article>
+        </div>
+      </section>
 
       {activeView === 'proveedores' ? (
-        <div className="suppliers-directory-shell">
-          <section className="suppliers-directory-toolbar">
-            <div>
-              <span className="suppliers-eyebrow">Directorio operativo</span>
-              <h3>Proveedores activos</h3>
-              <p>Consulta contactos, listas de precios, solicitudes y saldos desde un solo lugar.</p>
-            </div>
-            <div className="suppliers-directory-actions">
-              <label className="suppliers-search-field">
-                <span>Buscar</span>
-                <input
-                  className="suppliers-search"
-                  placeholder="Nombre, contacto, celular..."
-                  value={supplierSearch}
-                  onChange={(event) => setSupplierSearch(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="primary-button suppliers-new-button"
-                onClick={() => {
-                  setEditingSupplierId('');
-                  setSupplierForm(EMPTY_SUPPLIER);
-                  setShowSupplierForm(true);
-                }}
-              >
-                + Nuevo proveedor
-              </button>
-            </div>
-          </section>
-
+        <>
           {showSupplierForm ? (
             <form className="suppliers-editor-card" onSubmit={submitSupplier}>
               <div className="suppliers-editor-head">
                 <div>
-                  <span className="suppliers-eyebrow">{editingSupplierId ? 'Edición' : 'Nuevo registro'}</span>
-                  <h3>{editingSupplierId ? 'Editar proveedor' : 'Registrar proveedor'}</h3>
-                  <p>Completa solo los datos disponibles. Las condiciones y notas quedan como referencia operativa.</p>
+                  <span className="suppliers-eyebrow">{editingSupplierId ? 'Edición de proveedor' : 'Nuevo proveedor'}</span>
+                  <h3>{editingSupplierId ? 'Actualizar datos' : 'Registrar proveedor'}</h3>
+                  <p>Guarda contacto, ubicación y condiciones operativas sin mezclarlo con precios o solicitudes.</p>
                 </div>
                 <button
                   type="button"
@@ -611,54 +930,88 @@ function SuppliersSection({
             </form>
           ) : null}
 
-          <section className="suppliers-directory-card">
-            <div className="suppliers-directory-summary">
-              <span>{visibleSupplierStats.length} proveedor(es)</span>
-              <small>Ordenados por nombre · datos comerciales y operativos</small>
+          <section className="suppliers-work-card">
+            <div className="suppliers-work-toolbar">
+              <label>
+                Buscar proveedor
+                <input
+                  type="search"
+                  placeholder="Nombre, contacto, celular, ciudad..."
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                />
+              </label>
+              <button type="button" className="ghost-button suppliers-refresh-button" onClick={() => refreshSupplierBundle({ force: true })}>
+                Actualizar
+              </button>
+              <button
+                type="button"
+                className="primary-button suppliers-refresh-button"
+                onClick={() => {
+                  setEditingSupplierId('');
+                  setSupplierForm(EMPTY_SUPPLIER);
+                  setShowSupplierForm(true);
+                }}
+              >
+                + Nuevo proveedor
+              </button>
             </div>
-            <div className="suppliers-directory-list">
-              {visibleSupplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => {
-                const contact = supplier.contactName || supplier.phone || supplier.whatsapp || 'Contacto pendiente';
-                const initials = String(supplier.name ?? 'P')
-                  .split(/\s+/)
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .map((part) => part[0])
-                  .join('')
-                  .toUpperCase();
-                return (
-                  <article key={supplier.id} className="supplier-directory-row">
-                    <div className="supplier-directory-avatar">{initials || 'P'}</div>
-                    <div className="supplier-directory-main">
-                      <div className="supplier-directory-name">
-                        <strong>{supplier.name}</strong>
-                        <span className={supplier.status === 'inactive' ? 'supplier-status-pill inactive' : 'supplier-status-pill'}>{supplier.status === 'inactive' ? 'Inactivo' : 'Activo'}</span>
-                      </div>
-                      <span>{contact}{supplier.city ? ` · ${supplier.city}` : ''}</span>
-                      <small>{supplier.email || supplier.address || 'Sin datos adicionales'}</small>
-                    </div>
-                    <div className="supplier-directory-metrics">
-                      <div><span>Listas</span><strong>{quoteCount}</strong></div>
-                      <div><span>Solicitudes</span><strong>{loanCount}</strong></div>
-                      <div className={pendingPaidBs > 0 ? 'has-balance' : ''}><span>Por pagar</span><strong>{formatBs(pendingPaidBs)}</strong></div>
-                    </div>
-                    <div className="supplier-directory-row-actions">
-                      <button type="button" className="ghost-button" onClick={() => editSupplier(supplier)}>Editar</button>
-                      <button type="button" className="ghost-button" onClick={() => { setQuoteForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
-                      <button type="button" className="primary-button" onClick={() => { setLoanForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
-                    </div>
-                  </article>
-                );
-              })}
-              {visibleSupplierStats.length === 0 ? (
-                <div className="suppliers-empty-state">
-                  <strong>No encontramos proveedores.</strong>
-                  <span>Prueba con otro término o registra un nuevo proveedor.</span>
-                </div>
-              ) : null}
+
+            <div className="suppliers-table-shell">
+              <table className="suppliers-directory-table">
+                <thead>
+                  <tr>
+                    <th>Proveedor</th>
+                    <th>Contacto</th>
+                    <th>Listas</th>
+                    <th>Solicitudes</th>
+                    <th>Por pagar</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSupplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => (
+                    <tr key={supplier.id}>
+                      <td>
+                        <div className="supplier-name-cell">
+                          <strong>{supplier.name}</strong>
+                          <small>{supplier.city || supplier.address || 'Sin ubicación registrada'}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="supplier-contact-cell">
+                          <strong>{supplier.contactName || 'Contacto pendiente'}</strong>
+                          <small>{supplier.phone || supplier.whatsapp || supplier.email || 'Sin teléfono registrado'}</small>
+                        </div>
+                      </td>
+                      <td><span className="supplier-number-badge">{quoteCount}</span></td>
+                      <td><span className="supplier-number-badge">{loanCount}</span></td>
+                      <td><span className={`supplier-money ${pendingPaidBs > 0 ? 'due' : ''}`}>{formatBs(pendingPaidBs)}</span></td>
+                      <td><span className={supplier.status === 'inactive' ? 'supplier-status inactive' : 'supplier-status'}>{supplier.status === 'inactive' ? 'Inactivo' : 'Activo'}</span></td>
+                      <td>
+                        <button type="button" className="ghost-button supplier-open-btn" onClick={() => setSelectedSupplierId(String(supplier.id))}>
+                          Abrir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!isOverviewLoading && visibleSupplierStats.length === 0 ? (
+                    <tr><td colSpan={7}>No hay proveedores que coincidan con la búsqueda.</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+            <div className="suppliers-list-footer">
+              <span>Mostrando {visibleSupplierStats.length} de {suppliers.length} proveedor(es)</span>
+              {isOverviewLoading ? (
+                <span className="suppliers-loading-line"><span className="suppliers-loading-dot" />Actualizando datos...</span>
+              ) : (
+                <span>Directorio operativo listo</span>
+              )}
             </div>
           </section>
-        </div>
+        </>
       ) : null}
 
       {activeView === 'cotizaciones' ? (
@@ -897,6 +1250,47 @@ function SuppliersSection({
           </section>
         </div>
       ) : null}
+
+      {selectedDirectorySupplier ? (() => {
+        const stats = supplierStats.find((entry) => String(entry.supplier.id) === String(selectedDirectorySupplier.id));
+        return (
+          <div className="suppliers-detail-backdrop" onClick={() => setSelectedSupplierId('')}>
+            <aside className="suppliers-detail-drawer" onClick={(event) => event.stopPropagation()}>
+              <header className="suppliers-detail-head">
+                <div>
+                  <span className="suppliers-eyebrow">Ficha del proveedor</span>
+                  <h3>{selectedDirectorySupplier.name}</h3>
+                  <p>{selectedDirectorySupplier.contactName || 'Contacto pendiente'}</p>
+                </div>
+                <button type="button" className="ghost-button" onClick={() => setSelectedSupplierId('')}>Cerrar</button>
+              </header>
+              <div className="suppliers-detail-body">
+                <div className="suppliers-detail-metrics">
+                  <article><span>Listas</span><strong>{stats?.quoteCount ?? 0}</strong></article>
+                  <article><span>Solicitudes</span><strong>{stats?.loanCount ?? 0}</strong></article>
+                  <article><span>Por pagar</span><strong>{formatBs(stats?.pendingPaidBs ?? 0)}</strong></article>
+                </div>
+                <div className="suppliers-detail-grid">
+                  <div className="suppliers-detail-field"><span>Contacto</span><strong>{selectedDirectorySupplier.contactName || '-'}</strong></div>
+                  <div className="suppliers-detail-field"><span>Celular</span><strong>{selectedDirectorySupplier.phone || '-'}</strong></div>
+                  <div className="suppliers-detail-field"><span>WhatsApp</span><strong>{selectedDirectorySupplier.whatsapp || '-'}</strong></div>
+                  <div className="suppliers-detail-field"><span>Email</span><strong>{selectedDirectorySupplier.email || '-'}</strong></div>
+                  <div className="suppliers-detail-field"><span>Ciudad</span><strong>{selectedDirectorySupplier.city || '-'}</strong></div>
+                  <div className="suppliers-detail-field"><span>Estado</span><strong>{selectedDirectorySupplier.status === 'inactive' ? 'Inactivo' : 'Activo'}</strong></div>
+                  <div className="suppliers-detail-field wide"><span>Dirección</span><strong>{selectedDirectorySupplier.address || '-'}</strong></div>
+                  <div className="suppliers-detail-field wide"><span>Condiciones</span><strong>{selectedDirectorySupplier.paymentTerms || '-'}</strong></div>
+                  <div className="suppliers-detail-field wide"><span>Notas</span><strong>{selectedDirectorySupplier.notes || '-'}</strong></div>
+                </div>
+                <div className="suppliers-detail-actions">
+                  <button type="button" className="ghost-button" onClick={() => { setSelectedSupplierId(''); editSupplier(selectedDirectorySupplier); }}>Editar</button>
+                  <button type="button" className="ghost-button" onClick={() => { setSelectedSupplierId(''); setQuoteForm((current) => ({ ...current, supplierId: selectedDirectorySupplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
+                  <button type="button" className="primary-button" onClick={() => { setSelectedSupplierId(''); setLoanForm((current) => ({ ...current, supplierId: selectedDirectorySupplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
+                </div>
+              </div>
+            </aside>
+          </div>
+        );
+      })() : null}
 
       <datalist id="inventory-item-names">
         {items.map((item) => <option key={item.id} value={item.name} />)}

@@ -156,6 +156,14 @@ const fullContractCache = new Map();
 const fullRentalCache = new Map();
 const fullContractRequests = new Map();
 const fullRentalRequests = new Map();
+const SUPPLIER_OVERVIEW_CACHE_TTL_MS = 10 * 1000;
+let supplierOverviewCache = null;
+let supplierOverviewRequest = null;
+
+const invalidateSupplierOverviewCache = () => {
+  supplierOverviewCache = null;
+};
+
 
 const readFreshFullRecordCache = (cache, identifier) => {
   const key = String(identifier ?? '').trim();
@@ -3308,31 +3316,68 @@ export const api = {
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },
   suppliers: {
-    listBundle: async () => {
+    listBundle: async ({ force = false } = {}) => {
       if (!shouldUseServerState()) return callBridge('suppliers', 'listBundle', false);
-      const response = await fetch(getServerStateUrl('/suppliers/overview'), {
-        cache: 'no-store',
-        headers: getInternalHeaders(),
-      });
-      if (!response.ok) {
-        throw await createServerStateError(response, 'No se pudo cargar la vista de proveedores.');
+      const now = Date.now();
+      if (!force && supplierOverviewCache && now - supplierOverviewCache.cachedAt < SUPPLIER_OVERVIEW_CACHE_TTL_MS) {
+        return supplierOverviewCache.bundle;
       }
-      const payload = await response.json();
-      if (payload?.revision) {
-        lastSharedRevision = payload.revision;
-        setCachedServerRevision(payload.revision);
+      if (!force && supplierOverviewRequest) return supplierOverviewRequest;
+
+      const request = (async () => {
+        const response = await fetch(getServerStateUrl('/suppliers/overview'), {
+          cache: 'no-store',
+          headers: getInternalHeaders(),
+        });
+        if (!response.ok) {
+          throw await createServerStateError(response, 'No se pudo cargar la vista de proveedores.');
+        }
+        const payload = await response.json();
+        if (payload?.revision) {
+          lastSharedRevision = payload.revision;
+          setCachedServerRevision(payload.revision);
+        }
+        const bundle = {
+          suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
+          quotes: Array.isArray(payload?.quotes) ? payload.quotes : [],
+          loans: Array.isArray(payload?.loans) ? payload.loans : [],
+        };
+        supplierOverviewCache = { bundle, cachedAt: Date.now() };
+        return bundle;
+      })();
+
+      supplierOverviewRequest = request;
+      try {
+        return await request;
+      } finally {
+        if (supplierOverviewRequest === request) supplierOverviewRequest = null;
       }
-      return {
-        suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
-        quotes: Array.isArray(payload?.quotes) ? payload.quotes : [],
-        loans: Array.isArray(payload?.loans) ? payload.loans : [],
-      };
     },
-    create: (payload) => createSupplierOnServer(payload),
-    update: (payload) => callBridge('suppliers', 'update', true, payload),
-    createQuote: (payload) => callBridge('suppliers', 'createQuote', true, payload),
-    createLoan: (payload) => callBridge('suppliers', 'createLoan', true, payload),
-    updateLoanStatus: (payload) => callBridge('suppliers', 'updateLoanStatus', true, payload),
+    create: async (payload) => {
+      const created = await createSupplierOnServer(payload);
+      invalidateSupplierOverviewCache();
+      return created;
+    },
+    update: async (payload) => {
+      const updated = await callBridge('suppliers', 'update', true, payload);
+      invalidateSupplierOverviewCache();
+      return updated;
+    },
+    createQuote: async (payload) => {
+      const created = await callBridge('suppliers', 'createQuote', true, payload);
+      invalidateSupplierOverviewCache();
+      return created;
+    },
+    createLoan: async (payload) => {
+      const created = await callBridge('suppliers', 'createLoan', true, payload);
+      invalidateSupplierOverviewCache();
+      return created;
+    },
+    updateLoanStatus: async (payload) => {
+      const updated = await callBridge('suppliers', 'updateLoanStatus', true, payload);
+      invalidateSupplierOverviewCache();
+      return updated;
+    },
   },
   personnel: {
     getOptions: (payload) => getPersonnelOptionsFromServer(payload),

@@ -24,6 +24,12 @@ const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
 const JSON_PAYLOAD_CACHE_LIMIT = 32;
 const jsonPayloadCache = new Map();
+let suppliersOverviewCache = null;
+
+const getSnapshotRevisionKey = (value = {}) => String(
+  value?.revision ?? value?.updatedAt ?? value?.version ?? '',
+);
+
 
 const deferredBootstrapCollections = Object.freeze([
   'inventoryMovements',
@@ -2137,6 +2143,21 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
 
 router.get('/__copetin_db/suppliers/overview', async (req, res, next) => {
   try {
+    // La vista de proveedores se consulta con mucha frecuencia. Primero leemos
+    // solo la metadata de revision; si nada cambió reutilizamos el overview ya
+    // construido y evitamos volver a parsear todo app-state.json.
+    const meta = await getStateMeta();
+    const metaRevisionKey = getSnapshotRevisionKey(meta);
+    if (
+      suppliersOverviewCache
+      && metaRevisionKey
+      && suppliersOverviewCache.revisionKey === metaRevisionKey
+    ) {
+      res.set('Cache-Control', 'private, no-store');
+      res.json(suppliersOverviewCache.payload);
+      return;
+    }
+
     const snapshot = await getStateSnapshot();
     if (!snapshot.initialized || !snapshot.state) {
       res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
@@ -2157,14 +2178,21 @@ router.get('/__copetin_db/suppliers/overview', async (req, res, next) => {
       .slice()
       .sort((a, b) => new Date(b?.requestDate ?? b?.createdAt ?? 0) - new Date(a?.requestDate ?? a?.createdAt ?? 0));
 
-    res.json({
+    const payload = {
       suppliers,
       quotes,
       loans,
       revision: snapshot.revision,
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
-    });
+    };
+    suppliersOverviewCache = {
+      revisionKey: getSnapshotRevisionKey(snapshot),
+      payload,
+    };
+
+    res.set('Cache-Control', 'private, no-store');
+    res.json(payload);
   } catch (error) {
     next(error);
   }
@@ -2200,6 +2228,7 @@ router.post('/__copetin_db/suppliers/create', async (req, res, next) => {
       return state;
     });
 
+    suppliersOverviewCache = null;
     res.json({
       ok: true,
       supplier: createdSupplier,
@@ -8025,6 +8054,7 @@ router.put('/__copetin_db', async (req, res, next) => {
     }
 
     const result = await replaceStateSnapshot(req.body.state, req.body.revision);
+    suppliersOverviewCache = null;
     console.info('[state-route] Estado guardado correctamente.', {
       revision: result?.revision,
       version: result?.version,
