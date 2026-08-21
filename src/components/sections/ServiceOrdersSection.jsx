@@ -1677,6 +1677,7 @@ function ServiceOrdersSection({
   const [comboConfigurator, setComboConfigurator] = useState(null);
   const [itemObservationModal, setItemObservationModal] = useState(null);
   const [availabilityDetailModal, setAvailabilityDetailModal] = useState(null);
+  const [comboAvailabilityDetailModal, setComboAvailabilityDetailModal] = useState(null);
   const [draggedSelectedItemKey, setDraggedSelectedItemKey] = useState('');
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
@@ -6109,9 +6110,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   const getComboOptionAvailable = (item) => {
     if (!item) return 0;
     const availability = availabilityByItemId.get(item.id);
-    const projected = Math.max(0, Math.trunc(Number(availability?.projectedAvailable ?? item.availableStock ?? 0)));
-    if (projected > 0) return projected;
-    const stockValue = Math.max(0, Math.trunc(Number(item.totalStock ?? item.availableStock ?? 0)));
+    if (availability) {
+      return Math.max(0, Math.trunc(Number(availability.projectedAvailable ?? 0)));
+    }
+    const availableStock = Math.max(0, Math.trunc(Number(item.availableStock ?? 0)));
+    if (availableStock > 0) return availableStock;
+    const stockValue = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
     if (stockValue > 0) return stockValue;
     const verificationStatus = normalizeText(item.verificationStatus);
     if (item.controlsStock === false || verificationStatus.includes('pending') || verificationStatus.includes('validar')) {
@@ -6174,6 +6178,49 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }).filter((value) => value !== null);
     if (groupMaximums.length === 0) return 0;
     return Math.max(0, Math.min(...groupMaximums));
+  };
+
+  const getComboAvailabilityDetail = (combo, selections = {}) => {
+    const components = getComboRules(combo).map((rule, index) => {
+      const options = getComboRuleOptions(rule);
+      const selectedIds = getSelectedComboOptionIds(selections[index], []);
+      const selectedOptions = options.filter((option) => selectedIds.includes(option.id));
+      const effectiveOptions = selectedOptions.length > 0 ? selectedOptions : options;
+      const requiredPerCombo = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1)));
+      const availableUnits = effectiveOptions.reduce((sum, option) => sum + getComboOptionAvailable(option), 0);
+      const maxCombos = Math.max(0, Math.floor(availableUnits / requiredPerCombo));
+      const optionDetails = effectiveOptions.map((option) => {
+        const summary = availabilityByItemId.get(option.id) ?? null;
+        return {
+          item: option,
+          projectedAvailable: getComboOptionAvailable(option),
+          hardRecords: Array.isArray(summary?.hardReservedQtyRecords) ? summary.hardReservedQtyRecords : [],
+          softRecords: Array.isArray(summary?.softReservedQtyRecords) ? summary.softReservedQtyRecords : [],
+          returnRecords: Array.isArray(summary?.returningBeforeStartQtyRecords) ? summary.returningBeforeStartQtyRecords : [],
+        };
+      });
+      return {
+        index,
+        label: rule.slotLabel || rule.itemName || `Componente ${index + 1}`,
+        requiredPerCombo,
+        availableUnits,
+        maxCombos,
+        optionDetails,
+      };
+    });
+
+    const comboMaxQuantity = components.length > 0
+      ? Math.max(0, Math.min(...components.map((component) => component.maxCombos)))
+      : 0;
+
+    return {
+      combo,
+      comboMaxQuantity,
+      components: components.map((component) => ({
+        ...component,
+        isLimiting: component.maxCombos === comboMaxQuantity,
+      })),
+    };
   };
 
   const buildComboAllocations = (combo, selections, comboQuantity) => {
@@ -14566,6 +14613,159 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         );
       })() : null}
 
+      {comboAvailabilityDetailModal ? (() => {
+        const detail = comboAvailabilityDetailModal;
+        const relatedRecords = detail.components.reduce((sum, component) => (
+          sum + component.optionDetails.reduce((optionSum, option) => (
+            optionSum + option.hardRecords.length + option.softRecords.length + option.returnRecords.length
+          ), 0)
+        ), 0);
+
+        return (
+          <div
+            className="orders-modal-backdrop orders-availability-detail-backdrop"
+            onClick={() => setComboAvailabilityDetailModal(null)}
+          >
+            <section
+              className="orders-modal orders-availability-detail-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <header className="orders-modal-head orders-availability-detail-head">
+                <div>
+                  <span>DISPONIBILIDAD DEL COMBO PARA LA FECHA</span>
+                  <h3>Por qué puede armar {detail.comboMaxQuantity} combo(s)</h3>
+                  <p>{detail.combo?.name || 'Combo'}</p>
+                </div>
+                <button
+                  type="button"
+                  className="orders-modal-close"
+                  onClick={() => setComboAvailabilityDetailModal(null)}
+                  aria-label="Cerrar detalle de disponibilidad del combo"
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </header>
+
+              <div className="orders-availability-detail-body">
+                <p className="orders-availability-detail-description">
+                  El máximo del combo lo define el componente que permite armar menos paquetes para el periodo seleccionado.
+                  Cada componente usa la misma disponibilidad por fecha que los productos individuales.
+                </p>
+
+                <div className="orders-availability-records-head">
+                  <div>
+                    <h4>Componentes del combo</h4>
+                    <p>Unidades requeridas, disponibles para la fecha y cantidad de combos que permite cada componente.</p>
+                  </div>
+                  <strong>{detail.components.length}</strong>
+                </div>
+
+                <div className="orders-availability-records">
+                  {detail.components.map((component) => (
+                    <article
+                      key={`combo-availability-component-${component.index}`}
+                      className={`orders-availability-record ${component.isLimiting ? 'is-warning' : 'is-positive'}`}
+                    >
+                      <div className="orders-availability-record-main">
+                        <span>Componente</span>
+                        <strong>{component.label}</strong>
+                        {component.isLimiting ? <small>LIMITANTE DEL COMBO</small> : null}
+                      </div>
+                      <div>
+                        <span>Requiere por combo</span>
+                        <strong>{component.requiredPerCombo}</strong>
+                      </div>
+                      <div>
+                        <span>Para la fecha</span>
+                        <strong>{component.availableUnits}</strong>
+                      </div>
+                      <div>
+                        <span>Permite armar</span>
+                        <strong>{component.maxCombos}</strong>
+                      </div>
+                      <div className="orders-availability-record-quantity">
+                        <span>Opciones</span>
+                        <strong>{component.optionDetails.length}</strong>
+                      </div>
+                      <div className={`orders-availability-impact ${component.isLimiting ? 'is-warning' : 'is-positive'}`}>
+                        {component.isLimiting ? 'Define el máximo' : 'Tiene margen'}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="orders-availability-records-head">
+                  <div>
+                    <h4>Dónde están comprometidos los componentes</h4>
+                    <p>Contratos, cotizaciones y devoluciones que explican la disponibilidad de cada opción del combo.</p>
+                  </div>
+                  <strong>{relatedRecords}</strong>
+                </div>
+
+                <div className="orders-availability-records">
+                  {detail.components.flatMap((component) => component.optionDetails.flatMap((option) => {
+                    const records = [
+                      ...option.hardRecords.map((record) => ({ ...record, impactLabel: 'Resta en la fecha', tone: 'danger' })),
+                      ...option.returnRecords.map((record) => ({ ...record, impactLabel: 'Vuelve antes', tone: 'positive' })),
+                      ...option.softRecords.map((record) => ({ ...record, impactLabel: 'Riesgo sin aprobar', tone: 'warning' })),
+                    ];
+                    return records.map((record, index) => {
+                      const code = record.contractCode || record.code || record.orderCode || `Registro ${index + 1}`;
+                      return (
+                        <article
+                          key={`combo-${component.index}-${option.item.id}-${record.id || code}-${index}`}
+                          className={`orders-availability-record is-${record.tone}`}
+                        >
+                          <div className="orders-availability-record-main">
+                            <span>{component.label}</span>
+                            <strong>{option.item.name}</strong>
+                            <small>{code}</small>
+                          </div>
+                          <div>
+                            <span>Cliente</span>
+                            <strong>{record.customerName || 'Sin cliente registrado'}</strong>
+                          </div>
+                          <div>
+                            <span>Entrega</span>
+                            <strong>{formatDate(record.startDate)}</strong>
+                            <small>{record.startTime || '00:00'}</small>
+                          </div>
+                          <div>
+                            <span>Devolución</span>
+                            <strong>{formatDate(record.endDate)}</strong>
+                            <small>{record.endTime || '23:59'}</small>
+                          </div>
+                          <div className="orders-availability-record-quantity">
+                            <span>Cantidad</span>
+                            <strong>{Math.max(0, Number(record.quantity ?? 0))}</strong>
+                          </div>
+                          <div className={`orders-availability-impact is-${record.tone}`}>
+                            {record.impactLabel}
+                          </div>
+                        </article>
+                      );
+                    });
+                  }))}
+                  {relatedRecords === 0 ? (
+                    <div className="orders-availability-empty">
+                      <Box aria-hidden="true" />
+                      <strong>No hay contratos que afecten los componentes para esta fecha.</strong>
+                      <p>La cantidad armable se explica por el stock disponible de sus componentes.</p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <footer className="orders-modal-foot">
+                <button type="button" className="primary-button" onClick={() => setComboAvailabilityDetailModal(null)}>
+                  Entendido
+                </button>
+              </footer>
+            </section>
+          </div>
+        );
+      })() : null}
+
       {modalOpen ? (
         <div className="orders-modal-backdrop">
           <div
@@ -15381,10 +15581,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 <strong title={combo.name}>{combo.name}</strong>
                                 <span>Combo configurable · {ingredients.length} componente(s)</span>
                                 <div className="orders-availability-metrics">
-                                  <span className="primary">
+                                  <button
+                                    type="button"
+                                    className="primary orders-availability-metric-button"
+                                    onClick={() => setComboAvailabilityDetailModal(
+                                      getComboAvailabilityDetail(combo, defaultComboSelections),
+                                    )}
+                                    title="Ver por qué se puede armar esta cantidad de combos para la fecha"
+                                  >
                                     <small>Puede armar</small>
                                     <strong>{comboMaxQuantity}</strong>
-                                  </span>
+                                    <em>Ver detalle</em>
+                                  </button>
                                   <span>
                                     <small>Componentes</small>
                                     <strong>{ingredients.length}</strong>
