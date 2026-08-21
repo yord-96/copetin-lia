@@ -158,6 +158,7 @@ function SuppliersSection({
   const [activeView, setActiveView] = useState('proveedores');
   const [supplierForm, setSupplierForm] = useState(EMPTY_SUPPLIER);
   const [editingSupplierId, setEditingSupplierId] = useState('');
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [quoteForm, setQuoteForm] = useState(EMPTY_QUOTE);
   const [quoteLines, setQuoteLines] = useState([{ ...EMPTY_LINE }]);
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
@@ -385,6 +386,7 @@ function SuppliersSection({
       }
       setSupplierForm(EMPTY_SUPPLIER);
       setEditingSupplierId('');
+      setShowSupplierForm(false);
     } catch (requestError) {
       setError(requestError.message || 'No se pudo guardar el proveedor.');
     }
@@ -439,6 +441,7 @@ function SuppliersSection({
       status: supplier.status ?? 'active',
     });
     setActiveView('proveedores');
+    setShowSupplierForm(true);
   };
 
   const printDocumentPreview = () => {
@@ -460,6 +463,62 @@ function SuppliersSection({
 
   return (
     <section className="panel suppliers-panel">
+      <style>{`
+        .suppliers-panel { --sup-navy:#173a70; --sup-orange:#e74b00; --sup-border:#e6e9ef; --sup-soft:#f7f9fc; }
+        .suppliers-directory-shell { display:grid; gap:14px; }
+        .suppliers-directory-toolbar,.suppliers-directory-card,.suppliers-editor-card { background:#fff; border:1px solid var(--sup-border); border-radius:16px; }
+        .suppliers-directory-toolbar { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 20px; }
+        .suppliers-directory-toolbar h3,.suppliers-editor-head h3 { margin:3px 0 4px; color:#14213d; }
+        .suppliers-directory-toolbar p,.suppliers-editor-head p { margin:0; color:#667085; font-size:13px; }
+        .suppliers-eyebrow { color:var(--sup-orange); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+        .suppliers-directory-actions { display:flex; align-items:end; gap:10px; min-width:min(520px,48%); }
+        .suppliers-search-field { flex:1; display:grid; gap:5px; color:#667085; font-size:11px; font-weight:700; }
+        .suppliers-search-field input { width:100%; }
+        .suppliers-new-button { white-space:nowrap; min-height:38px; }
+        .suppliers-editor-card { padding:18px 20px; box-shadow:0 10px 28px rgba(23,58,112,.08); }
+        .suppliers-editor-head { display:flex; justify-content:space-between; gap:20px; align-items:start; margin-bottom:14px; }
+        .suppliers-form-grid-compact { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .suppliers-directory-summary { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--sup-border); background:var(--sup-soft); border-radius:16px 16px 0 0; }
+        .suppliers-directory-summary span { color:var(--sup-navy); font-weight:800; }
+        .suppliers-directory-summary small { color:#7a8495; }
+        .suppliers-directory-list { display:grid; }
+        .supplier-directory-row { display:grid; grid-template-columns:46px minmax(220px,1.35fr) minmax(310px,1fr) auto; gap:16px; align-items:center; padding:14px 16px; border-bottom:1px solid #edf0f4; }
+        .supplier-directory-row:last-child { border-bottom:0; }
+        .supplier-directory-row:hover { background:#fbfcfe; }
+        .supplier-directory-avatar { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; background:#fff2eb; color:#c94108; border:1px solid #ffd8c6; font-weight:900; }
+        .supplier-directory-main { min-width:0; display:grid; gap:3px; }
+        .supplier-directory-name { display:flex; align-items:center; gap:8px; min-width:0; }
+        .supplier-directory-name strong { color:#17233d; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .supplier-directory-main>span { color:#475467; font-size:12px; }
+        .supplier-directory-main>small { color:#8b94a5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .supplier-status-pill { display:inline-flex; padding:2px 7px; border-radius:999px; background:#eaf8ef; color:#178445; font-size:10px; font-weight:800; }
+        .supplier-status-pill.inactive { background:#f2f4f7; color:#667085; }
+        .supplier-directory-metrics { display:grid; grid-template-columns:80px 90px minmax(120px,1fr); gap:8px; }
+        .supplier-directory-metrics>div { display:grid; gap:2px; padding:7px 9px; border:1px solid #e8ebf0; border-radius:10px; background:#fafbfc; }
+        .supplier-directory-metrics span { color:#7a8495; font-size:10px; text-transform:uppercase; font-weight:700; }
+        .supplier-directory-metrics strong { color:#24324a; font-size:12px; }
+        .supplier-directory-metrics .has-balance { background:#fff7ed; border-color:#fed7aa; }
+        .supplier-directory-metrics .has-balance strong { color:#c2410c; }
+        .supplier-directory-row-actions { display:flex; gap:6px; justify-content:flex-end; }
+        .supplier-directory-row-actions button { min-height:34px; padding:0 11px; }
+        .suppliers-empty-state { display:grid; place-items:center; gap:4px; min-height:150px; color:#667085; }
+        .suppliers-empty-state strong { color:#344054; }
+        @media (max-width:1200px) {
+          .supplier-directory-row { grid-template-columns:42px 1fr auto; }
+          .supplier-directory-metrics { grid-column:2 / 4; }
+          .suppliers-directory-actions { min-width:420px; }
+        }
+        @media (max-width:780px) {
+          .suppliers-directory-toolbar,.suppliers-editor-head { align-items:stretch; flex-direction:column; }
+          .suppliers-directory-actions { min-width:0; width:100%; flex-direction:column; align-items:stretch; }
+          .suppliers-form-grid-compact { grid-template-columns:1fr; }
+          .supplier-directory-row { grid-template-columns:42px 1fr; }
+          .supplier-directory-metrics,.supplier-directory-row-actions { grid-column:1 / -1; }
+          .supplier-directory-metrics { grid-template-columns:repeat(3,1fr); }
+          .supplier-directory-row-actions { justify-content:stretch; }
+          .supplier-directory-row-actions button { flex:1; }
+        }
+      `}</style>
       <header className="suppliers-header suppliers-hero">
         <div className="suppliers-hero-copy">
           <span>Abastecimiento externo</span>
@@ -484,62 +543,119 @@ function SuppliersSection({
       </div>
 
       {activeView === 'proveedores' ? (
-        <div className="suppliers-content-grid">
-          <form className="suppliers-card suppliers-form" onSubmit={submitSupplier}>
-            <div className="suppliers-card-head">
-              <div>
-                <span>01 · Directorio</span>
-                <h3>{editingSupplierId ? 'Editar proveedor' : 'Nuevo proveedor'}</h3>
-                <p>Datos de contacto y condiciones para coordinar entregas, pagos y devoluciones.</p>
-              </div>
+        <div className="suppliers-directory-shell">
+          <section className="suppliers-directory-toolbar">
+            <div>
+              <span className="suppliers-eyebrow">Directorio operativo</span>
+              <h3>Proveedores activos</h3>
+              <p>Consulta contactos, listas de precios, solicitudes y saldos desde un solo lugar.</p>
             </div>
-            <div className="suppliers-form-grid">
-              <label>Nombre<input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} required /></label>
-              <label>Tipo<input value="Abastecimiento con costo" disabled /></label>
-              <label>Contacto<input value={supplierForm.contactName} onChange={(event) => setSupplierForm((current) => ({ ...current, contactName: event.target.value }))} /></label>
-              <label>Celular<input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} /></label>
-              <label>WhatsApp<input value={supplierForm.whatsapp} onChange={(event) => setSupplierForm((current) => ({ ...current, whatsapp: event.target.value }))} /></label>
-              <label>Email<input type="email" value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} /></label>
-              <label>Direccion<input value={supplierForm.address} onChange={(event) => setSupplierForm((current) => ({ ...current, address: event.target.value }))} /></label>
-              <label>Ciudad<input value={supplierForm.city} onChange={(event) => setSupplierForm((current) => ({ ...current, city: event.target.value }))} /></label>
-              <label className="full-width">Condiciones<input value={supplierForm.paymentTerms} onChange={(event) => setSupplierForm((current) => ({ ...current, paymentTerms: event.target.value }))} placeholder="Ej: pago contra entrega, pago semanal..." /></label>
-              <label className="full-width">Notas<textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+            <div className="suppliers-directory-actions">
+              <label className="suppliers-search-field">
+                <span>Buscar</span>
+                <input
+                  className="suppliers-search"
+                  placeholder="Nombre, contacto, celular..."
+                  value={supplierSearch}
+                  onChange={(event) => setSupplierSearch(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="primary-button suppliers-new-button"
+                onClick={() => {
+                  setEditingSupplierId('');
+                  setSupplierForm(EMPTY_SUPPLIER);
+                  setShowSupplierForm(true);
+                }}
+              >
+                + Nuevo proveedor
+              </button>
             </div>
-            <div className="suppliers-actions">
-              {editingSupplierId ? <button type="button" className="ghost-button" onClick={() => { setEditingSupplierId(''); setSupplierForm(EMPTY_SUPPLIER); }}>Cancelar</button> : null}
-              <button type="submit" className="primary-button">{editingSupplierId ? 'Guardar cambios' : 'Crear proveedor'}</button>
-            </div>
-          </form>
+          </section>
 
-          <section className="suppliers-card">
-            <div className="suppliers-card-head inline">
-              <div>
-                <span>Proveedores disponibles</span>
-                <h3>Directorio operativo</h3>
-                <p>Selecciona un proveedor para registrar sus precios o crear una solicitud.</p>
+          {showSupplierForm ? (
+            <form className="suppliers-editor-card" onSubmit={submitSupplier}>
+              <div className="suppliers-editor-head">
+                <div>
+                  <span className="suppliers-eyebrow">{editingSupplierId ? 'Edición' : 'Nuevo registro'}</span>
+                  <h3>{editingSupplierId ? 'Editar proveedor' : 'Registrar proveedor'}</h3>
+                  <p>Completa solo los datos disponibles. Las condiciones y notas quedan como referencia operativa.</p>
+                </div>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => {
+                    setEditingSupplierId('');
+                    setSupplierForm(EMPTY_SUPPLIER);
+                    setShowSupplierForm(false);
+                  }}
+                >
+                  Cerrar
+                </button>
               </div>
-              <input className="suppliers-search" placeholder="Buscar proveedor..." value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} />
+              <div className="suppliers-form-grid suppliers-form-grid-compact">
+                <label>Nombre<input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} required /></label>
+                <label>Contacto<input value={supplierForm.contactName} onChange={(event) => setSupplierForm((current) => ({ ...current, contactName: event.target.value }))} /></label>
+                <label>Celular<input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+                <label>WhatsApp<input value={supplierForm.whatsapp} onChange={(event) => setSupplierForm((current) => ({ ...current, whatsapp: event.target.value }))} /></label>
+                <label>Email<input type="email" value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} /></label>
+                <label>Ciudad<input value={supplierForm.city} onChange={(event) => setSupplierForm((current) => ({ ...current, city: event.target.value }))} /></label>
+                <label className="full-width">Dirección<input value={supplierForm.address} onChange={(event) => setSupplierForm((current) => ({ ...current, address: event.target.value }))} /></label>
+                <label className="full-width">Condiciones<input value={supplierForm.paymentTerms} onChange={(event) => setSupplierForm((current) => ({ ...current, paymentTerms: event.target.value }))} placeholder="Ej: pago contra entrega, pago semanal..." /></label>
+                <label className="full-width">Notas<textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+              </div>
+              <div className="suppliers-actions">
+                <button type="submit" className="primary-button">{editingSupplierId ? 'Guardar cambios' : 'Crear proveedor'}</button>
+              </div>
+            </form>
+          ) : null}
+
+          <section className="suppliers-directory-card">
+            <div className="suppliers-directory-summary">
+              <span>{visibleSupplierStats.length} proveedor(es)</span>
+              <small>Ordenados por nombre · datos comerciales y operativos</small>
             </div>
-            <div className="suppliers-list">
-              {visibleSupplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => (
-                <article key={supplier.id} className="supplier-row">
-                  <div>
-                    <strong>{supplier.name}</strong>
-                    <span>{supplier.contactName || 'Contacto pendiente'} · {supplier.city || 'Sin ciudad'}</span>
-                    <small>{supplier.phone || supplier.whatsapp || 'Sin telefono'} · {quoteCount} lista(s) · {loanCount} solicitud(es)</small>
-                    {supplier.paymentTerms ? <em>{supplier.paymentTerms}</em> : null}
-                  </div>
-                  <div className="supplier-row-money">
-                    <span>Por pagar: {formatBs(pendingPaidBs)}</span>
-                    <div>
-                      <button type="button" className="link-button" onClick={() => editSupplier(supplier)}>Editar</button>
-                      <button type="button" className="link-button" onClick={() => { setQuoteForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
-                      <button type="button" className="link-button" onClick={() => { setLoanForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
+            <div className="suppliers-directory-list">
+              {visibleSupplierStats.map(({ supplier, quoteCount, loanCount, pendingPaidBs }) => {
+                const contact = supplier.contactName || supplier.phone || supplier.whatsapp || 'Contacto pendiente';
+                const initials = String(supplier.name ?? 'P')
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((part) => part[0])
+                  .join('')
+                  .toUpperCase();
+                return (
+                  <article key={supplier.id} className="supplier-directory-row">
+                    <div className="supplier-directory-avatar">{initials || 'P'}</div>
+                    <div className="supplier-directory-main">
+                      <div className="supplier-directory-name">
+                        <strong>{supplier.name}</strong>
+                        <span className={supplier.status === 'inactive' ? 'supplier-status-pill inactive' : 'supplier-status-pill'}>{supplier.status === 'inactive' ? 'Inactivo' : 'Activo'}</span>
+                      </div>
+                      <span>{contact}{supplier.city ? ` · ${supplier.city}` : ''}</span>
+                      <small>{supplier.email || supplier.address || 'Sin datos adicionales'}</small>
                     </div>
-                  </div>
-                </article>
-              ))}
-              {visibleSupplierStats.length === 0 ? <p className="status">Todavia no hay proveedores para mostrar.</p> : null}
+                    <div className="supplier-directory-metrics">
+                      <div><span>Listas</span><strong>{quoteCount}</strong></div>
+                      <div><span>Solicitudes</span><strong>{loanCount}</strong></div>
+                      <div className={pendingPaidBs > 0 ? 'has-balance' : ''}><span>Por pagar</span><strong>{formatBs(pendingPaidBs)}</strong></div>
+                    </div>
+                    <div className="supplier-directory-row-actions">
+                      <button type="button" className="ghost-button" onClick={() => editSupplier(supplier)}>Editar</button>
+                      <button type="button" className="ghost-button" onClick={() => { setQuoteForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
+                      <button type="button" className="primary-button" onClick={() => { setLoanForm((current) => ({ ...current, supplierId: supplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
+                    </div>
+                  </article>
+                );
+              })}
+              {visibleSupplierStats.length === 0 ? (
+                <div className="suppliers-empty-state">
+                  <strong>No encontramos proveedores.</strong>
+                  <span>Prueba con otro término o registra un nuevo proveedor.</span>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

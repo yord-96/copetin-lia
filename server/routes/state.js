@@ -2135,6 +2135,41 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
   }
 });
 
+router.get('/__copetin_db/suppliers/overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    if (!snapshot.initialized || !snapshot.state) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    const state = snapshot.state;
+    const suppliers = (Array.isArray(state.suppliers) ? state.suppliers : [])
+      .filter((row) => !row?.deletedAt)
+      .slice()
+      .sort((a, b) => String(a?.name ?? '').localeCompare(String(b?.name ?? ''), 'es'));
+    const quotes = (Array.isArray(state.supplierQuotes) ? state.supplierQuotes : [])
+      .filter((row) => !row?.deletedAt)
+      .slice()
+      .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));
+    const loans = (Array.isArray(state.supplierLoans) ? state.supplierLoans : [])
+      .filter((row) => !row?.deletedAt)
+      .slice()
+      .sort((a, b) => new Date(b?.requestDate ?? b?.createdAt ?? 0) - new Date(a?.requestDate ?? a?.createdAt ?? 0));
+
+    res.json({
+      suppliers,
+      quotes,
+      loans,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/suppliers/create', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body)

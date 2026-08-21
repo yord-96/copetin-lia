@@ -3308,7 +3308,26 @@ export const api = {
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },
   suppliers: {
-    listBundle: () => callBridge('suppliers', 'listBundle', false),
+    listBundle: async () => {
+      if (!shouldUseServerState()) return callBridge('suppliers', 'listBundle', false);
+      const response = await fetch(getServerStateUrl('/suppliers/overview'), {
+        cache: 'no-store',
+        headers: getInternalHeaders(),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo cargar la vista de proveedores.');
+      }
+      const payload = await response.json();
+      if (payload?.revision) {
+        lastSharedRevision = payload.revision;
+        setCachedServerRevision(payload.revision);
+      }
+      return {
+        suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
+        quotes: Array.isArray(payload?.quotes) ? payload.quotes : [],
+        loans: Array.isArray(payload?.loans) ? payload.loans : [],
+      };
+    },
     create: (payload) => createSupplierOnServer(payload),
     update: (payload) => callBridge('suppliers', 'update', true, payload),
     createQuote: (payload) => callBridge('suppliers', 'createQuote', true, payload),
