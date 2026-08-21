@@ -3824,7 +3824,23 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       0,
       Number((guaranteeReserveBs - guaranteeAppliedToChargesBs - effectiveGuaranteeRefundedBs).toFixed(2)),
     );
-    const totalRefundAvailableBs = Number((guaranteeRefundAvailableBs + ledgerRefundSuggestedBs).toFixed(2));
+    // La garantia retenida puede seguir disponible para cubrir obligaciones y aun
+    // asi no ser dinero reembolsable al cliente. Se reserva primero lo necesario
+    // para saldo comercial y danos pendientes, sin alterar el flujo de aplicacion
+    // explicita de garantia ni registrar movimientos nuevos.
+    const guaranteePendingObligationsBs = Math.max(
+      0,
+      Number((ledgerDebtBs + damagePendingBs).toFixed(2)),
+    );
+    const guaranteeCommittedToPendingBs = Math.min(
+      guaranteeRefundAvailableBs,
+      guaranteePendingObligationsBs,
+    );
+    const guaranteeRefundableBs = Math.max(
+      0,
+      Number((guaranteeRefundAvailableBs - guaranteeCommittedToPendingBs).toFixed(2)),
+    );
+    const totalRefundAvailableBs = Number((guaranteeRefundableBs + ledgerRefundSuggestedBs).toFixed(2));
     const availableDepositsForGuaranteeBs = Math.max(
       0,
       Number((ledgerCustomerDepositsBs - reclassifiedGuaranteeBs).toFixed(2)),
@@ -3895,6 +3911,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       cashToRegisterBs,
       cashCollectionSuggestedBs,
       guaranteeRefundAvailableBs,
+      guaranteePendingObligationsBs,
+      guaranteeCommittedToPendingBs,
+      guaranteeRefundableBs,
       balanceDetailLabel,
       incomeBs,
       expenseBs,
@@ -9592,7 +9611,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsGuaranteeRefund) return;
 
     const requestedSource = contractEconomicsGuaranteeRefundDraft.source === 'surplus' ? 'surplus' : 'guarantee';
-    const refundSource = requestedSource === 'guarantee' && contractEconomicsData.guaranteeRefundAvailableBs <= 0
+    const refundSource = requestedSource === 'guarantee' && contractEconomicsData.guaranteeRefundableBs <= 0
       ? 'surplus'
       : requestedSource === 'surplus' && contractEconomicsData.ledgerRefundSuggestedBs <= 0
         ? 'guarantee'
@@ -9601,7 +9620,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       0,
       toMoneyNumber(refundSource === 'surplus'
         ? contractEconomicsData.ledgerRefundSuggestedBs
-        : contractEconomicsData.guaranteeRefundAvailableBs),
+        : contractEconomicsData.guaranteeRefundableBs),
     );
     const amount = Math.max(0, toMoneyNumber(contractEconomicsGuaranteeRefundDraft.amountBs || refundableBs));
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsGuaranteeRefundDraft.paymentMethod);
@@ -11852,8 +11871,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           ? `Alquiler pagado | Danos pendientes ${formatBs(contractEconomicsData.damagePendingBs)}`
                           : contractEconomicsData.ledgerRefundSuggestedBs > 0
                             ? `Alquiler pagado | Excedente por devolver ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}`
-                          : contractEconomicsData.guaranteeRefundAvailableBs > 0
-                            ? `Alquiler pagado | Garantia por devolver ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}`
+                          : contractEconomicsData.guaranteeRefundableBs > 0
+                            ? `Alquiler pagado | Garantia por devolver ${formatBs(contractEconomicsData.guaranteeRefundableBs)}`
                             : 'Contrato economicamente al dia'}
                     </h4>
                     <p>
@@ -11867,7 +11886,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         ? 'Danos pendientes'
                         : contractEconomicsData.ledgerRefundSuggestedBs > 0
                           ? 'Excedente pendiente'
-                        : contractEconomicsData.guaranteeRefundAvailableBs > 0
+                        : contractEconomicsData.guaranteeRefundableBs > 0
                           ? 'Garantia pendiente'
                           : 'Sin pendientes'}
                   </span>
@@ -11890,9 +11909,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <small>{contractEconomicsData.managedDebtBs > 0 ? 'Pendiente de cobro' : 'Sin saldo pendiente'}</small>
                   </article>
                   <article>
-                    <span>Garantia disponible</span>
-                    <strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
-                    <small>{contractEconomicsData.guaranteeStatus}</small>
+                    <span>Garantia reembolsable</span>
+                    <strong>{formatBs(contractEconomicsData.guaranteeRefundableBs)}</strong>
+                    <small>
+                      {contractEconomicsData.guaranteeCommittedToPendingBs > 0
+                        ? `${formatBs(contractEconomicsData.guaranteeCommittedToPendingBs)} retenida para obligaciones`
+                        : contractEconomicsData.guaranteeStatus}
+                    </small>
                   </article>
                   <article className={contractEconomicsData.damagePendingBs > 0 ? 'is-due' : 'is-paid'}>
                     <span>Danos / faltantes</span>
@@ -12132,8 +12155,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <h4 style={{ margin: '2px 0', fontSize: '14px' }}>Garantia o excedente con recibo</h4>
                             <p style={{ margin: 0, color: '#667085', lineHeight: 1.4 }}>
                               {contractEconomicsData.totalRefundAvailableBs > 0
-                                ? `Garantia: ${formatBs(contractEconomicsData.guaranteeRefundAvailableBs)} · Excedente: ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}.`
-                                : 'No existe dinero disponible para devolver.'}
+                                ? `Garantia reembolsable: ${formatBs(contractEconomicsData.guaranteeRefundableBs)} · Excedente: ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}.`
+                                : contractEconomicsData.guaranteeCommittedToPendingBs > 0
+                                  ? `La garantia esta retenida para cubrir ${formatBs(contractEconomicsData.guaranteeCommittedToPendingBs)} de obligaciones pendientes.`
+                                  : 'No existe dinero disponible para devolver.'}
                             </p>
                           </div>
                           <label>
@@ -12141,11 +12166,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <select
                               value={contractEconomicsGuaranteeRefundDraft.source === 'surplus' && contractEconomicsData.ledgerRefundSuggestedBs > 0
                                 ? 'surplus'
-                                : contractEconomicsData.guaranteeRefundAvailableBs > 0 ? 'guarantee' : 'surplus'}
+                                : contractEconomicsData.guaranteeRefundableBs > 0 ? 'guarantee' : 'surplus'}
                               onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, source: event.target.value, amountBs: '' }))}
                               disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             >
-                              <option value="guarantee" disabled={contractEconomicsData.guaranteeRefundAvailableBs <= 0}>Garantia ({formatBs(contractEconomicsData.guaranteeRefundAvailableBs)})</option>
+                              <option value="guarantee" disabled={contractEconomicsData.guaranteeRefundableBs <= 0}>Garantia ({formatBs(contractEconomicsData.guaranteeRefundableBs)})</option>
                               <option value="surplus" disabled={contractEconomicsData.ledgerRefundSuggestedBs <= 0}>Excedente ({formatBs(contractEconomicsData.ledgerRefundSuggestedBs)})</option>
                             </select>
                           </label>
@@ -12157,9 +12182,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               step="0.01"
                               value={contractEconomicsGuaranteeRefundDraft.amountBs}
                               onChange={(event) => setContractEconomicsGuaranteeRefundDraft((current) => ({ ...current, amountBs: event.target.value }))}
-                              placeholder={String((contractEconomicsGuaranteeRefundDraft.source === 'surplus' || contractEconomicsData.guaranteeRefundAvailableBs <= 0
+                              placeholder={String((contractEconomicsGuaranteeRefundDraft.source === 'surplus' || contractEconomicsData.guaranteeRefundableBs <= 0
                                 ? contractEconomicsData.ledgerRefundSuggestedBs
-                                : contractEconomicsData.guaranteeRefundAvailableBs).toFixed(2))}
+                                : contractEconomicsData.guaranteeRefundableBs).toFixed(2))}
                               disabled={readOnly || isSavingContractEconomicsGuaranteeRefund || contractEconomicsData.totalRefundAvailableBs <= 0}
                             />
                           </label>
@@ -12276,8 +12301,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     </article>
                     <article className="tone-green">
                       <span>A devolver si todo OK</span>
-                      <strong>{formatBs(contractEconomicsData.guaranteeRefundAvailableBs)}</strong>
-                      <small>Garantia - danos - devoluciones</small>
+                      <strong>{formatBs(contractEconomicsData.guaranteeRefundableBs)}</strong>
+                      <small>
+                        {contractEconomicsData.guaranteeCommittedToPendingBs > 0
+                          ? `${formatBs(contractEconomicsData.guaranteeCommittedToPendingBs)} retenida para obligaciones`
+                          : 'Garantia - danos - devoluciones'}
+                      </small>
                     </article>
                     <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
                       <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : contractEconomicsData.ledgerRefundSuggestedBs > 0 ? 'Excedente a devolver' : 'Todo cubierto'}</span>
