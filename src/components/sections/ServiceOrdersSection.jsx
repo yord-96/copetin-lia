@@ -9251,12 +9251,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       return;
     }
 
-    if (contractEconomicsData.guaranteeDeclaredBs > contractEconomicsData.ledgerAnnotatedGuaranteeBs + 0.01) {
-      setContractEconomicsError('Primero aparta la garantia del deposito. Asi el recibo mostrara correctamente cuanto va al contrato y cuanto queda como garantia.');
-      setActionFeedback('Primero usa "Apartar garantia" en la fila del deposito y luego genera el recibo.');
-      return;
-    }
-
     const allocations = getEconomicDepositAllocations(
       contractEconomicsData.economicLedger,
       contractEconomicsData.ledgerChargeTargetBs,
@@ -12525,12 +12519,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 onClick={() => handleDepositReceipt(entry)}
                                 disabled={
                                   generatingDepositReceiptId === entry.id
-                                  || (!entry.cashMovementId && guaranteeGapBs > 0)
                                   || (!entry.cashMovementId && (readOnly || isSavingContractEconomicsLedger))
                                 }
-                                title={!entry.cashMovementId && guaranteeGapBs > 0
-                                  ? 'Primero aparta la garantia desde uno de los depositos.'
-                                  : entry.cashMovementId ? 'Abrir o reimprimir el recibo.' : 'Generar recibo oficial del deposito.'}
+                                title={entry.cashMovementId
+                                  ? 'Abrir o reimprimir el recibo.'
+                                  : guaranteeToSeparateFromDepositBs > 0
+                                    ? 'Generar recibo como abono al contrato. Si parte de este deposito corresponde a garantia, usa Apartar antes de generar el recibo.'
+                                    : 'Generar recibo oficial del deposito.'}
                                 aria-label={`${entry.cashMovementId ? 'Abrir' : 'Generar'} recibo del deposito`}
                               >
                                 {generatingDepositReceiptId === entry.id
