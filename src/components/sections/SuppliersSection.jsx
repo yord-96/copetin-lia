@@ -209,6 +209,7 @@ function SuppliersSection({
   const [quoteLines, setQuoteLines] = useState([{ ...EMPTY_LINE }]);
   const [loanForm, setLoanForm] = useState(EMPTY_LOAN);
   const [loanLines, setLoanLines] = useState([{ ...EMPTY_LINE }]);
+  const [showLoanForm, setShowLoanForm] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [loanSearch, setLoanSearch] = useState('');
   const [loanSupplierFilter, setLoanSupplierFilter] = useState('all');
@@ -516,6 +517,7 @@ function SuppliersSection({
       });
       setLoanForm({ ...EMPTY_LOAN, supplierId: loanForm.supplierId });
       setLoanLines([{ ...EMPTY_LINE }]);
+      setShowLoanForm(false);
       setFeedback('Solicitud registrada.');
       await refreshSupplierBundle({ force: true, silent: true });
     } catch (requestError) {
@@ -823,6 +825,19 @@ function SuppliersSection({
         .suppliers-v2 .suppliers-card-head h3 { color:var(--sup-text); }
         .suppliers-v2 .supplier-loan-filters { background:#fafbfd; border:1px solid var(--sup-border); border-radius:12px; padding:10px; }
         .suppliers-v2 .suppliers-table thead th { background:var(--sup-navy); color:#fff; }
+        .suppliers-v2 .suppliers-loans-full { width:100%; min-width:0; }
+        .suppliers-v2 .suppliers-loans-full .suppliers-table-wrap { width:100%; overflow:auto; }
+        .suppliers-v2 .suppliers-loans-full .suppliers-table { width:100%; min-width:1080px; }
+        .suppliers-v2 .suppliers-loans-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+        .suppliers-v2 .supplier-request-modal-backdrop { position:fixed; inset:0; z-index:1300; background:rgba(15,23,42,.48); display:grid; place-items:center; padding:22px; }
+        .suppliers-v2 .supplier-request-modal { width:min(980px,96vw); max-height:92vh; background:#fff; border-radius:16px; box-shadow:0 28px 70px rgba(15,23,42,.28); overflow:hidden; display:flex; flex-direction:column; }
+        .suppliers-v2 .supplier-request-modal-head { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; padding:17px 20px; background:#fffaf7; border-bottom:1px solid #f1ddd3; }
+        .suppliers-v2 .supplier-request-modal-head h3 { margin:2px 0 4px; color:var(--sup-text); font-size:20px; }
+        .suppliers-v2 .supplier-request-modal-head p { margin:0; color:var(--sup-muted); font-size:12px; }
+        .suppliers-v2 .supplier-request-modal-body { padding:18px 20px; overflow:auto; }
+        .suppliers-v2 .supplier-request-modal-body .suppliers-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .suppliers-v2 .supplier-request-modal-foot { padding:12px 20px; border-top:1px solid var(--sup-border); background:#fff; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+        .suppliers-v2 .supplier-request-modal-foot > div { display:flex; gap:8px; }
         @media (max-width:1100px) {
           .suppliers-v2 .suppliers-compact-kpis { grid-template-columns:repeat(2,1fr); }
           .suppliers-v2 .suppliers-compact-kpis article:nth-child(3) { border-left:0; border-top:1px solid var(--sup-border); }
@@ -835,6 +850,9 @@ function SuppliersSection({
           .suppliers-v2 .suppliers-work-toolbar { grid-template-columns:1fr; }
           .suppliers-v2 .suppliers-compact-kpis { grid-template-columns:1fr 1fr; }
           .suppliers-v2 .suppliers-form-grid-compact { grid-template-columns:1fr; }
+          .suppliers-v2 .supplier-request-modal-body .suppliers-form-grid { grid-template-columns:1fr; }
+          .suppliers-v2 .supplier-request-modal-backdrop { padding:8px; }
+          .suppliers-v2 .supplier-request-modal { max-height:96vh; }
           .suppliers-v2 .suppliers-detail-grid,.suppliers-v2 .suppliers-detail-actions,.suppliers-v2 .suppliers-detail-metrics { grid-template-columns:1fr; }
         }
       `}</style>
@@ -856,6 +874,11 @@ function SuppliersSection({
               }}
             >
               + Nuevo proveedor
+            </button>
+          ) : null}
+          {activeView === 'prestamos' ? (
+            <button type="button" className="primary-button" onClick={() => setShowLoanForm(true)}>
+              + Registrar pedido
             </button>
           ) : null}
         </div>
@@ -1099,155 +1122,85 @@ function SuppliersSection({
       ) : null}
 
       {activeView === 'prestamos' ? (
-        <div className="suppliers-content-grid">
-          <form className="suppliers-card suppliers-form" onSubmit={submitLoan}>
-            <div className="suppliers-card-head">
-              <div>
-                <span>03 · Solicitud de abastecimiento</span>
-                <h3>Registrar pedido a proveedor</h3>
-                <p>Usa esto cuando una orden necesita items que no tienes disponibles. La solicitud calcula cuánto pagarás.</p>
-              </div>
-            </div>
-            <div className="suppliers-form-grid">
-              <label>Proveedor<select value={loanForm.supplierId} onChange={(event) => setLoanForm((current) => ({ ...current, supplierId: event.target.value }))} required><option value="">Seleccionar...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
-              <label>Fecha solicitada<input type="date" value={loanForm.requestDate} onChange={(event) => setLoanForm((current) => ({ ...current, requestDate: event.target.value }))} required /></label>
-              <label>Fecha devolucion<input type="date" value={loanForm.returnDate} onChange={(event) => setLoanForm((current) => ({ ...current, returnDate: event.target.value }))} /></label>
-              <label>Evento / referencia<input value={loanForm.eventName} onChange={(event) => setLoanForm((current) => ({ ...current, eventName: event.target.value }))} /></label>
-              <label className="full-width">Notas<textarea value={loanForm.notes} onChange={(event) => setLoanForm((current) => ({ ...current, notes: event.target.value }))} /></label>
-            </div>
-            {loanForm.supplierId ? (
-              <section className="supplier-request-offers">
-                <header>
-                  <div>
-                    <strong>Items registrados de {selectedLoanSupplier?.name}</strong>
-                    <span>{selectedLoanSupplierOffers.length} item(s) disponibles en sus listas de precios.</span>
-                  </div>
-                </header>
-                {selectedLoanSupplierOffers.length > 0 ? (
-                  <div className="supplier-request-offer-grid">
-                    {selectedLoanSupplierOffers.map((offer) => (
-                      <button key={`${offer.supplierId}-${offer.itemName}`} type="button" onClick={() => applySupplierOfferToLoanLine(offer, 0)}>
-                        <strong>{offer.itemName}</strong>
-                        <span>{offer.category || 'Sin categoría'}</span>
-                        <small>Proveedor {formatBs(offer.unitPriceBs)} · Cliente {formatBs(offer.saleUnitPriceBs ?? 0)}</small>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="suppliers-hint">Este proveedor todavía no tiene items/precios registrados. Puedes escribir el item manualmente o ir a “Items y precios”.</p>
-                )}
-              </section>
-            ) : null}
-            <div className="supplier-lines">
-              {loanLines.map((line, index) => (
-                <div key={`loan-line-${index}`} className="supplier-line-card request">
-                  <label>
-                    Item faltante
-                    {selectedLoanSupplierOffers.length > 0 ? (
-                      <select value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required>
-                        <option value="">Seleccionar item del proveedor...</option>
-                        {selectedLoanSupplierOffers.map((offer) => (
-                          <option key={`${offer.supplierId}-${offer.itemName}-${index}`} value={offer.itemName}>
-                            {offer.itemName} · {formatBs(offer.unitPriceBs)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input list="inventory-item-names" placeholder="Qué necesitas cubrir" value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required />
-                    )}
-                  </label>
-                  <label>Categoria<input placeholder="Categoria" value={line.category} onChange={(event) => updateLine('loan', index, 'category', event.target.value)} /></label>
-                  <label>Cantidad<input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('loan', index, 'quantity', event.target.value)} /></label>
-                  <label>Me alquila a Bs<input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('loan', index, 'unitPriceBs', event.target.value)} /></label>
-                  <label>Yo lo doy a Bs<input type="number" min="0" step="0.01" value={line.saleUnitPriceBs} onChange={(event) => updateLine('loan', index, 'saleUnitPriceBs', event.target.value)} /></label>
-                  <div className="supplier-line-summary">
-                    <span>Pago {formatBs(getLineTotal(line))}</span>
-                    <strong>Venta {formatBs(getLineSaleTotal(line))}</strong>
-                  </div>
-                  {loanLines.length > 1 ? <button type="button" className="link-button" onClick={() => setLoanLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button> : null}
-                </div>
-              ))}
-            </div>
-            <div className="suppliers-actions">
-              <button type="button" className="ghost-button" onClick={() => setLoanLines((current) => [...current, { ...EMPTY_LINE }])}>Agregar item</button>
-              <button type="submit" className="primary-button">Registrar solicitud</button>
-            </div>
-            {selectedLoanSupplier ? <p className="suppliers-hint">Se generara la solicitud de compra para {selectedLoanSupplier.name}.</p> : null}
-          </form>
-
-          <section className="suppliers-card">
-            <div className="suppliers-card-head inline">
+        <div className="suppliers-loans-full">
+          <section className="suppliers-card suppliers-loans-full">
+            <div className="suppliers-card-head suppliers-loans-head">
               <div>
                 <span>Control de pago</span>
                 <h3>Solicitudes registradas</h3>
                 <p>Costo proveedor {formatBs(requestTotals.totalCostBs)} · venta ref. {formatBs(requestTotals.totalSaleBs)}</p>
               </div>
+              <button type="button" className="primary-button" onClick={() => setShowLoanForm(true)}>+ Registrar pedido</button>
             </div>
             <div className="supplier-loan-filters">
               <label className="supplier-loan-filter-search">
                 Buscar
-                <input
-                  className="suppliers-search"
-                  placeholder="Proveedor, contrato, referencia, item..."
-                  value={loanSearch}
-                  onChange={(event) => setLoanSearch(event.target.value)}
-                />
+                <input className="suppliers-search" placeholder="Proveedor, contrato, referencia, item..." value={loanSearch} onChange={(event) => setLoanSearch(event.target.value)} />
               </label>
-              <label>
-                Proveedor
-                <select value={loanSupplierFilter} onChange={(event) => setLoanSupplierFilter(event.target.value)}>
-                  <option value="all">Todos</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Estado
-                <select value={loanStatusFilter} onChange={(event) => setLoanStatusFilter(event.target.value)}>
-                  <option value="all">Todos</option>
-                  {loanStatusOptions.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Desde
-                <input type="date" value={loanDateFrom} onChange={(event) => setLoanDateFrom(event.target.value)} />
-              </label>
-              <label>
-                Hasta
-                <input type="date" value={loanDateTo} onChange={(event) => setLoanDateTo(event.target.value)} />
-              </label>
+              <label>Proveedor<select value={loanSupplierFilter} onChange={(event) => setLoanSupplierFilter(event.target.value)}><option value="all">Todos</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
+              <label>Estado<select value={loanStatusFilter} onChange={(event) => setLoanStatusFilter(event.target.value)}><option value="all">Todos</option>{loanStatusOptions.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+              <label>Desde<input type="date" value={loanDateFrom} onChange={(event) => setLoanDateFrom(event.target.value)} /></label>
+              <label>Hasta<input type="date" value={loanDateTo} onChange={(event) => setLoanDateTo(event.target.value)} /></label>
             </div>
             <div className="suppliers-actions supplier-loan-filter-actions">
-              <span className="suppliers-hint">
-                {filteredLoans.length} de {loans.length} solicitud(es) - costo {formatBs(filteredLoanTotals.totalCostBs)} - venta ref. {formatBs(filteredLoanTotals.totalSaleBs)}
-              </span>
+              <span className="suppliers-hint">{filteredLoans.length} de {loans.length} solicitud(es) - costo {formatBs(filteredLoanTotals.totalCostBs)} - venta ref. {formatBs(filteredLoanTotals.totalSaleBs)}</span>
               <button type="button" className="ghost-button" onClick={clearLoanFilters}>Limpiar filtros</button>
             </div>
             <div className="suppliers-table-wrap">
               <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Referencia</th><th>Fecha</th><th>A pagar</th><th>Venta ref.</th><th>Estado</th><th></th></tr></thead><tbody>
                 {filteredLoans.map((loan) => (
                   <tr key={loan.id}>
-                    <td>{loan.loanCode}</td>
-                    <td>{loan.supplierName}</td>
-                    <td>{getSupplierLoanReferenceLabel(loan)}</td>
-                    <td>{formatDate(getSupplierLoanEventDate(loan))}</td>
-                    <td>{formatBs(loan?.totals?.totalBs ?? 0)}</td>
-                    <td>{formatBs((loan.items ?? []).reduce((sum, line) => sum + getLineSaleTotal(line), 0))}</td>
-                    <td>{loan.status}</td>
-                    <td className="supplier-table-actions">
-                      <button type="button" className="link-button" onClick={() => setDocumentPreview({ title: loan.loanCode, html: createDocumentHtml(loan) })}>Documento</button>
-                      <button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'devuelto')}>Devuelto</button>
-                      <button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'liquidado')}>Liquidado</button>
-                    </td>
+                    <td>{loan.loanCode}</td><td>{loan.supplierName}</td><td>{getSupplierLoanReferenceLabel(loan)}</td><td>{formatDate(getSupplierLoanEventDate(loan))}</td><td>{formatBs(loan?.totals?.totalBs ?? 0)}</td><td>{formatBs((loan.items ?? []).reduce((sum, line) => sum + getLineSaleTotal(line), 0))}</td><td>{loan.status}</td>
+                    <td className="supplier-table-actions"><button type="button" className="link-button" onClick={() => setDocumentPreview({ title: loan.loanCode, html: createDocumentHtml(loan) })}>Documento</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'devuelto')}>Devuelto</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'liquidado')}>Liquidado</button></td>
                   </tr>
                 ))}
                 {filteredLoans.length === 0 ? <tr><td colSpan={8}>Sin solicitudes con esos filtros.</td></tr> : null}
               </tbody></table>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {showLoanForm ? (
+        <div className="supplier-request-modal-backdrop" onClick={() => setShowLoanForm(false)}>
+          <form className="supplier-request-modal" onSubmit={submitLoan} onClick={(event) => event.stopPropagation()}>
+            <header className="supplier-request-modal-head">
+              <div><span className="suppliers-eyebrow">Solicitud de abastecimiento</span><h3>Registrar pedido a proveedor</h3><p>Completa los datos y registra el abastecimiento sin perder de vista la tabla.</p></div>
+              <button type="button" className="ghost-button" onClick={() => setShowLoanForm(false)}>Cerrar</button>
+            </header>
+            <div className="supplier-request-modal-body">
+              <div className="suppliers-form-grid">
+                <label>Proveedor<select value={loanForm.supplierId} onChange={(event) => setLoanForm((current) => ({ ...current, supplierId: event.target.value }))} required><option value="">Seleccionar...</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
+                <label>Fecha solicitada<input type="date" value={loanForm.requestDate} onChange={(event) => setLoanForm((current) => ({ ...current, requestDate: event.target.value }))} required /></label>
+                <label>Fecha devolución<input type="date" value={loanForm.returnDate} onChange={(event) => setLoanForm((current) => ({ ...current, returnDate: event.target.value }))} /></label>
+                <label>Evento / referencia<input value={loanForm.eventName} onChange={(event) => setLoanForm((current) => ({ ...current, eventName: event.target.value }))} /></label>
+                <label className="full-width">Notas<textarea value={loanForm.notes} onChange={(event) => setLoanForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+              </div>
+              {loanForm.supplierId ? (
+                <section className="supplier-request-offers">
+                  <header><div><strong>Items registrados de {selectedLoanSupplier?.name}</strong><span>{selectedLoanSupplierOffers.length} item(s) disponibles en sus listas de precios.</span></div></header>
+                  {selectedLoanSupplierOffers.length > 0 ? <div className="supplier-request-offer-grid">{selectedLoanSupplierOffers.map((offer) => <button key={`${offer.supplierId}-${offer.itemName}`} type="button" onClick={() => applySupplierOfferToLoanLine(offer, 0)}><strong>{offer.itemName}</strong><span>{offer.category || 'Sin categoría'}</span><small>Proveedor {formatBs(offer.unitPriceBs)} · Cliente {formatBs(offer.saleUnitPriceBs ?? 0)}</small></button>)}</div> : <p className="suppliers-hint">Este proveedor todavía no tiene items/precios registrados. Puedes escribir el item manualmente o ir a “Items y precios”.</p>}
+                </section>
+              ) : null}
+              <div className="supplier-lines">
+                {loanLines.map((line, index) => (
+                  <div key={`loan-line-${index}`} className="supplier-line-card request">
+                    <label>Item faltante{selectedLoanSupplierOffers.length > 0 ? <select value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required><option value="">Seleccionar item del proveedor...</option>{selectedLoanSupplierOffers.map((offer) => <option key={`${offer.supplierId}-${offer.itemName}-${index}`} value={offer.itemName}>{offer.itemName} · {formatBs(offer.unitPriceBs)}</option>)}</select> : <input list="inventory-item-names" placeholder="Qué necesitas cubrir" value={line.itemName} onChange={(event) => updateLine('loan', index, 'itemName', event.target.value)} required />}</label>
+                    <label>Categoria<input placeholder="Categoria" value={line.category} onChange={(event) => updateLine('loan', index, 'category', event.target.value)} /></label>
+                    <label>Cantidad<input type="number" min="1" step="1" value={line.quantity} onChange={(event) => updateLine('loan', index, 'quantity', event.target.value)} /></label>
+                    <label>Me alquila a Bs<input type="number" min="0" step="0.01" value={line.unitPriceBs} onChange={(event) => updateLine('loan', index, 'unitPriceBs', event.target.value)} /></label>
+                    <label>Yo lo doy a Bs<input type="number" min="0" step="0.01" value={line.saleUnitPriceBs} onChange={(event) => updateLine('loan', index, 'saleUnitPriceBs', event.target.value)} /></label>
+                    <div className="supplier-line-summary"><span>Pago {formatBs(getLineTotal(line))}</span><strong>Venta {formatBs(getLineSaleTotal(line))}</strong></div>
+                    {loanLines.length > 1 ? <button type="button" className="link-button" onClick={() => setLoanLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}>Quitar</button> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <footer className="supplier-request-modal-foot">
+              <button type="button" className="ghost-button" onClick={() => setLoanLines((current) => [...current, { ...EMPTY_LINE }])}>+ Agregar item</button>
+              <div><button type="button" className="ghost-button" onClick={() => setShowLoanForm(false)}>Cancelar</button><button type="submit" className="primary-button">Registrar solicitud</button></div>
+            </footer>
+          </form>
         </div>
       ) : null}
 
@@ -1284,7 +1237,7 @@ function SuppliersSection({
                 <div className="suppliers-detail-actions">
                   <button type="button" className="ghost-button" onClick={() => { setSelectedSupplierId(''); editSupplier(selectedDirectorySupplier); }}>Editar</button>
                   <button type="button" className="ghost-button" onClick={() => { setSelectedSupplierId(''); setQuoteForm((current) => ({ ...current, supplierId: selectedDirectorySupplier.id })); setActiveView('cotizaciones'); }}>Precios</button>
-                  <button type="button" className="primary-button" onClick={() => { setSelectedSupplierId(''); setLoanForm((current) => ({ ...current, supplierId: selectedDirectorySupplier.id })); setActiveView('prestamos'); }}>Solicitud</button>
+                  <button type="button" className="primary-button" onClick={() => { setSelectedSupplierId(''); setLoanForm((current) => ({ ...current, supplierId: selectedDirectorySupplier.id })); setActiveView('prestamos'); setShowLoanForm(true); }}>Solicitud</button>
                 </div>
               </div>
             </aside>
