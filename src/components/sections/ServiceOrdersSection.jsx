@@ -4959,6 +4959,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       setSupplierFulfillmentDraftByItem({});
       return;
     }
+    if (isHistoricalReturnedContractEdit) return;
     setSupplierFulfillmentDraftByItem((current) => {
       const next = { ...current };
       const validCoverageKeys = new Set(selectedItems.flatMap((line) => [
@@ -5018,7 +5019,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
       return next;
     });
-  }, [currentStep, getEditableAvailableStock, isHistoricalReconstruction, modalOpen, selectedItems, supplierOffersByItemId]);
+  }, [currentStep, getEditableAvailableStock, isHistoricalReconstruction, isHistoricalReturnedContractEdit, modalOpen, selectedItems, supplierOffersByItemId]);
 
   const supplierCoverageRows = useMemo(
     () => {
@@ -5763,7 +5764,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const openSupplierCoverageModal = (line, availableStock, options = {}) => {
-    if (isHistoricalReconstruction) return;
+    if (bypassStockValidation) return;
     const manualMode = Boolean(options.manual);
     const requestedForItem = Math.max(0, Number(
       options.requestedForItem
@@ -7133,7 +7134,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       throw new Error('La ventana de recojo debe terminar despues de la hora de inicio.');
     }
     if (!selectedItems.length && !selectedServices.length) throw new Error('Debes agregar al menos un item o servicio.');
-    if (!isHistoricalReconstruction && uncoveredStockIssues.length) {
+    if (!bypassStockValidation && uncoveredStockIssues.length) {
       const issue = uncoveredStockIssues[0];
       throw new Error(getUncoveredStockIssueMessage(issue));
     }
@@ -7152,6 +7153,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
     const supplierFulfillmentPlan = (() => {
       if (isHistoricalReconstruction) return [];
+      if (isHistoricalReturnedContractEdit) {
+        return Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [];
+      }
 
       const removedIds = removedSupplierCoverageIdsRef.current;
       const retainedLineKeys = new Set(selectedItems.map((line) => String(line.lineKey ?? '').trim()).filter(Boolean));
@@ -15640,7 +15644,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           const availableStock = getEditableAvailableStock(line);
                           const existingCommittedQtyForEdit = getExistingCommittedQtyForEdit(line);
                           const requestedForItem = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
-                          const shortageForItem = isHistoricalReconstruction
+                          const shortageForItem = bypassStockValidation
                             ? 0
                             : Math.max(0, requestedForItem - availableStock);
                           const supplierCoverageKey = getSupplierCoverageKey(line);
@@ -15657,8 +15661,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             supplierPlannedQty,
                           );
                           const uncoveredForItem = Math.max(0, effectiveShortageForItem - supplierCoveredQty);
-                          const hasStockShortage = !isHistoricalReconstruction && !isProvisionalItem && effectiveShortageForItem > 0;
-                          const hasUncoveredShortage = !isHistoricalReconstruction && !isProvisionalItem && uncoveredForItem > 0;
+                          const hasStockShortage = !bypassStockValidation && !isProvisionalItem && effectiveShortageForItem > 0;
+                          const hasUncoveredShortage = !bypassStockValidation && !isProvisionalItem && uncoveredForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
                           const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
@@ -15837,15 +15841,21 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   +
                                 </button>
                               </div>
-                              <div className={`orders-selected-availability${hasUncoveredShortage ? ' is-error' : ''}`}>
-                                <span><small>Fecha</small><strong>{availableStock}</strong></span>
-                                <span><small>Ahora</small><strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong></span>
-                              </div>
-                              {isProvisionalItem ? (
+                              {!bypassStockValidation ? (
+                                <div className={`orders-selected-availability${hasUncoveredShortage ? ' is-error' : ''}`}>
+                                  <span><small>Fecha</small><strong>{availableStock}</strong></span>
+                                  <span><small>Ahora</small><strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong></span>
+                                </div>
+                              ) : null}
+                              {isHistoricalReturnedContractEdit ? (
+                                <small className="orders-available-note is-positive">
+                                  Operacion devuelta: esta correccion historica no revalida stock ni exige proveedor.
+                                </small>
+                              ) : isProvisionalItem ? (
                                 <small className="orders-available-note is-warning">
                                   Item operativo: se guarda y vuelve en la orden, pero aun no descuenta stock.
                                 </small>
-                              ) : (
+                              ) : !bypassStockValidation ? (
                                 <>
                                   <small className={`orders-available-note${hasUncoveredShortage ? ' is-error' : ''}`}>
                                     Fecha {availableStock} · ahora {Math.max(0, Number(line.item.availableStock ?? 0))}
@@ -15856,7 +15866,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                     </small>
                                   ) : null}
                                 </>
-                              )}
+                              ) : null}
                               {returningRecords.length > 0 ? (
                                 <small className="orders-available-note is-positive orders-return-contract-note">
                                   <span>Depende de retorno:</span>
