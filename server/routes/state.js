@@ -4329,8 +4329,16 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           if (row?.voidedAt || row?.deletedAt || !matchesLinked(row)) return sum;
           const type = String(row?.type ?? '').trim().toLowerCase();
           const category = String(row?.category ?? '').trim().toLowerCase();
-          const isIncome = type === 'ingreso_garantia' || category === 'garantia';
-          return isIncome && Number(row?.amountBs ?? 0) > 0 ? sum + Number(row.amountBs) : sum;
+          const explicitGuaranteeAllocationBs = directMoney(row?.guaranteeAllocationBs);
+          const legacyGuaranteeIncomeBs = (type === 'ingreso_garantia' || category === 'garantia')
+            && Number(row?.amountBs ?? 0) > 0
+            ? directMoney(row.amountBs)
+            : 0;
+          // Los recibos de deposito modernos pueden incluir alquiler + garantia en un
+          // unico movimiento. guaranteeAllocationBs es la parte realmente recibida como
+          // garantia. Usamos el mayor valor por movimiento para no duplicar ingresos
+          // legacy que ya estuvieran marcados tambien como categoria garantia.
+          return sum + Math.max(explicitGuaranteeAllocationBs, legacyGuaranteeIncomeBs);
         }, 0));
         const storedGuaranteeBs = directMoney(Math.max(
           Number(rental?.depositBs ?? 0),
