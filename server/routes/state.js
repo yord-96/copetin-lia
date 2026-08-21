@@ -4312,18 +4312,10 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           .map((value) => String(value ?? '').trim()).filter(Boolean));
         const matchesLinked = (row) => [row?.linkedRentalId, row?.sourceId, row?.linkedContractId, row?.linkedOrderCode, row?.contractCode, row?.orderCode]
           .map((value) => String(value ?? '').trim()).some((value) => value && linkedKeys.has(value));
-        const previousRefund = state.cashMovements.find((row) => (
-          !row?.voidedAt
-          && !row?.deletedAt
-          && isGuaranteeRefundMovement(row)
-          && matchesLinked(row)
-          && Math.abs(Number(row?.amountBs ?? 0)) > 0.009
-        ));
-        if (previousRefund) {
-          const error = new Error(`La garantia de este contrato ya tiene una devolucion registrada${previousRefund?.receiptCode ? ` (${previousRefund.receiptCode})` : ''}.`);
-          error.statusCode = 409;
-          throw error;
-        }
+        const previousGuaranteeRefundBs = directMoney(state.cashMovements.reduce((sum, row) => {
+          if (row?.voidedAt || row?.deletedAt || !matchesLinked(row) || !isGuaranteeRefundMovement(row)) return sum;
+          return sum + Math.abs(Number(row?.amountBs ?? 0));
+        }, 0));
 
         const guaranteeIncomeBs = directMoney(state.cashMovements.reduce((sum, row) => {
           if (row?.voidedAt || row?.deletedAt || !matchesLinked(row)) return sum;
@@ -4354,63 +4346,37 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           throw error;
         }
 
-        const totalBs = directMoney(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
-        const prepaidAppliedBs = directMoney(rental?.payment?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs);
-        const storedPaidBs = directMoney(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? contract?.payment?.paidAtApprovalBs);
-        const effectivePaidBs = storedPaidBs + 0.01 >= prepaidAppliedBs
-          ? storedPaidBs
-          : directMoney(storedPaidBs + prepaidAppliedBs);
-        const outstandingRentalBs = directMoney(Math.max(0, totalBs - effectivePaidBs));
-        const normalizeOwner = (value) => {
-          const normalized = String(value ?? '').trim().toLowerCase();
-          return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
-        };
-        const penaltiesBs = directMoney((Array.isArray(rental?.returnReport) ? rental.returnReport : []).reduce((sum, line) => {
-          if (normalizeOwner(line?.chargeOwner) !== 'cliente') return sum;
-          return sum + directMoney(line?.penaltyBs ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)));
+        const explicitGuaranteeAppliedBs = directMoney((Array.isArray(contract?.economicLedger) ? contract.economicLedger : []).reduce((sum, entry) => {
+          if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return sum;
+          return sum + directMoney(entry?.amountBs);
         }, 0));
-        const collectedDamageBs = directMoney(state.cashMovements.reduce((sum, row) => {
-          if (row?.voidedAt || row?.deletedAt || !matchesLinked(row) || isGuaranteeRefundMovement(row)) return sum;
-          const breakdown = Array.isArray(row?.collectionBreakdown) ? row.collectionBreakdown : [];
-          const breakdownDamageBs = directMoney(breakdown
-            .filter((entry) => String(entry?.target ?? '').trim().toLowerCase() === 'damage')
-            .reduce((subtotal, entry) => subtotal + directMoney(entry?.amountBs), 0));
-          if (breakdownDamageBs > 0) return sum + breakdownDamageBs;
-          const storedDamageBs = directMoney(row?.damageCollectedBs);
-          if (storedDamageBs > 0) return sum + storedDamageBs;
-          const marker = [row?.collectionTarget, row?.category, row?.accountingTag, row?.type]
-            .map((value) => String(value ?? '').trim().toLowerCase()).join(' ');
-          return /(damage|dano|daño|faltante)/.test(marker) && Number(row?.amountBs ?? 0) > 0
-            ? sum + Number(row.amountBs)
-            : sum;
-        }, 0));
-        const pendingDamageBs = directMoney(Math.max(0, penaltiesBs - collectedDamageBs));
-        const totalDiscountAgainstDepositBs = directMoney(outstandingRentalBs + pendingDamageBs);
-        const discountCoveredByDepositBs = directMoney(Math.min(guaranteePaidBs, totalDiscountAgainstDepositBs));
-        const pendingCollectionBs = directMoney(Math.max(0, totalDiscountAgainstDepositBs - guaranteePaidBs));
-        const refundBs = directMoney(Math.max(0, guaranteePaidBs - discountCoveredByDepositBs));
-        if (refundBs <= 0) {
-          const error = new Error('No existe saldo de garantia para devolver despues de cubrir las obligaciones pendientes.');
+        const availableGuaranteeBs = directMoney(Math.max(
+          0,
+          guaranteePaidBs - explicitGuaranteeAppliedBs - previousGuaranteeRefundBs,
+        ));
+        if (availableGuaranteeBs <= 0) {
+          const error = new Error('No existe saldo de garantia disponible para devolver.');
+          error.statusCode = 409;
+          throw error;
+        }
+        if (requestedAmountBs > availableGuaranteeBs + 0.009) {
+          const error = new Error(`La devolucion no puede superar Bs ${availableGuaranteeBs.toFixed(2)} de garantia disponible.`);
           error.statusCode = 409;
           throw error;
         }
 
-        amountBs = refundBs;
-        rental.refundBs = refundBs;
-        rental.returnSettlement = {
-          ...(rental.returnSettlement ?? {}),
-          outstandingRentalBs,
-          penaltiesBs,
-          totalDiscountAgainstDepositBs,
-          discountCoveredByDepositBs,
-          pendingCollectionBs,
-          refundBs,
-          guaranteeReconciledAt: new Date().toISOString(),
-          guaranteeReconciledBy: String(payload?.createdBy ?? payload?.responsible ?? 'Sistema').trim() || 'Sistema',
-        };
+        amountBs = requestedAmountBs;
+        rental.refundBs = directMoney(previousGuaranteeRefundBs + amountBs);
         rental.updatedAt = new Date().toISOString();
         updatedRental = structuredClone(rental);
-        reconciliation = { guaranteePaidBs, outstandingRentalBs, penaltiesBs, collectedDamageBs, pendingDamageBs, discountCoveredByDepositBs, pendingCollectionBs, refundBs };
+        reconciliation = {
+          guaranteePaidBs,
+          guaranteeAppliedBs: explicitGuaranteeAppliedBs,
+          previousGuaranteeRefundBs,
+          availableGuaranteeBs,
+          refundBs: amountBs,
+          remainingGuaranteeBs: directMoney(Math.max(0, availableGuaranteeBs - amountBs)),
+        };
       }
 
       movement = buildDirectMovement(state, {
@@ -4421,10 +4387,10 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
       });
       if (isGuaranteeRefund && reconciliation) {
         movement.guaranteePaidBs = reconciliation.guaranteePaidBs;
-        movement.guaranteeAppliedBs = reconciliation.discountCoveredByDepositBs;
+        movement.guaranteeAppliedBs = reconciliation.guaranteeAppliedBs;
         movement.guaranteeRefundBs = reconciliation.refundBs;
         movement.receiptDetail = String(payload?.receiptDetail ?? '').trim()
-          || `Garantia pagada Bs ${reconciliation.guaranteePaidBs.toFixed(2)} | Aplicado Bs ${reconciliation.discountCoveredByDepositBs.toFixed(2)} | Devuelto Bs ${reconciliation.refundBs.toFixed(2)}`;
+          || `Garantia recibida Bs ${reconciliation.guaranteePaidBs.toFixed(2)} | Aplicada Bs ${reconciliation.guaranteeAppliedBs.toFixed(2)} | Devuelta ahora Bs ${reconciliation.refundBs.toFixed(2)} | Saldo garantia Bs ${reconciliation.remainingGuaranteeBs.toFixed(2)}`;
       }
       state.cashMovements.push(movement);
       return state;
