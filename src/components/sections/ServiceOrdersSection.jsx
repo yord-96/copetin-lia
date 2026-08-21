@@ -4833,12 +4833,34 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     draft.recordId,
   ]);
 
+  const isHistoricalReturnedContractEdit = useMemo(() => {
+    if (draft.entityType !== 'contract' || !draft.recordId) return false;
+
+    const contract = contracts.find(
+      (entry) => String(entry?.id ?? '') === String(draft.recordId),
+    ) ?? null;
+    if (!contract) return false;
+
+    const linkedRental = rentals.find((rental) => (
+      String(rental?.id ?? '') === String(contract?.rentalId ?? '')
+      || String(rental?.contractId ?? '') === String(contract?.id ?? '')
+      || (contract?.orderCode && String(rental?.orderCode ?? '') === String(contract.orderCode))
+    )) ?? null;
+    if (!linkedRental) return false;
+
+    const rentalStatus = normalizeText(linkedRental?.status);
+    const inventoryStatus = normalizeText(linkedRental?.operational?.inventoryStatus);
+    return rentalStatus === 'returned' || inventoryStatus === 'devuelto';
+  }, [contracts, draft.entityType, draft.recordId, rentals]);
+
+  const bypassStockValidation = isHistoricalReconstruction || isHistoricalReturnedContractEdit;
+
   const stockIssues = useMemo(
     () => {
       // La disponibilidad pesada se calcula desde el paso Items (currentStep >= 2).
       // En Cliente/Evento availabilityByItemId queda vacio a proposito para no hacer
       // trabajo innecesario; por eso no debemos interpretar availableStock=0 como faltante.
-      if (currentStep < 2 || isHistoricalReconstruction) return [];
+      if (currentStep < 2 || bypassStockValidation) return [];
       return selectedItems.filter((line) => {
         if (isDetachedFromInventory(line)) return false;
         const available = getEditableAvailableStock(line);
@@ -4846,7 +4868,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         return requestedForItem > available;
       });
     },
-    [currentStep, getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems],
+    [bypassStockValidation, currentStep, getEditableAvailableStock, selectedDemandByItemId, selectedItems],
   );
 
   const supplierOffersByItemId = useMemo(() => {
@@ -5003,7 +5025,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       // Igual que stockIssues: en Cliente/Evento no existe disponibilidad proyectada
       // porque se calcula recién desde Items. No debemos convertir el availableStock
       // físico (que puede ser 0 por el propio contrato) en un faltante de proveedor.
-      if (currentStep < 2 || isHistoricalReconstruction) return [];
+      if (currentStep < 2 || bypassStockValidation) return [];
       const processedLineKeys = new Set();
       return selectedItems
         .map((line) => {
@@ -5042,7 +5064,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       })
         .filter(Boolean);
     },
-    [currentStep, getEditableAvailableStock, isHistoricalReconstruction, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
+    [bypassStockValidation, currentStep, getEditableAvailableStock, selectedDemandByItemId, selectedItems, supplierFulfillmentDraftByItem],
   );
 
   const getDisplayedItemSubtotalBs = useCallback((line) => {
@@ -6996,7 +7018,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
     if (stepIndex === 2) {
       if (!selectedItems.length && !selectedServices.length) return 'Agrega al menos un item o servicio para continuar.';
-      if (!isHistoricalReconstruction && uncoveredStockIssues.length) {
+      if (!bypassStockValidation && uncoveredStockIssues.length) {
         const issue = uncoveredStockIssues[0];
         return getUncoveredStockIssueMessage(issue);
       }
@@ -15723,7 +15745,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                     ))}
                                   </select>
                                 ) : null}
-                                {!isHistoricalReconstruction && !isProvisionalItem ? (
+                                {!bypassStockValidation && !isProvisionalItem ? (
                                   <button
                                     type="button"
                                     className={`orders-line-provider-link${supplierCoverageLines.length > 0 ? ' has-provider' : ''}`}

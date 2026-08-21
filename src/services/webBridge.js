@@ -11253,6 +11253,10 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
 
   const inventoryStatusBeforeSync = normalizeText(rental.operational?.inventoryStatus ?? '');
   const wasAlreadyOutOfWarehouse = ['salio', 'devuelto'].includes(inventoryStatusBeforeSync);
+  const isHistoricalReturnedOperation = (
+    normalizeText(rental.status) === 'returned'
+    || inventoryStatusBeforeSync === 'devuelto'
+  );
   const buildOperationalChangeSignature = (sourceContract) => JSON.stringify({
     items: (sourceContract?.items ?? []).map((line, index) => ({
       key: getInventoryLineKey(line, index),
@@ -11403,7 +11407,7 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       recordId: contract.id,
     },
   });
-  if (projectedIssues.length) {
+  if (!isHistoricalReturnedOperation && projectedIssues.length) {
     const issue = projectedIssues[0];
     const conflictText = (issue.hardConflicts ?? [])
       .slice(0, 2)
@@ -11465,12 +11469,12 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     const currentAvailableStock = Math.max(0, Number(item.availableStock ?? 0));
     const canReserveFromCurrentStock = currentAvailableStock >= reservationDelta;
     const canReserveByDateProjection = reservationDelta > 0 && projectedRequestedItems.some((entry) => entry.itemId === item.id);
-    if (reservationDelta > 0 && !canReserveFromCurrentStock && !canReserveByDateProjection) {
+    if (!isHistoricalReturnedOperation && reservationDelta > 0 && !canReserveFromCurrentStock && !canReserveByDateProjection) {
       throw new Error(
         `Stock insuficiente para "${item.name}". Disponibles: ${currentAvailableStock}. Faltan: ${reservationDelta - currentAvailableStock}.`,
       );
     }
-    if (reservationDelta !== 0) {
+    if (!isHistoricalReturnedOperation && reservationDelta !== 0) {
       const beforeAvailableStock = Number(item.availableStock ?? 0);
       const beforeTotalStock = Number(item.totalStock ?? 0);
       item.updatedAt = now;
@@ -11534,7 +11538,7 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     const item = state.items.find((entry) => String(entry.id) === itemId);
     if (!item) return;
     const releasedQty = getLineInternalReservedQty(oldLine);
-    if (releasedQty <= 0) return;
+    if (releasedQty <= 0 || isHistoricalReturnedOperation) return;
     const beforeAvailableStock = Number(item.availableStock ?? 0);
     const beforeTotalStock = Number(item.totalStock ?? 0);
     item.updatedAt = now;
