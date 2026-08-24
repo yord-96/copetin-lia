@@ -68443,3 +68443,55 @@ button.inventory-loss-row-action:hover {
     height: 95vh;
   }
 }
+
+/* Los indicadores de stock de los items seleccionados abren el mismo
+   diagnostico de disponibilidad que las tarjetas del catalogo. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability > button {
+  min-width: 0;
+  min-height: 1.94rem;
+  border: 1px solid #dbe8de;
+  border-radius: 0.5rem;
+  background: #f0fbf4;
+  padding: 0.18rem 0.25rem;
+  display: grid;
+  gap: 0.02rem;
+  align-content: center;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability > button:hover {
+  border-color: #56b47b;
+  box-shadow: 0 0.28rem 0.75rem rgba(31, 129, 76, 0.14);
+  transform: translateY(-1px);
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability > button:focus-visible {
+  outline: 2px solid #1f8a55;
+  outline-offset: 2px;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability > button small {
+  color: #61735f;
+  font-size: 0.5rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability > button strong {
+  color: #176f4d;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability.is-error > button {
+  border-color: #ffc4b8;
+  background: #fff3f0;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability.is-error > button strong {
+  color: #b42318;
+}

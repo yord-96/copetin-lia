@@ -16028,7 +16028,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               ) : null}
                               </div>
                             </div>
-                            <label className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
+                            <div className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
                               <span>Cant.</span>
                               <div className="orders-qty-stepper">
                                 <button
@@ -16058,8 +16058,32 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               </div>
                               {!bypassStockValidation ? (
                                 <div className={`orders-selected-availability${hasUncoveredShortage ? ' is-error' : ''}`}>
-                                  <span><small>Fecha</small><strong>{availableStock}</strong></span>
-                                  <span><small>Ahora</small><strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong></span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAvailabilityDetailModal({
+                                      mode: 'date',
+                                      item: line.item,
+                                      summary: availability,
+                                    })}
+                                    title="Ver por qué esta cantidad está disponible para la fecha"
+                                    aria-label={`Ver disponibilidad de ${line.item.name} para la fecha`}
+                                  >
+                                    <small>Fecha</small>
+                                    <strong>{availableStock}</strong>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAvailabilityDetailModal({
+                                      mode: 'now',
+                                      item: line.item,
+                                      summary: availability,
+                                    })}
+                                    title="Ver por qué esta cantidad está disponible ahora"
+                                    aria-label={`Ver disponibilidad actual de ${line.item.name}`}
+                                  >
+                                    <small>Ahora</small>
+                                    <strong>{Math.max(0, Number(line.item.availableStock ?? 0))}</strong>
+                                  </button>
                                 </div>
                               ) : null}
                               {isHistoricalReturnedContractEdit ? (
@@ -16125,7 +16149,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   Total comprometido: {totalCommittedQty} u. ({line.quantity} propias + {manuallyAddedSupplierQty} subalquiladas)
                                 </small>
                               ) : null}
-                            </label>
+                            </div>
                             <label className="orders-line-field">
                               <span>Precio</span>
                               <input
