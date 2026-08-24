@@ -6,7 +6,11 @@ import {
   isRentalExcludedFromReceivables,
 } from '../../utils/accountingRentals';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
-import { calculateGuaranteePaidEvidence, calculateGuaranteeSettlement } from '../../utils/guaranteeSettlement';
+import {
+  calculateGuaranteePaidEvidence,
+  calculateGuaranteeSettlement,
+  getGuaranteeLedgerEvidence,
+} from '../../utils/guaranteeSettlement';
 
 const getInputDate = (baseDate = new Date()) => {
   const cloned = new Date(baseDate);
@@ -1473,8 +1477,18 @@ function AccountingSection({
         .filter((movement) => isConfirmedGuaranteeReturnMovement(movement))
         .filter((movement) => cashMovementMatchesContractReferences(movement, contractReferences))
         .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
-      const refundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
-      const paidMethodLabels = [...new Set(linkedGuaranteePaymentMovements
+      const ledgerGuaranteeEvidence = getGuaranteeLedgerEvidence(contract);
+      const cashRefundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
+      const refundedBs = Math.max(cashRefundedBs, ledgerGuaranteeEvidence.refundedBs);
+      const guaranteePaymentEvidence = [
+        ...linkedGuaranteePaymentMovements,
+        ...ledgerGuaranteeEvidence.paymentEntries,
+      ];
+      const refundEvidence = [
+        ...refundMovements,
+        ...ledgerGuaranteeEvidence.refundEntries,
+      ].sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+      const paidMethodLabels = [...new Set(guaranteePaymentEvidence
         .map((movement) => getPaymentMethodLabel(movement))
         .filter(Boolean))];
       const fallbackMethod = rental?.guarantee?.paymentMethod
@@ -1492,8 +1506,8 @@ function AccountingSection({
         : fallbackMethod
           ? getPaymentMethodLabel({ paymentMethod: fallbackMethod, paymentAccount: fallbackAccount })
           : 'Sin método';
-      const refundDefaultMethod = normalizePaymentMethod(linkedGuaranteePaymentMovements[0]?.paymentMethod ?? fallbackMethod);
-      const refundDefaultAccount = String(linkedGuaranteePaymentMovements[0]?.paymentAccount ?? fallbackAccount ?? '').trim();
+      const refundDefaultMethod = normalizePaymentMethod(guaranteePaymentEvidence[0]?.paymentMethod ?? fallbackMethod);
+      const refundDefaultAccount = String(guaranteePaymentEvidence[0]?.paymentAccount ?? fallbackAccount ?? '').trim();
 
       const totalBs = Math.max(0, toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs));
       const prepaidAppliedBs = Math.max(0, toNumber(rental?.payment?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? contract?.payment?.prepaidAppliedBs ?? contract?.prepaidAppliedBs));
@@ -1530,11 +1544,11 @@ function AccountingSection({
         linkedContractMovements,
         isGuaranteeMovement,
       );
-      const guaranteePaidBs = cashGuaranteePaidBs > 0
-        ? cashGuaranteePaidBs
-        : guaranteeInfo.isValidated
-          ? guaranteeInfo.validatedBs
-          : 0;
+      const guaranteePaidBs = Math.max(
+        cashGuaranteePaidBs,
+        ledgerGuaranteeEvidence.paidBs,
+        guaranteeInfo.isValidated ? guaranteeInfo.validatedBs : 0,
+      );
       const guaranteeUnpaidBs = Math.max(0, Number((guaranteeBs - guaranteePaidBs).toFixed(2)));
       const appliedBs = guaranteePaidBs > 0 && isReturned
         ? Math.min(guaranteePaidBs, Number((currentOutstandingRentalBs + pendingDamageBs).toFixed(2)))
@@ -1545,14 +1559,14 @@ function AccountingSection({
         refundedBs,
       });
       const refundableBs = guaranteeSettlement.pendingRefundBs;
-      const refundPaymentMethods = [...new Set(refundMovements.map(getPaymentMethodLabel).filter(Boolean))];
-      const receiptCodes = [...new Set(refundMovements
-        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
+      const refundPaymentMethods = [...new Set(refundEvidence.map(getPaymentMethodLabel).filter(Boolean))];
+      const receiptCodes = [...new Set(refundEvidence
+        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? movement?.cashReceiptCode ?? '').trim())
         .filter(Boolean))];
-      const registeredByNames = [...new Set(refundMovements
-        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? '').trim())
+      const registeredByNames = [...new Set(refundEvidence
+        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? movement?.editedByName ?? '').trim())
         .filter(Boolean))];
-      const lastRefundMovement = refundMovements.at(-1);
+      const lastRefundMovement = refundEvidence.at(-1);
 
       return {
         id: rental.id,
@@ -1585,7 +1599,7 @@ function AccountingSection({
         refundPaymentMethodLabel: refundPaymentMethods.join(' + ') || 'Sin método',
         receiptCodes: receiptCodes.join(', '),
         registeredBy: registeredByNames.join(', ') || '-',
-        refundMovements,
+        refundMovements: refundEvidence,
         statusLabel: guaranteeUnpaidBs > 0.009
           ? guaranteePaidBs > 0.009 ? 'Pago parcial' : 'Falta pagar'
           : isReturned
