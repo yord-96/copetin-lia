@@ -699,6 +699,7 @@ function AdminApp() {
             clients={controller.clients}
             rentals={controller.rentals}
             contracts={controller.contracts}
+            hiddenContracts={controller.hiddenContracts}
             quotes={controller.quotes}
             supplierBundle={controller.supplierBundle}
             personnelBundle={controller.personnelBundle}

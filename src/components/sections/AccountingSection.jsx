@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
+import {
+  getRentalReceivableEventDate,
+  isRentalExcludedFromReceivables,
+} from '../../utils/accountingRentals';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 
 const getInputDate = (baseDate = new Date()) => {
@@ -335,6 +339,7 @@ function AccountingSection({
   cashSessions = [],
   rentals = [],
   contracts = [],
+  hiddenContracts = [],
   supplierBundle = { suppliers: [], quotes: [], loans: [] },
   currentUser = null,
   formatBs,
@@ -692,6 +697,12 @@ function AccountingSection({
       .filter((contract) => contract?.orderCode)
       .map((contract) => [String(contract.orderCode), contract]),
   ), [contracts]);
+  const receivableExcludedRentalIds = useMemo(() => new Set(
+    rentals
+      .filter((rental) => isRentalExcludedFromReceivables(rental, hiddenContracts, contracts))
+      .map((rental) => String(rental?.id ?? rental?.rentalId ?? ''))
+      .filter(Boolean),
+  ), [contracts, hiddenContracts, rentals]);
 
   const prepaidClientRows = useMemo(
     () => clients
@@ -1666,7 +1677,7 @@ function AccountingSection({
 
   const pendingReceivableRows = useMemo(
     () => rentals
-      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() !== 'cancelled')
+      .filter((rental) => !receivableExcludedRentalIds.has(String(rental?.id ?? rental?.rentalId ?? '')))
       .map((rental) => {
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
@@ -1681,7 +1692,7 @@ function AccountingSection({
           contractCode: contract?.contractCode ?? '',
           customerName: rental.customerName ?? 'Cliente',
           responsibleName: getRentalResponsibleName(rental, contract),
-          eventDate: rental.eventDate ?? contract?.eventDate ?? rental.deliveryDate ?? rental.createdAt,
+          eventDate: getRentalReceivableEventDate(rental, contract),
           status: isReturned ? 'Liquidacion' : 'Contrato',
           pendingBs,
           contractPendingBs: breakdown.contractPendingBs,
@@ -1697,7 +1708,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => b.pendingBs - a.pendingBs),
-    [contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, rentals],
+    [contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, receivableExcludedRentalIds, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -1707,7 +1718,7 @@ function AccountingSection({
 
   const finalizedReceivableRows = useMemo(
     () => rentals
-      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() !== 'cancelled')
+      .filter((rental) => !receivableExcludedRentalIds.has(String(rental?.id ?? rental?.rentalId ?? '')))
       .map((rental) => {
         const contract = getRentalContract(rental);
         if (!contract?.isFinalized) return null;
@@ -1755,7 +1766,7 @@ function AccountingSection({
           contractCode: contract.contractCode ?? rental.contractCode ?? '',
           customerName: rental.customerName ?? contract.customerName ?? 'Cliente',
           responsibleName: getRentalResponsibleName(rental, contract),
-          eventDate: rental.eventDate ?? contract.eventDate ?? rental.deliveryDate ?? rental.createdAt,
+          eventDate: getRentalReceivableEventDate(rental, contract),
           finalizedAt: contract.finalizedAt ?? rental.finalizedAt ?? rental.returnedAt ?? rental.updatedAt,
           finalizedByName: contract.finalizedByName ?? '',
           settledBs: Math.max(0, totalBs + penaltiesBs),
@@ -1764,7 +1775,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, rentals],
+    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, receivableExcludedRentalIds, rentals],
   );
 
   const derivedReturnIssueRows = useMemo(

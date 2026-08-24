@@ -9,6 +9,7 @@ import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapsh
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
+import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRentals.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -6371,10 +6372,15 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       }))
       .sort((a, b) => b.netBs - a.netBs || a.key.localeCompare(b.key, 'es'));
 
+    const activeContractRows = contractRows.filter((contract) => !contract?.deletedAt);
+    const deletedContractRows = contractRows.filter((contract) => Boolean(contract?.deletedAt));
     const contractsById = new Map(contractRows
       .map((contract) => [String(contract?.id ?? ''), contract]));
     const returnIssues = (Array.isArray(state.rentals) ? state.rentals : [])
-      .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
+      .filter((rental) => (
+        String(rental?.status ?? '').toLowerCase() === 'returned'
+        && !isRentalExcludedFromReceivables(rental, deletedContractRows, activeContractRows)
+      ))
       .flatMap((rental) => {
         const contract = contractsById.get(String(rental?.contractId ?? ''));
         const damageBreakdown = getReturnedDamageSettlementBreakdown(state, contract, rental);
@@ -7888,6 +7894,9 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
     const includeCommercial = String(req.query?.scope ?? 'full').trim().toLowerCase() !== 'petty';
+    const allContracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const activeContracts = allContracts.filter((contract) => !contract?.deletedAt);
+    const deletedContracts = allContracts.filter((contract) => Boolean(contract?.deletedAt));
     await sendJsonPayload(req, res, {
       initialized: snapshot.initialized,
       revision: snapshot.revision,
@@ -7895,13 +7904,11 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
       updatedAt: snapshot.updatedAt,
       overview: {
         contracts: includeCommercial
-          ? (Array.isArray(state.contracts) ? state.contracts : [])
-            .filter((contract) => !contract?.deletedAt)
-            .map(summarizeAccountingContract)
+          ? activeContracts.map(summarizeAccountingContract)
           : [],
         rentals: includeCommercial
           ? (Array.isArray(state.rentals) ? state.rentals : [])
-            .filter((rental) => !rental?.deletedAt)
+            .filter((rental) => !isRentalExcludedFromReceivables(rental, deletedContracts, activeContracts))
             .map(summarizeAccountingRental)
           : [],
         // Caja Grande solo usa clientes con prepago habilitado. El resto se
