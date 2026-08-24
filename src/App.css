@@ -37124,7 +37124,8 @@ button.calendar-dispatch-row:focus-visible {
     background: #eef3fb;
   }
 
-  .orders-guarantee-state.held {
+  .orders-guarantee-state.held,
+  .orders-guarantee-state.partial {
     background: #fff1c2;
     color: #8a5200;
   }

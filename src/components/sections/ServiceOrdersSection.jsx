@@ -35,6 +35,7 @@ import { getProductImageSrc } from '../../utils/productImage';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
+import { calculateGuaranteeSettlement } from '../../utils/guaranteeSettlement';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -2429,9 +2430,10 @@ function ServiceOrdersSection({
     return [...byId.values()];
   }, [cashMovements, contractEconomicsContextMovements, recentEconomicCashMovements]);
 
-  const returnedGuaranteeReferences = useMemo(() => {
-    const references = new Set();
+  const returnedGuaranteeAmountsByReference = useMemo(() => {
+    const amountsByReference = new Map();
     effectiveCashMovements.forEach((movement) => {
+      if (isVoidedCashMovement(movement) || movement?.deletedAt) return;
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
       const type = normalizeText(movement?.type);
@@ -2440,19 +2442,21 @@ function ServiceOrdersSection({
         || category === 'garantia_devuelta_manual'
         || type === 'egreso_devolucion_garantia_manual';
       if (!isConfirmedGuaranteeReturn) return;
-      [
+      const amountBs = Math.abs(getCashMovementAmount(movement));
+      if (amountBs <= 0.009) return;
+      new Set([
         movement?.linkedContractId,
         movement?.linkedRentalId,
         movement?.linkedOrderCode,
         movement?.contractCode,
         movement?.reference,
         movement?.sourceId,
-      ].forEach((value) => {
+      ].map(normalizeText).filter(Boolean)).forEach((value) => {
         const normalized = normalizeText(value);
-        if (normalized) references.add(normalized);
+        amountsByReference.set(normalized, Number(((amountsByReference.get(normalized) ?? 0) + amountBs).toFixed(2)));
       });
     });
-    return references;
+    return amountsByReference;
   }, [effectiveCashMovements]);
 
   const collectionMovementIndex = useMemo(() => {
@@ -2784,26 +2788,27 @@ function ServiceOrdersSection({
         linkedOrder?.id,
         linkedOrder?.orderCode,
       ].map(normalizeText);
-      const hasReturnedGuaranteeReference = guaranteeReferenceKeys
-        .some((key) => key && returnedGuaranteeReferences.has(key));
-      const rowGuaranteeRefundableBs = Math.max(
+      const referencedGuaranteeRefundedBs = Math.max(
         0,
-        Number((rowGuaranteeReserveBs - rowGuaranteeAppliedBs).toFixed(2)),
+        ...guaranteeReferenceKeys
+          .filter(Boolean)
+          .map((key) => returnedGuaranteeAmountsByReference.get(key) ?? 0),
       );
-      // En contratos antiguos la garantia puede estar validada en el contrato
-      // aunque su linea de apartado no tenga un movimiento de caja enlazado. Una
-      // devolucion posterior con recibo confirmado sigue siendo evidencia
-      // suficiente y debe reflejarse como "Devuelta" en el listado exterior.
-      const hasConfirmedFullGuaranteeRefund = rowGuaranteeRefundableBs > 0
-        && rowLedgerTotals.guaranteeRefundedBs > 0
-        && rowLedgerTotals.guaranteeRefundedBs + 0.009 >= rowGuaranteeRefundableBs;
-      const hasReturnedGuarantee = hasConfirmedFullGuaranteeRefund
-        || hasReturnedGuaranteeReference;
+      const guaranteeSettlement = calculateGuaranteeSettlement({
+        paidBs: rowGuaranteeReserveBs,
+        appliedBs: rowGuaranteeAppliedBs,
+        refundedBs: Math.max(
+          rowLedgerTotals.guaranteeRefundedBs,
+          referencedGuaranteeRefundedBs,
+        ),
+      });
       const isGuaranteeValidated = rowGuaranteeReserveBs > 0;
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : hasReturnedGuarantee
+        : guaranteeSettlement.isFullyResolved && guaranteeSettlement.refundedBs > 0
           ? 'returned'
+          : guaranteeSettlement.isPartiallyRefunded
+            ? 'partial'
           : rowGuaranteeAppliedBs >= rowGuaranteeReserveBs && rowGuaranteeReserveBs > 0
             ? 'charged'
             : !isGuaranteeValidated
@@ -2830,6 +2835,8 @@ function ServiceOrdersSection({
         hasEconomicLedger,
         economicInternalNotes,
         guaranteeBs,
+        guaranteeRefundedBs: guaranteeSettlement.refundedBs,
+        guaranteePendingRefundBs: guaranteeSettlement.pendingRefundBs,
         guaranteeStatus,
         damageChargeBs,
         damageCollectedBs,
@@ -2842,13 +2849,21 @@ function ServiceOrdersSection({
         isFinalized: Boolean(contract?.isFinalized),
         finalizedAt: contract?.finalizedAt ?? null,
         finalizedByName: String(contract?.finalizedByName ?? '').trim(),
-        guaranteePrimary: guaranteeBs > 0 ? formatBs(guaranteeBs) : 'Sin garantía',
+        guaranteePrimary: guaranteeBs > 0
+          ? formatBs(guaranteeStatus === 'partial' ? guaranteeSettlement.pendingRefundBs : guaranteeBs)
+          : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
-          ? guaranteeStatus === 'pending' ? 'Debe' : guaranteeStatus === 'returned' ? 'Devuelta' : 'Pagada'
+          ? guaranteeStatus === 'pending'
+            ? 'Debe'
+            : guaranteeStatus === 'returned'
+              ? 'Devuelta'
+              : guaranteeStatus === 'partial'
+                ? 'Por devolver'
+                : 'Pagada'
           : '',
       };
     });
-  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeReferences]);
+  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeAmountsByReference]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(

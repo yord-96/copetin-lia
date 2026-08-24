@@ -6,6 +6,7 @@ import {
   isRentalExcludedFromReceivables,
 } from '../../utils/accountingRentals';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
+import { calculateGuaranteeSettlement } from '../../utils/guaranteeSettlement';
 
 const getInputDate = (baseDate = new Date()) => {
   const cloned = new Date(baseDate);
@@ -1395,37 +1396,6 @@ function AccountingSection({
     ).trim() || '-';
   }, []);
 
-  const returnedGuaranteeReferences = useMemo(() => {
-    const references = new Set();
-    postedMovements.forEach((movement) => {
-      if (!isConfirmedGuaranteeReturnMovement(movement)) return;
-      [
-        movement?.linkedContractId,
-        movement?.linkedRentalId,
-        movement?.linkedOrderCode,
-        movement?.contractCode,
-        movement?.reference,
-        movement?.sourceId,
-      ].forEach((value) => {
-        const normalized = normalizeText(value);
-        if (normalized) references.add(normalized);
-      });
-    });
-    return references;
-  }, [postedMovements]);
-
-  const hasReturnedGuarantee = useCallback((rental, contract = null) => {
-    const keys = [
-      rental?.id,
-      rental?.orderCode,
-      rental?.contractCode,
-      contract?.id,
-      contract?.contractCode,
-      contract?.orderCode,
-    ].map(normalizeText);
-    return keys.some((key) => key && returnedGuaranteeReferences.has(key));
-  }, [returnedGuaranteeReferences]);
-
   const getRentalGuaranteeInfo = useCallback((rental, contract = null) => {
     const declaredBs = toNumber(
       rental?.guaranteeDeclaredBs
@@ -1455,22 +1425,7 @@ function AccountingSection({
     };
   }, []);
 
-  const activeGuaranteeRows = useMemo(
-    () => rentals
-      .filter((rental) => {
-        if (rental?.deletedAt) return false;
-        const contract = getRentalContract(rental);
-        const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
-        if (guaranteeInfo.declaredBs <= 0) return false;
-        const status = String(rental?.status ?? '').toLowerCase();
-        if (status === 'active') return true;
-        if (status !== 'returned') return false;
-        return !hasReturnedGuarantee(rental, contract);
-      }),
-    [getRentalContract, getRentalGuaranteeInfo, hasReturnedGuarantee, rentals],
-  );
-
-  const guaranteesToReturnRows = useMemo(() => rentals
+  const guaranteeLifecycleRows = useMemo(() => rentals
     .filter((rental) => !rental?.deletedAt)
     .map((rental) => {
       const contract = getRentalContract(rental);
@@ -1479,7 +1434,7 @@ function AccountingSection({
       const status = String(rental?.status ?? '').toLowerCase();
       const isReturned = status === 'returned';
       if (!['active', 'returned'].includes(status)) return null;
-      if (guaranteeBs <= 0 || hasReturnedGuarantee(rental, contract)) return null;
+      if (guaranteeBs <= 0) return null;
 
       const referenceKeys = new Set([
         rental?.id,
@@ -1502,6 +1457,20 @@ function AccountingSection({
           ].map(normalizeText).some((key) => key && referenceKeys.has(key));
         })
         .sort((a, b) => new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0));
+      const contractReferences = {
+        contractIds: [contract?.id, rental?.contractId],
+        rentalIds: [rental?.id, contract?.rentalId],
+        contractCodes: [contract?.contractCode, rental?.contractCode],
+        orderCodes: [contract?.orderCode, rental?.orderCode],
+        createdAtMs: new Date(
+          contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? rental?.createdAt ?? 0,
+        ).getTime(),
+      };
+      const refundMovements = postedMovements
+        .filter((movement) => isConfirmedGuaranteeReturnMovement(movement))
+        .filter((movement) => cashMovementMatchesContractReferences(movement, contractReferences))
+        .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+      const refundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
       const paidMethodLabels = [...new Set(linkedGuaranteeMovements
         .map((movement) => getPaymentMethodLabel(movement))
         .filter(Boolean))];
@@ -1557,9 +1526,20 @@ function AccountingSection({
       const appliedBs = guaranteeInfo.isValidated && isReturned
         ? Math.min(guaranteePaidBs, Number((currentOutstandingRentalBs + pendingDamageBs).toFixed(2)))
         : 0;
-      const refundableBs = guaranteeInfo.isValidated
-        ? Math.max(0, Number((guaranteePaidBs - appliedBs).toFixed(2)))
-        : 0;
+      const guaranteeSettlement = calculateGuaranteeSettlement({
+        paidBs: guaranteePaidBs,
+        appliedBs,
+        refundedBs,
+      });
+      const refundableBs = guaranteeInfo.isValidated ? guaranteeSettlement.pendingRefundBs : 0;
+      const refundPaymentMethods = [...new Set(refundMovements.map(getPaymentMethodLabel).filter(Boolean))];
+      const receiptCodes = [...new Set(refundMovements
+        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
+        .filter(Boolean))];
+      const registeredByNames = [...new Set(refundMovements
+        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? '').trim())
+        .filter(Boolean))];
+      const lastRefundMovement = refundMovements.at(-1);
 
       return {
         id: rental.id,
@@ -1574,7 +1554,8 @@ function AccountingSection({
         declaredBs: guaranteeInfo.declaredBs,
         guaranteePaidBs,
         validatedBs: refundableBs,
-        appliedBs,
+        appliedBs: guaranteeSettlement.appliedBs,
+        refundedBs: guaranteeSettlement.refundedBs,
         refundableBs,
         unvalidatedBs: guaranteeInfo.unvalidatedBs,
         currentOutstandingRentalBs,
@@ -1585,86 +1566,47 @@ function AccountingSection({
         guaranteeStatus: guaranteeInfo.status,
         isMoneyHeld: guaranteeInfo.isValidated && refundableBs > 0,
         isReadyToReturn: isReturned && guaranteeInfo.isValidated && refundableBs > 0,
+        isPartiallyRefunded: guaranteeSettlement.isPartiallyRefunded,
+        isFullyResolved: guaranteeSettlement.isFullyResolved,
+        returnedAt: lastRefundMovement?.receiptIssuedAt ?? lastRefundMovement?.createdAt ?? rental?.returnedAt,
+        refundPaymentMethodLabel: refundPaymentMethods.join(' + ') || 'Sin método',
+        receiptCodes: receiptCodes.join(', '),
+        registeredBy: registeredByNames.join(', ') || '-',
+        refundMovements,
         statusLabel: guaranteeInfo.isValidated
-          ? isReturned ? refundableBs > 0 ? 'Lista para devolver' : 'Sin devolución' : 'Material pendiente'
+          ? isReturned
+            ? guaranteeSettlement.isPartiallyRefunded ? 'Devolución parcial' : refundableBs > 0 ? 'Lista para devolver' : 'Sin devolución'
+            : 'Material pendiente'
           : 'Debe',
       };
     })
     .filter(Boolean)
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
-  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, postedMovements, rentals]);
+  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, postedMovements, rentals]);
 
-  const returnedGuaranteeRows = useMemo(() => rentals
-    .filter((rental) => !rental?.deletedAt)
-    .map((rental) => {
-      const contract = getRentalContract(rental);
-      const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
-      if (guaranteeInfo.declaredBs <= 0 || !hasReturnedGuarantee(rental, contract)) return null;
+  const guaranteesToReturnRows = useMemo(() => guaranteeLifecycleRows
+    .filter((row) => row.unvalidatedBs > 0.009 || row.refundableBs > 0.009)
+    .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
+  [guaranteeLifecycleRows]);
 
-      const references = {
-        contractIds: [contract?.id, rental?.contractId],
-        rentalIds: [rental?.id, contract?.rentalId],
-        contractCodes: [contract?.contractCode, rental?.contractCode],
-        orderCodes: [contract?.orderCode, rental?.orderCode],
-        createdAtMs: new Date(
-          contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? rental?.createdAt ?? 0,
-        ).getTime(),
-      };
-      const refundMovements = postedMovements
-        .filter((movement) => isConfirmedGuaranteeReturnMovement(movement))
-        .filter((movement) => cashMovementMatchesContractReferences(movement, references))
-        .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
-      if (!refundMovements.length) return null;
-
-      const refundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
-      const paymentMethods = [...new Set(refundMovements.map(getPaymentMethodLabel).filter(Boolean))];
-      const receiptCodes = [...new Set(refundMovements
-        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
-        .filter(Boolean))];
-      const registeredByNames = [...new Set(refundMovements
-        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? '').trim())
-        .filter(Boolean))];
-      const lastMovement = refundMovements.at(-1);
-      const guaranteePaidBs = Math.max(guaranteeInfo.validatedBs, guaranteeInfo.declaredBs, refundedBs);
-
-      return {
-        id: rental.id,
-        rentalId: rental.id,
-        contractId: contract?.id ?? rental?.contractId ?? '',
-        orderCode: rental?.orderCode ?? contract?.orderCode ?? '',
-        contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental.id,
-        customerName: rental?.customerName ?? contract?.customerName ?? 'Cliente',
-        responsibleName: getRentalResponsibleName(rental, contract),
-        eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.deliveryDate ?? rental?.createdAt,
-        returnedAt: lastMovement?.receiptIssuedAt ?? lastMovement?.createdAt ?? rental?.returnedAt,
-        guaranteePaidBs,
-        appliedBs: Math.max(0, Number((guaranteePaidBs - refundedBs).toFixed(2))),
-        refundedBs,
-        paymentMethodLabel: paymentMethods.join(' + ') || 'Sin método',
-        receiptCodes: receiptCodes.join(', '),
-        registeredBy: registeredByNames.join(', ') || '-',
-        statusLabel: 'Devuelta y finalizada',
-        refundMovements,
-      };
-    })
-    .filter(Boolean)
+  const returnedGuaranteeRows = useMemo(() => guaranteeLifecycleRows
+    .filter((row) => row.refundedBs > 0.009 && row.isFullyResolved)
+    .map((row) => ({
+      ...row,
+      paymentMethodLabel: row.refundPaymentMethodLabel,
+      statusLabel: 'Devuelta y finalizada',
+    }))
     .sort((left, right) => new Date(right?.returnedAt ?? 0) - new Date(left?.returnedAt ?? 0)),
-  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, hasReturnedGuarantee, postedMovements, rentals]);
+  [guaranteeLifecycleRows]);
 
   const calculatedGuaranteesHeldBs = useMemo(
-    () => sumBy(activeGuaranteeRows, (rental) => {
-      const contract = getRentalContract(rental);
-      return getRentalGuaranteeInfo(rental, contract).validatedBs;
-    }),
-    [activeGuaranteeRows, getRentalContract, getRentalGuaranteeInfo],
+    () => sumBy(guaranteeLifecycleRows.filter((row) => row.isMoneyHeld), (row) => row.refundableBs),
+    [guaranteeLifecycleRows],
   );
   const guaranteesHeldBs = calculatedGuaranteesHeldBs;
   const unvalidatedGuaranteesBs = useMemo(
-    () => sumBy(activeGuaranteeRows, (rental) => {
-      const contract = getRentalContract(rental);
-      return getRentalGuaranteeInfo(rental, contract).unvalidatedBs;
-    }),
-    [activeGuaranteeRows, getRentalContract, getRentalGuaranteeInfo],
+    () => sumBy(guaranteeLifecycleRows, (row) => row.unvalidatedBs),
+    [guaranteeLifecycleRows],
   );
   const operationalBigCashBs = useMemo(
     () => Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
