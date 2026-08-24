@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 
-const MIGRATION_ID = 'repair-finalized-guarantee-refunds-v1';
+const MIGRATION_ID = 'repair-returned-guarantee-refunds-v2';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const backupDirectory = path.resolve(__dirname, '../../data/backups');
 
@@ -54,17 +54,36 @@ const movementIdForEntry = (entryId) => (
   `mov-legacy-refund-${crypto.createHash('sha1').update(text(entryId)).digest('hex').slice(0, 20)}`
 );
 
-export const findLegacyFinalizedGuaranteeRefunds = (state = {}) => {
+const buildRentalIndexes = (rentals) => {
+  const byId = new Map();
+  const byContractId = new Map();
+  rentals.forEach((rental) => {
+    if (!rental || rental.deletedAt) return;
+    const rentalId = text(rental.id);
+    const contractId = text(rental.contractId);
+    if (rentalId) byId.set(rentalId, rental);
+    if (contractId && !byContractId.has(contractId)) byContractId.set(contractId, rental);
+  });
+  return { byId, byContractId };
+};
+
+const resolveRental = (contract, rentalIndexes) => (
+  rentalIndexes.byId.get(text(contract?.rentalId))
+  ?? rentalIndexes.byContractId.get(text(contract?.id))
+  ?? null
+);
+
+export const findLegacyReturnedGuaranteeRefunds = (state = {}) => {
   const contracts = Array.isArray(state.contracts) ? state.contracts : [];
   const rentals = Array.isArray(state.rentals) ? state.rentals : [];
   const movements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
-  const rentalById = new Map(rentals.map((rental) => [text(rental?.id), rental]));
+  const rentalIndexes = buildRentalIndexes(rentals);
   const movementById = new Map(movements.map((movement) => [text(movement?.id), movement]));
   const candidates = [];
 
   contracts.forEach((contract) => {
-    if (!contract?.isFinalized || contract?.deletedAt) return;
-    const rental = rentalById.get(text(contract.rentalId));
+    if (!contract || contract.deletedAt) return;
+    const rental = resolveRental(contract, rentalIndexes);
     if (!rental || rental.deletedAt || lower(rental.status) !== 'returned') return;
 
     (Array.isArray(contract.economicLedger) ? contract.economicLedger : []).forEach((entry) => {
@@ -72,7 +91,9 @@ export const findLegacyFinalizedGuaranteeRefunds = (state = {}) => {
       const amountBs = money(entry.amountBs);
       if (amountBs <= 0) return;
       const linkedMovement = movementById.get(text(entry.cashMovementId));
-      if (linkedMovement && isActiveMovement(linkedMovement)) return;
+      // Un movimiento anulado o eliminado es evidencia de una reversión deliberada:
+      // nunca debe ser revivido automáticamente.
+      if (linkedMovement) return;
 
       const matchingMovement = movements.find((movement) => (
         isGuaranteeRefundMovement(movement)
@@ -80,7 +101,6 @@ export const findLegacyFinalizedGuaranteeRefunds = (state = {}) => {
         && Math.abs(Math.abs(Number(movement.amountBs ?? 0)) - amountBs) <= 0.009
       ));
       if (matchingMovement) return;
-      if (text(entry.cashReceiptCode)) return;
 
       candidates.push({ contract, rental, entry, amountBs });
     });
@@ -89,16 +109,20 @@ export const findLegacyFinalizedGuaranteeRefunds = (state = {}) => {
   return candidates;
 };
 
-export const repairLegacyFinalizedGuaranteeRefunds = (state = {}) => {
+// Alias conservado para integraciones anteriores a la migración v2.
+export const findLegacyFinalizedGuaranteeRefunds = findLegacyReturnedGuaranteeRefunds;
+
+export const repairLegacyReturnedGuaranteeRefunds = (state = {}) => {
   state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
   state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
   state.resetLogs = Array.isArray(state.resetLogs) ? state.resetLogs : [];
-  const candidates = findLegacyFinalizedGuaranteeRefunds(state);
+  const candidates = findLegacyReturnedGuaranteeRefunds(state);
   const repaired = [];
 
   candidates.forEach(({ contract, rental, entry, amountBs }) => {
-    const receiptCode = nextReceiptCode(state.cashMovements);
-    const movementId = movementIdForEntry(entry.id);
+    const receiptCode = text(entry.cashReceiptCode) || nextReceiptCode(state.cashMovements);
+    const requestedMovementId = text(entry.cashMovementId);
+    const movementId = requestedMovementId || movementIdForEntry(entry.id);
     const createdAt = text(entry.createdAt) || text(contract.finalizedAt) || new Date().toISOString();
     const createdBy = text(entry.createdByName) || text(contract.finalizedByName) || 'Sistema';
     const customerName = text(contract.customerName ?? rental.customerName) || 'Cliente';
@@ -189,7 +213,7 @@ export const repairLegacyFinalizedGuaranteeRefunds = (state = {}) => {
       action: 'regularizar_devoluciones_garantia_historicas',
       entityType: 'accounting',
       entityId: MIGRATION_ID,
-      detail: `${repaired.length} devolucion(es) de garantia finalizadas fueron vinculadas a Caja Grande por Bs ${totalBs.toFixed(2)}.`,
+      detail: `${repaired.length} devolucion(es) historicas de garantia fueron vinculadas a Caja Grande por Bs ${totalBs.toFixed(2)}.`,
       userName: 'Migracion del sistema',
       userRole: 'Sistema',
       createdAt: repairedAt,
@@ -207,10 +231,13 @@ export const repairLegacyFinalizedGuaranteeRefunds = (state = {}) => {
   return { state, repaired };
 };
 
+// Alias conservado para integraciones anteriores a la migración v2.
+export const repairLegacyFinalizedGuaranteeRefunds = repairLegacyReturnedGuaranteeRefunds;
+
 export const runLegacyGuaranteeRefundRepair = async () => {
   const snapshot = await getStateSnapshot();
   if (!snapshot.initialized || !snapshot.state) return { repaired: [], backupPath: null };
-  const candidates = findLegacyFinalizedGuaranteeRefunds(snapshot.state);
+  const candidates = findLegacyReturnedGuaranteeRefunds(snapshot.state);
   if (candidates.length === 0) return { repaired: [], backupPath: null };
 
   await fs.mkdir(backupDirectory, { recursive: true });
@@ -225,7 +252,7 @@ export const runLegacyGuaranteeRefundRepair = async () => {
 
   let repaired = [];
   await updateStateSnapshot((state) => {
-    const result = repairLegacyFinalizedGuaranteeRefunds(state);
+    const result = repairLegacyReturnedGuaranteeRefunds(state);
     repaired = result.repaired;
     return result.state;
   });
