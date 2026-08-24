@@ -4,6 +4,8 @@ import {
   calculateGuaranteePaidEvidence,
   calculateGuaranteeSettlement,
   getGuaranteeLedgerEvidence,
+  getGuaranteeResolutionLabel,
+  getStoredGuaranteeValidation,
 } from './guaranteeSettlement.js';
 
 test('reconoce una garantía apartada dentro de un pago combinado', () => {
@@ -104,4 +106,33 @@ test('no trata como pagada una garantia sin evidencia de caja', () => {
   });
   assert.equal(evidence.paidBs, 0);
   assert.equal(evidence.refundedBs, 0);
+});
+
+test('una validacion positiva del contrato prevalece sobre el estado antiguo del alquiler', () => {
+  assert.deepEqual(getStoredGuaranteeValidation({
+    declaredBs: 150,
+    rental: {
+      depositBs: 150,
+      guarantee: { status: 'no_validado', validatedBs: 0 },
+      payment: { guaranteeStatus: 'no_validado' },
+    },
+    contract: {
+      guarantee: { status: 'validado' },
+      payment: { guaranteeStatus: 'validado' },
+    },
+  }), {
+    isValidated: true,
+    validatedBs: 150,
+  });
+});
+
+test('distingue una garantia consumida por danos de una garantia devuelta', () => {
+  assert.equal(
+    getGuaranteeResolutionLabel({ appliedBs: 117.7, refundedBs: 0 }),
+    'Aplicada a daños',
+  );
+  assert.equal(
+    getGuaranteeResolutionLabel({ appliedBs: 0, refundedBs: 150 }),
+    'Devuelta y finalizada',
+  );
 });

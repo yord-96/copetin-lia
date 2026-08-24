@@ -81,6 +81,39 @@ export const getGuaranteeLedgerEvidence = (contract) => {
   };
 };
 
+/**
+ * Reconciles duplicated legacy status fields. A positive validation is durable
+ * evidence and must not be hidden by an older `no_validado` copied to rental.
+ */
+export const getStoredGuaranteeValidation = ({ rental, contract, declaredBs = 0 } = {}) => {
+  const statuses = [
+    rental?.guarantee?.status,
+    rental?.payment?.guaranteeStatus,
+    contract?.guarantee?.status,
+    contract?.payment?.guaranteeStatus,
+  ].map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean);
+  const isValidated = statuses.includes('validado');
+  const validatedBs = isValidated
+    ? Math.max(
+        toMoney(declaredBs),
+        toMoney(rental?.depositBs),
+        toMoney(rental?.guarantee?.validatedBs),
+        toMoney(contract?.guarantee?.validatedBs),
+      )
+    : 0;
+
+  return { isValidated, validatedBs };
+};
+
+export const getGuaranteeResolutionLabel = ({ appliedBs = 0, refundedBs = 0 } = {}) => {
+  const applied = toMoney(appliedBs);
+  const refunded = toMoney(refundedBs);
+  if (applied > 0 && refunded > 0) return 'Aplicada a cargos y devuelta';
+  if (applied > 0) return 'Aplicada a daños';
+  if (refunded > 0) return 'Devuelta y finalizada';
+  return 'Liquidada';
+};
+
 export const calculateGuaranteeSettlement = ({
   paidBs = 0,
   appliedBs = 0,

@@ -10,6 +10,8 @@ import {
   calculateGuaranteePaidEvidence,
   calculateGuaranteeSettlement,
   getGuaranteeLedgerEvidence,
+  getGuaranteeResolutionLabel,
+  getStoredGuaranteeValidation,
 } from '../../utils/guaranteeSettlement';
 
 const getInputDate = (baseDate = new Date()) => {
@@ -1407,18 +1409,20 @@ function AccountingSection({
       ?? contract?.totals?.guaranteeBs
       ?? rental?.depositBs,
     );
-    const rawStatus = String(
-      rental?.guarantee?.status
-      ?? rental?.payment?.guaranteeStatus
-      ?? contract?.guarantee?.status
-      ?? contract?.payment?.guaranteeStatus
-      ?? '',
-    ).trim();
     const storedDepositBs = toNumber(rental?.depositBs);
     const storedValidatedBs = toNumber(rental?.guarantee?.validatedBs);
-    const isValidated = rawStatus === 'validado' || (rawStatus !== 'no_validado' && storedDepositBs > 0);
+    const storedValidation = getStoredGuaranteeValidation({ rental, contract, declaredBs });
+    const statuses = [
+      rental?.guarantee?.status,
+      rental?.payment?.guaranteeStatus,
+      contract?.guarantee?.status,
+      contract?.payment?.guaranteeStatus,
+    ].map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean);
+    const hasExplicitUnvalidatedStatus = statuses.includes('no_validado');
+    const isValidated = storedValidation.isValidated
+      || (!hasExplicitUnvalidatedStatus && storedDepositBs > 0);
     const validatedBs = isValidated
-      ? Math.max(0, storedDepositBs || storedValidatedBs || declaredBs)
+      ? Math.max(0, storedValidation.validatedBs, storedDepositBs, storedValidatedBs, declaredBs)
       : 0;
     return {
       declaredBs,
@@ -1490,6 +1494,12 @@ function AccountingSection({
       ].sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
       const paidMethodLabels = [...new Set(guaranteePaymentEvidence
         .map((movement) => getPaymentMethodLabel(movement))
+        .filter(Boolean))];
+      const paymentReceiptCodes = [...new Set(guaranteePaymentEvidence
+        .map((movement) => String(movement?.receiptCode ?? movement?.receipt ?? movement?.cashReceiptCode ?? '').trim())
+        .filter(Boolean))];
+      const paymentRegisteredByNames = [...new Set(guaranteePaymentEvidence
+        .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? movement?.editedByName ?? '').trim())
         .filter(Boolean))];
       const fallbackMethod = rental?.guarantee?.paymentMethod
         ?? rental?.payment?.guaranteePaymentMethod
@@ -1597,6 +1607,8 @@ function AccountingSection({
         isFullyResolved: guaranteeSettlement.isFullyResolved,
         returnedAt: lastRefundMovement?.receiptIssuedAt ?? lastRefundMovement?.createdAt ?? rental?.returnedAt,
         refundPaymentMethodLabel: refundPaymentMethods.join(' + ') || 'Sin método',
+        paymentReceiptCodes: paymentReceiptCodes.join(', '),
+        paymentRegisteredBy: paymentRegisteredByNames.join(', ') || '-',
         receiptCodes: receiptCodes.join(', '),
         registeredBy: registeredByNames.join(', ') || '-',
         refundMovements: refundEvidence,
@@ -1617,12 +1629,17 @@ function AccountingSection({
   [guaranteeLifecycleRows]);
 
   const returnedGuaranteeRows = useMemo(() => guaranteeLifecycleRows
-    .filter((row) => row.refundedBs > 0.009 && row.isFullyResolved)
-    .map((row) => ({
-      ...row,
-      paymentMethodLabel: row.refundPaymentMethodLabel,
-      statusLabel: 'Devuelta y finalizada',
-    }))
+    .filter((row) => row.isFullyResolved && (row.refundedBs > 0.009 || row.appliedBs > 0.009))
+    .map((row) => {
+      const hasRefund = row.refundedBs > 0.009;
+      return {
+        ...row,
+        paymentMethodLabel: hasRefund ? row.refundPaymentMethodLabel : row.paymentMethodLabel,
+        receiptCodes: hasRefund ? row.receiptCodes : row.paymentReceiptCodes,
+        registeredBy: hasRefund ? row.registeredBy : row.paymentRegisteredBy,
+        statusLabel: getGuaranteeResolutionLabel(row),
+      };
+    })
     .sort((left, right) => new Date(right?.returnedAt ?? 0) - new Date(left?.returnedAt ?? 0)),
   [guaranteeLifecycleRows]);
 
@@ -2211,7 +2228,7 @@ function AccountingSection({
       const isReturnedView = guaranteesView === 'returned';
       const rows = isReturnedView ? visibleReturnedGuaranteeRows : visibleGuaranteeRows;
       const totalBs = isReturnedView
-        ? sumBy(rows, (row) => row.refundedBs)
+        ? sumBy(rows, (row) => row.appliedBs + row.refundedBs)
         : sumBy(rows, (row) => row.refundableBs);
       const sheet = workbook.addWorksheet(isReturnedView ? 'Garantías devueltas' : 'Por devolver', {
         views: [{ state: 'frozen', ySplit: 6 }],
@@ -2233,19 +2250,19 @@ function AccountingSection({
       sheet.getCell('K2').value = `Periodo: ${guaranteesReportRange}`;
       sheet.getCell('K2').alignment = { horizontal: 'right' };
       sheet.mergeCells('A3:J3');
-      sheet.getCell('A3').value = `${rows.length} garantía(s) · ${isReturnedView ? 'Total devuelto' : 'Saldo por devolver'} ${formatBs(totalBs)}`;
+      sheet.getCell('A3').value = `${rows.length} garantía(s) · ${isReturnedView ? 'Total resuelto' : 'Saldo por devolver'} ${formatBs(totalBs)}`;
       sheet.mergeCells('K3:N3');
       sheet.getCell('K3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
       sheet.getCell('K3').alignment = { horizontal: 'right' };
       sheet.mergeCells('A4:N4');
       sheet.getCell('A4').value = isReturnedView
-        ? 'Historial de devoluciones confirmadas mediante movimientos y recibos de Caja Grande.'
+        ? 'Historial de garantías resueltas mediante devolución o aplicación a daños, respaldadas por sus movimientos de Caja Grande.'
         : 'Detalle separado de garantía acordada, pagada, aplicada, ya devuelta, saldo por devolver y monto aún no pagado.';
       sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
 
       const header = sheet.getRow(6);
       header.values = isReturnedView
-        ? ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha devolución', 'Garantía pagada', 'Aplicado', 'Devuelto', 'Método / recibo', 'Registrado por']
+        ? ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha resolución', 'Resultado', 'Garantía pagada', 'Aplicado', 'Devuelto', 'Método / recibo', 'Registrado por']
         : ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Situación', 'Acordada', 'Pagada', 'Método', 'Aplicado', 'Ya devuelto', 'Saldo por devolver', 'Falta pagar'];
       header.eachCell((cell) => {
         cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -2261,7 +2278,7 @@ function AccountingSection({
           ? [
               index + 1, row.contractCode || '', row.orderCode || '', row.customerName || '', row.responsibleName || '',
               eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '',
-              validReturnedDate,
+              validReturnedDate, row.statusLabel || '',
               toNumber(row.guaranteePaidBs), toNumber(row.appliedBs), toNumber(row.refundedBs),
               [row.paymentMethodLabel, row.receiptCodes].filter(Boolean).join(' · '), row.registeredBy || '',
             ]
@@ -2274,12 +2291,12 @@ function AccountingSection({
         const excelRow = sheet.addRow(values);
         excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
         if (isReturnedView) excelRow.getCell(7).numFmt = 'dd/mm/yyyy hh:mm';
-        (isReturnedView ? [8, 9, 10] : [8, 9, 11, 12, 13, 14]).forEach((column) => {
+        (isReturnedView ? [9, 10, 11] : [8, 9, 11, 12, 13, 14]).forEach((column) => {
           excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00';
         });
       });
       const lastRow = Math.max(6, 6 + rows.length);
-      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: isReturnedView ? 12 : 14 } };
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: isReturnedView ? 13 : 14 } };
       sheet.pageSetup.printTitlesRow = '1:6';
 
       const buffer = await workbook.xlsx.writeBuffer();
@@ -2557,7 +2574,7 @@ function AccountingSection({
   };
   const visibleGuaranteePendingRefundBs = sumBy(visibleGuaranteeRows, (row) => row.refundableBs);
   const visibleGuaranteeUnpaidBs = sumBy(visibleGuaranteeRows, (row) => row.unvalidatedBs);
-  const visibleReturnedGuaranteeTotalBs = sumBy(visibleReturnedGuaranteeRows, (row) => row.refundedBs);
+  const visibleReturnedGuaranteeTotalBs = sumBy(visibleReturnedGuaranteeRows, (row) => row.appliedBs + row.refundedBs);
   const visibleReturnIssueTotalBs = sumBy(
     visibleReturnIssueRows,
     (row) => returnIssuesView === 'pending' ? row.pendingDamageBs : row.penaltyBs,
@@ -5791,7 +5808,7 @@ function AccountingSection({
                   </>
                 ) : (
                   <div className="bigcash-header-total">
-                    <small>Total devuelto</small>
+                    <small>Total resuelto</small>
                     <strong>{formatBs(visibleReturnedGuaranteeTotalBs)}</strong>
                   </div>
                 )}
@@ -5855,7 +5872,8 @@ function AccountingSection({
                       <th>Cliente</th>
                       <th>Responsable</th>
                       <th>Fecha evento</th>
-                      <th>Fecha devolución</th>
+                      <th>Fecha resolución</th>
+                      <th>Resultado</th>
                       <th>Garantía pagada</th>
                       <th>Aplicado</th>
                       <th>Devuelto</th>
@@ -5900,6 +5918,7 @@ function AccountingSection({
                       <td>{row.responsibleName}</td>
                       <td>{formatDate(row.eventDate)}</td>
                       <td><strong>{formatDate(row.returnedAt)}</strong><small>{getLongHourLabel(row.returnedAt)}</small></td>
+                      <td><span className="bigcash-status-pill ready">{row.statusLabel}</span></td>
                       <td className="amount">{formatBs(row.guaranteePaidBs)}</td>
                       <td className="amount">{formatBs(row.appliedBs)}</td>
                       <td className="amount"><strong>{formatBs(row.refundedBs)}</strong></td>
@@ -5911,7 +5930,7 @@ function AccountingSection({
                     <tr><td colSpan={11}><p className="status">No se encontraron garantías pendientes o por devolver con ese criterio.</p></td></tr>
                   ) : null}
                   {guaranteesView === 'returned' && visibleReturnedGuaranteeRows.length === 0 ? (
-                    <tr><td colSpan={10}><p className="status">No se encontraron garantías devueltas con ese criterio.</p></td></tr>
+                    <tr><td colSpan={11}><p className="status">No se encontraron garantías finalizadas con ese criterio.</p></td></tr>
                   ) : null}
                 </tbody>
               </table>
