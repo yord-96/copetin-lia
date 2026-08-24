@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
+import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -810,54 +811,6 @@ router.get('/__copetin_db/contracts/:id', async (req, res, next) => {
 
 const normalizeEconomicContextKey = (value) =>
   String(value ?? '').trim().toLocaleLowerCase('es-BO');
-
-const resolveActiveRentalForContract = (rentals, contract, serviceOrder = null, payload = null) => {
-  const activeRentals = (Array.isArray(rentals) ? rentals : []).filter((entry) => !entry?.deletedAt);
-  const normalize = normalizeEconomicContextKey;
-  const contractId = normalize(contract?.id);
-  const contractRentalId = normalize(contract?.rentalId);
-  const payloadRentalId = normalize(payload?.rentalId);
-  const orderRentalId = normalize(serviceOrder?.rentalId);
-  const contractCode = normalize(contract?.contractCode ?? contract?.number);
-  const orderCode = normalize(contract?.orderCode ?? serviceOrder?.orderCode ?? serviceOrder?.codigo);
-
-  // Prioridad absoluta a IDs estructurados. Un orderCode puede reutilizarse al
-  // eliminar y reconstruir un contrato, por lo que nunca debe ganar sobre IDs.
-  if (contractRentalId) {
-    const exact = activeRentals.find((entry) => normalize(entry?.id) === contractRentalId);
-    if (exact) return exact;
-  }
-  if (payloadRentalId) {
-    const exact = activeRentals.find((entry) => normalize(entry?.id) === payloadRentalId);
-    if (exact) return exact;
-  }
-  if (contractId) {
-    const exact = activeRentals.find((entry) => normalize(entry?.contractId) === contractId);
-    if (exact) return exact;
-  }
-  if (orderRentalId) {
-    const exact = activeRentals.find((entry) => normalize(entry?.id) === orderRentalId);
-    if (exact && (!normalize(exact?.contractId) || normalize(exact?.contractId) === contractId)) return exact;
-  }
-
-  // Compatibilidad histórica: solo registros sin vínculo fuerte a otro contrato.
-  if (contractCode) {
-    const byContractCode = activeRentals.find((entry) => {
-      const entryContractId = normalize(entry?.contractId);
-      return normalize(entry?.contractCode ?? entry?.number) === contractCode
-        && (!entryContractId || entryContractId === contractId);
-    });
-    if (byContractCode) return byContractCode;
-  }
-  if (orderCode) {
-    return activeRentals.find((entry) => {
-      const entryContractId = normalize(entry?.contractId);
-      return normalize(entry?.orderCode) === orderCode
-        && (!entryContractId || entryContractId === contractId);
-    }) ?? null;
-  }
-  return null;
-};
 
 const resolveServiceOrderForContract = (serviceOrders, contract, rental = null) => {
   const orders = Array.isArray(serviceOrders) ? serviceOrders : [];
@@ -4357,11 +4310,27 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
         const rentalId = String(payload?.linkedRentalId ?? payload?.sourceId ?? '').trim();
         const contractId = String(payload?.linkedContractId ?? '').trim();
         const orderCode = String(payload?.linkedOrderCode ?? '').trim();
-        const rental = state.rentals.find((row) => (
-          (rentalId && String(row?.id ?? '') === rentalId)
-          || (contractId && String(row?.contractId ?? '') === contractId)
-          || (orderCode && String(row?.orderCode ?? '') === orderCode)
-        ));
+        // Cada referencia se resuelve por prioridad. Un `find` con condiciones OR
+        // puede tomar primero un contrato historico que comparta codigo de orden,
+        // aunque el request incluya el ID exacto del contrato vigente.
+        const availableContracts = state.contracts.filter((row) => !row?.deletedAt);
+        const contract = (contractId
+          ? availableContracts.find((row) => String(row?.id ?? '') === contractId)
+          : null)
+          ?? (rentalId
+            ? availableContracts.find((row) => String(row?.rentalId ?? '') === rentalId)
+            : null)
+          ?? (orderCode
+            ? availableContracts.find((row) => String(row?.orderCode ?? '') === orderCode)
+            : null)
+          ?? null;
+        const rental = resolveActiveRentalForContract(state.rentals, contract, null, {
+          ...payload,
+          rentalId,
+          linkedRentalId: rentalId,
+          linkedContractId: contractId,
+          linkedOrderCode: orderCode,
+        });
         if (!rental) {
           const error = new Error('No se encontro el alquiler vinculado a esta garantia.');
           error.statusCode = 404;
@@ -4372,12 +4341,11 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           error.statusCode = 409;
           throw error;
         }
-        const contract = state.contracts.find((row) => (
+        const resolvedContract = contract ?? state.contracts.find((row) => (
           String(row?.id ?? '') === String(rental?.contractId ?? '')
-          || (contractId && String(row?.id ?? '') === contractId)
           || (String(row?.contractCode ?? '') && String(row?.contractCode ?? '') === String(rental?.contractCode ?? ''))
         )) ?? null;
-        const linkedKeys = new Set([rental?.id, rental?.orderCode, rental?.contractCode, contract?.id, contract?.contractCode, contract?.orderCode]
+        const linkedKeys = new Set([rental?.id, rental?.orderCode, rental?.contractCode, resolvedContract?.id, resolvedContract?.contractCode, resolvedContract?.orderCode]
           .map((value) => String(value ?? '').trim()).filter(Boolean));
         const matchesLinked = (row) => [row?.linkedRentalId, row?.sourceId, row?.linkedContractId, row?.linkedOrderCode, row?.contractCode, row?.orderCode]
           .map((value) => String(value ?? '').trim()).some((value) => value && linkedKeys.has(value));
@@ -4415,7 +4383,7 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           throw error;
         }
 
-        const explicitGuaranteeAppliedBs = directMoney((Array.isArray(contract?.economicLedger) ? contract.economicLedger : []).reduce((sum, entry) => {
+        const explicitGuaranteeAppliedBs = directMoney((Array.isArray(resolvedContract?.economicLedger) ? resolvedContract.economicLedger : []).reduce((sum, entry) => {
           if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return sum;
           return sum + directMoney(entry?.amountBs);
         }, 0));
