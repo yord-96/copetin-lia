@@ -5107,6 +5107,61 @@ const formatBs = (value) =>
     minimumFractionDigits: 2,
   }).format(Number(value ?? 0));
 
+const getActiveCancellationCashReceipts = (state, contract, rental) => {
+  const context = contract ?? {
+    id: rental?.contractId,
+    rentalId: rental?.id,
+    orderCode: rental?.orderCode,
+    contractCode: rental?.contractCode,
+    createdAt: rental?.createdAt,
+  };
+  const references = getContractCashReferenceKeys(state, context);
+
+  return (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !movement?.deletedAt && !isVoidedCashMovement(movement))
+    .filter((movement) => !movement?.isInternalTransfer && Number(movement?.amountBs ?? 0) > 0)
+    .filter((movement) => cashMovementMatchesContract(movement, references))
+    .filter((movement) => isGuaranteeCashMovement(movement) || isContractCollectionCashMovement(movement));
+};
+
+export const buildLateCancellationErrorMessage = ({
+  cutoffDate,
+  wasOperationallySent,
+  collectedBs,
+  guaranteeWasCollected,
+  cashReceipts = [],
+}) => {
+  const reasons = [];
+
+  if (wasOperationallySent) {
+    reasons.push('la orden registra una salida, entrega o devolución operativa');
+  }
+
+  if (cashReceipts.length > 0) {
+    const receiptDetails = cashReceipts.slice(0, 3).map((movement) => {
+      const concept = isGuaranteeCashMovement(movement) ? 'garantía' : 'cobro';
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? '').trim();
+      return `${concept} de ${formatBs(movement?.amountBs)}${receiptCode ? ` con recibo ${receiptCode}` : ' con movimiento de caja activo'}`;
+    });
+    const remainingCount = Math.max(0, cashReceipts.length - receiptDetails.length);
+    reasons.push(`existe ${receiptDetails.join(', ')}${remainingCount > 0 ? ` y ${remainingCount} recibo(s) adicional(es)` : ''}`);
+  } else {
+    if (Number(collectedBs ?? 0) > 0) {
+      reasons.push(`el contrato registra ${formatBs(collectedBs)} cobrados`);
+    }
+    if (guaranteeWasCollected) {
+      reasons.push('la garantía figura como pagada, validada o retenida');
+    }
+  }
+
+  const reasonText = reasons.length > 0
+    ? reasons.join('; ')
+    : 'existen registros operativos o económicos pendientes de regularizar';
+
+  return `No se puede anular después del ${toDateKey(cutoffDate)} porque ${reasonText}. `
+    + 'Regulariza esos registros y vuelve a intentar.';
+};
+
 const formatDateTime = (value) => {
   if (!value) {
     return '-';
@@ -13438,13 +13493,20 @@ const createWebBridge = () => ({
         );
         const guaranteeWasCollected = ['pagada', 'pagado', 'validada', 'validado', 'retenida', 'retenido']
           .includes(normalizeText(rental?.payment?.guaranteeStatus ?? linkedContract?.guarantee?.status ?? ''));
-        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent && collectedBs <= 0 && !guaranteeWasCollected;
+        const activeCashReceipts = getActiveCancellationCashReceipts(state, linkedContract, rental);
+        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent
+          && collectedBs <= 0
+          && !guaranteeWasCollected
+          && activeCashReceipts.length === 0;
 
         if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
-          throw new Error(
-            `El plazo de anulacion vencio el ${toDateKey(cutoffDate)}. `
-            + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
-          );
+          throw new Error(buildLateCancellationErrorMessage({
+            cutoffDate,
+            wasOperationallySent,
+            collectedBs,
+            guaranteeWasCollected,
+            cashReceipts: activeCashReceipts,
+          }));
         }
 
         const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
@@ -17554,13 +17616,20 @@ const createWebBridge = () => ({
         );
         const guaranteeWasCollected = ['pagada', 'pagado', 'validada', 'validado', 'retenida', 'retenido']
           .includes(normalizeText(rental?.payment?.guaranteeStatus ?? linkedContract?.guarantee?.status ?? ''));
-        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent && collectedBs <= 0 && !guaranteeWasCollected;
+        const activeCashReceipts = getActiveCancellationCashReceipts(state, linkedContract, rental);
+        const canCancelUnfulfilledAfterCutoff = !wasOperationallySent
+          && collectedBs <= 0
+          && !guaranteeWasCollected
+          && activeCashReceipts.length === 0;
 
         if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
-          throw new Error(
-            `El plazo de anulacion vencio el ${toDateKey(cutoffDate)}. `
-            + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
-          );
+          throw new Error(buildLateCancellationErrorMessage({
+            cutoffDate,
+            wasOperationallySent,
+            collectedBs,
+            guaranteeWasCollected,
+            cashReceipts: activeCashReceipts,
+          }));
         }
 
         const totalBs = Number(linkedContract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
