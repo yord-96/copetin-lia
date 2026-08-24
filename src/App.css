@@ -68495,3 +68495,142 @@ button.inventory-loss-row-action:hover {
 .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-availability.is-error > button strong {
   color: #b42318;
 }
+
+/* Controles tipo Excel para ordenar y filtrar la tabla de contratos */
+.orders-column-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.28rem;
+  width: 100%;
+  align-items: center;
+  gap: 0.22rem;
+  line-height: 1.15;
+}
+
+.orders-column-heading > span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: normal;
+  text-align: center;
+}
+
+.orders-column-filter-trigger {
+  display: inline-flex;
+  width: 1.28rem;
+  height: 1.28rem;
+  min-width: 1.28rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.44);
+  border-radius: 0.34rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.orders-column-filter-trigger svg {
+  width: 0.72rem;
+  height: 0.72rem;
+  stroke-width: 2.4;
+}
+
+.orders-column-filter-trigger:hover,
+.orders-column-filter-trigger:focus-visible {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+  outline: none;
+}
+
+.orders-column-filter-trigger:active {
+  transform: translateY(1px);
+}
+
+.orders-column-filter-trigger.is-active {
+  border-color: #ffb184;
+  background: #ffffff;
+  color: #d94a0b;
+  box-shadow: 0 0 0 2px rgba(255, 177, 132, 0.25);
+}
+
+.orders-column-filter-popover {
+  position: fixed;
+  z-index: 100000;
+  width: 14rem;
+  overflow: hidden;
+  border: 1px solid #d7e0ee;
+  border-radius: 0.72rem;
+  background: #ffffff;
+  color: #102b59;
+  box-shadow: 0 1rem 2.5rem rgba(15, 35, 70, 0.22);
+  animation: orders-column-popover-in 120ms ease-out;
+}
+
+.orders-column-filter-popover > header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.72rem 0.78rem;
+  border-bottom: 1px solid #e3e9f2;
+  background: #f7f9fd;
+  font-size: 0.78rem;
+}
+
+.orders-column-filter-popover > header svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: #e65100;
+}
+
+.orders-column-filter-options {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.42rem;
+}
+
+.orders-column-filter-options > button {
+  display: flex;
+  width: 100%;
+  min-height: 2.15rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.48rem 0.58rem;
+  border: 0;
+  border-radius: 0.48rem;
+  background: transparent;
+  color: #263552;
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+}
+
+.orders-column-filter-options > button:hover,
+.orders-column-filter-options > button.is-selected {
+  background: #fff1e8;
+  color: #c94609;
+}
+
+.orders-column-filter-options > button svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.orders-column-filter-clear {
+  width: calc(100% - 0.84rem);
+  margin: 0 0.42rem 0.5rem;
+  padding: 0.48rem;
+  border: 1px solid #f1c4ad;
+  border-radius: 0.48rem;
+  background: #ffffff;
+  color: #bd3f08;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@keyframes orders-column-popover-in {
+  from { opacity: 0; transform: translateY(-0.2rem); }
+  to { opacity: 1; transform: translateY(0); }
+}

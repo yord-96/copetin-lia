@@ -11,6 +11,7 @@ import {
   CircleUserRound,
   Clock3,
   Gift,
+  Filter,
   Info,
   MapPin,
   MessageCircle,
@@ -33,6 +34,7 @@ import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
+import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -113,6 +115,85 @@ const parseCommercialCodePrefix = (code) => String(code ?? '').trim().replace(/\
 const ORDERS_SEEN_STORAGE_KEY = 'copetin-orders-seen-counts-v1';
 const CATALOG_PAGE_SIZE = 8;
 const CONTRACT_RENDER_BATCH_SIZE = 80;
+const DEFAULT_ORDER_TABLE_FILTERS = Object.freeze({
+  damage: 'all',
+  notes: 'all',
+  guarantee: 'all',
+  payment: 'all',
+  finalized: 'all',
+});
+
+const ORDER_COLUMN_MENU_OPTIONS = {
+  contract: {
+    label: 'Ordenar contrato',
+    type: 'sort',
+    options: [
+      { value: 'desc', label: 'Mayor a menor' },
+      { value: 'asc', label: 'Menor a mayor' },
+    ],
+  },
+  date: {
+    label: 'Ordenar fecha del evento',
+    type: 'sort',
+    options: [
+      { value: 'desc', label: 'Más reciente primero' },
+      { value: 'asc', label: 'Más antigua primero' },
+    ],
+  },
+  client: {
+    label: 'Ordenar cliente',
+    type: 'sort',
+    options: [
+      { value: 'asc', label: 'A a Z' },
+      { value: 'desc', label: 'Z a A' },
+    ],
+  },
+  damage: {
+    label: 'Daños y faltantes',
+    type: 'filter',
+    options: [
+      { value: 'all', label: 'Todos' },
+      { value: 'yes', label: 'Con daños o faltantes' },
+      { value: 'no', label: 'Sin daños ni faltantes' },
+    ],
+  },
+  notes: {
+    label: 'Notas',
+    type: 'filter',
+    options: [
+      { value: 'all', label: 'Todas' },
+      { value: 'yes', label: 'Con notas' },
+      { value: 'no', label: 'Sin notas' },
+    ],
+  },
+  guarantee: {
+    label: 'Garantía',
+    type: 'filter',
+    options: [
+      { value: 'all', label: 'Todas' },
+      { value: 'yes', label: 'Con garantía' },
+      { value: 'no', label: 'Sin garantía' },
+    ],
+  },
+  payment: {
+    label: 'Estado de pago',
+    type: 'filter',
+    options: [
+      { value: 'all', label: 'Todos' },
+      { value: 'yes', label: 'Pagados' },
+      { value: 'no', label: 'Por cobrar' },
+    ],
+  },
+  finalized: {
+    label: 'Finalización',
+    type: 'filter',
+    options: [
+      { value: 'all', label: 'Todos' },
+      { value: 'yes', label: 'Finalizados' },
+      { value: 'no', label: 'No finalizados' },
+    ],
+  },
+};
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 const DOCUMENT_API_BASE_URL = String(import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 const DOCUMENT_INTERNAL_KEY = String(
@@ -247,6 +328,21 @@ function OrdersKpiIcon({ kind }) {
         {icons[kind] ?? icons.orders}
       </g>
     </svg>
+  );
+}
+
+function OrdersColumnFilterButton({ column, label, active, onOpen }) {
+  return (
+    <button
+      type="button"
+      className={`orders-column-filter-trigger${active ? ' is-active' : ''}`}
+      onClick={(event) => onOpen(column, event)}
+      title={`Filtrar u ordenar ${label.toLowerCase()}`}
+      aria-label={`Filtrar u ordenar ${label}`}
+      aria-haspopup="menu"
+    >
+      <Filter aria-hidden="true" />
+    </button>
   );
 }
 
@@ -1525,7 +1621,7 @@ const exportOrdersRangeWorkbook = async (report = {}) => {
   sheet.mergeCells('A8:N8');
   sheet.getCell('A8').value = 'DETALLE DE CONTRATOS DEL RANGO';
   sheet.getCell('A8').font = { name: 'Calibri', size: 12, bold: true, color: { argb: dark } };
-  const headers = ['N°', 'Contrato / OS', 'Cliente', 'Evento', 'Responsable', 'Servicio', 'Estado', 'Garantía', 'Pendiente contrato', 'Pendiente transporte', 'Pendiente daños', 'Total por cobrar', 'Estado financiero', 'Finalizado'];
+  const headers = ['N°', 'Contrato', 'Cliente', 'Evento', 'Responsable', 'Servicio', 'Estado', 'Garantía', 'Pendiente contrato', 'Pendiente transporte', 'Pendiente daños', 'Total por cobrar', 'Estado financiero', 'Finalizado'];
   const headerRow = sheet.getRow(10);
   headerRow.values = headers;
   headerRow.height = 28;
@@ -1541,7 +1637,7 @@ const exportOrdersRangeWorkbook = async (report = {}) => {
     const excelRow = sheet.getRow(11 + index);
     excelRow.values = [
       index + 1,
-      `${row.contractCode || '—'}${row.orderCode ? ` / ${row.orderCode}` : ''}`,
+      row.contractCode || '—',
       row.customerName || 'Sin cliente',
       row.eventDateValue ? new Date(`${row.eventDateValue}T12:00:00`) : '',
       row.responsibleName || 'Sistema',
@@ -1655,6 +1751,9 @@ function ServiceOrdersSection({
   const [isMobileCommercialLayout, setIsMobileCommercialLayout] = useState(false);
   const [contractDateFrom, setContractDateFrom] = useState(DEFAULT_CONTRACT_WEEK_RANGE.from);
   const [contractDateTo, setContractDateTo] = useState(DEFAULT_CONTRACT_WEEK_RANGE.to);
+  const [contractColumnFilters, setContractColumnFilters] = useState(() => ({ ...DEFAULT_ORDER_TABLE_FILTERS }));
+  const [contractSort, setContractSort] = useState({ key: '', direction: '' });
+  const [contractColumnMenu, setContractColumnMenu] = useState(null);
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -1793,6 +1892,25 @@ function ServiceOrdersSection({
   const [supplierFulfillmentDraftByItem, setSupplierFulfillmentDraftByItem] = useState({});
   const supplierCoverageHydrationKeyRef = useRef('');
   const removedSupplierCoverageIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    if (!contractColumnMenu) return undefined;
+    const closeMenu = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Escape') return;
+      if (event.type === 'pointerdown' && event.target.closest?.('.orders-column-filter-popover, .orders-column-filter-trigger')) return;
+      setContractColumnMenu(null);
+    };
+    document.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('keydown', closeMenu);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('keydown', closeMenu);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
+  }, [contractColumnMenu]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
@@ -2791,13 +2909,59 @@ function ServiceOrdersSection({
   }, [searchedHiddenContracts.length, searchedVisibleContracts]);
 
   const filteredContracts = useMemo(() => {
-    if (contractFilter === 'oculto') return searchedHiddenContracts;
-    return searchedVisibleContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
-  }, [contractFilter, searchedHiddenContracts, searchedVisibleContracts]);
+    const statusRows = contractFilter === 'oculto'
+      ? searchedHiddenContracts
+      : searchedVisibleContracts.filter((row) => contractFilter === 'all' || row.status === contractFilter);
+    const controlledRows = statusRows.map((row) => {
+      const noteOverride = contractNoteOverrides.get(String(row.id ?? ''));
+      const economicNotes = noteOverride ?? row.economicInternalNotes ?? [];
+      const isFinalized = finalizedContractOverrides.has(row.id)
+        ? finalizedContractOverrides.get(row.id)
+        : Boolean(row.isFinalized);
+      return {
+        ...row,
+        hasDamage: row.damageStatus !== 'none',
+        hasNotes: Array.isArray(economicNotes) && economicNotes.length > 0,
+        hasGuarantee: Number(row.guaranteeBs ?? 0) > 0,
+        isPaid: Number(row.dueBs ?? 0) <= 0.009,
+        isFinalized,
+      };
+    });
+    return applyOrderTableControls(controlledRows, contractColumnFilters, contractSort);
+  }, [contractColumnFilters, contractFilter, contractNoteOverrides, contractSort, finalizedContractOverrides, searchedHiddenContracts, searchedVisibleContracts]);
 
   useEffect(() => {
     setVisibleContractLimit(CONTRACT_RENDER_BATCH_SIZE);
-  }, [activeView, contractDateFrom, contractDateTo, contractFilter, deferredContractQuery]);
+  }, [activeView, contractColumnFilters, contractDateFrom, contractDateTo, contractFilter, contractSort, deferredContractQuery]);
+
+  const openContractColumnMenu = useCallback((key, event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const width = 224;
+    const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width));
+    setContractColumnMenu((current) => current?.key === key
+      ? null
+      : { key, top: rect.bottom + 7, left });
+  }, []);
+
+  const selectContractColumnOption = useCallback((key, value) => {
+    const menu = ORDER_COLUMN_MENU_OPTIONS[key];
+    if (menu?.type === 'sort') {
+      setContractSort({ key, direction: value });
+    } else {
+      setContractColumnFilters((current) => ({ ...current, [key]: value }));
+    }
+    setContractColumnMenu(null);
+  }, []);
+
+  const clearContractColumnControl = useCallback((key) => {
+    const menu = ORDER_COLUMN_MENU_OPTIONS[key];
+    if (menu?.type === 'sort') {
+      setContractSort({ key: '', direction: '' });
+    } else {
+      setContractColumnFilters((current) => ({ ...current, [key]: 'all' }));
+    }
+    setContractColumnMenu(null);
+  }, []);
 
   const visibleContractsForRender = useMemo(
     () => filteredContracts.slice(0, visibleContractLimit),
@@ -2835,6 +2999,20 @@ function ServiceOrdersSection({
     const filterParts = [];
     if (contractFilter !== 'all') filterParts.push(`Estado: ${statusLabels[contractFilter] || contractFilter}`);
     if (String(contractQuery ?? '').trim()) filterParts.push(`Búsqueda: ${String(contractQuery).trim()}`);
+    const binaryFilterLabels = {
+      damage: { yes: 'Con daños/faltantes', no: 'Sin daños/faltantes' },
+      notes: { yes: 'Con notas', no: 'Sin notas' },
+      guarantee: { yes: 'Con garantía', no: 'Sin garantía' },
+      payment: { yes: 'Pagados', no: 'Por cobrar' },
+      finalized: { yes: 'Finalizados', no: 'No finalizados' },
+    };
+    Object.entries(contractColumnFilters).forEach(([key, value]) => {
+      if (value !== 'all') filterParts.push(binaryFilterLabels[key]?.[value] || value);
+    });
+    if (contractSort.key) {
+      const sortLabels = { contract: 'Contrato', date: 'Fecha', client: 'Cliente' };
+      filterParts.push(`Orden: ${sortLabels[contractSort.key] || contractSort.key} ${contractSort.direction === 'desc' ? 'descendente' : 'ascendente'}`);
+    }
     const filterLabel = filterParts.length ? filterParts.join(' · ') : 'Todos los estados';
 
     const reportRows = rows.map((row) => {
@@ -2854,7 +3032,6 @@ function ServiceOrdersSection({
         : 'Sin garantía';
       return {
         contractCode: row.contractCode || '',
-        orderCode: row.orderCode || '',
         customerName: row.customerName || '',
         eventDateValue: getDateKey(row.eventDate),
         eventDateLabel: formatDateKey(row.eventDate),
@@ -2890,7 +3067,7 @@ function ServiceOrdersSection({
     const htmlRows = reportRows.map((row, index) => `
       <tr>
         <td class="center">${index + 1}</td>
-        <td><strong>${escapeOrdersReportHtml(row.contractCode || '—')}</strong><br><small>${escapeOrdersReportHtml(row.orderCode || '')}</small></td>
+        <td><strong>${escapeOrdersReportHtml(row.contractCode || '—')}</strong></td>
         <td>${escapeOrdersReportHtml(row.customerName || 'Sin cliente')}</td>
         <td class="center">${escapeOrdersReportHtml(row.eventDateLabel)}</td>
         <td>${escapeOrdersReportHtml(row.responsibleName)}</td>
@@ -2915,7 +3092,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 </style></head><body>
 <header class="header"><div><div class="brand">EL COPETÍN · ÓRDENES DE SERVICIO</div><h1>Reporte de Órdenes de Servicio</h1><p class="subtitle">Control comercial de contratos según los filtros visibles en la vista de Órdenes.</p></div><div class="meta"><div class="meta-row"><span>Periodo</span><strong>${escapeOrdersReportHtml(rangeLabel)}</strong></div><div class="meta-row"><span>Generado</span><strong>${escapeOrdersReportHtml(generatedAt)}</strong></div><div class="meta-row"><span>Contratos</span><strong>${reportRows.length}</strong></div><div class="meta-row"><span>Pendiente</span><strong>${escapeOrdersReportHtml(formatBs(totalPendingBs))}</strong></div></div></header>
 <div class="summary-title">Resumen ejecutivo del periodo</div><section class="cards">${summaryCards.map((card) => `<div class="card ${card.tone}"><span>${escapeOrdersReportHtml(card.label)}</span><strong>${escapeOrdersReportHtml(card.value)}</strong></div>`).join('')}</section>
-<section><div class="section-head"><h2>Detalle de contratos del rango</h2><small>${reportRows.length} contrato(s) encontrados · ${escapeOrdersReportHtml(filterLabel)}</small></div><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Evento</th><th>Responsable</th><th>Servicio</th><th>Estado</th><th>Garantía</th><th>Contrato</th><th>Transporte</th><th>Daños</th><th>Total por cobrar</th><th>Estado financiero</th><th>Finalizado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="14" class="center">No hay contratos con los filtros seleccionados.</td></tr>'}</tbody></table></section>
+<section><div class="section-head"><h2>Detalle de contratos del rango</h2><small>${reportRows.length} contrato(s) encontrados · ${escapeOrdersReportHtml(filterLabel)}</small></div><table><thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Evento</th><th>Responsable</th><th>Servicio</th><th>Estado</th><th>Garantía</th><th>Contrato</th><th>Transporte</th><th>Daños</th><th>Total por cobrar</th><th>Estado financiero</th><th>Finalizado</th></tr></thead><tbody>${htmlRows || '<tr><td colspan="14" class="center">No hay contratos con los filtros seleccionados.</td></tr>'}</tbody></table></section>
 <footer class="footer"><span><strong>EL COPETÍN</strong> · Gestión comercial y operativa</span><span>Filtros: ${escapeOrdersReportHtml(filterLabel)} · ${escapeOrdersReportHtml(rangeLabel)}</span></footer>
 </body></html>`;
 
@@ -10330,6 +10507,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
+  const activeContractColumnMenu = contractColumnMenu
+    ? ORDER_COLUMN_MENU_OPTIONS[contractColumnMenu.key]
+    : null;
+  const activeContractColumnValue = contractColumnMenu && activeContractColumnMenu?.type === 'sort'
+    ? (contractSort.key === contractColumnMenu.key ? contractSort.direction : '')
+    : (contractColumnFilters[contractColumnMenu?.key] ?? 'all');
+
   return (
     <section className="panel orders-view">
       <header className="orders-header">
@@ -10931,28 +11115,28 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   <col style={{ width: '9%' }} />
                   <col style={{ width: '11%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '13%' }} />
                   <col style={{ width: '11%' }} />
-                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '8%' }} />
                   <col style={{ width: '8%' }} />
                   <col style={{ width: '7%' }} />
-                  <col style={{ width: '7%' }} />
-                  <col style={{ width: '4%' }} />
                   <col style={{ width: '6%' }} />
+                  <col style={{ width: '5%' }} />
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>Contrato</th>
-                    <th>Fecha evento</th>
-                    <th>Cliente</th>
+                    <th><div className="orders-column-heading"><span>Contrato</span><OrdersColumnFilterButton column="contract" label="Contrato" active={contractSort.key === 'contract'} onOpen={openContractColumnMenu} /></div></th>
+                    <th><div className="orders-column-heading"><span>Fecha evento</span><OrdersColumnFilterButton column="date" label="Fecha evento" active={contractSort.key === 'date'} onOpen={openContractColumnMenu} /></div></th>
+                    <th><div className="orders-column-heading"><span>Cliente</span><OrdersColumnFilterButton column="client" label="Cliente" active={contractSort.key === 'client'} onOpen={openContractColumnMenu} /></div></th>
                     <th>Responsable</th>
                     <th>Servicio</th>
-                    <th>Daños y faltantes</th>
-                    <th>Nota</th>
+                    <th><div className="orders-column-heading"><span>Daños y faltantes</span><OrdersColumnFilterButton column="damage" label="Daños y faltantes" active={contractColumnFilters.damage !== 'all'} onOpen={openContractColumnMenu} /></div></th>
+                    <th><div className="orders-column-heading"><span>Nota</span><OrdersColumnFilterButton column="notes" label="Nota" active={contractColumnFilters.notes !== 'all'} onOpen={openContractColumnMenu} /></div></th>
                     <th>Estado</th>
-                    <th>Garantía</th>
-                    <th>Debe</th>
-                    <th>Finalizado</th>
+                    <th><div className="orders-column-heading"><span>Garantía</span><OrdersColumnFilterButton column="guarantee" label="Garantía" active={contractColumnFilters.guarantee !== 'all'} onOpen={openContractColumnMenu} /></div></th>
+                    <th><div className="orders-column-heading"><span>Debe</span><OrdersColumnFilterButton column="payment" label="Debe" active={contractColumnFilters.payment !== 'all'} onOpen={openContractColumnMenu} /></div></th>
+                    <th><div className="orders-column-heading"><span>Finalizado</span><OrdersColumnFilterButton column="finalized" label="Finalizado" active={contractColumnFilters.finalized !== 'all'} onOpen={openContractColumnMenu} /></div></th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -11163,6 +11347,44 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 </tbody>
               </table>
             </div>
+
+            {contractColumnMenu && activeContractColumnMenu ? (
+              <div
+                className="orders-column-filter-popover"
+                style={{ top: contractColumnMenu.top, left: contractColumnMenu.left }}
+                role="menu"
+                aria-label={activeContractColumnMenu.label}
+              >
+                <header>
+                  <Filter aria-hidden="true" />
+                  <strong>{activeContractColumnMenu.label}</strong>
+                </header>
+                <div className="orders-column-filter-options">
+                  {activeContractColumnMenu.options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={activeContractColumnValue === option.value ? 'is-selected' : ''}
+                      onClick={() => selectContractColumnOption(contractColumnMenu.key, option.value)}
+                      role="menuitemradio"
+                      aria-checked={activeContractColumnValue === option.value}
+                    >
+                      <span>{option.label}</span>
+                      {activeContractColumnValue === option.value ? <Check aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </div>
+                {(activeContractColumnMenu.type === 'sort' ? activeContractColumnValue : activeContractColumnValue !== 'all') ? (
+                  <button
+                    type="button"
+                    className="orders-column-filter-clear"
+                    onClick={() => clearContractColumnControl(contractColumnMenu.key)}
+                  >
+                    Quitar filtro
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             {isMobileCommercialLayout ? (
               <div className="orders-mobile-commercial-list">
