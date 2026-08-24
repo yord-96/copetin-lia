@@ -3,6 +3,17 @@ const toMoney = (value) => {
   return Number.isFinite(parsed) ? Math.max(0, Number(parsed.toFixed(2))) : 0;
 };
 
+export const calculateGuaranteePaidEvidence = (
+  movements = [],
+  isDirectGuarantee = () => false,
+) => toMoney((Array.isArray(movements) ? movements : []).reduce((sum, movement) => {
+  const directGuaranteeBs = isDirectGuarantee(movement)
+    ? toMoney(movement?.amountBs)
+    : 0;
+  const allocatedGuaranteeBs = toMoney(movement?.guaranteeAllocationBs);
+  return sum + Math.max(directGuaranteeBs, allocatedGuaranteeBs);
+}, 0));
+
 export const calculateGuaranteeSettlement = ({
   paidBs = 0,
   appliedBs = 0,

@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateGuaranteeSettlement } from './guaranteeSettlement.js';
+import { calculateGuaranteePaidEvidence, calculateGuaranteeSettlement } from './guaranteeSettlement.js';
+
+test('reconoce una garantía apartada dentro de un pago combinado', () => {
+  const movements = [{
+    type: 'cobro_saldo_devolucion',
+    amountBs: 1956,
+    contractAllocationBs: 1786,
+    guaranteeAllocationBs: 170,
+  }];
+
+  assert.equal(
+    calculateGuaranteePaidEvidence(movements, (movement) => movement.type === 'ingreso_garantia'),
+    170,
+  );
+});
+
+test('no duplica una garantía directa que también conserva su asignación', () => {
+  const movements = [{ type: 'ingreso_garantia', amountBs: 170, guaranteeAllocationBs: 170 }];
+  assert.equal(
+    calculateGuaranteePaidEvidence(movements, (movement) => movement.type === 'ingreso_garantia'),
+    170,
+  );
+});
 
 test('mantiene pendiente el saldo de una devolución parcial', () => {
   assert.deepEqual(calculateGuaranteeSettlement({
