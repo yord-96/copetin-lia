@@ -1327,6 +1327,75 @@ const getReconciledReturnedPendingCollectionBs = (contract, rental) => {
   return directMoney(Math.min(reconciledStoredPendingBs, derivedPendingBs));
 };
 
+const getReturnedDamageSettlementBreakdown = (state, contract, rental) => {
+  const settlement = rental?.returnSettlement ?? {};
+  const normalizeChargeOwner = (value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
+  };
+  const clientDamageBs = directMoney((Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    .reduce((sum, line) => {
+      if (normalizeChargeOwner(line?.chargeOwner) !== 'cliente') return sum;
+      return sum + directMoney(line?.penaltyBs ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)));
+    }, 0));
+  const totalDamageBs = clientDamageBs > 0
+    ? clientDamageBs
+    : directMoney(rental?.penaltiesBs ?? settlement?.penaltiesBs ?? 0);
+  const contractLedger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
+  const ledgerCoveredBs = directMoney(contractLedger.reduce((sum, entry) => {
+    if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return sum;
+    if (String(entry?.cashMovementId ?? '').trim() || entry?.isCashRegistered) return sum;
+    return sum + Math.max(0, directMoney(entry?.amountBs));
+  }, 0));
+  const coveredByGuaranteeBs = Math.min(totalDamageBs, Math.max(
+    directMoney(settlement?.discountCoveredByDepositBs),
+    ledgerCoveredBs,
+  ));
+  const movementCollectedBs = directMoney((Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .reduce((sum, movement) => {
+      if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return sum;
+      const sameRental = String(movement?.linkedRentalId ?? movement?.sourceId ?? '') === String(rental?.id ?? '');
+      const sameContract = contract && String(movement?.linkedContractId ?? '') === String(contract.id);
+      const sameOrder = String(movement?.linkedOrderCode ?? '') === String(rental?.orderCode ?? contract?.orderCode ?? '');
+      if (!sameRental && !sameContract && !sameOrder) return sum;
+      const movementBreakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
+      const explicitDamageBs = directMoney(movementBreakdown
+        .filter((entry) => String(entry?.target ?? '').trim().toLowerCase() === 'damage')
+        .reduce((subtotal, entry) => subtotal + directMoney(entry?.amountBs), 0));
+      if (explicitDamageBs > 0) return sum + explicitDamageBs;
+      const storedDamageBs = Math.max(0, directMoney(movement?.damageCollectedBs));
+      if (storedDamageBs > 0) return sum + storedDamageBs;
+      const target = String(movement?.collectionTarget ?? '').trim().toLowerCase();
+      const category = String(movement?.category ?? '').trim().toLowerCase();
+      const tag = String(movement?.accountingTag ?? '').trim().toLowerCase();
+      const type = String(movement?.type ?? '').trim().toLowerCase();
+      const isDamageMovement = target === 'damage'
+        || category === 'cobro_danos_faltantes'
+        || tag === 'contract_damage_collection'
+        || type.includes('dano')
+        || type.includes('faltante');
+      return isDamageMovement ? sum + Math.max(0, directMoney(movement?.amountBs)) : sum;
+    }, 0));
+  const storedCollectedBs = Math.max(
+    directMoney(settlement?.damageCollectedBs),
+    directMoney(settlement?.penaltiesCollectedBs),
+    directMoney(rental?.payment?.damageCollectedBs),
+    directMoney(rental?.totals?.damageCollectedBs),
+  );
+  const collectedBs = Math.min(
+    Math.max(0, totalDamageBs - coveredByGuaranteeBs),
+    Math.max(storedCollectedBs, movementCollectedBs),
+  );
+  const pendingBs = directMoney(Math.max(0, totalDamageBs - coveredByGuaranteeBs - collectedBs));
+  return {
+    totalDamageBs,
+    coveredByGuaranteeBs,
+    collectedBs,
+    settledBs: directMoney(totalDamageBs - pendingBs),
+    pendingBs,
+  };
+};
+
 const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
   const rows = [];
   if (seed.initialPaymentBs > 0) {
@@ -6340,34 +6409,52 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
       .flatMap((rental) => {
         const contract = contractsById.get(String(rental?.contractId ?? ''));
+        const damageBreakdown = getReturnedDamageSettlementBreakdown(state, contract, rental);
+        let remainingSettledBs = damageBreakdown.settledBs;
         return (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
           .filter((line) => (
             Number(line?.damagedQty ?? 0) > 0
             || Number(line?.missingQty ?? 0) > 0
             || Number(line?.penaltyBs ?? 0) > 0
           ))
-          .map((line, index) => ({
-            id: `${rental.id}-${line?.itemId ?? index}`,
-            rentalId: rental.id,
-            contractId: contract?.id ?? rental?.contractId ?? '',
-            orderCode: rental?.orderCode ?? '',
-            contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental?.id,
-            customerName: rental?.customerName ?? contract?.customerName ?? 'Cliente',
-            responsibleName: contract?.responsibles?.[0]?.name ?? contract?.responsibleName ?? rental?.createdByName ?? '-',
-            eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.rentalDate ?? rental?.createdAt,
-            returnedAt: rental?.returnedAt,
-            itemName: line?.itemName ?? line?.name ?? 'Item',
-            damagedQty: Number(line?.damagedQty ?? 0),
-            missingQty: Number(line?.missingQty ?? 0),
-            damagedUnitChargeBs: Number(line?.damagedUnitChargeBs ?? 0),
-            missingUnitChargeBs: Number(line?.missingUnitChargeBs ?? 0),
-            penaltyBs: Number(line?.penaltyBs ?? 0),
-            chargeOwner: ['transporte', 'lavado'].includes(String(line?.chargeOwner ?? '').toLowerCase())
+          .map((line, index) => {
+            const chargeOwner = ['transporte', 'lavado'].includes(String(line?.chargeOwner ?? '').toLowerCase())
               ? String(line.chargeOwner).toLowerCase()
-              : 'cliente',
-            note: line?.damageNote ?? '',
-            pendingCollectionBs: getReconciledReturnedPendingCollectionBs(contract, rental),
-          }));
+              : 'cliente';
+            const penaltyBs = directMoney(line?.penaltyBs);
+            const settledDamageBs = chargeOwner === 'cliente'
+              ? directMoney(Math.min(penaltyBs, remainingSettledBs))
+              : 0;
+            if (chargeOwner === 'cliente') remainingSettledBs = directMoney(Math.max(0, remainingSettledBs - settledDamageBs));
+            const pendingDamageBs = chargeOwner === 'cliente'
+              ? directMoney(Math.max(0, penaltyBs - settledDamageBs))
+              : 0;
+            return {
+              id: `${rental.id}-${line?.itemId ?? index}`,
+              rentalId: rental.id,
+              contractId: contract?.id ?? rental?.contractId ?? '',
+              orderCode: rental?.orderCode ?? '',
+              contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental?.id,
+              customerName: rental?.customerName ?? contract?.customerName ?? 'Cliente',
+              responsibleName: contract?.responsibles?.[0]?.name ?? contract?.responsibleName ?? rental?.createdByName ?? '-',
+              eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.rentalDate ?? rental?.createdAt,
+              returnedAt: rental?.returnedAt,
+              itemName: line?.itemName ?? line?.name ?? 'Item',
+              damagedQty: Number(line?.damagedQty ?? 0),
+              missingQty: Number(line?.missingQty ?? 0),
+              damagedUnitChargeBs: Number(line?.damagedUnitChargeBs ?? 0),
+              missingUnitChargeBs: Number(line?.missingUnitChargeBs ?? 0),
+              penaltyBs,
+              chargeOwner,
+              note: line?.damageNote ?? '',
+              pendingDamageBs,
+              settledDamageBs,
+              damagePendingTotalBs: damageBreakdown.pendingBs,
+              damageCollectedTotalBs: damageBreakdown.collectedBs,
+              damageCoveredByGuaranteeTotalBs: damageBreakdown.coveredByGuaranteeBs,
+              pendingCollectionBs: pendingDamageBs,
+            };
+          });
       })
       .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
 

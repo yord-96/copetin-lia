@@ -362,7 +362,10 @@ function AccountingSection({
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
   const [guaranteesView, setGuaranteesView] = useState('pending');
+  const [returnIssuesView, setReturnIssuesView] = useState('pending');
   const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
+  const [showReturnIssuesReport, setShowReturnIssuesReport] = useState(false);
+  const [isExportingReturnIssues, setIsExportingReturnIssues] = useState(false);
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
   const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
@@ -1770,18 +1773,32 @@ function AccountingSection({
       .flatMap((rental) => {
         const contract = getRentalContract(rental);
         const settlement = rental?.returnSettlement ?? {};
-        const pendingCollectionBs = getVipAdjustedPendingBs(rental, contract);
+        const damagePendingTotalBs = getRentalReceivableBreakdown(rental, contract).damagePendingBs;
         const issueLines = Array.isArray(rental.returnIssueSummary)
           ? rental.returnIssueSummary
           : Array.isArray(rental.returnReport)
             ? rental.returnReport
             : [];
-        return issueLines
-          .filter((line) => toNumber(line.damagedQty) > 0 || toNumber(line.missingQty) > 0 || toNumber(line.penaltyBs) > 0)
+        const relevantLines = issueLines
+          .filter((line) => toNumber(line.damagedQty) > 0 || toNumber(line.missingQty) > 0 || toNumber(line.penaltyBs) > 0);
+        const clientPenaltyBs = sumBy(
+          relevantLines.filter((line) => !['transporte', 'lavado'].includes(String(line.chargeOwner ?? '').toLowerCase())),
+          (line) => line.penaltyBs,
+        );
+        let remainingSettledBs = Math.max(0, Number((clientPenaltyBs - Math.min(clientPenaltyBs, damagePendingTotalBs)).toFixed(2)));
+        return relevantLines
           .map((line, index) => {
             const chargeOwner = ['transporte', 'lavado'].includes(String(line.chargeOwner ?? '').toLowerCase())
               ? String(line.chargeOwner).toLowerCase()
               : 'cliente';
+            const penaltyBs = toNumber(line.penaltyBs);
+            const settledDamageBs = chargeOwner === 'cliente'
+              ? Math.min(penaltyBs, remainingSettledBs)
+              : 0;
+            if (chargeOwner === 'cliente') remainingSettledBs = Math.max(0, Number((remainingSettledBs - settledDamageBs).toFixed(2)));
+            const pendingDamageBs = chargeOwner === 'cliente'
+              ? Math.max(0, Number((penaltyBs - settledDamageBs).toFixed(2)))
+              : 0;
             return {
               id: `${rental.id}-${line.itemId ?? index}`,
               rentalId: rental.id,
@@ -1796,28 +1813,47 @@ function AccountingSection({
               missingQty: toNumber(line.missingQty),
               damagedUnitChargeBs: toNumber(line.damagedUnitChargeBs),
               missingUnitChargeBs: toNumber(line.missingUnitChargeBs),
-              penaltyBs: toNumber(line.penaltyBs),
+              penaltyBs,
               chargeOwner,
               note: line.damageNote ?? '',
-              pendingCollectionBs,
-              pendingBs: pendingCollectionBs,
+              pendingDamageBs,
+              settledDamageBs,
+              damagePendingTotalBs,
+              pendingCollectionBs: pendingDamageBs,
+              pendingBs: pendingDamageBs,
               totalBs: toNumber(rental?.totals?.totalBs),
               paidBs: toNumber(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
               guaranteeBs: toNumber(rental?.depositBs),
               penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
               outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
               refundBs: toNumber(settlement.refundBs ?? rental?.refundBs),
-              status: 'Dano / faltante',
+              status: 'Liquidacion',
             };
           });
       })
       .sort((a, b) => new Date(b.returnedAt ?? 0) - new Date(a.returnedAt ?? 0)),
-    [getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, rentals],
+    [getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, rentals],
   );
 
   const returnIssueRows = useMemo(
     () => (Array.isArray(cashReturnIssues) && cashReturnIssues.length > 0
-      ? cashReturnIssues.slice().sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0))
+      ? cashReturnIssues.map((row) => {
+          const derivedRow = derivedReturnIssueRows.find((entry) => String(entry.id) === String(row.id));
+          const merged = { ...(derivedRow ?? {}), ...row };
+          const pendingDamageBs = row.pendingDamageBs !== undefined
+            ? toNumber(row.pendingDamageBs)
+            : toNumber(derivedRow?.pendingDamageBs ?? row.pendingCollectionBs);
+          const settledDamageBs = row.settledDamageBs !== undefined
+            ? toNumber(row.settledDamageBs)
+            : toNumber(derivedRow?.settledDamageBs);
+          return {
+            ...merged,
+            pendingDamageBs,
+            settledDamageBs,
+            pendingBs: pendingDamageBs,
+            status: 'Liquidacion',
+          };
+        }).sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0))
       : derivedReturnIssueRows),
     [cashReturnIssues, derivedReturnIssueRows],
   );
@@ -1848,11 +1884,20 @@ function AccountingSection({
     'guarantees',
     (row) => row.eventDate,
   );
-  const visibleReturnIssueRows = filterBigCashWorkspaceRows(
+  const filteredReturnIssueRows = filterBigCashWorkspaceRows(
     returnIssueRows,
     'issues',
     (row) => row.returnedAt ?? row.createdAt,
   );
+  const visiblePendingReturnIssueRows = filteredReturnIssueRows.filter(
+    (row) => row.chargeOwner === 'cliente' && toNumber(row.pendingDamageBs) > 0.009,
+  );
+  const visibleSettledReturnIssueRows = filteredReturnIssueRows.filter(
+    (row) => row.chargeOwner !== 'cliente' || toNumber(row.pendingDamageBs) <= 0.009,
+  );
+  const visibleReturnIssueRows = returnIssuesView === 'pending'
+    ? visiblePendingReturnIssueRows
+    : visibleSettledReturnIssueRows;
   const visiblePrepaidRows = filterBigCashWorkspaceRows(prepaidLedgerRows, 'prepaid', (row) => row.createdAt);
   const visibleReceivableTotalBs = sumBy(visibleReceivableRows, (row) => row.pendingBs);
   const visibleFinalizedReceivableTotalBs = sumBy(visibleFinalizedReceivableRows, (row) => row.settledBs);
@@ -1984,6 +2029,121 @@ function AccountingSection({
     if (!range.dateFrom && !range.dateTo) return 'Todos los eventos filtrados';
     return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
   }, [bigCashWorkspaceRanges]);
+
+  const returnIssuesReportRange = useMemo(() => {
+    const range = bigCashWorkspaceRanges.issues ?? { dateFrom: '', dateTo: '' };
+    const formatRangeDate = (value) => {
+      if (!value) return '';
+      const [year, month, day] = String(value).split('-');
+      return year && month && day ? `${day}/${month}/${year}` : value;
+    };
+    if (!range.dateFrom && !range.dateTo) return 'Todas las recepciones filtradas';
+    return `${range.dateFrom ? formatRangeDate(range.dateFrom) : 'Inicio'} — ${range.dateTo ? formatRangeDate(range.dateTo) : 'Fin'}`;
+  }, [bigCashWorkspaceRanges]);
+
+  const exportReturnIssuesWorkbook = async () => {
+    if (isExportingReturnIssues || visibleReturnIssueRows.length === 0) return;
+    setIsExportingReturnIssues(true);
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'Copetín SRL';
+      workbook.created = new Date();
+      const isPendingView = returnIssuesView === 'pending';
+      const sheet = workbook.addWorksheet(isPendingView ? 'Por cobrar' : 'Cobrados y liquidados', {
+        views: [{ state: 'frozen', ySplit: 6 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      sheet.columns = [
+        { width: 7 }, { width: 15 }, { width: 15 }, { width: 28 }, { width: 23 }, { width: 15 }, { width: 18 },
+        { width: 30 }, { width: 22 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 21 },
+      ];
+      sheet.mergeCells('A1:N1');
+      sheet.getCell('A1').value = 'EL COPETÍN · CONTROL DE DAÑOS Y FALTANTES';
+      sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+      sheet.mergeCells('A2:I2');
+      sheet.getCell('A2').value = isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados';
+      sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
+      sheet.mergeCells('J2:N2');
+      sheet.getCell('J2').value = `Periodo: ${returnIssuesReportRange}`;
+      sheet.getCell('J2').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A3:I3');
+      sheet.getCell('A3').value = `${visibleReturnIssueRows.length} registro(s) · Total ${formatBs(visibleReturnIssueTotalBs)}`;
+      sheet.mergeCells('J3:N3');
+      sheet.getCell('J3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getCell('J3').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A4:N4');
+      sheet.getCell('A4').value = isPendingView
+        ? 'Incluye únicamente cargos de daños o faltantes asignados al cliente que todavía tienen saldo pendiente.'
+        : 'Incluye cargos ya cobrados, cubiertos con garantía o liquidados como responsabilidad interna.';
+      sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+      const header = sheet.getRow(6);
+      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha recepción', 'Ítem', 'Novedad', 'Origen', 'Penalización', 'Liquidado', 'Pendiente', 'Estado'];
+      header.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      visibleReturnIssueRows.forEach((row, index) => {
+        const eventDateKey = getDateKey(row.eventDate);
+        const returnedDate = new Date(row.returnedAt ?? '');
+        const validReturnedDate = Number.isNaN(returnedDate.getTime()) ? '' : returnedDate;
+        const novelty = [row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '', row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''].filter(Boolean).join(' / ');
+        const statusLabel = row.chargeOwner !== 'cliente'
+          ? 'Pérdida interna'
+          : toNumber(row.pendingDamageBs) > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto';
+        const excelRow = sheet.addRow([
+          index + 1, row.contractCode || '', row.orderCode || '', row.customerName || '', row.responsibleName || '',
+          eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '', validReturnedDate, row.itemName || '', novelty,
+          getReturnIssueOwnerLabel(row.chargeOwner), toNumber(row.penaltyBs), toNumber(row.settledDamageBs),
+          toNumber(row.pendingDamageBs), statusLabel,
+        ]);
+        excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
+        excelRow.getCell(7).numFmt = 'dd/mm/yyyy hh:mm';
+        [11, 12, 13].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+      });
+      const lastRow = Math.max(6, 6 + visibleReturnIssueRows.length);
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 14 } };
+      sheet.pageSetup.printTitlesRow = '1:6';
+      const buffer = await workbook.xlsx.writeBuffer();
+      const range = bigCashWorkspaceRanges.issues ?? {};
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `reporte-danos-faltantes-${isPendingView ? 'por-cobrar' : 'liquidados'}-${range.dateFrom || 'inicio'}-${range.dateTo || 'fin'}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('No se pudo exportar el reporte de daños y faltantes.', error);
+      window.alert('No se pudo generar el Excel de daños y faltantes. Intenta nuevamente.');
+    } finally {
+      setIsExportingReturnIssues(false);
+    }
+  };
+
+  const printReturnIssuesReport = () => {
+    const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    const popup = window.open('', '_blank', 'width=1400,height=900');
+    if (!popup) {
+      window.alert('El navegador bloqueó la ventana de impresión. Habilita ventanas emergentes e intenta nuevamente.');
+      return;
+    }
+    const isPendingView = returnIssuesView === 'pending';
+    const rows = visibleReturnIssueRows.map((row, index) => {
+      const novelty = [row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '', row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''].filter(Boolean).join(' / ');
+      const statusLabel = row.chargeOwner !== 'cliente' ? 'Pérdida interna' : toNumber(row.pendingDamageBs) > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto';
+      return `<tr><td>${index + 1}</td><td><strong>${escapeHtml(row.contractCode || row.orderCode)}</strong><br><small>${escapeHtml(row.customerName)}</small></td><td>${escapeHtml(row.itemName)}</td><td>${escapeHtml(novelty)}</td><td>${escapeHtml(getReturnIssueOwnerLabel(row.chargeOwner))}</td><td class="money">${escapeHtml(formatBs(row.penaltyBs))}</td><td class="money">${escapeHtml(formatBs(row.settledDamageBs))}</td><td class="money">${escapeHtml(formatBs(row.pendingDamageBs))}</td><td>${escapeHtml(statusLabel)}</td></tr>`;
+    }).join('');
+    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de daños y faltantes</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;border-bottom:3px solid #173a70;padding-bottom:10px}h1{margin:4px 0;font-size:23px}.brand{color:#173a70;font-weight:800;letter-spacing:.12em}.meta{text-align:right}.summary{display:flex;gap:10px;margin:12px 0}.summary div{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:9px 12px;min-width:180px}.summary small{display:block;color:#64748b}.summary strong{font-size:17px}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:#fff;padding:7px;text-transform:uppercase;font-size:7px}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.money{text-align:right;font-weight:800;white-space:nowrap}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:700}@media print{.no-print{display:none}}</style></head><body><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>${isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h1><p>Control separado de cargos originados en la recepción de inventario.</p></div><div class="meta"><strong>${escapeHtml(returnIssuesReportRange)}</strong><br>${visibleReturnIssueRows.length} registro(s)</div></header><section class="summary"><div><small>Registros</small><strong>${visibleReturnIssueRows.length}</strong></div><div><small>${isPendingView ? 'Total pendiente' : 'Total liquidado'}</small><strong>${escapeHtml(formatBs(visibleReturnIssueTotalBs))}</strong></div></section><table><thead><tr><th>N°</th><th>Contrato / cliente</th><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Sin resultados.</td></tr>'}</tbody></table><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
+    popup.document.close();
+    popup.focus();
+  };
 
   const exportPendingReceivablesWorkbook = async () => {
     try {
@@ -2421,7 +2581,10 @@ function AccountingSection({
   };
   const visibleGuaranteeTotalBs = sumBy(visibleGuaranteeRows, (row) => toNumber(row.guaranteePaidBs) + toNumber(row.unvalidatedBs));
   const visibleReturnedGuaranteeTotalBs = sumBy(visibleReturnedGuaranteeRows, (row) => row.refundedBs);
-  const visibleReturnIssueTotalBs = sumBy(visibleReturnIssueRows, (row) => row.penaltyBs);
+  const visibleReturnIssueTotalBs = sumBy(
+    visibleReturnIssueRows,
+    (row) => returnIssuesView === 'pending' ? row.pendingDamageBs : row.penaltyBs,
+  );
 
   const getReturnIssueOwnerLabel = (owner) => {
     if (owner === 'transporte') return 'Transporte';
@@ -3072,6 +3235,10 @@ function AccountingSection({
       const result = await onCollectReceivable?.({
         rentalId: collectModal.id,
         amountBs: Math.max(0, toNumber(collectForm.amountBs)),
+        collectionTarget: collectModal.collectionTarget || 'balance',
+        collectionBreakdown: collectModal.collectionTarget === 'damage'
+          ? [{ target: 'damage', amountBs: Math.max(0, toNumber(collectForm.amountBs)) }]
+          : undefined,
         paymentMethod: collectForm.paymentMethod,
         paymentAccount: collectForm.paymentMethod === 'qr' ? collectForm.paymentAccount : '',
         receipt: collectForm.receipt,
@@ -5051,7 +5218,7 @@ function AccountingSection({
             ['receipts', 'Comprobantes', receiptBrowserData.total || null],
             ['receivables', 'Cobros', pendingReceivableRows.length],
             ['guarantees', 'Garantías', guaranteesToReturnRows.length],
-            ['issues', 'Daños', returnIssueRows.length],
+            ['issues', 'Daños y faltantes', returnIssueRows.length],
             ['prepaid', 'Prepago VIP', prepaidLedgerRows.length],
             ['movements', 'Movimientos', filteredBigCashRows.length],
           ].map(([id, label, count]) => (
@@ -5760,13 +5927,27 @@ function AccountingSection({
         <section className="bigcash-card bigcash-return-issues-card" hidden={bigCashWorkspaceTab !== 'issues'}>
           <header>
             <div>
-              <span>03 - Recepcion</span>
-              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Danos y faltantes por contrato</h3>
-              <p>Roturas, faltantes, responsable del cargo y estado de cobro por contrato.</p>
+              <span>03 - Recepción</span>
+              <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Daños y faltantes por contrato</h3>
+              <p>{returnIssuesView === 'pending' ? 'Cargos al cliente que todavía deben cobrarse.' : 'Historial de cargos cobrados, cubiertos o liquidados internamente.'}</p>
             </div>
-            <div className="bigcash-header-total"><small>Total en resultados</small><strong>{formatBs(visibleReturnIssueTotalBs)}</strong></div>
+            <div className="bigcash-receivables-header-actions">
+              <div className="bigcash-header-total">
+                <small>{returnIssuesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
+                <strong>{formatBs(visibleReturnIssueTotalBs)}</strong>
+              </div>
+              <button type="button" className="bigcash-export-button" onClick={() => setShowReturnIssuesReport(true)} disabled={visibleReturnIssueRows.length === 0}>Generar reporte</button>
+            </div>
           </header>
-          {renderBigCashWorkspaceSearch('Buscar contrato, cliente, ítem o novedad...', 'issues', 'Fecha de recepción')}
+          <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de daños y faltantes">
+            <button type="button" role="tab" aria-selected={returnIssuesView === 'pending'} className={returnIssuesView === 'pending' ? 'is-active' : ''} onClick={() => setReturnIssuesView('pending')}>
+              Por cobrar <b>{returnIssueRows.filter((row) => row.chargeOwner === 'cliente' && toNumber(row.pendingDamageBs) > 0.009).length}</b>
+            </button>
+            <button type="button" role="tab" aria-selected={returnIssuesView === 'settled'} className={returnIssuesView === 'settled' ? 'is-active' : ''} onClick={() => setReturnIssuesView('settled')}>
+              Cobrados y liquidados <b>{returnIssueRows.filter((row) => row.chargeOwner !== 'cliente' || toNumber(row.pendingDamageBs) <= 0.009).length}</b>
+            </button>
+          </div>
+          {renderBigCashWorkspaceSearch('Buscar contrato, cliente, ítem o novedad...', 'issues', 'Fecha de recepción', visibleReturnIssueRows.length, '')}
           <div className="bigcash-table-wrap bigcash-command-table-wrap">
             <table className="accounting-table bigcash-table bigcash-command-table bigcash-return-issues-table">
               <thead>
@@ -5775,7 +5956,7 @@ function AccountingSection({
                   <th>Item</th>
                   <th>Novedad</th>
                   <th>Origen</th>
-                  <th>Penalizacion</th>
+                  <th>Penalización</th>
                   <th>Estado</th>
                   <th />
                 </tr>
@@ -5787,25 +5968,25 @@ function AccountingSection({
                     <td><strong>{row.itemName}</strong>{row.note ? <small>{row.note}</small> : null}</td>
                     <td>
                       <strong>{row.damagedQty > 0 ? `${row.damagedQty} rotos` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltantes` : ''}</strong>
-                      <small>Dano {formatBs(row.damagedUnitChargeBs)} | Falta {formatBs(row.missingUnitChargeBs)}</small>
+                      <small>Daño {formatBs(row.damagedUnitChargeBs)} | Falta {formatBs(row.missingUnitChargeBs)}</small>
                     </td>
                     <td><span className={`bigcash-status-pill ${row.chargeOwner === 'cliente' ? 'ready' : 'waiting'}`}>{getReturnIssueOwnerLabel(row.chargeOwner)}</span></td>
                     <td className="amount">{formatBs(row.penaltyBs)}</td>
                     <td>
                       {row.chargeOwner === 'cliente'
-                        ? <span className={`bigcash-status-pill ${row.pendingCollectionBs > 0 ? 'waiting' : 'ready'}`}>{row.pendingCollectionBs > 0 ? 'Por cobrar' : 'Cubierto / liquidado'}</span>
-                        : <span className="bigcash-status-pill waiting">Perdida interna</span>}
+                        ? <span className={`bigcash-status-pill ${row.pendingDamageBs > 0.009 ? 'waiting' : 'ready'}`}>{row.pendingDamageBs > 0.009 ? `Por cobrar ${formatBs(row.pendingDamageBs)}` : 'Cobrado / cubierto'}</span>
+                        : <span className="bigcash-status-pill waiting">Pérdida interna</span>}
                     </td>
                     <td>
-                      {row.chargeOwner === 'cliente' && row.pendingCollectionBs > 0 ? (
-                        <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>
+                      {row.chargeOwner === 'cliente' && row.pendingDamageBs > 0.009 ? (
+                        <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...row, id: row.rentalId, pendingBs: row.pendingDamageBs, damagePendingBs: row.pendingDamageBs, collectionTarget: 'damage' })}>Cobrar</button>
                       ) : (
                         <span className="bigcash-action-muted">Registro</span>
                       )}
                     </td>
                   </tr>
                 ))}
-                {visibleReturnIssueRows.length === 0 ? <tr><td colSpan={7}><p className="status">No se encontraron daños o faltantes con ese criterio.</p></td></tr> : null}
+                {visibleReturnIssueRows.length === 0 ? <tr><td colSpan={7}><p className="status">No se encontraron daños o faltantes {returnIssuesView === 'pending' ? 'por cobrar' : 'liquidados'} con ese criterio.</p></td></tr> : null}
               </tbody>
             </table>
           </div>
@@ -6046,6 +6227,69 @@ function AccountingSection({
                   {isExportingFinalizedReceivables ? 'Generando Excel...' : 'Exportar a Excel'}
                 </button>
                 <button type="button" className="primary-button" onClick={printFinalizedReceivablesReport}>Imprimir / guardar PDF</button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
+        {showReturnIssuesReport ? (
+          <div className="bigcash-report-backdrop" onClick={() => setShowReturnIssuesReport(false)}>
+            <section className="bigcash-report-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="bigcash-report-modal-head">
+                <div>
+                  <h2>Reporte de daños y faltantes</h2>
+                  <p>Vista previa del estado, rango y filtros actualmente aplicados.</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setShowReturnIssuesReport(false)} aria-label="Cerrar reporte">×</button>
+              </header>
+              <div className="bigcash-report-document">
+                <div className="bigcash-report-page">
+                  <header className="bigcash-report-doc-head">
+                    <div>
+                      <div className="bigcash-report-brand">EL COPETÍN · CAJA GRANDE</div>
+                      <h3>{returnIssuesView === 'pending' ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h3>
+                      <p>Control separado de cargos originados en la recepción de inventario.</p>
+                    </div>
+                    <div className="bigcash-report-meta">
+                      <div><span>Periodo</span><strong>{returnIssuesReportRange}</strong></div>
+                      <div><span>Generado</span><strong>{new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</strong></div>
+                      <div><span>Registros</span><strong>{visibleReturnIssueRows.length}</strong></div>
+                    </div>
+                  </header>
+                  <section className="bigcash-report-summary">
+                    <article><small>Registros encontrados</small><strong>{visibleReturnIssueRows.length}</strong></article>
+                    <article className="money"><small>{returnIssuesView === 'pending' ? 'Total pendiente' : 'Total liquidado'}</small><strong>{formatBs(visibleReturnIssueTotalBs)}</strong></article>
+                    <article><small>Estado</small><strong>{returnIssuesView === 'pending' ? 'Por cobrar' : 'Liquidados'}</strong></article>
+                  </section>
+                  <section className="bigcash-report-section">
+                    <h4>Detalle de daños y faltantes</h4>
+                    <div className="bigcash-table-wrap">
+                      <table className="bigcash-report-table">
+                        <thead><tr><th>N°</th><th>Contrato / cliente</th><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead>
+                        <tbody>
+                          {visibleReturnIssueRows.map((row, index) => (
+                            <tr key={`report-issue-${row.id}`}>
+                              <td>{index + 1}</td>
+                              <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.customerName}</small></td>
+                              <td><strong>{row.itemName}</strong>{row.note ? <small>{row.note}</small> : null}</td>
+                              <td>{row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''}</td>
+                              <td>{getReturnIssueOwnerLabel(row.chargeOwner)}</td>
+                              <td className="amount">{formatBs(row.penaltyBs)}</td>
+                              <td className="amount">{formatBs(row.settledDamageBs)}</td>
+                              <td className="amount">{formatBs(row.pendingDamageBs)}</td>
+                              <td>{row.chargeOwner !== 'cliente' ? 'Pérdida interna' : row.pendingDamageBs > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto'}</td>
+                            </tr>
+                          ))}
+                          {visibleReturnIssueRows.length === 0 ? <tr><td colSpan={9}>Sin resultados.</td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              <footer className="bigcash-report-footer">
+                <button type="button" className="ghost-button" onClick={() => setShowReturnIssuesReport(false)}>Cerrar</button>
+                <button type="button" className="ghost-button" onClick={exportReturnIssuesWorkbook} disabled={isExportingReturnIssues || visibleReturnIssueRows.length === 0}>{isExportingReturnIssues ? 'Generando Excel...' : 'Exportar a Excel'}</button>
+                <button type="button" className="primary-button" onClick={printReturnIssuesReport} disabled={visibleReturnIssueRows.length === 0}>Imprimir / guardar PDF</button>
               </footer>
             </section>
           </div>

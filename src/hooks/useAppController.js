@@ -1770,6 +1770,16 @@ export const useAppController = () => {
           String(rental?.id) === String(result.rental.id) ? result.rental : rental
         )));
       }
+      try {
+        const context = await api.cash.getAccountingContext();
+        setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
+        setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
+        setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
+        setCashReturnIssues(Array.isArray(context?.returnIssues) ? context.returnIssues : []);
+      } catch (refreshError) {
+        console.warn('El cobro se registró, pero no se pudo refrescar el contexto contable.', refreshError);
+        setCashReturnIssues([]);
+      }
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo confirmar el cobro.');
