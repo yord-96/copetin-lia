@@ -64,3 +64,34 @@ test('a damage receipt is not applied again to the commercial contract balance',
   };
   assert.equal(getConfirmedContractLedgerPaidBs(contract, 100), 0);
 });
+
+test('a reconciled return payment closes a stale commercial balance', () => {
+  const contract = {
+    totals: { totalBs: 250 },
+    payment: { paidAtApprovalBs: 0, pendingPaymentBs: 250 },
+  };
+  const rental = {
+    status: 'returned',
+    totals: { totalBs: 250, paidAtRentalBs: 0, pendingPaymentBs: 250, damageCollectedBs: 161 },
+    payment: { paidAtRentalBs: 0, pendingPaymentBs: 250, damageCollectedBs: 161 },
+    returnSettlement: {
+      paidBs: 250,
+      outstandingRentalBs: 0,
+      penaltiesBs: 161,
+      damageCollectedBs: 161,
+      pendingCollectionBs: 0,
+      accountingStatus: 'liquidado',
+    },
+  };
+
+  assert.deepEqual(calculateReceivableBreakdown({ rental, contract }), {
+    totalBs: 250,
+    paidBs: 250,
+    contractPendingBs: 0,
+    transportPendingBs: 0,
+    damagePendingBs: 0,
+    commercialPendingBs: 0,
+    totalPendingBs: 0,
+    status: 'paid',
+  });
+});

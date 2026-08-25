@@ -83,6 +83,10 @@ export const calculateReceivableBreakdown = ({
     0,
     money(rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs),
     money(contract?.payment?.paidAtApprovalBs),
+    // Returned rentals keep the reconciled commercial amount here. This is
+    // the canonical fallback when old payment fields were not synchronized
+    // after collecting the balance from the return workflow.
+    money(settlement?.paidBs),
   );
   const paidBs = Math.min(
     totalBs,
