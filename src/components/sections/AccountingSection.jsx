@@ -835,11 +835,6 @@ function AccountingSection({
     });
   }, [prepaidChargeByRentalId]);
 
-  const getVipAdjustedPendingBs = useCallback(
-    (rental, contract = null) => getRentalReceivableBreakdown(rental, contract).totalPendingBs,
-    [getRentalReceivableBreakdown],
-  );
-
   const totalPrepaidBalanceBs = useMemo(
     () => sumBy(prepaidClientRows, (row) => row.balanceBs),
     [prepaidClientRows],
@@ -1721,9 +1716,17 @@ function AccountingSection({
         const contract = getRentalContract(rental);
         if (!contract?.isFinalized) return null;
         const settlement = rental?.returnSettlement ?? {};
-        const pendingBs = getVipAdjustedPendingBs(rental, contract);
+        const breakdown = getRentalReceivableBreakdown(rental, contract);
+        const pendingBs = breakdown.totalPendingBs;
         if (pendingBs > 0.009) return null;
-        const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
+        const totalBs = breakdown.totalBs;
+        const transportBs = Math.max(
+          0,
+          toNumber(rental?.deliveryFeeBs),
+          toNumber(rental?.totals?.deliveryFeeBs),
+          toNumber(contract?.deliveryFeeBs),
+          toNumber(contract?.totals?.deliveryFeeBs),
+        );
         const penaltiesBs = toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
         const contractReferences = {
           contractIds: [contract?.id, rental?.contractId],
@@ -1776,6 +1779,10 @@ function AccountingSection({
           eventDate: getRentalReceivableEventDate(rental, contract),
           finalizedAt: contract.finalizedAt ?? rental.finalizedAt ?? rental.returnedAt ?? rental.updatedAt,
           finalizedByName: contract.finalizedByName ?? '',
+          totalBs,
+          paidBs: breakdown.paidBs,
+          transportBs,
+          damageBs: Math.max(0, penaltiesBs),
           settledBs: Math.max(0, totalBs + penaltiesBs),
           collectionMovements,
           collectionsLoaded: Array.isArray(exactCollectionSource),
@@ -1783,7 +1790,7 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [exactFinalizedCollections, getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, receivableExcludedRentalIds, rentals],
+    [exactFinalizedCollections, getMovementUserLabel, getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, postedMovements, receivableExcludedRentalIds, rentals],
   );
 
   const derivedReturnIssueRows = useMemo(
@@ -2449,48 +2456,49 @@ function AccountingSection({
         pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
       });
       contractsSheet.columns = [
-        { width: 7 }, { width: 15 }, { width: 15 }, { width: 30 }, { width: 24 },
-        { width: 15 }, { width: 18 }, { width: 20 }, { width: 25 },
+        { width: 7 }, { width: 15 }, { width: 15 }, { width: 28 }, { width: 23 },
+        { width: 15 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 18 },
+        { width: 18 }, { width: 20 }, { width: 24 },
       ];
-      contractsSheet.mergeCells('A1:I1');
+      contractsSheet.mergeCells('A1:M1');
       contractsSheet.getCell('A1').value = 'EL COPETÍN · CAJA GRANDE';
       contractsSheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
       contractsSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
       contractsSheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
       contractsSheet.getRow(1).height = 24;
-      contractsSheet.mergeCells('A2:F2');
+      contractsSheet.mergeCells('A2:I2');
       contractsSheet.getCell('A2').value = 'Reporte de Cobros y Contratos Finalizados';
       contractsSheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: ink } };
-      contractsSheet.mergeCells('G2:I2');
-      contractsSheet.getCell('G2').value = `Periodo: ${finalizedReceivablesReportRange}`;
-      contractsSheet.getCell('G2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: muted } };
-      contractsSheet.getCell('G2').alignment = { horizontal: 'right', vertical: 'middle' };
+      contractsSheet.mergeCells('J2:M2');
+      contractsSheet.getCell('J2').value = `Periodo: ${finalizedReceivablesReportRange}`;
+      contractsSheet.getCell('J2').font = { name: 'Calibri', size: 10, bold: true, color: { argb: muted } };
+      contractsSheet.getCell('J2').alignment = { horizontal: 'right', vertical: 'middle' };
       contractsSheet.getRow(2).height = 30;
-      contractsSheet.mergeCells('A3:F3');
+      contractsSheet.mergeCells('A3:I3');
       contractsSheet.getCell('A3').value = 'Historial de contratos sin saldo pendiente y finalizados administrativamente.';
       contractsSheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: muted } };
-      contractsSheet.mergeCells('G3:I3');
-      contractsSheet.getCell('G3').value = `Generado: ${generatedAt}`;
-      contractsSheet.getCell('G3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
-      contractsSheet.getCell('G3').alignment = { horizontal: 'right' };
+      contractsSheet.mergeCells('J3:M3');
+      contractsSheet.getCell('J3').value = `Generado: ${generatedAt}`;
+      contractsSheet.getCell('J3').font = { name: 'Calibri', size: 9, color: { argb: muted } };
+      contractsSheet.getCell('J3').alignment = { horizontal: 'right' };
 
-      contractsSheet.mergeCells('A5:C5');
+      contractsSheet.mergeCells('A5:D5');
       contractsSheet.getCell('A5').value = `CONTRATOS EN RESULTADO\n${visibleFinalizedReceivableRows.length}`;
-      contractsSheet.mergeCells('D5:F5');
-      contractsSheet.getCell('D5').value = `TOTAL LIQUIDADO\n${visibleFinalizedReceivableTotalBs}`;
-      contractsSheet.mergeCells('G5:I5');
-      contractsSheet.getCell('G5').value = `MOVIMIENTOS DE COBRO\n${finalizedReceivablesCollectionRows.filter((row) => row.amountBs > 0).length}`;
-      ['A5', 'D5', 'G5'].forEach((address, index) => {
+      contractsSheet.mergeCells('E5:I5');
+      contractsSheet.getCell('E5').value = `TOTAL LIQUIDADO\n${visibleFinalizedReceivableTotalBs}`;
+      contractsSheet.mergeCells('J5:M5');
+      contractsSheet.getCell('J5').value = `MOVIMIENTOS DE COBRO\n${finalizedReceivablesCollectionRows.filter((row) => row.amountBs > 0).length}`;
+      ['A5', 'E5', 'J5'].forEach((address, index) => {
         const cell = contractsSheet.getCell(address);
         cell.font = { name: 'Calibri', size: 12, bold: true, color: { argb: index === 1 ? green : navy } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index === 1 ? 'FFEDF9F0' : 'FFF1F5FA' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       });
-      contractsSheet.getCell('D5').numFmt = moneyFormat;
+      contractsSheet.getCell('E5').numFmt = moneyFormat;
       contractsSheet.getRow(5).height = 42;
 
       const contractHeaderRow = 7;
-      contractsSheet.getRow(contractHeaderRow).values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total liquidado', 'Finalizado', 'Finalizado por'];
+      contractsSheet.getRow(contractHeaderRow).values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Transporte', 'Daños / faltantes', 'Total liquidado', 'Finalizado', 'Finalizado por'];
       styleHeader(contractsSheet.getRow(contractHeaderRow));
       visibleFinalizedReceivableRows.forEach((row, index) => {
         const excelRow = contractsSheet.addRow([
@@ -2500,17 +2508,21 @@ function AccountingSection({
           row.customerName || '',
           row.responsibleName || '',
           row.eventDate ? new Date(row.eventDate) : '',
+          toNumber(row.totalBs),
+          toNumber(row.paidBs),
+          toNumber(row.transportBs),
+          toNumber(row.damageBs),
           toNumber(row.settledBs),
           row.finalizedAt ? new Date(row.finalizedAt) : '',
           row.finalizedByName || '',
         ]);
         excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
-        excelRow.getCell(8).numFmt = 'dd/mm/yyyy hh:mm';
+        excelRow.getCell(12).numFmt = 'dd/mm/yyyy hh:mm';
       });
       const contractEndRow = Math.max(contractHeaderRow, contractHeaderRow + visibleFinalizedReceivableRows.length);
-      styleDataRows(contractsSheet, contractHeaderRow + 1, contractEndRow, [7]);
+      styleDataRows(contractsSheet, contractHeaderRow + 1, contractEndRow, [7, 8, 9, 10, 11]);
       if (visibleFinalizedReceivableRows.length) {
-        contractsSheet.autoFilter = { from: { row: contractHeaderRow, column: 1 }, to: { row: contractEndRow, column: 9 } };
+        contractsSheet.autoFilter = { from: { row: contractHeaderRow, column: 1 }, to: { row: contractEndRow, column: 13 } };
       }
       contractsSheet.pageSetup.printTitlesRow = `1:${contractHeaderRow}`;
       contractsSheet.headerFooter.oddFooter = '&LEl Copetín · Caja Grande&C&P de &N&RDocumento interno';
@@ -2609,8 +2621,13 @@ function AccountingSection({
         <td>${escapeHtml(row.customerName || '—')}</td>
         <td>${escapeHtml(row.responsibleName || '—')}</td>
         <td class="center">${escapeHtml(formatDate(row.eventDate))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.totalBs))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.paidBs))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.transportBs))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.damageBs))}</td>
         <td class="amount">${escapeHtml(formatBs(row.settledBs))}</td>
-        <td>${escapeHtml(formatDate(row.finalizedAt))}<br><small>${escapeHtml(row.finalizedByName || '—')}</small></td>
+        <td class="center">${escapeHtml(formatDate(row.finalizedAt))}</td>
+        <td>${escapeHtml(row.finalizedByName || '—')}</td>
       </tr>`).join('');
     const collectionRows = finalizedReceivablesCollectionRows.map((movement, index) => {
       const row = movement.contractRow;
@@ -2630,7 +2647,7 @@ function AccountingSection({
     </style></head><body>
       <header class="head"><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte de Cobros y Contratos Finalizados</h1><p>Historial con trazabilidad de cobros registrados.</p></div><div class="meta"><div><span>Periodo</span><strong>${escapeHtml(finalizedReceivablesReportRange)}</strong></div><div><span>Generado</span><strong>${escapeHtml(new Intl.DateTimeFormat('es-BO',{dateStyle:'medium',timeStyle:'short'}).format(new Date()))}</strong></div><div><span>Contratos</span><strong>${visibleFinalizedReceivableRows.length}</strong></div></div></header>
       <section class="cards"><div class="card"><span>Contratos encontrados</span><strong>${visibleFinalizedReceivableRows.length}</strong></div><div class="card money"><span>Total liquidado</span><strong>${escapeHtml(formatBs(visibleFinalizedReceivableTotalBs))}</strong></div><div class="card"><span>Movimientos de cobro</span><strong>${finalizedReceivablesCollectionRows.filter((row)=>row.amountBs>0).length}</strong></div></section>
-      <section class="section"><h2>Contratos finalizados</h2><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total liquidado</th><th>Finalizado</th></tr></thead><tbody>${contractRows || '<tr><td colspan="7">Sin resultados.</td></tr>'}</tbody></table></section>
+      <section class="section"><h2>Contratos finalizados</h2><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead><tbody>${contractRows || '<tr><td colspan="12">Sin resultados.</td></tr>'}</tbody></table></section>
       <section class="section"><h2>Detalle de cobros realizados</h2><table><thead><tr><th>N°</th><th>Contrato / cliente</th><th>Fecha / hora</th><th>Qué se cobró</th><th>Cómo</th><th>Monto</th><th>Recibo</th><th>Registrado por</th></tr></thead><tbody>${collectionRows || '<tr><td colspan="8">Sin movimientos vinculados.</td></tr>'}</tbody></table></section>
       <div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
     </body></html>`);
@@ -5760,8 +5777,14 @@ function AccountingSection({
                       <th>Cliente</th>
                       <th>Responsable</th>
                       <th>Fecha evento</th>
+                      <th>Total contrato</th>
+                      <th>Pagado</th>
+                      <th>Transporte</th>
+                      <th>Daños / faltantes</th>
                       <th>Total liquidado</th>
-                      <th>Finalizado</th>
+                      <th>Fecha finalización</th>
+                      <th>Finalizado por</th>
+                      <th>Cobros</th>
                     </tr>
                   )}
                 </thead>
@@ -5789,15 +5812,18 @@ function AccountingSection({
                           <td><strong>{row.customerName}</strong></td>
                           <td>{row.responsibleName}</td>
                           <td>{formatDate(row.eventDate)}</td>
-                          <td className="amount">{formatBs(row.settledBs)}</td>
-                          <td>
-                            <span className="bigcash-status-pill ready">Cobrado y finalizado</span>
-                            <small>{formatDate(row.finalizedAt)}{row.finalizedByName ? ` · ${row.finalizedByName}` : ''}</small>
+                          <td className="amount">{formatBs(row.totalBs)}</td>
+                          <td className="amount">{formatBs(row.paidBs)}</td>
+                          <td className="amount">{formatBs(row.transportBs)}</td>
+                          <td className="amount">{formatBs(row.damageBs)}</td>
+                          <td className="amount bigcash-total-liquidated">{formatBs(row.settledBs)}</td>
+                          <td>{formatDate(row.finalizedAt)}</td>
+                          <td>{row.finalizedByName || '-'}</td>
+                          <td className="bigcash-receivable-actions">
                             <button
                               type="button"
                               className="accounting-inline-action"
                               onClick={() => toggleFinalizedCollections(row)}
-                              style={{ marginTop: 6 }}
                             >
                               {isExpanded
                                 ? 'Ocultar cobros'
@@ -5809,7 +5835,7 @@ function AccountingSection({
                         </tr>,
                         isExpanded ? (
                           <tr key={`${row.id}-collections`}>
-                            <td colSpan={6} style={{ padding: '10px 16px 16px' }}>
+                            <td colSpan={12} style={{ padding: '10px 16px 16px' }}>
                               <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de cobros registrados en Caja Grande</div>
                               {isLoadingCollections ? (
                                 <p className="status">Consultando el historial completo de Caja Grande...</p>
@@ -5855,7 +5881,7 @@ function AccountingSection({
                     <tr><td colSpan={11}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
                   ) : null}
                   {receivablesView === 'finalized' && visibleFinalizedReceivableRows.length === 0 ? (
-                    <tr><td colSpan={6}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
+                    <tr><td colSpan={12}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
                   ) : null}
                 </tbody>
               </table>
@@ -6273,7 +6299,7 @@ function AccountingSection({
                     <h4>Detalle de contratos del rango</h4>
                     <div className="bigcash-table-wrap">
                       <table className="bigcash-report-table">
-                        <thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total liquidado</th><th>Finalizado</th></tr></thead>
+                        <thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead>
                         <tbody>
                           {visibleFinalizedReceivableRows.map((row, index) => (
                             <tr key={`report-contract-${row.id}`}>
@@ -6282,8 +6308,13 @@ function AccountingSection({
                               <td>{row.customerName}</td>
                               <td>{row.responsibleName}</td>
                               <td>{formatDate(row.eventDate)}</td>
+                              <td className="amount">{formatBs(row.totalBs)}</td>
+                              <td className="amount">{formatBs(row.paidBs)}</td>
+                              <td className="amount">{formatBs(row.transportBs)}</td>
+                              <td className="amount">{formatBs(row.damageBs)}</td>
                               <td className="amount">{formatBs(row.settledBs)}</td>
-                              <td>{formatDate(row.finalizedAt)}<small>{row.finalizedByName || 'Sin usuario registrado'}</small></td>
+                              <td>{formatDate(row.finalizedAt)}</td>
+                              <td>{row.finalizedByName || 'Sin usuario registrado'}</td>
                             </tr>
                           ))}
                         </tbody>

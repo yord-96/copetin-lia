@@ -68739,3 +68739,53 @@ button.inventory-loss-row-action:hover {
 .accounting-bigcash-view .bigcash-guarantees-table.is-returned td:nth-child(6) {
   text-align: center !important;
 }
+
+/* Caja Grande · contratos cobrados con desglose económico por columna. */
+.accounting-bigcash-view .bigcash-command-table-wrap:has(.bigcash-receivables-table.is-finalized) {
+  overflow-x: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized {
+  width: 100% !important;
+  min-width: 88rem !important;
+  height: auto !important;
+  min-height: 0 !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized th,
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized td {
+  min-width: 0 !important;
+  padding: 0.76rem 0.44rem !important;
+  line-height: 1.16 !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(1) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(2) { width: 13% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(3) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(4) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(5) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(6) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(7) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(8) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(9) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(10) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(11) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized :is(th, td):nth-child(12) { width: 5% !important; }
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized td:nth-child(n+5):nth-child(-n+9) {
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized .bigcash-total-liquidated {
+  color: #08733f !important;
+  font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-finalized .bigcash-receivable-actions {
+  text-align: center !important;
+}
