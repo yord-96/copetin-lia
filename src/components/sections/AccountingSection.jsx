@@ -2529,8 +2529,7 @@ function AccountingSection({
         <td>${escapeHtml(formatDate(group.eventDate))}</td>
         <td>${escapeHtml(formatDate(group.returnedAt))}</td>
         <td class="center"><strong>${group.itemCount}</strong></td>
-        <td class="center"><strong>${group.damagedQty}</strong></td>
-        <td class="center"><strong>${group.missingQty}</strong></td>
+        <td class="center"><strong>${group.damagedQty}</strong> dañ. · <strong>${group.missingQty}</strong> falt.</td>
         <td class="money">${escapeHtml(formatBs(group.penaltyBs))}</td>
         <td class="money">${escapeHtml(formatBs(group.settledDamageBs))}</td>
         <td class="money">${escapeHtml(formatBs(group.pendingDamageBs))}</td>
@@ -2559,7 +2558,7 @@ function AccountingSection({
       </section>`;
     }).join('');
 
-    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de daños y faltantes</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;border-bottom:3px solid #173a70;padding-bottom:10px}h1{margin:4px 0;font-size:23px}.brand{color:#173a70;font-weight:800;letter-spacing:.12em}.meta{text-align:right}.summary{display:flex;gap:10px;margin:12px 0}.summary div{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:9px 12px;min-width:180px}.summary small{display:block;color:#64748b}.summary strong{font-size:17px}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:#fff;padding:7px;text-transform:uppercase;font-size:7px}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.money{text-align:right;font-weight:800;white-space:nowrap}.center{text-align:center}.detail-contract{margin-top:16px;break-inside:avoid}.detail-contract h2{font-size:12px;color:#173a70;margin:0 0 6px}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:700}@media print{.no-print{display:none}.detail-contract{break-inside:avoid}}</style></head><body><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>${isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h1><p>Resumen por contrato con detalle de los ítems afectados.</p></div><div class="meta"><strong>${escapeHtml(returnIssuesReportRange)}</strong><br>${visibleReturnIssueContractRows.length} contrato(s) · ${visibleReturnIssueRows.length} ítem(s)</div></header><section class="summary"><div><small>Contratos</small><strong>${visibleReturnIssueContractRows.length}</strong></div><div><small>Ítems afectados</small><strong>${visibleReturnIssueRows.length}</strong></div><div><small>${isPendingView ? 'Total pendiente' : 'Total liquidado'}</small><strong>${escapeHtml(formatBs(visibleReturnIssueTotalBs))}</strong></div></section><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Recepción</th><th>Ítems</th><th>Dañados</th><th>Faltantes</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${contractRows || '<tr><td colspan="13">Sin resultados.</td></tr>'}</tbody></table>${detailBlocks}<div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
+    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de daños y faltantes</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;border-bottom:3px solid #173a70;padding-bottom:10px}h1{margin:4px 0;font-size:23px}.brand{color:#173a70;font-weight:800;letter-spacing:.12em}.meta{text-align:right}.summary{display:flex;gap:10px;margin:12px 0}.summary div{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:9px 12px;min-width:180px}.summary small{display:block;color:#64748b}.summary strong{font-size:17px}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:#fff;padding:7px;text-transform:uppercase;font-size:7px}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.money{text-align:right;font-weight:800;white-space:nowrap}.center{text-align:center}.detail-contract{margin-top:16px;break-inside:avoid}.detail-contract h2{font-size:12px;color:#173a70;margin:0 0 6px}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:700}@media print{.no-print{display:none}.detail-contract{break-inside:avoid}}</style></head><body><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>${isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h1><p>Resumen por contrato con detalle de los ítems afectados.</p></div><div class="meta"><strong>${escapeHtml(returnIssuesReportRange)}</strong><br>${visibleReturnIssueContractRows.length} contrato(s) · ${visibleReturnIssueRows.length} ítem(s)</div></header><section class="summary"><div><small>Contratos</small><strong>${visibleReturnIssueContractRows.length}</strong></div><div><small>Ítems afectados</small><strong>${visibleReturnIssueRows.length}</strong></div><div><small>${isPendingView ? 'Total pendiente' : 'Total liquidado'}</small><strong>${escapeHtml(formatBs(visibleReturnIssueTotalBs))}</strong></div></section><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Recepción</th><th>Ítems</th><th>Novedades</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${contractRows || '<tr><td colspan="12">Sin resultados.</td></tr>'}</tbody></table>${detailBlocks}<div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
     popup.document.close();
     popup.focus();
   };
@@ -6426,22 +6425,101 @@ function AccountingSection({
           </div>
           {renderBigCashWorkspaceSearch('Buscar contrato, cliente, ítem o novedad...', 'issues', 'Fecha de recepción', visibleReturnIssueContractRows.length, '')}
           <div className="bigcash-table-wrap bigcash-command-table-wrap">
+            <style>{`
+              .bigcash-return-issues-table {
+                width: 100%;
+                min-width: 0 !important;
+                table-layout: fixed;
+              }
+              .bigcash-return-issues-table th {
+                padding: 11px 9px;
+                font-size: 10px;
+                line-height: 1.15;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                vertical-align: middle;
+              }
+              .bigcash-return-issues-table td {
+                padding: 13px 9px;
+                vertical-align: middle;
+                line-height: 1.2;
+                overflow: hidden;
+              }
+              .bigcash-return-issues-table td > strong {
+                display: block;
+                line-height: 1.2;
+              }
+              .bigcash-return-issues-table td > small {
+                display: block;
+                margin-top: 3px;
+                line-height: 1.15;
+              }
+              .bigcash-return-issues-table .amount {
+                text-align: right;
+                white-space: nowrap;
+              }
+              .return-issue-novelty {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                flex-wrap: nowrap;
+                white-space: nowrap;
+              }
+              .return-issue-novelty span {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 24px;
+                padding: 3px 7px;
+                border: 1px solid #d9e2ef;
+                border-radius: 999px;
+                background: #f8fafc;
+                color: #173a70;
+                font-size: 10px;
+                font-weight: 800;
+              }
+              .return-issue-novelty span.is-damage {
+                border-color: #ffd3b8;
+                background: #fff7f0;
+                color: #b54708;
+              }
+              .return-issue-novelty span.is-missing {
+                border-color: #ffd8dd;
+                background: #fff5f6;
+                color: #b42318;
+              }
+              .bigcash-return-issues-table .return-issue-status {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                max-width: 100%;
+                min-height: 27px;
+                padding: 4px 8px;
+                white-space: nowrap;
+                font-size: 10px;
+                line-height: 1;
+              }
+              .bigcash-return-issues-table .return-issue-detail-button {
+                min-width: 44px;
+                padding-inline: 9px;
+                white-space: nowrap;
+              }
+            `}</style>
             <table
               className="accounting-table bigcash-table bigcash-command-table bigcash-return-issues-table"
-              style={{ width: '100%', minWidth: '1240px', tableLayout: 'fixed' }}
             >
               <colgroup>
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '13%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '15%' }} />
                 <col style={{ width: '11%' }} />
                 <col style={{ width: '10%' }} />
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '6%' }} />
-                <col style={{ width: '6%' }} />
+                <col style={{ width: '12%' }} />
                 <col style={{ width: '9%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
                 <col style={{ width: '5%' }} />
               </colgroup>
               <thead>
@@ -6451,13 +6529,12 @@ function AccountingSection({
                   <th>Responsable</th>
                   <th>Recepción</th>
                   <th>Ítems</th>
-                  <th>Dañados</th>
-                  <th>Faltantes</th>
+                  <th>Novedades</th>
                   <th>Penalización</th>
                   <th>Liquidado</th>
                   <th>Pendiente</th>
                   <th>Estado</th>
-                  <th>Detalle</th>
+                  <th>Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -6467,8 +6544,12 @@ function AccountingSection({
                       <strong>{group.contractCode || group.orderCode}</strong>
                       <small>{group.orderCode || 'Sin OS'}</small>
                     </td>
-                    <td><strong>{group.customerName}</strong></td>
-                    <td>{group.responsibleName || '-'}</td>
+                    <td>
+                      <strong title={group.customerName}>{group.customerName}</strong>
+                    </td>
+                    <td title={group.responsibleName || '-'}>
+                      <strong>{group.responsibleName || '-'}</strong>
+                    </td>
                     <td>
                       <strong>{formatDate(group.returnedAt)}</strong>
                       <small>{getLongHourLabel(group.returnedAt)}</small>
@@ -6484,25 +6565,23 @@ function AccountingSection({
                       </button>
                     </td>
                     <td>
-                      <strong>{group.damagedQty}</strong>
-                      <small>{group.damagedQty === 1 ? 'unidad' : 'unidades'}</small>
-                    </td>
-                    <td>
-                      <strong>{group.missingQty}</strong>
-                      <small>{group.missingQty === 1 ? 'unidad' : 'unidades'}</small>
+                      <div className="return-issue-novelty" title={`${group.damagedQty} dañada(s) · ${group.missingQty} faltante(s)`}>
+                        <span className="is-damage">{group.damagedQty} dañ.</span>
+                        <span className="is-missing">{group.missingQty} falt.</span>
+                      </div>
                     </td>
                     <td className="amount"><strong>{formatBs(group.penaltyBs)}</strong></td>
                     <td className="amount">{formatBs(group.settledDamageBs)}</td>
                     <td className="amount"><strong>{formatBs(group.pendingDamageBs)}</strong></td>
                     <td>
-                      <span className={`bigcash-status-pill ${group.pendingDamageBs > 0.009 ? 'waiting' : 'ready'}`}>
+                      <span className={`bigcash-status-pill return-issue-status ${group.pendingDamageBs > 0.009 ? 'waiting' : 'ready'}`}>
                         {group.stateLabel}
                       </span>
                     </td>
                     <td>
                       <button
                         type="button"
-                        className="accounting-inline-action"
+                        className="accounting-inline-action return-issue-detail-button"
                         onClick={() => setReturnIssueDetailGroup(group)}
                         title="Abrir detalle completo del contrato"
                       >
@@ -6512,7 +6591,7 @@ function AccountingSection({
                   </tr>
                 ))}
                 {visibleReturnIssueContractRows.length === 0 ? (
-                  <tr><td colSpan={12}><p className="status">No se encontraron daños o faltantes {returnIssuesView === 'pending' ? 'por cobrar' : 'liquidados'} con ese criterio.</p></td></tr>
+                  <tr><td colSpan={11}><p className="status">No se encontraron daños o faltantes {returnIssuesView === 'pending' ? 'por cobrar' : 'liquidados'} con ese criterio.</p></td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -6797,7 +6876,7 @@ function AccountingSection({
                     <h4>Resumen por contrato</h4>
                     <div className="bigcash-table-wrap">
                       <table className="bigcash-report-table">
-                        <thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Recepción</th><th>Ítems</th><th>Dañados</th><th>Faltantes</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead>
+                        <thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Recepción</th><th>Ítems</th><th>Novedades</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead>
                         <tbody>
                           {visibleReturnIssueContractRows.map((group, index) => (
                             <tr key={`report-contract-${group.id}`}>
@@ -6807,15 +6886,14 @@ function AccountingSection({
                               <td>{group.responsibleName || '-'}</td>
                               <td><strong>{formatDate(group.returnedAt)}</strong><small>{getLongHourLabel(group.returnedAt)}</small></td>
                               <td>{group.itemCount}</td>
-                              <td>{group.damagedQty}</td>
-                              <td>{group.missingQty}</td>
+                              <td><strong>{group.damagedQty}</strong> dañ. · <strong>{group.missingQty}</strong> falt.</td>
                               <td className="amount">{formatBs(group.penaltyBs)}</td>
                               <td className="amount">{formatBs(group.settledDamageBs)}</td>
                               <td className="amount">{formatBs(group.pendingDamageBs)}</td>
                               <td>{group.stateLabel}</td>
                             </tr>
                           ))}
-                          {visibleReturnIssueContractRows.length === 0 ? <tr><td colSpan={12}>Sin resultados.</td></tr> : null}
+                          {visibleReturnIssueContractRows.length === 0 ? <tr><td colSpan={11}>Sin resultados.</td></tr> : null}
                         </tbody>
                       </table>
                     </div>
