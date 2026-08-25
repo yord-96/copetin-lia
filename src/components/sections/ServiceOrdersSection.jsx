@@ -16858,22 +16858,24 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <input type="time" value={draft.pickupWindowEnd} disabled={draft.pickupTimeMode === 'coordinate'} onChange={(event) => setDraftField('pickupWindowEnd', event.target.value)} />
                           </label>
                         </div>
-                        <label className="orders-time-coordinate">
-                          <input
-                            type="checkbox"
-                            checked={draft.pickupDateMode === 'coordinate'}
-                            onChange={(event) => setPickupDateCoordinatesPending(event.target.checked)}
-                          />
-                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar fecha de devolucion con el cliente' : 'Coordinar fecha de recojo con el cliente'}</span>
-                        </label>
-                        <label className="orders-time-coordinate">
-                          <input
-                            type="checkbox"
-                            checked={draft.pickupTimeMode === 'coordinate'}
-                            onChange={(event) => setPickupTimeCoordinatesPending(event.target.checked)}
-                          />
-                          <span>{draft.logisticsMode === 'recojo' ? 'Coordinar horario de devolucion con el cliente' : 'Coordinar horario de recojo con el cliente'}</span>
-                        </label>
+                        <div className="orders-pickup-coordinate-row">
+                          <label className="orders-time-coordinate">
+                            <input
+                              type="checkbox"
+                              checked={draft.pickupDateMode === 'coordinate'}
+                              onChange={(event) => setPickupDateCoordinatesPending(event.target.checked)}
+                            />
+                            <span>Coordinar fecha con el cliente</span>
+                          </label>
+                          <label className="orders-time-coordinate">
+                            <input
+                              type="checkbox"
+                              checked={draft.pickupTimeMode === 'coordinate'}
+                              onChange={(event) => setPickupTimeCoordinatesPending(event.target.checked)}
+                            />
+                            <span>Coordinar horario con el cliente</span>
+                          </label>
+                        </div>
                       </section>
                     </div>
 

@@ -58554,6 +58554,17 @@ body:has(.accounting-bigcash-view) .workspace {
   padding: 0.55rem 0.65rem;
 }
 
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-pickup-coordinate-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-4 .orders-pickup-coordinate-row .orders-time-coordinate {
+  min-width: 0;
+  margin: 0;
+}
+
 .orders-wizard-modal .orders-wizard-panel-step-4 .orders-transport-assignment-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 0.35rem;
