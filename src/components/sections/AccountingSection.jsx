@@ -156,6 +156,81 @@ const consolidateReturnIssueLines = (rows, scopeKey = '') => {
   });
 };
 
+
+const groupReturnIssuesByContract = (rows) => {
+  const source = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+
+  source.forEach((row, index) => {
+    const rentalId = String(row?.rentalId ?? '').trim();
+    const contractId = String(row?.contractId ?? '').trim();
+    const contractCode = String(row?.contractCode ?? '').trim();
+    const orderCode = String(row?.orderCode ?? '').trim();
+    const key = rentalId || contractId || `${contractCode}|${orderCode}` || `issue-${index}`;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: `return-issue-contract-${key}`,
+        rentalId,
+        contractId,
+        contractCode,
+        orderCode,
+        customerName: row?.customerName ?? '',
+        responsibleName: row?.responsibleName ?? '',
+        eventDate: row?.eventDate ?? '',
+        returnedAt: row?.returnedAt ?? row?.createdAt ?? '',
+        status: 'Liquidacion',
+        items: [],
+        penaltyBs: 0,
+        settledDamageBs: 0,
+        pendingDamageBs: 0,
+        damagedQty: 0,
+        missingQty: 0,
+        internalLossBs: 0,
+      });
+    }
+
+    const group = groups.get(key);
+    group.items.push(row);
+    group.penaltyBs = Number((group.penaltyBs + toNumber(row?.penaltyBs)).toFixed(2));
+    group.settledDamageBs = Number((group.settledDamageBs + toNumber(row?.settledDamageBs)).toFixed(2));
+    group.pendingDamageBs = Number((group.pendingDamageBs + toNumber(row?.pendingDamageBs)).toFixed(2));
+    group.damagedQty += Math.max(0, toNumber(row?.damagedQty));
+    group.missingQty += Math.max(0, toNumber(row?.missingQty));
+    if (row?.chargeOwner !== 'cliente') {
+      group.internalLossBs = Number((group.internalLossBs + toNumber(row?.penaltyBs)).toFixed(2));
+    }
+
+    const currentReturnedAt = new Date(group.returnedAt ?? 0).getTime();
+    const candidateReturnedAt = new Date(row?.returnedAt ?? row?.createdAt ?? 0).getTime();
+    if (
+      Number.isFinite(candidateReturnedAt)
+      && (!Number.isFinite(currentReturnedAt) || candidateReturnedAt > currentReturnedAt)
+    ) {
+      group.returnedAt = row?.returnedAt ?? row?.createdAt ?? group.returnedAt;
+    }
+
+    if (!group.customerName && row?.customerName) group.customerName = row.customerName;
+    if (!group.responsibleName && row?.responsibleName) group.responsibleName = row.responsibleName;
+    if (!group.eventDate && row?.eventDate) group.eventDate = row.eventDate;
+  });
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      itemCount: group.items.length,
+      pendingBs: group.pendingDamageBs,
+      hasClientPending: group.pendingDamageBs > 0.009,
+      hasInternalLoss: group.items.some((item) => item?.chargeOwner !== 'cliente'),
+      stateLabel: group.pendingDamageBs > 0.009
+        ? 'Por cobrar'
+        : group.items.every((item) => item?.chargeOwner !== 'cliente')
+          ? 'Pérdida interna'
+          : 'Cobrado / cubierto',
+    }))
+    .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
+};
+
 const getDateKey = (value) => {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) return '';
@@ -509,6 +584,7 @@ function AccountingSection({
   const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
   const [showReturnIssuesReport, setShowReturnIssuesReport] = useState(false);
   const [isExportingReturnIssues, setIsExportingReturnIssues] = useState(false);
+  const [returnIssueDetailGroup, setReturnIssueDetailGroup] = useState(null);
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
   const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
@@ -2143,6 +2219,22 @@ function AccountingSection({
   const visibleReturnIssueRows = returnIssuesView === 'pending'
     ? visiblePendingReturnIssueRows
     : visibleSettledReturnIssueRows;
+  const pendingReturnIssueContractRows = useMemo(
+    () => groupReturnIssuesByContract(
+      returnIssueRows.filter((row) => row.chargeOwner === 'cliente' && toNumber(row.pendingDamageBs) > 0.009),
+    ),
+    [returnIssueRows],
+  );
+  const settledReturnIssueContractRows = useMemo(
+    () => groupReturnIssuesByContract(
+      returnIssueRows.filter((row) => row.chargeOwner !== 'cliente' || toNumber(row.pendingDamageBs) <= 0.009),
+    ),
+    [returnIssueRows],
+  );
+  const visibleReturnIssueContractRows = useMemo(
+    () => groupReturnIssuesByContract(visibleReturnIssueRows),
+    [visibleReturnIssueRows],
+  );
   const visiblePrepaidRows = filterBigCashWorkspaceRows(prepaidLedgerRows, 'prepaid', (row) => row.createdAt);
   const visibleReceivableTotalBs = sumBy(visibleReceivableRows, (row) => row.pendingBs);
   const visibleFinalizedReceivableTotalBs = sumBy(visibleFinalizedReceivableRows, (row) => row.settledBs);
@@ -2287,7 +2379,7 @@ function AccountingSection({
   }, [bigCashWorkspaceRanges]);
 
   const exportReturnIssuesWorkbook = async () => {
-    if (isExportingReturnIssues || visibleReturnIssueRows.length === 0) return;
+    if (isExportingReturnIssues || visibleReturnIssueContractRows.length === 0) return;
     setIsExportingReturnIssues(true);
     try {
       const excelModule = await import('exceljs');
@@ -2297,62 +2389,107 @@ function AccountingSection({
       workbook.company = 'Copetín SRL';
       workbook.created = new Date();
       const isPendingView = returnIssuesView === 'pending';
+
       const sheet = workbook.addWorksheet(isPendingView ? 'Por cobrar' : 'Cobrados y liquidados', {
         views: [{ state: 'frozen', ySplit: 6 }],
         pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
       });
       sheet.columns = [
-        { width: 7 }, { width: 15 }, { width: 15 }, { width: 28 }, { width: 23 }, { width: 15 }, { width: 18 },
-        { width: 30 }, { width: 22 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 21 },
+        { width: 7 }, { width: 15 }, { width: 15 }, { width: 28 }, { width: 23 }, { width: 15 },
+        { width: 18 }, { width: 12 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 20 },
       ];
-      sheet.mergeCells('A1:N1');
+      sheet.mergeCells('A1:L1');
       sheet.getCell('A1').value = 'EL COPETÍN · CONTROL DE DAÑOS Y FALTANTES';
       sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
       sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
-      sheet.mergeCells('A2:I2');
+      sheet.mergeCells('A2:H2');
       sheet.getCell('A2').value = isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados';
       sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
-      sheet.mergeCells('J2:N2');
-      sheet.getCell('J2').value = `Periodo: ${returnIssuesReportRange}`;
-      sheet.getCell('J2').alignment = { horizontal: 'right' };
-      sheet.mergeCells('A3:I3');
-      sheet.getCell('A3').value = `${visibleReturnIssueRows.length} registro(s) · Total ${formatBs(visibleReturnIssueTotalBs)}`;
-      sheet.mergeCells('J3:N3');
-      sheet.getCell('J3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
-      sheet.getCell('J3').alignment = { horizontal: 'right' };
-      sheet.mergeCells('A4:N4');
+      sheet.mergeCells('I2:L2');
+      sheet.getCell('I2').value = `Periodo: ${returnIssuesReportRange}`;
+      sheet.getCell('I2').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A3:H3');
+      sheet.getCell('A3').value = `${visibleReturnIssueContractRows.length} contrato(s) · ${visibleReturnIssueRows.length} ítem(s) · Total ${formatBs(visibleReturnIssueTotalBs)}`;
+      sheet.mergeCells('I3:L3');
+      sheet.getCell('I3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getCell('I3').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A4:L4');
       sheet.getCell('A4').value = isPendingView
-        ? 'Incluye únicamente cargos de daños o faltantes asignados al cliente que todavía tienen saldo pendiente.'
-        : 'Incluye cargos ya cobrados, cubiertos con garantía o liquidados como responsabilidad interna.';
+        ? 'Una fila por contrato. Incluye únicamente cargos de daños o faltantes del cliente con saldo pendiente.'
+        : 'Una fila por contrato. Incluye cargos cobrados, cubiertos con garantía o liquidados internamente.';
       sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+
       const header = sheet.getRow(6);
-      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha recepción', 'Ítem', 'Novedad', 'Origen', 'Penalización', 'Liquidado', 'Pendiente', 'Estado'];
+      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Fecha recepción', 'Ítems', 'Penalización', 'Liquidado', 'Pendiente', 'Estado'];
       header.eachCell((cell) => {
         cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       });
-      visibleReturnIssueRows.forEach((row, index) => {
-        const eventDateKey = getDateKey(row.eventDate);
-        const returnedDate = new Date(row.returnedAt ?? '');
+
+      visibleReturnIssueContractRows.forEach((group, index) => {
+        const eventDateKey = getDateKey(group.eventDate);
+        const returnedDate = new Date(group.returnedAt ?? '');
         const validReturnedDate = Number.isNaN(returnedDate.getTime()) ? '' : returnedDate;
-        const novelty = [row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '', row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''].filter(Boolean).join(' / ');
-        const statusLabel = row.chargeOwner !== 'cliente'
-          ? 'Pérdida interna'
-          : toNumber(row.pendingDamageBs) > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto';
         const excelRow = sheet.addRow([
-          index + 1, row.contractCode || '', row.orderCode || '', row.customerName || '', row.responsibleName || '',
-          eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '', validReturnedDate, row.itemName || '', novelty,
-          getReturnIssueOwnerLabel(row.chargeOwner), toNumber(row.penaltyBs), toNumber(row.settledDamageBs),
-          toNumber(row.pendingDamageBs), statusLabel,
+          index + 1,
+          group.contractCode || '',
+          group.orderCode || '',
+          group.customerName || '',
+          group.responsibleName || '',
+          eventDateKey ? new Date(`${eventDateKey}T12:00:00`) : '',
+          validReturnedDate,
+          group.itemCount,
+          toNumber(group.penaltyBs),
+          toNumber(group.settledDamageBs),
+          toNumber(group.pendingDamageBs),
+          group.stateLabel,
         ]);
         excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
         excelRow.getCell(7).numFmt = 'dd/mm/yyyy hh:mm';
-        [11, 12, 13].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+        [9, 10, 11].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
       });
-      const lastRow = Math.max(6, 6 + visibleReturnIssueRows.length);
-      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 14 } };
+      const lastRow = Math.max(6, 6 + visibleReturnIssueContractRows.length);
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 12 } };
       sheet.pageSetup.printTitlesRow = '1:6';
+
+      const detailSheet = workbook.addWorksheet('Detalle de ítems', {
+        views: [{ state: 'frozen', ySplit: 1 }],
+        pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      });
+      detailSheet.columns = [
+        { width: 16 }, { width: 16 }, { width: 28 }, { width: 34 }, { width: 24 }, { width: 20 },
+        { width: 16 }, { width: 16 }, { width: 16 }, { width: 22 },
+      ];
+      const detailHeader = detailSheet.getRow(1);
+      detailHeader.values = ['Contrato', 'OS', 'Cliente', 'Ítem', 'Novedad', 'Origen', 'Penalización', 'Liquidado', 'Pendiente', 'Observación'];
+      detailHeader.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      visibleReturnIssueContractRows.forEach((group) => {
+        group.items.forEach((row) => {
+          const novelty = [
+            row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '',
+            row.missingQty > 0 ? `${row.missingQty} faltante(s)` : '',
+          ].filter(Boolean).join(' / ');
+          const detailRow = detailSheet.addRow([
+            group.contractCode || '',
+            group.orderCode || '',
+            group.customerName || '',
+            row.itemName || '',
+            novelty,
+            getReturnIssueOwnerLabel(row.chargeOwner),
+            toNumber(row.penaltyBs),
+            toNumber(row.settledDamageBs),
+            toNumber(row.pendingDamageBs),
+            row.note || '',
+          ]);
+          [7, 8, 9].forEach((column) => { detailRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+        });
+      });
+
       const buffer = await workbook.xlsx.writeBuffer();
       const range = bigCashWorkspaceRanges.issues ?? {};
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -2380,12 +2517,44 @@ function AccountingSection({
       return;
     }
     const isPendingView = returnIssuesView === 'pending';
-    const rows = visibleReturnIssueRows.map((row, index) => {
-      const novelty = [row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '', row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''].filter(Boolean).join(' / ');
-      const statusLabel = row.chargeOwner !== 'cliente' ? 'Pérdida interna' : toNumber(row.pendingDamageBs) > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto';
-      return `<tr><td>${index + 1}</td><td><strong>${escapeHtml(row.contractCode || row.orderCode)}</strong><br><small>${escapeHtml(row.customerName)}</small></td><td>${escapeHtml(row.itemName)}</td><td>${escapeHtml(novelty)}</td><td>${escapeHtml(getReturnIssueOwnerLabel(row.chargeOwner))}</td><td class="money">${escapeHtml(formatBs(row.penaltyBs))}</td><td class="money">${escapeHtml(formatBs(row.settledDamageBs))}</td><td class="money">${escapeHtml(formatBs(row.pendingDamageBs))}</td><td>${escapeHtml(statusLabel)}</td></tr>`;
+    const contractRows = visibleReturnIssueContractRows.map((group, index) => (
+      `<tr>
+        <td>${index + 1}</td>
+        <td><strong>${escapeHtml(group.contractCode || group.orderCode)}</strong><br><small>${escapeHtml(group.orderCode || '')}</small></td>
+        <td><strong>${escapeHtml(group.customerName)}</strong></td>
+        <td>${escapeHtml(group.responsibleName || '-')}</td>
+        <td>${escapeHtml(formatDate(group.eventDate))}</td>
+        <td>${escapeHtml(formatDate(group.returnedAt))}</td>
+        <td class="center"><strong>${group.itemCount}</strong></td>
+        <td class="money">${escapeHtml(formatBs(group.penaltyBs))}</td>
+        <td class="money">${escapeHtml(formatBs(group.settledDamageBs))}</td>
+        <td class="money">${escapeHtml(formatBs(group.pendingDamageBs))}</td>
+        <td>${escapeHtml(group.stateLabel)}</td>
+      </tr>`
+    )).join('');
+    const detailBlocks = visibleReturnIssueContractRows.map((group) => {
+      const itemRows = group.items.map((row) => {
+        const novelty = [
+          row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : '',
+          row.missingQty > 0 ? `${row.missingQty} faltante(s)` : '',
+        ].filter(Boolean).join(' / ');
+        return `<tr>
+          <td><strong>${escapeHtml(row.itemName)}</strong></td>
+          <td>${escapeHtml(novelty || '-')}</td>
+          <td>${escapeHtml(getReturnIssueOwnerLabel(row.chargeOwner))}</td>
+          <td class="money">${escapeHtml(formatBs(row.penaltyBs))}</td>
+          <td class="money">${escapeHtml(formatBs(row.settledDamageBs))}</td>
+          <td class="money">${escapeHtml(formatBs(row.pendingDamageBs))}</td>
+          <td>${escapeHtml(row.note || 'Sin observación')}</td>
+        </tr>`;
+      }).join('');
+      return `<section class="detail-contract">
+        <h2>Contrato ${escapeHtml(group.contractCode || group.orderCode)} · ${escapeHtml(group.customerName)} · ${group.itemCount} ítem(s)</h2>
+        <table><thead><tr><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Observación</th></tr></thead><tbody>${itemRows}</tbody></table>
+      </section>`;
     }).join('');
-    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de daños y faltantes</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;border-bottom:3px solid #173a70;padding-bottom:10px}h1{margin:4px 0;font-size:23px}.brand{color:#173a70;font-weight:800;letter-spacing:.12em}.meta{text-align:right}.summary{display:flex;gap:10px;margin:12px 0}.summary div{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:9px 12px;min-width:180px}.summary small{display:block;color:#64748b}.summary strong{font-size:17px}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:#fff;padding:7px;text-transform:uppercase;font-size:7px}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.money{text-align:right;font-weight:800;white-space:nowrap}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:700}@media print{.no-print{display:none}}</style></head><body><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>${isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h1><p>Control separado de cargos originados en la recepción de inventario.</p></div><div class="meta"><strong>${escapeHtml(returnIssuesReportRange)}</strong><br>${visibleReturnIssueRows.length} registro(s)</div></header><section class="summary"><div><small>Registros</small><strong>${visibleReturnIssueRows.length}</strong></div><div><small>${isPendingView ? 'Total pendiente' : 'Total liquidado'}</small><strong>${escapeHtml(formatBs(visibleReturnIssueTotalBs))}</strong></div></section><table><thead><tr><th>N°</th><th>Contrato / cliente</th><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Sin resultados.</td></tr>'}</tbody></table><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
+
+    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte de daños y faltantes</title><style>@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;border-bottom:3px solid #173a70;padding-bottom:10px}h1{margin:4px 0;font-size:23px}.brand{color:#173a70;font-weight:800;letter-spacing:.12em}.meta{text-align:right}.summary{display:flex;gap:10px;margin:12px 0}.summary div{border:1px solid #d7dee8;border-top:3px solid #173a70;padding:9px 12px;min-width:180px}.summary small{display:block;color:#64748b}.summary strong{font-size:17px}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#173a70;color:#fff;padding:7px;text-transform:uppercase;font-size:7px}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f8fafc}.money{text-align:right;font-weight:800;white-space:nowrap}.center{text-align:center}.detail-contract{margin-top:16px;break-inside:avoid}.detail-contract h2{font-size:12px;color:#173a70;margin:0 0 6px}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:700}@media print{.no-print{display:none}.detail-contract{break-inside:avoid}}</style></head><body><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>${isPendingView ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h1><p>Resumen por contrato con detalle de los ítems afectados.</p></div><div class="meta"><strong>${escapeHtml(returnIssuesReportRange)}</strong><br>${visibleReturnIssueContractRows.length} contrato(s) · ${visibleReturnIssueRows.length} ítem(s)</div></header><section class="summary"><div><small>Contratos</small><strong>${visibleReturnIssueContractRows.length}</strong></div><div><small>Ítems afectados</small><strong>${visibleReturnIssueRows.length}</strong></div><div><small>${isPendingView ? 'Total pendiente' : 'Total liquidado'}</small><strong>${escapeHtml(formatBs(visibleReturnIssueTotalBs))}</strong></div></section><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Recepción</th><th>Ítems</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>${contractRows || '<tr><td colspan="11">Sin resultados.</td></tr>'}</tbody></table>${detailBlocks}<div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
     popup.document.close();
     popup.focus();
   };
@@ -6239,15 +6408,15 @@ function AccountingSection({
                 <small>{returnIssuesView === 'pending' ? 'Pendiente en resultados' : 'Total liquidado en resultados'}</small>
                 <strong>{formatBs(visibleReturnIssueTotalBs)}</strong>
               </div>
-              <button type="button" className="bigcash-export-button" onClick={() => setShowReturnIssuesReport(true)} disabled={visibleReturnIssueRows.length === 0}>Generar reporte</button>
+              <button type="button" className="bigcash-export-button" onClick={() => setShowReturnIssuesReport(true)} disabled={visibleReturnIssueContractRows.length === 0}>Generar reporte</button>
             </div>
           </header>
           <div className="bigcash-receivables-switch" role="tablist" aria-label="Estado de daños y faltantes">
             <button type="button" role="tab" aria-selected={returnIssuesView === 'pending'} className={returnIssuesView === 'pending' ? 'is-active' : ''} onClick={() => setReturnIssuesView('pending')}>
-              Por cobrar <b>{returnIssueRows.filter((row) => row.chargeOwner === 'cliente' && toNumber(row.pendingDamageBs) > 0.009).length}</b>
+              Por cobrar <b>{pendingReturnIssueContractRows.length}</b>
             </button>
             <button type="button" role="tab" aria-selected={returnIssuesView === 'settled'} className={returnIssuesView === 'settled' ? 'is-active' : ''} onClick={() => setReturnIssuesView('settled')}>
-              Cobrados y liquidados <b>{returnIssueRows.filter((row) => row.chargeOwner !== 'cliente' || toNumber(row.pendingDamageBs) <= 0.009).length}</b>
+              Cobrados y liquidados <b>{settledReturnIssueContractRows.length}</b>
             </button>
           </div>
           {renderBigCashWorkspaceSearch('Buscar contrato, cliente, ítem o novedad...', 'issues', 'Fecha de recepción', visibleReturnIssueRows.length, '')}
@@ -6256,40 +6425,73 @@ function AccountingSection({
               <thead>
                 <tr>
                   <th>Contrato</th>
-                  <th>Item</th>
-                  <th>Novedad</th>
-                  <th>Origen</th>
+                  <th>Cliente</th>
+                  <th>Responsable</th>
+                  <th>Fecha recepción</th>
+                  <th>Ítems</th>
                   <th>Penalización</th>
+                  <th>Liquidado</th>
+                  <th>Pendiente</th>
                   <th>Estado</th>
-                  <th />
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleReturnIssueRows.map((row) => (
-                  <tr key={row.id}>
-                    <td><strong>{row.contractCode}</strong><small>{row.customerName}</small></td>
-                    <td><strong>{row.itemName}</strong>{row.note ? <small>{row.note}</small> : null}</td>
+                {visibleReturnIssueContractRows.map((group) => (
+                  <tr key={group.id}>
+                    <td><strong>{group.contractCode || group.orderCode}</strong><small>{group.orderCode}</small></td>
+                    <td><strong>{group.customerName}</strong></td>
+                    <td>{group.responsibleName || '-'}</td>
+                    <td><strong>{formatDate(group.returnedAt)}</strong><small>{getLongHourLabel(group.returnedAt)}</small></td>
                     <td>
-                      <strong>{row.damagedQty > 0 ? `${row.damagedQty} rotos` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltantes` : ''}</strong>
-                      <small>Daño {formatBs(row.damagedUnitChargeBs)} | Falta {formatBs(row.missingUnitChargeBs)}</small>
+                      <button
+                        type="button"
+                        className="accounting-inline-action"
+                        onClick={() => setReturnIssueDetailGroup(group)}
+                        title="Ver detalle de ítems con daños o faltantes"
+                      >
+                        {group.itemCount} ítem{group.itemCount === 1 ? '' : 's'}
+                      </button>
+                      <small>
+                        {group.damagedQty > 0 ? `${group.damagedQty} dañada(s)` : ''}
+                        {group.damagedQty > 0 && group.missingQty > 0 ? ' · ' : ''}
+                        {group.missingQty > 0 ? `${group.missingQty} faltante(s)` : ''}
+                      </small>
                     </td>
-                    <td><span className={`bigcash-status-pill ${row.chargeOwner === 'cliente' ? 'ready' : 'waiting'}`}>{getReturnIssueOwnerLabel(row.chargeOwner)}</span></td>
-                    <td className="amount">{formatBs(row.penaltyBs)}</td>
+                    <td className="amount">{formatBs(group.penaltyBs)}</td>
+                    <td className="amount">{formatBs(group.settledDamageBs)}</td>
+                    <td className="amount"><strong>{formatBs(group.pendingDamageBs)}</strong></td>
                     <td>
-                      {row.chargeOwner === 'cliente'
-                        ? <span className={`bigcash-status-pill ${row.pendingDamageBs > 0.009 ? 'waiting' : 'ready'}`}>{row.pendingDamageBs > 0.009 ? `Por cobrar ${formatBs(row.pendingDamageBs)}` : 'Cobrado / cubierto'}</span>
-                        : <span className="bigcash-status-pill waiting">Pérdida interna</span>}
+                      <span className={`bigcash-status-pill ${group.pendingDamageBs > 0.009 ? 'waiting' : 'ready'}`}>
+                        {group.stateLabel}
+                      </span>
                     </td>
                     <td>
-                      {row.chargeOwner === 'cliente' && row.pendingDamageBs > 0.009 ? (
-                        <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...row, id: row.rentalId, pendingBs: row.pendingDamageBs, damagePendingBs: row.pendingDamageBs, collectionTarget: 'damage' })}>Cobrar</button>
+                      {group.pendingDamageBs > 0.009 ? (
+                        <button
+                          type="button"
+                          className="accounting-inline-action"
+                          onClick={() => openCollectAction({
+                            ...group,
+                            id: group.rentalId,
+                            pendingBs: group.pendingDamageBs,
+                            damagePendingBs: group.pendingDamageBs,
+                            collectionTarget: 'damage',
+                          })}
+                        >
+                          Cobrar
+                        </button>
                       ) : (
-                        <span className="bigcash-action-muted">Registro</span>
+                        <button type="button" className="accounting-inline-action" onClick={() => setReturnIssueDetailGroup(group)}>
+                          Ver detalle
+                        </button>
                       )}
                     </td>
                   </tr>
                 ))}
-                {visibleReturnIssueRows.length === 0 ? <tr><td colSpan={7}><p className="status">No se encontraron daños o faltantes {returnIssuesView === 'pending' ? 'por cobrar' : 'liquidados'} con ese criterio.</p></td></tr> : null}
+                {visibleReturnIssueContractRows.length === 0 ? (
+                  <tr><td colSpan={10}><p className="status">No se encontraron daños o faltantes {returnIssuesView === 'pending' ? 'por cobrar' : 'liquidados'} con ese criterio.</p></td></tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -6545,7 +6747,7 @@ function AccountingSection({
               <header className="bigcash-report-modal-head">
                 <div>
                   <h2>Reporte de daños y faltantes</h2>
-                  <p>Vista previa del estado, rango y filtros actualmente aplicados.</p>
+                  <p>Resumen por contrato y detalle de los ítems afectados con los filtros actualmente aplicados.</p>
                 </div>
                 <button type="button" className="bigcash-report-close" onClick={() => setShowReturnIssuesReport(false)} aria-label="Cerrar reporte">×</button>
               </header>
@@ -6555,39 +6757,121 @@ function AccountingSection({
                     <div>
                       <div className="bigcash-report-brand">EL COPETÍN · CAJA GRANDE</div>
                       <h3>{returnIssuesView === 'pending' ? 'Daños y faltantes por cobrar' : 'Daños y faltantes cobrados y liquidados'}</h3>
-                      <p>Control separado de cargos originados en la recepción de inventario.</p>
+                      <p>Una fila por contrato. El detalle interno conserva cada ítem y su novedad.</p>
                     </div>
                     <div className="bigcash-report-meta">
                       <div><span>Periodo</span><strong>{returnIssuesReportRange}</strong></div>
                       <div><span>Generado</span><strong>{new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</strong></div>
-                      <div><span>Registros</span><strong>{visibleReturnIssueRows.length}</strong></div>
+                      <div><span>Contratos</span><strong>{visibleReturnIssueContractRows.length}</strong></div>
                     </div>
                   </header>
                   <section className="bigcash-report-summary">
-                    <article><small>Registros encontrados</small><strong>{visibleReturnIssueRows.length}</strong></article>
+                    <article><small>Contratos encontrados</small><strong>{visibleReturnIssueContractRows.length}</strong></article>
+                    <article><small>Ítems afectados</small><strong>{visibleReturnIssueRows.length}</strong></article>
                     <article className="money"><small>{returnIssuesView === 'pending' ? 'Total pendiente' : 'Total liquidado'}</small><strong>{formatBs(visibleReturnIssueTotalBs)}</strong></article>
                     <article><small>Estado</small><strong>{returnIssuesView === 'pending' ? 'Por cobrar' : 'Liquidados'}</strong></article>
                   </section>
                   <section className="bigcash-report-section">
-                    <h4>Detalle de daños y faltantes</h4>
+                    <h4>Resumen por contrato</h4>
                     <div className="bigcash-table-wrap">
                       <table className="bigcash-report-table">
-                        <thead><tr><th>N°</th><th>Contrato / cliente</th><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead>
+                        <thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Recepción</th><th>Ítems</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Estado</th></tr></thead>
                         <tbody>
-                          {visibleReturnIssueRows.map((row, index) => (
-                            <tr key={`report-issue-${row.id}`}>
+                          {visibleReturnIssueContractRows.map((group, index) => (
+                            <tr key={`report-contract-${group.id}`}>
                               <td>{index + 1}</td>
-                              <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.customerName}</small></td>
-                              <td><strong>{row.itemName}</strong>{row.note ? <small>{row.note}</small> : null}</td>
+                              <td><strong>{group.contractCode || group.orderCode}</strong><small>{group.orderCode}</small></td>
+                              <td><strong>{group.customerName}</strong></td>
+                              <td>{group.responsibleName || '-'}</td>
+                              <td><strong>{formatDate(group.returnedAt)}</strong><small>{getLongHourLabel(group.returnedAt)}</small></td>
+                              <td>{group.itemCount}</td>
+                              <td className="amount">{formatBs(group.penaltyBs)}</td>
+                              <td className="amount">{formatBs(group.settledDamageBs)}</td>
+                              <td className="amount">{formatBs(group.pendingDamageBs)}</td>
+                              <td>{group.stateLabel}</td>
+                            </tr>
+                          ))}
+                          {visibleReturnIssueContractRows.length === 0 ? <tr><td colSpan={10}>Sin resultados.</td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                  <section className="bigcash-report-section">
+                    <h4>Detalle de ítems por contrato</h4>
+                    {visibleReturnIssueContractRows.map((group) => (
+                      <div key={`report-detail-${group.id}`} className="bigcash-report-detail-card">
+                        <div className="bigcash-report-detail-head">
+                          <strong>Contrato {group.contractCode || group.orderCode}</strong>
+                          <span>{group.customerName} · {group.itemCount} ítem{group.itemCount === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="bigcash-table-wrap">
+                          <table className="bigcash-report-table">
+                            <thead><tr><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Observación</th></tr></thead>
+                            <tbody>
+                              {group.items.map((row) => (
+                                <tr key={`report-detail-item-${row.id}`}>
+                                  <td><strong>{row.itemName}</strong></td>
+                                  <td>{row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''}</td>
+                                  <td>{getReturnIssueOwnerLabel(row.chargeOwner)}</td>
+                                  <td className="amount">{formatBs(row.penaltyBs)}</td>
+                                  <td className="amount">{formatBs(row.settledDamageBs)}</td>
+                                  <td className="amount">{formatBs(row.pendingDamageBs)}</td>
+                                  <td>{row.note || 'Sin observación'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                </div>
+              </div>
+              <footer className="bigcash-report-footer">
+                <button type="button" className="ghost-button" onClick={() => setShowReturnIssuesReport(false)}>Cerrar</button>
+                <button type="button" className="ghost-button" onClick={exportReturnIssuesWorkbook} disabled={isExportingReturnIssues || visibleReturnIssueContractRows.length === 0}>{isExportingReturnIssues ? 'Generando Excel...' : 'Exportar a Excel'}</button>
+                <button type="button" className="primary-button" onClick={printReturnIssuesReport} disabled={visibleReturnIssueContractRows.length === 0}>Imprimir / guardar PDF</button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
+        {returnIssueDetailGroup ? (
+          <div className="bigcash-report-backdrop" onClick={() => setReturnIssueDetailGroup(null)}>
+            <section className="bigcash-report-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="bigcash-report-modal-head">
+                <div>
+                  <h2>Daños y faltantes · Contrato {returnIssueDetailGroup.contractCode || returnIssueDetailGroup.orderCode}</h2>
+                  <p>{returnIssueDetailGroup.customerName} · {returnIssueDetailGroup.itemCount} ítem{returnIssueDetailGroup.itemCount === 1 ? '' : 's'} con novedad.</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setReturnIssueDetailGroup(null)} aria-label="Cerrar detalle">×</button>
+              </header>
+              <div className="bigcash-report-document">
+                <div className="bigcash-report-page">
+                  <section className="bigcash-report-summary">
+                    <article><small>Ítems</small><strong>{returnIssueDetailGroup.itemCount}</strong></article>
+                    <article className="money"><small>Penalización</small><strong>{formatBs(returnIssueDetailGroup.penaltyBs)}</strong></article>
+                    <article className="money"><small>Liquidado</small><strong>{formatBs(returnIssueDetailGroup.settledDamageBs)}</strong></article>
+                    <article className="money"><small>Pendiente</small><strong>{formatBs(returnIssueDetailGroup.pendingDamageBs)}</strong></article>
+                  </section>
+                  <section className="bigcash-report-section">
+                    <h4>Ítems con novedad</h4>
+                    <div className="bigcash-table-wrap">
+                      <table className="bigcash-report-table">
+                        <thead><tr><th>Ítem</th><th>Novedad</th><th>Origen</th><th>Daño unit.</th><th>Falta unit.</th><th>Penalización</th><th>Liquidado</th><th>Pendiente</th><th>Observación</th></tr></thead>
+                        <tbody>
+                          {returnIssueDetailGroup.items.map((row) => (
+                            <tr key={`detail-issue-${row.id}`}>
+                              <td><strong>{row.itemName}</strong></td>
                               <td>{row.damagedQty > 0 ? `${row.damagedQty} dañado(s)` : ''}{row.damagedQty > 0 && row.missingQty > 0 ? ' / ' : ''}{row.missingQty > 0 ? `${row.missingQty} faltante(s)` : ''}</td>
                               <td>{getReturnIssueOwnerLabel(row.chargeOwner)}</td>
+                              <td className="amount">{formatBs(row.damagedUnitChargeBs)}</td>
+                              <td className="amount">{formatBs(row.missingUnitChargeBs)}</td>
                               <td className="amount">{formatBs(row.penaltyBs)}</td>
                               <td className="amount">{formatBs(row.settledDamageBs)}</td>
                               <td className="amount">{formatBs(row.pendingDamageBs)}</td>
-                              <td>{row.chargeOwner !== 'cliente' ? 'Pérdida interna' : row.pendingDamageBs > 0.009 ? 'Por cobrar' : 'Cobrado / cubierto'}</td>
+                              <td>{row.note || 'Sin observación'}</td>
                             </tr>
                           ))}
-                          {visibleReturnIssueRows.length === 0 ? <tr><td colSpan={9}>Sin resultados.</td></tr> : null}
                         </tbody>
                       </table>
                     </div>
@@ -6595,9 +6879,7 @@ function AccountingSection({
                 </div>
               </div>
               <footer className="bigcash-report-footer">
-                <button type="button" className="ghost-button" onClick={() => setShowReturnIssuesReport(false)}>Cerrar</button>
-                <button type="button" className="ghost-button" onClick={exportReturnIssuesWorkbook} disabled={isExportingReturnIssues || visibleReturnIssueRows.length === 0}>{isExportingReturnIssues ? 'Generando Excel...' : 'Exportar a Excel'}</button>
-                <button type="button" className="primary-button" onClick={printReturnIssuesReport} disabled={visibleReturnIssueRows.length === 0}>Imprimir / guardar PDF</button>
+                <button type="button" className="primary-button" onClick={() => setReturnIssueDetailGroup(null)}>Cerrar</button>
               </footer>
             </section>
           </div>
