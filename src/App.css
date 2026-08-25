@@ -68697,3 +68697,45 @@ button.inventory-loss-row-action:hover {
   color: #08733f !important;
   font-weight: 950 !important;
 }
+
+/* Caja Grande · garantías resueltas compactas y con sus 11 columnas visibles. */
+.accounting-bigcash-view .bigcash-guarantees-table-wrap.is-returned {
+  min-height: 0 !important;
+  max-height: 25.2rem !important;
+  overflow: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned {
+  width: 100% !important;
+  min-width: 74rem !important;
+  height: auto !important;
+  min-height: 0 !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned tbody,
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned tr {
+  height: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned td {
+  height: auto !important;
+  min-height: 0 !important;
+  padding-block: 0.82rem !important;
+}
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(1) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(2) { width: 13% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(3) { width: 11% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(4) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(5) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(6) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(7) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(8) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(9) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(10) { width: 10% !important; }
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned :is(th, td):nth-child(11) { width: 8% !important; }
+
+.accounting-bigcash-view .bigcash-guarantees-table.is-returned td:nth-child(6) {
+  text-align: center !important;
+}
