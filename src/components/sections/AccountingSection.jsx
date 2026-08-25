@@ -6424,104 +6424,10 @@ function AccountingSection({
             </button>
           </div>
           {renderBigCashWorkspaceSearch('Buscar contrato, cliente, ítem o novedad...', 'issues', 'Fecha de recepción', visibleReturnIssueContractRows.length, '')}
-          <div className="bigcash-table-wrap bigcash-command-table-wrap">
-            <style>{`
-              .bigcash-return-issues-table {
-                width: 100%;
-                min-width: 0 !important;
-                table-layout: fixed;
-              }
-              .bigcash-return-issues-table th {
-                padding: 11px 9px;
-                font-size: 10px;
-                line-height: 1.15;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                vertical-align: middle;
-              }
-              .bigcash-return-issues-table td {
-                padding: 13px 9px;
-                vertical-align: middle;
-                line-height: 1.2;
-                overflow: hidden;
-              }
-              .bigcash-return-issues-table td > strong {
-                display: block;
-                line-height: 1.2;
-              }
-              .bigcash-return-issues-table td > small {
-                display: block;
-                margin-top: 3px;
-                line-height: 1.15;
-              }
-              .bigcash-return-issues-table .amount {
-                text-align: right;
-                white-space: nowrap;
-              }
-              .return-issue-novelty {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                flex-wrap: nowrap;
-                white-space: nowrap;
-              }
-              .return-issue-novelty span {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 24px;
-                padding: 3px 7px;
-                border: 1px solid #d9e2ef;
-                border-radius: 999px;
-                background: #f8fafc;
-                color: #173a70;
-                font-size: 10px;
-                font-weight: 800;
-              }
-              .return-issue-novelty span.is-damage {
-                border-color: #ffd3b8;
-                background: #fff7f0;
-                color: #b54708;
-              }
-              .return-issue-novelty span.is-missing {
-                border-color: #ffd8dd;
-                background: #fff5f6;
-                color: #b42318;
-              }
-              .bigcash-return-issues-table .return-issue-status {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                max-width: 100%;
-                min-height: 27px;
-                padding: 4px 8px;
-                white-space: nowrap;
-                font-size: 10px;
-                line-height: 1;
-              }
-              .bigcash-return-issues-table .return-issue-detail-button {
-                min-width: 44px;
-                padding-inline: 9px;
-                white-space: nowrap;
-              }
-            `}</style>
+          <div className="bigcash-table-wrap bigcash-command-table-wrap bigcash-return-issues-table-wrap">
             <table
               className="accounting-table bigcash-table bigcash-command-table bigcash-return-issues-table"
             >
-              <colgroup>
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '10%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '5%' }} />
-              </colgroup>
               <thead>
                 <tr>
                   <th>Contrato</th>
@@ -6557,7 +6463,7 @@ function AccountingSection({
                     <td>
                       <button
                         type="button"
-                        className="accounting-inline-action"
+                        className="accounting-inline-action return-issue-items-button"
                         onClick={() => setReturnIssueDetailGroup(group)}
                         title="Ver los ítems con daños o faltantes"
                       >

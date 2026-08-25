@@ -68789,3 +68789,215 @@ button.inventory-loss-row-action:hover {
 .accounting-bigcash-view .bigcash-receivables-table.is-finalized .bigcash-receivable-actions {
   text-align: center !important;
 }
+
+
+/* ============================================================
+   Caja Grande · Daños y faltantes por contrato
+   Alcance deliberadamente aislado a esta tabla.
+   No modifica Cobros, Garantías, Movimientos ni otras grillas.
+   ============================================================ */
+.accounting-bigcash-view .bigcash-return-issues-table-wrap {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: hidden !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th,
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td {
+  min-width: 0 !important;
+  width: auto;
+  padding: 0.72rem 0.52rem !important;
+  vertical-align: middle !important;
+  overflow: hidden !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th {
+  font-size: 0.64rem !important;
+  font-weight: 900 !important;
+  line-height: 1.05 !important;
+  letter-spacing: 0.015em !important;
+  white-space: nowrap !important;
+  text-overflow: clip !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td {
+  font-size: 0.75rem !important;
+  line-height: 1.15 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td > strong {
+  display: block !important;
+  min-width: 0 !important;
+  color: #071f49 !important;
+  font-size: 0.78rem !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td > small {
+  display: block !important;
+  margin-top: 0.16rem !important;
+  color: #63748d !important;
+  font-size: 0.63rem !important;
+  font-weight: 750 !important;
+  line-height: 1.08 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(1),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(1) {
+  width: 7% !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(2),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(2) {
+  width: 16% !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(3),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(3) {
+  width: 12% !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(4),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(4) {
+  width: 10% !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(5),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(5) {
+  width: 7% !important;
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(6),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(6) {
+  width: 11% !important;
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(7),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(7),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(8),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(8),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(9),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(9) {
+  width: 8% !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(10),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(10) {
+  width: 8% !important;
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table th:nth-child(11),
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table td:nth-child(11) {
+  width: 5% !important;
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table .amount {
+  font-size: 0.75rem !important;
+  white-space: nowrap !important;
+  text-align: right !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-novelty {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.28rem !important;
+  min-width: 0 !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-novelty span {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 0 !important;
+  min-height: 1.55rem !important;
+  padding: 0.2rem 0.38rem !important;
+  border: 1px solid #d9e2ef !important;
+  border-radius: 999px !important;
+  background: #f8fafc !important;
+  color: #173a70 !important;
+  font-size: 0.61rem !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-novelty span.is-damage {
+  border-color: #f7c9aa !important;
+  background: #fff7f0 !important;
+  color: #b54708 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-novelty span.is-missing {
+  border-color: #f4c8ce !important;
+  background: #fff5f6 !important;
+  color: #b42318 !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-items-button {
+  width: auto !important;
+  min-width: 4.35rem !important;
+  max-width: 100% !important;
+  min-height: 1.9rem !important;
+  padding: 0 0.52rem !important;
+  border-radius: 0.65rem !important;
+  font-size: 0.67rem !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  max-width: 100% !important;
+  min-height: 1.75rem !important;
+  padding: 0.28rem 0.48rem !important;
+  border-radius: 0.6rem !important;
+  font-size: 0.62rem !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.accounting-bigcash-view .bigcash-return-issues-table-wrap .return-issue-detail-button {
+  width: auto !important;
+  min-width: 2.8rem !important;
+  max-width: 100% !important;
+  min-height: 1.9rem !important;
+  padding: 0 0.44rem !important;
+  border-radius: 0.6rem !important;
+  font-size: 0.66rem !important;
+  white-space: nowrap !important;
+}
+
+/* En pantallas más estrechas se conserva la tabla completa mediante scroll,
+   sin deformar ni afectar otras tablas de Caja Grande. */
+@media (max-width: 1180px) {
+  .accounting-bigcash-view .bigcash-return-issues-table-wrap {
+    overflow-x: auto !important;
+  }
+
+  .accounting-bigcash-view .bigcash-return-issues-table-wrap .bigcash-return-issues-table {
+    width: 70rem !important;
+    min-width: 70rem !important;
+  }
+}
