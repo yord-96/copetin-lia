@@ -1900,7 +1900,6 @@ function ServiceOrdersSection({
   const [itemObservationModal, setItemObservationModal] = useState(null);
   const [availabilityDetailModal, setAvailabilityDetailModal] = useState(null);
   const [comboAvailabilityDetailModal, setComboAvailabilityDetailModal] = useState(null);
-  const [availabilityOverview, setAvailabilityOverview] = useState(null);
   const [draggedSelectedItemKey, setDraggedSelectedItemKey] = useState('');
   const [formError, setFormError] = useState('');
   const [actionFeedback, setActionFeedback] = useState('');
@@ -4735,30 +4734,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     [contractNotificationCount, contractRows.length, quoteNotificationCount, quoteRows.length],
   );
 
-  useEffect(() => {
-    if (!modalOpen) {
-      setAvailabilityOverview(null);
-      return undefined;
-    }
-    if (currentStep !== 2) return undefined;
-
-    let cancelled = false;
-    api.sync.getAvailabilityOverview()
-      .then((overview) => {
-        if (!cancelled) setAvailabilityOverview(overview ?? null);
-      })
-      .catch(() => {
-        // La validacion definitiva del servidor sigue protegiendo el guardado.
-        // Si este resumen falla, conservamos temporalmente los datos ya cargados
-        // en Ordenes en vez de bloquear el wizard.
-        if (!cancelled) setAvailabilityOverview(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentStep, modalOpen]);
-
   const draftAvailabilityPeriod = useMemo(
     () => buildAvailabilityPeriod({
       deliveryDate: draft.deliveryDate || draft.eventDate,
@@ -4806,24 +4781,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       const excludeRentalId = draftRentalId || currentContract?.rentalId || linkedRental?.id || null;
       const excludeOrderCode = draftOrderCode || currentContract?.orderCode || linkedRental?.orderCode || null;
       const excludeContractCode = draftContractCode || currentContract?.contractCode || null;
-      const availabilityItems = Array.isArray(availabilityOverview?.items)
-        ? availabilityOverview.items
-        : items;
-      const availabilityRentals = Array.isArray(availabilityOverview?.rentals)
-        ? availabilityOverview.rentals
-        : rentals;
-      const availabilityContracts = Array.isArray(availabilityOverview?.contracts)
-        ? availabilityOverview.contracts
-        : contracts;
-      const availabilityQuotes = Array.isArray(availabilityOverview?.quotes)
-        ? availabilityOverview.quotes
-        : quotes;
-
       return getProjectedInventoryAvailability({
-        items: availabilityItems,
-        rentals: availabilityRentals,
-        contracts: availabilityContracts,
-        quotes: availabilityQuotes,
+        items,
+        rentals,
+        contracts,
+        quotes,
         period: draftAvailabilityPeriod,
         exclude: {
           recordId: draft.recordId,
@@ -4835,7 +4797,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         },
       });
     },
-    [availabilityOverview, contracts, currentStep, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, modalOpen, quotes, rentals],
+    [contracts, currentStep, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, modalOpen, quotes, rentals],
   );
 
   const itemById = useMemo(
@@ -14983,6 +14945,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           <span>Contrato / orden</span>
                           <strong>{code}</strong>
                           {record.orderCode && record.orderCode !== code ? <small>{record.orderCode}</small> : null}
+                          <small>Creado: {record.createdAt ? formatDate(record.createdAt) : 'Sin fecha'}</small>
                         </div>
                         <div>
                           <span>Cliente</span>
@@ -15134,6 +15097,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <span>{component.label}</span>
                             <strong>{option.item.name}</strong>
                             <small>{code}</small>
+                            <small>Creado: {record.createdAt ? formatDate(record.createdAt) : 'Sin fecha'}</small>
                           </div>
                           <div>
                             <span>Cliente</span>
