@@ -1489,6 +1489,13 @@ function AccountingSection({
         .filter((movement) => cashMovementMatchesContractReferences(movement, contractReferences))
         .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
       const ledgerGuaranteeEvidence = getGuaranteeLedgerEvidence(contract);
+      const explicitlyAppliedGuaranteeBs = Math.max(
+        ledgerGuaranteeEvidence.appliedBs,
+        toNumber(rental?.returnSettlement?.discountCoveredByDepositBs),
+        toNumber(rental?.returnSettlement?.guaranteeAppliedBs),
+        toNumber(rental?.guarantee?.appliedBs),
+        toNumber(contract?.guarantee?.appliedBs),
+      );
       const cashRefundedBs = sumBy(refundMovements, (movement) => Math.abs(toNumber(movement?.amountBs)));
       const refundedBs = Math.max(cashRefundedBs, ledgerGuaranteeEvidence.refundedBs);
       const guaranteePaymentEvidence = [
@@ -1556,7 +1563,10 @@ function AccountingSection({
         const targetText = normalizeText([movement?.collectionTarget, movement?.category, movement?.accountingTag, movement?.type].join(' '));
         return /(damage|dano|faltante)/.test(targetText) ? sum + Math.max(0, toNumber(movement?.amountBs)) : sum;
       }, 0).toFixed(2)));
-      const pendingDamageBs = Math.max(0, Number((clientPenaltyBs - collectedDamageBs).toFixed(2)));
+      const pendingDamageBs = Math.max(
+        0,
+        Number((clientPenaltyBs - collectedDamageBs - explicitlyAppliedGuaranteeBs).toFixed(2)),
+      );
       const cashGuaranteePaidBs = calculateGuaranteePaidEvidence(
         linkedContractMovements,
         isGuaranteeMovement,
@@ -1567,9 +1577,7 @@ function AccountingSection({
         guaranteeInfo.isValidated ? guaranteeInfo.validatedBs : 0,
       );
       const guaranteeUnpaidBs = Math.max(0, Number((guaranteeBs - guaranteePaidBs).toFixed(2)));
-      const appliedBs = guaranteePaidBs > 0 && isReturned
-        ? Math.min(guaranteePaidBs, Number((currentOutstandingRentalBs + pendingDamageBs).toFixed(2)))
-        : 0;
+      const appliedBs = Math.min(guaranteePaidBs, explicitlyAppliedGuaranteeBs);
       const guaranteeSettlement = calculateGuaranteeSettlement({
         paidBs: guaranteePaidBs,
         appliedBs,
@@ -1583,7 +1591,11 @@ function AccountingSection({
       const registeredByNames = [...new Set(refundEvidence
         .map((movement) => String(movement?.createdByName ?? movement?.createdBy ?? movement?.responsible ?? movement?.editedByName ?? '').trim())
         .filter(Boolean))];
-      const lastRefundMovement = refundEvidence.at(-1);
+      const resolutionEvidence = [
+        ...refundEvidence,
+        ...ledgerGuaranteeEvidence.applicationEntries,
+      ].sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
+      const lastResolutionMovement = resolutionEvidence.at(-1);
 
       return {
         id: rental.id,
@@ -1612,7 +1624,7 @@ function AccountingSection({
         isReadyToReturn: isReturned && refundableBs > 0,
         isPartiallyRefunded: guaranteeSettlement.isPartiallyRefunded,
         isFullyResolved: guaranteeSettlement.isFullyResolved,
-        returnedAt: lastRefundMovement?.receiptIssuedAt ?? lastRefundMovement?.createdAt ?? rental?.returnedAt,
+        returnedAt: lastResolutionMovement?.receiptIssuedAt ?? lastResolutionMovement?.createdAt ?? rental?.returnedAt,
         refundPaymentMethodLabel: refundPaymentMethods.join(' + ') || 'Sin método',
         paymentReceiptCodes: paymentReceiptCodes.join(', '),
         paymentRegisteredBy: paymentRegisteredByNames.join(', ') || '-',

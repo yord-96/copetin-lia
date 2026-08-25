@@ -95,8 +95,10 @@ test('reconstruye una garantia combinada y su devolucion parcial desde la hoja e
 
   const evidence = getGuaranteeLedgerEvidence(contract);
   assert.equal(evidence.paidBs, 170);
+  assert.equal(evidence.appliedBs, 0);
   assert.equal(evidence.refundedBs, 150);
   assert.equal(evidence.paymentEntries.length, 1);
+  assert.equal(evidence.applicationEntries.length, 0);
   assert.equal(evidence.refundEntries.length, 1);
 });
 
@@ -105,7 +107,42 @@ test('no trata como pagada una garantia sin evidencia de caja', () => {
     economicLedger: [{ type: 'guarantee', amountBs: 170 }],
   });
   assert.equal(evidence.paidBs, 0);
+  assert.equal(evidence.appliedBs, 0);
   assert.equal(evidence.refundedBs, 0);
+});
+
+test('no aplica automaticamente la garantia por el solo hecho de existir danos', () => {
+  const evidence = getGuaranteeLedgerEvidence({
+    economicLedger: [{
+      type: 'guarantee',
+      amountBs: 117.7,
+      cashMovementId: 'cash-guarantee',
+    }],
+  });
+
+  assert.equal(evidence.paidBs, 117.7);
+  assert.equal(evidence.appliedBs, 0);
+  assert.equal(evidence.applicationEntries.length, 0);
+});
+
+test('solo reconoce como aplicada la garantia registrada en la hoja economica', () => {
+  const evidence = getGuaranteeLedgerEvidence({
+    economicLedger: [
+      { type: 'guarantee', amountBs: 117.7, cashMovementId: 'cash-guarantee' },
+      { id: 'apply-1', type: 'charge', amountBs: 117.7, note: 'Aplicado contra la garantia' },
+      {
+        id: 'cash-damage-1',
+        type: 'charge',
+        amountBs: 35,
+        cashCollectionTarget: 'damage',
+        cashMovementId: 'cash-damage',
+      },
+    ],
+  });
+
+  assert.equal(evidence.appliedBs, 117.7);
+  assert.equal(evidence.applicationEntries.length, 1);
+  assert.equal(evidence.applicationEntries[0].id, 'apply-1');
 });
 
 test('una validacion positiva del contrato prevalece sobre el estado antiguo del alquiler', () => {

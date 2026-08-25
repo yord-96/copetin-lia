@@ -29,6 +29,12 @@ const isGuaranteeRefundEntry = (entry) => {
   return type === 'refund' && (source === 'guarantee' || source === 'garantia' || tag === 'guarantee_refund');
 };
 
+const isCashCollectedDamageEntry = (entry) => (
+  entry?.type === 'charge'
+  && entry?.cashCollectionTarget === 'damage'
+  && isConfirmedLedgerEntry(entry)
+);
+
 /**
  * Rebuilds guarantee evidence from the durable contract ledger when the fast
  * accounting bootstrap does not include old cash movements.
@@ -69,14 +75,19 @@ export const getGuaranteeLedgerEvidence = (contract) => {
     0,
   );
   const refundEntries = ledger.filter((entry) => isGuaranteeRefundEntry(entry) && isConfirmedLedgerEntry(entry));
+  const applicationEntries = ledger.filter((entry) => (
+    entry?.type === 'charge' && !isCashCollectedDamageEntry(entry)
+  ));
 
   return {
     paidBs: toMoney(depositGuaranteeBs + directGuaranteeBs),
+    appliedBs: toMoney(applicationEntries.reduce((sum, entry) => sum + toMoney(entry?.amountBs), 0)),
     refundedBs: toMoney(refundEntries.reduce((sum, entry) => sum + toMoney(entry?.amountBs), 0)),
     paymentEntries: [
       ...deposits.filter((entry) => getDepositGuaranteeBs(entry) > 0),
       ...directGuaranteeEntries,
     ],
+    applicationEntries,
     refundEntries,
   };
 };
