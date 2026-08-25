@@ -11258,18 +11258,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 style={{ width: '100%', minWidth: 0, tableLayout: 'fixed' }}
               >
                 <colgroup>
-                  <col style={{ width: '7%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  <col style={{ width: '8.5%' }} />
+                  <col style={{ width: '10.5%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '13%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '5%' }} />
-                  <col style={{ width: '8%' }} />
-                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '9.5%' }} />
+                  <col style={{ width: '4.5%' }} />
                   <col style={{ width: '7%' }} />
-                  <col style={{ width: '6%' }} />
-                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  <col style={{ width: '10.5%' }} />
                 </colgroup>
                 <thead>
                   <tr>

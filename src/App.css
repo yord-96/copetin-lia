@@ -69001,3 +69001,262 @@ button.inventory-loss-row-action:hover {
     min-width: 70rem !important;
   }
 }
+
+/* === ORDENES · AJUSTE VISUAL CONSERVADOR 2026-08-25 === */
+/*
+  Alcance:
+  - Solo la vista .orders-view.
+  - No cambia lógica, eventos, filtros, estados, paginación ni menús.
+  - Mantiene la identidad visual actual y solo corrige proporciones,
+    aire desperdiciado, lectura de tabla y visibilidad de ACCIONES.
+*/
+@media (min-width: 769px) {
+  /* Aprovechar mejor el ancho útil sin cambiar la estructura de la vista. */
+  .orders-view {
+    gap: 0.72rem !important;
+  }
+
+  .orders-view > .orders-header {
+    margin-bottom: 0 !important;
+    padding-top: 0.08rem !important;
+    padding-bottom: 0.12rem !important;
+  }
+
+  .orders-view > .orders-header h2 {
+    margin-bottom: 0.12rem !important;
+  }
+
+  .orders-view > .orders-header p {
+    margin-top: 0 !important;
+  }
+
+  .orders-view > .orders-table-card {
+    gap: 0.68rem !important;
+    padding: 0.76rem !important;
+    border-radius: 0.92rem !important;
+  }
+
+  /* Tarjetas superiores: mismas piezas, un poco más compactas y alineadas. */
+  .orders-view .orders-view-switch.orders-workflow-tabs {
+    min-height: 4.15rem !important;
+  }
+
+  .orders-view .orders-workflow-tabs > button {
+    min-height: 4.15rem !important;
+    padding-top: 0.58rem !important;
+    padding-bottom: 0.58rem !important;
+  }
+
+  .orders-view .orders-board-next-code {
+    min-height: 4.15rem !important;
+  }
+
+  /* Filtros: conservar exactamente los mismos controles, con menos aire. */
+  .orders-view .orders-filter-panel {
+    gap: 0.48rem !important;
+    padding: 0.55rem 0.62rem !important;
+    border-radius: 0.78rem !important;
+  }
+
+  .orders-view .orders-toolbar {
+    gap: 0.5rem !important;
+  }
+
+  .orders-view .orders-toolbar :is(input, button),
+  .orders-view .orders-date-range-filter label {
+    min-height: 2.25rem;
+  }
+
+  .orders-view .orders-status-tabs {
+    gap: 0.38rem !important;
+  }
+
+  .orders-view .orders-status-tabs > button {
+    min-height: 1.9rem !important;
+    padding: 0.28rem 0.58rem !important;
+  }
+
+  .orders-view .orders-contract-legend {
+    gap: 0.55rem !important;
+  }
+
+  /* Tabla contratos: usar todo el ancho disponible, sin cortar ACCIONES. */
+  .orders-view .orders-commercial-table-wrap:has(.orders-contracts-table) {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    border-radius: 0.78rem !important;
+  }
+
+  .orders-view .orders-contracts-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+  }
+
+  .orders-view .orders-contracts-table thead th {
+    height: 2.45rem !important;
+    padding: 0.5rem 0.32rem !important;
+    font-size: 0.68rem !important;
+    line-height: 1.08 !important;
+    vertical-align: middle !important;
+  }
+
+  .orders-view .orders-contracts-table tbody td {
+    height: 3.92rem !important;
+    padding: 0.46rem 0.34rem !important;
+    vertical-align: middle !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-cell-main {
+    gap: 0.12rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-cell-main strong,
+  .orders-view .orders-contracts-table .orders-responsible-cell strong {
+    font-size: 0.75rem !important;
+    line-height: 1.16 !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-cell-main span,
+  .orders-view .orders-contracts-table .orders-responsible-cell small {
+    font-size: 0.63rem !important;
+    line-height: 1.18 !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-responsible-cell {
+    gap: 0.38rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-responsible-cell > span {
+    width: 1.55rem !important;
+    height: 1.55rem !important;
+    font-size: 0.58rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-contract-code {
+    min-width: 2.55rem !important;
+    padding: 0.24rem 0.36rem !important;
+    font-size: 0.82rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-status-badge {
+    min-height: 1.55rem !important;
+    padding: 0.22rem 0.45rem !important;
+    font-size: 0.62rem !important;
+    white-space: nowrap !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-cell {
+    gap: 0.12rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-cell strong {
+    font-size: 0.71rem !important;
+    line-height: 1.12 !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-cell span {
+    font-size: 0.59rem !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-total {
+    font-size: 0.76rem !important;
+    white-space: nowrap !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-finalized-check {
+    width: 1.85rem !important;
+    height: 1.85rem !important;
+    font-size: 0.68rem !important;
+  }
+
+  /* ACCIONES: reservar espacio real para Abrir + menú ⋮. */
+  .orders-view .orders-contracts-table th:last-child,
+  .orders-view .orders-contracts-table td.orders-menu {
+    overflow: visible !important;
+    padding-left: 0.28rem !important;
+    padding-right: 0.42rem !important;
+    text-align: center !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-row-actions {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.34rem !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-open-btn {
+    flex: 0 0 auto !important;
+    min-width: 3.2rem !important;
+    min-height: 1.85rem !important;
+    padding: 0.3rem 0.52rem !important;
+    border-radius: 0.52rem !important;
+    font-size: 0.66rem !important;
+    white-space: nowrap !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-menu .transport-row-menu-button {
+    flex: 0 0 auto !important;
+    width: 1.9rem !important;
+    min-width: 1.9rem !important;
+    height: 1.9rem !important;
+    display: inline-grid !important;
+    place-items: center !important;
+    padding: 0 !important;
+    border: 1px solid #dce4ef !important;
+    border-radius: 999px !important;
+    background: #ffffff !important;
+    color: #53627a !important;
+    font-size: 1rem !important;
+    line-height: 1 !important;
+    box-shadow: 0 2px 6px rgba(16, 43, 89, 0.07) !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-menu .transport-row-menu-button:hover,
+  .orders-view .orders-contracts-table .orders-menu .transport-row-menu-button:focus-visible {
+    border-color: #efb18c !important;
+    background: #fff8f3 !important;
+    color: #d94a0b !important;
+    outline: none !important;
+  }
+
+  /* Mantener filtros del encabezado compactos y simétricos. */
+  .orders-view .orders-contracts-table .orders-column-heading {
+    gap: 0.2rem !important;
+    justify-content: center !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-column-filter-trigger {
+    width: 1.28rem !important;
+    min-width: 1.28rem !important;
+    height: 1.28rem !important;
+    padding: 0 !important;
+  }
+
+  .orders-view .orders-contracts-table .orders-column-filter-trigger svg {
+    width: 0.7rem !important;
+    height: 0.7rem !important;
+  }
+
+  /* Pie más discreto: conserva exactamente la información existente. */
+  .orders-view .orders-footer {
+    padding-top: 0.36rem !important;
+  }
+}
+
+/* En resoluciones de escritorio más estrechas: scroll solo si realmente hace falta.
+   No cambia el contenido ni el funcionamiento. */
+@media (min-width: 769px) and (max-width: 1180px) {
+  .orders-view .orders-commercial-table-wrap:has(.orders-contracts-table) {
+    overflow-x: auto !important;
+  }
+
+  .orders-view .orders-contracts-table {
+    width: 72rem !important;
+    min-width: 72rem !important;
+  }
+}
