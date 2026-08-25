@@ -35,7 +35,7 @@ import { getProductImageSrc } from '../../utils/productImage';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
-import { calculateGuaranteeSettlement } from '../../utils/guaranteeSettlement';
+import { calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -2787,16 +2787,26 @@ function ServiceOrdersSection({
         return sum + Math.max(0, toMoneyNumber(allocation?.contractBs));
       }, 0);
       const rawGuaranteeStatus = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '').trim();
+      const rowGuaranteeEvidence = getGuaranteeLedgerEvidence(contract);
       const rowLedgerBackedGuaranteeBs = economicLedger.reduce((sum, entry) => (
         isEconomicGuaranteeBackedByCash(entry, rowLedgerById)
           ? sum + toMoneyNumber(entry.amountBs)
           : sum
       ), 0);
+      // La tabla debe mostrar la realidad economica actual y no quedarse con el
+      // snapshot historico contract.guarantee.status. La hoja economica ya tiene
+      // evidencia suficiente para reconstruir garantia pagada, aplicada o devuelta.
       const rowGuaranteeReserveBs = Math.max(
         rawGuaranteeStatus === 'validado' ? guaranteeBs : 0,
         rowLedgerBackedGuaranteeBs,
+        toMoneyNumber(rowGuaranteeEvidence?.paidBs),
       );
-      const rowGuaranteeAppliedBs = Math.min(rowGuaranteeReserveBs, rowLedgerTotals.chargesBs);
+      // No considerar cualquier dano como garantia aplicada: solo cuenta una
+      // aplicacion explicita registrada en la hoja economica.
+      const rowGuaranteeAppliedBs = Math.min(
+        rowGuaranteeReserveBs,
+        Math.max(0, toMoneyNumber(rowGuaranteeEvidence?.appliedBs)),
+      );
       const damageChargeBs = Math.max(
         0,
         toMoneyNumber(linkedRental?.returnSettlement?.penaltiesBs ?? linkedRental?.penaltiesBs),
@@ -2922,6 +2932,7 @@ function ServiceOrdersSection({
         paidBs: rowGuaranteeReserveBs,
         appliedBs: rowGuaranteeAppliedBs,
         refundedBs: Math.max(
+          toMoneyNumber(rowGuaranteeEvidence?.refundedBs),
           rowLedgerTotals.guaranteeRefundedBs,
           referencedGuaranteeRefundedBs,
         ),
