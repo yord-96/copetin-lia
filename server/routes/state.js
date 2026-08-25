@@ -11,6 +11,7 @@ import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../stor
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
 import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRentals.js';
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
+import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -67,13 +68,9 @@ const summarizeContract = (contract = {}) => summarizeOrdersContract(contract);
 
 const summarizeRental = (rental = {}) => ({
   ...summarizeOrdersRental(rental),
-  returnIssueSummary: (Array.isArray(rental.returnReport) ? rental.returnReport : [])
-    .filter((line) => (
-      Number(line?.damagedQty ?? 0) > 0
-      || Number(line?.missingQty ?? 0) > 0
-      || Number(line?.penaltyBs ?? 0) > 0
-    ))
+  returnIssueSummary: consolidateReturnIssueLines(rental?.returnReport)
     .map((line) => ({
+      lineKey: line?.lineKey ?? '',
       itemId: line?.itemId ?? '',
       itemName: line?.itemName ?? line?.name ?? 'Item',
       damagedQty: Number(line?.damagedQty ?? 0),
@@ -1288,7 +1285,8 @@ const getReturnedDamageSettlementBreakdown = (state, contract, rental) => {
     const normalized = String(value ?? '').trim().toLowerCase();
     return ['transporte', 'lavado'].includes(normalized) ? normalized : 'cliente';
   };
-  const clientDamageBs = directMoney((Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+  const consolidatedReturnIssues = consolidateReturnIssueLines(rental?.returnReport);
+  const clientDamageBs = directMoney(consolidatedReturnIssues
     .reduce((sum, line) => {
       if (normalizeChargeOwner(line?.chargeOwner) !== 'cliente') return sum;
       return sum + directMoney(line?.penaltyBs ?? (directMoney(line?.damagedFeeBs) + directMoney(line?.missingFeeBs)));
@@ -6386,12 +6384,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
         const contract = contractsById.get(String(rental?.contractId ?? ''));
         const damageBreakdown = getReturnedDamageSettlementBreakdown(state, contract, rental);
         let remainingSettledBs = damageBreakdown.settledBs;
-        return (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
-          .filter((line) => (
-            Number(line?.damagedQty ?? 0) > 0
-            || Number(line?.missingQty ?? 0) > 0
-            || Number(line?.penaltyBs ?? 0) > 0
-          ))
+        return consolidateReturnIssueLines(rental?.returnReport)
           .map((line, index) => {
             const chargeOwner = ['transporte', 'lavado'].includes(String(line?.chargeOwner ?? '').toLowerCase())
               ? String(line.chargeOwner).toLowerCase()
@@ -6405,7 +6398,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
               ? directMoney(Math.max(0, penaltyBs - settledDamageBs))
               : 0;
             return {
-              id: `${rental.id}-${line?.itemId ?? index}`,
+              id: `${rental.id}-${line?.lineKey || line?.itemId || index}`,
               rentalId: rental.id,
               contractId: contract?.id ?? rental?.contractId ?? '',
               orderCode: rental?.orderCode ?? '',
@@ -6414,6 +6407,8 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
               responsibleName: contract?.responsibles?.[0]?.name ?? contract?.responsibleName ?? rental?.createdByName ?? '-',
               eventDate: rental?.eventDate ?? contract?.eventDate ?? rental?.rentalDate ?? rental?.createdAt,
               returnedAt: rental?.returnedAt,
+              lineKey: line?.lineKey ?? '',
+              itemId: line?.itemId ?? '',
               itemName: line?.itemName ?? line?.name ?? 'Item',
               damagedQty: Number(line?.damagedQty ?? 0),
               missingQty: Number(line?.missingQty ?? 0),
@@ -7243,6 +7238,7 @@ const summarizeAvailabilityRecord = (record = {}) => ({
   deliveryWindowStart: record.deliveryWindowStart ?? '',
   pickupWindowEnd: record.pickupWindowEnd ?? '',
   pickupTimeMode: record.pickupTimeMode ?? '',
+  pickupDateMode: record.pickupDateMode ?? '',
   eventAddress: record.eventAddress ?? '',
   deliveryAddress: record.deliveryAddress ?? '',
   serviceAddress: record.serviceAddress ?? '',

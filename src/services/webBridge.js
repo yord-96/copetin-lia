@@ -2496,6 +2496,10 @@ const normalizeState = (state) => {
         pickupDate: String(quote?.pickupDate ?? '').trim(),
         pickupWindowStart: String(quote?.pickupWindowStart ?? '20:00').trim(),
         pickupWindowEnd: String(quote?.pickupWindowEnd ?? '22:00').trim(),
+        pickupDateMode: quote?.pickupDateMode === 'coordinate'
+          || (quote?.pickupDateMode === undefined && quote?.pickupTimeMode === 'coordinate')
+          ? 'coordinate'
+          : 'fixed',
         pickupTimeMode: quote?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
         driverId: String(quote?.driverId ?? '').trim() || null,
         vehicleId: String(quote?.vehicleId ?? '').trim() || null,
@@ -2854,6 +2858,10 @@ const normalizeState = (state) => {
         pickupDate: String(contract?.pickupDate ?? '').trim(),
         pickupWindowStart: String(contract?.pickupWindowStart ?? '20:00').trim(),
         pickupWindowEnd: String(contract?.pickupWindowEnd ?? '22:00').trim(),
+        pickupDateMode: contract?.pickupDateMode === 'coordinate'
+          || (contract?.pickupDateMode === undefined && contract?.pickupTimeMode === 'coordinate')
+          ? 'coordinate'
+          : 'fixed',
         pickupTimeMode: contract?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
         driverId: String(contract?.driverId ?? '').trim() || null,
         vehicleId: String(contract?.vehicleId ?? '').trim() || null,
@@ -9143,14 +9151,18 @@ export const buildContractDocumentHtml = ({
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';
   const deliveryEnd = deliveryOut?.windowEnd ?? contract?.deliveryWindowEnd ?? '-';
   const pickupTimeMode = contract?.pickupTimeMode ?? rental?.pickupTimeMode;
-  const pickupDate = pickupTimeMode === 'coordinate'
-    ? ''
+  const pickupDateMode = contract?.pickupDateMode === 'coordinate'
+    || (contract?.pickupDateMode === undefined && pickupTimeMode === 'coordinate')
+    ? 'coordinate'
+    : rental?.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
+  const pickupDate = pickupDateMode === 'coordinate'
+    ? 'Por coordinar'
     : formatDocumentScheduleDate(deliveryBack?.scheduledDate ?? contract?.pickupDate ?? rental.dueDate);
   const pickupStart = deliveryBack?.windowStart ?? contract?.pickupWindowStart ?? '-';
   const pickupEnd = deliveryBack?.windowEnd ?? contract?.pickupWindowEnd ?? '-';
   const deliveryTimeMode = contract?.deliveryTimeMode ?? rental?.deliveryTimeMode;
   const deliveryTimeLabel = deliveryTimeMode === 'coordinate' ? '' : `${deliveryStart} - ${deliveryEnd}`;
-  const pickupTimeLabel = pickupTimeMode === 'coordinate' ? '' : `${pickupStart} - ${pickupEnd}`;
+  const pickupTimeLabel = pickupTimeMode === 'coordinate' ? 'Por coordinar' : `${pickupStart} - ${pickupEnd}`;
   return `<!doctype html>
 <html>
   <head>
@@ -11410,15 +11422,20 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     }
   });
 
-  const pickupCoordinatesForAvailability = contract.pickupTimeMode === 'coordinate'
+  const legacyAvailabilityPickupCoordinate = contract.pickupDateMode === undefined
+    && contract.pickupTimeMode === 'coordinate';
+  const pickupDateCoordinatesForAvailability = contract.pickupDateMode === 'coordinate'
+    || legacyAvailabilityPickupCoordinate
+    || rental.pickupDateMode === 'coordinate';
+  const pickupTimeCoordinatesForAvailability = contract.pickupTimeMode === 'coordinate'
     || rental.pickupTimeMode === 'coordinate';
   const availabilityPeriod = buildAvailabilityPeriod({
     deliveryDate: contract.deliveryDate || rental.rentalDate,
     deliveryWindowStart: contract.deliveryWindowStart || rental.deliveryWindowStart || '00:00',
-    pickupDate: pickupCoordinatesForAvailability
+    pickupDate: pickupDateCoordinatesForAvailability
       ? (contract.eventDate || contract.deliveryDate || rental.rentalDate)
       : contract.pickupDate || rental.dueDate,
-    pickupWindowEnd: pickupCoordinatesForAvailability
+    pickupWindowEnd: pickupTimeCoordinatesForAvailability
       ? '23:59'
       : contract.pickupWindowEnd || rental.pickupWindowEnd || rental.dueTime || '23:59',
   });
@@ -11631,16 +11648,21 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   rental.customerName = contract.customerName;
   rental.customerPhone = contract.customerPhone;
   rental.rentalDate = contract.deliveryDate;
-  const pickupCoordinatesPending = contract.pickupTimeMode === 'coordinate';
-  rental.dueDate = pickupCoordinatesPending
+  const legacyCombinedPickupCoordinate = contract.pickupDateMode === undefined
+    && contract.pickupTimeMode === 'coordinate';
+  const pickupDateCoordinatesPending = contract.pickupDateMode === 'coordinate'
+    || legacyCombinedPickupCoordinate;
+  const pickupTimeCoordinatesPending = contract.pickupTimeMode === 'coordinate';
+  rental.dueDate = pickupDateCoordinatesPending
     ? (contract.eventDate || contract.deliveryDate)
     : contract.pickupDate;
-  rental.dueTime = pickupCoordinatesPending ? '23:59' : contract.pickupWindowEnd;
+  rental.dueTime = pickupTimeCoordinatesPending ? '23:59' : contract.pickupWindowEnd;
   rental.deliveryWindowStart = contract.deliveryWindowStart;
   rental.deliveryWindowEnd = contract.deliveryWindowEnd;
   rental.deliveryTimeMode = contract.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
-  rental.pickupWindowStart = pickupCoordinatesPending ? null : contract.pickupWindowStart;
-  rental.pickupWindowEnd = pickupCoordinatesPending ? null : contract.pickupWindowEnd;
+  rental.pickupWindowStart = pickupTimeCoordinatesPending ? null : contract.pickupWindowStart;
+  rental.pickupWindowEnd = pickupTimeCoordinatesPending ? null : contract.pickupWindowEnd;
+  rental.pickupDateMode = pickupDateCoordinatesPending ? 'coordinate' : 'fixed';
   rental.pickupTimeMode = contract.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
   rental.eventType = contract.eventType;
   rental.eventAddress = contract.address;
@@ -14896,8 +14918,9 @@ const createWebBridge = () => ({
       const deliveryWindowStart = String(payload?.deliveryWindowStart ?? '08:00').trim();
       const deliveryWindowEnd = String(payload?.deliveryWindowEnd ?? '10:00').trim();
       const deliveryTimeMode = payload?.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
+      const pickupDateMode = payload?.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
       const pickupTimeMode = payload?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
-      const pickupDate = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupDate ?? eventDate).trim();
+      const pickupDate = pickupDateMode === 'coordinate' ? '' : String(payload?.pickupDate ?? eventDate).trim();
       const pickupWindowStart = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupWindowStart ?? '20:00').trim();
       const pickupWindowEnd = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupWindowEnd ?? '22:00').trim();
       const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
@@ -14909,7 +14932,7 @@ const createWebBridge = () => ({
       if (!eventDate) throw new Error('Debes indicar la fecha del evento.');
       if (!eventTime) throw new Error('Debes indicar la hora del evento.');
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
-      if (pickupTimeMode !== 'coordinate' && !pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+      if (pickupDateMode !== 'coordinate' && !pickupDate) throw new Error('Debes indicar la fecha de recojo.');
       if (!requestedItems.length && !requestedServices.length) throw new Error('Debes agregar al menos un item o servicio en la cotizacion.');
       assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
       if (pickupTimeMode !== 'coordinate') assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
@@ -15040,6 +15063,7 @@ const createWebBridge = () => ({
           pickupDate: pickupDate || null,
           pickupWindowStart: pickupWindowStart || null,
           pickupWindowEnd: pickupWindowEnd || null,
+          pickupDateMode,
           pickupTimeMode,
           driverId: String(payload?.driverId ?? '').trim() || null,
           vehicleId: String(payload?.vehicleId ?? '').trim() || null,
@@ -15139,8 +15163,9 @@ const createWebBridge = () => ({
         if (payload.deliveryWindowStart !== undefined) quote.deliveryWindowStart = String(payload.deliveryWindowStart ?? '').trim() || quote.deliveryWindowStart;
         if (payload.deliveryWindowEnd !== undefined) quote.deliveryWindowEnd = String(payload.deliveryWindowEnd ?? '').trim() || quote.deliveryWindowEnd;
         if (payload.deliveryTimeMode !== undefined) quote.deliveryTimeMode = payload.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
+        if (payload.pickupDateMode !== undefined) quote.pickupDateMode = payload.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
         if (payload.pickupTimeMode !== undefined) quote.pickupTimeMode = payload.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
-        if (payload.pickupDate !== undefined) quote.pickupDate = quote.pickupTimeMode === 'coordinate' ? null : String(payload.pickupDate ?? '').trim() || quote.pickupDate;
+        if (payload.pickupDate !== undefined) quote.pickupDate = quote.pickupDateMode === 'coordinate' ? null : String(payload.pickupDate ?? '').trim() || quote.pickupDate;
         if (payload.pickupWindowStart !== undefined) quote.pickupWindowStart = quote.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowStart ?? '').trim() || quote.pickupWindowStart;
         if (payload.pickupWindowEnd !== undefined) quote.pickupWindowEnd = quote.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowEnd ?? '').trim() || quote.pickupWindowEnd;
         assertSameDayTimeWindow(quote.deliveryWindowStart, quote.deliveryWindowEnd, 'La ventana de entrega');
@@ -15384,8 +15409,9 @@ const createWebBridge = () => ({
       const deliveryWindowStart = String(payload?.deliveryWindowStart ?? '08:00').trim();
       const deliveryWindowEnd = String(payload?.deliveryWindowEnd ?? '10:00').trim();
       const deliveryTimeMode = payload?.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
+      const pickupDateMode = payload?.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
       const pickupTimeMode = payload?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
-      const pickupDate = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupDate ?? eventDate).trim();
+      const pickupDate = pickupDateMode === 'coordinate' ? '' : String(payload?.pickupDate ?? eventDate).trim();
       const pickupWindowStart = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupWindowStart ?? '20:00').trim();
       const pickupWindowEnd = pickupTimeMode === 'coordinate' ? '' : String(payload?.pickupWindowEnd ?? '22:00').trim();
       const status = String(payload?.status ?? 'borrador').trim() || 'borrador';
@@ -15397,7 +15423,7 @@ const createWebBridge = () => ({
       if (!eventDate) throw new Error('Debes indicar la fecha del evento.');
       if (!eventTime) throw new Error('Debes indicar la hora del evento.');
       if (!deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
-      if (pickupTimeMode !== 'coordinate' && !pickupDate) throw new Error('Debes indicar la fecha de recojo.');
+      if (pickupDateMode !== 'coordinate' && !pickupDate) throw new Error('Debes indicar la fecha de recojo.');
       if (!requestedItems.length && !requestedServices.length) throw new Error('Debes agregar al menos un item o servicio en el contrato.');
       assertSameDayTimeWindow(deliveryWindowStart, deliveryWindowEnd, 'La ventana de entrega');
       if (pickupTimeMode !== 'coordinate') assertSameDayTimeWindow(pickupWindowStart, pickupWindowEnd, 'La ventana de recojo');
@@ -15525,6 +15551,7 @@ const createWebBridge = () => ({
           pickupDate: pickupDate || null,
           pickupWindowStart: pickupWindowStart || null,
           pickupWindowEnd: pickupWindowEnd || null,
+          pickupDateMode,
           pickupTimeMode,
           driverId: String(payload?.driverId ?? '').trim() || null,
           vehicleId: String(payload?.vehicleId ?? '').trim() || null,
@@ -15679,8 +15706,9 @@ const createWebBridge = () => ({
         if (payload.deliveryWindowStart !== undefined) contract.deliveryWindowStart = String(payload.deliveryWindowStart ?? '').trim() || contract.deliveryWindowStart;
         if (payload.deliveryWindowEnd !== undefined) contract.deliveryWindowEnd = String(payload.deliveryWindowEnd ?? '').trim() || contract.deliveryWindowEnd;
         if (payload.deliveryTimeMode !== undefined) contract.deliveryTimeMode = payload.deliveryTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
+        if (payload.pickupDateMode !== undefined) contract.pickupDateMode = payload.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
         if (payload.pickupTimeMode !== undefined) contract.pickupTimeMode = payload.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
-        if (payload.pickupDate !== undefined) contract.pickupDate = contract.pickupTimeMode === 'coordinate' ? null : String(payload.pickupDate ?? '').trim() || contract.pickupDate;
+        if (payload.pickupDate !== undefined) contract.pickupDate = contract.pickupDateMode === 'coordinate' ? null : String(payload.pickupDate ?? '').trim() || contract.pickupDate;
         if (payload.pickupWindowStart !== undefined) contract.pickupWindowStart = contract.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowStart ?? '').trim() || contract.pickupWindowStart;
         if (payload.pickupWindowEnd !== undefined) contract.pickupWindowEnd = contract.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowEnd ?? '').trim() || contract.pickupWindowEnd;
         assertSameDayTimeWindow(contract.deliveryWindowStart, contract.deliveryWindowEnd, 'La ventana de entrega');
@@ -16771,6 +16799,7 @@ const createWebBridge = () => ({
       const dueDate = String(payload?.dueDate ?? '').trim();
       const dueTime = String(payload?.dueTime ?? '').trim();
       const notes = String(payload?.notes ?? '').trim();
+      const pickupDateMode = payload?.pickupDateMode === 'coordinate' ? 'coordinate' : 'fixed';
       const pickupTimeMode = payload?.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed';
       const idCardHeld = Boolean(payload?.idCardHeld);
       const paymentMode = ['sin_pago', 'a_cuenta', 'cancelado'].includes(payload?.paymentMode)
@@ -17203,6 +17232,7 @@ const createWebBridge = () => ({
           deliveryWindowEnd: String(payload?.deliveryWindowEnd ?? '').trim() || null,
           pickupWindowStart: String(payload?.pickupWindowStart ?? '').trim() || null,
           pickupWindowEnd: pickupTimeMode === 'coordinate' ? null : String(payload?.pickupWindowEnd ?? '').trim() || dueTime,
+          pickupDateMode,
           pickupTimeMode,
           idCardHeld,
           depositBs: guaranteeStatus === 'validado' ? toPositiveRoundedNumber(depositBs) : 0,

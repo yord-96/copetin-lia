@@ -2209,6 +2209,10 @@ export const useAppController = () => {
         pickupDate: quote.pickupDate,
         pickupWindowStart: quote.pickupWindowStart,
         pickupWindowEnd: quote.pickupWindowEnd,
+        pickupDateMode: quote.pickupDateMode === 'coordinate'
+          || (quote.pickupDateMode === undefined && quote.pickupTimeMode === 'coordinate')
+          ? 'coordinate'
+          : 'fixed',
         pickupTimeMode: quote.pickupTimeMode === 'coordinate' ? 'coordinate' : 'fixed',
         driverId: quote.driverId || null,
         vehicleId: quote.vehicleId || null,
@@ -2689,7 +2693,11 @@ export const useAppController = () => {
         ? contract.responsibles.find((responsible) => String(responsible?.name ?? '').trim())
         : null;
       const approvalTrace = getCurrentUserTrace();
-      const pickupCoordinatesPending = contract.pickupTimeMode === 'coordinate';
+      const legacyCombinedPickupCoordinate = contract.pickupDateMode === undefined
+        && contract.pickupTimeMode === 'coordinate';
+      const pickupDateCoordinatesPending = contract.pickupDateMode === 'coordinate'
+        || legacyCombinedPickupCoordinate;
+      const pickupTimeCoordinatesPending = contract.pickupTimeMode === 'coordinate';
 
       let createdRental = null;
       let updatedContract = null;
@@ -2704,15 +2712,16 @@ export const useAppController = () => {
           customerName: contract.customerName,
           customerPhone: contract.customerPhone,
           rentalDate: contract.deliveryDate || contract.eventDate,
-          dueDate: pickupCoordinatesPending
+          dueDate: pickupDateCoordinatesPending
             ? (contract.eventDate || contract.deliveryDate)
             : contract.pickupDate || contract.deliveryDate || contract.eventDate,
-          dueTime: pickupCoordinatesPending ? '23:59' : contract.pickupWindowEnd || contract.eventTime || '23:59',
+          dueTime: pickupTimeCoordinatesPending ? '23:59' : contract.pickupWindowEnd || contract.eventTime || '23:59',
           deliveryWindowStart: contract.deliveryWindowStart || '00:00',
           deliveryWindowEnd: contract.deliveryWindowEnd || contract.eventTime || null,
-          pickupWindowStart: pickupCoordinatesPending ? null : contract.pickupWindowStart || null,
-          pickupWindowEnd: pickupCoordinatesPending ? null : contract.pickupWindowEnd || contract.eventTime || '23:59',
-          pickupTimeMode: pickupCoordinatesPending ? 'coordinate' : 'fixed',
+          pickupWindowStart: pickupTimeCoordinatesPending ? null : contract.pickupWindowStart || null,
+          pickupWindowEnd: pickupTimeCoordinatesPending ? null : contract.pickupWindowEnd || contract.eventTime || '23:59',
+          pickupDateMode: pickupDateCoordinatesPending ? 'coordinate' : 'fixed',
+          pickupTimeMode: pickupTimeCoordinatesPending ? 'coordinate' : 'fixed',
           depositBs: guaranteeForCashBs,
           guaranteeDeclaredBs: Number(contract?.totals?.guaranteeBs ?? 0),
           guaranteeStatus: isGuaranteeValidated ? 'validado' : 'no_validado',

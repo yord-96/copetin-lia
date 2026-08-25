@@ -76,29 +76,37 @@ const getContractMaps = (contracts = []) => {
 };
 
 const periodFromRental = (rental, contract) => {
-  const pickupCoordinatesPending = contract?.pickupTimeMode === 'coordinate'
-    || (!contract && rental?.pickupTimeMode === 'coordinate');
+  const record = contract ?? rental;
+  const legacyCombinedPickupCoordinate = record?.pickupDateMode === undefined
+    && record?.pickupTimeMode === 'coordinate';
+  const pickupDateCoordinatesPending = record?.pickupDateMode === 'coordinate'
+    || legacyCombinedPickupCoordinate;
+  const pickupTimeCoordinatesPending = record?.pickupTimeMode === 'coordinate';
   return buildAvailabilityPeriod({
     deliveryDate: contract?.deliveryDate || rental?.rentalDate || rental?.createdAt,
     deliveryWindowStart: contract?.deliveryWindowStart || rental?.deliveryWindowStart || '00:00',
-    pickupDate: pickupCoordinatesPending
+    pickupDate: pickupDateCoordinatesPending
       ? (contract?.eventDate || rental?.rentalDate)
       : contract?.pickupDate || rental?.dueDate || contract?.eventDate || rental?.rentalDate,
-    pickupWindowEnd: pickupCoordinatesPending
+    pickupWindowEnd: pickupTimeCoordinatesPending
       ? '23:59'
       : contract?.pickupWindowEnd || rental?.pickupWindowEnd || rental?.dueTime || '23:59',
   });
 };
 
 const periodFromCommercialRecord = (record) => {
-  const pickupCoordinatesPending = record?.pickupTimeMode === 'coordinate';
+  const legacyCombinedPickupCoordinate = record?.pickupDateMode === undefined
+    && record?.pickupTimeMode === 'coordinate';
+  const pickupDateCoordinatesPending = record?.pickupDateMode === 'coordinate'
+    || legacyCombinedPickupCoordinate;
+  const pickupTimeCoordinatesPending = record?.pickupTimeMode === 'coordinate';
   return buildAvailabilityPeriod({
     deliveryDate: record?.deliveryDate || record?.eventDate,
     deliveryWindowStart: record?.deliveryWindowStart || record?.eventTime || '00:00',
-    pickupDate: pickupCoordinatesPending
+    pickupDate: pickupDateCoordinatesPending
       ? record?.eventDate
       : record?.pickupDate || record?.validUntil || record?.eventDate,
-    pickupWindowEnd: pickupCoordinatesPending
+    pickupWindowEnd: pickupTimeCoordinatesPending
       ? '23:59'
       : record?.pickupWindowEnd || record?.eventTime || '23:59',
   });
