@@ -1,4 +1,5 @@
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
+import { buildContractCollectionGroups } from '../utils/contractCollectionGroups';
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
@@ -3602,6 +3603,36 @@ export const api = {
         setCachedServerRevision(payload.revision);
       }
       return payload;
+    },
+    getContractCollections: async (references = []) => {
+      const normalizedReferences = Array.isArray(references) ? references : [];
+      if (!normalizedReferences.length) return { groups: [] };
+      if (!shouldUseServerState()) {
+        const movements = await callBridge('cash', 'listMovements', false);
+        return { groups: buildContractCollectionGroups({ movements, references: normalizedReferences }) };
+      }
+      const batches = [];
+      for (let index = 0; index < normalizedReferences.length; index += 250) {
+        batches.push(normalizedReferences.slice(index, index + 250));
+      }
+      const payloads = await Promise.all(batches.map(async (batch) => {
+        const response = await fetch(getServerStateUrl('/accounting/contract-collections'), {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            ...getInternalHeaders(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ references: batch }),
+        });
+        if (!response.ok) {
+          throw await createServerStateError(response, 'No se pudo cargar el historial completo de cobros.');
+        }
+        return response.json();
+      }));
+      const latestRevision = payloads.find((payload) => payload?.revision)?.revision;
+      if (latestRevision) rememberServerRevision(latestRevision);
+      return { groups: payloads.flatMap((payload) => payload?.groups ?? []) };
     },
     getAccountLedger: async ({ accountKey = 'all', dateFrom = '', dateTo = '', query = '', limit = 600 } = {}) => {
       if (!shouldUseServerState()) {

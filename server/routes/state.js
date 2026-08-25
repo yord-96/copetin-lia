@@ -10,6 +10,7 @@ import { heartbeatPresence, leavePresence, listPresence } from '../storage/prese
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
 import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRentals.js';
+import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -6445,6 +6446,47 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       totalMovements: allMovements.length,
       visibleMovements: selectedMovements.size,
       truncated: selectedMovements.size < allMovements.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/accounting/contract-collections', async (req, res, next) => {
+  try {
+    const requestedReferences = Array.isArray(req.body?.references) ? req.body.references : [];
+    if (requestedReferences.length > 500) {
+      res.status(400).json({ error: 'La consulta de cobros supera el lote maximo de 500 contratos.' });
+      return;
+    }
+    const references = requestedReferences
+      .map((entry) => ({
+        key: String(entry?.key ?? '').trim(),
+        contractIds: Array.isArray(entry?.contractIds) ? entry.contractIds : [],
+        rentalIds: Array.isArray(entry?.rentalIds) ? entry.rentalIds : [],
+        contractCodes: Array.isArray(entry?.contractCodes) ? entry.contractCodes : [],
+        orderCodes: Array.isArray(entry?.orderCodes) ? entry.orderCodes : [],
+        createdAtMs: Number(entry?.createdAtMs ?? 0),
+      }))
+      .filter((entry) => entry.key);
+    if (!references.length) {
+      await sendJsonPayload(req, res, { groups: [] });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const groups = buildContractCollectionGroups({
+      movements: Array.isArray(snapshot?.state?.cashMovements) ? snapshot.state.cashMovements : [],
+      references,
+    }).map((group) => ({
+      ...group,
+      movements: group.movements.map(summarizeAccountingMovement),
+    }));
+
+    await sendJsonPayload(req, res, {
+      revision: snapshot?.revision ?? null,
+      updatedAt: snapshot?.updatedAt ?? null,
+      groups,
     });
   } catch (error) {
     next(error);

@@ -205,6 +205,15 @@ const getCollectionConceptLabel = (movement) => {
   return String(movement?.description ?? 'Cobro').trim() || 'Cobro';
 };
 
+const getReceivableCollectionReferences = (row) => ({
+  key: String(row?.id ?? ''),
+  contractIds: [row?.contractId],
+  rentalIds: [row?.id],
+  contractCodes: [row?.contractCode],
+  orderCodes: [row?.orderCode],
+  createdAtMs: Number(row?.contractCreatedAtMs ?? 0),
+});
+
 function CashIcon({ kind }) {
   if (kind === 'safe') {
     return <img className="asset-icon safe-asset-icon" src="/imagenes/caja-fuerte.png" alt="" aria-hidden="true" />;
@@ -381,6 +390,9 @@ function AccountingSection({
   const [expandedFinalizedReceivableId, setExpandedFinalizedReceivableId] = useState('');
   const [showFinalizedReceivablesReport, setShowFinalizedReceivablesReport] = useState(false);
   const [isExportingFinalizedReceivables, setIsExportingFinalizedReceivables] = useState(false);
+  const [exactFinalizedCollections, setExactFinalizedCollections] = useState({});
+  const [loadingFinalizedCollectionIds, setLoadingFinalizedCollectionIds] = useState([]);
+  const [finalizedCollectionsError, setFinalizedCollectionsError] = useState('');
   const [vipTopUpModalOpen, setVipTopUpModalOpen] = useState(false);
   const [vipTopUpSubmitting, setVipTopUpSubmitting] = useState(false);
   const [vipTopUpError, setVipTopUpError] = useState('');
@@ -1713,16 +1725,23 @@ function AccountingSection({
         if (pendingBs > 0.009) return null;
         const totalBs = toNumber(rental?.totals?.totalBs ?? contract?.totals?.totalBs);
         const penaltiesBs = toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
-        const collectionMovements = postedMovements
+        const contractReferences = {
+          contractIds: [contract?.id, rental?.contractId],
+          rentalIds: [rental?.id, contract?.rentalId],
+          contractCodes: [contract?.contractCode, rental?.contractCode],
+          orderCodes: [contract?.orderCode, rental?.orderCode],
+          createdAtMs: new Date(
+            contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? rental?.createdAt ?? 0,
+          ).getTime(),
+        };
+        const exactCollectionSource = exactFinalizedCollections[String(rental.id)];
+        const collectionSource = Array.isArray(exactCollectionSource)
+          ? exactCollectionSource
+          : postedMovements;
+        const collectionMovements = collectionSource
           .filter((movement) => {
             if (toNumber(movement?.amountBs) <= 0 || movement?.isInternalTransfer) return false;
-            const linkedToRental = String(movement?.linkedRentalId ?? '') === String(rental.id)
-              || String(movement?.sourceId ?? '') === String(rental.id);
-            const linkedToContract = String(movement?.linkedContractId ?? '') === String(contract.id)
-              || String(movement?.sourceId ?? '') === String(contract.id);
-            const linkedToOrder = rental?.orderCode
-              && String(movement?.linkedOrderCode ?? '') === String(rental.orderCode);
-            if (!linkedToRental && !linkedToContract && !linkedToOrder) return false;
+            if (!cashMovementMatchesContractReferences(movement, contractReferences)) return false;
 
             const breakdown = Array.isArray(movement?.collectionBreakdown) ? movement.collectionBreakdown : [];
             const hasOperationalBreakdown = breakdown.some((entry) => {
@@ -1748,8 +1767,10 @@ function AccountingSection({
           .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
         return {
           id: rental.id,
+          contractId: contract.id ?? rental.contractId ?? '',
           orderCode: rental.orderCode ?? rental.id,
           contractCode: contract.contractCode ?? rental.contractCode ?? '',
+          contractCreatedAtMs: contractReferences.createdAtMs,
           customerName: rental.customerName ?? contract.customerName ?? 'Cliente',
           responsibleName: getRentalResponsibleName(rental, contract),
           eventDate: getRentalReceivableEventDate(rental, contract),
@@ -1757,11 +1778,12 @@ function AccountingSection({
           finalizedByName: contract.finalizedByName ?? '',
           settledBs: Math.max(0, totalBs + penaltiesBs),
           collectionMovements,
+          collectionsLoaded: Array.isArray(exactCollectionSource),
         };
       })
       .filter(Boolean)
       .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, receivableExcludedRentalIds, rentals],
+    [exactFinalizedCollections, getMovementUserLabel, getRentalContract, getRentalResponsibleName, getVipAdjustedPendingBs, postedMovements, receivableExcludedRentalIds, rentals],
   );
 
   const derivedReturnIssueRows = useMemo(
@@ -1875,6 +1897,48 @@ function AccountingSection({
     'receivables',
     (row) => row.eventDate,
   );
+  const loadExactFinalizedCollections = useCallback(async (rows, { force = false } = {}) => {
+    const pendingRows = (Array.isArray(rows) ? rows : [])
+      .filter((row) => force || !Object.prototype.hasOwnProperty.call(exactFinalizedCollections, String(row?.id ?? '')));
+    if (!pendingRows.length) return true;
+
+    const pendingIds = pendingRows.map((row) => String(row.id));
+    setLoadingFinalizedCollectionIds((current) => [...new Set([...current, ...pendingIds])]);
+    setFinalizedCollectionsError('');
+    try {
+      const references = pendingRows.map(getReceivableCollectionReferences);
+      const result = await api.cash.getContractCollections(references);
+      const groupsByKey = new Map((Array.isArray(result?.groups) ? result.groups : [])
+        .map((group) => [String(group?.key ?? ''), group]));
+      const loadedCollections = {};
+      pendingRows.forEach((row) => {
+        const key = String(row.id);
+        const reference = getReceivableCollectionReferences(row);
+        loadedCollections[key] = (groupsByKey.get(key)?.movements ?? [])
+          .filter((movement) => cashMovementMatchesContractReferences(movement, reference));
+      });
+      setExactFinalizedCollections((current) => ({ ...current, ...loadedCollections }));
+      return true;
+    } catch (error) {
+      setFinalizedCollectionsError(error?.message || 'No se pudo cargar el historial completo de cobros.');
+      return false;
+    } finally {
+      setLoadingFinalizedCollectionIds((current) => current.filter((id) => !pendingIds.includes(id)));
+    }
+  }, [exactFinalizedCollections]);
+  const toggleFinalizedCollections = useCallback((row) => {
+    if (expandedFinalizedReceivableId === row.id) {
+      setExpandedFinalizedReceivableId('');
+      return;
+    }
+    setExpandedFinalizedReceivableId(row.id);
+    void loadExactFinalizedCollections([row], { force: true });
+  }, [expandedFinalizedReceivableId, loadExactFinalizedCollections]);
+  const openFinalizedReceivablesReport = useCallback(async () => {
+    if (!visibleFinalizedReceivableRows.length) return;
+    const loaded = await loadExactFinalizedCollections(visibleFinalizedReceivableRows, { force: true });
+    if (loaded) setShowFinalizedReceivablesReport(true);
+  }, [loadExactFinalizedCollections, visibleFinalizedReceivableRows]);
   const visibleGuaranteeRows = filterBigCashWorkspaceRows(guaranteesToReturnRows, 'guarantees', (row) => row.eventDate);
   const visibleReturnedGuaranteeRows = filterBigCashWorkspaceRows(
     returnedGuaranteeRows,
@@ -5634,10 +5698,10 @@ function AccountingSection({
                   <button
                     type="button"
                     className="primary-button bigcash-generate-report-button"
-                    onClick={() => setShowFinalizedReceivablesReport(true)}
-                    disabled={visibleFinalizedReceivableRows.length === 0}
+                    onClick={openFinalizedReceivablesReport}
+                    disabled={visibleFinalizedReceivableRows.length === 0 || loadingFinalizedCollectionIds.length > 0}
                   >
-                    Generar reporte
+                    {loadingFinalizedCollectionIds.length > 0 ? 'Verificando cobros...' : 'Generar reporte'}
                   </button>
                 )}
               </div>
@@ -5669,6 +5733,9 @@ function AccountingSection({
               receivablesView === 'pending' ? visibleReceivableRows.length : visibleFinalizedReceivableRows.length,
               '',
             )}
+            {finalizedCollectionsError && receivablesView === 'finalized' ? (
+              <p className="status error">{finalizedCollectionsError}</p>
+            ) : null}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
               <table className="accounting-table bigcash-table bigcash-command-table">
                 <thead style={{ position: 'sticky', top: 0, zIndex: 6, background: '#fff', boxShadow: '0 1px 0 rgba(15,23,42,.08)' }}>
@@ -5707,6 +5774,7 @@ function AccountingSection({
                       </tr>
                     )) : visibleFinalizedReceivableRows.flatMap((row) => {
                       const isExpanded = expandedFinalizedReceivableId === row.id;
+                      const isLoadingCollections = loadingFinalizedCollectionIds.includes(String(row.id));
                       return [
                         <tr key={row.id} className="bigcash-finalized-receivable-row">
                           <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
@@ -5720,10 +5788,14 @@ function AccountingSection({
                             <button
                               type="button"
                               className="accounting-inline-action"
-                              onClick={() => setExpandedFinalizedReceivableId((current) => current === row.id ? '' : row.id)}
+                              onClick={() => toggleFinalizedCollections(row)}
                               style={{ marginTop: 6 }}
                             >
-                              {isExpanded ? 'Ocultar cobros' : `Ver cobros (${row.collectionMovements.length})`}
+                              {isExpanded
+                                ? 'Ocultar cobros'
+                                : row.collectionsLoaded
+                                  ? `Ver cobros (${row.collectionMovements.length})`
+                                  : 'Ver cobros'}
                             </button>
                           </td>
                         </tr>,
@@ -5731,7 +5803,9 @@ function AccountingSection({
                           <tr key={`${row.id}-collections`}>
                             <td colSpan={6} style={{ padding: '10px 16px 16px' }}>
                               <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de cobros registrados en Caja Grande</div>
-                              {row.collectionMovements.length ? (
+                              {isLoadingCollections ? (
+                                <p className="status">Consultando el historial completo de Caja Grande...</p>
+                              ) : row.collectionMovements.length ? (
                                 <div className="bigcash-table-wrap">
                                   <table className="accounting-table bigcash-table">
                                     <thead>
