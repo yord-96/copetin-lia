@@ -6740,7 +6740,10 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   amountBs: Number(entry.amountBs ?? 0),
   paymentMethod: entry.paymentMethod ?? '',
   paymentAccount: entry.paymentAccount ?? '',
-  note: entry.type === 'note' ? (entry.note ?? '') : '',
+  // La resolución de garantía necesita distinguir aplicaciones y devoluciones
+  // reales. Conservamos la nota económica de esas líneas sin enviar adjuntos ni
+  // otros campos pesados del cuaderno completo.
+  note: entry.note ?? '',
   createdAt: entry.createdAt ?? null,
   createdByName: entry.createdByName ?? entry.createdBy ?? '',
   cashMovementId: entry.cashMovementId ?? null,
@@ -6758,6 +6761,97 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   deletedByName: entry.deletedByName ?? '',
 });
 
+
+const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
+  const declaredBs = toPositiveRoundedNumber(
+    contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0,
+  );
+  const rawLedger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
+  const ledger = rawLedger.filter((entry) => !entry?.deletedAt);
+  const byId = new Map(ledger
+    .map((entry) => [String(entry?.id ?? '').trim(), entry])
+    .filter(([id]) => Boolean(id)));
+  const isCashConfirmed = (entry) => Boolean(
+    entry?.isCashRegistered
+    || String(entry?.cashMovementId ?? '').trim()
+    || String(entry?.cashReceiptCode ?? '').trim()
+  );
+
+  const confirmedDepositGuaranteeBs = ledger.reduce((sum, entry) => {
+    if (entry?.type !== 'deposit' || entry?.reclassifiedFromPayment || !isCashConfirmed(entry)) return sum;
+    return sum + toPositiveRoundedNumber(entry?.guaranteeAllocationBs);
+  }, 0);
+
+  const explicitGuaranteePaidBs = ledger.reduce((sum, entry) => {
+    if (entry?.type !== 'guarantee') return sum;
+    const sourceDeposit = String(entry?.sourceDepositId ?? '').trim();
+    const backedByDeposit = Boolean(
+      entry?.reclassifiedFromPayment
+      && sourceDeposit
+      && isCashConfirmed(byId.get(sourceDeposit)),
+    );
+    if (!isCashConfirmed(entry) && !backedByDeposit) return sum;
+    return sum + toPositiveRoundedNumber(entry?.amountBs);
+  }, 0);
+
+  const rawStatus = String(
+    contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '',
+  ).trim().toLowerCase();
+  const storedValidatedBs = toPositiveRoundedNumber(contract?.guarantee?.validatedBs);
+  const paidBs = toPositiveRoundedNumber(Math.max(
+    rawStatus === 'validado' ? Math.max(storedValidatedBs, declaredBs) : storedValidatedBs,
+    explicitGuaranteePaidBs,
+    confirmedDepositGuaranteeBs,
+  ));
+
+  const refundedBs = toPositiveRoundedNumber(Math.min(
+    paidBs,
+    ledger.reduce((sum, entry) => {
+      if (entry?.type !== 'refund' || entry?.refundSource === 'surplus') return sum;
+      if (!isCashConfirmed(entry)) return sum;
+      return sum + toPositiveRoundedNumber(entry?.amountBs);
+    }, 0),
+  ));
+
+  const appliedBs = toPositiveRoundedNumber(Math.min(
+    Math.max(0, paidBs - refundedBs),
+    ledger.reduce((sum, entry) => {
+      if (entry?.type !== 'charge') return sum;
+      const note = String(entry?.note ?? '').trim().toLowerCase();
+      const target = String(entry?.cashCollectionTarget ?? '').trim().toLowerCase();
+      const isGuaranteeApplication = Boolean(
+        entry?.appliedFromGuarantee
+        || entry?.guaranteeApplied
+        || target === 'guarantee'
+        || (note.includes('garantia') && (note.includes('aplic') || note.includes('descont'))),
+      );
+      return isGuaranteeApplication ? sum + toPositiveRoundedNumber(entry?.amountBs) : sum;
+    }, 0),
+  ));
+
+  const pendingRefundBs = toPositiveRoundedNumber(Math.max(0, paidBs - appliedBs - refundedBs));
+  const isFullyResolved = paidBs > 0 && pendingRefundBs <= 0.009;
+  const status = declaredBs <= 0
+    ? 'none'
+    : isFullyResolved && refundedBs > 0
+      ? 'returned'
+      : isFullyResolved && appliedBs > 0
+        ? 'charged'
+        : refundedBs > 0
+          ? 'partial'
+          : paidBs > 0
+            ? 'held'
+            : 'pending';
+
+  return {
+    declaredBs,
+    paidBs,
+    appliedBs,
+    refundedBs,
+    pendingRefundBs,
+    status,
+  };
+};
 
 const summarizeOrdersContract = (contract = {}) => ({
   id: contract.id ?? '',
@@ -6811,8 +6905,14 @@ const summarizeOrdersContract = (contract = {}) => ({
       }
     : null,
   guarantee: contract.guarantee
-    ? { status: contract.guarantee.status ?? '' }
+    ? {
+        status: contract.guarantee.status ?? '',
+        validatedBs: Number(contract.guarantee.validatedBs ?? 0),
+      }
     : null,
+  // Resumen autoritativo calculado en servidor desde el cuaderno completo.
+  // Evita que la tabla de Órdenes dependa de snapshots históricos de garantía.
+  guaranteeEconomicSummary: getOrdersGuaranteeEconomicSummary(contract),
   totals: {
     totalBs: Number(contract?.totals?.totalBs ?? 0),
     guaranteeBs: Number(contract?.totals?.guaranteeBs ?? 0),

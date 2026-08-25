@@ -2796,16 +2796,25 @@ function ServiceOrdersSection({
       // La tabla debe mostrar la realidad economica actual y no quedarse con el
       // snapshot historico contract.guarantee.status. La hoja economica ya tiene
       // evidencia suficiente para reconstruir garantia pagada, aplicada o devuelta.
+      const serverGuaranteeSummary = contract?.guaranteeEconomicSummary && typeof contract.guaranteeEconomicSummary === 'object'
+        ? contract.guaranteeEconomicSummary
+        : null;
       const rowGuaranteeReserveBs = Math.max(
         rawGuaranteeStatus === 'validado' ? guaranteeBs : 0,
         rowLedgerBackedGuaranteeBs,
         toMoneyNumber(rowGuaranteeEvidence?.paidBs),
+        toMoneyNumber(serverGuaranteeSummary?.paidBs),
       );
       // No considerar cualquier dano como garantia aplicada: solo cuenta una
-      // aplicacion explicita registrada en la hoja economica.
+      // aplicacion explicita registrada en la hoja economica. El resumen del
+      // servidor prevalece cuando el bootstrap ya resolvio el cuaderno completo.
       const rowGuaranteeAppliedBs = Math.min(
         rowGuaranteeReserveBs,
-        Math.max(0, toMoneyNumber(rowGuaranteeEvidence?.appliedBs)),
+        Math.max(
+          0,
+          toMoneyNumber(rowGuaranteeEvidence?.appliedBs),
+          toMoneyNumber(serverGuaranteeSummary?.appliedBs),
+        ),
       );
       const damageChargeBs = Math.max(
         0,
@@ -2935,20 +2944,24 @@ function ServiceOrdersSection({
           toMoneyNumber(rowGuaranteeEvidence?.refundedBs),
           rowLedgerTotals.guaranteeRefundedBs,
           referencedGuaranteeRefundedBs,
+          toMoneyNumber(serverGuaranteeSummary?.refundedBs),
         ),
       });
       const isGuaranteeValidated = rowGuaranteeReserveBs > 0;
+      const serverGuaranteeStatus = String(serverGuaranteeSummary?.status ?? '').trim().toLowerCase();
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : guaranteeSettlement.isFullyResolved && guaranteeSettlement.refundedBs > 0
-          ? 'returned'
-          : guaranteeSettlement.isPartiallyRefunded
-            ? 'partial'
-          : rowGuaranteeAppliedBs >= rowGuaranteeReserveBs && rowGuaranteeReserveBs > 0
-            ? 'charged'
-            : !isGuaranteeValidated
-              ? 'pending'
-              : 'held';
+        : ['returned', 'partial', 'charged', 'held', 'pending'].includes(serverGuaranteeStatus)
+          ? serverGuaranteeStatus
+          : guaranteeSettlement.isFullyResolved && guaranteeSettlement.refundedBs > 0
+            ? 'returned'
+            : guaranteeSettlement.isPartiallyRefunded
+              ? 'partial'
+            : rowGuaranteeAppliedBs >= rowGuaranteeReserveBs && rowGuaranteeReserveBs > 0
+              ? 'charged'
+              : !isGuaranteeValidated
+                ? 'pending'
+                : 'held';
       return {
         ...contract,
         status,
