@@ -367,6 +367,128 @@ const toMoneyNumber = (value) => {
   return Number.isFinite(numberValue) ? numberValue : 0;
 };
 
+
+const consolidateReturnIssueLines = (rows, scopeKey = '') => {
+  const source = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+
+  source.forEach((line, index) => {
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const itemId = String(line?.itemId ?? '').trim();
+    const itemName = String(line?.itemName ?? line?.name ?? 'Item').trim() || 'Item';
+    const rowScope = String(
+      scopeKey
+      || line?.rentalId
+      || line?.contractId
+      || line?.orderCode
+      || line?.contractCode
+      || '',
+    ).trim();
+    const identity = lineKey || (itemId ? `item:${itemId}` : `name:${normalizeText(itemName)}`);
+    const groupKey = `${rowScope}|${identity}`;
+    const previousProcessedQty = Math.max(0, toMoneyNumber(line?.previousProcessedQty));
+    const createdAtMs = new Date(
+      line?.partialRegisteredAt
+      ?? line?.registeredAt
+      ?? line?.updatedAt
+      ?? line?.createdAt
+      ?? 0,
+    ).getTime();
+
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        groupKey,
+        lineKey,
+        itemId,
+        itemName,
+        stages: new Map(),
+      });
+    }
+
+    const group = groups.get(groupKey);
+    const stageKey = String(previousProcessedQty);
+    const existing = group.stages.get(stageKey);
+    const candidate = {
+      line,
+      index,
+      previousProcessedQty,
+      createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0,
+    };
+
+    // Una segunda recepción puede volver a traer el snapshot completo de una
+    // línea ya procesada. Para el mismo punto de avance conservamos únicamente
+    // la versión más reciente y evitamos contarla dos veces.
+    if (
+      !existing
+      || candidate.createdAtMs > existing.createdAtMs
+      || (candidate.createdAtMs === existing.createdAtMs && candidate.index > existing.index)
+    ) {
+      group.stages.set(stageKey, candidate);
+    }
+  });
+
+  return Array.from(groups.values()).map((group) => {
+    const stages = Array.from(group.stages.values())
+      .sort((left, right) => (
+        left.previousProcessedQty - right.previousProcessedQty
+        || left.createdAtMs - right.createdAtMs
+        || left.index - right.index
+      ));
+    const lastStage = stages[stages.length - 1];
+    const lastLine = lastStage?.line ?? {};
+    const damagedQty = stages.reduce((sum, stage) => sum + Math.max(0, toMoneyNumber(stage.line?.damagedQty)), 0);
+    // Los faltantes de una recepción intermedia son provisionales si luego
+    // existe una recepción que avanza previousProcessedQty. Solo el último
+    // estado vigente conserva faltantes.
+    const missingQty = Math.max(0, toMoneyNumber(lastLine?.missingQty));
+
+    const findLastPositive = (field) => {
+      for (let index = stages.length - 1; index >= 0; index -= 1) {
+        const value = Math.max(0, toMoneyNumber(stages[index].line?.[field]));
+        if (value > 0) return value;
+      }
+      return 0;
+    };
+    const findLastText = (...fields) => {
+      for (let index = stages.length - 1; index >= 0; index -= 1) {
+        for (const field of fields) {
+          const value = String(stages[index].line?.[field] ?? '').trim();
+          if (value) return value;
+        }
+      }
+      return '';
+    };
+
+    const damagedUnitChargeBs = findLastPositive('damagedUnitChargeBs');
+    const missingUnitChargeBs = findLastPositive('missingUnitChargeBs');
+    const computedPenaltyBs = Number((
+      damagedQty * damagedUnitChargeBs
+      + missingQty * missingUnitChargeBs
+    ).toFixed(2));
+    const fallbackPenaltyBs = stages.reduce(
+      (max, stage) => Math.max(max, Math.max(0, toMoneyNumber(stage.line?.penaltyBs))),
+      0,
+    );
+    const penaltyBs = computedPenaltyBs > 0 ? computedPenaltyBs : fallbackPenaltyBs;
+
+    return {
+      ...lastLine,
+      lineKey: group.lineKey || String(lastLine?.lineKey ?? '').trim(),
+      itemId: group.itemId || String(lastLine?.itemId ?? '').trim(),
+      itemName: group.itemName,
+      damagedQty,
+      missingQty,
+      damagedUnitChargeBs,
+      missingUnitChargeBs,
+      damagedFeeBs: Number((damagedQty * damagedUnitChargeBs).toFixed(2)),
+      missingFeeBs: Number((missingQty * missingUnitChargeBs).toFixed(2)),
+      penaltyBs,
+      damageNote: findLastText('damageNote', 'note'),
+      chargeOwner: findLastText('chargeOwner') || 'cliente',
+    };
+  });
+};
+
 const isVoidedCashMovement = (movement) => Boolean(
   movement?.voidedAt
   || movement?.voidedBy
@@ -3479,7 +3601,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       }));
     const clientPendingUnits = clientPendingItems.reduce((sum, line) => sum + toMoneyNumber(line.pendingQty), 0);
 
-    const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    const returnIssues = consolidateReturnIssueLines(
+      Array.isArray(rental?.returnIssueSummary) && rental.returnIssueSummary.length > 0
+        ? rental.returnIssueSummary
+        : rental?.returnReport,
+      rental?.id ?? contract?.id ?? 'contract',
+    )
       .filter((line) =>
         toMoneyNumber(line?.damagedQty) > 0
         || toMoneyNumber(line?.missingQty) > 0
@@ -4413,7 +4540,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) totals.refundedBs += entry.amountBs;
       return totals;
     }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, refundedBs: 0 });
-    const returnIssues = (Array.isArray(rental?.returnReport) ? rental.returnReport : [])
+    const returnIssues = consolidateReturnIssueLines(
+      Array.isArray(rental?.returnIssueSummary) && rental.returnIssueSummary.length > 0
+        ? rental.returnIssueSummary
+        : rental?.returnReport,
+      rental?.id ?? contract?.id ?? 'contract',
+    )
       .filter((line) =>
         toMoneyNumber(line?.damagedQty) > 0
         || toMoneyNumber(line?.missingQty) > 0

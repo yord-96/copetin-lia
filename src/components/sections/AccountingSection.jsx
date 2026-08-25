@@ -34,6 +34,128 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+
+const consolidateReturnIssueLines = (rows, scopeKey = '') => {
+  const source = Array.isArray(rows) ? rows : [];
+  const groups = new Map();
+
+  source.forEach((line, index) => {
+    const lineKey = String(line?.lineKey ?? '').trim();
+    const itemId = String(line?.itemId ?? '').trim();
+    const itemName = String(line?.itemName ?? line?.name ?? 'Item').trim() || 'Item';
+    const rowScope = String(
+      scopeKey
+      || line?.rentalId
+      || line?.contractId
+      || line?.orderCode
+      || line?.contractCode
+      || '',
+    ).trim();
+    const identity = lineKey || (itemId ? `item:${itemId}` : `name:${normalizeText(itemName)}`);
+    const groupKey = `${rowScope}|${identity}`;
+    const previousProcessedQty = Math.max(0, toNumber(line?.previousProcessedQty));
+    const createdAtMs = new Date(
+      line?.partialRegisteredAt
+      ?? line?.registeredAt
+      ?? line?.updatedAt
+      ?? line?.createdAt
+      ?? 0,
+    ).getTime();
+
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        groupKey,
+        lineKey,
+        itemId,
+        itemName,
+        stages: new Map(),
+      });
+    }
+
+    const group = groups.get(groupKey);
+    const stageKey = String(previousProcessedQty);
+    const existing = group.stages.get(stageKey);
+    const candidate = {
+      line,
+      index,
+      previousProcessedQty,
+      createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : 0,
+    };
+
+    // Una segunda recepción puede volver a traer el snapshot completo de una
+    // línea ya procesada. Para el mismo punto de avance conservamos únicamente
+    // la versión más reciente y evitamos contarla dos veces.
+    if (
+      !existing
+      || candidate.createdAtMs > existing.createdAtMs
+      || (candidate.createdAtMs === existing.createdAtMs && candidate.index > existing.index)
+    ) {
+      group.stages.set(stageKey, candidate);
+    }
+  });
+
+  return Array.from(groups.values()).map((group) => {
+    const stages = Array.from(group.stages.values())
+      .sort((left, right) => (
+        left.previousProcessedQty - right.previousProcessedQty
+        || left.createdAtMs - right.createdAtMs
+        || left.index - right.index
+      ));
+    const lastStage = stages[stages.length - 1];
+    const lastLine = lastStage?.line ?? {};
+    const damagedQty = stages.reduce((sum, stage) => sum + Math.max(0, toNumber(stage.line?.damagedQty)), 0);
+    // Los faltantes de una recepción intermedia son provisionales si luego
+    // existe una recepción que avanza previousProcessedQty. Solo el último
+    // estado vigente conserva faltantes.
+    const missingQty = Math.max(0, toNumber(lastLine?.missingQty));
+
+    const findLastPositive = (field) => {
+      for (let index = stages.length - 1; index >= 0; index -= 1) {
+        const value = Math.max(0, toNumber(stages[index].line?.[field]));
+        if (value > 0) return value;
+      }
+      return 0;
+    };
+    const findLastText = (...fields) => {
+      for (let index = stages.length - 1; index >= 0; index -= 1) {
+        for (const field of fields) {
+          const value = String(stages[index].line?.[field] ?? '').trim();
+          if (value) return value;
+        }
+      }
+      return '';
+    };
+
+    const damagedUnitChargeBs = findLastPositive('damagedUnitChargeBs');
+    const missingUnitChargeBs = findLastPositive('missingUnitChargeBs');
+    const computedPenaltyBs = Number((
+      damagedQty * damagedUnitChargeBs
+      + missingQty * missingUnitChargeBs
+    ).toFixed(2));
+    const fallbackPenaltyBs = stages.reduce(
+      (max, stage) => Math.max(max, Math.max(0, toNumber(stage.line?.penaltyBs))),
+      0,
+    );
+    const penaltyBs = computedPenaltyBs > 0 ? computedPenaltyBs : fallbackPenaltyBs;
+
+    return {
+      ...lastLine,
+      lineKey: group.lineKey || String(lastLine?.lineKey ?? '').trim(),
+      itemId: group.itemId || String(lastLine?.itemId ?? '').trim(),
+      itemName: group.itemName,
+      damagedQty,
+      missingQty,
+      damagedUnitChargeBs,
+      missingUnitChargeBs,
+      damagedFeeBs: Number((damagedQty * damagedUnitChargeBs).toFixed(2)),
+      missingFeeBs: Number((missingQty * missingUnitChargeBs).toFixed(2)),
+      penaltyBs,
+      damageNote: findLastText('damageNote', 'note'),
+      chargeOwner: findLastText('chargeOwner') || 'cliente',
+    };
+  });
+};
+
 const getDateKey = (value) => {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) return '';
@@ -1812,12 +1934,12 @@ function AccountingSection({
         const contract = getRentalContract(rental);
         const settlement = rental?.returnSettlement ?? {};
         const damagePendingTotalBs = getRentalReceivableBreakdown(rental, contract).damagePendingBs;
-        const issueLines = Array.isArray(rental.returnIssueSummary)
+        const issueLines = Array.isArray(rental.returnIssueSummary) && rental.returnIssueSummary.length > 0
           ? rental.returnIssueSummary
           : Array.isArray(rental.returnReport)
             ? rental.returnReport
             : [];
-        const relevantLines = issueLines
+        const relevantLines = consolidateReturnIssueLines(issueLines, rental.id)
           .filter((line) => toNumber(line.damagedQty) > 0 || toNumber(line.missingQty) > 0 || toNumber(line.penaltyBs) > 0);
         const clientPenaltyBs = sumBy(
           relevantLines.filter((line) => !['transporte', 'lavado'].includes(String(line.chargeOwner ?? '').toLowerCase())),
@@ -1838,8 +1960,10 @@ function AccountingSection({
               ? Math.max(0, Number((penaltyBs - settledDamageBs).toFixed(2)))
               : 0;
             return {
-              id: `${rental.id}-${line.itemId ?? index}`,
+              id: `${rental.id}-${line.lineKey ?? line.itemId ?? index}`,
               rentalId: rental.id,
+              lineKey: String(line?.lineKey ?? '').trim(),
+              itemId: String(line?.itemId ?? '').trim(),
               orderCode: rental.orderCode ?? '',
               contractCode: contract?.contractCode ?? rental?.contractCode ?? rental?.orderCode ?? rental.id,
               customerName: rental.customerName ?? contract?.customerName ?? 'Cliente',
@@ -1874,25 +1998,51 @@ function AccountingSection({
   );
 
   const returnIssueRows = useMemo(
-    () => (Array.isArray(cashReturnIssues) && cashReturnIssues.length > 0
-      ? cashReturnIssues.map((row) => {
-          const derivedRow = derivedReturnIssueRows.find((entry) => String(entry.id) === String(row.id));
-          const merged = { ...(derivedRow ?? {}), ...row };
-          const pendingDamageBs = row.pendingDamageBs !== undefined
+    () => {
+      if (!Array.isArray(cashReturnIssues) || cashReturnIssues.length === 0) return derivedReturnIssueRows;
+
+      const consolidatedCashRows = consolidateReturnIssueLines(cashReturnIssues);
+      return consolidatedCashRows.map((row) => {
+        const rentalId = String(row?.rentalId ?? '').trim();
+        const lineKey = String(row?.lineKey ?? '').trim();
+        const itemId = String(row?.itemId ?? '').trim();
+        const exactDerivedRow = derivedReturnIssueRows.find((entry) => String(entry.id) === String(row.id));
+        const lineDerivedRow = !exactDerivedRow && lineKey
+          ? derivedReturnIssueRows.find((entry) =>
+              String(entry?.rentalId ?? '') === rentalId
+              && String(entry?.lineKey ?? '') === lineKey,
+            )
+          : null;
+        const itemMatches = !exactDerivedRow && !lineDerivedRow && itemId
+          ? derivedReturnIssueRows.filter((entry) =>
+              String(entry?.rentalId ?? '') === rentalId
+              && String(entry?.itemId ?? '') === itemId,
+            )
+          : [];
+        const derivedRow = exactDerivedRow ?? lineDerivedRow ?? (itemMatches.length === 1 ? itemMatches[0] : null);
+
+        // La rental actual manda sobre un resumen ligero desactualizado.
+        const merged = { ...row, ...(derivedRow ?? {}) };
+        const pendingDamageBs = derivedRow
+          ? toNumber(derivedRow.pendingDamageBs)
+          : row.pendingDamageBs !== undefined
             ? toNumber(row.pendingDamageBs)
-            : toNumber(derivedRow?.pendingDamageBs ?? row.pendingCollectionBs);
-          const settledDamageBs = row.settledDamageBs !== undefined
+            : toNumber(row.pendingCollectionBs);
+        const settledDamageBs = derivedRow
+          ? toNumber(derivedRow.settledDamageBs)
+          : row.settledDamageBs !== undefined
             ? toNumber(row.settledDamageBs)
-            : toNumber(derivedRow?.settledDamageBs);
-          return {
-            ...merged,
-            pendingDamageBs,
-            settledDamageBs,
-            pendingBs: pendingDamageBs,
-            status: 'Liquidacion',
-          };
-        }).sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0))
-      : derivedReturnIssueRows),
+            : 0;
+
+        return {
+          ...merged,
+          pendingDamageBs,
+          settledDamageBs,
+          pendingBs: pendingDamageBs,
+          status: 'Liquidacion',
+        };
+      }).sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
+    },
     [cashReturnIssues, derivedReturnIssueRows],
   );
 
@@ -1964,11 +2114,26 @@ function AccountingSection({
     'guarantees',
     (row) => row.eventDate,
   );
-  const filteredReturnIssueRows = filterBigCashWorkspaceRows(
-    returnIssueRows,
-    'issues',
-    (row) => row.returnedAt ?? row.createdAt,
-  );
+  const filteredReturnIssueRows = (() => {
+    const range = bigCashWorkspaceRanges.issues ?? {};
+    return returnIssueRows.filter((row) => {
+      const dateKey = getDateKey(row.returnedAt ?? row.createdAt);
+      if (range.dateFrom && (!dateKey || dateKey < range.dateFrom)) return false;
+      if (range.dateTo && (!dateKey || dateKey > range.dateTo)) return false;
+      if (!normalizedBigCashWorkspaceQuery) return true;
+      const issueSearchText = normalizeText([
+        row.contractCode,
+        row.orderCode,
+        row.customerName,
+        row.responsibleName,
+        row.itemName,
+        row.note,
+        row.damagedQty > 0 ? `${row.damagedQty} danado roto` : '',
+        row.missingQty > 0 ? `${row.missingQty} faltante` : '',
+      ].filter(Boolean).join(' '));
+      return issueSearchText.includes(normalizedBigCashWorkspaceQuery);
+    });
+  })();
   const visiblePendingReturnIssueRows = filteredReturnIssueRows.filter(
     (row) => row.chargeOwner === 'cliente' && toNumber(row.pendingDamageBs) > 0.009,
   );
@@ -2671,7 +2836,11 @@ function AccountingSection({
   const visibleReturnedGuaranteeTotalBs = sumBy(visibleReturnedGuaranteeRows, (row) => row.appliedBs + row.refundedBs);
   const visibleReturnIssueTotalBs = sumBy(
     visibleReturnIssueRows,
-    (row) => returnIssuesView === 'pending' ? row.pendingDamageBs : row.penaltyBs,
+    (row) => returnIssuesView === 'pending'
+      ? row.pendingDamageBs
+      : row.chargeOwner === 'cliente'
+        ? row.settledDamageBs
+        : row.penaltyBs,
   );
 
   const getReturnIssueOwnerLabel = (owner) => {

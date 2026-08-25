@@ -177,6 +177,153 @@ const getDateKeyDiffDays = (fromDateKey, toDateKey) => {
   return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 };
 
+
+const consolidateOperationalReturnItems = ({
+  returnReport = [],
+  dispatchItems = [],
+  pendingClientItems = [],
+} = {}) => {
+  const source = Array.isArray(returnReport) ? returnReport : [];
+  const dispatchSource = Array.isArray(dispatchItems) ? dispatchItems : [];
+  const pendingSource = Array.isArray(pendingClientItems) ? pendingClientItems : [];
+
+  const getIdentity = (line, index = 0) => {
+    const lineKey = String(line?.lineKey ?? line?.returnLineKey ?? '').trim();
+    if (lineKey) return `line:${lineKey}`;
+    const itemId = String(line?.itemId ?? '').trim();
+    if (itemId) return `item:${itemId}`;
+    return `name:${normalizeText(line?.itemName ?? line?.name ?? 'item')}:${index}`;
+  };
+
+  const dispatchByIdentity = new Map();
+  dispatchSource.forEach((line, index) => {
+    dispatchByIdentity.set(getIdentity(line, index), line);
+  });
+
+  const pendingByIdentity = new Map();
+  pendingSource.forEach((line, index) => {
+    const identity = getIdentity(line, index);
+    pendingByIdentity.set(
+      identity,
+      Math.max(
+        Number(pendingByIdentity.get(identity) ?? 0),
+        Math.max(0, Math.trunc(Number(line?.pendingQty ?? line?.pendingClientQty ?? 0))),
+      ),
+    );
+  });
+
+  const groups = new Map();
+  source.forEach((line, index) => {
+    const identity = getIdentity(line, index);
+    if (!groups.has(identity)) {
+      groups.set(identity, {
+        identity,
+        rows: [],
+        firstIndex: index,
+      });
+    }
+    groups.get(identity).rows.push({ line, index });
+  });
+
+  // Si existe una línea despachada pero todavía no hay registro de retorno,
+  // la mantenemos fuera del detalle de "recibido"; este helper solo consolida
+  // las líneas que efectivamente aparecen en returnReport.
+  return Array.from(groups.values())
+    .sort((a, b) => a.firstIndex - b.firstIndex)
+    .map((group) => {
+      const rows = group.rows;
+      const last = rows[rows.length - 1]?.line ?? {};
+      const dispatchLine = dispatchByIdentity.get(group.identity);
+
+      const expectedQty = Math.max(
+        0,
+        Math.trunc(Number(
+          dispatchLine?.dispatchedQty
+          ?? dispatchLine?.expectedQty
+          ?? last?.originalExpectedQty
+          ?? last?.expectedQty
+          ?? 0
+        )),
+      );
+
+      const rawGood = rows.reduce(
+        (sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.line?.returnedQty ?? 0))),
+        0,
+      );
+      const rawDamaged = rows.reduce(
+        (sum, entry) => sum + Math.max(0, Math.trunc(Number(entry.line?.damagedQty ?? 0))),
+        0,
+      );
+
+      const pendingClientQty = Math.min(
+        expectedQty,
+        Math.max(
+          0,
+          Math.trunc(Number(
+            pendingByIdentity.get(group.identity)
+            ?? last?.pendingClientQty
+            ?? 0
+          )),
+        ),
+      );
+
+      // returnReport puede contener varias recepciones/snapshots del mismo
+      // lineKey. "missingQty" de una recepción previa no debe seguir contando
+      // si esa unidad volvió después como buena o dañada. Por eso la condición
+      // final se reconstruye contra la cantidad realmente despachada.
+      const damagedQty = Math.min(expectedQty, rawDamaged);
+      const returnedQty = Math.min(
+        Math.max(0, expectedQty - damagedQty - pendingClientQty),
+        rawGood,
+      );
+      const missingQty = Math.max(
+        0,
+        expectedQty - returnedQty - damagedQty - pendingClientQty,
+      );
+
+      const findLastPositive = (field) => {
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          const value = Math.max(0, Number(rows[index].line?.[field] ?? 0));
+          if (value > 0) return value;
+        }
+        return 0;
+      };
+      const findLastText = (...fields) => {
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          for (const field of fields) {
+            const value = String(rows[index].line?.[field] ?? '').trim();
+            if (value) return value;
+          }
+        }
+        return '';
+      };
+
+      const damagedUnitChargeBs = findLastPositive('damagedUnitChargeBs');
+      const missingUnitChargeBs = findLastPositive('missingUnitChargeBs');
+
+      return {
+        ...last,
+        lineKey: String(last?.lineKey ?? last?.returnLineKey ?? dispatchLine?.lineKey ?? '').trim(),
+        returnLineKey: String(last?.returnLineKey ?? last?.lineKey ?? dispatchLine?.lineKey ?? '').trim(),
+        itemId: last?.itemId ?? dispatchLine?.itemId,
+        itemName: last?.itemName ?? last?.name ?? dispatchLine?.itemName ?? 'Ítem',
+        expectedQty,
+        returnedQty,
+        damagedQty,
+        missingQty,
+        pendingClientQty,
+        damagedUnitChargeBs,
+        missingUnitChargeBs,
+        penaltyBs: Number((
+          damagedQty * damagedUnitChargeBs
+          + missingQty * missingUnitChargeBs
+        ).toFixed(2)),
+        damageNote: findLastText('damageNote', 'note'),
+        chargeOwner: findLastText('chargeOwner') || 'cliente',
+      };
+    });
+};
+
 const hasExplicitOperationalConfirmation = (rental) => {
   const operational = rental?.operational ?? {};
   return Boolean(
@@ -7383,18 +7530,20 @@ function InventoryDashboardSection({
               pendingQty: 0,
               note: '',
             }));
-        const returnItems = Array.isArray(operationalReportRow.rental?.returnReport)
-          ? operationalReportRow.rental.returnReport
+        const pendingClientItems = Array.isArray(operationalReportRow.clientPendingPickup?.items)
+          ? operationalReportRow.clientPendingPickup.items
           : [];
+        const returnItems = consolidateOperationalReturnItems({
+          returnReport: operationalReportRow.rental?.returnReport,
+          dispatchItems,
+          pendingClientItems,
+        });
         const expectedTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.expectedQty ?? 0)), 0);
         const dispatchedTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.dispatchedQty ?? 0)), 0);
         const pendingDispatchTotal = dispatchItems.reduce((sum, line) => sum + Math.max(0, Number(line.pendingQty ?? 0)), 0);
         const returnedGoodTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.returnedQty ?? 0)), 0);
         const damagedTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.damagedQty ?? 0)), 0);
         const missingTotal = returnItems.reduce((sum, line) => sum + Math.max(0, Number(line.missingQty ?? 0)), 0);
-        const pendingClientItems = Array.isArray(operationalReportRow.clientPendingPickup?.items)
-          ? operationalReportRow.clientPendingPickup.items
-          : [];
         const pendingClientTotal = pendingClientItems.reduce((sum, line) => sum + Math.max(0, Number(line.pendingQty ?? 0)), 0);
         const returnStatusLabel = pendingClientTotal > 0
           ? 'Retorno parcial · material con cliente'
