@@ -68654,3 +68654,46 @@ button.inventory-loss-row-action:hover {
   from { opacity: 0; transform: translateY(-0.2rem); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Caja Grande · Cobros pendientes con desglose económico por columna. */
+.accounting-bigcash-view .bigcash-command-table-wrap:has(.bigcash-receivables-table.is-pending) {
+  overflow-x: auto !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending {
+  width: 100% !important;
+  min-width: 80rem !important;
+  table-layout: fixed !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending th,
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td {
+  min-width: 0 !important;
+  padding: 0.76rem 0.46rem !important;
+  line-height: 1.16 !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(1) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(2) { width: 14% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(3) { width: 11% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(4) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(5) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(6) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(7) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(8) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(9) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(10) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(11) { width: 7% !important; }
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(n+5):nth-child(-n+10) {
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending .bigcash-total-due {
+  color: #08733f !important;
+  font-weight: 950 !important;
+}

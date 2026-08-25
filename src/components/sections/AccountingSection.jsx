@@ -2220,28 +2220,28 @@ function AccountingSection({
       });
       sheet.columns = [
         { width: 7 }, { width: 16 }, { width: 16 }, { width: 30 }, { width: 25 }, { width: 15 },
-        { width: 17 }, { width: 17 }, { width: 17 }, { width: 18 }, { width: 16 },
+        { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 18 }, { width: 16 },
       ];
-      sheet.mergeCells('A1:K1');
+      sheet.mergeCells('A1:M1');
       sheet.getCell('A1').value = 'EL COPETÍN · CONTROL UNIFICADO DE CUENTAS POR COBRAR';
       sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
       sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
-      sheet.mergeCells('A2:G2');
+      sheet.mergeCells('A2:I2');
       sheet.getCell('A2').value = 'Pendientes por fecha de evento';
       sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
-      sheet.mergeCells('H2:K2');
-      sheet.getCell('H2').value = `Periodo: ${finalizedReceivablesReportRange}`;
-      sheet.getCell('H2').alignment = { horizontal: 'right' };
-      sheet.mergeCells('A3:G3');
+      sheet.mergeCells('J2:M2');
+      sheet.getCell('J2').value = `Periodo: ${finalizedReceivablesReportRange}`;
+      sheet.getCell('J2').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A3:I3');
       sheet.getCell('A3').value = `${visibleReceivableRows.length} contrato(s) con deuda real · Total ${formatBs(visibleReceivableTotalBs)}`;
-      sheet.mergeCells('H3:K3');
-      sheet.getCell('H3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
-      sheet.getCell('H3').alignment = { horizontal: 'right' };
-      sheet.mergeCells('A4:K4');
+      sheet.mergeCells('J3:M3');
+      sheet.getCell('J3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
+      sheet.getCell('J3').alignment = { horizontal: 'right' };
+      sheet.mergeCells('A4:M4');
       sheet.getCell('A4').value = 'El estado operativo “Finalizado” es independiente. Este reporte incluye únicamente contratos cuyo total por cobrar es mayor a cero.';
       sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
       const header = sheet.getRow(6);
-      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Contrato', 'Transporte', 'Daños / faltantes', 'Total por cobrar', 'Estado financiero'];
+      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Saldo contrato', 'Transporte', 'Daños / faltantes', 'Total por cobrar', 'Estado financiero'];
       header.eachCell((cell) => {
         cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
@@ -2252,14 +2252,15 @@ function AccountingSection({
         const excelRow = sheet.addRow([
           index + 1, row.contractCode || row.orderCode || '', row.orderCode || '', row.customerName || '',
           row.responsibleName || '', dateKey ? new Date(`${dateKey}T12:00:00`) : '',
-          toNumber(row.contractPendingBs), toNumber(row.transportPendingBs), toNumber(row.damagePendingBs),
+          toNumber(row.totalBs), toNumber(row.paidBs), toNumber(row.contractPendingBs),
+          toNumber(row.transportPendingBs), toNumber(row.damagePendingBs),
           toNumber(row.pendingBs), 'Por cobrar',
         ]);
         excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
-        [7, 8, 9, 10].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+        [7, 8, 9, 10, 11, 12].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
       });
       const lastRow = Math.max(6, 6 + visibleReceivableRows.length);
-      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 11 } };
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 13 } };
       sheet.pageSetup.printTitlesRow = '1:6';
       const buffer = await workbook.xlsx.writeBuffer();
       const range = bigCashWorkspaceRanges.receivables ?? {};
@@ -5737,7 +5738,7 @@ function AccountingSection({
               <p className="status error">{finalizedCollectionsError}</p>
             ) : null}
             <div className="bigcash-table-wrap bigcash-command-table-wrap">
-              <table className="accounting-table bigcash-table bigcash-command-table">
+              <table className={`accounting-table bigcash-table bigcash-command-table bigcash-receivables-table ${receivablesView === 'pending' ? 'is-pending' : 'is-finalized'}`}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 6, background: '#fff', boxShadow: '0 1px 0 rgba(15,23,42,.08)' }}>
                   {receivablesView === 'pending' ? (
                     <tr>
@@ -5745,7 +5746,12 @@ function AccountingSection({
                       <th>Cliente</th>
                       <th>Responsable</th>
                       <th>Fecha evento</th>
-                      <th>A cobrar</th>
+                      <th>Total contrato</th>
+                      <th>Pagado</th>
+                      <th>Saldo contrato</th>
+                      <th>Transporte</th>
+                      <th>Daños / faltantes</th>
+                      <th>Total a cobrar</th>
                       <th />
                     </tr>
                   ) : (
@@ -5766,10 +5772,12 @@ function AccountingSection({
                         <td><strong>{row.customerName}</strong></td>
                         <td>{row.responsibleName}</td>
                         <td>{formatDate(row.eventDate)}</td>
-                        <td className="amount">
-                          <strong>{formatBs(row.pendingBs)}</strong>
-                          <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
-                        </td>
+                        <td className="amount">{formatBs(row.totalBs)}</td>
+                        <td className="amount">{formatBs(row.paidBs)}</td>
+                        <td className="amount">{formatBs(row.contractPendingBs)}</td>
+                        <td className="amount">{formatBs(row.transportPendingBs)}</td>
+                        <td className="amount">{formatBs(row.damagePendingBs)}</td>
+                        <td className="amount bigcash-total-due">{formatBs(row.pendingBs)}</td>
                         <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
                       </tr>
                     )) : visibleFinalizedReceivableRows.flatMap((row) => {
@@ -5844,7 +5852,7 @@ function AccountingSection({
                       ].filter(Boolean);
                     })}
                   {receivablesView === 'pending' && visibleReceivableRows.length === 0 ? (
-                    <tr><td colSpan={6}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
+                    <tr><td colSpan={11}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
                   ) : null}
                   {receivablesView === 'finalized' && visibleFinalizedReceivableRows.length === 0 ? (
                     <tr><td colSpan={6}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
