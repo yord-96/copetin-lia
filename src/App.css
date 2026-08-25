@@ -44574,7 +44574,7 @@ button.calendar-dispatch-row:focus-visible {
   display: none;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
   grid-column: span 2;
 }
 
@@ -44583,7 +44583,7 @@ button.calendar-dispatch-row:focus-visible {
   overflow-x: auto;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.stock-warning > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row.stock-warning > .orders-line-quantity {
   grid-column: auto;
 }
 
@@ -49954,7 +49954,7 @@ button.calendar-dispatch-row:focus-visible {
     grid-column: 1;
   }
 
-  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
     grid-column: 2;
     grid-row: 1;
   }
@@ -50649,7 +50649,7 @@ button.calendar-dispatch-row:focus-visible {
     grid-row: 1;
   }
 
-  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+  .orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
     grid-column: 2 !important;
     grid-row: 1;
   }
@@ -56843,7 +56843,7 @@ body:has(.accounting-bigcash-view) .workspace {
   grid-row: auto !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
   grid-column: auto !important;
   grid-row: auto !important;
 }
@@ -57944,12 +57944,11 @@ body:has(.accounting-bigcash-view) .workspace {
   margin: 0 !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type,
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:not(:first-of-type) {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field {
   min-width: 0 !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
   display: grid !important;
   gap: 0.42rem !important;
 }
@@ -58008,8 +58007,8 @@ body:has(.accounting-bigcash-view) .workspace {
   font-size: 0.82rem !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field:first-of-type > .orders-available-note:not(.is-error):not(.is-warning):not(.is-positive),
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-field:first-of-type > .orders-return-contract-note {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-quantity > .orders-available-note:not(.is-error):not(.is-warning):not(.is-positive),
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-line-quantity > .orders-return-contract-note {
   display: none !important;
 }
 
@@ -58085,11 +58084,11 @@ body:has(.accounting-bigcash-view) .workspace {
   grid-area: product !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
   grid-area: qty !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:nth-of-type(2):not(.orders-line-discount) {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-price {
   grid-area: price !important;
 }
 
@@ -58594,11 +58593,11 @@ body:has(.accounting-bigcash-view) .workspace {
   height: 4.6rem !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:first-of-type {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-quantity {
   grid-area: qty !important;
 }
 
-.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-field:nth-of-type(2):not(.orders-line-discount) {
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-line-price {
   grid-area: price !important;
 }
 

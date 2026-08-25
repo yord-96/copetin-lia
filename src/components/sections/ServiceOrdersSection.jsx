@@ -16265,7 +16265,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               ) : null}
                               </div>
                             </div>
-                            <div className={`orders-line-field${hasUncoveredShortage ? ' has-error' : ''}`}>
+                            <div className={`orders-line-field orders-line-quantity${hasUncoveredShortage ? ' has-error' : ''}`}>
                               <span>Cant.</span>
                               <div className="orders-qty-stepper">
                                 <button
@@ -16387,7 +16387,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 </small>
                               ) : null}
                             </div>
-                            <label className="orders-line-field">
+                            <label className="orders-line-field orders-line-price">
                               <span>Precio</span>
                               <input
                                 type="text"
