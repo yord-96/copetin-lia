@@ -83,7 +83,7 @@ export default function LincolnCommercialWorkspace({
             onClick={() => setStatus('reservations')}
             title="Mostrar solo reservas"
           >
-            <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) sin bloqueo</span></div>
+            <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) · {Math.max(0, Number(summary.reservations ?? 0) - Number(summary.interested ?? 0))} confirmada(s)</span></div>
             <b>{summary.reservations ?? 0}</b>
           </button>
 
@@ -113,7 +113,7 @@ export default function LincolnCommercialWorkspace({
 
         <div className="lincoln-commercial-statuses">
           {[
-            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
+            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Reserva · interesado'], ['pending', 'Reserva · pendiente'], ['confirmed', 'Reserva · confirmada'],
             ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
           ].map(([value, label]) => (
             <button
@@ -137,7 +137,7 @@ export default function LincolnCommercialWorkspace({
               {!loading && !rows.length ? <tr><td colSpan="9" className="is-empty">No hay registros con estos filtros.</td></tr> : null}
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => row.kind === 'reservation' ? onEditReservation(row) : onEditContract(row)}>{row.code}</button><small>{row.kindLabel}</small></td>
+                  <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => row.kind === 'reservation' ? onEditReservation(row) : onOpenDocument(row)}>{row.kind === 'contract' ? (row.contractCode || row.code) : row.code}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
                   <td><strong>{dateLabel(row.eventDate)}</strong><small>{row.startTime || 'Hora pendiente'}</small></td>
                   <td><strong>{row.clientName || 'Sin cliente'}</strong><small>{row.clientPhone || ''}</small></td>
                   <td><strong>{row.roomName || 'Sin salón'}</strong><small>{row.eventType || 'Sin tipo'}</small></td>
@@ -147,9 +147,10 @@ export default function LincolnCommercialWorkspace({
                   <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
                   <td>
                     <div className="lincoln-commercial-actions">
-                      <button type="button" onClick={() => row.kind === 'reservation' ? onEditReservation(row) : onEditContract(row)}>Abrir</button>
-                      {row.kind === 'reservation' && !['cancelled', 'converted'].includes(row.status) ? <button type="button" className="is-primary" onClick={() => onConvertReservation(row)}>Convertir</button> : null}
-                      {row.kind === 'contract' ? <><button type="button" className="is-document" onClick={() => onOpenDocument(row)}>Documento</button><button type="button" className="is-primary" onClick={() => onOpenEconomic(row)}>Economía</button></> : null}
+                      {row.kind === 'reservation' ? <button type="button" onClick={() => onEditReservation(row)}>Abrir reserva</button> : <button type="button" className="is-document" onClick={() => onOpenDocument(row)}>Abrir documento</button>}
+                      {row.kind === 'reservation' && row.status === 'lead' ? <button type="button" className="is-primary" onClick={() => onEditReservation(row)}>Concretar reserva</button> : null}
+                      {row.kind === 'reservation' && !['lead', 'cancelled', 'converted'].includes(row.status) ? <button type="button" className="is-primary" onClick={() => onConvertReservation(row)}>Generar contrato</button> : null}
+                      {row.kind === 'contract' ? <><button type="button" onClick={() => onEditContract(row)}>Editar datos</button><button type="button" className="is-primary" onClick={() => onOpenEconomic(row)}>Economía</button></> : null}
                     </div>
                   </td>
                 </tr>

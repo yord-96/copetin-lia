@@ -592,6 +592,14 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       throw error;
     }
     const reservation = state.reservations[reservationIndex];
+    const reservationPaymentBs = Number(reservation?.reservationPaymentBs ?? 0);
+    const reservationStatus = String(reservation?.status ?? '').trim().toLowerCase();
+    if (reservationPaymentBs <= 0 || reservationStatus === 'lead') {
+      const error = new Error('La reserva todavía está como interesado. Primero debe concretarse con dinero de reserva antes de generar el contrato.');
+      error.statusCode = 400;
+      error.code = 'LINCOLN_RESERVATION_NOT_CONFIRMED';
+      throw error;
+    }
     const existing = state.events.find((row) => String(row?.reservationId ?? '') === String(reservation.id));
     if (existing) {
       const repairedReservation = {

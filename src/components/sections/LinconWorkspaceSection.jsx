@@ -261,7 +261,7 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
   };
 
   return (
-    <Modal className="lincoln-reservation-modal" title={`${isEdit ? 'Editar' : 'Nueva'} reserva`} saving={saving} onClose={onClose} onSubmit={submit}>
+    <Modal className="lincoln-reservation-modal" title={`${isEdit ? 'Editar' : 'Nueva'} reserva${reservationPaymentBs > 0 ? ' · CONFIRMADA' : ' · INTERESADO'}`} saving={saving} onClose={onClose} onSubmit={submit}>
       <section className="lincoln-reservation-section is-identity">
         <header><div><small>01 · Titulares</small><h3>¿A nombre de quién se registra?</h3></div><span>Los titulares se registran automáticamente como clientes</span></header>
         <div className="lincoln-reservation-contractors">
@@ -299,9 +299,9 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
       </section>
 
       <section className="lincoln-reservation-section is-money">
-        <header><div><small>03 · Condición económica</small><h3>Montos separados</h3></div><span className={reservationPaymentBs > 0 ? 'is-confirmed' : 'is-interested'}>{reservationPaymentBs > 0 ? 'Reserva confirmada · bloquea fecha' : 'Solo interesado · fecha disponible'}</span></header>
+        <header><div><small>03 · Estado de la reserva</small><h3>De interesado a reserva confirmada</h3></div><span className={reservationPaymentBs > 0 ? 'is-confirmed' : 'is-interested'}>{reservationPaymentBs > 0 ? 'RESERVA CONFIRMADA · bloquea fecha' : 'RESERVA · INTERESADO · no bloquea fecha'}</span></header>
         <div className="lincoln-reservation-money-grid">
-          <Field label="Dinero de reserva (Bs)"><input type="number" min="0" step="0.01" value={form.reservationPaymentBs ?? ''} onChange={(e) => set('reservationPaymentBs', e.target.value)} /><em>Este monto confirma y bloquea el salón.</em></Field>
+          <Field label="Dinero para concretar la reserva (Bs)"><input type="number" min="0" step="0.01" value={form.reservationPaymentBs ?? ''} onChange={(e) => set('reservationPaymentBs', e.target.value)} /><em>Mientras sea Bs 0, la reserva queda como INTERESADO. Al registrar un monto, queda CONFIRMADA y bloquea el salón.</em></Field>
           <Field label="Garantía (Bs)"><input type="number" min="0" step="0.01" value={form.guaranteeBs ?? ''} onChange={(e) => set('guaranteeBs', e.target.value)} /><em>Monto retenido y eventualmente devoluble.</em></Field>
           <Field label="A cuenta (Bs)"><input type="number" min="0" step="0.01" value={form.accountPaymentBs ?? ''} onChange={(e) => set('accountPaymentBs', e.target.value)} /><em>Abono que reduce el saldo del evento.</em></Field>
         </div>
@@ -515,7 +515,7 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
     });
   };
   return <div className="lincoln-contract-flow-backdrop"><section className="lincoln-contract-flow-modal">
-    <header><div><small>RESERVA {reservation?.code}</small><h2>Convertir a contrato</h2><p>Revisa la propuesta y confirma el documento antes de crear el contrato.</p></div><button type="button" onClick={onClose}>×</button></header>
+    <header><div><small>RESERVA CONFIRMADA · {reservation?.code}</small><h2>Generar contrato</h2><p>La reserva ya fue concretada. Revisa la propuesta y el documento antes de convertirla en contrato.</p></div><button type="button" onClick={onClose}>×</button></header>
     <nav className="lincoln-contract-flow-steps">{[['1','Datos'],['2','Propuesta'],['3','Condiciones'],['4','Documento']].map(([number,label]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => setStep(Number(number))}><b>{number}</b><span>{label}</span></button>)}</nav>
     <div className="lincoln-contract-flow-body">
       {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Vienen desde la reserva; puedes completar lo necesario antes de confirmar.</p></div><div className="lincoln-contract-flow-grid"><Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><input value={draft.roomName} onChange={(e) => set('roomName', e.target.value)} /></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
@@ -1029,7 +1029,13 @@ function LinconWorkspaceSection({
               }}
               onConvertReservation={(row) => {
                 const record = state.reservations.find((item) => item.id === row.id);
-                if (record) setModal({ mode: 'contractConvert', record });
+                if (!record) return;
+                if (toNumber(record.reservationPaymentBs) <= 0 || String(record.status ?? '').toLowerCase() === 'lead') {
+                  window.alert('Esta reserva todavía está como INTERESADO. Primero concreta la reserva registrando el dinero de reserva; después podrás generar el contrato.');
+                  setModal({ mode: 'reservations', record });
+                  return;
+                }
+                setModal({ mode: 'contractConvert', record });
               }}
               onOpenDocument={(row) => {
                 const record = state.events.find((item) => item.id === (row.eventId || row.id));
