@@ -6,6 +6,7 @@ import LincolnSettlements from '../lincoln/settlements/LincolnSettlements';
 import LincolnReports from '../lincoln/reports/LincolnReports';
 import LincolnCommercialWorkspace from '../lincoln/commercial/LincolnCommercialWorkspace';
 import LincolnClients from '../lincoln/clients/LincolnClients';
+import LincolnMeetings from '../lincoln/meetings/LincolnMeetings';
 import LincolnRooms from '../lincoln/rooms/LincolnRooms';
 import LincolnPackages from '../lincoln/packages/LincolnPackages';
 import '../lincoln/styles/lincoln-base.css';
@@ -24,6 +25,7 @@ const emptyState = {
   rooms: [],
   packages: [],
   clients: [],
+  meetings: [],
   suppliers: [],
   inventory: [],
   payments: [],
@@ -235,7 +237,7 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
   return (
     <Modal className="lincoln-reservation-modal" title={`${isEdit ? 'Editar' : 'Nueva'} reserva`} saving={saving} onClose={onClose} onSubmit={submit}>
       <section className="lincoln-reservation-section is-identity">
-        <header><div><small>01 · Titulares</small><h3>¿A nombre de quién se registra?</h3></div><span>No exige crear clientes previamente</span></header>
+        <header><div><small>01 · Titulares</small><h3>¿A nombre de quién se registra?</h3></div><span>Los titulares se registran automáticamente como clientes</span></header>
         <div className="lincoln-reservation-contractors">
           <article>
             <strong>Contratante 1</strong>
@@ -788,6 +790,7 @@ function LinconWorkspaceSection({
     panel: 'Panel / Centro de Eventos Lincoln',
     agenda: 'Agenda / Centro de Eventos Lincoln',
     comercial: 'Reservas y Contratos / Centro de Eventos Lincoln',
+    reuniones: 'Reuniones / Centro de Eventos Lincoln',
     clientes: 'Clientes / Centro de Eventos Lincoln',
     salones: 'Salones / Centro de Eventos Lincoln',
     paquetes: 'Paquetes / Centro de Eventos Lincoln',
@@ -854,6 +857,7 @@ function LinconWorkspaceSection({
               onOpenEconomic={(row) => setEconomicEventId(row.eventId || row.id)}
             />
           ) : null}
+          {activeView === 'reuniones' ? <LincolnMeetings state={state} revision={snapshot?.revision} actor={actor} onRefresh={loadLincoln} /> : null}
           {activeView === 'caja' ? <CajaView state={state} onNewExpense={() => setModal({ mode: 'expense', record: null })} onEditExpense={(record) => setModal({ mode: 'expense', record })} onOpenEvent={(eventId) => { setEconomicEventId(eventId); setActiveView('comercial'); }} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'rendiciones' ? <LincolnSettlements refreshKey={snapshot?.revision} revision={snapshot?.revision} actor={actor} onNewExpense={(eventId) => setModal({ mode: 'expense', record: { eventId } })} /> : null}
           {activeView === 'reportes' ? <LincolnReports events={state.events} refreshKey={snapshot?.revision} /> : null}

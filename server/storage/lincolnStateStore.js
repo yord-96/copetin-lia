@@ -30,6 +30,7 @@ const createEmptyLincolnState = () => ({
   rooms: [],
   packages: [],
   clients: [],
+  meetings: [],
   suppliers: [],
   inventory: [],
   payments: [],
@@ -139,7 +140,7 @@ export const replaceLincolnStateSnapshot = async (state, expectedRevision) => {
 };
 
 
-const LINCOLN_MUTABLE_COLLECTIONS = new Set(['clients', 'rooms', 'packages', 'reservations', 'events', 'expenseEntries']);
+const LINCOLN_MUTABLE_COLLECTIONS = new Set(['clients', 'rooms', 'packages', 'reservations', 'events', 'meetings', 'expenseEntries']);
 
 const normalizeLincolnStateShape = (state) => {
   const base = createEmptyLincolnState();
@@ -150,7 +151,7 @@ const normalizeLincolnStateShape = (state) => {
     company: { ...base.company, ...(source.company ?? {}), id: 'lincoln' },
     settings: { ...base.settings, ...(source.settings ?? {}) },
   };
-  ['reservations', 'leads', 'events', 'rooms', 'packages', 'clients', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
+  ['reservations', 'leads', 'events', 'rooms', 'packages', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
     next[key] = Array.isArray(source[key]) ? source[key] : [];
   });
   next.schemaVersion = Math.max(3, Number(source.schemaVersion ?? 1));
@@ -176,11 +177,52 @@ const getCollectionPrefix = (collection) => ({
   packages: 'PAQ',
   reservations: 'RES',
   events: 'EVE',
+  meetings: 'REU',
   expenseEntries: 'EGR',
 }[collection] ?? 'LIN');
 
 const appendLincolnAudit = (state, entry) => {
   state.auditLog = [{ id: makeLincolnId('AUD'), createdAt: nowIso(), ...entry }, ...(Array.isArray(state.auditLog) ? state.auditLog : [])].slice(0, 5000);
+};
+
+const normalizeClientText = (value) => String(value ?? '').trim();
+const normalizeClientKey = (value) => normalizeClientText(value).toLowerCase().replace(/\s+/g, ' ');
+const normalizeClientPhone = (value) => normalizeClientText(value).replace(/\D/g, '');
+
+const ensureReservationClient = (state, person, actor, sourceCode = '') => {
+  const name = normalizeClientText(person?.name);
+  if (!name) return null;
+  const ci = normalizeClientText(person?.ci);
+  const phone = normalizeClientText(person?.phone);
+  const normalizedCi = normalizeClientKey(ci);
+  const normalizedPhone = normalizeClientPhone(phone);
+  const normalizedName = normalizeClientKey(name);
+  const existing = state.clients.find((client) => {
+    const clientCi = normalizeClientKey(client?.ci);
+    const clientPhone = normalizeClientPhone(client?.phone);
+    const clientName = normalizeClientKey(client?.name);
+    if (normalizedCi && clientCi) return normalizedCi === clientCi;
+    if (normalizedPhone && clientPhone) return normalizedPhone === clientPhone;
+    return normalizedName && clientName === normalizedName;
+  });
+  if (existing) {
+    let changed = false;
+    if (!normalizeClientText(existing.ci) && ci) { existing.ci = ci; changed = true; }
+    if (!normalizeClientText(existing.phone) && phone) { existing.phone = phone; changed = true; }
+    if (changed) existing.updatedAt = nowIso();
+    return existing;
+  }
+  const createdAt = nowIso();
+  const client = {
+    id: makeLincolnId('CLI'),
+    code: nextLincolnCode('CLI', state.clients),
+    name, ci, phone, secondaryPhone: '', email: '', notes: sourceCode ? `Creado automáticamente desde ${sourceCode}.` : 'Creado automáticamente desde Reservas Lincoln.',
+    status: 'active', createdAt, updatedAt: createdAt,
+    createdById: String(actor?.id ?? '').trim() || null, createdByName: String(actor?.name ?? '').trim() || null,
+  };
+  state.clients.unshift(client);
+  appendLincolnAudit(state, { action: 'clients.auto_create', entityType: 'clients', entityId: client.id, entityCode: client.code, actorId: client.createdById, actorName: client.createdByName, sourceCode });
+  return client;
 };
 
 const mutateLincolnState = async (expectedRevision, mutator) => {
@@ -216,9 +258,14 @@ export const createLincolnRecord = async (collection, payload, expectedRevision,
     const rows = state[collection];
     const prefix = getCollectionPrefix(collection);
     const createdAt = nowIso();
-    const normalizedPayload = collection === 'reservations'
+    let normalizedPayload = collection === 'reservations'
       ? normalizeLincolnReservation({ ...payload, reservationDate: payload?.reservationDate || createdAt.slice(0, 10) }, state)
       : (payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
+    if (collection === 'reservations') {
+      const primaryClient = ensureReservationClient(state, { name: normalizedPayload.contractor1Name, ci: normalizedPayload.contractor1Ci, phone: normalizedPayload.contractor1Phone }, actor, String(payload?.code ?? '').trim() || 'RESERVA LINCOLN');
+      const secondaryClient = ensureReservationClient(state, { name: normalizedPayload.contractor2Name, ci: normalizedPayload.contractor2Ci, phone: normalizedPayload.contractor2Phone }, actor, String(payload?.code ?? '').trim() || 'RESERVA LINCOLN');
+      normalizedPayload = { ...normalizedPayload, clientId: primaryClient?.id ?? null, secondClientId: secondaryClient?.id ?? null };
+    }
     const record = {
       ...normalizedPayload,
       id: makeLincolnId(prefix),
@@ -252,9 +299,14 @@ export const updateLincolnRecord = async (collection, id, payload, expectedRevis
     }
     const current = rows[index];
     const incoming = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
-    const normalizedIncoming = collection === 'reservations'
+    let normalizedIncoming = collection === 'reservations'
       ? normalizeLincolnReservation(incoming, state, { existing: current })
       : incoming;
+    if (collection === 'reservations') {
+      const primaryClient = ensureReservationClient(state, { name: normalizedIncoming.contractor1Name, ci: normalizedIncoming.contractor1Ci, phone: normalizedIncoming.contractor1Phone }, actor, current.code);
+      const secondaryClient = ensureReservationClient(state, { name: normalizedIncoming.contractor2Name, ci: normalizedIncoming.contractor2Ci, phone: normalizedIncoming.contractor2Phone }, actor, current.code);
+      normalizedIncoming = { ...normalizedIncoming, clientId: primaryClient?.id ?? null, secondClientId: secondaryClient?.id ?? null };
+    }
     const linkedEvent = collection === 'reservations'
       ? state.events.find((event) => String(event?.reservationId ?? '') === String(current.id) || String(event?.id ?? '') === String(current.eventId ?? ''))
       : null;

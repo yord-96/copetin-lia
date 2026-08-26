@@ -2,6 +2,7 @@ export const lincolnSidebarItems = [
   { id: 'panel', label: 'Panel', icon: 'home' },
   { id: 'agenda', label: 'Agenda', icon: 'calendar' },
   { id: 'comercial', label: 'Reservas y Contratos', icon: 'bookmark' },
+  { id: 'reuniones', label: 'Reuniones', icon: 'calendar' },
   { id: 'clientes', label: 'Clientes', icon: 'users' },
   { id: 'salones', label: 'Salones', icon: 'home' },
   { id: 'paquetes', label: 'Paquetes', icon: 'star' },
