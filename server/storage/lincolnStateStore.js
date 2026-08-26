@@ -17,7 +17,7 @@ let cachedPayload = null;
 let cachedSignature = null;
 
 const createEmptyLincolnState = () => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   company: {
     id: 'lincoln',
     name: 'Centro de Eventos Lincoln',
@@ -92,17 +92,266 @@ const readPayload = async () => {
   return payload;
 };
 
+
+const INITIAL_PACKAGE_DOCUMENTS_MIGRATION = 'packageDocuments20260826';
+
+const seedServiceLine = ({ id, category, description, variantIds = [], catalogId = '' }) => ({
+  id,
+  category,
+  sourceType: 'internal',
+  description,
+  quantity: 1,
+  unit: 'SERVICIO',
+  costMode: 'fixed_event',
+  unitCostBs: 0,
+  supplierId: '',
+  supplierName: '',
+  included: true,
+  notes: '',
+  variantIds,
+  catalogId,
+  catalogKind: 'service',
+});
+
+const seedExtraLine = ({ id, description, priceBs, costMode = 'per_person', catalogId }) => ({
+  id,
+  category: 'OTROS',
+  sourceType: 'internal',
+  description,
+  quantity: 1,
+  unit: costMode === 'per_person' ? 'PERSONA' : 'EVENTO',
+  costMode,
+  unitCostBs: priceBs,
+  supplierId: '',
+  supplierName: '',
+  included: false,
+  notes: 'Precio referencial tomado del documento comercial entregado por Lincoln.',
+  variantIds: [],
+  catalogId,
+  catalogKind: 'extra',
+});
+
+const initialPackageDocumentSeed = (state) => {
+  const serviceCatalog = [
+    ['SRV-DOC-001', 'CATERING', 'Plato servido: 2 carnes, 3 guarniciones'],
+    ['SRV-DOC-002', 'CATERING', 'Bocaditos: 2 rondas'],
+    ['SRV-DOC-003', 'CATERING', 'Galleta de champagne (hojaldre con almendras)'],
+    ['SRV-DOC-004', 'BEBIDAS', 'Jugos de fruta natural'],
+    ['SRV-DOC-005', 'BEBIDAS', 'Cereser para el brindis'],
+    ['SRV-DOC-006', 'BEBIDAS', 'Singani: Casa Real negro'],
+    ['SRV-DOC-007', 'BEBIDAS', 'Ron: Bacardi añejo'],
+    ['SRV-DOC-008', 'BEBIDAS', 'Gaseosas: barra libre'],
+    ['SRV-DOC-009', 'BEBIDAS', 'Agua: barra libre'],
+    ['SRV-DOC-010', 'BEBIDAS', 'Hielo: barra libre'],
+    ['SRV-DOC-011', 'MONTAJE', 'Montaje de mesas con mantelería fina, sillas Tiffany, cristalería, mesa principal para novios, torta, postres y otras mesas especiales'],
+    ['SRV-DOC-012', 'SONIDO', 'Amplificación, iluminación y maestro de ceremonia'],
+    ['SRV-DOC-013', 'PERSONAL', 'Coordinador de evento, recepcionista, guardia de seguridad, personal de limpieza y garzones'],
+    ['SRV-DOC-014', 'SALÓN', 'Alquiler de instalaciones del Salón Grande, gaseado de salón'],
+    ['SRV-DOC-015', 'CATERING', 'Bocaditos: 5 rondas – menú amplio a elección'],
+    ['SRV-DOC-016', 'MONTAJE', 'Montaje de mesas con mantelería, sillas Tiffany y cristalería básica; mesas especiales de torta y postres'],
+    ['SRV-DOC-017', 'PERSONAL', 'Garzones (1 garzón por cada 30 personas)'],
+    ['SRV-DOC-018', 'SALÓN', 'Alquiler de instalaciones del Salón Pequeño gaseado'],
+    ['SRV-DOC-019', 'CATERING', 'Plato servido: 2 carnes, 3 guarniciones – menú amplio a elección'],
+    ['SRV-DOC-020', 'MONTAJE', 'Montaje de mesas con mantelería fina, sillas, cristalería, vajilla, mesa principal de torta, postres, juego de lounge y mesas altas con taburetes'],
+    ['SRV-DOC-021', 'PERSONAL', 'Coordinador de evento, recepcionista, guardia de seguridad, garzones (1 garzón por cada 30 personas) y personal de limpieza permanente'],
+    ['SRV-DOC-022', 'SALÓN', 'Alquiler de instalaciones del Salón Principal gaseado'],
+  ].map(([id, category, description], index) => ({
+    id,
+    code: `SRV-DOC-${String(index + 1).padStart(3, '0')}`,
+    name: description,
+    category,
+    description,
+    sourceType: 'internal',
+    costMode: 'fixed_event',
+    unit: 'SERVICIO',
+    unitCostBs: 0,
+    supplierId: '',
+    supplierName: '',
+    status: 'active',
+    notes: 'Servicio inicial cargado una sola vez desde los documentos comerciales de Lincoln.',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  }));
+
+  const extraCatalog = [
+    ['EXT-DOC-001', 'Singani: Casa Real negro o Vodka', 7, 'per_person'],
+    ['EXT-DOC-002', 'Ron: Bacardi añejo o Fernet', 8.5, 'per_person'],
+    ['EXT-DOC-003', 'Ron: Habana 7 años, Solera', 13, 'per_person'],
+    ['EXT-DOC-004', 'Whisky: Johnnie Walker o Chivas Regal', 29, 'per_person'],
+    ['EXT-DOC-005', 'Whisky: Old Parr', 32, 'per_person'],
+    ['EXT-DOC-006', 'Buffet de postres: 3 postres por persona de 5 variedades', 21, 'per_person'],
+    ['EXT-DOC-007', 'Buffet de picaditos: variedad de quesos, jamón y otros', 21, 'per_person'],
+    ['EXT-DOC-008', 'Torta con maqueta', 15, 'per_person'],
+    ['EXT-DOC-009', 'Saladitos (papa frita, maní)', 5, 'per_person'],
+    ['EXT-DOC-010', 'Cócteles (margarita, martini, mojitos, daiquiri, kalua entre otros) con o sin alcohol', 24, 'per_person'],
+    ['EXT-DOC-011', 'Vino tinto o blanco (Campos de Solana, Kohlberg fino)', 4, 'per_person'],
+    ['EXT-DOC-012', 'Vino tinto o blanco (Rosé, Duo, Terruño, Cabernet)', 7, 'per_person'],
+    ['EXT-DOC-013', 'Servicio de amplificación, iluminación, DJ y maestro de ceremonias', 1200, 'fixed_event'],
+    ['EXT-DOC-014', 'Servicio de amplificación, iluminación con juego de luces, DJ y maestro de ceremonias para 15 años', 3000, 'fixed_event'],
+  ].map(([id, description, unitCostBs, costMode], index) => ({
+    id,
+    code: `EXT-DOC-${String(index + 1).padStart(3, '0')}`,
+    name: description,
+    category: 'OTROS',
+    description,
+    sourceType: 'internal',
+    costMode,
+    unit: costMode === 'per_person' ? 'PERSONA' : 'EVENTO',
+    unitCostBs,
+    supplierId: '',
+    supplierName: '',
+    status: 'active',
+    notes: 'Precio referencial inicial cargado una sola vez desde los documentos comerciales de Lincoln.',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  }));
+
+  const roomByName = (terms) => (state.rooms ?? []).find((room) => {
+    const name = String(room?.name ?? '').toUpperCase();
+    return terms.some((term) => name.includes(term));
+  }) ?? null;
+  const largeRoom = roomByName(['GRANDE', 'PRINCIPAL']);
+  const smallRoom = roomByName(['PEQUEÑO', 'PEQUENO']);
+
+  const grandeVariants = [
+    { id: 'VAR-GRANDE-COBRE', name: 'COBRE', pricePerPersonBs: 120, minimumGuests: 120, status: 'active' },
+    { id: 'VAR-GRANDE-PLATA', name: 'PLATA', pricePerPersonBs: 145, minimumGuests: 120, status: 'active' },
+    { id: 'VAR-GRANDE-ORO', name: 'ORO', pricePerPersonBs: 210, minimumGuests: 120, status: 'active' },
+    { id: 'VAR-GRANDE-PLATINO', name: 'PLATINO', pricePerPersonBs: 245, minimumGuests: 120, status: 'active' },
+  ];
+  const smallVariants = [
+    { id: 'VAR-PEQ-BASICO', name: 'BÁSICO', pricePerPersonBs: 70, minimumGuests: 50, status: 'active' },
+    { id: 'VAR-PEQ-PLATA', name: 'PLATA', pricePerPersonBs: 80, minimumGuests: 50, status: 'active' },
+    { id: 'VAR-PEQ-PLATINO', name: 'PLATINO', pricePerPersonBs: 145, minimumGuests: 50, status: 'active' },
+    { id: 'VAR-PEQ-ORO', name: 'ORO', pricePerPersonBs: 160, minimumGuests: 50, status: 'active' },
+  ];
+  const quinceVariants = [
+    { id: 'VAR-15-BASICO', name: 'BÁSICO', pricePerPersonBs: 120, minimumGuests: 120, status: 'active' },
+    { id: 'VAR-15-JOVENES', name: 'JÓVENES', pricePerPersonBs: 180, minimumGuests: 120, status: 'active' },
+    { id: 'VAR-15-ADULTOS', name: 'ADULTOS', pricePerPersonBs: 190, minimumGuests: 120, status: 'active' },
+  ];
+
+  const packages = [
+    {
+      id: 'PKG-DOC-SALON-GRANDE', code: 'PAQ-DOC-001', name: 'SALÓN GRANDE', familyName: 'SALÓN GRANDE',
+      roomId: largeRoom?.id ?? '', roomName: largeRoom?.name ?? 'SALÓN GRANDE', segment: 'EVENTOS',
+      eventTypes: ['BODA', '15 AÑOS', 'CUMPLEAÑOS', 'EVENTO CORPORATIVO', 'OTRO'], minimumGuests: 120,
+      pricePerPersonBs: 120, status: 'active', description: 'Paquetes Cobre, Plata, Oro y Platino del Salón Grande según documento comercial entregado por Lincoln.', images: [], variants: grandeVariants,
+      serviceLines: [
+        seedServiceLine({ id: 'L-GR-001', category: 'CATERING', description: 'Plato servido: 2 carnes, 3 guarniciones', variantIds: ['VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-001' }),
+        seedServiceLine({ id: 'L-GR-002', category: 'CATERING', description: 'Bocaditos: 2 rondas', variantIds: ['VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-002' }),
+        seedServiceLine({ id: 'L-GR-003', category: 'CATERING', description: 'Galleta de champagne (hojaldre con almendras)', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-003' }),
+        seedServiceLine({ id: 'L-GR-004', category: 'BEBIDAS', description: 'Jugos de fruta natural', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-004' }),
+        seedServiceLine({ id: 'L-GR-005', category: 'BEBIDAS', description: 'Cereser para el brindis', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-005' }),
+        seedServiceLine({ id: 'L-GR-006', category: 'BEBIDAS', description: 'Singani: Casa Real negro', variantIds: ['VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-006' }),
+        seedServiceLine({ id: 'L-GR-007', category: 'BEBIDAS', description: 'Ron: Bacardi añejo', variantIds: ['VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-007' }),
+        seedServiceLine({ id: 'L-GR-008', category: 'BEBIDAS', description: 'Gaseosas: barra libre', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-008' }),
+        seedServiceLine({ id: 'L-GR-009', category: 'BEBIDAS', description: 'Agua: barra libre', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-009' }),
+        seedServiceLine({ id: 'L-GR-010', category: 'BEBIDAS', description: 'Hielo: barra libre', variantIds: ['VAR-GRANDE-PLATA','VAR-GRANDE-ORO','VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-010' }),
+        seedServiceLine({ id: 'L-GR-011', category: 'MONTAJE', description: 'Montaje de mesas con mantelería fina, sillas Tiffany, cristalería, mesa principal para novios, torta, postres y otras mesas especiales', variantIds: [], catalogId: 'SRV-DOC-011' }),
+        seedServiceLine({ id: 'L-GR-012', category: 'SONIDO', description: 'Amplificación, iluminación y maestro de ceremonia', variantIds: ['VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-012' }),
+        seedServiceLine({ id: 'L-GR-013', category: 'PERSONAL', description: 'Coordinador de evento, recepcionista, guardia de seguridad, personal de limpieza y garzones', variantIds: [], catalogId: 'SRV-DOC-013' }),
+        seedServiceLine({ id: 'L-GR-014', category: 'SALÓN', description: 'Alquiler de instalaciones del Salón Grande, gaseado de salón', variantIds: [], catalogId: 'SRV-DOC-014' }),
+      ],
+      servicesText: '', sourceDocument: 'PAQUETES SALÓN GRANDE', createdAt: nowIso(), updatedAt: nowIso(),
+    },
+    {
+      id: 'PKG-DOC-SALON-PEQUENO', code: 'PAQ-DOC-002', name: 'SALÓN PEQUEÑO 2024', familyName: 'SALÓN PEQUEÑO 2024',
+      roomId: smallRoom?.id ?? '', roomName: smallRoom?.name ?? 'SALÓN PEQUEÑO', segment: 'EVENTOS',
+      eventTypes: ['BODA', '15 AÑOS', 'CUMPLEAÑOS', 'EVENTO CORPORATIVO', 'OTRO'], minimumGuests: 50,
+      pricePerPersonBs: 70, status: 'active', description: 'Paquetes Básico, Plata, Platino y Oro del Salón Pequeño según documento comercial 2024.', images: [], variants: smallVariants,
+      serviceLines: [
+        seedServiceLine({ id: 'L-PEQ-001', category: 'CATERING', description: 'Plato servido: 2 carnes, 3 guarniciones – menú amplio a elección', variantIds: ['VAR-PEQ-ORO'], catalogId: 'SRV-DOC-019' }),
+        seedServiceLine({ id: 'L-PEQ-002', category: 'CATERING', description: 'Bocaditos: 5 rondas – menú amplio a elección', variantIds: ['VAR-PEQ-PLATINO'], catalogId: 'SRV-DOC-015' }),
+        seedServiceLine({ id: 'L-PEQ-003', category: 'CATERING', description: 'Galleta de champagne (hojaldre con almendras)', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-003' }),
+        seedServiceLine({ id: 'L-PEQ-004', category: 'BEBIDAS', description: 'Jugos de fruta natural', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-004' }),
+        seedServiceLine({ id: 'L-PEQ-005', category: 'BEBIDAS', description: 'Cereser para el brindis', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-005' }),
+        seedServiceLine({ id: 'L-PEQ-006', category: 'BEBIDAS', description: 'Gaseosas: barra libre', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-008' }),
+        seedServiceLine({ id: 'L-PEQ-007', category: 'BEBIDAS', description: 'Agua: barra libre', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-009' }),
+        seedServiceLine({ id: 'L-PEQ-008', category: 'BEBIDAS', description: 'Hielo: barra libre', variantIds: ['VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-010' }),
+        seedServiceLine({ id: 'L-PEQ-009', category: 'MONTAJE', description: 'Montaje de mesas con mantelería, sillas Tiffany y cristalería básica; mesas especiales de torta y postres', variantIds: [], catalogId: 'SRV-DOC-016' }),
+        seedServiceLine({ id: 'L-PEQ-010', category: 'PERSONAL', description: 'Garzones (1 garzón por cada 30 personas)', variantIds: ['VAR-PEQ-PLATA','VAR-PEQ-PLATINO','VAR-PEQ-ORO'], catalogId: 'SRV-DOC-017' }),
+        seedServiceLine({ id: 'L-PEQ-011', category: 'SALÓN', description: 'Alquiler de instalaciones del Salón Pequeño gaseado', variantIds: [], catalogId: 'SRV-DOC-018' }),
+        ...extraCatalog.filter((item) => item.id !== 'EXT-DOC-014').map((item, index) => seedExtraLine({ id: `L-PEQ-EXT-${index + 1}`, description: item.description, priceBs: item.unitCostBs, costMode: item.costMode, catalogId: item.id })),
+      ], servicesText: '', sourceDocument: 'PAQUETES SALÓN PEQUEÑO 2024', createdAt: nowIso(), updatedAt: nowIso(),
+    },
+    {
+      id: 'PKG-DOC-15-ANOS', code: 'PAQ-DOC-003', name: 'PAQUETE 15 AÑOS', familyName: 'PAQUETE 15 AÑOS',
+      roomId: largeRoom?.id ?? '', roomName: largeRoom?.name ?? 'SALÓN PRINCIPAL', segment: '15 AÑOS',
+      eventTypes: ['15 AÑOS'], minimumGuests: 120, pricePerPersonBs: 120, status: 'active',
+      description: 'Paquete 15 Años con niveles Básico, Jóvenes y Adultos según documento comercial entregado por Lincoln.', images: [], variants: quinceVariants,
+      serviceLines: [
+        seedServiceLine({ id: 'L-15-001', category: 'CATERING', description: 'Plato servido: 2 carnes, 3 guarniciones – menú amplio a elección', variantIds: ['VAR-15-ADULTOS'], catalogId: 'SRV-DOC-019' }),
+        seedServiceLine({ id: 'L-15-002', category: 'CATERING', description: 'Bocaditos: 5 rondas – menú amplio a elección', variantIds: ['VAR-15-JOVENES'], catalogId: 'SRV-DOC-015' }),
+        seedServiceLine({ id: 'L-15-003', category: 'CATERING', description: 'Galleta de champagne (hojaldre con almendras)', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-003' }),
+        seedServiceLine({ id: 'L-15-004', category: 'BEBIDAS', description: 'Jugos de fruta natural', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-004' }),
+        seedServiceLine({ id: 'L-15-005', category: 'BEBIDAS', description: 'Cereser para el brindis', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-005' }),
+        seedServiceLine({ id: 'L-15-006', category: 'BEBIDAS', description: 'Gaseosas: barra libre', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-008' }),
+        seedServiceLine({ id: 'L-15-007', category: 'BEBIDAS', description: 'Agua: barra libre', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-009' }),
+        seedServiceLine({ id: 'L-15-008', category: 'BEBIDAS', description: 'Hielo: barra libre', variantIds: ['VAR-15-JOVENES','VAR-15-ADULTOS'], catalogId: 'SRV-DOC-010' }),
+        seedServiceLine({ id: 'L-15-009', category: 'MONTAJE', description: 'Montaje de mesas con mantelería fina, sillas, cristalería, vajilla, mesa principal de torta, postres, juego de lounge y mesas altas con taburetes', variantIds: [], catalogId: 'SRV-DOC-020' }),
+        seedServiceLine({ id: 'L-15-010', category: 'PERSONAL', description: 'Coordinador de evento, recepcionista, guardia de seguridad, garzones (1 garzón por cada 30 personas) y personal de limpieza permanente', variantIds: [], catalogId: 'SRV-DOC-021' }),
+        seedServiceLine({ id: 'L-15-011', category: 'SALÓN', description: 'Alquiler de instalaciones del Salón Principal gaseado', variantIds: [], catalogId: 'SRV-DOC-022' }),
+        ...extraCatalog.filter((item) => item.id !== 'EXT-DOC-013').map((item, index) => seedExtraLine({ id: `L-15-EXT-${index + 1}`, description: item.description, priceBs: item.unitCostBs, costMode: item.costMode, catalogId: item.id })),
+      ], servicesText: '', sourceDocument: 'PAQUETE 15 AÑOS', createdAt: nowIso(), updatedAt: nowIso(),
+    },
+  ];
+
+  return { packages, serviceCatalog, extraCatalog };
+};
+
+const applyInitialPackageDocumentSeed = (state) => {
+  const settings = state.settings && typeof state.settings === 'object' && !Array.isArray(state.settings) ? state.settings : {};
+  const migrations = settings.dataMigrations && typeof settings.dataMigrations === 'object' && !Array.isArray(settings.dataMigrations)
+    ? settings.dataMigrations
+    : {};
+  if (migrations[INITIAL_PACKAGE_DOCUMENTS_MIGRATION]) return { state, changed: false };
+
+  const { packages, serviceCatalog, extraCatalog } = initialPackageDocumentSeed(state);
+  const packageIds = new Set((state.packages ?? []).map((row) => row?.id));
+  const serviceIds = new Set((state.packageServices ?? []).map((row) => row?.id));
+  const extraIds = new Set((state.packageExtras ?? []).map((row) => row?.id));
+  state.packages = [...(state.packages ?? []), ...packages.filter((row) => !packageIds.has(row.id))];
+  state.packageServices = [...(state.packageServices ?? []), ...serviceCatalog.filter((row) => !serviceIds.has(row.id))];
+  state.packageExtras = [...(state.packageExtras ?? []), ...extraCatalog.filter((row) => !extraIds.has(row.id))];
+  state.settings = {
+    ...settings,
+    dataMigrations: {
+      ...migrations,
+      [INITIAL_PACKAGE_DOCUMENTS_MIGRATION]: {
+        appliedAt: nowIso(),
+        source: 'Documentos comerciales Lincoln entregados por el usuario',
+        packagesAdded: packages.length,
+      },
+    },
+  };
+  state.schemaVersion = Math.max(5, Number(state.schemaVersion ?? 1));
+  return { state, changed: true };
+};
+
 export const ensureLincolnStateStore = async () => {
   await fs.mkdir(path.dirname(stateFilePath), { recursive: true });
-  if (await signatureForFile()) return;
-  const state = createEmptyLincolnState();
+  const signature = await signatureForFile();
+  if (!signature) {
+    const seeded = applyInitialPackageDocumentSeed(createEmptyLincolnState()).state;
+    const updatedAt = new Date().toISOString();
+    await writePayload({
+      state: seeded,
+      version: 1,
+      checksum: checksumForState(seeded),
+      updatedAt,
+    });
+    return;
+  }
+
+  const payload = await readPayload();
+  const normalized = normalizeLincolnStateShape(payload?.state ?? createEmptyLincolnState());
+  const migration = applyInitialPackageDocumentSeed(normalized);
+  if (!migration.changed) return;
+  const version = Number(payload?.version ?? 1) + 1;
+  const checksum = checksumForState(migration.state);
   const updatedAt = new Date().toISOString();
-  await writePayload({
-    state,
-    version: 1,
-    checksum: checksumForState(state),
-    updatedAt,
-  });
+  await writePayload({ state: migration.state, version, checksum, updatedAt });
 };
 
 export const getLincolnStateSnapshot = async () => {
@@ -156,7 +405,7 @@ const normalizeLincolnStateShape = (state) => {
   ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
     next[key] = Array.isArray(source[key]) ? source[key] : [];
   });
-  next.schemaVersion = Math.max(4, Number(source.schemaVersion ?? 1));
+  next.schemaVersion = Math.max(5, Number(source.schemaVersion ?? 1));
   return next;
 };
 
