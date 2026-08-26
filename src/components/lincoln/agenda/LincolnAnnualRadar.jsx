@@ -21,13 +21,6 @@ export default function LincolnAnnualRadar({ year, months = [], onYearChange }) 
   const polygon = (key) => values.map((row, index) => pointForValue(index, row[key]).join(',')).join(' ');
   const gridPolygon = (scale) => Array.from({ length: 12 }, (_, index) => coordinate(index, scale).join(',')).join(' ');
   const yearOptions = Array.from({ length: 7 }, (_, index) => year - 3 + index);
-  const totals = SERIES.map(([key, className, label]) => ({
-    key,
-    className,
-    label,
-    value: values.reduce((total, row) => total + Number(row[key] ?? 0), 0),
-  }));
-
   return (
     <section className="lincoln-agenda-surface lincoln-agenda-radar-card">
       <div className="lincoln-agenda-radar-head">
@@ -35,15 +28,6 @@ export default function LincolnAnnualRadar({ year, months = [], onYearChange }) 
         <select className="lincoln-agenda-year-select" value={year} onChange={(event) => onYearChange(Number(event.target.value))} aria-label="Año del radar">
           {yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
-      </div>
-      <div className="lincoln-agenda-radar-legend" aria-label={`Totales de actividad ${year}`}>
-        {totals.map((item) => (
-          <div key={item.key} className={`lincoln-agenda-radar-legend-item is-${item.className}`}>
-            <span className="lincoln-agenda-radar-legend-dot" aria-hidden="true" />
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-          </div>
-        ))}
       </div>
       <div className="lincoln-agenda-radar-wrap">
         <svg className="lincoln-agenda-radar" viewBox="0 0 360 360" role="img" aria-label={`Radar anual de actividad Lincoln ${year}`}>
