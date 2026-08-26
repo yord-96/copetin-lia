@@ -604,6 +604,7 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       return { record: existing, reservation: repairedReservation, alreadyConverted: true };
     }
     const createdAt = nowIso();
+    const contractCode = nextLincolnCode('CON', state.events.map((row) => ({ code: row?.contractCode ?? '' })));
     const event = {
       clientId: reservation.clientId ?? null,
       clientName: reservation.clientName ?? '',
@@ -639,6 +640,9 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       notes: reservation.notes ?? '',
       status: 'contract_pending',
       ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
+      contractCode,
+      contractDocumentVersion: Math.max(1, Number(payload?.contractDocumentVersion ?? 1)),
+      contractedAt: String(payload?.contractedAt ?? '').trim() || createdAt,
       id: makeLincolnId('EVE'),
       code: nextLincolnCode('EVE', state.events),
       reservationId: reservation.id,

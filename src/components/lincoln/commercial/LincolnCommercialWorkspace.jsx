@@ -19,6 +19,7 @@ export default function LincolnCommercialWorkspace({
   onEditReservation,
   onEditContract,
   onConvertReservation,
+  onOpenDocument,
   onOpenEconomic,
 }) {
   const [query, setQuery] = useState('');
@@ -148,7 +149,7 @@ export default function LincolnCommercialWorkspace({
                     <div className="lincoln-commercial-actions">
                       <button type="button" onClick={() => row.kind === 'reservation' ? onEditReservation(row) : onEditContract(row)}>Abrir</button>
                       {row.kind === 'reservation' && !['cancelled', 'converted'].includes(row.status) ? <button type="button" className="is-primary" onClick={() => onConvertReservation(row)}>Convertir</button> : null}
-                      {row.kind === 'contract' ? <button type="button" className="is-primary" onClick={() => onOpenEconomic(row)}>Economía</button> : null}
+                      {row.kind === 'contract' ? <><button type="button" className="is-document" onClick={() => onOpenDocument(row)}>Documento</button><button type="button" className="is-primary" onClick={() => onOpenEconomic(row)}>Economía</button></> : null}
                     </div>
                   </td>
                 </tr>

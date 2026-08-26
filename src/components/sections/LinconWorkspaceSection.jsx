@@ -14,6 +14,7 @@ import '../lincoln/styles/lincoln-agenda.css';
 import '../lincoln/styles/lincoln-settlements.css';
 import '../lincoln/styles/lincoln-reports.css';
 import '../lincoln/styles/lincoln-commercial.css';
+import '../lincoln/styles/lincoln-contract-document.css';
 import { lincolnEnabledViews, lincolnSidebarItems } from '../lincoln/config/navigation';
 import LincolnWorkspaceLayout from '../lincoln/layout/LincolnWorkspaceLayout';
 import LinconIcon from '../lincoln/shared/LinconIcon';
@@ -395,6 +396,155 @@ function RecordModal({ mode, record, state, saving, onClose, onSave }) {
   );
 }
 
+
+const contractMoney = (value) => new Intl.NumberFormat('es-BO', {
+  style: 'currency', currency: 'BOB', minimumFractionDigits: 2,
+}).format(Number(value ?? 0));
+
+const contractDateLong = (value) => {
+  if (!value) return 'FECHA PENDIENTE';
+  const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return String(value).toUpperCase();
+  return parsed.toLocaleDateString('es-BO', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).toUpperCase();
+};
+
+const contractDefaultClauses = (draft) => [
+  `Centro de Eventos LINCOLN prestará el servicio de atención para el evento ${String(draft.eventType || 'EVENTO').toUpperCase()}, a realizarse el ${contractDateLong(draft.eventDate)}.`,
+  'Los servicios a prestar se detallan en la hoja de costos y servicios, la cual forma parte integrante del presente contrato.',
+  `El costo del servicio se establece de acuerdo con la propuesta comercial descrita en la hoja de costos, para ${Number(draft.guestCount || 0)} invitados. Los importes pactados en este documento quedan congelados para este contrato.`,
+  `Los Contratantes cancelan en calidad de anticipo la suma de ${contractMoney(draft.advanceBs)}. El saldo será pagado ${Number(draft.balanceDueDays || 7)} días antes del evento, salvo acuerdo escrito diferente.`,
+  'Si los Contratantes deciden suspender el evento, las condiciones de devolución o penalidad serán las expresamente acordadas entre las partes y registradas en este contrato.',
+  `Los Contratantes se comprometen a resarcir los daños ocasionados por sus invitados en instalaciones, muebles, mantelería, vajilla, cristalería u otros bienes puestos a su disposición, dejando una garantía de ${contractMoney(draft.guaranteeBs)}, que será devuelta cuando corresponda si no existen daños pendientes.`,
+  'Cuando por fuerza mayor o motivos coyunturales el evento no pueda realizarse en la fecha acordada, las partes podrán reprogramarlo de acuerdo con la disponibilidad de calendario de Centro de Eventos Lincoln.',
+  'En conformidad con todas las cláusulas y condiciones del presente contrato, las partes firman el documento en señal de aceptación.',
+];
+
+const packageLineAppliesToVariant = (line, variantId) => {
+  const variantIds = Array.isArray(line?.variantIds) ? line.variantIds : [];
+  return !variantIds.length || !variantId || variantIds.includes(variantId);
+};
+
+const buildContractDraft = (reservation) => {
+  const snapshot = reservation?.packageSnapshot && typeof reservation.packageSnapshot === 'object' ? reservation.packageSnapshot : {};
+  const variant = snapshot.selectedVariant ?? null;
+  const variantId = reservation?.packageVariantId ?? variant?.id ?? '';
+  const rawLines = Array.isArray(snapshot.serviceLines) ? snapshot.serviceLines : [];
+  const includedServices = rawLines
+    .filter((line) => line?.included !== false && line?.catalogKind !== 'extra' && packageLineAppliesToVariant(line, variantId))
+    .map((line, index) => ({ ...line, id: line.id || `service-${index}`, selected: true }));
+  const extras = rawLines
+    .filter((line) => line?.catalogKind === 'extra' || line?.included === false)
+    .map((line, index) => ({ ...line, id: line.id || `extra-${index}`, selected: false, quantity: Number(line.quantity || 1), unitCostBs: Number(line.unitCostBs || 0) }));
+  const pricePerPersonBs = Number(reservation?.packagePricePerPersonBs ?? variant?.pricePerPersonBs ?? 0);
+  const guestCount = Number(reservation?.guestCount ?? 0);
+  const advanceBs = Number(reservation?.reservationPaymentBs ?? 0) + Number(reservation?.accountPaymentBs ?? 0);
+  const base = {
+    sourceReservationId: reservation?.id ?? '', sourceReservationCode: reservation?.code ?? '',
+    contractor1Name: reservation?.contractor1Name ?? reservation?.clientName ?? '', contractor1Ci: reservation?.contractor1Ci ?? reservation?.clientCi ?? '', contractor1Phone: reservation?.contractor1Phone ?? reservation?.clientPhone ?? '',
+    contractor2Name: reservation?.contractor2Name ?? reservation?.secondContractorName ?? '', contractor2Ci: reservation?.contractor2Ci ?? reservation?.secondContractorCi ?? '', contractor2Phone: reservation?.contractor2Phone ?? reservation?.secondContractorPhone ?? '',
+    eventType: reservation?.eventType ?? '', eventDate: reservation?.eventDate ?? '', startTime: reservation?.startTime ?? '', durationHours: Number(reservation?.durationHours ?? 8), roomName: reservation?.roomName ?? '', roomId: reservation?.roomId ?? '',
+    guestCount, packageName: reservation?.packageName ?? snapshot.templateName ?? '', packageVariantName: reservation?.packageVariantName ?? variant?.name ?? '', packageVariantId: variantId,
+    pricePerPersonBs, services: includedServices, extras, discountPercent: 0, advanceBs, guaranteeBs: Number(reservation?.guaranteeBs ?? 0), balanceDueDays: 7,
+    contractDate: lincolnTodayKey(), notes: reservation?.notes ?? '',
+  };
+  return { ...base, clauses: contractDefaultClauses(base) };
+};
+
+const contractTotals = (draft) => {
+  const baseBs = Number(draft.guestCount || 0) * Number(draft.pricePerPersonBs || 0);
+  const extrasBs = (draft.extras ?? []).filter((line) => line.selected).reduce((total, line) => {
+    const qty = Number(line.quantity || 1);
+    const unit = Number(line.unitCostBs || 0);
+    return total + (line.costMode === 'per_person' ? unit * Number(draft.guestCount || 0) * qty : unit * qty);
+  }, 0);
+  const grossBs = baseBs + extrasBs;
+  const discountBs = grossBs * Math.max(0, Number(draft.discountPercent || 0)) / 100;
+  const totalBs = Math.max(0, grossBs - discountBs);
+  const balanceBs = Math.max(0, totalBs - Number(draft.advanceBs || 0));
+  return { baseBs, extrasBs, grossBs, discountBs, totalBs, balanceBs };
+};
+
+function ContractDocumentSheet({ document, compact = false }) {
+  const totals = document?.totals ?? contractTotals(document ?? {});
+  const services = Array.isArray(document?.services) ? document.services.filter((line) => line.selected !== false) : [];
+  const extras = Array.isArray(document?.extras) ? document.extras.filter((line) => line.selected) : [];
+  const grouped = services.reduce((acc, line) => { const key = line.category || 'OTROS'; (acc[key] ||= []).push(line); return acc; }, {});
+  return <div className={`lincoln-contract-paper-stack ${compact ? 'is-compact' : ''}`}>
+    <article className="lincoln-contract-paper">
+      <header className="lincoln-contract-doc-head"><div><small>CENTRO DE EVENTOS</small><h1>LINCOLN</h1><p>Pachamama #2250 y Waldo Ballivian · Cochabamba</p></div><div><strong>{document?.contractCode || 'CONTRATO'}</strong><span>{formatDate(document?.contractDate)}</span></div></header>
+      <h2>CONTRATO DE SERVICIOS</h2>
+      <section className="lincoln-contract-doc-facts">
+        <div><span>Contratante 1</span><strong>{document?.contractor1Name || '—'}</strong><small>C.I. {document?.contractor1Ci || '—'} · {document?.contractor1Phone || '—'}</small></div>
+        <div><span>Contratante 2</span><strong>{document?.contractor2Name || '—'}</strong><small>C.I. {document?.contractor2Ci || '—'} · {document?.contractor2Phone || '—'}</small></div>
+        <div><span>Evento</span><strong>{document?.eventType || '—'}</strong><small>{contractDateLong(document?.eventDate)} · {document?.startTime || 'hora pendiente'}</small></div>
+        <div><span>Salón</span><strong>{document?.roomName || '—'}</strong><small>{document?.durationHours || 0} h · {document?.guestCount || 0} invitados</small></div>
+      </section>
+      <p className="lincoln-contract-intro">Conste por el presente documento privado de prestación de servicios, suscrito entre Centro de Eventos LINCOLN y los Contratantes individualizados precedentemente, bajo las siguientes cláusulas:</p>
+      <ol className="lincoln-contract-clauses">{(document?.clauses ?? []).map((clause, index) => <li key={index}><b>{['PRIMERA','SEGUNDA','TERCERA','CUARTA','QUINTA','SEXTA','SÉPTIMA','OCTAVA','NOVENA'][index] || `CLÁUSULA ${index + 1}`}.-</b> {clause}</li>)}</ol>
+      <section className="lincoln-contract-signatures"><div><span>BASILIA HERBAS SAHONERO</span><small>Centro de Eventos Lincoln</small></div><div><span>{document?.contractor1Name || 'CONTRATANTE 1'}</span><small>Contratante</small></div><div><span>{document?.contractor2Name || 'CONTRATANTE 2'}</span><small>Contratante</small></div></section>
+    </article>
+    <article className="lincoln-contract-paper">
+      <header className="lincoln-contract-doc-head is-cost"><div><small>ANEXO DEL CONTRATO</small><h1>HOJA DE COSTOS Y SERVICIOS</h1><p>{document?.eventType || 'EVENTO'} · {document?.contractor1Name || ''}{document?.contractor2Name ? ` / ${document.contractor2Name}` : ''}</p></div><div><strong>{document?.contractCode || 'BORRADOR'}</strong><span>{contractDateLong(document?.eventDate)}</span></div></header>
+      <section className="lincoln-contract-package-summary"><div><span>Paquete</span><strong>{document?.packageName || 'SIN PAQUETE'}</strong></div><div><span>Nivel</span><strong>{document?.packageVariantName || 'BASE'}</strong></div><div><span>Invitados</span><strong>{document?.guestCount || 0}</strong></div><div><span>Precio / persona</span><strong>{contractMoney(document?.pricePerPersonBs)}</strong></div></section>
+      <div className="lincoln-contract-service-table">{Object.entries(grouped).map(([category, lines]) => <section key={category}><h3>{category}</h3>{lines.map((line) => <div key={line.id}><span>{line.description}</span><b>✓</b></div>)}</section>)}</div>
+      {extras.length ? <section className="lincoln-contract-extras"><h3>SERVICIOS ADICIONALES</h3>{extras.map((line) => <div key={line.id}><span>{line.description}</span><small>{line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1))}</small></div>)}</section> : null}
+      <section className="lincoln-contract-totals"><div><span>Paquete base</span><strong>{contractMoney(totals.baseBs)}</strong></div>{totals.extrasBs > 0 ? <div><span>Extras</span><strong>{contractMoney(totals.extrasBs)}</strong></div> : null}{totals.discountBs > 0 ? <div><span>Descuento ({Number(document?.discountPercent || 0)}%)</span><strong>- {contractMoney(totals.discountBs)}</strong></div> : null}<div className="is-total"><span>Total servicio</span><strong>{contractMoney(totals.totalBs)}</strong></div><div><span>Anticipo / a cuenta</span><strong>{contractMoney(document?.advanceBs)}</strong></div><div><span>Saldo servicio</span><strong>{contractMoney(totals.balanceBs)}</strong></div><div><span>Garantía separada</span><strong>{contractMoney(document?.guaranteeBs)}</strong></div></section>
+      {document?.notes ? <section className="lincoln-contract-notes"><b>Observaciones / acuerdos</b><p>{document.notes}</p></section> : null}
+    </article>
+  </div>;
+}
+
+function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
+  const [step, setStep] = useState(1);
+  const [draft, setDraft] = useState(() => buildContractDraft(reservation));
+  const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
+  const totals = contractTotals(draft);
+  const updateExtra = (id, patch) => setDraft((current) => ({ ...current, extras: current.extras.map((line) => line.id === id ? { ...line, ...patch } : line) }));
+  const updateService = (id, selected) => setDraft((current) => ({ ...current, services: current.services.map((line) => line.id === id ? { ...line, selected } : line) }));
+  const goNext = () => setStep((current) => Math.min(4, current + 1));
+  const goBack = () => setStep((current) => Math.max(1, current - 1));
+  const confirm = () => {
+    if (!draft.contractor1Name.trim()) return window.alert('El Contratante 1 es obligatorio.');
+    if (!draft.eventDate) return window.alert('La fecha del evento es obligatoria.');
+    if (Number(draft.guestCount || 0) <= 0) return window.alert('Indica la cantidad de invitados.');
+    const contractDocumentSnapshot = { ...draft, totals, version: 1, generatedAt: new Date().toISOString(), sourceReservationCode: reservation?.code ?? '' };
+    onConfirm({
+      guaranteeBs: Number(draft.guaranteeBs || 0), guestCount: Number(draft.guestCount || 0), estimatedTotalBs: totals.totalBs, totalBs: totals.totalBs,
+      packageName: draft.packageName, packageVariantName: draft.packageVariantName, packagePricePerPersonBs: Number(draft.pricePerPersonBs || 0),
+      contractDocumentSnapshot, contractDocumentVersion: 1, status: 'contracted', contractedAt: new Date().toISOString(), notes: draft.notes,
+    });
+  };
+  return <div className="lincoln-contract-flow-backdrop"><section className="lincoln-contract-flow-modal">
+    <header><div><small>RESERVA {reservation?.code}</small><h2>Convertir a contrato</h2><p>Revisa la propuesta y confirma el documento antes de crear el contrato.</p></div><button type="button" onClick={onClose}>×</button></header>
+    <nav className="lincoln-contract-flow-steps">{[['1','Datos'],['2','Propuesta'],['3','Condiciones'],['4','Documento']].map(([number,label]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => setStep(Number(number))}><b>{number}</b><span>{label}</span></button>)}</nav>
+    <div className="lincoln-contract-flow-body">
+      {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Vienen desde la reserva; puedes completar lo necesario antes de confirmar.</p></div><div className="lincoln-contract-flow-grid"><Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><input value={draft.roomName} onChange={(e) => set('roomName', e.target.value)} /></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
+      {step === 2 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 2</small><h3>Propuesta comercial congelada</h3><p>Estos cambios solo afectan este contrato; no modifican el paquete maestro.</p></div><div className="lincoln-contract-proposal-head"><div><span>Paquete</span><strong>{draft.packageName || 'SIN PAQUETE'}</strong><small>{draft.packageVariantName || 'BASE'}</small></div><label><span>Bs por persona</span><input type="number" min="0" step="0.01" value={draft.pricePerPersonBs} onChange={(e) => set('pricePerPersonBs', toNumber(e.target.value))} /></label><div><span>Subtotal</span><strong>{contractMoney(totals.baseBs)}</strong></div></div><div className="lincoln-contract-proposal-cols"><article><h4>Servicios incluidos</h4>{draft.services.length ? draft.services.map((line) => <label className="lincoln-contract-check-row" key={line.id}><input type="checkbox" checked={line.selected !== false} onChange={(e) => updateService(line.id, e.target.checked)} /><span><b>{line.category}</b>{line.description}</span></label>) : <p className="is-empty">La reserva no tiene servicios congelados.</p>}</article><article><h4>Extras disponibles</h4>{draft.extras.length ? draft.extras.map((line) => <div className="lincoln-contract-extra-row" key={line.id}><label><input type="checkbox" checked={Boolean(line.selected)} onChange={(e) => updateExtra(line.id, { selected: e.target.checked })} /><span>{line.description}</span></label><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></div>) : <p className="is-empty">No hay extras cargados en este paquete.</p>}</article></div></section> : null}
+      {step === 3 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 3</small><h3>Condiciones y cláusulas</h3><p>Los montos permanecen separados para no mezclar servicio y garantía.</p></div><div className="lincoln-contract-condition-grid"><Field label="Anticipo / a cuenta Bs"><input type="number" min="0" step="0.01" value={draft.advanceBs} onChange={(e) => set('advanceBs', toNumber(e.target.value))} /></Field><Field label="Garantía Bs"><input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field><Field label="Descuento %"><input type="number" min="0" max="100" step="0.01" value={draft.discountPercent} onChange={(e) => set('discountPercent', toNumber(e.target.value))} /></Field><Field label="Saldo antes del evento (días)"><input type="number" min="0" value={draft.balanceDueDays} onChange={(e) => set('balanceDueDays', toNumber(e.target.value))} /></Field></div><div className="lincoln-contract-clause-editor">{draft.clauses.map((clause,index) => <label key={index}><span>Cláusula {index + 1}</span><textarea value={clause} onChange={(e) => setDraft((current) => ({ ...current, clauses: current.clauses.map((item,i) => i === index ? e.target.value : item) }))} /></label>)}</div><Field label="Observaciones / acuerdos" wide><textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></Field></section> : null}
+      {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, totals }} compact /></section> : null}
+    </div>
+    <footer><button type="button" className="is-secondary" onClick={step === 1 ? onClose : goBack}>{step === 1 ? 'Cancelar' : '← Atrás'}</button><div><span>Total: <b>{contractMoney(totals.totalBs)}</b></span>{step < 4 ? <button type="button" onClick={goNext}>Siguiente →</button> : <button type="button" disabled={saving} onClick={confirm}>{saving ? 'Creando contrato...' : 'Confirmar contrato'}</button>}</div></footer>
+  </section></div>;
+}
+
+function ContractDocumentModal({ eventRecord, onClose }) {
+  const document = eventRecord?.contractDocumentSnapshot ? { ...eventRecord.contractDocumentSnapshot, contractCode: eventRecord.contractCode || eventRecord.code } : { ...eventRecord, contractCode: eventRecord?.contractCode || eventRecord?.code, totals: contractTotals(eventRecord ?? {}), clauses: [] };
+  const printDocument = () => {
+    const popup = window.open('', '_blank', 'width=980,height=900');
+    if (!popup) return window.alert('Habilita ventanas emergentes para imprimir el contrato.');
+    const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char] || char));
+    const services = Array.isArray(document.services) ? document.services.filter((line) => line.selected !== false) : [];
+    const extras = Array.isArray(document.extras) ? document.extras.filter((line) => line.selected) : [];
+    const totals = document.totals ?? contractTotals(document);
+    const clauses = (document.clauses ?? []).map((clause, index) => `<li><b>${['PRIMERA','SEGUNDA','TERCERA','CUARTA','QUINTA','SEXTA','SÉPTIMA','OCTAVA','NOVENA'][index] || `CLÁUSULA ${index + 1}`}.-</b> ${safe(clause)}</li>`).join('');
+    const servicesHtml = services.map((line) => `<tr><td>${safe(line.category)}</td><td>${safe(line.description)}</td><td class="yes">✓</td></tr>`).join('');
+    const extrasHtml = extras.map((line) => `<tr><td>${safe(line.description)}</td><td>${safe(line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1)))}</td></tr>`).join('');
+    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(document.contractCode || 'Contrato Lincoln')}</title><style>@page{size:Letter portrait;margin:13mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#211617;font-size:11px}.page{min-height:250mm;page-break-after:always}.page:last-child{page-break-after:auto}.head{display:flex;justify-content:space-between;border-bottom:3px solid #8c1520;padding-bottom:10px;margin-bottom:12px}.brand small{letter-spacing:3px;color:#8c1520}.brand h1{font-family:Georgia,serif;font-size:30px;margin:2px 0}.code{text-align:right}.code b{font-size:17px;color:#8c1520}.title{text-align:center;font-size:18px;margin:14px}.facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.facts div{border:1px solid #ddd;padding:8px}.facts span{display:block;font-size:9px;text-transform:uppercase;color:#777}.facts strong{display:block;margin:3px 0}.intro{line-height:1.5;text-align:justify}.clauses{padding-left:20px}.clauses li{margin:8px 0;line-height:1.45;text-align:justify}.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:55px;text-align:center}.sign div{border-top:1px solid #222;padding-top:6px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#8c1520;color:#fff;text-align:left}th,td{border:1px solid #bbb;padding:6px}.yes{text-align:center;color:#8c1520;font-size:15px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.summary div{border:1px solid #ddd;padding:8px}.totals{width:48%;margin-left:auto}.totals div{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:6px}.totals .total{font-size:14px;background:#f7eeee;font-weight:bold}.no-print{margin:15px 0}@media print{.no-print{display:none}}</style></head><body><button class="no-print" onclick="window.print()">Imprimir / Guardar PDF</button><section class="page"><div class="head"><div class="brand"><small>CENTRO DE EVENTOS</small><h1>LINCOLN</h1><span>Pachamama #2250 y Waldo Ballivian · Cochabamba</span></div><div class="code"><b>${safe(document.contractCode)}</b><br>${safe(formatDate(document.contractDate))}</div></div><h2 class="title">CONTRATO DE SERVICIOS</h2><div class="facts"><div><span>Contratante 1</span><strong>${safe(document.contractor1Name)}</strong>C.I. ${safe(document.contractor1Ci)} · ${safe(document.contractor1Phone)}</div><div><span>Contratante 2</span><strong>${safe(document.contractor2Name || '—')}</strong>C.I. ${safe(document.contractor2Ci || '—')} · ${safe(document.contractor2Phone || '—')}</div><div><span>Evento</span><strong>${safe(document.eventType)}</strong>${safe(contractDateLong(document.eventDate))} · ${safe(document.startTime)}</div><div><span>Salón</span><strong>${safe(document.roomName)}</strong>${safe(document.durationHours)} h · ${safe(document.guestCount)} invitados</div></div><p class="intro">Conste por el presente documento privado de prestación de servicios, suscrito entre Centro de Eventos LINCOLN y los Contratantes individualizados precedentemente, bajo las siguientes cláusulas:</p><ol class="clauses">${clauses}</ol><div class="sign"><div>BASILIA HERBAS SAHONERO<br><small>Centro de Eventos Lincoln</small></div><div>${safe(document.contractor1Name || 'CONTRATANTE 1')}<br><small>Contratante</small></div><div>${safe(document.contractor2Name || 'CONTRATANTE 2')}<br><small>Contratante</small></div></div></section><section class="page"><div class="head"><div class="brand"><small>ANEXO DEL CONTRATO</small><h1>HOJA DE COSTOS</h1><span>${safe(document.eventType)} · ${safe(document.contractor1Name)}</span></div><div class="code"><b>${safe(document.contractCode)}</b><br>${safe(contractDateLong(document.eventDate))}</div></div><div class="summary"><div><span>Paquete</span><strong>${safe(document.packageName || 'SIN PAQUETE')}</strong></div><div><span>Nivel</span><strong>${safe(document.packageVariantName || 'BASE')}</strong></div><div><span>Invitados</span><strong>${safe(document.guestCount)}</strong></div><div><span>Precio/persona</span><strong>${safe(contractMoney(document.pricePerPersonBs))}</strong></div></div><table><thead><tr><th>Categoría</th><th>Servicio incluido</th><th></th></tr></thead><tbody>${servicesHtml || '<tr><td colspan="3">Sin servicios detallados</td></tr>'}</tbody></table>${extrasHtml ? `<table><thead><tr><th>Servicio adicional</th><th>Precio</th></tr></thead><tbody>${extrasHtml}</tbody></table>` : ''}<div class="totals"><div><span>Paquete base</span><b>${safe(contractMoney(totals.baseBs))}</b></div><div><span>Extras</span><b>${safe(contractMoney(totals.extrasBs))}</b></div><div><span>Descuento</span><b>- ${safe(contractMoney(totals.discountBs))}</b></div><div class="total"><span>TOTAL SERVICIO</span><b>${safe(contractMoney(totals.totalBs))}</b></div><div><span>Anticipo / a cuenta</span><b>${safe(contractMoney(document.advanceBs))}</b></div><div><span>Saldo</span><b>${safe(contractMoney(totals.balanceBs))}</b></div><div><span>Garantía separada</span><b>${safe(contractMoney(document.guaranteeBs))}</b></div></div></section></body></html>`);
+    popup.document.close();
+  };
+  return <div className="lincoln-contract-document-backdrop"><section className="lincoln-contract-document-modal"><header><div><small>DOCUMENTO COMERCIAL</small><h2>{eventRecord?.contractCode || eventRecord?.code}</h2><p>Contrato confirmado y hoja de costos congelada.</p></div><div><button type="button" className="is-print" onClick={printDocument}>Imprimir / PDF</button><button type="button" onClick={onClose}>×</button></div></header><div className="lincoln-contract-document-scroll"><ContractDocumentSheet document={document} /></div></section></div>;
+}
+
 function LinconPanelView({ state, onNavigate }) {
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = state.events
@@ -699,18 +849,17 @@ function LinconWorkspaceSection({
     }
   };
 
-  const convertReservation = async (reservation) => {
+  const convertReservation = async (reservation, eventPayload) => {
     if (!snapshot?.revision) return;
-    const accepted = window.confirm(`¿Convertir la reserva ${reservation.code} de ${reservation.clientName || 'este cliente'} en contrato?`);
-    if (!accepted) return;
     setSaving(true);
     try {
       await api.lincoln.convertReservation({
         reservationId: reservation.id,
-        event: { guaranteeBs: 0 },
+        event: eventPayload ?? {},
         revision: snapshot.revision,
         actor,
       });
+      setModal(null);
       await loadLincoln();
       setActiveView('comercial');
     } catch (error) {
@@ -832,7 +981,9 @@ function LinconWorkspaceSection({
       {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
       {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
-      {modal && !['payment', 'expense', 'guaranteeReturn'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
+      {modal?.mode === 'contractDocument' ? <ContractDocumentModal eventRecord={modal.record} onClose={() => setModal(null)} /> : null}
+      {modal && !['payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
     </>
   );
 
@@ -878,7 +1029,11 @@ function LinconWorkspaceSection({
               }}
               onConvertReservation={(row) => {
                 const record = state.reservations.find((item) => item.id === row.id);
-                if (record) void convertReservation(record);
+                if (record) setModal({ mode: 'contractConvert', record });
+              }}
+              onOpenDocument={(row) => {
+                const record = state.events.find((item) => item.id === (row.eventId || row.id));
+                if (record) setModal({ mode: 'contractDocument', record });
               }}
               onOpenEconomic={(row) => setEconomicEventId(row.eventId || row.id)}
             />
