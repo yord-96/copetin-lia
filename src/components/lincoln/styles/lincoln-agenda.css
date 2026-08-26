@@ -220,6 +220,30 @@
   font-size: 0.72rem;
   font-weight: 750;
 }
+
+.lincoln-agenda-radar-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  padding: 0.2rem 1rem 0.35rem;
+}
+.lincoln-agenda-radar-legend-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.36rem;
+  color: #627169;
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+.lincoln-agenda-radar-legend-item span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lincoln-agenda-radar-legend-item strong { color: var(--agenda-ink); font-size: 0.78rem; }
+.lincoln-agenda-radar-legend-dot { width: 0.46rem; height: 0.46rem; border-radius: 50%; }
+.lincoln-agenda-radar-legend-item.is-interested .lincoln-agenda-radar-legend-dot { background: var(--agenda-interested); }
+.lincoln-agenda-radar-legend-item.is-reservation .lincoln-agenda-radar-legend-dot { background: var(--agenda-reserved); }
+.lincoln-agenda-radar-legend-item.is-event .lincoln-agenda-radar-legend-dot { background: var(--agenda-contracted); }
+
 .lincoln-agenda-radar-wrap { min-height: 20.8rem; display: grid; place-items: center; padding: 0 0.55rem 0.45rem; }
 .lincoln-agenda-radar { width: min(100%, 25rem); height: auto; overflow: visible; }
 .lincoln-agenda-radar .radar-grid { fill: none; stroke: #e3e8e5; stroke-width: 1; }
@@ -231,6 +255,10 @@
 .lincoln-agenda-radar .radar-dot.is-interested { fill: var(--agenda-interested); }
 .lincoln-agenda-radar .radar-dot.is-reservation { fill: var(--agenda-reserved); }
 .lincoln-agenda-radar .radar-dot.is-event { fill: var(--agenda-contracted); }
+.lincoln-agenda-radar .radar-value { font-size: 10px; font-weight: 900; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.lincoln-agenda-radar .radar-value.is-interested { fill: var(--agenda-interested); }
+.lincoln-agenda-radar .radar-value.is-reservation { fill: var(--agenda-reserved); }
+.lincoln-agenda-radar .radar-value.is-event { fill: var(--agenda-contracted); }
 .lincoln-agenda-radar .radar-month {
   fill: #26362e;
   font-size: 11px;
