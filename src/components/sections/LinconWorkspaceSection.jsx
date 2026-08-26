@@ -24,6 +24,8 @@ const emptyState = {
   events: [],
   rooms: [],
   packages: [],
+  packageServices: [],
+  packageExtras: [],
   clients: [],
   meetings: [],
   suppliers: [],
@@ -188,6 +190,13 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const rooms = (state.rooms ?? []).filter((room) => room.status !== 'inactive');
   const packages = (state.packages ?? []).filter((pkg) => pkg.status !== 'inactive');
+  const selectedPackage = packages.find((pkg) => pkg.id === form.packageId) ?? null;
+  const packageVariants = selectedPackage
+    ? (Array.isArray(selectedPackage.variants) && selectedPackage.variants.length
+      ? selectedPackage.variants.filter((variant) => variant?.status !== 'inactive')
+      : [{ id: 'base', name: selectedPackage.name || 'BASE', pricePerPersonBs: Number(selectedPackage.pricePerPersonBs ?? 0), minimumGuests: Number(selectedPackage.minimumGuests ?? 0) }])
+    : [];
+  const selectedPackageVariant = packageVariants.find((variant) => variant.id === form.packageVariantId) ?? packageVariants[0] ?? null;
   const organizers = (state.clients ?? []).filter((client) => client.status !== 'inactive');
   const eventTypes = Array.isArray(state.settings?.eventTypes) ? state.settings.eventTypes : [];
   const reservationPaymentBs = toNumber(form.reservationPaymentBs);
@@ -228,6 +237,22 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
       guaranteeBs: toNumber(form.guaranteeBs),
       accountPaymentBs: toNumber(form.accountPaymentBs),
       estimatedTotalBs: toNumber(form.estimatedTotalBs),
+      packageId: selectedPackage?.id ?? null,
+      packageName: selectedPackage?.name ?? '',
+      packageVariantId: selectedPackageVariant?.id ?? null,
+      packageVariantName: selectedPackageVariant?.name ?? '',
+      packageSnapshot: selectedPackage ? {
+        templateId: selectedPackage.id,
+        templateCode: selectedPackage.code ?? '',
+        templateName: selectedPackage.name ?? '',
+        roomId: selectedPackage.roomId ?? null,
+        roomName: selectedPackage.roomName ?? '',
+        eventTypes: Array.isArray(selectedPackage.eventTypes) ? selectedPackage.eventTypes : [],
+        selectedVariant: selectedPackageVariant ? { ...selectedPackageVariant } : null,
+        variants: Array.isArray(selectedPackage.variants) ? selectedPackage.variants.map((variant) => ({ ...variant })) : [],
+        serviceLines: Array.isArray(selectedPackage.serviceLines) ? selectedPackage.serviceLines.map((line) => ({ ...line, variantIds: Array.isArray(line.variantIds) ? [...line.variantIds] : [] })) : [],
+        capturedAt: new Date().toISOString(),
+      } : null,
       status: ['cancelled', 'converted'].includes(String(form.status ?? '').toLowerCase())
         ? form.status
         : reservationPaymentBs > 0 ? 'confirmed' : 'lead',
@@ -265,7 +290,8 @@ function ReservationModal({ record, state, saving, onClose, onSave }) {
         </div>
         <div className={`lincoln-reservation-availability ${availabilityTone}`}><span aria-hidden="true">{availability.roomConflicts.length ? '!' : '✓'}</span><div><strong>{availabilityTitle}</strong>{availability.interests.length ? <small>{availability.interests.length} interesado(s) no bloquean la fecha.</small> : null}{availability.commitments.slice(0, 4).map((row) => <small key={`${row.kind}-${row.id}`}>{row.kind} {row.code} · {row.clientName || 'Sin nombre'} · {row.roomName || 'sin salón'} · {row.startTime || 'hora pendiente'}</small>)}</div></div>
         <div className="lincoln-reservation-fields is-commercial">
-          <Field label="Paquete"><select value={form.packageId ?? ''} onChange={(e) => { const pkg = packages.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, packageId: pkg?.id ?? '', packageName: pkg?.name ?? '', packagePricePerPersonBs: Number(pkg?.pricePerPersonBs ?? 0) })); }}><option value="">Sin definir</option>{packages.map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select></Field>
+          <Field label="Plantilla de paquete"><select value={form.packageId ?? ''} onChange={(e) => { const pkg = packages.find((item) => item.id === e.target.value); const variants = Array.isArray(pkg?.variants) && pkg.variants.length ? pkg.variants.filter((variant) => variant?.status !== 'inactive') : pkg ? [{ id: 'base', name: pkg.name || 'BASE', pricePerPersonBs: Number(pkg.pricePerPersonBs ?? 0), minimumGuests: Number(pkg.minimumGuests ?? 0) }] : []; const variant = variants[0] ?? null; setForm((current) => ({ ...current, packageId: pkg?.id ?? '', packageName: pkg?.name ?? '', packageVariantId: variant?.id ?? '', packageVariantName: variant?.name ?? '', packagePricePerPersonBs: Number(variant?.pricePerPersonBs ?? 0), estimatedTotalBs: Number(current.estimatedTotalBs || 0) || (Number(current.guestCount || 0) * Number(variant?.pricePerPersonBs || 0)) })); }}><option value="">Sin definir</option>{packages.map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select></Field>
+          <Field label="Variante / nivel"><select disabled={!selectedPackage} value={form.packageVariantId ?? selectedPackageVariant?.id ?? ''} onChange={(e) => { const variant = packageVariants.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, packageVariantId: variant?.id ?? '', packageVariantName: variant?.name ?? '', packagePricePerPersonBs: Number(variant?.pricePerPersonBs ?? 0), estimatedTotalBs: Number(current.guestCount || 0) * Number(variant?.pricePerPersonBs || 0) })); }}><option value="">Sin variante</option>{packageVariants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name} · {formatBs(variant.pricePerPersonBs)} / persona</option>)}</select></Field>
           <Field label="Cantidad de invitados"><input type="number" min="0" value={form.guestCount ?? ''} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field>
           <Field label="Total estimado (Bs)"><input type="number" min="0" step="0.01" value={form.estimatedTotalBs ?? ''} onChange={(e) => set('estimatedTotalBs', e.target.value)} /></Field>
         </div>

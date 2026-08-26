@@ -17,7 +17,7 @@ let cachedPayload = null;
 let cachedSignature = null;
 
 const createEmptyLincolnState = () => ({
-  schemaVersion: 3,
+  schemaVersion: 4,
   company: {
     id: 'lincoln',
     name: 'Centro de Eventos Lincoln',
@@ -29,6 +29,8 @@ const createEmptyLincolnState = () => ({
   events: [],
   rooms: [],
   packages: [],
+  packageServices: [],
+  packageExtras: [],
   clients: [],
   meetings: [],
   suppliers: [],
@@ -140,7 +142,7 @@ export const replaceLincolnStateSnapshot = async (state, expectedRevision) => {
 };
 
 
-const LINCOLN_MUTABLE_COLLECTIONS = new Set(['clients', 'rooms', 'packages', 'reservations', 'events', 'meetings', 'expenseEntries']);
+const LINCOLN_MUTABLE_COLLECTIONS = new Set(['clients', 'rooms', 'packages', 'packageServices', 'packageExtras', 'reservations', 'events', 'meetings', 'expenseEntries']);
 
 const normalizeLincolnStateShape = (state) => {
   const base = createEmptyLincolnState();
@@ -151,10 +153,10 @@ const normalizeLincolnStateShape = (state) => {
     company: { ...base.company, ...(source.company ?? {}), id: 'lincoln' },
     settings: { ...base.settings, ...(source.settings ?? {}) },
   };
-  ['reservations', 'leads', 'events', 'rooms', 'packages', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
+  ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
     next[key] = Array.isArray(source[key]) ? source[key] : [];
   });
-  next.schemaVersion = Math.max(3, Number(source.schemaVersion ?? 1));
+  next.schemaVersion = Math.max(4, Number(source.schemaVersion ?? 1));
   return next;
 };
 
@@ -175,6 +177,8 @@ const getCollectionPrefix = (collection) => ({
   clients: 'CLI',
   rooms: 'SAL',
   packages: 'PAQ',
+  packageServices: 'SRV',
+  packageExtras: 'EXT',
   reservations: 'RES',
   events: 'EVE',
   meetings: 'REU',
@@ -373,6 +377,11 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       roomId: reservation.roomId ?? null,
       roomName: reservation.roomName ?? '',
       guestCount: Number(reservation.guestCount ?? 0),
+      packageId: reservation.packageId ?? null,
+      packageName: reservation.packageName ?? '',
+      packageVariantId: reservation.packageVariantId ?? null,
+      packageVariantName: reservation.packageVariantName ?? '',
+      packageSnapshot: reservation.packageSnapshot && typeof reservation.packageSnapshot === 'object' ? reservation.packageSnapshot : null,
       packageLines: Array.isArray(reservation.packageLines) ? reservation.packageLines : [],
       estimatedTotalBs: Number(reservation.estimatedTotalBs ?? 0),
       reservationPaymentBs: Number(reservation.reservationPaymentBs ?? 0),
