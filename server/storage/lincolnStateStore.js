@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { normalizeLincolnReservation } from '../services/lincoln/lincolnReservationService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -215,8 +216,11 @@ export const createLincolnRecord = async (collection, payload, expectedRevision,
     const rows = state[collection];
     const prefix = getCollectionPrefix(collection);
     const createdAt = nowIso();
+    const normalizedPayload = collection === 'reservations'
+      ? normalizeLincolnReservation({ ...payload, reservationDate: payload?.reservationDate || createdAt.slice(0, 10) }, state)
+      : (payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
     const record = {
-      ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
+      ...normalizedPayload,
       id: makeLincolnId(prefix),
       code: String(payload?.code ?? '').trim() || nextLincolnCode(prefix, rows),
       createdAt,
@@ -248,12 +252,15 @@ export const updateLincolnRecord = async (collection, id, payload, expectedRevis
     }
     const current = rows[index];
     const incoming = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const normalizedIncoming = collection === 'reservations'
+      ? normalizeLincolnReservation(incoming, state, { existing: current })
+      : incoming;
     const linkedEvent = collection === 'reservations'
       ? state.events.find((event) => String(event?.reservationId ?? '') === String(current.id) || String(event?.id ?? '') === String(current.eventId ?? ''))
       : null;
     const protectedIncoming = linkedEvent
-      ? { ...incoming, status: 'converted', eventId: linkedEvent.id }
-      : incoming;
+      ? { ...normalizedIncoming, status: 'converted', eventId: linkedEvent.id }
+      : normalizedIncoming;
     const record = {
       ...current,
       ...protectedIncoming,
@@ -295,7 +302,18 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
     const event = {
       clientId: reservation.clientId ?? null,
       clientName: reservation.clientName ?? '',
+      clientCi: reservation.clientCi ?? '',
       clientPhone: reservation.clientPhone ?? '',
+      contractor1Name: reservation.contractor1Name ?? reservation.clientName ?? '',
+      contractor1Ci: reservation.contractor1Ci ?? reservation.clientCi ?? '',
+      contractor1Phone: reservation.contractor1Phone ?? reservation.clientPhone ?? '',
+      contractor2Name: reservation.contractor2Name ?? reservation.secondContractorName ?? '',
+      contractor2Ci: reservation.contractor2Ci ?? reservation.secondContractorCi ?? '',
+      contractor2Phone: reservation.contractor2Phone ?? reservation.secondContractorPhone ?? '',
+      organizerId: reservation.organizerId ?? null,
+      organizerName: reservation.organizerName ?? '',
+      organizerPhone: reservation.organizerPhone ?? '',
+      reservationDate: reservation.reservationDate ?? '',
       eventType: reservation.eventType ?? '',
       eventDate: reservation.eventDate ?? '',
       startTime: reservation.startTime ?? '',
@@ -305,7 +323,9 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       guestCount: Number(reservation.guestCount ?? 0),
       packageLines: Array.isArray(reservation.packageLines) ? reservation.packageLines : [],
       estimatedTotalBs: Number(reservation.estimatedTotalBs ?? 0),
-      guaranteeBs: 0,
+      reservationPaymentBs: Number(reservation.reservationPaymentBs ?? 0),
+      accountPaymentBs: Number(reservation.accountPaymentBs ?? 0),
+      guaranteeBs: Number(reservation.guaranteeBs ?? 0),
       notes: reservation.notes ?? '',
       status: 'contract_pending',
       ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),

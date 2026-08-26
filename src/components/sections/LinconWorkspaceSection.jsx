@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import AttendanceSection from './AttendanceSection';
 import LincolnAgenda from '../lincoln/agenda/LincolnAgenda';
@@ -119,10 +119,10 @@ function DataTable({ columns, rows, onSelect, emptyText }) {
   );
 }
 
-function Modal({ title, children, saving, onClose, onSubmit }) {
+function Modal({ title, children, saving, onClose, onSubmit, className = '' }) {
   return (
     <div className="lincoln-modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <form className="lincoln-modal" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
+      <form className={`lincoln-modal ${className}`.trim()} onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
         <header><div><small>Centro de Eventos Lincoln</small><h2>{title}</h2></div><button type="button" onClick={onClose}>×</button></header>
         <div className="lincoln-modal-body">{children}</div>
         <footer><button type="button" className="is-secondary" onClick={onClose}>Cancelar</button><button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button></footer>
@@ -135,13 +135,163 @@ function Field({ label, children, wide = false }) {
   return <label className={wide ? 'lincoln-form-field is-wide' : 'lincoln-form-field'}><span>{label}</span>{children}</label>;
 }
 
+const lincolnTodayKey = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const reservationBlocksDate = (reservation) => {
+  const status = String(reservation?.status ?? '').toLowerCase();
+  if (['cancelled', 'converted', 'lead'].includes(status)) return false;
+  if (reservation?.reservationPaymentBs !== undefined) return toNumber(reservation.reservationPaymentBs) > 0;
+  return ['pending', 'confirmed', 'tentative'].includes(status);
+};
+
+const getReservationAvailability = (state, { eventDate, roomId, reservationId }) => {
+  if (!eventDate) return { commitments: [], interests: [], roomConflicts: [] };
+  const reservations = (state.reservations ?? [])
+    .filter((row) => row.id !== reservationId && String(row.eventDate ?? '').slice(0, 10) === eventDate)
+    .filter((row) => !['cancelled', 'converted'].includes(String(row.status ?? '').toLowerCase()))
+    .map((row) => ({ ...row, kind: reservationBlocksDate(row) ? 'Reserva' : 'Interesado', blocksDate: reservationBlocksDate(row) }));
+  const events = (state.events ?? [])
+    .filter((row) => String(row.reservationId ?? '') !== String(reservationId ?? ''))
+    .filter((row) => String(row.eventDate ?? '').slice(0, 10) === eventDate)
+    .filter((row) => String(row.status ?? '').toLowerCase() !== 'cancelled')
+    .map((row) => ({ ...row, kind: 'Evento', blocksDate: true }));
+  const rows = [...reservations, ...events];
+  const commitments = rows.filter((row) => row.blocksDate);
+  return {
+    commitments,
+    interests: rows.filter((row) => !row.blocksDate),
+    roomConflicts: roomId ? commitments.filter((row) => String(row.roomId ?? '') === String(roomId)) : [],
+  };
+};
+
+function ReservationModal({ record, state, saving, onClose, onSave }) {
+  const isEdit = Boolean(record?.id);
+  const [form, setForm] = useState(() => ({
+    ...(record ?? {}),
+    contractor1Name: record?.contractor1Name ?? record?.clientName ?? '',
+    contractor1Ci: record?.contractor1Ci ?? record?.clientCi ?? '',
+    contractor1Phone: record?.contractor1Phone ?? record?.clientPhone ?? '',
+    contractor2Name: record?.contractor2Name ?? record?.secondContractorName ?? '',
+    contractor2Ci: record?.contractor2Ci ?? record?.secondContractorCi ?? '',
+    contractor2Phone: record?.contractor2Phone ?? record?.secondContractorPhone ?? '',
+    organizerId: record?.organizerId ?? '',
+    reservationDate: record?.reservationDate ?? (String(record?.createdAt ?? '').slice(0, 10) || lincolnTodayKey()),
+    durationHours: record?.durationHours ?? 8,
+    reservationPaymentBs: record?.reservationPaymentBs ?? '',
+    guaranteeBs: record?.guaranteeBs ?? '',
+    accountPaymentBs: record?.accountPaymentBs ?? '',
+  }));
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const rooms = (state.rooms ?? []).filter((room) => room.status !== 'inactive');
+  const packages = (state.packages ?? []).filter((pkg) => pkg.status !== 'inactive');
+  const organizers = (state.clients ?? []).filter((client) => client.status !== 'inactive');
+  const eventTypes = Array.isArray(state.settings?.eventTypes) ? state.settings.eventTypes : [];
+  const reservationPaymentBs = toNumber(form.reservationPaymentBs);
+  const availability = useMemo(() => getReservationAvailability(state, {
+    eventDate: form.eventDate,
+    roomId: form.roomId,
+    reservationId: record?.id,
+  }), [form.eventDate, form.roomId, record?.id, state]);
+  const selectedRoom = rooms.find((room) => room.id === form.roomId);
+  const availabilityTone = availability.roomConflicts.length ? 'is-busy' : availability.commitments.length ? 'is-partial' : 'is-free';
+  const availabilityTitle = !form.eventDate
+    ? 'Selecciona la fecha del evento para revisar disponibilidad.'
+    : !form.roomId && availability.commitments.length
+      ? `Hay ${availability.commitments.length} reserva o evento en esta fecha. Selecciona un salón para comprobarlo.`
+    : availability.roomConflicts.length
+      ? `${selectedRoom?.name || 'El salón'} ya está ocupado en esta fecha.`
+      : availability.commitments.length
+        ? `Hay ${availability.commitments.length} reserva o evento en esta fecha, pero el salón seleccionado está libre.`
+        : 'La fecha está libre para reservar.';
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (reservationPaymentBs > 0 && availability.roomConflicts.length) {
+      window.alert('No se puede confirmar la reserva porque el salón ya está comprometido en esa fecha.');
+      return;
+    }
+    const organizer = organizers.find((item) => item.id === form.organizerId);
+    onSave({
+      ...form,
+      clientId: null,
+      clientName: String(form.contractor1Name ?? '').trim(),
+      clientCi: String(form.contractor1Ci ?? '').trim(),
+      clientPhone: String(form.contractor1Phone ?? '').trim(),
+      organizerId: organizer?.id ?? null,
+      organizerName: organizer?.name ?? '',
+      organizerPhone: organizer?.phone ?? '',
+      reservationPaymentBs,
+      guaranteeBs: toNumber(form.guaranteeBs),
+      accountPaymentBs: toNumber(form.accountPaymentBs),
+      estimatedTotalBs: toNumber(form.estimatedTotalBs),
+      status: ['cancelled', 'converted'].includes(String(form.status ?? '').toLowerCase())
+        ? form.status
+        : reservationPaymentBs > 0 ? 'confirmed' : 'lead',
+    });
+  };
+
+  return (
+    <Modal className="lincoln-reservation-modal" title={`${isEdit ? 'Editar' : 'Nueva'} reserva`} saving={saving} onClose={onClose} onSubmit={submit}>
+      <section className="lincoln-reservation-section is-identity">
+        <header><div><small>01 · Titulares</small><h3>¿A nombre de quién se registra?</h3></div><span>No exige crear clientes previamente</span></header>
+        <div className="lincoln-reservation-contractors">
+          <article>
+            <strong>Contratante 1</strong>
+            <Field label="Nombre completo"><input required value={form.contractor1Name ?? ''} onChange={(e) => set('contractor1Name', e.target.value)} placeholder="Nombre y apellidos" /></Field>
+            <div><Field label="C.I."><input value={form.contractor1Ci ?? ''} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Celular"><input required inputMode="tel" value={form.contractor1Phone ?? ''} onChange={(e) => set('contractor1Phone', e.target.value)} /></Field></div>
+          </article>
+          <article>
+            <strong>Contratante 2 <small>Opcional</small></strong>
+            <Field label="Nombre completo"><input value={form.contractor2Name ?? ''} onChange={(e) => set('contractor2Name', e.target.value)} placeholder="Segundo titular" /></Field>
+            <div><Field label="C.I."><input value={form.contractor2Ci ?? ''} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Celular"><input inputMode="tel" value={form.contractor2Phone ?? ''} onChange={(e) => set('contractor2Phone', e.target.value)} /></Field></div>
+          </article>
+        </div>
+        <Field label="Organizador responsable (opcional)" wide><select value={form.organizerId ?? ''} onChange={(e) => set('organizerId', e.target.value)}><option value="">Sin organizador asignado</option>{organizers.map((organizer) => <option key={organizer.id} value={organizer.id}>{organizer.name}{organizer.phone ? ` · ${organizer.phone}` : ''}</option>)}</select></Field>
+      </section>
+
+      <section className="lincoln-reservation-section is-schedule">
+        <header><div><small>02 · Agenda</small><h3>Fecha y características del evento</h3></div></header>
+        <div className="lincoln-reservation-fields">
+          <Field label="Fecha de registro de la reserva"><input required type="date" value={form.reservationDate ?? ''} onChange={(e) => set('reservationDate', e.target.value)} /><em>Para reservas antiguas, registra aquí la fecha original.</em></Field>
+          <Field label="Fecha del evento"><input required type="date" value={form.eventDate ?? ''} onChange={(e) => set('eventDate', e.target.value)} /></Field>
+          <Field label="Tipo de encuentro o actividad"><input required list="lincoln-event-types" value={form.eventType ?? ''} onChange={(e) => set('eventType', e.target.value)} placeholder="Boda, graduación, reunión..." /><datalist id="lincoln-event-types">{eventTypes.map((type) => <option key={type} value={type} />)}</datalist></Field>
+          <Field label="Hora de inicio"><input required type="time" value={form.startTime ?? ''} onChange={(e) => set('startTime', e.target.value)} /></Field>
+          <Field label="Duración del evento (horas)"><input required type="number" min="0.5" step="0.5" value={form.durationHours ?? 8} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field>
+          <Field label="Salón"><select required value={form.roomId ?? ''} onChange={(e) => { const room = rooms.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, roomId: room?.id ?? '', roomName: room?.name ?? '' })); }}><option value="">Seleccionar salón</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field>
+        </div>
+        <div className={`lincoln-reservation-availability ${availabilityTone}`}><span aria-hidden="true">{availability.roomConflicts.length ? '!' : '✓'}</span><div><strong>{availabilityTitle}</strong>{availability.interests.length ? <small>{availability.interests.length} interesado(s) no bloquean la fecha.</small> : null}{availability.commitments.slice(0, 4).map((row) => <small key={`${row.kind}-${row.id}`}>{row.kind} {row.code} · {row.clientName || 'Sin nombre'} · {row.roomName || 'sin salón'} · {row.startTime || 'hora pendiente'}</small>)}</div></div>
+        <div className="lincoln-reservation-fields is-commercial">
+          <Field label="Paquete"><select value={form.packageId ?? ''} onChange={(e) => { const pkg = packages.find((item) => item.id === e.target.value); setForm((current) => ({ ...current, packageId: pkg?.id ?? '', packageName: pkg?.name ?? '', packagePricePerPersonBs: Number(pkg?.pricePerPersonBs ?? 0) })); }}><option value="">Sin definir</option>{packages.map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}</select></Field>
+          <Field label="Cantidad de invitados"><input type="number" min="0" value={form.guestCount ?? ''} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field>
+          <Field label="Total estimado (Bs)"><input type="number" min="0" step="0.01" value={form.estimatedTotalBs ?? ''} onChange={(e) => set('estimatedTotalBs', e.target.value)} /></Field>
+        </div>
+      </section>
+
+      <section className="lincoln-reservation-section is-money">
+        <header><div><small>03 · Condición económica</small><h3>Montos separados</h3></div><span className={reservationPaymentBs > 0 ? 'is-confirmed' : 'is-interested'}>{reservationPaymentBs > 0 ? 'Reserva confirmada · bloquea fecha' : 'Solo interesado · fecha disponible'}</span></header>
+        <div className="lincoln-reservation-money-grid">
+          <Field label="Dinero de reserva (Bs)"><input type="number" min="0" step="0.01" value={form.reservationPaymentBs ?? ''} onChange={(e) => set('reservationPaymentBs', e.target.value)} /><em>Este monto confirma y bloquea el salón.</em></Field>
+          <Field label="Garantía (Bs)"><input type="number" min="0" step="0.01" value={form.guaranteeBs ?? ''} onChange={(e) => set('guaranteeBs', e.target.value)} /><em>Monto retenido y eventualmente devoluble.</em></Field>
+          <Field label="A cuenta (Bs)"><input type="number" min="0" step="0.01" value={form.accountPaymentBs ?? ''} onChange={(e) => set('accountPaymentBs', e.target.value)} /><em>Abono que reduce el saldo del evento.</em></Field>
+        </div>
+      </section>
+
+      <section className="lincoln-reservation-section is-notes">
+        {isEdit ? <Field label="Estado administrativo"><select value={String(form.status ?? '').toLowerCase() === 'cancelled' ? 'cancelled' : 'active'} onChange={(e) => set('status', e.target.value === 'cancelled' ? 'cancelled' : reservationPaymentBs > 0 ? 'confirmed' : 'lead')}><option value="active">Activa según el dinero de reserva</option><option value="cancelled">Cancelada</option></select></Field> : null}
+        <Field label="Observaciones y acuerdos" wide><textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} placeholder="Detalles conversados, condiciones especiales o próximos pasos..." /></Field>
+      </section>
+    </Modal>
+  );
+}
+
 function RecordModal({ mode, record, state, saving, onClose, onSave }) {
   const isEdit = Boolean(record?.id);
   const [form, setForm] = useState(() => ({ ...(record ?? {}) }));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const roomOptions = state.rooms ?? [];
   const clientOptions = state.clients ?? [];
-  const packageOptions = state.packages ?? [];
   const submit = (event) => {
     event.preventDefault();
     onSave(form);
@@ -173,55 +323,7 @@ function RecordModal({ mode, record, state, saving, onClose, onSave }) {
 
 
   if (mode === 'reservations') {
-    return (
-      <Modal title={`${isEdit ? 'Editar' : 'Nueva'} reserva`} saving={saving} onClose={onClose} onSubmit={submit}>
-        <Field label="Cliente" wide>
-          <select required value={form.clientId ?? ''} onChange={(e) => {
-            const client = clientOptions.find((item) => item.id === e.target.value);
-            setForm((current) => ({
-              ...current,
-              clientId: client?.id ?? '',
-              clientName: client?.name ?? '',
-              clientPhone: client?.phone ?? '',
-            }));
-          }}>
-            <option value="">Seleccionar cliente</option>
-            {clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Tipo de evento"><input required value={form.eventType ?? ''} onChange={(e) => set('eventType', e.target.value)} placeholder="BODA, 15 AÑOS..." /></Field>
-        <Field label="Fecha"><input required type="date" value={form.eventDate ?? ''} onChange={(e) => set('eventDate', e.target.value)} /></Field>
-        <Field label="Hora de inicio"><input type="time" value={form.startTime ?? ''} onChange={(e) => set('startTime', e.target.value)} /></Field>
-        <Field label="Duración (horas)"><input type="number" min="1" value={form.durationHours ?? 8} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field>
-        <Field label="Salón">
-          <select required value={form.roomId ?? ''} onChange={(e) => {
-            const room = roomOptions.find((item) => item.id === e.target.value);
-            setForm((current) => ({ ...current, roomId: room?.id ?? '', roomName: room?.name ?? '' }));
-          }}>
-            <option value="">Seleccionar salón</option>
-            {roomOptions.filter((room) => room.status !== 'inactive').map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Paquete">
-          <select value={form.packageId ?? ''} onChange={(e) => {
-            const item = packageOptions.find((pkg) => pkg.id === e.target.value);
-            setForm((current) => ({
-              ...current,
-              packageId: item?.id ?? '',
-              packageName: item?.name ?? '',
-              packagePricePerPersonBs: Number(item?.pricePerPersonBs ?? 0),
-            }));
-          }}>
-            <option value="">Sin definir</option>
-            {packageOptions.filter((pkg) => pkg.status !== 'inactive').map((pkg) => <option key={pkg.id} value={pkg.id}>{pkg.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Invitados"><input type="number" min="0" value={form.guestCount ?? ''} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field>
-        <Field label="Total estimado (Bs)"><input type="number" min="0" step="0.01" value={form.estimatedTotalBs ?? ''} onChange={(e) => set('estimatedTotalBs', toNumber(e.target.value))} /></Field>
-        <Field label="Estado"><select value={form.status ?? 'pending'} onChange={(e) => set('status', e.target.value)}><option value="pending">Pendiente</option><option value="confirmed">Confirmada</option><option value="cancelled">Cancelada</option></select></Field>
-        <Field label="Observaciones" wide><textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value)} /></Field>
-      </Modal>
-    );
+    return <ReservationModal record={record} state={state} saving={saving} onClose={onClose} onSave={onSave} />;
   }
 
   return (
@@ -271,13 +373,14 @@ function LinconPanelView({ state, onNavigate }) {
     .filter((event) => String(event.eventDate ?? '') >= today && event.status !== 'cancelled')
     .sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)))
     .slice(0, 6);
-  const activeReservations = state.reservations.filter((row) => !['cancelled', 'converted'].includes(row.status));
+  const activeReservations = state.reservations.filter((row) => !['cancelled', 'converted', 'lead'].includes(row.status));
+  const interestedReservations = state.reservations.filter((row) => row.status === 'lead');
   const projected = sum(activeReservations, (row) => row.estimatedTotalBs);
   return (
     <div className="lincoln-content">
       <section className="lincoln-kpi-grid">
         <KpiCard icon="calendar" label="Próximos eventos" value={String(upcoming.length)} detail="Eventos registrados desde hoy" />
-        <KpiCard icon="bookmark" label="Reservas activas" value={String(activeReservations.length)} detail="Pendientes o confirmadas" />
+        <KpiCard icon="bookmark" label="Reservas activas" value={String(activeReservations.length)} detail={`${interestedReservations.length} interesado(s) sin bloqueo`} />
         <KpiCard icon="users" label="Clientes" value={String(state.clients.length)} detail="Base propia de Lincoln" />
         <KpiCard icon="wallet" label="Facturación proyectada" value={formatBs(projected)} detail="Reservas activas" />
       </section>

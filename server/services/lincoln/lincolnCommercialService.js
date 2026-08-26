@@ -8,6 +8,7 @@ const money = (value) => {
 };
 
 const reservationStatusLabel = (status) => ({
+  lead: 'Interesado',
   pending: 'Pendiente',
   confirmed: 'Confirmada',
   cancelled: 'Anulada',
@@ -71,11 +72,13 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       key: `reservation:${reservation.id}`,
       id: reservation.id,
       kind: 'reservation',
-      kindLabel: 'Reserva',
+      kindLabel: asText(reservation.status).toLowerCase() === 'lead' ? 'Interesado' : 'Reserva',
       code: reservation.code,
       clientId: reservation.clientId ?? null,
       clientName: reservation.clientName ?? '',
       clientPhone: reservation.clientPhone ?? '',
+      contractor2Name: reservation.contractor2Name ?? reservation.secondContractorName ?? '',
+      organizerName: reservation.organizerName ?? '',
       eventType: reservation.eventType ?? '',
       eventDate: reservation.eventDate ?? '',
       startTime: reservation.startTime ?? '',
@@ -121,11 +124,11 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
   const rows = [...reservationRows, ...contractRows]
     .filter((row) => {
       if (q) {
-        const haystack = normalize(`${row.code} ${row.clientName} ${row.clientPhone} ${row.eventType} ${row.roomName} ${row.statusLabel}`);
+        const haystack = normalize(`${row.code} ${row.clientName} ${row.clientPhone} ${row.contractor2Name ?? ''} ${row.organizerName ?? ''} ${row.eventType} ${row.roomName} ${row.statusLabel}`);
         if (!haystack.includes(q)) return false;
       }
       if (normalizedStatus !== 'all') {
-        if (normalizedStatus === 'reservations' && row.kind !== 'reservation') return false;
+        if (normalizedStatus === 'reservations' && (row.kind !== 'reservation' || normalize(row.status) === 'lead')) return false;
         else if (normalizedStatus === 'contracts' && row.kind !== 'contract') return false;
         else if (!['reservations', 'contracts'].includes(normalizedStatus) && normalize(row.status) !== normalizedStatus) return false;
       }
@@ -138,7 +141,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       return byDate || asText(b.updatedAt).localeCompare(asText(a.updatedAt));
     });
 
-  const activeReservations = reservationRows.filter((row) => !['cancelled'].includes(asText(row.status).toLowerCase()));
+  const activeReservations = reservationRows.filter((row) => !['cancelled', 'lead'].includes(asText(row.status).toLowerCase()));
+  const interestedReservations = reservationRows.filter((row) => asText(row.status).toLowerCase() === 'lead');
   const activeContracts = contractRows.filter((row) => !['cancelled'].includes(asText(row.status).toLowerCase()));
   const sequences = contractRows.map((row) => parseSequence(row.code)).filter((value) => value > 0);
   const currentNumber = sequences.length ? Math.max(...sequences) : 0;
@@ -147,6 +151,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
     revision: snapshot.revision,
     summary: {
       reservations: activeReservations.length,
+      interested: interestedReservations.length,
       contracts: activeContracts.length,
       currentNumber,
       nextNumber: currentNumber + 1,

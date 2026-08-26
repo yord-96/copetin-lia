@@ -95,7 +95,7 @@ export const buildLincolnAgendaItems = (state = {}) => {
     .filter((row) => !linkedEventIds.has(String(row?.eventId ?? '').trim()))
     .map((row) => agendaItem({
       row,
-      kind: 'reservation',
+      kind: normalizeText(row?.status) === 'lead' ? 'interested' : 'reservation',
       eventDate: dateKey(row.eventDate),
       status: row.status,
       key: `reservation:${row.id}`,

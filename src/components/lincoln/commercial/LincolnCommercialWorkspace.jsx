@@ -82,7 +82,7 @@ export default function LincolnCommercialWorkspace({
             onClick={() => setStatus('reservations')}
             title="Mostrar solo reservas"
           >
-            <div><strong>Reservas</strong><span>Pendientes de decisión</span></div>
+            <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) sin bloqueo</span></div>
             <b>{summary.reservations ?? 0}</b>
           </button>
 
@@ -112,7 +112,7 @@ export default function LincolnCommercialWorkspace({
 
         <div className="lincoln-commercial-statuses">
           {[
-            ['all', 'Todas'], ['reservations', 'Reservas'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
+            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
             ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
           ].map(([value, label]) => (
             <button

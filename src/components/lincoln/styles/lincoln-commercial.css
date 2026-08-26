@@ -139,3 +139,175 @@ button.lincoln-commercial-metric-card.is-selected {
     min-width: 1160px;
   }
 }
+
+/* Reserva Lincoln: captura directa, agenda y economia separada. */
+.lincoln-modal.lincoln-reservation-modal {
+  width: min(1120px, 96vw);
+  border: 1px solid #e8d3ca;
+  background: #fffaf7;
+}
+
+.lincoln-reservation-modal > header {
+  border-bottom: 3px solid #7a121b;
+  background: linear-gradient(110deg, #fffdfb, #fff4ef);
+}
+
+.lincoln-reservation-modal > header h2 { color: #55151b; }
+.lincoln-reservation-modal .lincoln-modal-body { gap: .85rem; background: #fbf6f2; }
+.lincoln-reservation-modal > footer { background: #fff; }
+.lincoln-reservation-modal > footer button:not(.is-secondary) { background: #7a121b; }
+
+.lincoln-reservation-section {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: .78rem;
+  padding: .9rem;
+  border: 1px solid #eadbd3;
+  border-radius: .9rem;
+  background: #fff;
+  box-shadow: 0 7px 20px rgba(91, 39, 29, .04);
+}
+
+.lincoln-reservation-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: .6rem;
+  border-bottom: 1px solid #f0e5df;
+}
+
+.lincoln-reservation-section > header small {
+  color: #b14637;
+  font-size: .62rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.lincoln-reservation-section > header h3 {
+  margin: .12rem 0 0;
+  color: #42191c;
+  font-size: 1rem;
+}
+
+.lincoln-reservation-section > header > span {
+  border: 1px solid #e6d1c8;
+  border-radius: 999px;
+  padding: .35rem .62rem;
+  color: #7b5d55;
+  background: #fff8f5;
+  font-size: .66rem;
+  font-weight: 800;
+}
+
+.lincoln-reservation-contractors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+}
+
+.lincoln-reservation-contractors > article {
+  display: grid;
+  gap: .62rem;
+  padding: .72rem;
+  border: 1px solid #eee1da;
+  border-radius: .75rem;
+  background: #fffaf7;
+}
+
+.lincoln-reservation-contractors > article > strong { color: #691820; font-size: .8rem; }
+.lincoln-reservation-contractors > article > strong small { color: #a58d85; font-size: .62rem; }
+.lincoln-reservation-contractors > article > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .6rem;
+}
+
+.lincoln-reservation-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .7rem;
+}
+
+.lincoln-reservation-fields.is-commercial {
+  padding-top: .75rem;
+  border-top: 1px dashed #ead9d1;
+}
+
+.lincoln-reservation-modal .lincoln-form-field > span { color: #694d45; }
+.lincoln-reservation-modal .lincoln-form-field input,
+.lincoln-reservation-modal .lincoln-form-field select,
+.lincoln-reservation-modal .lincoln-form-field textarea {
+  border-color: #e2d5cf;
+  background: #fffdfc;
+}
+
+.lincoln-reservation-modal .lincoln-form-field input:focus,
+.lincoln-reservation-modal .lincoln-form-field select:focus,
+.lincoln-reservation-modal .lincoln-form-field textarea:focus {
+  border-color: #a52b34;
+  outline: 3px solid rgba(165, 43, 52, .09);
+}
+
+.lincoln-reservation-modal .lincoln-form-field em {
+  color: #9a837b;
+  font-size: .62rem;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.lincoln-reservation-availability {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .72rem .8rem;
+  border: 1px solid #cfe1d4;
+  border-radius: .75rem;
+  background: #f1f8f3;
+  color: #286243;
+}
+
+.lincoln-reservation-availability > span {
+  flex: 0 0 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #2e7a50;
+  color: #fff;
+  font-weight: 900;
+}
+
+.lincoln-reservation-availability div { display: grid; gap: .18rem; }
+.lincoln-reservation-availability strong { font-size: .76rem; }
+.lincoln-reservation-availability small { font-size: .65rem; opacity: .82; }
+.lincoln-reservation-availability.is-partial { border-color: #ead5a9; background: #fff8e8; color: #895d18; }
+.lincoln-reservation-availability.is-partial > span { background: #ad7924; }
+.lincoln-reservation-availability.is-busy { border-color: #efc0bc; background: #fff0ee; color: #9d292a; }
+.lincoln-reservation-availability.is-busy > span { background: #b33035; }
+
+.lincoln-reservation-section.is-money { border-color: #dcbdb2; background: #fffaf7; }
+.lincoln-reservation-section.is-money header > span.is-confirmed { border-color: #b9ddc5; background: #edf8f0; color: #297049; }
+.lincoln-reservation-section.is-money header > span.is-interested { border-color: #ead5a9; background: #fff6df; color: #90631d; }
+.lincoln-reservation-money-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .7rem;
+}
+
+.lincoln-reservation-money-grid .lincoln-form-field {
+  padding: .68rem;
+  border: 1px solid #eadbd3;
+  border-radius: .72rem;
+  background: #fff;
+}
+
+.lincoln-reservation-section.is-notes textarea { min-height: 4.5rem; }
+
+@media (max-width: 820px) {
+  .lincoln-reservation-contractors,
+  .lincoln-reservation-fields,
+  .lincoln-reservation-money-grid { grid-template-columns: 1fr; }
+  .lincoln-reservation-section > header { align-items: flex-start; flex-direction: column; }
+}
