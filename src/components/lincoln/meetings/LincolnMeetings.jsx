@@ -33,6 +33,19 @@ const typeLabel = (type) => ({
 
 const normalize = (value) => String(value ?? '').trim().toLowerCase();
 
+const formatDateNumeric = (value) => {
+  const key = String(value ?? '').slice(0, 10);
+  const match = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : key;
+};
+
+const referenceTypeLabel = (reference) => {
+  if (reference.sourceType === 'event') return 'Contrato';
+  const status = normalize(reference.status);
+  if (status === 'interested' || status === 'interesado') return 'Interesado';
+  return 'Reserva';
+};
+
 function Metric({ icon, value, label, tone = 'wine' }) {
   return (
     <article className={`lincoln-meeting-metric is-${tone}`}>
@@ -49,30 +62,72 @@ function MeetingModal({ record, state, saving, onClose, onSave }) {
     location: 'CENTRO DE EVENTOS LINCOLN', ...record,
   }));
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const [referenceQuery, setReferenceQuery] = useState('');
+  const [referenceOpen, setReferenceOpen] = useState(false);
 
   const references = useMemo(() => {
+    const buildReference = (row, sourceType) => {
+      const primaryName = row.contractor1Name ?? row.clientName ?? '';
+      const secondaryName = row.contractor2Name ?? row.secondClientName ?? '';
+      const names = [primaryName, secondaryName].map((value) => String(value ?? '').trim()).filter(Boolean);
+      const displayName = names.join(' / ') || 'Sin cliente';
+      const eventName = String(row.eventType ?? '').trim();
+      const eventDate = row.eventDate ?? '';
+      const typeText = sourceType === 'event'
+        ? 'Contrato'
+        : ['interested', 'interesado'].includes(normalize(row.status)) ? 'Interesado' : 'Reserva';
+      const searchValues = [
+        row.code, eventName, eventDate, formatDate(eventDate), formatDateNumeric(eventDate),
+        primaryName, secondaryName, displayName, row.contractor1Phone, row.contractor2Phone,
+        row.clientPhone, row.roomName, typeText,
+      ];
+      return {
+        key: `${sourceType}:${row.id}`,
+        sourceType,
+        sourceId: row.id,
+        sourceCode: row.code,
+        status: row.status ?? '',
+        clientId: row.clientId ?? null,
+        clientName: primaryName,
+        clientPhone: row.contractor1Phone ?? row.clientPhone ?? '',
+        secondaryClientName: secondaryName,
+        eventDate,
+        eventType: eventName,
+        roomName: row.roomName ?? '',
+        displayName,
+        typeText,
+        searchText: normalize(searchValues.join(' ')),
+      };
+    };
+
     const reservations = (state.reservations ?? [])
       .filter((row) => String(row.status ?? '').toLowerCase() !== 'cancelled')
-      .map((row) => ({
-        key: `reservation:${row.id}`, sourceType: 'reservation', sourceId: row.id, sourceCode: row.code,
-        clientId: row.clientId ?? null, clientName: row.contractor1Name ?? row.clientName ?? '',
-        clientPhone: row.contractor1Phone ?? row.clientPhone ?? '', eventDate: row.eventDate ?? '',
-        eventType: row.eventType ?? '', roomName: row.roomName ?? '',
-        label: `${row.code || 'RESERVA'} · ${row.contractor1Name || row.clientName || 'Sin cliente'} · ${formatDate(row.eventDate)}`,
-      }));
+      .map((row) => buildReference(row, 'reservation'));
     const events = (state.events ?? [])
       .filter((row) => String(row.status ?? '').toLowerCase() !== 'cancelled')
-      .map((row) => ({
-        key: `event:${row.id}`, sourceType: 'event', sourceId: row.id, sourceCode: row.code,
-        clientId: row.clientId ?? null, clientName: row.contractor1Name ?? row.clientName ?? '',
-        clientPhone: row.contractor1Phone ?? row.clientPhone ?? '', eventDate: row.eventDate ?? '',
-        eventType: row.eventType ?? '', roomName: row.roomName ?? '',
-        label: `${row.code || 'CONTRATO'} · ${row.contractor1Name || row.clientName || 'Sin cliente'} · ${formatDate(row.eventDate)}`,
-      }));
+      .map((row) => buildReference(row, 'event'));
     return [...reservations, ...events].sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
   }, [state.events, state.reservations]);
 
   const selectedKey = form.sourceType && form.sourceId ? `${form.sourceType}:${form.sourceId}` : '';
+  const selectedReference = references.find((item) => item.key === selectedKey) ?? null;
+  const filteredReferences = useMemo(() => {
+    const needle = normalize(referenceQuery);
+    const matches = needle ? references.filter((item) => item.searchText.includes(needle)) : references;
+    return matches.slice(0, 10);
+  }, [referenceQuery, references]);
+
+  const selectReference = (reference) => {
+    if (!reference) {
+      setForm((current) => ({ ...current, sourceType: '', sourceId: '', sourceCode: '', clientId: '', clientName: '', clientPhone: '', eventDate: '', eventType: '', roomName: '' }));
+      setReferenceQuery('');
+      setReferenceOpen(false);
+      return;
+    }
+    setForm((current) => ({ ...current, ...reference, subject: current.subject || `Reunión de ${reference.eventType || 'evento'}` }));
+    setReferenceQuery('');
+    setReferenceOpen(false);
+  };
 
   const submit = (event) => {
     event.preventDefault();
@@ -94,19 +149,55 @@ function MeetingModal({ record, state, saving, onClose, onSave }) {
         <div className="lincoln-meeting-modal-body">
           <section>
             <div className="lincoln-meeting-section-title"><small>01 · Vinculación</small><h3>Reserva, interesado o contrato relacionado</h3></div>
-            <label className="is-wide"><span>Documento comercial</span>
-              <select value={selectedKey} onChange={(event) => {
-                const reference = references.find((item) => item.key === event.target.value);
-                if (!reference) {
-                  setForm((current) => ({ ...current, sourceType: '', sourceId: '', sourceCode: '', clientId: '', clientName: '', clientPhone: '', eventDate: '', eventType: '', roomName: '' }));
-                  return;
-                }
-                setForm((current) => ({ ...current, ...reference, subject: current.subject || `Reunión de ${reference.eventType || 'evento'}` }));
-              }}>
-                <option value="">Reunión general / sin vínculo</option>
-                {references.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-              </select>
-            </label>
+            <div className="lincoln-meeting-reference is-wide">
+              <span className="lincoln-meeting-reference-label">Documento comercial</span>
+              <div className={`lincoln-meeting-reference-picker${referenceOpen ? ' is-open' : ''}`}>
+                <div className="lincoln-meeting-reference-search">
+                  <span className="lincoln-meeting-reference-search-icon">⌕</span>
+                  <input
+                    type="search"
+                    value={referenceQuery}
+                    onFocus={() => setReferenceOpen(true)}
+                    onChange={(event) => { setReferenceQuery(event.target.value); setReferenceOpen(true); }}
+                    placeholder="Buscar por evento, fecha, cliente, código o salón..."
+                    aria-label="Buscar reserva, interesado o contrato"
+                    autoComplete="off"
+                  />
+                  {selectedReference ? <button type="button" className="lincoln-meeting-reference-clear" onClick={() => selectReference(null)} title="Quitar vínculo">×</button> : null}
+                </div>
+                {selectedReference && !referenceQuery ? (
+                  <button type="button" className="lincoln-meeting-reference-selected" onClick={() => setReferenceOpen((current) => !current)}>
+                    <span className={`lincoln-meeting-reference-badge is-${selectedReference.sourceType === 'event' ? 'contract' : normalize(selectedReference.status) === 'interested' || normalize(selectedReference.status) === 'interesado' ? 'interested' : 'reservation'}`}>{referenceTypeLabel(selectedReference)}</span>
+                    <span className="lincoln-meeting-reference-selected-copy">
+                      <strong>{selectedReference.eventType || selectedReference.displayName}</strong>
+                      <small>{formatDateNumeric(selectedReference.eventDate)} · {selectedReference.displayName}{selectedReference.roomName ? ` · ${selectedReference.roomName}` : ''} · {selectedReference.sourceCode || 'SIN CÓDIGO'}</small>
+                    </span>
+                  </button>
+                ) : null}
+                {referenceOpen ? (
+                  <div className="lincoln-meeting-reference-menu">
+                    <button type="button" className="lincoln-meeting-reference-general" onMouseDown={(event) => event.preventDefault()} onClick={() => selectReference(null)}>
+                      <span className="lincoln-meeting-reference-general-icon">＋</span>
+                      <span><strong>Reunión general / sin vínculo</strong><small>Crear una reunión que no dependa de una reserva o contrato.</small></span>
+                    </button>
+                    <div className="lincoln-meeting-reference-menu-head"><span>{referenceQuery ? `Resultados para “${referenceQuery}”` : 'Documentos recientes'}</span><small>{references.length} disponibles</small></div>
+                    <div className="lincoln-meeting-reference-results">
+                      {filteredReferences.length ? filteredReferences.map((item) => (
+                        <button type="button" key={item.key} className={`lincoln-meeting-reference-option${item.key === selectedKey ? ' is-selected' : ''}`} onMouseDown={(event) => event.preventDefault()} onClick={() => selectReference(item)}>
+                          <span className={`lincoln-meeting-reference-badge is-${item.sourceType === 'event' ? 'contract' : normalize(item.status) === 'interested' || normalize(item.status) === 'interesado' ? 'interested' : 'reservation'}`}>{referenceTypeLabel(item)}</span>
+                          <span className="lincoln-meeting-reference-option-copy">
+                            <strong>{item.eventType || item.displayName}</strong>
+                            <small>{formatDateNumeric(item.eventDate)} · {item.displayName}{item.roomName ? ` · ${item.roomName}` : ''}</small>
+                          </span>
+                          <span className="lincoln-meeting-reference-code">{item.sourceCode || 'SIN CÓDIGO'}</span>
+                        </button>
+                      )) : <div className="lincoln-meeting-reference-empty">No encontramos coincidencias. Prueba con el nombre del evento, una fecha como 01/09/2026, el cliente o el código.</div>}
+                    </div>
+                    {references.length > filteredReferences.length ? <div className="lincoln-meeting-reference-more">Mostrando los primeros {filteredReferences.length} resultados. Escribe más datos para afinar la búsqueda.</div> : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
             <div className="lincoln-meeting-form-grid">
               <label><span>Cliente</span><input value={form.clientName ?? ''} onChange={(e) => set('clientName', e.target.value)} /></label>
               <label><span>Celular</span><input value={form.clientPhone ?? ''} onChange={(e) => set('clientPhone', e.target.value)} /></label>
