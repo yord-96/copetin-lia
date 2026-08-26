@@ -4,7 +4,7 @@ export default function LincolnActivityTable({ rows = [], selectedDate, onClearS
   return (
     <section className="lincoln-agenda-surface lincoln-agenda-activity">
       <header className="lincoln-agenda-activity-head">
-        <div><span className="lincoln-agenda-eyebrow">Actividad del mes</span><h3>{selectedDate ? `Actividad del ${formatAgendaDate(selectedDate)}` : 'Reservas, interesados y contratos'}</h3></div>
+        <div><span className="lincoln-agenda-eyebrow">Actividad del mes</span><h3>{selectedDate ? `Actividad del ${formatAgendaDate(selectedDate)}` : 'Reservas, interesados, contratos y reuniones'}</h3></div>
         {selectedDate ? <button type="button" className="lincoln-agenda-inline-button" onClick={onClearSelection}>Ver todo el mes</button> : null}
       </header>
       {rows.length === 0 ? <div className="lincoln-agenda-empty-state"><strong>No hay actividad para este período.</strong></div> : (

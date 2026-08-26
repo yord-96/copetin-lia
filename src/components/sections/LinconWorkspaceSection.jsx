@@ -835,7 +835,7 @@ function LinconWorkspaceSection({
       {!databaseStatus.loading || snapshot ? (
         <>
           {activeView === 'panel' ? <LinconPanelView state={state} onNavigate={openView} /> : null}
-          {activeView === 'agenda' ? <LincolnAgenda /> : null}
+          {activeView === 'agenda' ? <LincolnAgenda state={state} /> : null}
           {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onVoidPayment={voidPayment} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'comercial' && !economicEvent ? (
             <LincolnCommercialWorkspace

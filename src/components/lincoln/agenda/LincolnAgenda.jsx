@@ -13,7 +13,43 @@ const todayParts = () => {
   return { year: today.getFullYear(), month: today.getMonth() + 1 };
 };
 
-export default function LincolnAgenda() {
+const EMPTY_MEETINGS = [];
+
+const todayKey = () => new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const meetingStatusLabel = (status) => ({
+  scheduled: 'Programada',
+  pending_followup: 'Seguimiento pendiente',
+  completed: 'Realizada',
+  cancelled: 'Cancelada',
+}[String(status ?? '').toLowerCase()] ?? 'Programada');
+
+const meetingToAgendaRecord = (meeting) => {
+  const status = String(meeting?.status ?? 'scheduled').toLowerCase();
+  return {
+    key: `meeting:${meeting.id}`,
+    id: meeting.id,
+    kind: 'meeting',
+    kindLabel: 'Reunión',
+    markerClass: status === 'cancelled' ? 'cancelled' : 'reservation',
+    eventDate: String(meeting.date ?? '').slice(0, 10),
+    startTime: meeting.time ?? '',
+    clientName: meeting.clientName ?? '',
+    eventType: meeting.subject || meeting.eventType || 'Reunión',
+    roomName: meeting.location || meeting.roomName || 'Centro de Eventos Lincoln',
+    status,
+    statusLabel: meetingStatusLabel(status),
+    isCancelled: status === 'cancelled',
+    responsibleName: meeting.responsibleName ?? '',
+    sourceCode: meeting.sourceCode ?? '',
+    nextActions: meeting.nextActions ?? '',
+    nextFollowUpDate: meeting.nextFollowUpDate ?? '',
+  };
+};
+
+export default function LincolnAgenda({ state }) {
   const today = todayParts();
   const [year, setYear] = useState(today.year);
   const [month, setMonth] = useState(today.month);
@@ -49,6 +85,51 @@ export default function LincolnAgenda() {
     };
   }, [month, reloadToken, year]);
 
+  const stateMeetings = state?.meetings;
+  const meetings = useMemo(
+    () => (Array.isArray(stateMeetings) ? stateMeetings : EMPTY_MEETINGS),
+    [stateMeetings],
+  );
+
+  const monthMeetingRecords = useMemo(() => meetings
+    .map(meetingToAgendaRecord)
+    .filter((row) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(row.eventDate)) return false;
+      return Number(row.eventDate.slice(0, 4)) === Number(year)
+        && Number(row.eventDate.slice(5, 7)) === Number(month);
+    }), [meetings, month, year]);
+
+  const mergedDays = useMemo(() => {
+    const next = Object.fromEntries(
+      Object.entries(monthData?.days ?? {}).map(([date, rows]) => [date, [...rows]]),
+    );
+    monthMeetingRecords.forEach((record) => {
+      if (!next[record.eventDate]) next[record.eventDate] = [];
+      next[record.eventDate].push(record);
+      next[record.eventDate].sort((a, b) => String(a.startTime ?? '').localeCompare(String(b.startTime ?? '')));
+    });
+    return next;
+  }, [monthData?.days, monthMeetingRecords]);
+
+  const mergedActivity = useMemo(() => [
+    ...(monthData?.activity ?? []),
+    ...monthMeetingRecords,
+  ].sort((a, b) => `${a.eventDate ?? ''} ${a.startTime ?? ''}`.localeCompare(`${b.eventDate ?? ''} ${b.startTime ?? ''}`)), [monthData?.activity, monthMeetingRecords]);
+
+  const upcomingRows = useMemo(() => {
+    const currentDate = todayKey();
+    const futureMeetings = meetings
+      .map(meetingToAgendaRecord)
+      .filter((row) => row.eventDate >= currentDate && !row.isCancelled);
+    return [
+      ...(monthData?.upcomingEvents ?? []),
+      ...futureMeetings,
+    ]
+      .filter((row, index, all) => all.findIndex((candidate) => candidate.key === row.key) === index)
+      .sort((a, b) => `${a.eventDate ?? ''} ${a.startTime ?? ''}`.localeCompare(`${b.eventDate ?? ''} ${b.startTime ?? ''}`))
+      .slice(0, 8);
+  }, [meetings, monthData?.upcomingEvents]);
+
   const goMonth = (delta) => {
     const next = new Date(year, month - 1 + delta, 1);
     setLoading(true);
@@ -68,12 +149,12 @@ export default function LincolnAgenda() {
   };
 
   const selectedRecords = useMemo(
-    () => (selectedDate ? (monthData?.days?.[selectedDate] ?? []) : []),
-    [monthData?.days, selectedDate],
+    () => (selectedDate ? (mergedDays[selectedDate] ?? []) : []),
+    [mergedDays, selectedDate],
   );
   const activityRows = useMemo(
-    () => (selectedDate ? selectedRecords : (monthData?.activity ?? [])),
-    [monthData?.activity, selectedDate, selectedRecords],
+    () => (selectedDate ? selectedRecords : mergedActivity),
+    [mergedActivity, selectedDate, selectedRecords],
   );
   const monthTitle = formatAgendaMonthTitle(year, month);
 
@@ -98,7 +179,7 @@ export default function LincolnAgenda() {
             year={year}
             month={month}
             title={monthTitle}
-            days={monthData?.days ?? {}}
+            days={mergedDays}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
             onPrevious={() => goMonth(-1)}
@@ -120,7 +201,7 @@ export default function LincolnAgenda() {
             }}
           />
           <LincolnDayDetail selectedDate={selectedDate} records={selectedRecords} />
-          <LincolnUpcomingEvents events={monthData?.upcomingEvents ?? []} />
+          <LincolnUpcomingEvents events={upcomingRows} />
         </aside>
       </div>
     </div>
