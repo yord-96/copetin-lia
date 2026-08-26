@@ -89,14 +89,20 @@ function CatalogModal({ kind, record, suppliers, revision, actor, onClose, onSav
 }
 
 function PackageModal({ record, rooms, services, extras, revision, actor, onClose, onSaved }) {
-  const [form, setForm] = useState(() => normalizePackageForm(record));
+  const [form, setForm] = useState(() => {
+    const normalized = normalizePackageForm(record);
+    if (!normalized.variants.length) normalized.variants = [blankVariant('BASE')];
+    return normalized;
+  });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [catalogQuery, setCatalogQuery] = useState('');
+  const [step, setStep] = useState(1);
   const isEdit = Boolean(record?.id);
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const variants = Array.isArray(form.variants) ? form.variants : [];
+  const hasMultiplePrices = variants.length > 1;
 
   const packageCost = (() => {
     const lines = form.serviceLines ?? [];
@@ -112,7 +118,20 @@ function PackageModal({ record, rooms, services, extras, revision, actor, onClos
   const updateVariant = (id, patch) => setForm((current) => ({ ...current, variants: current.variants.map((v) => v.id === id ? { ...v, ...patch } : v) }));
   const updateLine = (id, patch) => setForm((current) => ({ ...current, serviceLines: current.serviceLines.map((line) => line.id === id ? { ...line, ...patch } : line) }));
   const addCatalogLine = (item) => setForm((current) => ({ ...current, serviceLines: [...current.serviceLines, { ...blankLine(), category: item.category, sourceType: item.sourceType, description: item.description, unit: item.unit, costMode: item.costMode, unitCostBs: item.unitCostBs, supplierId: item.supplierId, supplierName: item.supplierName, catalogId: item.id, catalogKind: item.kind }] }));
+  const includedLines = (form.serviceLines ?? []).filter((line) => line.catalogKind !== 'extra');
+  const extraLines = (form.serviceLines ?? []).filter((line) => line.catalogKind === 'extra');
   const catalog = [...services, ...extras].filter((item) => item.status !== 'inactive' && (!catalogQuery.trim() || [item.name, item.description, item.category, item.supplierName].some((v) => normalize(v).includes(normalize(catalogQuery))))).slice(0, 20);
+
+  const toggleMultiplePrices = (enabled) => {
+    if (enabled) {
+      setForm((current) => ({ ...current, variants: current.variants.length > 1 ? current.variants : [
+        { ...(current.variants[0] || blankVariant('OPCIÓN 1')), name: current.variants[0]?.name === 'BASE' ? 'OPCIÓN 1' : (current.variants[0]?.name || 'OPCIÓN 1') },
+        blankVariant('OPCIÓN 2'),
+      ] }));
+    } else {
+      setForm((current) => ({ ...current, variants: [{ ...(current.variants[0] || blankVariant('BASE')), name: 'BASE' }] }));
+    }
+  };
 
   const handleUpload = async (event) => {
     const files = [...(event.target.files ?? [])]; event.target.value = ''; if (!files.length) return;
@@ -129,6 +148,7 @@ function PackageModal({ record, rooms, services, extras, revision, actor, onClos
     } catch (uploadError) { setError(uploadError?.message || 'No se pudo subir la imagen.'); }
     finally { setUploading(false); }
   };
+
   const removeImage = async (image) => {
     try { if (image?.filename) await api.uploads.deletePackageImage({ filename: image.filename }); setForm((current) => ({ ...current, images: current.images.filter((item) => item.filename !== image.filename) })); }
     catch (deleteError) { setError(deleteError?.message || 'No se pudo eliminar la imagen.'); }
@@ -136,10 +156,10 @@ function PackageModal({ record, rooms, services, extras, revision, actor, onClos
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!form.name.trim()) return setError('El nombre de la plantilla es obligatorio.');
-    if (!variants.length) return setError('Agrega al menos una variante o nivel de precio.');
-    if (variants.some((variant) => !String(variant.name ?? '').trim())) return setError('Todas las variantes deben tener nombre.');
-    if (form.serviceLines.some((line) => !String(line.description ?? '').trim())) return setError('Todo servicio agregado debe tener descripción.');
+    if (!form.name.trim()) { setStep(1); return setError('Escribe el nombre del paquete.'); }
+    if (!variants.length) { setStep(1); return setError('Agrega al menos un precio.'); }
+    if (variants.some((variant) => !String(variant.name ?? '').trim())) { setStep(1); return setError('Todos los precios deben tener un nombre.'); }
+    if (form.serviceLines.some((line) => !String(line.description ?? '').trim())) { setStep(2); return setError('Todo servicio agregado debe tener descripción.'); }
     setSaving(true); setError('');
     try {
       const room = rooms.find((item) => item.id === form.roomId);
@@ -157,40 +177,73 @@ function PackageModal({ record, rooms, services, extras, revision, actor, onClos
     finally { setSaving(false); }
   };
 
-  return <div className="lincoln-package-modal-backdrop"><section className="lincoln-package-modal"><form onSubmit={submit}>
-    <header><div><span>Plantilla comercial híbrida</span><h2>{isEdit ? 'Editar plantilla' : 'Nueva plantilla'}</h2><p>Define variantes, matriz de servicios y costos. Los contratos futuros podrán congelar una copia independiente.</p></div><button type="button" className="is-close" onClick={onClose}>×</button></header>
-    {error ? <div className="lincoln-package-error">{error}</div> : null}
-    <div className="lincoln-package-form-grid">
-      <label className="is-wide"><span>Nombre de la familia / plantilla</span><input required value={form.name} onChange={(e) => { set('name', e.target.value); if (!form.familyName) set('familyName', e.target.value); }} placeholder="Ej. SALÓN GRANDE · BODAS" /></label>
-      <label><span>Salón</span><select value={form.roomId} onChange={(e) => set('roomId', e.target.value)}><option value="">Todos / no específico</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
-      <label><span>Mínimo general</span><input type="number" min="0" value={form.minimumGuests} onChange={(e) => set('minimumGuests', Number(e.target.value))} /></label>
-      <label><span>Segmento</span><input value={form.segment} onChange={(e) => set('segment', e.target.value)} placeholder="Ej. Bodas / 15 años" /></label>
-      <label><span>Estado</span><select value={form.status} onChange={(e) => set('status', e.target.value)}><option value="active">Activo</option><option value="inactive">Inactivo</option></select></label>
-      <label className="is-wide"><span>Tipos de evento</span><div className="lincoln-package-checks">{EVENT_TYPES.map((type) => <button type="button" key={type} className={form.eventTypes.includes(type) ? 'is-active' : ''} onClick={() => set('eventTypes', form.eventTypes.includes(type) ? form.eventTypes.filter((x) => x !== type) : [...form.eventTypes, type])}>{type}</button>)}</div></label>
-      <label className="is-wide"><span>Descripción comercial</span><textarea value={form.description} onChange={(e) => set('description', e.target.value)} /></label>
+  const renderServiceCard = (line) => <article className="lincoln-package-simple-line" key={line.id}>
+    <div className="lincoln-package-simple-line-main">
+      <select value={line.category} onChange={(e) => updateLine(line.id, { category: e.target.value })}>{CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>
+      <input value={line.description} onChange={(e) => updateLine(line.id, { description: e.target.value })} placeholder="Descripción del servicio" />
     </div>
+    <div className="lincoln-package-simple-line-meta">
+      <label><span>Tipo de costo</span><select value={line.costMode} onChange={(e) => updateLine(line.id, { costMode: e.target.value })}>{COST_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label><span>Costo interno Bs</span><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateLine(line.id, { unitCostBs: e.target.value })} /></label>
+    </div>
+    {hasMultiplePrices ? <div className="lincoln-package-simple-variants"><small>¿En qué precios está incluido?</small><div>{variants.map((variant) => <label key={variant.id}><input type="checkbox" checked={line.variantIds.includes(variant.id)} onChange={() => updateLine(line.id, { variantIds: line.variantIds.includes(variant.id) ? line.variantIds.filter((id) => id !== variant.id) : [...line.variantIds, variant.id] })} /><span>{variant.name || 'Precio'}</span></label>)}</div><em>Si no marcas ninguno, se incluye en todos.</em></div> : null}
+    <button type="button" className="is-remove" onClick={() => set('serviceLines', form.serviceLines.filter((item) => item.id !== line.id))}>×</button>
+  </article>;
 
-    <section className="lincoln-package-builder-section"><div className="lincoln-package-editor-title"><div><strong>1. Variantes y precios</strong><small>Cobre / Plata / Oro / Platino, o Jóvenes / Adultos dentro de una misma familia.</small></div><button type="button" onClick={() => set('variants', [...variants, blankVariant()])}>+ Variante</button></div>
-      <div className="lincoln-package-variants-editor">{variants.map((variant) => <article key={variant.id}><input value={variant.name} onChange={(e) => updateVariant(variant.id, { name: e.target.value })} placeholder="Nombre" /><label><span>Bs/persona</span><input type="number" min="0" step="0.01" value={variant.pricePerPersonBs} onChange={(e) => updateVariant(variant.id, { pricePerPersonBs: e.target.value })} /></label><label><span>Mínimo</span><input type="number" min="0" value={variant.minimumGuests} onChange={(e) => updateVariant(variant.id, { minimumGuests: e.target.value })} /></label><button type="button" onClick={() => set('variants', variants.filter((v) => v.id !== variant.id))}>×</button></article>)}</div>
-    </section>
+  return <div className="lincoln-package-modal-backdrop"><section className="lincoln-package-modal is-friendly"><form onSubmit={submit}>
+    <header><div><span>PAQUETE LINCOLN</span><h2>{isEdit ? 'Editar paquete' : 'Nuevo paquete'}</h2><p>Completa lo esencial. Puedes agregar servicios y extras después.</p></div><button type="button" className="is-close" onClick={onClose}>×</button></header>
+    <nav className="lincoln-package-wizard">
+      {[['1','Información'],['2','Incluye'],['3','Extras'],['4','Resumen']].map(([id, label]) => <button type="button" key={id} className={step === Number(id) ? 'is-active' : ''} onClick={() => setStep(Number(id))}><b>{id}</b><span>{label}</span></button>)}
+    </nav>
+    {error ? <div className="lincoln-package-error">{error}</div> : null}
+    <div className="lincoln-package-wizard-body">
+      {step === 1 ? <section className="lincoln-package-friendly-section">
+        <div className="lincoln-package-section-heading"><div><small>PASO 1</small><h3>Información del paquete</h3><p>Los datos que verá el personal al seleccionar este paquete.</p></div></div>
+        <div className="lincoln-package-friendly-grid">
+          <label className="is-wide"><span>Nombre del paquete</span><input required value={form.name} onChange={(e) => { set('name', e.target.value); if (!form.familyName) set('familyName', e.target.value); }} placeholder="Ej. PLATINO" /></label>
+          <label><span>Salón</span><select value={form.roomId} onChange={(e) => set('roomId', e.target.value)}><option value="">Todos / no específico</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
+          <label><span>Mínimo de personas</span><input type="number" min="0" value={form.minimumGuests} onChange={(e) => set('minimumGuests', Number(e.target.value))} /></label>
+          <label><span>Estado</span><select value={form.status} onChange={(e) => set('status', e.target.value)}><option value="active">Activo</option><option value="inactive">Inactivo</option></select></label>
+          <label className="is-wide"><span>Tipo de evento</span><div className="lincoln-package-checks">{EVENT_TYPES.map((type) => <button type="button" key={type} className={form.eventTypes.includes(type) ? 'is-active' : ''} onClick={() => set('eventTypes', form.eventTypes.includes(type) ? form.eventTypes.filter((x) => x !== type) : [...form.eventTypes, type])}>{type}</button>)}</div></label>
+          <label className="is-wide"><span>Descripción comercial (opcional)</span><textarea value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Ej. Paquete completo para bodas en Salón Grande." /></label>
+        </div>
+        <div className="lincoln-package-price-box">
+          <div className="lincoln-package-price-box-head"><div><strong>Precio del paquete</strong><small>¿Maneja un solo precio o grupos diferentes?</small></div><div className="lincoln-package-price-toggle"><button type="button" className={!hasMultiplePrices ? 'is-active' : ''} onClick={() => toggleMultiplePrices(false)}>Un precio</button><button type="button" className={hasMultiplePrices ? 'is-active' : ''} onClick={() => toggleMultiplePrices(true)}>Varios precios</button></div></div>
+          <div className="lincoln-package-friendly-prices">{variants.map((variant, index) => <article key={variant.id}>
+            {hasMultiplePrices ? <label><span>Nombre</span><input value={variant.name} onChange={(e) => updateVariant(variant.id, { name: e.target.value })} placeholder={index === 0 ? 'JÓVENES' : 'ADULTOS'} /></label> : <div className="lincoln-package-single-price-label"><strong>Precio por persona</strong><small>Precio base del paquete</small></div>}
+            <label><span>Bs por persona</span><input type="number" min="0" step="0.01" value={variant.pricePerPersonBs} onChange={(e) => updateVariant(variant.id, { pricePerPersonBs: e.target.value })} /></label>
+            {hasMultiplePrices ? <label><span>Mínimo</span><input type="number" min="0" value={variant.minimumGuests} onChange={(e) => updateVariant(variant.id, { minimumGuests: e.target.value })} /></label> : null}
+            {hasMultiplePrices && variants.length > 2 ? <button type="button" className="is-remove" onClick={() => set('variants', variants.filter((v) => v.id !== variant.id))}>×</button> : null}
+          </article>)}</div>
+          {hasMultiplePrices ? <button type="button" className="lincoln-package-add-price" onClick={() => set('variants', [...variants, blankVariant(`OPCIÓN ${variants.length + 1}`)])}>+ Agregar otro precio</button> : null}
+        </div>
+      </section> : null}
 
-    <section className="lincoln-package-builder-section"><div className="lincoln-package-editor-title"><div><strong>2. Catálogo reutilizable</strong><small>Busca servicios o extras existentes y agrégalos a la matriz.</small></div></div>
-      <input className="lincoln-package-catalog-search" value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} placeholder="Buscar catering, bebidas, montaje, extra..." />
-      <div className="lincoln-package-catalog-picker">{catalog.map((item) => <button type="button" key={`${item.kind}-${item.id}`} onClick={() => addCatalogLine(item)}><span className={`is-${item.kind}`}>{item.kind === 'extra' ? 'EXTRA' : item.category}</span><strong>{item.name || item.description}</strong><small>{money(item.unitCostBs)} · {item.costMode === 'per_person' ? 'por persona' : 'por evento'}</small></button>)}{!catalog.length ? <small>No hay coincidencias. Puedes agregar una línea manual.</small> : null}</div>
-    </section>
+      {step === 2 ? <section className="lincoln-package-friendly-section">
+        <div className="lincoln-package-section-heading"><div><small>PASO 2</small><h3>¿Qué incluye?</h3><p>Agrega los servicios incluidos en este paquete.</p></div><button type="button" onClick={() => set('serviceLines', [...form.serviceLines, blankLine()])}>+ Servicio manual</button></div>
+        <div className="lincoln-package-catalog-friendly"><input value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} placeholder="Buscar catering, bebida, montaje, personal..." /><div>{catalog.filter((item) => item.kind !== 'extra').map((item) => <button type="button" key={`${item.kind}-${item.id}`} onClick={() => addCatalogLine(item)}><b>{item.category}</b><span>{item.name || item.description}</span><small>Agregar</small></button>)}</div></div>
+        <div className="lincoln-package-simple-list">{includedLines.map(renderServiceCard)}{!includedLines.length ? <div className="lincoln-package-friendly-empty"><strong>Aún no agregaste servicios</strong><span>Busca arriba o usa “Servicio manual”.</span></div> : null}</div>
+      </section> : null}
 
-    <section className="lincoln-package-builder-section"><div className="lincoln-package-editor-title"><div><strong>3. Matriz de servicios</strong><small>Marca en qué variantes está incluido cada servicio. Sin marcas = incluido en todas.</small></div><button type="button" onClick={() => set('serviceLines', [...form.serviceLines, blankLine()])}>+ Línea manual</button></div>
-      <div className="lincoln-package-matrix">{form.serviceLines.map((line) => <article key={line.id}>
-        <div className="lincoln-package-line-main"><select value={line.category} onChange={(e) => updateLine(line.id, { category: e.target.value })}>{CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select><input value={line.description} onChange={(e) => updateLine(line.id, { description: e.target.value })} placeholder="Servicio / detalle" /></div>
-        <div className="lincoln-package-line-cost"><select value={line.costMode} onChange={(e) => updateLine(line.id, { costMode: e.target.value })}>{COST_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateLine(line.id, { unitCostBs: e.target.value })} /></div>
-        <div className="lincoln-package-line-variants">{variants.map((variant) => <label key={variant.id}><input type="checkbox" checked={line.variantIds.includes(variant.id)} onChange={() => updateLine(line.id, { variantIds: line.variantIds.includes(variant.id) ? line.variantIds.filter((id) => id !== variant.id) : [...line.variantIds, variant.id] })} /><span>{variant.name || 'Variante'}</span></label>)}</div>
-        <button type="button" className="is-remove" onClick={() => set('serviceLines', form.serviceLines.filter((item) => item.id !== line.id))}>×</button>
-      </article>)}{!form.serviceLines.length ? <div className="lincoln-package-services-empty">Aún no hay servicios en la matriz.</div> : null}</div>
-    </section>
+      {step === 3 ? <section className="lincoln-package-friendly-section">
+        <div className="lincoln-package-section-heading"><div><small>PASO 3</small><h3>Servicios adicionales</h3><p>Extras disponibles para ofrecer junto al paquete.</p></div><button type="button" onClick={() => set('serviceLines', [...form.serviceLines, { ...blankLine(), category: 'OTROS', catalogKind: 'extra' }])}>+ Extra manual</button></div>
+        <div className="lincoln-package-catalog-friendly"><input value={catalogQuery} onChange={(e) => setCatalogQuery(e.target.value)} placeholder="Buscar pantalla LED, tarima, torta, bar..." /><div>{catalog.filter((item) => item.kind === 'extra').map((item) => <button type="button" key={`${item.kind}-${item.id}`} onClick={() => addCatalogLine(item)}><b>EXTRA</b><span>{item.name || item.description}</span><small>{money(item.unitCostBs)}</small></button>)}</div></div>
+        <div className="lincoln-package-simple-list">{extraLines.map(renderServiceCard)}{!extraLines.length ? <div className="lincoln-package-friendly-empty"><strong>Sin extras por ahora</strong><span>Puedes guardarlo así y agregarlos más adelante.</span></div> : null}</div>
+      </section> : null}
 
-    <section className="lincoln-package-images-editor"><div className="lincoln-package-editor-title"><div><strong>Imagen y presentación</strong><small>Opcional; se guarda en servidor.</small></div><label className="lincoln-package-upload">{uploading ? 'Subiendo...' : '+ Imagen'}<input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} /></label></div><div className="lincoln-package-image-grid">{form.images.map((image) => <figure key={image.filename || image.imageUrl}><img src={image.imageUrl} alt="Paquete" /><button type="button" onClick={() => removeImage(image)}>×</button></figure>)}</div></section>
-    <section className="lincoln-package-cost-preview"><article><span>Costo variable / persona</span><strong>{money(packageCost.variablePerPerson)}</strong></article><article><span>Costos fijos / evento</span><strong>{money(packageCost.fixedEvent)}</strong></article><article><span>Ingreso mínimo estimado</span><strong>{money(packageCost.revenueMin)}</strong></article><article className={packageCost.marginMin < 0 ? 'is-negative' : 'is-positive'}><span>Margen estimado</span><strong>{money(packageCost.marginMin)}</strong></article></section>
-    <footer><button type="button" className="is-secondary" onClick={onClose}>Cancelar</button><button type="submit" className="is-primary" disabled={saving || uploading}>{saving ? 'Guardando...' : 'Guardar plantilla'}</button></footer>
+      {step === 4 ? <section className="lincoln-package-friendly-section">
+        <div className="lincoln-package-section-heading"><div><small>PASO 4</small><h3>Resumen del paquete</h3><p>Revisa antes de guardar.</p></div></div>
+        <div className="lincoln-package-summary-card">
+          <div className="lincoln-package-summary-main"><small>{form.eventTypes.join(' · ') || 'EVENTO'}</small><h3>{form.name || 'PAQUETE SIN NOMBRE'}</h3><p>{rooms.find((room) => room.id === form.roomId)?.name || 'Todos los salones'} · mínimo {form.minimumGuests || 0} personas</p></div>
+          <div className="lincoln-package-summary-prices">{variants.map((variant) => <span key={variant.id}><b>{hasMultiplePrices ? variant.name : 'Precio'}</b><strong>{money(variant.pricePerPersonBs)}</strong><small>/ persona</small></span>)}</div>
+          <div className="lincoln-package-summary-counts"><span><b>{includedLines.length}</b> servicios incluidos</span><span><b>{extraLines.length}</b> extras disponibles</span></div>
+          {form.description ? <p className="lincoln-package-summary-description">{form.description}</p> : null}
+        </div>
+        <section className="lincoln-package-images-editor is-friendly"><div className="lincoln-package-editor-title"><div><strong>Imagen del paquete</strong><small>Opcional.</small></div><label className="lincoln-package-upload">{uploading ? 'Subiendo...' : '+ Imagen'}<input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} /></label></div><div className="lincoln-package-image-grid">{form.images.map((image) => <figure key={image.filename || image.imageUrl}><img src={image.imageUrl} alt="Paquete" /><button type="button" onClick={() => removeImage(image)}>×</button></figure>)}</div></section>
+        <details className="lincoln-package-advanced-summary"><summary>Ver costos internos estimados</summary><div className="lincoln-package-cost-preview"><article><span>Costo variable / persona</span><strong>{money(packageCost.variablePerPerson)}</strong></article><article><span>Costos fijos / evento</span><strong>{money(packageCost.fixedEvent)}</strong></article><article><span>Ingreso mínimo estimado</span><strong>{money(packageCost.revenueMin)}</strong></article><article className={packageCost.marginMin < 0 ? 'is-negative' : 'is-positive'}><span>Margen estimado</span><strong>{money(packageCost.marginMin)}</strong></article></div></details>
+      </section> : null}
+    </div>
+    <footer><button type="button" className="is-secondary" onClick={onClose}>Cancelar</button><div className="lincoln-package-footer-nav">{step > 1 ? <button type="button" className="is-secondary" onClick={() => setStep(step - 1)}>← Anterior</button> : null}{step < 4 ? <button type="button" className="is-primary" onClick={() => setStep(step + 1)}>Siguiente →</button> : <button type="submit" className="is-primary" disabled={saving || uploading}>{saving ? 'Guardando...' : 'Guardar paquete'}</button>}</div></footer>
   </form></section></div>;
 }
 
