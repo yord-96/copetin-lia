@@ -946,6 +946,28 @@ const fetchLincolnCommercialOverview = ({ query = '', status = 'all', from = '',
   return fetchLincolnQuery(`/__lincoln_db/commercial?${params.toString()}`, 'No se pudo cargar Reservas y Contratos de Lincoln.');
 };
 
+const fetchLincolnContractPdf = async ({ identifier }) => {
+  const requestedId = String(identifier ?? '').trim();
+  if (!requestedId) throw new Error('No se pudo identificar el contrato Lincoln.');
+  const response = await fetch(getApiUrl(`/__lincoln_db/contracts/${encodeURIComponent(requestedId)}/pdf`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo generar el PDF del contrato Lincoln.');
+  }
+  const pdfBlob = await response.blob();
+  if (pdfBlob.type && pdfBlob.type !== 'application/pdf') {
+    throw new Error('El servidor no devolvió un PDF válido para el contrato Lincoln.');
+  }
+  return {
+    blobUrl: URL.createObjectURL(pdfBlob),
+    mimeType: 'application/pdf',
+    cacheStatus: response.headers.get('X-Document-Cache') ?? '',
+    durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
+  };
+};
+
 const fetchLincolnClientsOverview = ({ query = '', status = 'all' } = {}) => {
   const params = new URLSearchParams();
   if (query) params.set('query', String(query));
@@ -3846,6 +3868,7 @@ export const api = {
   lincoln: {
     getState: () => fetchLincolnState(),
     getCommercialOverview: (payload) => fetchLincolnCommercialOverview(payload),
+    getContractPdf: (payload) => fetchLincolnContractPdf(payload),
     getClientsOverview: (payload) => fetchLincolnClientsOverview(payload),
     getRoomsOverview: (payload) => fetchLincolnRoomsOverview(payload),
     getPackagesOverview: (payload) => fetchLincolnPackagesOverview(payload),

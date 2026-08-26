@@ -72,7 +72,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       key: `reservation:${reservation.id}`,
       id: reservation.id,
       kind: 'reservation',
-      kindLabel: asText(reservation.status).toLowerCase() === 'lead' ? 'Interesado' : 'Reserva',
+      kindLabel: 'Reserva',
       code: reservation.code,
       clientId: reservation.clientId ?? null,
       clientName: reservation.clientName ?? '',
@@ -100,7 +100,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       id: event.id,
       kind: 'contract',
       kindLabel: 'Contrato',
-      code: event.code,
+      code: event.contractCode || event.code,
+      contractCode: event.contractCode || '',
       clientId: event.clientId ?? null,
       clientName: event.clientName ?? '',
       clientPhone: event.clientPhone ?? '',
@@ -128,7 +129,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
         if (!haystack.includes(q)) return false;
       }
       if (normalizedStatus !== 'all') {
-        if (normalizedStatus === 'reservations' && (row.kind !== 'reservation' || normalize(row.status) === 'lead')) return false;
+        if (normalizedStatus === 'reservations' && row.kind !== 'reservation') return false;
         else if (normalizedStatus === 'contracts' && row.kind !== 'contract') return false;
         else if (!['reservations', 'contracts'].includes(normalizedStatus) && normalize(row.status) !== normalizedStatus) return false;
       }
@@ -141,8 +142,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       return byDate || asText(b.updatedAt).localeCompare(asText(a.updatedAt));
     });
 
-  const activeReservations = reservationRows.filter((row) => !['cancelled', 'lead'].includes(asText(row.status).toLowerCase()));
-  const interestedReservations = reservationRows.filter((row) => asText(row.status).toLowerCase() === 'lead');
+  const activeReservations = reservationRows.filter((row) => asText(row.status).toLowerCase() !== 'cancelled');
+  const interestedReservations = activeReservations.filter((row) => asText(row.status).toLowerCase() === 'lead');
   const activeContracts = contractRows.filter((row) => !['cancelled'].includes(asText(row.status).toLowerCase()));
   const sequences = contractRows.map((row) => parseSequence(row.code)).filter((value) => value > 0);
   const currentNumber = sequences.length ? Math.max(...sequences) : 0;

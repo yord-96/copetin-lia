@@ -6,6 +6,8 @@ import { getLincolnCommercialOverview } from '../services/lincoln/lincolnCommerc
 import { getLincolnClientsOverview } from '../services/lincoln/lincolnClientsService.js';
 import { getLincolnRoomsOverview } from '../services/lincoln/lincolnRoomsService.js';
 import { getLincolnPackagesOverview } from '../services/lincoln/lincolnPackagesService.js';
+import { buildLincolnContractDocumentHtml, buildLincolnContractPdfFileName } from '../services/lincoln/lincolnContractDocumentService.js';
+import { renderHtmlDocumentToPdf } from '../storage/documentPdfRenderer.js';
 import {
   convertLincolnReservationToEvent,
   createLincolnExpense,
@@ -179,6 +181,44 @@ router.get('/__lincoln_db/reports/events/:eventId', async (req, res, next) => {
     res.json(await getLincolnEventReport({ eventId: req.params.eventId }));
   } catch (error) {
     handleLincolnMutationError(error, res, next);
+  }
+});
+
+
+router.get('/__lincoln_db/contracts/:id/pdf', async (req, res, next) => {
+  const startedAt = Date.now();
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato Lincoln.' });
+      return;
+    }
+    const snapshot = await getLincolnStateSnapshot();
+    const event = (snapshot?.state?.events ?? []).find((row) => (
+      String(row?.id ?? '') === requestedId
+      || String(row?.contractCode ?? '') === requestedId
+      || String(row?.code ?? '') === requestedId
+    ));
+    if (!event) {
+      res.status(404).json({ error: 'Contrato Lincoln no encontrado.' });
+      return;
+    }
+    const html = buildLincolnContractDocumentHtml({ event });
+    const result = await renderHtmlDocumentToPdf({
+      html,
+      baseUrl: `${req.protocol}://${req.get('host')}`,
+      fileName: buildLincolnContractPdfFileName(event),
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+    res.setHeader('Content-Length', String(result.buffer.length));
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
+    res.setHeader('X-Document-Key', result.cacheKey);
+    res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
   }
 });
 

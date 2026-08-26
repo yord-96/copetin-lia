@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../../services/api';
 
 const money = (value) => new Intl.NumberFormat('es-BO', {
@@ -16,11 +16,13 @@ export default function LincolnCommercialWorkspace({
   refreshKey,
   onNewReservation,
   onNewContract,
+  onOpenRecord,
   onEditReservation,
   onEditContract,
   onConvertReservation,
   onOpenDocument,
   onOpenEconomic,
+  onCancelReservation,
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -29,6 +31,8 @@ export default function LincolnCommercialWorkspace({
   const [data, setData] = useState({ summary: { reservations: 0, contracts: 0, currentNumber: 0, nextNumber: 1 }, rows: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [openMenuKey, setOpenMenuKey] = useState('');
+  const menuRootRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +56,20 @@ export default function LincolnCommercialWorkspace({
     };
   }, [from, query, refreshKey, status, to]);
 
+  useEffect(() => {
+    if (!openMenuKey) return undefined;
+    const close = (event) => {
+      if (!menuRootRef.current?.contains(event.target)) setOpenMenuKey('');
+    };
+    const closeOnScroll = () => setOpenMenuKey('');
+    document.addEventListener('mousedown', close);
+    window.addEventListener('scroll', closeOnScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('scroll', closeOnScroll, true);
+    };
+  }, [openMenuKey]);
+
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const summary = data?.summary ?? {};
 
@@ -62,12 +80,17 @@ export default function LincolnCommercialWorkspace({
     setTo('');
   };
 
+  const act = (callback, row) => {
+    setOpenMenuKey('');
+    callback?.(row);
+  };
+
   return (
     <div className="lincoln-commercial-page">
       <section className="lincoln-commercial-titlebar">
         <div>
           <h1>Reservas y Contratos</h1>
-          <p>Gestión comercial de reservas, contratos y apertura económica en un solo lugar.</p>
+          <p>Una sola operación comercial: la reserva cambia de estado y, cuando corresponde, se formaliza como contrato.</p>
         </div>
         <div className="lincoln-commercial-primary-actions">
           <button type="button" onClick={onNewContract}>+ Nuevo contrato</button>
@@ -81,9 +104,9 @@ export default function LincolnCommercialWorkspace({
             type="button"
             className={`lincoln-commercial-metric-card is-reservations ${status === 'reservations' ? 'is-selected' : ''}`}
             onClick={() => setStatus('reservations')}
-            title="Mostrar solo reservas"
+            title="Mostrar todas las reservas, sin separar sus estados"
           >
-            <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) · {Math.max(0, Number(summary.reservations ?? 0) - Number(summary.interested ?? 0))} confirmada(s)</span></div>
+            <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) dentro de {summary.reservations ?? 0} reserva(s)</span></div>
             <b>{summary.reservations ?? 0}</b>
           </button>
 
@@ -97,9 +120,9 @@ export default function LincolnCommercialWorkspace({
             type="button"
             className={`lincoln-commercial-metric-card is-contracts ${status === 'contracts' ? 'is-selected' : ''}`}
             onClick={() => setStatus('contracts')}
-            title="Mostrar solo contratos"
+            title="Mostrar contratos"
           >
-            <div><strong>Contratos</strong><span>Documentos comerciales</span></div>
+            <div><strong>Contratos</strong><span>Documentos formalizados</span></div>
             <b>{summary.contracts ?? 0}</b>
           </button>
         </div>
@@ -113,18 +136,10 @@ export default function LincolnCommercialWorkspace({
 
         <div className="lincoln-commercial-statuses">
           {[
-            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Reserva · interesado'], ['pending', 'Reserva · pendiente'], ['confirmed', 'Reserva · confirmada'],
+            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
             ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
           ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={status === value ? 'is-active' : ''}
-              onClick={() => setStatus(value)}
-              aria-pressed={status === value}
-            >
-              {label}
-            </button>
+            <button key={value} type="button" className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)} aria-pressed={status === value}>{label}</button>
           ))}
         </div>
 
@@ -135,26 +150,51 @@ export default function LincolnCommercialWorkspace({
             <tbody>
               {loading && !rows.length ? <tr><td colSpan="9" className="is-empty">Cargando operación comercial...</td></tr> : null}
               {!loading && !rows.length ? <tr><td colSpan="9" className="is-empty">No hay registros con estos filtros.</td></tr> : null}
-              {rows.map((row) => (
-                <tr key={row.key}>
-                  <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => row.kind === 'reservation' ? onEditReservation(row) : onOpenDocument(row)}>{row.kind === 'contract' ? (row.contractCode || row.code) : row.code}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
-                  <td><strong>{dateLabel(row.eventDate)}</strong><small>{row.startTime || 'Hora pendiente'}</small></td>
-                  <td><strong>{row.clientName || 'Sin cliente'}</strong><small>{row.clientPhone || ''}</small></td>
-                  <td><strong>{row.roomName || 'Sin salón'}</strong><small>{row.eventType || 'Sin tipo'}</small></td>
-                  <td>{row.guestCount || '—'}</td>
-                  <td><span className={`lincoln-commercial-status is-${row.kind}`}>{row.statusLabel}</span></td>
-                  <td><strong>{money(row.totalBs)}</strong></td>
-                  <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
-                  <td>
-                    <div className="lincoln-commercial-actions">
-                      {row.kind === 'reservation' ? <button type="button" onClick={() => onEditReservation(row)}>Abrir reserva</button> : <button type="button" className="is-document" onClick={() => onOpenDocument(row)}>Abrir documento</button>}
-                      {row.kind === 'reservation' && row.status === 'lead' ? <button type="button" className="is-primary" onClick={() => onEditReservation(row)}>Concretar reserva</button> : null}
-                      {row.kind === 'reservation' && !['lead', 'cancelled', 'converted'].includes(row.status) ? <button type="button" className="is-primary" onClick={() => onConvertReservation(row)}>Generar contrato</button> : null}
-                      {row.kind === 'contract' ? <><button type="button" onClick={() => onEditContract(row)}>Editar datos</button><button type="button" className="is-primary" onClick={() => onOpenEconomic(row)}>Economía</button></> : null}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const menuOpen = openMenuKey === row.key;
+                const reservationConfirmed = row.kind === 'reservation' && !['lead', 'cancelled', 'converted'].includes(String(row.status ?? '').toLowerCase());
+                return (
+                  <tr key={row.key}>
+                    <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => onOpenRecord(row)}>{row.code}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
+                    <td><strong>{dateLabel(row.eventDate)}</strong><small>{row.startTime || 'Hora pendiente'}</small></td>
+                    <td><strong>{row.clientName || 'Sin cliente'}</strong><small>{row.clientPhone || ''}</small></td>
+                    <td><strong>{row.roomName || 'Sin salón'}</strong><small>{row.eventType || 'Sin tipo'}</small></td>
+                    <td>{row.guestCount || '—'}</td>
+                    <td><span className={`lincoln-commercial-status is-${row.kind} is-status-${String(row.status ?? '').toLowerCase()}`}>{row.statusLabel}</span></td>
+                    <td><strong>{money(row.totalBs)}</strong></td>
+                    <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
+                    <td>
+                      <div className="lincoln-commercial-actions" ref={menuOpen ? menuRootRef : null}>
+                        <button type="button" className="lincoln-commercial-open" onClick={() => onOpenRecord(row)}>Abrir</button>
+                        <div className="lincoln-commercial-menu-wrap">
+                          <button type="button" className="lincoln-commercial-dots" aria-label={`Más opciones para ${row.code}`} aria-expanded={menuOpen} onClick={() => setOpenMenuKey((current) => current === row.key ? '' : row.key)}>⋮</button>
+                          {menuOpen ? (
+                            <div className="lincoln-commercial-menu">
+                              {row.kind === 'reservation' ? (
+                                <>
+                                  <button type="button" onClick={() => act(onEditReservation, row)}>Editar reserva</button>
+                                  <button type="button" onClick={() => act(onOpenEconomic, row)}>Económico</button>
+                                  {String(row.status ?? '').toLowerCase() === 'lead' ? <button type="button" onClick={() => act(onEditReservation, row)}>Concretar reserva</button> : null}
+                                  {reservationConfirmed ? <button type="button" className="is-emphasis" onClick={() => act(onConvertReservation, row)}>Generar contrato</button> : null}
+                                  <button type="button" onClick={() => act(onOpenRecord, row)}>Ver documentos</button>
+                                  {!['cancelled', 'converted'].includes(String(row.status ?? '').toLowerCase()) ? <button type="button" className="is-danger" onClick={() => act(onCancelReservation, row)}>Cancelar reserva</button> : null}
+                                </>
+                              ) : (
+                                <>
+                                  <button type="button" onClick={() => act(onEditContract, row)}>Editar datos</button>
+                                  <button type="button" onClick={() => act(onOpenEconomic, row)}>Económico</button>
+                                  <button type="button" className="is-emphasis" onClick={() => act(onOpenDocument, row)}>Abrir contrato PDF</button>
+                                  <button type="button" onClick={() => act(onOpenRecord, row)}>Ver documentos</button>
+                                </>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

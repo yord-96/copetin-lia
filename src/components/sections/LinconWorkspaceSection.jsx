@@ -528,21 +528,111 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
 }
 
 function ContractDocumentModal({ eventRecord, onClose }) {
-  const document = eventRecord?.contractDocumentSnapshot ? { ...eventRecord.contractDocumentSnapshot, contractCode: eventRecord.contractCode || eventRecord.code } : { ...eventRecord, contractCode: eventRecord?.contractCode || eventRecord?.code, totals: contractTotals(eventRecord ?? {}), clauses: [] };
-  const printDocument = () => {
-    const popup = window.open('', '_blank', 'width=980,height=900');
-    if (!popup) return window.alert('Habilita ventanas emergentes para imprimir el contrato.');
-    const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char] || char));
-    const services = Array.isArray(document.services) ? document.services.filter((line) => line.selected !== false) : [];
-    const extras = Array.isArray(document.extras) ? document.extras.filter((line) => line.selected) : [];
-    const totals = document.totals ?? contractTotals(document);
-    const clauses = (document.clauses ?? []).map((clause, index) => `<li><b>${['PRIMERA','SEGUNDA','TERCERA','CUARTA','QUINTA','SEXTA','SÉPTIMA','OCTAVA','NOVENA'][index] || `CLÁUSULA ${index + 1}`}.-</b> ${safe(clause)}</li>`).join('');
-    const servicesHtml = services.map((line) => `<tr><td>${safe(line.category)}</td><td>${safe(line.description)}</td><td class="yes">✓</td></tr>`).join('');
-    const extrasHtml = extras.map((line) => `<tr><td>${safe(line.description)}</td><td>${safe(line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1)))}</td></tr>`).join('');
-    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(document.contractCode || 'Contrato Lincoln')}</title><style>@page{size:Letter portrait;margin:13mm}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#211617;font-size:11px}.page{min-height:250mm;page-break-after:always}.page:last-child{page-break-after:auto}.head{display:flex;justify-content:space-between;border-bottom:3px solid #8c1520;padding-bottom:10px;margin-bottom:12px}.brand small{letter-spacing:3px;color:#8c1520}.brand h1{font-family:Georgia,serif;font-size:30px;margin:2px 0}.code{text-align:right}.code b{font-size:17px;color:#8c1520}.title{text-align:center;font-size:18px;margin:14px}.facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.facts div{border:1px solid #ddd;padding:8px}.facts span{display:block;font-size:9px;text-transform:uppercase;color:#777}.facts strong{display:block;margin:3px 0}.intro{line-height:1.5;text-align:justify}.clauses{padding-left:20px}.clauses li{margin:8px 0;line-height:1.45;text-align:justify}.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:55px;text-align:center}.sign div{border-top:1px solid #222;padding-top:6px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#8c1520;color:#fff;text-align:left}th,td{border:1px solid #bbb;padding:6px}.yes{text-align:center;color:#8c1520;font-size:15px}.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.summary div{border:1px solid #ddd;padding:8px}.totals{width:48%;margin-left:auto}.totals div{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:6px}.totals .total{font-size:14px;background:#f7eeee;font-weight:bold}.no-print{margin:15px 0}@media print{.no-print{display:none}}</style></head><body><button class="no-print" onclick="window.print()">Imprimir / Guardar PDF</button><section class="page"><div class="head"><div class="brand"><small>CENTRO DE EVENTOS</small><h1>LINCOLN</h1><span>Pachamama #2250 y Waldo Ballivian · Cochabamba</span></div><div class="code"><b>${safe(document.contractCode)}</b><br>${safe(formatDate(document.contractDate))}</div></div><h2 class="title">CONTRATO DE SERVICIOS</h2><div class="facts"><div><span>Contratante 1</span><strong>${safe(document.contractor1Name)}</strong>C.I. ${safe(document.contractor1Ci)} · ${safe(document.contractor1Phone)}</div><div><span>Contratante 2</span><strong>${safe(document.contractor2Name || '—')}</strong>C.I. ${safe(document.contractor2Ci || '—')} · ${safe(document.contractor2Phone || '—')}</div><div><span>Evento</span><strong>${safe(document.eventType)}</strong>${safe(contractDateLong(document.eventDate))} · ${safe(document.startTime)}</div><div><span>Salón</span><strong>${safe(document.roomName)}</strong>${safe(document.durationHours)} h · ${safe(document.guestCount)} invitados</div></div><p class="intro">Conste por el presente documento privado de prestación de servicios, suscrito entre Centro de Eventos LINCOLN y los Contratantes individualizados precedentemente, bajo las siguientes cláusulas:</p><ol class="clauses">${clauses}</ol><div class="sign"><div>BASILIA HERBAS SAHONERO<br><small>Centro de Eventos Lincoln</small></div><div>${safe(document.contractor1Name || 'CONTRATANTE 1')}<br><small>Contratante</small></div><div>${safe(document.contractor2Name || 'CONTRATANTE 2')}<br><small>Contratante</small></div></div></section><section class="page"><div class="head"><div class="brand"><small>ANEXO DEL CONTRATO</small><h1>HOJA DE COSTOS</h1><span>${safe(document.eventType)} · ${safe(document.contractor1Name)}</span></div><div class="code"><b>${safe(document.contractCode)}</b><br>${safe(contractDateLong(document.eventDate))}</div></div><div class="summary"><div><span>Paquete</span><strong>${safe(document.packageName || 'SIN PAQUETE')}</strong></div><div><span>Nivel</span><strong>${safe(document.packageVariantName || 'BASE')}</strong></div><div><span>Invitados</span><strong>${safe(document.guestCount)}</strong></div><div><span>Precio/persona</span><strong>${safe(contractMoney(document.pricePerPersonBs))}</strong></div></div><table><thead><tr><th>Categoría</th><th>Servicio incluido</th><th></th></tr></thead><tbody>${servicesHtml || '<tr><td colspan="3">Sin servicios detallados</td></tr>'}</tbody></table>${extrasHtml ? `<table><thead><tr><th>Servicio adicional</th><th>Precio</th></tr></thead><tbody>${extrasHtml}</tbody></table>` : ''}<div class="totals"><div><span>Paquete base</span><b>${safe(contractMoney(totals.baseBs))}</b></div><div><span>Extras</span><b>${safe(contractMoney(totals.extrasBs))}</b></div><div><span>Descuento</span><b>- ${safe(contractMoney(totals.discountBs))}</b></div><div class="total"><span>TOTAL SERVICIO</span><b>${safe(contractMoney(totals.totalBs))}</b></div><div><span>Anticipo / a cuenta</span><b>${safe(contractMoney(document.advanceBs))}</b></div><div><span>Saldo</span><b>${safe(contractMoney(totals.balanceBs))}</b></div><div><span>Garantía separada</span><b>${safe(contractMoney(document.guaranteeBs))}</b></div></div></section></body></html>`);
-    popup.document.close();
+  const [preview, setPreview] = useState({ loading: true, error: '', blobUrl: '', cacheStatus: '' });
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+    api.lincoln.getContractPdf({ identifier: eventRecord?.id || eventRecord?.contractCode || eventRecord?.code })
+      .then((result) => {
+        if (cancelled) {
+          if (result?.blobUrl) URL.revokeObjectURL(result.blobUrl);
+          return;
+        }
+        objectUrl = result?.blobUrl || '';
+        setPreview({ loading: false, error: '', blobUrl: objectUrl, cacheStatus: result?.cacheStatus || '' });
+      })
+      .catch((error) => {
+        if (!cancelled) setPreview({ loading: false, error: error?.message || 'No se pudo preparar el contrato.', blobUrl: '', cacheStatus: '' });
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [eventRecord?.code, eventRecord?.contractCode, eventRecord?.id]);
+
+  const openPdf = () => {
+    if (!preview.blobUrl) return;
+    window.open(preview.blobUrl, '_blank', 'noopener,noreferrer');
   };
-  return <div className="lincoln-contract-document-backdrop"><section className="lincoln-contract-document-modal"><header><div><small>DOCUMENTO COMERCIAL</small><h2>{eventRecord?.contractCode || eventRecord?.code}</h2><p>Contrato confirmado y hoja de costos congelada.</p></div><div><button type="button" className="is-print" onClick={printDocument}>Imprimir / PDF</button><button type="button" onClick={onClose}>×</button></div></header><div className="lincoln-contract-document-scroll"><ContractDocumentSheet document={document} /></div></section></div>;
+
+  return <div className="lincoln-contract-document-backdrop" onMouseDown={onClose}>
+    <section className="lincoln-contract-document-modal is-server-pdf" onMouseDown={(event) => event.stopPropagation()}>
+      <header>
+        <div><small>DOCUMENTOS DEL CONTRATO</small><h2>{eventRecord?.contractCode || eventRecord?.code}</h2><p>PDF oficial generado por el motor documental del servidor.</p></div>
+        <div>{preview.blobUrl ? <button type="button" className="is-print" onClick={openPdf}>Imprimir / guardar PDF</button> : null}<button type="button" onClick={onClose}>×</button></div>
+      </header>
+      <div className="lincoln-contract-document-scroll is-pdf-viewer">
+        {preview.loading ? <div className="lincoln-document-loading"><strong>Preparando documento...</strong><span>El servidor está generando el contrato y su hoja de costos.</span></div> : null}
+        {preview.error ? <div className="lincoln-commercial-error"><strong>No se pudo abrir el documento.</strong><span>{preview.error}</span></div> : null}
+        {!preview.loading && preview.blobUrl ? <iframe title={`Contrato ${eventRecord?.contractCode || eventRecord?.code}`} src={preview.blobUrl} className="lincoln-server-document-frame" /> : null}
+      </div>
+    </section>
+  </div>;
+}
+
+function CommercialRecordDetailModal({ kind, record, state, initialSection = 'summary', onClose, onEdit, onEconomic, onGenerateContract, onOpenDocument }) {
+  const [section, setSection] = useState(initialSection);
+  const isReservation = kind === 'reservation';
+  const reservationPaid = Number(record?.reservationPaymentBs ?? 0);
+  const reservationAccount = Number(record?.accountPaymentBs ?? 0);
+  const reservationTotal = Number(record?.estimatedTotalBs ?? 0);
+  const contractFinancial = !isReservation ? getEventFinancialSummary(state, record) : null;
+  const totalBs = isReservation ? reservationTotal : Number(contractFinancial?.eventTotalBs ?? record?.totalBs ?? record?.estimatedTotalBs ?? 0);
+  const paidBs = isReservation ? reservationPaid + reservationAccount : Number(contractFinancial?.servicePaidBs ?? 0);
+  const balanceBs = Math.max(0, isReservation ? totalBs - paidBs : Number(contractFinancial?.serviceBalanceBs ?? 0));
+  const guaranteeBs = Number(record?.guaranteeBs ?? contractFinancial?.guaranteeRequiredBs ?? 0);
+  const reservationStatus = String(record?.status ?? '').toLowerCase();
+  const canGenerateContract = isReservation && !['lead', 'cancelled', 'converted'].includes(reservationStatus) && reservationPaid > 0;
+  const snapshot = record?.contractDocumentSnapshot ?? record?.packageSnapshot ?? null;
+
+  return <div className="lincoln-commercial-detail-backdrop" onMouseDown={onClose}>
+    <section className="lincoln-commercial-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="lincoln-commercial-detail-head">
+        <div><small>{isReservation ? 'RESERVA' : 'CONTRATO'}</small><h2>{isReservation ? record?.code : (record?.contractCode || record?.code)}</h2><p>{record?.clientName || record?.contractor1Name || 'Sin cliente'} · {record?.eventType || 'Evento'}</p></div>
+        <div><span className={`lincoln-commercial-detail-status is-${reservationStatus || 'pending'}`}>{statusLabel(record?.status)}</span><button type="button" onClick={onClose}>×</button></div>
+      </header>
+      <nav className="lincoln-commercial-detail-tabs">
+        <button type="button" className={section === 'summary' ? 'is-active' : ''} onClick={() => setSection('summary')}>Resumen</button>
+        <button type="button" className={section === 'economic' ? 'is-active' : ''} onClick={() => setSection('economic')}>Económico</button>
+        <button type="button" className={section === 'documents' ? 'is-active' : ''} onClick={() => setSection('documents')}>Documentos</button>
+      </nav>
+      <div className="lincoln-commercial-detail-body">
+        {section === 'summary' ? <>
+          <section className="lincoln-commercial-detail-grid">
+            <article><span>Contratante 1</span><strong>{record?.contractor1Name || record?.clientName || '—'}</strong><small>C.I. {record?.contractor1Ci || record?.clientCi || '—'} · {record?.contractor1Phone || record?.clientPhone || '—'}</small></article>
+            <article><span>Contratante 2</span><strong>{record?.contractor2Name || '—'}</strong><small>C.I. {record?.contractor2Ci || '—'} · {record?.contractor2Phone || '—'}</small></article>
+            <article><span>Evento</span><strong>{record?.eventType || '—'}</strong><small>{formatDate(record?.eventDate)} · {record?.startTime || 'hora pendiente'}</small></article>
+            <article><span>Salón</span><strong>{record?.roomName || '—'}</strong><small>{record?.durationHours || 0} h · {record?.guestCount || 0} personas</small></article>
+            <article><span>Paquete</span><strong>{record?.packageName || 'Sin definir'}</strong><small>{record?.packageVariantName || 'Sin nivel'}</small></article>
+            <article><span>Estado comercial</span><strong>{statusLabel(record?.status)}</strong><small>{isReservation ? (reservationPaid > 0 ? 'Reserva concretada · bloquea fecha' : 'Interesado · no bloquea fecha') : 'Documento contractual formalizado'}</small></article>
+          </section>
+          {record?.notes ? <section className="lincoln-commercial-detail-notes"><span>Observaciones y acuerdos</span><p>{record.notes}</p></section> : null}
+        </> : null}
+        {section === 'economic' ? <>
+          <section className="lincoln-commercial-money-cards">
+            <article><span>Total servicio</span><strong>{formatBs(totalBs)}</strong><small>Valor comercial del evento</small></article>
+            <article><span>Pagado / a cuenta</span><strong>{formatBs(paidBs)}</strong><small>{isReservation ? `Reserva ${formatBs(reservationPaid)} · A cuenta ${formatBs(reservationAccount)}` : 'Pagos activos del contrato'}</small></article>
+            <article className={balanceBs > 0 ? 'is-pending' : 'is-paid'}><span>Saldo pendiente</span><strong>{formatBs(balanceBs)}</strong><small>{balanceBs > 0 ? 'Pendiente de cobro' : 'Servicio cubierto'}</small></article>
+            <article><span>Garantía separada</span><strong>{formatBs(guaranteeBs)}</strong><small>No forma parte del total del servicio</small></article>
+          </section>
+          {!isReservation ? <div className="lincoln-commercial-detail-callout"><div><strong>Sector económico completo</strong><span>Consulta movimientos, recibos, garantía y saldo con el módulo económico del contrato.</span></div><button type="button" onClick={onEconomic}>Abrir económico</button></div> : <div className="lincoln-commercial-detail-callout"><div><strong>Economía de la reserva</strong><span>Los montos registrados aquí acompañarán la operación cuando se genere el contrato.</span></div><button type="button" onClick={onEdit}>Editar montos</button></div>}
+        </> : null}
+        {section === 'documents' ? <section className="lincoln-commercial-documents-panel">
+          <header><div><small>EXPEDIENTE COMERCIAL</small><h3>Documentos</h3></div><span>{isReservation ? 'Reserva' : 'Contrato'}</span></header>
+          {isReservation ? <>
+            <article className="lincoln-commercial-document-row"><div><b>Reserva comercial</b><span>{record?.code} · estado {statusLabel(record?.status)}</span></div><span className="is-state">REGISTRO</span></article>
+            <article className="lincoln-commercial-document-row"><div><b>Propuesta / paquete congelado</b><span>{snapshot ? `${record?.packageName || 'Paquete'} · ${record?.packageVariantName || 'nivel base'}` : 'Aún no existe una propuesta congelada'}</span></div><span className={`is-state ${snapshot ? 'is-ready' : ''}`}>{snapshot ? 'DISPONIBLE' : 'PENDIENTE'}</span></article>
+            <article className="lincoln-commercial-document-row"><div><b>Contrato de servicios</b><span>{canGenerateContract ? 'La reserva está lista para formalizarse.' : reservationPaid <= 0 ? 'Se habilita cuando la reserva se concrete.' : 'No disponible para el estado actual.'}</span></div>{canGenerateContract ? <button type="button" onClick={onGenerateContract}>Generar contrato</button> : <span className="is-state">PENDIENTE</span>}</article>
+          </> : <>
+            <article className="lincoln-commercial-document-row is-primary"><div><b>Contrato de servicios + hoja de costos</b><span>{record?.contractCode || record?.code} · PDF generado por el servidor</span></div><button type="button" onClick={onOpenDocument}>Abrir PDF</button></article>
+            <article className="lincoln-commercial-document-row"><div><b>Snapshot contractual</b><span>Versión {record?.contractDocumentVersion || 1} · información comercial congelada</span></div><span className="is-state is-ready">ARCHIVADO</span></article>
+          </>}
+        </section> : null}
+      </div>
+      <footer className="lincoln-commercial-detail-footer"><button type="button" className="is-secondary" onClick={onClose}>Cerrar</button><div><button type="button" className="is-secondary" onClick={onEdit}>Editar</button>{canGenerateContract ? <button type="button" onClick={onGenerateContract}>Generar contrato</button> : null}{!isReservation ? <button type="button" onClick={onOpenDocument}>Abrir contrato</button> : null}</div></footer>
+    </section>
+  </div>;
 }
 
 function LinconPanelView({ state, onNavigate }) {
@@ -880,6 +970,28 @@ function LinconWorkspaceSection({
     window.alert(error.message || fallback);
   };
 
+  const cancelReservation = async (reservation) => {
+    if (!snapshot?.revision || !reservation?.id) return;
+    const accepted = window.confirm(`¿Cancelar la reserva ${reservation.code}? La fecha dejará de considerarse comprometida.`);
+    if (!accepted) return;
+    setSaving(true);
+    try {
+      await api.lincoln.updateRecord({
+        collection: 'reservations',
+        id: reservation.id,
+        record: { ...reservation, status: 'cancelled' },
+        revision: snapshot.revision,
+        actor,
+      });
+      setModal(null);
+      await loadLincoln();
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo cancelar la reserva.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const savePayment = async (eventRecord, payment) => {
     if (!snapshot?.revision) return;
     setSaving(true);
@@ -983,7 +1095,25 @@ function LinconWorkspaceSection({
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
       {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
       {modal?.mode === 'contractDocument' ? <ContractDocumentModal eventRecord={modal.record} onClose={() => setModal(null)} /> : null}
-      {modal && !['payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {modal?.mode === 'commercialDetail' ? <CommercialRecordDetailModal
+        kind={modal.kind}
+        record={modal.record}
+        state={state}
+        initialSection={modal.section || 'summary'}
+        onClose={() => setModal(null)}
+        onEdit={() => setModal({ mode: modal.kind === 'reservation' ? 'reservations' : 'events', record: modal.record })}
+        onEconomic={() => {
+          if (modal.kind === 'contract') {
+            setModal(null);
+            setEconomicEventId(modal.record.id);
+          } else {
+            setModal((current) => ({ ...current, section: 'economic' }));
+          }
+        }}
+        onGenerateContract={() => setModal({ mode: 'contractConvert', record: modal.record })}
+        onOpenDocument={() => setModal({ mode: 'contractDocument', record: modal.record })}
+      /> : null}
+      {modal && !['payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
     </>
   );
 
@@ -1019,12 +1149,18 @@ function LinconWorkspaceSection({
               refreshKey={snapshot?.revision}
               onNewReservation={() => setModal({ mode: 'reservations', record: null })}
               onNewContract={() => setModal({ mode: 'events', record: null })}
+              onOpenRecord={(row) => {
+                const record = row.kind === 'reservation'
+                  ? state.reservations.find((item) => item.id === row.id)
+                  : state.events.find((item) => item.id === (row.eventId || row.id));
+                if (record) setModal({ mode: 'commercialDetail', kind: row.kind, record, section: 'summary' });
+              }}
               onEditReservation={(row) => {
                 const record = state.reservations.find((item) => item.id === row.id);
                 if (record) setModal({ mode: 'reservations', record });
               }}
               onEditContract={(row) => {
-                const record = state.events.find((item) => item.id === row.id);
+                const record = state.events.find((item) => item.id === (row.eventId || row.id));
                 if (record) setModal({ mode: 'events', record });
               }}
               onConvertReservation={(row) => {
@@ -1041,7 +1177,18 @@ function LinconWorkspaceSection({
                 const record = state.events.find((item) => item.id === (row.eventId || row.id));
                 if (record) setModal({ mode: 'contractDocument', record });
               }}
-              onOpenEconomic={(row) => setEconomicEventId(row.eventId || row.id)}
+              onOpenEconomic={(row) => {
+                if (row.kind === 'reservation') {
+                  const record = state.reservations.find((item) => item.id === row.id);
+                  if (record) setModal({ mode: 'commercialDetail', kind: 'reservation', record, section: 'economic' });
+                  return;
+                }
+                setEconomicEventId(row.eventId || row.id);
+              }}
+              onCancelReservation={(row) => {
+                const record = state.reservations.find((item) => item.id === row.id);
+                if (record) void cancelReservation(record);
+              }}
             />
           ) : null}
           {activeView === 'reuniones' ? <LincolnMeetings state={state} revision={snapshot?.revision} actor={actor} onRefresh={loadLincoln} /> : null}
