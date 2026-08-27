@@ -319,15 +319,38 @@ const preserveFullCommercialRecords = (currentState, nextState) => {
 const assertSafeStateTransition = (currentState, nextState) => {
   if (!currentState || !nextState) return;
 
-  if (!hasRecentDestructiveResetLog(nextState)) {
+  const hasDestructiveResetApproval = hasRecentDestructiveResetLog(nextState);
+
+  if (!hasDestructiveResetApproval) {
     assertNoCommercialDataRegression(currentState, nextState);
+
+    // Protección por colección: un estado parcial del frontend no puede vaciar
+    // silenciosamente catálogos completos aunque el total global siga siendo alto.
+    protectedBusinessCollections.forEach((collection) => {
+      const currentRows = Array.isArray(currentState?.[collection]) ? currentState[collection].length : 0;
+      const nextRows = Array.isArray(nextState?.[collection]) ? nextState[collection].length : 0;
+      if (currentRows < 10) return;
+
+      const minimumSafeRows = Math.max(1, Math.floor(currentRows * 0.2));
+      if (nextRows >= minimumSafeRows) return;
+
+      const error = new Error(
+        `Guardado bloqueado por seguridad: ${collection} pasaria de ${currentRows} a ${nextRows} registros. La operacion parece contener un estado parcial o incompleto.`,
+      );
+      error.code = 'STATE_COLLECTION_REGRESSION_BLOCKED';
+      error.statusCode = 409;
+      error.collection = collection;
+      error.currentRows = currentRows;
+      error.nextRows = nextRows;
+      throw error;
+    });
   }
 
   const currentRows = countProtectedBusinessRows(currentState);
   const nextRows = countProtectedBusinessRows(nextState);
   if (currentRows < 50) return;
   if (nextRows > Math.max(10, Math.floor(currentRows * 0.15))) return;
-  if (hasRecentDestructiveResetLog(nextState)) return;
+  if (hasDestructiveResetApproval) return;
 
   const error = new Error(
     `Guardado bloqueado por seguridad: la base pasaria de ${currentRows} registros operativos a ${nextRows}. Usa el panel de importacion/reset confirmado si realmente quieres reemplazarla.`,

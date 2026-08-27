@@ -2127,18 +2127,21 @@ function ServiceOrdersSection({
   const canManageContractEconomicLedger = !readOnly;
   const contractNumberingInfo = useMemo(() => {
     const numbering = settings?.numbering ?? {};
-    const prefix = String(numbering.contractPrefix ?? '');
+    const configuredPrefix = String(numbering.contractPrefix ?? '');
     const configuredNext = Math.max(1, Math.trunc(Number(numbering.contractNext ?? 1)));
     const occupiedCodes = new Set();
-    const matchingNumbers = [];
+    const allNumberedCodes = [];
     const addCode = (code) => {
       const normalizedCode = String(code ?? '').trim();
       if (!normalizedCode) return;
       occupiedCodes.add(normalizedCode);
-      if (parseCommercialCodePrefix(normalizedCode) === prefix) {
-        const numericPart = parseCommercialCodeNumericPart(normalizedCode);
-        if (numericPart) matchingNumbers.push(numericPart);
-      }
+      const numericPart = parseCommercialCodeNumericPart(normalizedCode);
+      if (!numericPart) return;
+      allNumberedCodes.push({
+        code: normalizedCode,
+        number: numericPart,
+        prefix: parseCommercialCodePrefix(normalizedCode),
+      });
     };
 
     contracts.forEach((contract) => addCode(contract?.contractCode));
@@ -2146,14 +2149,26 @@ function ServiceOrdersSection({
       .filter((rental) => rental && !rental.deletedAt && rental.status !== 'cancelled')
       .forEach((rental) => addCode(rental?.contractCode));
 
-    let next = configuredNext;
+    const configuredHistory = allNumberedCodes.filter((entry) => entry.prefix === configuredPrefix);
+    const latestActual = allNumberedCodes
+      .slice()
+      .sort((a, b) => b.number - a.number)[0] ?? null;
+
+    const prefix = configuredHistory.length > 0 || !latestActual
+      ? configuredPrefix
+      : latestActual.prefix;
+    const matchingNumbers = allNumberedCodes
+      .filter((entry) => entry.prefix === prefix)
+      .map((entry) => entry.number);
+
+    const latest = matchingNumbers.length > 0 ? Math.max(...matchingNumbers) : null;
+    let next = Math.max(configuredNext, latest ? latest + 1 : 1);
     let attempts = 0;
     while (attempts < 100000 && occupiedCodes.has(formatCommercialDocumentCode(prefix, next))) {
       next += 1;
       attempts += 1;
     }
 
-    const latest = matchingNumbers.length > 0 ? Math.max(...matchingNumbers) : null;
     return {
       prefix,
       configuredNext,

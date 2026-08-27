@@ -10250,13 +10250,48 @@ const consumeUniqueCommercialDocumentCode = (state, fieldPrefix, fieldNext, coll
   if (!state.settings) state.settings = {};
   if (!state.settings.numbering) state.settings.numbering = {};
   const numbering = state.settings.numbering;
-  const prefix = String(numbering[fieldPrefix] ?? '');
-  let next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
-  let attempts = 0;
+  const rows = Array.isArray(state?.[collectionName]) ? state[collectionName] : [];
 
+  let prefix = String(numbering[fieldPrefix] ?? '');
+  let next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
+
+  const existingCodes = rows
+    .map((row) => String(row?.[codeField] ?? '').trim())
+    .filter(Boolean);
+  const configuredPrefixHasHistory = existingCodes.some((code) => parseDocumentPrefix(code) === prefix);
+
+  // Si la configuración volvió al valor por defecto pero ya existe historia comercial,
+  // reconstruye la secuencia a partir de los documentos reales en vez de empezar en 1.
+  if (existingCodes.length > 0 && !configuredPrefixHasHistory) {
+    const latest = existingCodes
+      .map((code) => ({
+        code,
+        number: parseDocumentNumericPart(code),
+        prefix: parseDocumentPrefix(code),
+      }))
+      .filter((entry) => entry.number)
+      .sort((a, b) => b.number - a.number)[0];
+
+    if (latest) {
+      prefix = latest.prefix;
+      next = Math.max(next, latest.number + 1);
+      numbering[fieldPrefix] = prefix;
+      numbering[fieldNext] = next;
+    }
+  } else if (configuredPrefixHasHistory) {
+    const latestNumber = existingCodes
+      .filter((code) => parseDocumentPrefix(code) === prefix)
+      .map((code) => parseDocumentNumericPart(code))
+      .filter(Boolean)
+      .reduce((maximum, value) => Math.max(maximum, value), 0);
+    next = Math.max(next, latestNumber + 1);
+  }
+
+  let attempts = 0;
   while (attempts < 100000) {
     const code = prefix ? `${prefix}${formatDocNumber(next, size)}` : String(next);
     if (!commercialDocumentCodeExists(state, collectionName, codeField, code)) {
+      numbering[fieldPrefix] = prefix;
       numbering[fieldNext] = next + 1;
       return code;
     }
