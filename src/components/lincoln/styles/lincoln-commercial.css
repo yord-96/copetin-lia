@@ -323,3 +323,125 @@ button.lincoln-commercial-metric-card.is-selected {
 .lincoln-contract-document-modal.is-server-pdf{width:min(1180px,calc(100vw - 2rem));height:calc(100vh - 2rem)}.lincoln-contract-document-scroll.is-pdf-viewer{display:grid;min-height:0;padding:.75rem;background:#dedbd9}.lincoln-server-document-frame{width:100%;height:100%;min-height:680px;border:0;border-radius:.4rem;background:#fff}.lincoln-document-loading{display:grid;place-items:center;align-content:center;gap:.35rem;min-height:420px;color:#5e504c;text-align:center}.lincoln-document-loading strong{font-size:1rem}.lincoln-document-loading span{color:#8c7b75;font-size:.75rem}.lincoln-contract-document-scroll .lincoln-commercial-error{display:grid;gap:.3rem;align-self:start;margin:1rem}.lincoln-contract-document-scroll .lincoln-commercial-error span{font-size:.75rem}
 
 @media(max-width:900px){.lincoln-commercial-detail-grid{grid-template-columns:1fr 1fr}.lincoln-commercial-money-cards{grid-template-columns:1fr 1fr}}@media(max-width:680px){.lincoln-commercial-detail-backdrop{padding:.4rem}.lincoln-commercial-detail-modal{width:100%;height:calc(100vh - .8rem)}.lincoln-commercial-detail-head{padding:.8rem}.lincoln-commercial-detail-head>div:last-child{align-items:flex-end;flex-direction:column-reverse}.lincoln-commercial-detail-tabs{padding:.5rem .7rem}.lincoln-commercial-detail-body{padding:.7rem}.lincoln-commercial-detail-grid,.lincoln-commercial-money-cards{grid-template-columns:1fr}.lincoln-commercial-detail-callout,.lincoln-commercial-document-row{align-items:flex-start;flex-direction:column}.lincoln-commercial-detail-footer{align-items:stretch;flex-direction:column}.lincoln-commercial-detail-footer>div{display:grid;grid-template-columns:1fr 1fr}.lincoln-commercial-menu{position:fixed;right:1rem;left:1rem;top:auto;bottom:1rem;width:auto}.lincoln-server-document-frame{min-height:70vh}}
+
+/* ================================================================
+   MENÚ CONTEXTUAL FLOTANTE · SIN RECORTE POR LA TABLA
+   Se renderiza en document.body para quedar por encima del scroll.
+   ================================================================ */
+.lincoln-commercial-dots.is-active{
+  border-color:#b98b80!important;
+  background:#fff4f0!important;
+  color:#7a121b!important;
+  box-shadow:0 0 0 3px rgba(122,18,27,.07);
+}
+
+.lincoln-commercial-menu.lincoln-commercial-menu-portal{
+  position:fixed!important;
+  z-index:10080!important;
+  right:auto!important;
+  bottom:auto!important;
+  width:220px!important;
+  max-width:calc(100vw - 24px);
+  display:grid;
+  gap:2px;
+  padding:8px;
+  overflow:auto;
+  max-height:calc(100vh - 24px);
+  border:1px solid rgba(113,72,64,.18);
+  border-radius:14px;
+  background:rgba(255,255,255,.985);
+  box-shadow:
+    0 22px 55px rgba(53,31,28,.18),
+    0 5px 14px rgba(53,31,28,.08);
+  backdrop-filter:blur(10px);
+  transform-origin:top right;
+  animation:lincoln-commercial-menu-in .14s ease-out;
+}
+
+.lincoln-commercial-menu-portal .lincoln-commercial-menu-title{
+  display:grid;
+  gap:2px;
+  margin:0 2px 5px;
+  padding:7px 8px 9px;
+  border-bottom:1px solid #eee3de;
+}
+
+.lincoln-commercial-menu-portal .lincoln-commercial-menu-title strong{
+  color:#3d2527;
+  font-size:.72rem;
+  line-height:1.2;
+}
+
+.lincoln-commercial-menu-portal .lincoln-commercial-menu-title span{
+  color:#9a8179;
+  font-size:.61rem;
+  line-height:1.25;
+}
+
+.lincoln-commercial-menu-portal button{
+  width:100%;
+  min-height:38px!important;
+  display:flex;
+  align-items:center;
+  border:0!important;
+  border-radius:9px!important;
+  padding:0 11px!important;
+  background:transparent!important;
+  color:#493936!important;
+  font:inherit;
+  font-size:.72rem!important;
+  font-weight:750!important;
+  text-align:left;
+  cursor:pointer;
+  transition:background .12s ease,color .12s ease,transform .12s ease;
+}
+
+.lincoln-commercial-menu-portal button:hover{
+  background:#fff2ee!important;
+  color:#7b151e!important;
+}
+
+.lincoln-commercial-menu-portal button:active{
+  transform:translateY(1px);
+}
+
+.lincoln-commercial-menu-portal button.is-emphasis{
+  background:#fff8f5!important;
+  color:#7b121b!important;
+  font-weight:900!important;
+}
+
+.lincoln-commercial-menu-portal button.is-emphasis:hover{
+  background:#fce9e4!important;
+}
+
+.lincoln-commercial-menu-portal button.is-danger{
+  margin-top:4px;
+  border-top:1px solid #f1e4df!important;
+  border-radius:0 0 9px 9px!important;
+  color:#b13b37!important;
+}
+
+.lincoln-commercial-menu-portal button.is-danger:hover{
+  background:#fff0ef!important;
+  color:#9f2726!important;
+}
+
+@keyframes lincoln-commercial-menu-in{
+  from{opacity:0;transform:translateY(-4px) scale(.985)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+@media(max-width:680px){
+  .lincoln-commercial-menu.lincoln-commercial-menu-portal{
+    left:12px!important;
+    right:12px!important;
+    top:auto!important;
+    bottom:12px!important;
+    width:auto!important;
+    max-width:none;
+    border-radius:16px;
+    box-shadow:0 24px 70px rgba(46,24,24,.24);
+  }
+}
+
