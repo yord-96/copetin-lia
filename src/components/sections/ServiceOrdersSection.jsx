@@ -4800,15 +4800,35 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   }, [currentStep, modalOpen]);
 
   const draftAvailabilityPeriod = useMemo(
-    () => buildAvailabilityPeriod({
-      deliveryDate: draft.deliveryDate || draft.eventDate,
-      deliveryWindowStart: draft.deliveryWindowStart || draft.eventTime,
-      pickupDate: draft.pickupDateMode === 'coordinate' ? draft.eventDate : draft.pickupDate || draft.eventDate,
-      pickupWindowEnd: draft.pickupTimeMode === 'coordinate' ? '23:59' : draft.pickupWindowEnd || draft.eventTime,
-      eventDate: draft.eventDate,
-      eventTime: draft.eventTime,
-    }),
+    () => {
+      // En el paso Items todavía no se definió la logística del nuevo documento.
+      // La disponibilidad que se muestra aquí debe responder exclusivamente a la
+      // FECHA DEL EVENTO visible en pantalla; usar un pickupDate heredado/oculto
+      // puede ampliar el rango varias semanas y descontar contratos posteriores.
+      if (currentStep === 2) {
+        return buildAvailabilityPeriod({
+          deliveryDate: draft.eventDate,
+          deliveryWindowStart: '00:00',
+          pickupDate: draft.eventDate,
+          pickupWindowEnd: '23:59',
+          eventDate: draft.eventDate,
+          eventTime: draft.eventTime,
+        });
+      }
+
+      // Desde Logística/Resumen sí se valida el período operativo completo,
+      // porque para entonces entrega y recojo ya son datos explícitos del usuario.
+      return buildAvailabilityPeriod({
+        deliveryDate: draft.deliveryDate || draft.eventDate,
+        deliveryWindowStart: draft.deliveryWindowStart || draft.eventTime,
+        pickupDate: draft.pickupDateMode === 'coordinate' ? draft.eventDate : draft.pickupDate || draft.eventDate,
+        pickupWindowEnd: draft.pickupTimeMode === 'coordinate' ? '23:59' : draft.pickupWindowEnd || draft.eventTime,
+        eventDate: draft.eventDate,
+        eventTime: draft.eventTime,
+      });
+    },
     [
+      currentStep,
       draft.deliveryDate,
       draft.deliveryWindowStart,
       draft.eventDate,
