@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import AttendanceSection from './AttendanceSection';
+import SystemResetPanel from '../common/SystemResetPanel';
 import LincolnAgenda from '../lincoln/agenda/LincolnAgenda';
 import LincolnSettlements from '../lincoln/settlements/LincolnSettlements';
 import LincolnReports from '../lincoln/reports/LincolnReports';
@@ -909,6 +910,8 @@ function LinconWorkspaceSection({
   availableCompanies = ['lincoln'],
   attendanceProps = {},
   onOpenAttendance,
+  userPresence = [],
+  onPublishUpdateNotice,
   onSwitchWorkspace,
   onLogout,
 }) {
@@ -918,6 +921,7 @@ function LinconWorkspaceSection({
   const [modal, setModal] = useState(null);
   const [economicEventId, setEconomicEventId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const userName = currentUser?.fullName ?? currentUser?.name ?? 'Usuario Lincoln';
   const userInitials = userName.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'US';
   const snapshot = databaseStatus.snapshot;
@@ -948,7 +952,35 @@ function LinconWorkspaceSection({
     if (viewId === 'asistencia') onOpenAttendance?.();
   };
 
-  const actor = { id: currentUser?.id ?? null, name: userName };
+  const actor = {
+    id: currentUser?.id ?? null,
+    name: userName,
+    role: currentUser?.role ?? '',
+  };
+  const canResetLincoln = String(currentUser?.role ?? '').trim().toLowerCase() === 'developer';
+
+  const verifyLincolnResetAccess = ({ code }) => api.lincoln.verifyResetAccess({ code, actor });
+
+  const analyzeLincolnReset = ({ code, modules }) => api.lincoln.analyzeReset({ code, modules, actor });
+
+  const executeLincolnReset = async ({ code, modules, confirmation, observations }) => {
+    const response = await api.lincoln.executeReset({
+      code,
+      modules,
+      confirmation,
+      observations,
+      revision: snapshot?.revision,
+      actor,
+    });
+    await loadLincoln();
+    return response;
+  };
+
+  const exportLincolnDatabase = ({ code, observations }) => api.lincoln.exportDatabase({
+    code,
+    observations,
+    actor,
+  });
 
   const saveRecord = async (collection, form) => {
     if (!snapshot?.revision) return;
@@ -1152,6 +1184,17 @@ function LinconWorkspaceSection({
         onOpenDocument={() => setModal({ mode: 'contractDocument', record: modal.record })}
       /> : null}
       {modal && !['payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {isResetDialogOpen ? (
+        <SystemResetPanel
+          onClose={() => setIsResetDialogOpen(false)}
+          onVerify={verifyLincolnResetAccess}
+          onAnalyze={analyzeLincolnReset}
+          onExecute={executeLincolnReset}
+          onExportDatabase={exportLincolnDatabase}
+          companyName="Centro de Eventos Lincoln"
+          databaseFilePrefix="lincoln"
+        />
+      ) : null}
     </>
   );
 
@@ -1171,6 +1214,10 @@ function LinconWorkspaceSection({
       onSwitchWorkspace={onSwitchWorkspace}
       onReload={() => void loadLincoln()}
       onLogout={onLogout}
+      canReset={canResetLincoln}
+      userPresence={userPresence}
+      onOpenResetDialog={() => setIsResetDialogOpen(true)}
+      onPublishUpdateNotice={onPublishUpdateNotice}
       onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
       onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
       overlay={overlay}

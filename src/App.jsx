@@ -919,6 +919,8 @@ function AdminApp() {
             onCreateRecord: canMarkAttendance ? controller.handleCreateAttendanceRecord : undefined,
           }}
           onOpenAttendance={() => controller.setActiveTab('asistencia')}
+          userPresence={controller.userPresence}
+          onPublishUpdateNotice={isDeveloper(controller.currentUser) ? controller.handlePublishUpdateNotice : undefined}
           onSwitchWorkspace={handleDeveloperCompanySelect}
           onLogout={controller.handleLogout}
         />

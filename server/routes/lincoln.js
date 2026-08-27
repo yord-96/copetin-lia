@@ -7,6 +7,14 @@ import { getLincolnClientsOverview } from '../services/lincoln/lincolnClientsSer
 import { getLincolnRoomsOverview } from '../services/lincoln/lincolnRoomsService.js';
 import { getLincolnPackagesOverview } from '../services/lincoln/lincolnPackagesService.js';
 import { buildLincolnContractDocumentHtml, buildLincolnContractPdfFileName } from '../services/lincoln/lincolnContractDocumentService.js';
+import {
+  LINCOLN_RESET_CODE,
+  LINCOLN_RESET_MODULES,
+  analyzeLincolnReset,
+  applyLincolnReset,
+  assertLincolnAdminAccess,
+  buildLincolnDatabaseBackup,
+} from '../services/lincoln/lincolnAdminService.js';
 import { renderHtmlDocumentToPdf } from '../storage/documentPdfRenderer.js';
 import {
   convertLincolnReservationToEvent,
@@ -24,6 +32,7 @@ import {
 
 const router = Router();
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
+const lincolnResetSecurityCode = String(process.env.LINCOLN_RESET_SECURITY_CODE ?? LINCOLN_RESET_CODE).trim() || LINCOLN_RESET_CODE;
 
 router.use('/__lincoln_db', (req, res, next) => {
   if (!internalKey) {
@@ -45,6 +54,7 @@ router.use('/__lincoln_db', (req, res, next) => {
 const actorFromRequest = (req) => ({
   id: String(req.body?.actor?.id ?? req.get('X-User-Id') ?? '').trim() || null,
   name: String(req.body?.actor?.name ?? req.get('X-User-Name') ?? '').trim() || null,
+  role: String(req.body?.actor?.role ?? req.get('X-User-Role') ?? '').trim() || null,
 });
 
 const handleLincolnMutationError = (error, res, next) => {
@@ -56,12 +66,81 @@ const handleLincolnMutationError = (error, res, next) => {
     });
     return;
   }
-  if (error?.statusCode === 400 || error?.statusCode === 404) {
+  if ([400, 403, 404].includes(error?.statusCode)) {
     res.status(error.statusCode).json({ error: error.message, code: error.code });
     return;
   }
   next(error);
 };
+
+const requireLincolnAdmin = (req) => {
+  const actor = actorFromRequest(req);
+  assertLincolnAdminAccess({ code: req.body?.code, actor, expectedCode: lincolnResetSecurityCode });
+  return actor;
+};
+
+router.post('/__lincoln_db/admin/reset/verify', async (req, res, next) => {
+  try {
+    requireLincolnAdmin(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ ok: true, company: 'lincoln', modules: LINCOLN_RESET_MODULES.map(({ collections: _collections, ...module }) => module) });
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
+
+router.post('/__lincoln_db/admin/reset/analyze', async (req, res, next) => {
+  try {
+    requireLincolnAdmin(req);
+    const snapshot = await getLincolnStateSnapshot();
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(analyzeLincolnReset(snapshot.state, req.body?.modules));
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
+
+router.post('/__lincoln_db/admin/reset/execute', async (req, res, next) => {
+  try {
+    const actor = requireLincolnAdmin(req);
+    const confirmation = String(req.body?.confirmation ?? '').trim().toUpperCase();
+    const requiresFactoryWord = Array.isArray(req.body?.modules) && req.body.modules.includes('factory_reset');
+    if ((requiresFactoryWord && confirmation !== 'RESET') || (!requiresFactoryWord && !['CONFIRMAR', 'RESET'].includes(confirmation))) {
+      const error = new Error(requiresFactoryWord ? 'Escribe RESET para confirmar.' : 'Escribe CONFIRMAR o RESET para confirmar.');
+      error.statusCode = 400;
+      error.code = 'LINCOLN_RESET_CONFIRMATION_INVALID';
+      throw error;
+    }
+    const snapshot = await getLincolnStateSnapshot();
+    const result = applyLincolnReset({
+      state: snapshot.state,
+      moduleIds: req.body?.modules,
+      actor,
+      observations: req.body?.observations,
+    });
+    const saved = await replaceLincolnStateSnapshot(result.nextState, req.body?.revision ?? snapshot.revision);
+    res.json({ ok: true, ...saved, analysis: result.analysis, deletedTotal: result.deletedTotal, log: result.log });
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
+
+router.post('/__lincoln_db/admin/database/export', async (req, res, next) => {
+  try {
+    const actor = requireLincolnAdmin(req);
+    const snapshot = await getLincolnStateSnapshot();
+    const backup = buildLincolnDatabaseBackup({ snapshot, actor });
+    const stamp = backup.exportedAt.replace(/[:.]/g, '-');
+    const body = JSON.stringify(backup, null, 2);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="lincoln-base-datos-${stamp}.json"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Lincoln-Revision', String(snapshot.revision ?? ''));
+    res.send(body);
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
 
 router.get('/__lincoln_db/commercial', async (req, res, next) => {
   try {

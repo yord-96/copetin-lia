@@ -29,7 +29,16 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDatabase, onImportDatabase }) {
+function SystemResetPanel({
+  onClose,
+  onVerify,
+  onAnalyze,
+  onExecute,
+  onExportDatabase,
+  onImportDatabase,
+  companyName = 'El Copetín',
+  databaseFilePrefix = 'copetin',
+}) {
   const [code, setCode] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [modules, setModules] = useState([]);
@@ -130,12 +139,15 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
         downloadBlob(response.blob, response.filename);
       } else {
         const exportedAt = String(response?.exportedAt ?? new Date().toISOString()).replace(/[:.]/g, '-');
-        downloadJson(response, `copetin-base-datos-${exportedAt}.json`);
+        downloadJson(response, `${databaseFilePrefix}-base-datos-${exportedAt}.json`);
       }
+      const exportedTotal = Number(response?.summary?.total);
       setDbTransferResult({
         tone: 'success',
         title: 'Base descargada',
-        message: `Registros incluidos: ${response?.summary?.total ?? 0}. Usa este archivo para importarlo en tu sistema local.`,
+        message: Number.isFinite(exportedTotal)
+          ? `Registros incluidos: ${exportedTotal}. Conserva este archivo como respaldo.`
+          : `Respaldo independiente de ${companyName} descargado correctamente.`,
       });
     } catch (requestError) {
       setError(requestError.message || 'No se pudo descargar la base de datos.');
@@ -186,8 +198,8 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
         <header className="system-reset-head">
           <div>
             <span>Herramienta developer</span>
-            <h3>Panel de Limpieza</h3>
-            <p>Limpia datos de prueba sin borrar inventario, clientes, personal ni usuarios.</p>
+            <h3>Panel de Limpieza · {companyName}</h3>
+            <p>Administra y respalda únicamente los datos de {companyName}.</p>
           </div>
           <button type="button" className="orders-modal-close" onClick={onClose}>x</button>
         </header>
@@ -223,14 +235,14 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
           <>
             <div className="system-reset-danger">
               <strong>Zona critica</strong>
-              <p>El backend volvera a validar rol, contrasena y confirmacion antes de borrar. Esta limpieza conserva catalogo de inventario, clientes, personal, usuarios y auditoria.</p>
+              <p>El backend volverá a validar rol, contraseña y confirmación antes de borrar. Cada módulo indica exactamente qué información de {companyName} será afectada.</p>
             </div>
 
             <section className="system-database-panel">
               <div className="system-database-copy">
                 <span>Base de datos developer</span>
-                <strong>Exportar e importar respaldo completo</strong>
-                <p>Descarga una copia antes de limpiar. La importacion reemplaza la base activa y conserva el developer actual para no perder acceso.</p>
+                <strong>{onImportDatabase ? 'Exportar e importar respaldo completo' : 'Descargar respaldo completo'}</strong>
+                <p>{onImportDatabase ? 'Descarga una copia antes de limpiar. La importación reemplaza la base activa.' : `La descarga contiene exclusivamente la base independiente de ${companyName}.`}</p>
               </div>
               <div className="system-database-actions">
                 <button
@@ -241,7 +253,7 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
                 >
                   {loadingAction === 'export' ? 'Descargando...' : 'Descargar base'}
                 </button>
-                <label className="system-database-file">
+                {onImportDatabase ? <label className="system-database-file">
                   <input
                     type="file"
                     accept="application/json,.json"
@@ -249,21 +261,21 @@ function SystemResetPanel({ onClose, onVerify, onAnalyze, onExecute, onExportDat
                     disabled={loadingAction === 'import'}
                   />
                   <span>{importFile?.name ?? 'Seleccionar JSON'}</span>
-                </label>
-                <input
+                </label> : null}
+                {onImportDatabase ? <input
                   value={importConfirmation}
                   onChange={(event) => setImportConfirmation(event.target.value)}
                   placeholder="Escribe IMPORTAR"
                   disabled={loadingAction === 'import'}
-                />
-                <button
+                /> : null}
+                {onImportDatabase ? <button
                   type="button"
                   className="danger-button"
                   onClick={handleImportDatabase}
                   disabled={!canImportDatabase || loadingAction === 'import'}
                 >
                   {loadingAction === 'import' ? 'Importando...' : 'Importar base'}
-                </button>
+                </button> : null}
               </div>
               {dbTransferResult ? (
                 <div className={`system-database-result ${dbTransferResult.tone}`}>

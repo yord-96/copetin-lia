@@ -1,12 +1,11 @@
 import { lincolnMobilePrimaryIds, lincolnSidebarItems } from '../config/navigation';
 import LinconIcon from '../shared/LinconIcon';
+import TopBar from '../../layout/TopBar';
 
 export default function LincolnWorkspaceLayout({
   activeView,
   activeItem,
-  title,
   databaseStatus,
-  snapshot,
   currentUser,
   userName,
   userInitials,
@@ -14,13 +13,19 @@ export default function LincolnWorkspaceLayout({
   isMobileMenuOpen,
   onOpenView,
   onSwitchWorkspace,
-  onReload,
   onLogout,
+  canReset,
+  userPresence,
+  onOpenResetDialog,
+  onPublishUpdateNotice,
   onOpenMobileMenu,
   onCloseMobileMenu,
   children,
   overlay,
 }) {
+  const companies = Array.isArray(availableCompanies) ? availableCompanies : ['lincoln'];
+  const presence = Array.isArray(userPresence) ? userPresence : [];
+
   return (
     <div className={`lincon-shell ${activeView !== 'panel' ? 'lincon-shell--agenda' : ''}`}>
       <aside className="lincon-sidebar">
@@ -34,7 +39,7 @@ export default function LincolnWorkspaceLayout({
             </button>
           ))}
         </nav>
-        {availableCompanies.includes('copetin') ? <div className="lincon-switcher"><span>Espacios habilitados</span><p>Selecciona tu área de trabajo</p><div><button type="button" onClick={() => onSwitchWorkspace('copetin')}>Copetín</button><button type="button" className="is-current">Lincoln</button></div></div> : null}
+        {companies.includes('copetin') ? <div className="lincon-switcher"><span>Espacios habilitados</span><p>Selecciona tu área de trabajo</p><div><button type="button" onClick={() => onSwitchWorkspace('copetin')}>Copetín</button><button type="button" className="is-current">Lincoln</button></div></div> : null}
       </aside>
 
       <main className="lincon-main">
@@ -43,13 +48,17 @@ export default function LincolnWorkspaceLayout({
           <div className="lincon-mobile-heading"><span>{activeItem.label}</span><small className={databaseStatus.error ? 'has-error' : ''}><i />{databaseStatus.loading ? 'Conectando' : databaseStatus.error ? 'Sin conexión' : 'Base Lincoln'}</small></div>
           <button type="button" className="lincon-mobile-account" onClick={onOpenMobileMenu} aria-label="Abrir menú">{userInitials}</button>
         </header>
-        <header className="lincon-topbar">
-          <div className="lincon-topbar-brand"><LinconIcon name="home" /><strong>{title}</strong></div>
-          <div className={`lincon-topbar-status ${databaseStatus.error ? 'has-error' : ''}`}><span /><div><strong>{databaseStatus.loading ? 'Conectando base Lincoln' : databaseStatus.error ? 'Base Lincoln no disponible' : 'Base Lincoln separada'}</strong><small>{databaseStatus.error || (snapshot ? `Revisión ${snapshot.version}` : 'Sin mezclar datos con El Copetín')}</small></div></div>
-          <button type="button" className="lincon-icon-button" aria-label="Recargar Lincoln" onClick={onReload}><LinconIcon name="bell" /></button>
-          <div className="lincon-account"><div><strong>{userName}</strong><small>{currentUser?.role ?? 'Usuario'}</small></div><span>{userInitials}</span></div>
-          <button type="button" className="lincon-logout" onClick={onLogout}>Salir</button>
-        </header>
+        <TopBar
+          variant="lincoln"
+          currentUser={currentUser}
+          onLogout={onLogout}
+          canReset={canReset}
+          userPresence={presence}
+          activeTab={`lincoln_${activeView}`}
+          onOpenResetDialog={onOpenResetDialog}
+          onPublishUpdateNotice={onPublishUpdateNotice}
+          onSwitchCompany={companies.includes('copetin') ? () => onSwitchWorkspace('copetin') : undefined}
+        />
         {children}
       </main>
 
@@ -70,7 +79,11 @@ export default function LincolnWorkspaceLayout({
                 <button key={item.id} type="button" disabled={item.disabled} onClick={() => onOpenView(item.id)}><LinconIcon name={item.icon} /><span>{item.label}</span><small>{item.disabled ? 'Próxima fase' : 'Abrir'}</small></button>
               ))}
             </div>
-            <div className="lincon-mobile-menu-actions">{availableCompanies.includes('copetin') ? <button type="button" onClick={() => onSwitchWorkspace('copetin')}><LinconIcon name="home" /> Ir a El Copetín</button> : null}<button type="button" className="is-logout" onClick={onLogout}>Salir de la sesión</button></div>
+            <div className="lincon-mobile-menu-actions">
+              {canReset ? <button type="button" onClick={onOpenResetDialog}><LinconIcon name="panel" /> Panel Reset Lincoln</button> : null}
+              {companies.includes('copetin') ? <button type="button" onClick={() => onSwitchWorkspace('copetin')}><LinconIcon name="home" /> Ir a El Copetín</button> : null}
+              <button type="button" className="is-logout" onClick={onLogout}>Salir de la sesión</button>
+            </div>
           </section>
         </div>
       ) : null}

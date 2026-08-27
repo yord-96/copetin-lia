@@ -48,6 +48,17 @@ const PAGE_LABELS = {
   contabilidad_caja_chica: 'Caja Chica',
   usuarios: 'Usuarios',
   categorias: 'Ajustes',
+  lincoln_panel: 'Panel Lincoln',
+  lincoln_agenda: 'Agenda Lincoln',
+  lincoln_comercial: 'Reservas y Contratos',
+  lincoln_reuniones: 'Reuniones Lincoln',
+  lincoln_clientes: 'Clientes Lincoln',
+  lincoln_salones: 'Salones Lincoln',
+  lincoln_paquetes: 'Paquetes Lincoln',
+  lincoln_caja: 'Caja Lincoln',
+  lincoln_rendiciones: 'Rendiciones Lincoln',
+  lincoln_reportes: 'Reportes Lincoln',
+  lincoln_asistencia: 'Asistencia',
 };
 
 const shortName = (name) => String(name ?? 'Usuario').split(' ').filter(Boolean).slice(0, 2).join(' ') || 'Usuario';
@@ -78,6 +89,7 @@ function TopBar({
   activeTab = '',
   onPublishUpdateNotice,
   onSwitchCompany,
+  variant = '',
 }) {
   const [isPublishingNotice, setIsPublishingNotice] = useState(false);
   const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
@@ -94,7 +106,7 @@ function TopBar({
     }
   };
   return (
-    <header className="topbar">
+    <header className={`topbar${variant ? ` topbar--${variant}` : ''}`}>
       <div className="topbar-inner">
         <div className="mobile-top-summary">
           <span>{PAGE_LABELS[activeTab] ?? 'Sistema'}</span>
@@ -135,7 +147,7 @@ function TopBar({
               {activeUsersHere.length > 0 ? <small>{activeUsersHere.length} aqui</small> : null}
             </div>
           </div>
-          {canReset ? (
+          {canReset && onPublishUpdateNotice ? (
             <button
               type="button"
               className="admin-update-button topbar-utility-action topbar-utility-action--notice"
@@ -157,7 +169,7 @@ function TopBar({
               type="button"
               className="admin-reset-button"
               onClick={onOpenResetDialog}
-              title="Panel de Reset del Sistema"
+              title={variant === 'lincoln' ? 'Panel de Reset de Lincoln' : 'Panel de Reset del Sistema'}
             >
               Panel Reset
             </button>

@@ -3321,3 +3321,72 @@
 
 /* Estilos antes inline del workspace Lincoln. */
 .lincoln-content{padding:22px;display:grid;gap:18px}.lincoln-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.lincoln-kpi{background:#fff;border:1px solid #e3e7e5;border-radius:16px;padding:18px;display:flex;gap:13px;align-items:flex-start;box-shadow:0 8px 24px rgba(24,55,39,.05)}.lincoln-kpi-icon{width:38px;height:38px;border-radius:11px;background:#edf5ef;display:grid;place-items:center}.lincoln-kpi-icon svg{width:20px;fill:none;stroke:#326348;stroke-width:1.7}.lincoln-kpi small,.lincoln-card header small{display:block;color:#789083;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.08em}.lincoln-kpi strong{display:block;font-size:22px;color:#173a29;margin:3px 0}.lincoln-kpi p{margin:0;color:#7a8580;font-size:12px}.lincoln-two-cols{display:grid;grid-template-columns:1.3fr .7fr;gap:16px}.lincoln-card{background:#fff;border:1px solid #e0e6e2;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(24,55,39,.05)}.lincoln-card>header{display:flex;align-items:center;justify-content:space-between;padding:17px 18px;border-bottom:1px solid #edf0ee}.lincoln-card h2{margin:2px 0 0;color:#173a29;font-size:18px}.lincoln-card button,.lincoln-empty button,.lincoln-modal footer button,.lincoln-mini-action{border:0;border-radius:9px;background:#276342;color:#fff;padding:9px 13px;font-weight:750;cursor:pointer}.lincoln-list-row{width:100%;display:grid!important;grid-template-columns:1fr 1.4fr 1fr;text-align:left!important;background:#fff!important;color:#233!important;border:0!important;border-bottom:1px solid #edf0ee!important;border-radius:0!important;padding:13px 18px!important}.lincoln-list-row span{display:grid;gap:2px}.lincoln-list-row small{color:#7a8580}.lincoln-health-list{display:grid}.lincoln-health-list span{display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid #edf0ee}.lincoln-health-list strong{margin-left:auto}.lincoln-health-list i{width:9px;height:9px;border-radius:50%;background:#d2d7d4}.lincoln-health-list i.is-ok{background:#2a9d61}.lincoln-empty{padding:42px 20px;text-align:center;color:#6c7972}.lincoln-empty strong{display:block;color:#284236;font-size:17px}.lincoln-empty p{margin:6px auto 14px;max-width:520px}.lincoln-table-wrap{overflow:auto}.lincoln-data-table{width:100%;border-collapse:collapse;min-width:780px}.lincoln-data-table th{background:#f5f7f6;color:#6c7c74;text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:left;padding:11px 13px}.lincoln-data-table td{padding:12px 13px;border-top:1px solid #edf0ee;color:#314038;font-size:13px;vertical-align:middle}.lincoln-data-table td strong{display:block;color:#1c3429}.lincoln-data-table td small{display:block;color:#7b8881;margin-top:2px}.lincoln-data-table tr.is-clickable{cursor:pointer}.lincoln-data-table tr.is-clickable:hover{background:#f8fbf9}.lincoln-status-pill{display:inline-flex;padding:5px 8px;border-radius:999px;background:#eef4f0;color:#326348;font-size:11px;font-weight:800;white-space:nowrap}.lincoln-filters{display:flex;gap:10px;padding:14px 18px;background:#fbfcfb}.lincoln-filters input,.lincoln-filters select{border:1px solid #dbe2de;border-radius:9px;padding:9px 11px;background:#fff;min-width:180px}.lincoln-mini-action{font-size:11px;padding:6px 8px!important}.lincoln-modal-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(12,26,19,.58);display:grid;place-items:center;padding:20px}.lincoln-modal{width:min(760px,96vw);max-height:92vh;background:#fff;border-radius:18px;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr) auto;box-shadow:0 28px 70px rgba(0,0,0,.28)}.lincoln-modal>header{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid #e8ece9}.lincoln-modal h2{margin:2px 0 0;color:#173a29}.lincoln-modal>header small{color:#74857b}.lincoln-modal>header button{border:0;background:transparent;font-size:28px;color:#718078;cursor:pointer}.lincoln-modal-body{padding:18px 20px;overflow:auto;display:grid;grid-template-columns:1fr 1fr;gap:13px}.lincoln-form-field{display:grid;gap:6px}.lincoln-form-field.is-wide{grid-column:1/-1}.lincoln-form-field>span{font-size:11px;font-weight:800;color:#54675d;text-transform:uppercase}.lincoln-form-field input,.lincoln-form-field select,.lincoln-form-field textarea{width:100%;box-sizing:border-box;border:1px solid #d9e1dc;border-radius:9px;padding:10px 11px;font:inherit}.lincoln-form-field textarea{min-height:84px;resize:vertical}.lincoln-modal>footer{display:flex;justify-content:flex-end;gap:9px;padding:14px 20px;border-top:1px solid #e8ece9}.lincoln-modal footer .is-secondary{background:#eef2ef;color:#3b5045}.lincoln-modal footer button:disabled{opacity:.6}.lincon-nav button:disabled{opacity:.38;cursor:not-allowed}.lincon-nav button:disabled::after{content:'Próx.';margin-left:auto;font-size:9px}.lincoln-db-error{margin:14px 22px 0;padding:10px 12px;border-radius:10px;background:#fff0ef;color:#a52a24;border:1px solid #f3cbc8}.lincoln-loading{padding:40px;text-align:center;color:#6e7b74}.lincoln-header-actions{display:flex;gap:8px;align-items:center}.lincoln-header-actions .is-secondary{background:#eef2ef;color:#385046}.lincoln-event-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:16px 18px;background:#fbfcfb;border-bottom:1px solid #edf0ee}.lincoln-event-summary>div{padding:12px;border:1px solid #e2e8e4;border-radius:10px;background:#fff}.lincoln-event-summary small{display:block;color:#75837b;text-transform:uppercase;font-size:9px;font-weight:800}.lincoln-event-summary strong{display:block;margin-top:4px;color:#173a29;font-size:17px}.lincoln-event-summary .has-warning strong{color:#a8661d}.lincoln-event-summary .has-ok strong{color:#2a7d4e}.lincoln-inline-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;background:#fff8e9;border-bottom:1px solid #f2e4bf;color:#76521d}.lincoln-inline-actions button{border:0;border-radius:8px;background:#9b6a24;color:#fff;padding:8px 11px;font-weight:800;cursor:pointer}.lincoln-link-action{border:0!important;background:transparent!important;color:#276342!important;padding:0!important;font-weight:800!important;text-decoration:underline;cursor:pointer}.lincoln-danger-action{border:1px solid #efc9c5!important;background:#fff4f2!important;color:#a4362e!important;border-radius:7px!important;padding:5px 7px!important;font-size:10px!important;font-weight:800!important;cursor:pointer}.lincoln-cash-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid #edf0ee;background:#fbfcfb}.lincoln-cash-toolbar .lincoln-filters{padding:0;background:transparent}.lincoln-tabs{display:flex;gap:6px}.lincoln-tabs button{border:1px solid #dbe2de;border-radius:8px;background:#fff;color:#486055;padding:8px 10px;font-weight:800;cursor:pointer}.lincoln-tabs button.is-active{background:#276342;color:#fff;border-color:#276342}.lincoln-movement-pill{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:10px;font-weight:800}.lincoln-movement-pill.is-income{background:#edf7f0;color:#26704a}.lincoln-movement-pill.is-expense{background:#fff0ee;color:#a33d34}.lincoln-agenda-top{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.65fr);gap:16px}.lincoln-calendar-header{gap:14px}.lincoln-calendar-nav{display:flex;gap:6px}.lincoln-calendar-nav button{min-width:38px;padding:8px 11px!important;background:#f3f6f4!important;color:#385046!important}.lincoln-agenda-kpis{display:flex;gap:18px;flex-wrap:wrap;padding:11px 18px;border-bottom:1px solid #edf0ee;background:#fbfcfb}.lincoln-agenda-kpis span{display:flex;align-items:center;gap:7px;color:#65766d;font-size:12px}.lincoln-agenda-kpis strong{color:#173a29;font-size:15px}.lincoln-agenda-kpis i,.lincoln-radar-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}.is-interested{--agenda-accent:#c88a27}.is-reserved{--agenda-accent:#5479b7}.is-contracted{--agenda-accent:#37805a}.lincoln-agenda-kpis i.is-interested,.lincoln-radar-legend i.is-interested{background:#c88a27}.lincoln-agenda-kpis i.is-reserved,.lincoln-radar-legend i.is-reserved{background:#5479b7}.lincoln-agenda-kpis i.is-contracted,.lincoln-radar-legend i.is-contracted{background:#37805a}.lincoln-calendar-weekdays,.lincoln-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.lincoln-calendar-weekdays{padding:8px 12px 0}.lincoln-calendar-weekdays span{text-align:center;color:#809087;font-size:10px;font-weight:800;text-transform:uppercase;padding:7px}.lincoln-calendar-grid{padding:8px 12px 14px;gap:6px}.lincoln-calendar-day{position:relative;min-height:82px!important;padding:8px!important;border:1px solid #e5eae7!important;border-radius:10px!important;background:#fff!important;color:#294238!important;text-align:left!important;display:flex!important;flex-direction:column;align-items:flex-start;justify-content:flex-start}.lincoln-calendar-day:hover{border-color:#c9d8cf!important;background:#f9fbfa!important}.lincoln-calendar-day.is-empty{background:#fafbfa!important;border-style:dashed!important;pointer-events:none}.lincoln-calendar-day.is-today{box-shadow:inset 0 0 0 2px #9f2028}.lincoln-calendar-day.is-selected{background:#fff4f2!important;border-color:#b7444c!important}.lincoln-calendar-day>strong{font-size:13px}.lincoln-calendar-day>small{margin-top:auto;color:#839087;font-size:9px}.lincoln-calendar-markers{display:flex;gap:4px;margin-top:8px}.lincoln-calendar-markers i{width:8px;height:8px;border-radius:50%}.lincoln-calendar-markers i.is-interested{background:#c88a27}.lincoln-calendar-markers i.is-reserved{background:#5479b7}.lincoln-calendar-markers i.is-contracted{background:#37805a}.lincoln-agenda-radar-body{padding:14px 18px 18px}.lincoln-agenda-radar{width:100%;max-height:290px}.lincoln-agenda-radar .radar-grid{fill:none;stroke:#dfe6e2;stroke-width:1}.lincoln-agenda-radar .radar-axis{stroke:#e7ece9;stroke-width:1}.lincoln-agenda-radar text{font-size:9px;fill:#7b8881;font-weight:700}.lincoln-agenda-radar .radar-series{stroke-width:2;fill-opacity:.12}.lincoln-agenda-radar .radar-series.is-interested{stroke:#c88a27;fill:#c88a27}.lincoln-agenda-radar .radar-series.is-reserved{stroke:#5479b7;fill:#5479b7}.lincoln-agenda-radar .radar-series.is-contracted{stroke:#37805a;fill:#37805a}.lincoln-radar-legend{display:grid;gap:8px;border-top:1px solid #edf0ee;padding-top:12px}.lincoln-radar-legend span{display:flex;gap:8px;align-items:center;color:#607068;font-size:11px}.lincoln-radar-legend strong{margin-left:auto;color:#173a29}.lincoln-status-pill.is-interested{background:#fff5df;color:#8d611c}.lincoln-status-pill.is-reserved{background:#edf3ff;color:#49699e}.lincoln-status-pill.is-contracted{background:#edf7f0;color:#2d6b4b}@media(max-width:1200px){.lincoln-agenda-top{grid-template-columns:1fr}.lincoln-agenda-radar-card{display:grid;grid-template-columns:1fr 1fr}.lincoln-agenda-radar-card>header{border-bottom:0;border-right:1px solid #edf0ee}}@media(max-width:1100px){.lincoln-event-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.lincoln-kpi-grid{grid-template-columns:1fr 1fr}.lincoln-two-cols{grid-template-columns:1fr}.lincoln-content{padding:12px}.lincoln-modal-body{grid-template-columns:1fr}.lincoln-form-field.is-wide{grid-column:auto}}@media(max-width:760px){.lincoln-agenda-radar-card{display:block}.lincoln-agenda-radar-card>header{border-right:0;border-bottom:1px solid #edf0ee}.lincoln-calendar-day{min-height:62px!important}.lincoln-calendar-day>small{display:none}.lincoln-agenda-kpis{gap:10px}}@media(max-width:560px){.lincoln-event-summary{grid-template-columns:1fr 1fr}.lincoln-cash-toolbar{display:grid}.lincoln-tabs{overflow:auto}.lincoln-kpi-grid{grid-template-columns:1fr}.lincoln-filters{display:grid}.lincoln-filters input,.lincoln-filters select{min-width:0;width:100%}}
+
+
+/* Cabecera administrativa Lincoln: reutiliza la arquitectura de TopBar de Copetín,
+   pero conserva la identidad guindo/crema y no invade la base visual global. */
+.lincon-shell .topbar--lincoln {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  min-height: 76px;
+  margin: 0 -2rem 1rem;
+  padding: 0.7rem 2rem;
+  border-bottom: 1px solid rgba(126, 20, 31, 0.14);
+  background: rgba(251, 245, 238, 0.96);
+  backdrop-filter: blur(14px);
+}
+
+.lincon-shell .topbar--lincoln .mode-pill-web {
+  border-color: rgba(141, 23, 33, 0.18);
+  background: #fff7f2;
+  color: #8d1721;
+}
+
+.lincon-shell .topbar--lincoln .presence-strip {
+  border-color: rgba(141, 23, 33, 0.14);
+  background: rgba(255, 252, 249, 0.92);
+}
+
+.lincon-shell .topbar--lincoln .presence-summary strong,
+.lincon-shell .topbar--lincoln .presence-session-list b,
+.lincon-shell .topbar--lincoln .user-meta strong {
+  color: #65131b;
+}
+
+.lincon-shell .topbar--lincoln .presence-session-list span.active {
+  border-color: rgba(141, 23, 33, 0.34);
+  background: #fff2ec;
+}
+
+.lincon-shell .topbar--lincoln .presence-session-list::-webkit-scrollbar-thumb {
+  background: #b85b62;
+}
+
+.lincon-shell .topbar--lincoln .admin-reset-button,
+.lincon-shell .topbar--lincoln .topbar-utility-action {
+  border-color: rgba(141, 23, 33, 0.24);
+  color: #7a121b;
+}
+
+.lincon-shell .topbar--lincoln .admin-reset-button:hover,
+.lincon-shell .topbar--lincoln .topbar-utility-action:hover {
+  border-color: rgba(141, 23, 33, 0.42);
+  background: #fff1eb;
+}
+
+.lincon-shell .topbar--lincoln .user-avatar {
+  background: #a5202e;
+  color: #fff;
+}
+
+.lincon-shell .topbar--lincoln .top-logout-button {
+  border-color: rgba(141, 23, 33, 0.2);
+  color: #7a121b;
+}
+
+@media (max-width: 768px) {
+  .lincon-shell .topbar--lincoln {
+    display: none !important;
+  }
+}

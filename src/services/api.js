@@ -1068,6 +1068,54 @@ const fetchLincolnEventReport = ({ eventId }) => fetchLincolnQuery(
   'No se pudo cargar el reporte del evento Lincoln.',
 );
 
+const postLincolnAdmin = async (path, payload, fallback) => {
+  const response = await fetch(getApiUrl(path), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!response.ok) throw await createServerStateError(response, fallback);
+  return response.json();
+};
+
+const verifyLincolnResetAccess = (payload) => postLincolnAdmin(
+  '/__lincoln_db/admin/reset/verify',
+  payload,
+  'No se pudo validar el acceso al Panel Reset de Lincoln.',
+);
+
+const analyzeLincolnReset = (payload) => postLincolnAdmin(
+  '/__lincoln_db/admin/reset/analyze',
+  payload,
+  'No se pudo analizar el reset de Lincoln.',
+);
+
+const executeLincolnReset = (payload) => postLincolnAdmin(
+  '/__lincoln_db/admin/reset/execute',
+  payload,
+  'No se pudo ejecutar el reset de Lincoln.',
+);
+
+const exportLincolnDatabase = async (payload) => {
+  const response = await fetch(getApiUrl('/__lincoln_db/admin/database/export'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo descargar la base independiente de Lincoln.');
+  }
+  const disposition = String(response.headers.get('content-disposition') ?? '');
+  const fileMatch = disposition.match(/filename="?([^";]+)"?/i);
+  return {
+    blob: await response.blob(),
+    filename: fileMatch?.[1] || `lincoln-base-datos-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+    revision: response.headers.get('X-Lincoln-Revision') ?? '',
+  };
+};
+
 const fetchLincolnState = async () => {
   const response = await fetch(getApiUrl('/__lincoln_db'), {
     cache: 'no-store',
@@ -2346,7 +2394,7 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
-    if (path === '/cash/movement' || path.includes('update-receipt')) {
+    if (path === '/cash/movement') {
       await applyDirectCashResultLocally(result);
     }
     const method = path.includes('update-receipt')
@@ -3889,6 +3937,10 @@ export const api = {
     returnGuarantee: (payload) => returnLincolnEventGuarantee(payload),
     createExpense: (payload) => mutateLincolnExpense(payload),
     updateExpense: (payload) => mutateLincolnExpense(payload),
+    verifyResetAccess: (payload) => verifyLincolnResetAccess(payload),
+    analyzeReset: (payload) => analyzeLincolnReset(payload),
+    executeReset: (payload) => executeLincolnReset(payload),
+    exportDatabase: (payload) => exportLincolnDatabase(payload),
   },
   system: {
     verifyResetAccess: (payload) => callBridge('system', 'verifyResetAccess', false, payload),
