@@ -2346,7 +2346,7 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
-    if (path === '/cash/movement') {
+    if (path === '/cash/movement' || path.includes('update-receipt')) {
       await applyDirectCashResultLocally(result);
     }
     const method = path.includes('update-receipt')

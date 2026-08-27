@@ -9964,7 +9964,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       paymentMethod: depositEntry.paymentMethod || 'efectivo',
       paymentAccount: depositEntry.paymentMethod === 'qr' ? depositEntry.paymentAccount || '' : '',
       note: `Del deposito de ${formatBs(depositEntry.amountBs)} se apartaron ${formatBs(amount)} como garantia para ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
-      createdAt: new Date().toISOString(),
+      createdAt: depositEntry.createdAt || new Date().toISOString(),
       createdByName,
       reclassifiedFromPayment: true,
       sourceDepositId: depositEntry.id,

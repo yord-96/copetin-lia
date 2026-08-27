@@ -4507,18 +4507,38 @@ router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next)
       state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
       state.contracts.forEach((contract) => {
         let touched = false;
-        contract.economicLedger = (Array.isArray(contract.economicLedger) ? contract.economicLedger : []).map((entry) => {
+        const linkedDepositIds = new Set();
+        const ledger = Array.isArray(contract.economicLedger) ? contract.economicLedger : [];
+        let nextLedger = ledger.map((entry) => {
           if (String(entry?.cashMovementId ?? '') !== movementId) return entry;
           touched = true;
+          if (entry?.id) linkedDepositIds.add(String(entry.id));
           return {
             ...entry,
             cashReceiptCode: receiptCode,
             createdAt: movement.receiptIssuedAt,
             receiptIssuedAt: movement.receiptIssuedAt,
+            paymentMethod: movement.paymentMethod,
+            paymentAccount: movement.paymentAccount,
             editedAt: now,
             editedByName: editorName,
           };
         });
+        if (linkedDepositIds.size) {
+          nextLedger = nextLedger.map((entry) => {
+            if (!entry?.reclassifiedFromPayment || !linkedDepositIds.has(String(entry?.sourceDepositId ?? ''))) return entry;
+            touched = true;
+            return {
+              ...entry,
+              createdAt: movement.receiptIssuedAt,
+              paymentMethod: movement.paymentMethod,
+              paymentAccount: movement.paymentAccount,
+              editedAt: now,
+              editedByName: editorName,
+            };
+          });
+        }
+        contract.economicLedger = nextLedger;
         if (touched) {
           contract.economicLedgerUpdatedAt = now;
           contract.economicLedgerUpdatedByName = editorName;
@@ -4537,6 +4557,10 @@ router.post('/__copetin_db/cash/update-receipt-metadata', async (req, res, next)
         if (reportMovementId !== movementId) return;
         report.receiptCode = receiptCode;
         report.receiptIssuedAt = movement.receiptIssuedAt;
+        report.paymentMethod = movement.paymentMethod;
+        report.paymentAccount = movement.paymentAccount;
+        report.receiptCustomerName = movement.receiptCustomerName;
+        report.receiptDetail = movement.receiptDetail;
         report.updatedAt = now;
       });
 

@@ -18917,11 +18917,37 @@ const createWebBridge = () => ({
         let updatedContract = null;
         (state.contracts ?? []).forEach((contract) => {
           let touched = false;
-          contract.economicLedger = (contract.economicLedger ?? []).map((entry) => {
+          const linkedDepositIds = new Set();
+          let nextLedger = (contract.economicLedger ?? []).map((entry) => {
             if (String(entry?.cashMovementId ?? '') !== movementId) return entry;
             touched = true;
-            return { ...entry, cashReceiptCode: receiptCode, receiptIssuedAt: movement.receiptIssuedAt, editedAt: now, editedByName };
+            if (entry?.id) linkedDepositIds.add(String(entry.id));
+            return {
+              ...entry,
+              cashReceiptCode: receiptCode,
+              createdAt: movement.receiptIssuedAt,
+              receiptIssuedAt: movement.receiptIssuedAt,
+              paymentMethod: movement.paymentMethod,
+              paymentAccount: movement.paymentAccount,
+              editedAt: now,
+              editedByName,
+            };
           });
+          if (linkedDepositIds.size) {
+            nextLedger = nextLedger.map((entry) => {
+              if (!entry?.reclassifiedFromPayment || !linkedDepositIds.has(String(entry?.sourceDepositId ?? ''))) return entry;
+              touched = true;
+              return {
+                ...entry,
+                createdAt: movement.receiptIssuedAt,
+                paymentMethod: movement.paymentMethod,
+                paymentAccount: movement.paymentAccount,
+                editedAt: now,
+                editedByName,
+              };
+            });
+          }
+          contract.economicLedger = nextLedger;
           if (touched) {
             contract.economicLedgerUpdatedAt = now;
             contract.economicLedgerUpdatedByName = editedByName;
