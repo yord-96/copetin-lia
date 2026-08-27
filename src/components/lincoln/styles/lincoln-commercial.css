@@ -635,6 +635,48 @@ button.lincoln-commercial-metric-card.is-selected::after{
   background:var(--lincoln-cream);
 }
 
+.lincoln-commercial-formalization{
+  width:calc(100% - 1.6rem);
+  min-height:4.25rem;
+  margin:0 .8rem .72rem;
+  display:grid;
+  grid-template-columns:2.4rem minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:.75rem;
+  padding:.7rem .85rem;
+  border:1px solid #bfd7d1;
+  border-radius:.82rem;
+  background:linear-gradient(105deg,#f4faf8,#e8f3f0);
+  color:var(--lincoln-petrol);
+  text-align:left;
+  cursor:pointer;
+  transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;
+}
+
+.lincoln-commercial-formalization:hover,
+.lincoln-commercial-formalization.is-active{
+  border-color:var(--lincoln-petrol);
+  box-shadow:0 7px 18px rgba(36,80,77,.12);
+  transform:translateY(-1px);
+}
+
+.lincoln-commercial-formalization > span{
+  width:2.4rem;
+  height:2.4rem;
+  display:grid;
+  place-items:center;
+  border-radius:.65rem;
+  background:var(--lincoln-petrol);
+  color:#fff;
+}
+
+.lincoln-commercial-formalization > div{display:grid;gap:.08rem}
+.lincoln-commercial-formalization small{color:#68847f;font-size:.56rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.lincoln-commercial-formalization strong{font-size:.76rem}
+.lincoln-commercial-formalization p{margin:0;color:#6b7c78;font-size:.64rem}
+.lincoln-commercial-formalization > b{min-width:2rem;color:var(--lincoln-wine);font-size:1.35rem;text-align:center}
+.lincoln-commercial-formalization > em{border-left:1px solid #bed5cf;padding-left:.8rem;color:var(--lincoln-petrol);font-size:.65rem;font-style:normal;font-weight:900}
+
 .lincoln-commercial-filters > label{
   min-height:2.7rem;
   border-color:#dfd5cf;
@@ -715,12 +757,12 @@ button.lincoln-commercial-metric-card.is-selected::after{
 
 .lincoln-commercial-table col.is-code{width:11%}
 .lincoln-commercial-table col.is-date{width:12%}
-.lincoln-commercial-table col.is-client{width:18%}
-.lincoln-commercial-table col.is-event{width:19%}
-.lincoln-commercial-table col.is-guests{width:7%}
+.lincoln-commercial-table col.is-client{width:17%}
+.lincoln-commercial-table col.is-event{width:16%}
+.lincoln-commercial-table col.is-guests{width:6%}
 .lincoln-commercial-table col.is-status{width:10%}
 .lincoln-commercial-table col.is-money{width:8.5%}
-.lincoln-commercial-table col.is-actions{width:7%}
+.lincoln-commercial-table col.is-actions{width:11%}
 
 .lincoln-commercial-table th{
   height:2.8rem;
@@ -810,6 +852,13 @@ button.lincoln-commercial-metric-card.is-selected::after{
   color:#fff!important;
 }
 
+.lincoln-commercial-open.is-formalize{
+  min-width:7.4rem!important;
+  border-color:var(--lincoln-petrol)!important;
+  background:var(--lincoln-petrol)!important;
+  color:#fff!important;
+}
+
 .lincoln-commercial-dots{
   border-color:#cbdad6!important;
   color:var(--lincoln-petrol)!important;
@@ -845,4 +894,6 @@ button.lincoln-commercial-metric-card.is-selected::after{
   .lincoln-commercial-filters,.lincoln-commercial-search{grid-template-columns:1fr;grid-column:auto}
   .lincoln-commercial-table-wrap{margin:0 .5rem}
   .lincoln-commercial-footer{align-items:flex-start;flex-direction:column}
+  .lincoln-commercial-formalization{grid-template-columns:2.4rem 1fr auto}
+  .lincoln-commercial-formalization > em{display:none}
 }

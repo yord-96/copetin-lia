@@ -86,6 +86,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       guestCount: Number(reservation.guestCount ?? 0),
       totalBs: money(reservation.estimatedTotalBs ?? 0),
       balanceBs: null,
+      readyToContract: Number(reservation.reservationPaymentBs ?? 0) > 0
+        && !['cancelled', 'converted'].includes(asText(reservation.status).toLowerCase()),
       status: reservation.status ?? 'pending',
       statusLabel: reservationStatusLabel(reservation.status),
       reservationId: reservation.id,
@@ -131,7 +133,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       if (normalizedStatus !== 'all') {
         if (normalizedStatus === 'reservations' && row.kind !== 'reservation') return false;
         else if (normalizedStatus === 'contracts' && row.kind !== 'contract') return false;
-        else if (!['reservations', 'contracts'].includes(normalizedStatus) && normalize(row.status) !== normalizedStatus) return false;
+        else if (normalizedStatus === 'formalization' && !row.readyToContract) return false;
+        else if (!['reservations', 'contracts', 'formalization'].includes(normalizedStatus) && normalize(row.status) !== normalizedStatus) return false;
       }
       if (from && asText(row.eventDate) < asText(from)) return false;
       if (to && asText(row.eventDate) > asText(to)) return false;
@@ -144,6 +147,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
 
   const activeReservations = reservationRows.filter((row) => asText(row.status).toLowerCase() !== 'cancelled');
   const interestedReservations = activeReservations.filter((row) => asText(row.status).toLowerCase() === 'lead');
+  const readyToContract = activeReservations.filter((row) => row.readyToContract);
   const activeContracts = contractRows.filter((row) => !['cancelled'].includes(asText(row.status).toLowerCase()));
   const sequences = contractRows.map((row) => parseSequence(row.code)).filter((value) => value > 0);
   const currentNumber = sequences.length ? Math.max(...sequences) : 0;
@@ -151,6 +155,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
     all: reservationRows.length + contractRows.length,
     reservations: reservationRows.length,
     contracts: contractRows.length,
+    formalization: readyToContract.length,
   };
   [...reservationRows, ...contractRows].forEach((row) => {
     const key = normalize(row.status);
@@ -162,6 +167,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
     summary: {
       reservations: activeReservations.length,
       interested: interestedReservations.length,
+      readyToContract: readyToContract.length,
       contracts: activeContracts.length,
       currentNumber,
       nextNumber: currentNumber + 1,

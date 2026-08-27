@@ -79,7 +79,7 @@ export default function LincolnCommercialWorkspace({
   const summary = data?.summary ?? {};
   const statusCounts = summary.statusCounts ?? {};
   const statusOptions = [
-    ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
+    ['all', 'Todas'], ['reservations', 'Reservas'], ['formalization', 'Por formalizar'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
     ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
   ];
 
@@ -170,6 +170,13 @@ export default function LincolnCommercialWorkspace({
           </button>
         </div>
 
+        <button type="button" className={`lincoln-commercial-formalization ${status === 'formalization' ? 'is-active' : ''}`} onClick={() => setStatus('formalization')}>
+          <span><FileCheck2 size={20} aria-hidden="true" /></span>
+          <div><small>Siguiente etapa</small><strong>Eventos listos para pasar a contrato</strong><p>Revisa los datos, congela el paquete y genera el PDF contractual.</p></div>
+          <b>{summary.readyToContract ?? 0}</b>
+          <em>Ver por formalizar</em>
+        </button>
+
         <div className="lincoln-commercial-filters">
           <label className="lincoln-commercial-search"><Search size={17} aria-hidden="true" /><input type="search" placeholder="Buscar código, cliente, evento o salón..." value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <label><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
@@ -203,7 +210,7 @@ export default function LincolnCommercialWorkspace({
                   <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
                   <td>
                     <div className="lincoln-commercial-actions">
-                      <button type="button" className="lincoln-commercial-open" onClick={() => onOpenRecord(row)}>Abrir</button>
+                      <button type="button" className={`lincoln-commercial-open ${row.readyToContract ? 'is-formalize' : ''}`} onClick={() => row.readyToContract ? onConvertReservation(row) : onOpenRecord(row)}>{row.readyToContract ? 'Pasar a contrato' : 'Abrir'}</button>
                       <button
                         type="button"
                         className={`lincoln-commercial-dots ${openMenuKey === row.key ? 'is-active' : ''}`}

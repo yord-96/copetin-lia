@@ -409,20 +409,16 @@ const contractDateLong = (value) => {
 };
 
 const contractDefaultClauses = (draft) => [
-  `Centro de Eventos LINCOLN prestará el servicio de atención para el evento ${String(draft.eventType || 'EVENTO').toUpperCase()}, a realizarse el ${contractDateLong(draft.eventDate)}.`,
-  'Los servicios a prestar se detallan en la hoja de costos y servicios, la cual forma parte integrante del presente contrato.',
-  `El costo del servicio se establece de acuerdo con la propuesta comercial descrita en la hoja de costos, para ${Number(draft.guestCount || 0)} invitados. Los importes pactados en este documento quedan congelados para este contrato.`,
-  `Los Contratantes cancelan en calidad de anticipo la suma de ${contractMoney(draft.advanceBs)}. El saldo será pagado ${Number(draft.balanceDueDays || 7)} días antes del evento, salvo acuerdo escrito diferente.`,
-  'Si los Contratantes deciden suspender el evento, las condiciones de devolución o penalidad serán las expresamente acordadas entre las partes y registradas en este contrato.',
-  `Los Contratantes se comprometen a resarcir los daños ocasionados por sus invitados en instalaciones, muebles, mantelería, vajilla, cristalería u otros bienes puestos a su disposición, dejando una garantía de ${contractMoney(draft.guaranteeBs)}, que será devuelta cuando corresponda si no existen daños pendientes.`,
-  'Cuando por fuerza mayor o motivos coyunturales el evento no pueda realizarse en la fecha acordada, las partes podrán reprogramarlo de acuerdo con la disponibilidad de calendario de Centro de Eventos Lincoln.',
-  'En conformidad con todas las cláusulas y condiciones del presente contrato, las partes firman el documento en señal de aceptación.',
+  `Centro de Eventos LINCOLN prestará el servicio de atención para el evento ${String(draft.eventType || 'EVENTO').toUpperCase()}, a realizarse el ${contractDateLong(draft.eventDate)} en ${draft.roomName || 'el salón acordado'}.`,
+  'Los servicios incluidos se encuentran detallados en la hoja de costos y servicios, que forma parte integrante e indivisible del presente contrato.',
+  `El costo se establece para ${Number(draft.guestCount || 0)} invitados según la composición del paquete seleccionada. Los importes pactados quedan congelados para este contrato, salvo cambios solicitados por escrito.`,
+  `Los Contratantes reconocen como anticipo y pagos a cuenta la suma de ${contractMoney(draft.advanceBs)}. El saldo será cancelado ${Number(draft.balanceDueDays || 7)} días antes del evento, salvo acuerdo escrito diferente.`,
+  'En caso de suspensión por decisión de los Contratantes, se aplicarán las condiciones de devolución o penalidad expresamente acordadas. Toda modificación o reprogramación deberá constar por escrito.',
+  `Los Contratantes se obligan a resarcir los daños ocasionados por ellos o sus invitados en instalaciones, mobiliario, mantelería, vajilla, cristalería y demás bienes. La garantía separada es de ${contractMoney(draft.guaranteeBs)} y será devuelta cuando corresponda, previa verificación de obligaciones pendientes.`,
+  'El incumplimiento comprobado de cualquiera de las partes dará lugar al resarcimiento de los daños y perjuicios que correspondan conforme a ley.',
+  'Cuando por fuerza mayor o motivos coyunturales el evento no pueda realizarse en la fecha acordada, las partes podrán reprogramarlo de acuerdo con la disponibilidad de Centro de Eventos Lincoln.',
+  `En conformidad con todas las cláusulas del presente contrato, las partes firman en fecha ${contractDateLong(draft.contractDate)} en señal de aceptación.`,
 ];
-
-const packageLineAppliesToVariant = (line, variantId) => {
-  const variantIds = Array.isArray(line?.variantIds) ? line.variantIds : [];
-  return !variantIds.length || !variantId || variantIds.includes(variantId);
-};
 
 const buildContractDraft = (reservation) => {
   const snapshot = reservation?.packageSnapshot && typeof reservation.packageSnapshot === 'object' ? reservation.packageSnapshot : {};
@@ -430,38 +426,56 @@ const buildContractDraft = (reservation) => {
   const variantId = reservation?.packageVariantId ?? variant?.id ?? '';
   const rawLines = Array.isArray(snapshot.serviceLines) ? snapshot.serviceLines : [];
   const includedServices = rawLines
-    .filter((line) => line?.included !== false && line?.catalogKind !== 'extra' && packageLineAppliesToVariant(line, variantId))
+    .filter((line) => line?.included !== false && line?.catalogKind !== 'extra')
     .map((line, index) => ({ ...line, id: line.id || `service-${index}`, selected: true }));
   const extras = rawLines
     .filter((line) => line?.catalogKind === 'extra' || line?.included === false)
     .map((line, index) => ({ ...line, id: line.id || `extra-${index}`, selected: false, quantity: Number(line.quantity || 1), unitCostBs: Number(line.unitCostBs || 0) }));
   const pricePerPersonBs = Number(reservation?.packagePricePerPersonBs ?? variant?.pricePerPersonBs ?? 0);
   const guestCount = Number(reservation?.guestCount ?? 0);
+  const packageVariants = Array.isArray(snapshot.variants) && snapshot.variants.length
+    ? snapshot.variants
+    : variant ? [variant] : [];
+  const pricingGroups = packageVariants.map((item, index) => ({
+    id: item.id || `variant-${index}`,
+    variantId: item.id || `variant-${index}`,
+    name: item.name || `Grupo ${index + 1}`,
+    selected: String(item.id ?? '') === String(variantId ?? '') || (!variantId && index === 0),
+    guestCount: String(item.id ?? '') === String(variantId ?? '') || (!variantId && index === 0) ? guestCount : 0,
+    pricePerPersonBs: Number(item.pricePerPersonBs ?? 0),
+  }));
   const advanceBs = Number(reservation?.reservationPaymentBs ?? 0) + Number(reservation?.accountPaymentBs ?? 0);
   const base = {
     sourceReservationId: reservation?.id ?? '', sourceReservationCode: reservation?.code ?? '',
     contractor1Name: reservation?.contractor1Name ?? reservation?.clientName ?? '', contractor1Ci: reservation?.contractor1Ci ?? reservation?.clientCi ?? '', contractor1Phone: reservation?.contractor1Phone ?? reservation?.clientPhone ?? '',
     contractor2Name: reservation?.contractor2Name ?? reservation?.secondContractorName ?? '', contractor2Ci: reservation?.contractor2Ci ?? reservation?.secondContractorCi ?? '', contractor2Phone: reservation?.contractor2Phone ?? reservation?.secondContractorPhone ?? '',
     eventType: reservation?.eventType ?? '', eventDate: reservation?.eventDate ?? '', startTime: reservation?.startTime ?? '', durationHours: Number(reservation?.durationHours ?? 8), roomName: reservation?.roomName ?? '', roomId: reservation?.roomId ?? '',
-    guestCount, packageName: reservation?.packageName ?? snapshot.templateName ?? '', packageVariantName: reservation?.packageVariantName ?? variant?.name ?? '', packageVariantId: variantId,
+    guestCount, packageName: reservation?.packageName ?? snapshot.templateName ?? '', packageVariantName: reservation?.packageVariantName ?? variant?.name ?? '', packageVariantId: variantId, packageVariants, pricingGroups,
     pricePerPersonBs, services: includedServices, extras, discountPercent: 0, advanceBs, guaranteeBs: Number(reservation?.guaranteeBs ?? 0), balanceDueDays: 7,
     contractDate: lincolnTodayKey(), notes: reservation?.notes ?? '',
   };
-  return { ...base, clauses: contractDefaultClauses(base) };
+  return { ...base, clauses: contractDefaultClauses(base), clausesCustomized: false };
 };
 
 const contractTotals = (draft) => {
-  const baseBs = Number(draft.guestCount || 0) * Number(draft.pricePerPersonBs || 0);
+  const activeGroups = Array.isArray(draft.pricingGroups)
+    ? draft.pricingGroups.filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0)
+    : [];
+  const pricedGuests = activeGroups.reduce((total, group) => total + Number(group.guestCount || 0), 0);
+  const baseBs = activeGroups.length
+    ? activeGroups.reduce((total, group) => total + Number(group.guestCount || 0) * Number(group.pricePerPersonBs || 0), 0)
+    : Number(draft.guestCount || 0) * Number(draft.pricePerPersonBs || 0);
+  const effectiveGuests = pricedGuests || Number(draft.guestCount || 0);
   const extrasBs = (draft.extras ?? []).filter((line) => line.selected).reduce((total, line) => {
     const qty = Number(line.quantity || 1);
     const unit = Number(line.unitCostBs || 0);
-    return total + (line.costMode === 'per_person' ? unit * Number(draft.guestCount || 0) * qty : unit * qty);
+    return total + (line.costMode === 'per_person' ? unit * effectiveGuests * qty : unit * qty);
   }, 0);
   const grossBs = baseBs + extrasBs;
   const discountBs = grossBs * Math.max(0, Number(draft.discountPercent || 0)) / 100;
   const totalBs = Math.max(0, grossBs - discountBs);
   const balanceBs = Math.max(0, totalBs - Number(draft.advanceBs || 0));
-  return { baseBs, extrasBs, grossBs, discountBs, totalBs, balanceBs };
+  return { baseBs, extrasBs, grossBs, discountBs, totalBs, balanceBs, guestCount: effectiveGuests };
 };
 
 function ContractDocumentSheet({ document, compact = false }) {
@@ -501,15 +515,29 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
   const totals = contractTotals(draft);
   const updateExtra = (id, patch) => setDraft((current) => ({ ...current, extras: current.extras.map((line) => line.id === id ? { ...line, ...patch } : line) }));
   const updateService = (id, selected) => setDraft((current) => ({ ...current, services: current.services.map((line) => line.id === id ? { ...line, selected } : line) }));
+  const updatePricingGroup = (id, patch) => setDraft((current) => {
+    const pricingGroups = current.pricingGroups.map((group) => group.id === id ? { ...group, ...patch } : group);
+    const guestCount = pricingGroups.filter((group) => group.selected !== false).reduce((total, group) => total + Number(group.guestCount || 0), 0);
+    return { ...current, pricingGroups, guestCount };
+  });
   const goNext = () => setStep((current) => Math.min(4, current + 1));
   const goBack = () => setStep((current) => Math.max(1, current - 1));
   const confirm = () => {
     if (!draft.contractor1Name.trim()) return window.alert('El Contratante 1 es obligatorio.');
     if (!draft.eventDate) return window.alert('La fecha del evento es obligatoria.');
-    if (Number(draft.guestCount || 0) <= 0) return window.alert('Indica la cantidad de invitados.');
-    const contractDocumentSnapshot = { ...draft, totals, version: 1, generatedAt: new Date().toISOString(), sourceReservationCode: reservation?.code ?? '' };
+    if (Number(totals.guestCount || 0) <= 0) return window.alert('Indica la cantidad de invitados.');
+    const finalDraft = {
+      ...draft,
+      guestCount: totals.guestCount,
+      clauses: draft.clausesCustomized
+        ? draft.clauses
+        : contractDefaultClauses({ ...draft, guestCount: totals.guestCount }),
+    };
+    const documentDraft = { ...finalDraft };
+    delete documentDraft.clausesCustomized;
+    const contractDocumentSnapshot = { ...documentDraft, totals, version: 1, generatedAt: new Date().toISOString(), sourceReservationCode: reservation?.code ?? '' };
     onConfirm({
-      guaranteeBs: Number(draft.guaranteeBs || 0), guestCount: Number(draft.guestCount || 0), estimatedTotalBs: totals.totalBs, totalBs: totals.totalBs,
+      guaranteeBs: Number(draft.guaranteeBs || 0), guestCount: Number(totals.guestCount || 0), estimatedTotalBs: totals.totalBs, totalBs: totals.totalBs,
       packageName: draft.packageName, packageVariantName: draft.packageVariantName, packagePricePerPersonBs: Number(draft.pricePerPersonBs || 0),
       contractDocumentSnapshot, contractDocumentVersion: 1, status: 'contracted', contractedAt: new Date().toISOString(), notes: draft.notes,
     });
@@ -519,9 +547,19 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
     <nav className="lincoln-contract-flow-steps">{[['1','Datos'],['2','Propuesta'],['3','Condiciones'],['4','Documento']].map(([number,label]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => setStep(Number(number))}><b>{number}</b><span>{label}</span></button>)}</nav>
     <div className="lincoln-contract-flow-body">
       {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Vienen desde la reserva; puedes completar lo necesario antes de confirmar.</p></div><div className="lincoln-contract-flow-grid"><Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><input value={draft.roomName} onChange={(e) => set('roomName', e.target.value)} /></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
-      {step === 2 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 2</small><h3>Propuesta comercial congelada</h3><p>Estos cambios solo afectan este contrato; no modifican el paquete maestro.</p></div><div className="lincoln-contract-proposal-head"><div><span>Paquete</span><strong>{draft.packageName || 'SIN PAQUETE'}</strong><small>{draft.packageVariantName || 'BASE'}</small></div><label><span>Bs por persona</span><input type="number" min="0" step="0.01" value={draft.pricePerPersonBs} onChange={(e) => set('pricePerPersonBs', toNumber(e.target.value))} /></label><div><span>Subtotal</span><strong>{contractMoney(totals.baseBs)}</strong></div></div><div className="lincoln-contract-proposal-cols"><article><h4>Servicios incluidos</h4>{draft.services.length ? draft.services.map((line) => <label className="lincoln-contract-check-row" key={line.id}><input type="checkbox" checked={line.selected !== false} onChange={(e) => updateService(line.id, e.target.checked)} /><span><b>{line.category}</b>{line.description}</span></label>) : <p className="is-empty">La reserva no tiene servicios congelados.</p>}</article><article><h4>Extras disponibles</h4>{draft.extras.length ? draft.extras.map((line) => <div className="lincoln-contract-extra-row" key={line.id}><label><input type="checkbox" checked={Boolean(line.selected)} onChange={(e) => updateExtra(line.id, { selected: e.target.checked })} /><span>{line.description}</span></label><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></div>) : <p className="is-empty">No hay extras cargados en este paquete.</p>}</article></div></section> : null}
-      {step === 3 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 3</small><h3>Condiciones y cláusulas</h3><p>Los montos permanecen separados para no mezclar servicio y garantía.</p></div><div className="lincoln-contract-condition-grid"><Field label="Anticipo / a cuenta Bs"><input type="number" min="0" step="0.01" value={draft.advanceBs} onChange={(e) => set('advanceBs', toNumber(e.target.value))} /></Field><Field label="Garantía Bs"><input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field><Field label="Descuento %"><input type="number" min="0" max="100" step="0.01" value={draft.discountPercent} onChange={(e) => set('discountPercent', toNumber(e.target.value))} /></Field><Field label="Saldo antes del evento (días)"><input type="number" min="0" value={draft.balanceDueDays} onChange={(e) => set('balanceDueDays', toNumber(e.target.value))} /></Field></div><div className="lincoln-contract-clause-editor">{draft.clauses.map((clause,index) => <label key={index}><span>Cláusula {index + 1}</span><textarea value={clause} onChange={(e) => setDraft((current) => ({ ...current, clauses: current.clauses.map((item,i) => i === index ? e.target.value : item) }))} /></label>)}</div><Field label="Observaciones / acuerdos" wide><textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></Field></section> : null}
-      {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, totals }} compact /></section> : null}
+      {step === 2 ? <section className="lincoln-contract-flow-section">
+        <div className="lincoln-contract-flow-title"><small>PASO 2</small><h3>Propuesta comercial congelada</h3><p>Selecciona uno o varios grupos del paquete. Esto permite contratos mixtos, por ejemplo Jóvenes y Adultos.</p></div>
+        <div className="lincoln-contract-proposal-head"><div><span>Paquete</span><strong>{draft.packageName || 'SIN PAQUETE'}</strong><small>{totals.guestCount || 0} invitados contratados</small></div><div><span>Subtotal del paquete</span><strong>{contractMoney(totals.baseBs)}</strong></div><div><span>Total con extras</span><strong>{contractMoney(totals.totalBs)}</strong></div></div>
+        {draft.pricingGroups?.length ? <div className="lincoln-contract-pricing-groups">{draft.pricingGroups.map((group) => <article key={group.id} className={group.selected !== false ? 'is-selected' : ''}>
+          <label className="is-toggle"><input type="checkbox" checked={group.selected !== false} onChange={(e) => updatePricingGroup(group.id, { selected: e.target.checked })} /><strong>{group.name}</strong></label>
+          <label><span>Invitados</span><input type="number" min="0" value={group.guestCount} disabled={group.selected === false} onChange={(e) => updatePricingGroup(group.id, { guestCount: toNumber(e.target.value) })} /></label>
+          <label><span>Bs por persona</span><input type="number" min="0" step="0.01" value={group.pricePerPersonBs} disabled={group.selected === false} onChange={(e) => updatePricingGroup(group.id, { pricePerPersonBs: toNumber(e.target.value) })} /></label>
+          <b>{contractMoney(Number(group.guestCount || 0) * Number(group.pricePerPersonBs || 0))}</b>
+        </article>)}</div> : null}
+        <div className="lincoln-contract-proposal-cols"><article><h4>Servicios incluidos</h4>{draft.services.length ? draft.services.map((line) => <label className="lincoln-contract-check-row" key={line.id}><input type="checkbox" checked={line.selected !== false} onChange={(e) => updateService(line.id, e.target.checked)} /><span><b>{line.category}</b>{line.description}</span></label>) : <p className="is-empty">La reserva no tiene servicios congelados.</p>}</article><article><h4>Extras disponibles</h4>{draft.extras.length ? draft.extras.map((line) => <div className="lincoln-contract-extra-row" key={line.id}><label><input type="checkbox" checked={Boolean(line.selected)} onChange={(e) => updateExtra(line.id, { selected: e.target.checked })} /><span>{line.description}</span></label><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></div>) : <p className="is-empty">No hay extras cargados en este paquete.</p>}</article></div>
+      </section> : null}
+      {step === 3 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 3</small><h3>Condiciones y cláusulas</h3><p>Los montos permanecen separados para no mezclar servicio y garantía.</p></div><div className="lincoln-contract-condition-grid"><Field label="Anticipo / a cuenta Bs"><input type="number" min="0" step="0.01" value={draft.advanceBs} onChange={(e) => set('advanceBs', toNumber(e.target.value))} /></Field><Field label="Garantía Bs"><input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field><Field label="Descuento %"><input type="number" min="0" max="100" step="0.01" value={draft.discountPercent} onChange={(e) => set('discountPercent', toNumber(e.target.value))} /></Field><Field label="Saldo antes del evento (días)"><input type="number" min="0" value={draft.balanceDueDays} onChange={(e) => set('balanceDueDays', toNumber(e.target.value))} /></Field></div><div className="lincoln-contract-clause-editor">{draft.clauses.map((clause,index) => <label key={index}><span>Cláusula {index + 1}</span><textarea value={clause} onChange={(e) => setDraft((current) => ({ ...current, clausesCustomized: true, clauses: current.clauses.map((item,i) => i === index ? e.target.value : item) }))} /></label>)}</div><Field label="Observaciones / acuerdos" wide><textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></Field></section> : null}
+      {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, guestCount: totals.guestCount, clauses: draft.clausesCustomized ? draft.clauses : contractDefaultClauses({ ...draft, guestCount: totals.guestCount }), totals }} compact /></section> : null}
     </div>
     <footer><button type="button" className="is-secondary" onClick={step === 1 ? onClose : goBack}>{step === 1 ? 'Cancelar' : '← Atrás'}</button><div><span>Total: <b>{contractMoney(totals.totalBs)}</b></span>{step < 4 ? <button type="button" onClick={goNext}>Siguiente →</button> : <button type="button" disabled={saving} onClick={confirm}>{saving ? 'Creando contrato...' : 'Confirmar contrato'}</button>}</div></footer>
   </section></div>;
