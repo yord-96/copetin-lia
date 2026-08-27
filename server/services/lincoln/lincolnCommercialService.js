@@ -147,6 +147,15 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
   const activeContracts = contractRows.filter((row) => !['cancelled'].includes(asText(row.status).toLowerCase()));
   const sequences = contractRows.map((row) => parseSequence(row.code)).filter((value) => value > 0);
   const currentNumber = sequences.length ? Math.max(...sequences) : 0;
+  const statusCounts = {
+    all: reservationRows.length + contractRows.length,
+    reservations: reservationRows.length,
+    contracts: contractRows.length,
+  };
+  [...reservationRows, ...contractRows].forEach((row) => {
+    const key = normalize(row.status);
+    statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+  });
 
   return {
     revision: snapshot.revision,
@@ -156,6 +165,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       contracts: activeContracts.length,
       currentNumber,
       nextNumber: currentNumber + 1,
+      statusCounts,
     },
     rows,
   };

@@ -445,3 +445,404 @@ button.lincoln-commercial-metric-card.is-selected {
   }
 }
 
+/* Lincoln commercial shell: misma jerarquia visual del modulo comercial de Copetin. */
+.lincoln-commercial-page{
+  --lincoln-wine:#861722;
+  --lincoln-wine-dark:#67131b;
+  --lincoln-cream:#fff8f2;
+  --lincoln-petrol:#24504d;
+  --lincoln-petrol-soft:#eaf4f1;
+  --lincoln-ink:#201b1c;
+  --lincoln-muted:#746967;
+  --lincoln-line:#e9dcd4;
+  padding:1.55rem 1.35rem 2rem;
+  gap:1rem;
+  background:linear-gradient(180deg,#fffdfb 0%,#fff9f4 100%);
+}
+
+.lincoln-commercial-titlebar{
+  align-items:center;
+  min-height:4.4rem;
+}
+
+.lincoln-commercial-eyebrow{
+  display:block;
+  margin-bottom:.18rem;
+  color:var(--lincoln-wine);
+  font-size:.62rem;
+  font-weight:900;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+}
+
+.lincoln-commercial-titlebar h1{
+  color:var(--lincoln-ink);
+  font-size:1.72rem;
+  line-height:1.08;
+}
+
+.lincoln-commercial-titlebar p{
+  color:var(--lincoln-muted);
+  font-size:.78rem;
+}
+
+.lincoln-commercial-primary-actions button{
+  min-width:10.6rem;
+  min-height:2.55rem;
+  border-color:var(--lincoln-wine);
+  border-radius:.72rem;
+  background:var(--lincoln-wine);
+  box-shadow:0 7px 15px rgba(134,23,34,.12);
+  font-size:.72rem;
+  transition:transform .15s ease,box-shadow .15s ease,background .15s ease;
+}
+
+.lincoln-commercial-primary-actions button:first-child{
+  border-color:var(--lincoln-petrol);
+  background:var(--lincoln-petrol);
+  box-shadow:0 7px 15px rgba(36,80,77,.13);
+}
+
+.lincoln-commercial-primary-actions button:hover{
+  transform:translateY(-1px);
+  box-shadow:0 10px 20px rgba(72,33,34,.17);
+}
+
+.lincoln-commercial-card{
+  border-color:var(--lincoln-line);
+  border-radius:1rem;
+  box-shadow:0 10px 28px rgba(83,43,35,.07);
+}
+
+.lincoln-commercial-metrics{
+  grid-template-columns:minmax(0,1.25fr) minmax(260px,.58fr) minmax(0,1.25fr);
+  gap:.7rem;
+  padding:.8rem;
+}
+
+.lincoln-commercial-metric-card{
+  position:relative;
+  min-height:5rem;
+  justify-content:flex-start;
+  gap:.75rem;
+  border-color:#e4e5e1;
+  border-radius:.85rem;
+  padding:.78rem .9rem;
+  background:#fbfcfd;
+  overflow:hidden;
+}
+
+.lincoln-commercial-metric-card::after{
+  content:"";
+  position:absolute;
+  inset:auto 0 0;
+  height:3px;
+  background:transparent;
+}
+
+.lincoln-commercial-metric-icon{
+  width:2.55rem;
+  height:2.55rem;
+  flex:0 0 2.55rem;
+  display:grid;
+  place-items:center;
+  border-radius:.72rem;
+  background:#f7e9e7;
+  color:var(--lincoln-wine);
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card > div{
+  min-width:0;
+}
+
+.lincoln-commercial-metrics strong{
+  color:#3e2b2d;
+  font-size:.79rem;
+  letter-spacing:.01em;
+}
+
+.lincoln-commercial-metrics span:not(.lincoln-commercial-metric-icon){
+  color:#7c7470;
+  font-size:.65rem;
+  line-height:1.3;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card > b{
+  margin-left:auto;
+  color:var(--lincoln-wine);
+  font-size:1.55rem;
+}
+
+button.lincoln-commercial-metric-card:hover,
+button.lincoln-commercial-metric-card.is-selected{
+  border-color:#c7868b;
+  background:#fff9f8;
+}
+
+button.lincoln-commercial-metric-card.is-selected::after{
+  background:var(--lincoln-wine);
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering{
+  grid-template-columns:2.55rem auto 1fr 1fr;
+  gap:.62rem;
+  border-color:#cbded9;
+  background:var(--lincoln-petrol-soft);
+}
+
+.lincoln-commercial-metric-card.is-numbering .lincoln-commercial-metric-icon{
+  background:#d7e9e4;
+  color:var(--lincoln-petrol);
+}
+
+.lincoln-commercial-numbering-label{
+  align-self:center;
+  color:var(--lincoln-petrol)!important;
+  font-size:.66rem!important;
+  font-weight:900;
+  text-transform:uppercase;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering > div{
+  align-content:center;
+  border-left:1px solid #bdd3ce;
+  padding-left:.62rem;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering b{
+  color:#183f3c;
+}
+
+.lincoln-commercial-metrics .lincoln-commercial-metric-card.is-contracts{
+  border-color:#c8ded8;
+  background:#f7fbfa;
+}
+
+.lincoln-commercial-metric-card.is-contracts .lincoln-commercial-metric-icon{
+  background:#dfeeea;
+  color:var(--lincoln-petrol);
+}
+
+.lincoln-commercial-metric-card.is-contracts::after{
+  background:var(--lincoln-petrol);
+}
+
+.lincoln-commercial-filters{
+  grid-template-columns:minmax(300px,1fr) 180px 180px auto;
+  gap:.55rem;
+  padding:.72rem .8rem .52rem;
+  border-top-color:var(--lincoln-line);
+  background:var(--lincoln-cream);
+}
+
+.lincoln-commercial-filters > label{
+  min-height:2.7rem;
+  border-color:#dfd5cf;
+  border-radius:.68rem;
+}
+
+.lincoln-commercial-search{
+  gap:.65rem!important;
+  color:#82736d;
+}
+
+.lincoln-commercial-search input{
+  font-size:.78rem!important;
+}
+
+.lincoln-commercial-filters label:focus-within{
+  border-color:#779b94;
+  box-shadow:0 0 0 3px rgba(36,80,77,.09);
+}
+
+.lincoln-commercial-filters .is-clear{
+  padding:0 .5rem;
+  color:var(--lincoln-wine);
+}
+
+.lincoln-commercial-statuses{
+  gap:.4rem;
+  padding:0 .8rem .72rem;
+  background:var(--lincoln-cream);
+}
+
+.lincoln-commercial-statuses button{
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  min-height:2rem;
+  border-color:#e2d8d2;
+  background:#fff;
+  color:#5f5552;
+  font-size:.66rem;
+}
+
+.lincoln-commercial-statuses button > span{
+  min-width:1.2rem;
+  padding:.15rem .3rem;
+  border-radius:999px;
+  background:#f1efed;
+  color:#776b67;
+  font-size:.58rem;
+  text-align:center;
+}
+
+.lincoln-commercial-statuses button.is-active{
+  border-color:var(--lincoln-wine);
+  background:var(--lincoln-wine);
+  color:#fff;
+  box-shadow:0 4px 10px rgba(134,23,34,.13);
+}
+
+.lincoln-commercial-statuses button.is-active > span{
+  background:#fff;
+  color:var(--lincoln-wine);
+}
+
+.lincoln-commercial-table-wrap{
+  margin:0 .72rem;
+  overflow:auto;
+  border:1px solid #d9e0dd;
+  border-radius:.78rem;
+  background:#fff;
+}
+
+.lincoln-commercial-table{
+  width:100%;
+  min-width:1040px;
+  table-layout:fixed;
+}
+
+.lincoln-commercial-table col.is-code{width:11%}
+.lincoln-commercial-table col.is-date{width:12%}
+.lincoln-commercial-table col.is-client{width:18%}
+.lincoln-commercial-table col.is-event{width:19%}
+.lincoln-commercial-table col.is-guests{width:7%}
+.lincoln-commercial-table col.is-status{width:10%}
+.lincoln-commercial-table col.is-money{width:8.5%}
+.lincoln-commercial-table col.is-actions{width:7%}
+
+.lincoln-commercial-table th{
+  height:2.8rem;
+  padding:.62rem .68rem;
+  background:var(--lincoln-petrol);
+  color:#fff;
+  font-size:.64rem;
+  letter-spacing:.025em;
+  vertical-align:middle;
+}
+
+.lincoln-commercial-table th:first-child{border-radius:.7rem 0 0 0}
+.lincoln-commercial-table th:last-child{border-radius:0 .7rem 0 0}
+
+.lincoln-commercial-table td{
+  height:4.65rem;
+  padding:.66rem .68rem;
+  border-bottom-color:#dfe7e4;
+  color:#282324;
+  font-size:.72rem;
+  line-height:1.25;
+}
+
+.lincoln-commercial-table tbody tr:nth-child(even) td{background:#f4f8f7}
+.lincoln-commercial-table tbody tr:hover td{background:#edf5f2}
+.lincoln-commercial-table tbody tr:last-child td{border-bottom:0}
+
+.lincoln-commercial-table td strong{
+  overflow-wrap:anywhere;
+  color:#241f20;
+  font-size:.73rem;
+  line-height:1.28;
+}
+
+.lincoln-commercial-table td small{
+  color:#7c7471;
+  font-size:.62rem;
+}
+
+.lincoln-commercial-code{
+  border:1px solid #ead1cf;
+  border-radius:.48rem;
+  background:#fff2ef;
+  color:var(--lincoln-wine);
+  font-size:.72rem;
+}
+
+.lincoln-commercial-code.is-contract{
+  border-color:#bcd6d0;
+  background:var(--lincoln-petrol-soft);
+  color:var(--lincoln-petrol);
+}
+
+.lincoln-commercial-status{
+  justify-content:center;
+  min-width:5.5rem;
+  border:1px solid #ecd9ac;
+  background:#fff7df;
+  color:#895f12;
+  font-size:.61rem;
+}
+
+.lincoln-commercial-status.is-contract,
+.lincoln-commercial-status.is-status-confirmed,
+.lincoln-commercial-status.is-status-contracted,
+.lincoln-commercial-status.is-status-completed{
+  border-color:#bfdbd3;
+  background:#eaf5f1;
+  color:#28665c;
+}
+
+.lincoln-commercial-actions{
+  justify-content:flex-end;
+  gap:.35rem;
+}
+
+.lincoln-commercial-open{
+  min-width:4.1rem!important;
+  min-height:2rem!important;
+  border-color:var(--lincoln-wine)!important;
+  background:#fff!important;
+  color:var(--lincoln-wine)!important;
+}
+
+.lincoln-commercial-open:hover{
+  background:var(--lincoln-wine)!important;
+  color:#fff!important;
+}
+
+.lincoln-commercial-dots{
+  border-color:#cbdad6!important;
+  color:var(--lincoln-petrol)!important;
+}
+
+.lincoln-commercial-footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:1rem;
+  min-height:3rem;
+  padding:.7rem .9rem;
+  color:#7d706c;
+  font-size:.65rem;
+}
+
+.lincoln-commercial-footer strong{color:var(--lincoln-petrol)}
+
+@media(max-width:1180px){
+  .lincoln-commercial-metrics{grid-template-columns:1fr 1fr}
+  .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering{grid-column:1/-1}
+  .lincoln-commercial-filters{grid-template-columns:1fr 1fr}
+  .lincoln-commercial-search{grid-column:1/-1}
+}
+
+@media(max-width:680px){
+  .lincoln-commercial-page{padding:.8rem}
+  .lincoln-commercial-titlebar{align-items:stretch}
+  .lincoln-commercial-primary-actions button{min-width:0}
+  .lincoln-commercial-metrics{grid-template-columns:1fr}
+  .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering{grid-column:auto;grid-template-columns:2.55rem 1fr 1fr}
+  .lincoln-commercial-numbering-label{display:none}
+  .lincoln-commercial-filters,.lincoln-commercial-search{grid-template-columns:1fr;grid-column:auto}
+  .lincoln-commercial-table-wrap{margin:0 .5rem}
+  .lincoln-commercial-footer{align-items:flex-start;flex-direction:column}
+}

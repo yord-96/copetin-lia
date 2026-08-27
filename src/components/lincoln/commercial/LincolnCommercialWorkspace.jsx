@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { CalendarDays, FileCheck2, Hash, Search } from 'lucide-react';
 import { api } from '../../../services/api';
 
 const money = (value) => new Intl.NumberFormat('es-BO', {
@@ -76,6 +77,11 @@ export default function LincolnCommercialWorkspace({
 
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const summary = data?.summary ?? {};
+  const statusCounts = summary.statusCounts ?? {};
+  const statusOptions = [
+    ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
+    ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
+  ];
 
   const clearFilters = () => {
     setQuery('');
@@ -122,6 +128,7 @@ export default function LincolnCommercialWorkspace({
     <div className="lincoln-commercial-page">
       <section className="lincoln-commercial-titlebar">
         <div>
+          <span className="lincoln-commercial-eyebrow">Gestión comercial</span>
           <h1>Reservas y Contratos</h1>
           <p>Una sola operación comercial: la reserva cambia de estado y, cuando corresponde, se formaliza como contrato.</p>
         </div>
@@ -139,12 +146,14 @@ export default function LincolnCommercialWorkspace({
             onClick={() => setStatus('reservations')}
             title="Mostrar todas las reservas, sin separar sus estados"
           >
+            <span className="lincoln-commercial-metric-icon"><CalendarDays size={25} strokeWidth={1.8} /></span>
             <div><strong>Reservas</strong><span>{summary.interested ?? 0} interesado(s) dentro de {summary.reservations ?? 0} reserva(s)</span></div>
             <b>{summary.reservations ?? 0}</b>
           </button>
 
           <article className="lincoln-commercial-metric-card is-numbering">
-            <span>Numeración</span>
+            <span className="lincoln-commercial-metric-icon"><Hash size={23} strokeWidth={1.9} /></span>
+            <span className="lincoln-commercial-numbering-label">Numeración</span>
             <div><small>Actual</small><b>{summary.currentNumber || '—'}</b></div>
             <div><small>Siguiente</small><b>{summary.nextNumber || 1}</b></div>
           </article>
@@ -155,30 +164,29 @@ export default function LincolnCommercialWorkspace({
             onClick={() => setStatus('contracts')}
             title="Mostrar contratos"
           >
+            <span className="lincoln-commercial-metric-icon"><FileCheck2 size={25} strokeWidth={1.8} /></span>
             <div><strong>Contratos</strong><span>Documentos formalizados</span></div>
             <b>{summary.contracts ?? 0}</b>
           </button>
         </div>
 
         <div className="lincoln-commercial-filters">
-          <input type="search" placeholder="Buscar código, cliente, evento o salón..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          <label className="lincoln-commercial-search"><Search size={17} aria-hidden="true" /><input type="search" placeholder="Buscar código, cliente, evento o salón..." value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <label><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
           <label><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
           <button type="button" className="is-clear" onClick={clearFilters}>Limpiar</button>
         </div>
 
         <div className="lincoln-commercial-statuses">
-          {[
-            ['all', 'Todas'], ['reservations', 'Reservas'], ['lead', 'Interesado'], ['pending', 'Pendiente'], ['confirmed', 'Confirmada'],
-            ['contracts', 'Contratos'], ['contract_pending', 'Contrato pendiente'], ['contracted', 'Contratado'], ['completed', 'Realizado'], ['cancelled', 'Anulado'],
-          ].map(([value, label]) => (
-            <button key={value} type="button" className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)} aria-pressed={status === value}>{label}</button>
+          {statusOptions.map(([value, label]) => (
+            <button key={value} type="button" className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)} aria-pressed={status === value}>{label}<span>{statusCounts[value] ?? 0}</span></button>
           ))}
         </div>
 
         {error ? <div className="lincoln-commercial-error">{error}</div> : null}
         <div className="lincoln-commercial-table-wrap">
           <table className="lincoln-commercial-table">
+            <colgroup><col className="is-code" /><col className="is-date" /><col className="is-client" /><col className="is-event" /><col className="is-guests" /><col className="is-status" /><col className="is-money" /><col className="is-money" /><col className="is-actions" /></colgroup>
             <thead><tr><th>Código</th><th>Fecha evento</th><th>Cliente</th><th>Salón / tipo</th><th>Personas</th><th>Estado</th><th>Total</th><th>Saldo</th><th>Acciones</th></tr></thead>
             <tbody>
               {loading && !rows.length ? <tr><td colSpan="9" className="is-empty">Cargando operación comercial...</td></tr> : null}
@@ -213,6 +221,7 @@ export default function LincolnCommercialWorkspace({
             </tbody>
           </table>
         </div>
+        <footer className="lincoln-commercial-footer"><span>Mostrando <strong>{rows.length}</strong> registro(s)</span><span>Reservas y contratos de Centro de Eventos Lincoln</span></footer>
       </section>
 
       {typeof document !== 'undefined' && activeMenuRow ? createPortal(
