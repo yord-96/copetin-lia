@@ -927,6 +927,61 @@ function LinconWorkspaceSection({
   const snapshot = databaseStatus.snapshot;
   const state = { ...emptyState, ...(snapshot?.state ?? {}) };
   const economicEvent = state.events.find((row) => row.id === economicEventId) ?? null;
+  const lincolnPresence = useMemo(() => {
+    const rows = (Array.isArray(userPresence) ? userPresence : []).filter((entry) =>
+      String(entry?.activeTab ?? '').startsWith('lincoln_'),
+    );
+    if (!currentUser) return rows;
+    const currentSessionId = String(currentUser.sessionId ?? '');
+    const currentUserId = String(currentUser.id ?? '');
+    const alreadyPresent = rows.some((entry) => (
+      (currentSessionId && String(entry?.sessionId ?? '') === currentSessionId)
+      || (!currentSessionId && currentUserId && String(entry?.userId ?? '') === currentUserId)
+    ));
+    if (alreadyPresent) return rows;
+    return [
+      {
+        userId: currentUser.id,
+        sessionId: currentUser.sessionId,
+        fullName: currentUser.fullName ?? currentUser.name ?? currentUser.username ?? userName,
+        role: currentUser.role ?? 'Usuario',
+        activeTab: `lincoln_${activeView}`,
+        device: currentUser.device,
+      },
+      ...rows,
+    ];
+  }, [activeView, currentUser, userName, userPresence]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+    let disposed = false;
+    const publishLincolnPresence = async () => {
+      if (disposed || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+      try {
+        await api.presence.heartbeat({
+          userId: currentUser.id,
+          sessionId: currentUser.sessionId,
+          fullName: currentUser.fullName ?? currentUser.name ?? currentUser.username ?? userName,
+          role: currentUser.role ?? 'Usuario',
+          activeTab: `lincoln_${activeView}`,
+          device: currentUser.device,
+        });
+      } catch {
+        // La presencia es informativa y nunca debe bloquear Lincoln.
+      }
+    };
+    void publishLincolnPresence();
+    const intervalId = window.setInterval(publishLincolnPresence, 20000);
+    const publishWhenVisible = () => {
+      if (document.visibilityState === 'visible') void publishLincolnPresence();
+    };
+    document.addEventListener('visibilitychange', publishWhenVisible);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', publishWhenVisible);
+    };
+  }, [activeView, currentUser, userName]);
 
   const loadLincoln = useCallback(async () => {
     setDatabaseStatus((current) => ({ ...current, loading: true, error: '' }));
@@ -1215,7 +1270,7 @@ function LinconWorkspaceSection({
       onReload={() => void loadLincoln()}
       onLogout={onLogout}
       canReset={canResetLincoln}
-      userPresence={userPresence}
+      userPresence={lincolnPresence}
       onOpenResetDialog={() => setIsResetDialogOpen(true)}
       onPublishUpdateNotice={onPublishUpdateNotice}
       onOpenMobileMenu={() => setIsMobileMenuOpen(true)}

@@ -3329,12 +3329,24 @@
   position: sticky;
   top: 0;
   z-index: 45;
-  min-height: 76px;
-  margin: 0 -2rem 1rem;
-  padding: 0.7rem 2rem;
+  min-height: 72px !important;
+  height: 72px;
+  box-sizing: border-box;
+  margin: 0 -2rem 0.65rem;
+  padding: 0 2rem;
   border-bottom: 1px solid rgba(126, 20, 31, 0.14);
   background: rgba(251, 245, 238, 0.96);
   backdrop-filter: blur(14px);
+}
+
+.lincon-shell .topbar--lincoln .topbar-inner {
+  min-height: 72px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.lincon-shell .topbar--lincoln .presence-strip {
+  align-self: center;
 }
 
 .lincon-shell .topbar--lincoln .mode-pill-web {

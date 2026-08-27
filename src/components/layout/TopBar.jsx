@@ -92,7 +92,11 @@ function TopBar({
   variant = '',
 }) {
   const [isPublishingNotice, setIsPublishingNotice] = useState(false);
-  const safeUserPresence = Array.isArray(userPresence) ? userPresence : [];
+  const allUserPresence = Array.isArray(userPresence) ? userPresence : [];
+  const safeUserPresence = allUserPresence.filter((entry) => {
+    const entryTab = String(entry?.activeTab ?? '');
+    return variant === 'lincoln' ? entryTab.startsWith('lincoln_') : !entryTab.startsWith('lincoln_');
+  });
   const activeUsersHere = safeUserPresence.filter((entry) => entry.activeTab === activeTab);
   const currentDevice = deviceLabel(currentUser?.device);
   const visiblePresence = safeUserPresence;
