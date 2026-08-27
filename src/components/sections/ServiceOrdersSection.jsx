@@ -9696,6 +9696,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       receivedAmountBs: allocation.receivedBs,
       guaranteeAllocationBs: allocation.guaranteeBs,
       surplusAllocationBs: allocation.surplusBs,
+      // El recibo oficial debe conservar la fecha elegida en la Hoja Flexible.
+      // Generarlo dias despues no convierte el deposito en un movimiento de hoy.
+      createdAt: entry.createdAt,
+      receiptIssuedAt: entry.createdAt,
       paymentMethod: entry.paymentMethod || 'efectivo',
       paymentAccount: entry.paymentMethod === 'qr' ? entry.paymentAccount || '' : '',
       receiptDetail,
@@ -9751,7 +9755,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               ...row,
               cashMovementId: movementId,
               cashReceiptCode: receiptCode,
-              cashRegisteredAt: movement?.createdAt ?? new Date().toISOString(),
+              cashRegisteredAt: movement?.receiptIssuedAt ?? movement?.createdAt ?? entry.createdAt,
               isCashRegistered: true,
               contractAllocationBs: allocation.contractBs,
               guaranteeAllocationBs: allocation.guaranteeBs,

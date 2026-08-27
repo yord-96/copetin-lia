@@ -66,5 +66,5 @@ test('renders the legal contract and package matrix as two professional pages', 
   assert.match(html, /JÓVENES/);
   assert.match(html, /ADULTOS/);
   assert.match(html, /BASILIA HERBAS SAHONERO/);
-  assert.equal((html.match(/class="page"/g) ?? []).length, 2);
+  assert.equal((html.match(/<section class="page(?: |")/g) ?? []).length, 2);
 });

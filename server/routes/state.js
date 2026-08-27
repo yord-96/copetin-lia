@@ -12,6 +12,7 @@ import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.
 import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRentals.js';
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
+import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -1531,51 +1532,55 @@ const nextDirectReceiptCode = (state) => {
   }, 0);
   return `RC-${String(maxPersisted > 0 ? maxPersisted + 1 : movements.length + 1).padStart(4, '0')}`;
 };
-const buildDirectMovement = (state, payload = {}) => ({
-  id: directId('mov'),
-  sessionId: payload.sessionId ?? null,
-  type: String(payload.type ?? '').trim(),
-  amountBs: Number(Number(payload.amountBs ?? 0).toFixed(2)),
-  description: String(payload.description ?? '').trim(),
-  sourceType: payload.sourceType ?? null,
-  sourceId: payload.sourceId ?? null,
-  createdBy: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
-  createdByName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
-  userName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
-  cashBoxType: String(payload.cashBoxType ?? 'BIG_CASH').trim() || 'BIG_CASH',
-  category: String(payload.category ?? '').trim(),
-  paymentMethod: directPaymentMethod(payload.paymentMethod),
-  paymentAccount: directPaymentAccount(payload.paymentMethod, payload.paymentAccount),
-  responsible: String(payload.responsible ?? payload.createdBy ?? 'Sistema').trim() || 'Sistema',
-  receipt: String(payload.receipt ?? '').trim(),
-  receiptCode: String(payload.receiptCode ?? nextDirectReceiptCode(state)).trim(),
-  notes: String(payload.notes ?? '').trim(),
-  isInternalTransfer: false,
-  transferGroupId: null,
-  receiptStatus: '',
-  voidedAt: null,
-  voidedBy: '',
-  voidReason: '',
-  replacedByMovementId: null,
-  replacementOfMovementId: null,
-  linkedRentalId: String(payload.linkedRentalId ?? '').trim() || null,
-  linkedContractId: String(payload.linkedContractId ?? '').trim() || null,
-  linkedOrderCode: String(payload.linkedOrderCode ?? '').trim() || null,
-  accountingTag: String(payload.accountingTag ?? '').trim(),
-  collectionTarget: String(payload.collectionTarget ?? '').trim(),
-  collectionTargets: Array.isArray(payload.collectionTargets) ? payload.collectionTargets : [],
-  collectionBreakdown: Array.isArray(payload.collectionBreakdown) ? payload.collectionBreakdown : [],
-  receiptDetail: String(payload.receiptDetail ?? '').trim(),
-  receivedAmountBs: directMoney(payload.receivedAmountBs ?? payload.amountBs),
-  contractAllocationBs: directMoney(payload.contractAllocationBs),
-  guaranteeAllocationBs: directMoney(payload.guaranteeAllocationBs),
-  surplusAllocationBs: directMoney(payload.surplusAllocationBs),
-  transportRevenueBs: directMoney(payload.transportRevenueBs),
-  damageCollectedBs: directMoney(payload.damageCollectedBs),
-  transportExpenseBs: directMoney(payload.transportExpenseBs),
-  clientOperationId: String(payload.clientOperationId ?? '').trim() || null,
-  createdAt: new Date().toISOString(),
-});
+const buildDirectMovement = (state, payload = {}) => {
+  const { createdAt, receiptIssuedAt } = resolveEconomicReceiptTimestamps(payload);
+  return ({
+    id: directId('mov'),
+    sessionId: payload.sessionId ?? null,
+    type: String(payload.type ?? '').trim(),
+    amountBs: Number(Number(payload.amountBs ?? 0).toFixed(2)),
+    description: String(payload.description ?? '').trim(),
+    sourceType: payload.sourceType ?? null,
+    sourceId: payload.sourceId ?? null,
+    createdBy: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+    createdByName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+    userName: String(payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+    cashBoxType: String(payload.cashBoxType ?? 'BIG_CASH').trim() || 'BIG_CASH',
+    category: String(payload.category ?? '').trim(),
+    paymentMethod: directPaymentMethod(payload.paymentMethod),
+    paymentAccount: directPaymentAccount(payload.paymentMethod, payload.paymentAccount),
+    responsible: String(payload.responsible ?? payload.createdBy ?? 'Sistema').trim() || 'Sistema',
+    receipt: String(payload.receipt ?? '').trim(),
+    receiptCode: String(payload.receiptCode ?? nextDirectReceiptCode(state)).trim(),
+    notes: String(payload.notes ?? '').trim(),
+    isInternalTransfer: false,
+    transferGroupId: null,
+    receiptStatus: '',
+    voidedAt: null,
+    voidedBy: '',
+    voidReason: '',
+    replacedByMovementId: null,
+    replacementOfMovementId: null,
+    linkedRentalId: String(payload.linkedRentalId ?? '').trim() || null,
+    linkedContractId: String(payload.linkedContractId ?? '').trim() || null,
+    linkedOrderCode: String(payload.linkedOrderCode ?? '').trim() || null,
+    accountingTag: String(payload.accountingTag ?? '').trim(),
+    collectionTarget: String(payload.collectionTarget ?? '').trim(),
+    collectionTargets: Array.isArray(payload.collectionTargets) ? payload.collectionTargets : [],
+    collectionBreakdown: Array.isArray(payload.collectionBreakdown) ? payload.collectionBreakdown : [],
+    receiptDetail: String(payload.receiptDetail ?? '').trim(),
+    receivedAmountBs: directMoney(payload.receivedAmountBs ?? payload.amountBs),
+    contractAllocationBs: directMoney(payload.contractAllocationBs),
+    guaranteeAllocationBs: directMoney(payload.guaranteeAllocationBs),
+    surplusAllocationBs: directMoney(payload.surplusAllocationBs),
+    transportRevenueBs: directMoney(payload.transportRevenueBs),
+    damageCollectedBs: directMoney(payload.damageCollectedBs),
+    transportExpenseBs: directMoney(payload.transportExpenseBs),
+    clientOperationId: String(payload.clientOperationId ?? '').trim() || null,
+    createdAt,
+    receiptIssuedAt,
+  });
+};
 
 const reconcileVipPrepaidRental = (state, rental, contract = null) => {
   if (!rental || rental?.deletedAt || String(rental?.status ?? '').toLowerCase() === 'cancelled') return null;

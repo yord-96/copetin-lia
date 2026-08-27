@@ -1,6 +1,7 @@
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
+import { resolveEconomicReceiptDisplayTimestamp } from '../utils/economicReceiptTimestamp.js';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
@@ -5302,6 +5303,11 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     || (linkedOrderCode && contractByOrderCode.get(linkedOrderCode))
     || (linkedOrderCode && contractByCode.get(linkedOrderCode))
     || null;
+  const linkedEconomicLedgerEntry = Array.isArray(contractContext?.economicLedger)
+    ? contractContext.economicLedger.find((entry) => (
+        String(entry?.cashMovementId ?? '').trim() === String(movement?.id ?? '').trim()
+      )) ?? null
+    : null;
   const contractCode = String(
     contractContext?.contractCode
     ?? rentalContext?.contractCode
@@ -5361,9 +5367,10 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const totalLabel = isPersonnelAdvance ? 'ADELANTO ENTREGADO' : isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
   const partyLabel = isPersonnelAdvance ? 'TRABAJADOR' : isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
   const cashBoxRoleLabel = isOut ? 'Caja origen' : 'Caja destino';
-  const createdAt = movement.receiptIssuedAt || movement.createdAt
-    ? new Date(movement.receiptIssuedAt ?? movement.createdAt)
-    : new Date();
+  const createdAt = new Date(resolveEconomicReceiptDisplayTimestamp({
+    movement,
+    ledgerEntry: linkedEconomicLedgerEntry,
+  }));
   const dateLabel = formatDate(createdAt);
   const timeLabel = createdAt.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false });
   const receiptCode = getCashReceiptCode(state, movement);
