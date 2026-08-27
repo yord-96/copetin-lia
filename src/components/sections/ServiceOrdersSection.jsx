@@ -9897,7 +9897,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const handleDeleteContractEconomicLedgerEntry = async (entry) => {
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
-    const confirmed = window.confirm('Eliminar esta linea del cuaderno economico?');
+    const linkedReceiptCode = String(entry?.cashReceiptCode ?? '').trim();
+    const linkedMovementId = String(entry?.cashMovementId ?? '').trim();
+    const confirmed = window.confirm(
+      linkedMovementId
+        ? `Eliminar este pago del cuaderno economico?${linkedReceiptCode ? `\n\nTambien se eliminara el recibo ${linkedReceiptCode} y su movimiento de Caja Grande.` : '\n\nTambien se eliminara su movimiento y recibo de Caja Grande.'}`
+        : 'Eliminar esta linea del cuaderno economico?',
+    );
     if (!confirmed) return;
 
     const nextLedger = (contractEconomicsData.economicLedger ?? [])
@@ -9907,6 +9913,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       'Linea anulada del cuaderno economico.',
       { deletionReason: `Anulada manualmente: ${entry.note || entry.type || 'sin detalle'}` },
     );
+    if (updated && linkedMovementId) {
+      setContractEconomicsContextMovements((current) => current.filter((movement) => String(movement?.id ?? '') !== linkedMovementId));
+      setRecentEconomicCashMovements((current) => current.filter((movement) => String(movement?.id ?? '') !== linkedMovementId));
+    }
     if (updated && contractEconomicsLedgerEditingId === entry.id) {
       resetContractEconomicLedgerForm();
     }
@@ -13046,8 +13056,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               type="button"
                               className="contract-economics-row-action danger"
                               onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
-                              disabled={readOnly || isSavingContractEconomicsLedger || (canHaveDepositReceipt && Boolean(entry.cashMovementId))}
-                              title={canHaveDepositReceipt && entry.cashMovementId ? 'Para corregir un recibo oficial debe usarse el flujo de anulacion y reemplazo.' : ''}
+                              disabled={readOnly || isSavingContractEconomicsLedger}
+                              title={entry.cashMovementId ? 'Elimina la linea, el movimiento de Caja Grande y el recibo vinculado.' : 'Elimina esta linea del cuaderno economico.'}
                               aria-label={`Eliminar linea ${meta.label}`}
                             >
                               <Trash2 aria-hidden="true" />

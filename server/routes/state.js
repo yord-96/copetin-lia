@@ -1069,7 +1069,7 @@ const getStrictEconomicLinkKeys = (contract, rental = null, serviceOrder = null)
 });
 
 const strictEconomicRecordMatches = (record, keys) => {
-  if (!record) return false;
+  if (!record || record?.deletedAt || record?.voidedAt) return false;
   const linkedContractId = normalizeStrictEconomicKey(record?.linkedContractId ?? record?.contractId);
   const linkedRentalId = normalizeStrictEconomicKey(record?.linkedRentalId ?? record?.rentalId);
   const linkedOrderCode = normalizeStrictEconomicKey(record?.linkedOrderCode ?? record?.orderCode);
@@ -5734,12 +5734,123 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
             const entryId = String(mutation?.entryId ?? '').trim();
             if (!entryId || !ledgerById.has(entryId)) return;
             const previous = ledgerById.get(entryId);
+            const deletionReason = String(mutation?.reason ?? 'Linea anulada.').trim() || 'Linea anulada.';
+            const deletedById = req.body.updatedById ?? req.body.userId ?? null;
+            const deletedByName = String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema';
+            const linkedCashMovementId = String(previous?.cashMovementId ?? '').trim();
+
+            // Una linea respaldada por Caja Grande es una sola operacion economica.
+            // Al eliminarla desde la Hoja Flexible tambien retiramos su movimiento
+            // y recibo, y revertimos los acumulados que ese cobro habia aplicado.
+            if (linkedCashMovementId) {
+              state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+              const linkedMovement = state.cashMovements.find((movement) =>
+                String(movement?.id ?? '') === linkedCashMovementId
+              );
+
+              if (linkedMovement && !linkedMovement.deletedAt) {
+                const commercialAppliedBs = Math.max(0, directMoney(linkedMovement?.contractAllocationBs));
+                const transportAppliedBs = Math.max(0, directMoney(linkedMovement?.transportRevenueBs));
+                const rentalAppliedBs = Math.max(0, directMoney(commercialAppliedBs - transportAppliedBs));
+                const damageAppliedBs = Math.max(0, directMoney(linkedMovement?.damageCollectedBs));
+                const rollbackPendingBs = directMoney(commercialAppliedBs + damageAppliedBs);
+
+                state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+                const linkedRentalId = String(
+                  linkedMovement?.linkedRentalId
+                  ?? linkedMovement?.sourceId
+                  ?? existingContract?.rentalId
+                  ?? '',
+                ).trim();
+                const linkedRental = state.rentals.find((rental) =>
+                  String(rental?.id ?? '') === linkedRentalId
+                  || (existingContract?.orderCode && String(rental?.orderCode ?? '') === String(existingContract.orderCode))
+                ) ?? null;
+
+                if (linkedRental && rollbackPendingBs > 0) {
+                  const previousPendingBs = directMoney(
+                    linkedRental?.returnSettlement?.pendingCollectionBs
+                    ?? linkedRental?.payment?.pendingPaymentBs
+                    ?? linkedRental?.totals?.pendingPaymentBs
+                    ?? 0,
+                  );
+                  const restoredPendingBs = directMoney(previousPendingBs + rollbackPendingBs);
+                  const restoredPaidBs = directMoney(Math.max(0, Number(linkedRental?.payment?.paidAtRentalBs ?? linkedRental?.totals?.paidAtRentalBs ?? 0) - commercialAppliedBs));
+                  const restoredTransportBs = directMoney(Math.max(0, Number(linkedRental?.payment?.deliveryFeeCollectedBs ?? linkedRental?.totals?.deliveryFeeCollectedBs ?? 0) - transportAppliedBs));
+                  const restoredRentalCollectedBs = directMoney(Math.max(0, Number(linkedRental?.payment?.rentalCollectedBs ?? linkedRental?.totals?.rentalCollectedBs ?? 0) - rentalAppliedBs));
+                  const restoredDamageBs = directMoney(Math.max(0, Number(linkedRental?.payment?.damageCollectedBs ?? linkedRental?.totals?.damageCollectedBs ?? 0) - damageAppliedBs));
+
+                  linkedRental.payment = {
+                    ...(linkedRental.payment ?? {}),
+                    paidAtRentalBs: restoredPaidBs,
+                    pendingPaymentBs: restoredPendingBs,
+                    deliveryFeeCollectedBs: restoredTransportBs,
+                    rentalCollectedBs: restoredRentalCollectedBs,
+                    damageCollectedBs: restoredDamageBs,
+                    status: restoredPendingBs > 0 ? 'saldo_pendiente' : linkedRental?.payment?.status,
+                    mode: restoredPendingBs > 0 ? 'a_cuenta' : linkedRental?.payment?.mode,
+                  };
+                  linkedRental.totals = { ...(linkedRental.totals ?? {}), ...linkedRental.payment };
+
+                  if (linkedRental.returnSettlement) {
+                    linkedRental.returnSettlement = {
+                      ...linkedRental.returnSettlement,
+                      outstandingRentalBs: directMoney(Number(linkedRental.returnSettlement?.outstandingRentalBs ?? 0) + commercialAppliedBs),
+                      pendingCollectionBs: restoredPendingBs,
+                      paidBs: directMoney(Math.max(0, Number(linkedRental.returnSettlement?.paidBs ?? 0) - commercialAppliedBs)),
+                      damageCollectedBs: directMoney(Math.max(0, Number(linkedRental.returnSettlement?.damageCollectedBs ?? 0) - damageAppliedBs)),
+                      penaltiesCollectedBs: directMoney(Math.max(0, Number(linkedRental.returnSettlement?.penaltiesCollectedBs ?? 0) - damageAppliedBs)),
+                      collectedAfterReturnBs: directMoney(Math.max(0, Number(linkedRental.returnSettlement?.collectedAfterReturnBs ?? 0) - rollbackPendingBs)),
+                      accountingStatus: restoredPendingBs > 0 ? 'saldo_pendiente' : linkedRental.returnSettlement?.accountingStatus,
+                      settledAt: restoredPendingBs > 0 ? null : linkedRental.returnSettlement?.settledAt,
+                    };
+                  }
+
+                  linkedRental.accountingStatus = restoredPendingBs > 0
+                    ? (String(linkedRental?.status ?? '').toLowerCase() === 'returned' ? 'finalizado_pendiente_cobro' : 'saldo_pendiente')
+                    : linkedRental.accountingStatus;
+                  linkedRental.updatedAt = now;
+
+                  state.serviceOrders = Array.isArray(state.serviceOrders) ? state.serviceOrders : [];
+                  state.serviceOrders.forEach((order) => {
+                    if (String(order?.rentalId ?? '') !== String(linkedRental.id)
+                      && String(order?.id ?? '') !== String(linkedRental.id)
+                      && String(order?.codigo ?? order?.orderCode ?? '') !== String(linkedRental?.orderCode ?? existingContract?.orderCode ?? '')) return;
+                    order.saldo_pendiente = restoredPendingBs;
+                    if (restoredPendingBs > 0) order.estado = 'pendiente_cobro';
+                    order.updated_at = now;
+                  });
+
+                  existingContract.accountingStatus = linkedRental.accountingStatus;
+                  if (restoredPendingBs > 0) existingContract.paymentStatus = 'saldo_pendiente';
+                }
+
+                linkedMovement.deletedAt = now;
+                linkedMovement.deletedById = deletedById;
+                linkedMovement.deletedByName = deletedByName;
+                linkedMovement.deletionReason = deletionReason;
+                linkedMovement.receiptDeletedAt = now;
+                linkedMovement.receiptStatus = 'eliminado';
+                linkedMovement.updatedAt = now;
+
+                state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
+                state.generatedReports = state.generatedReports.filter((report) => {
+                  const reportMovementId = String(
+                    report?.cashMovementId
+                    ?? (report?.sourceType === 'cashMovement' ? report?.sourceId : '')
+                    ?? '',
+                  ).trim();
+                  return reportMovementId !== linkedCashMovementId;
+                });
+              }
+            }
+
             ledgerById.set(entryId, {
               ...previous,
               deletedAt: now,
-              deletedById: req.body.updatedById ?? req.body.userId ?? null,
-              deletedByName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
-              deletionReason: String(mutation?.reason ?? 'Linea anulada.').trim() || 'Linea anulada.',
+              deletedById,
+              deletedByName,
+              deletionReason,
             });
           }
         });

@@ -4645,6 +4645,8 @@ const buildCashMovement = ({
   transportRevenueBs = 0,
   damageCollectedBs = 0,
   transportExpenseBs = 0,
+  createdAt = null,
+  receiptIssuedAt = null,
 }) => ({
   id: makeId('mov'),
   sessionId,
@@ -4696,7 +4698,12 @@ const buildCashMovement = ({
   transportRevenueBs: Number(Number(transportRevenueBs ?? 0).toFixed(2)),
   damageCollectedBs: Number(Number(damageCollectedBs ?? 0).toFixed(2)),
   transportExpenseBs: Number(Number(transportExpenseBs ?? 0).toFixed(2)),
-  createdAt: new Date().toISOString(),
+  createdAt: Number.isNaN(new Date(createdAt ?? '').getTime())
+    ? new Date().toISOString()
+    : new Date(createdAt).toISOString(),
+  receiptIssuedAt: Number.isNaN(new Date(receiptIssuedAt ?? createdAt ?? '').getTime())
+    ? null
+    : new Date(receiptIssuedAt ?? createdAt).toISOString(),
 });
 
 const isVoidedCashMovement = (movement) =>
@@ -18848,6 +18855,8 @@ const createWebBridge = () => ({
             linkedOrderCode,
             accountingTag,
             transportExpenseBs: accountingTag === 'transport_expense' ? amountRaw : transportExpenseBs,
+            createdAt: payload?.createdAt ?? null,
+            receiptIssuedAt: payload?.receiptIssuedAt ?? payload?.createdAt ?? null,
           });
           state.cashMovements.push(createdMovement);
         }
@@ -19399,6 +19408,8 @@ const createWebBridge = () => ({
           collectionTargets,
           collectionBreakdown,
           receiptDetail,
+          createdAt: payload?.createdAt ?? null,
+          receiptIssuedAt: payload?.receiptIssuedAt ?? payload?.createdAt ?? null,
         };
         const createdMovements = [
           buildCashMovement({
