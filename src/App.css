@@ -69261,3 +69261,43 @@ button.inventory-loss-row-action:hover {
     min-width: 72rem !important;
   }
 }
+
+/* === COTIZACIONES Y CONTRATOS · COMPACTAR ESPACIO SUPERIOR 2026-08-27 === */
+/*
+  SOLO VISUAL.
+  Reduce exclusivamente el aire entre la cabecera global y
+  Cotizaciones y Contratos en escritorio. No altera otras vistas,
+  handlers, filtros, tablas ni comportamiento móvil.
+*/
+@media (min-width: 769px) {
+  body:has(.orders-view) .app-content {
+    padding-top: 0.18rem !important;
+  }
+
+  body:has(.orders-view) .workspace {
+    gap: 0.42rem !important;
+  }
+
+  .orders-view.panel {
+    padding-top: 0 !important;
+  }
+
+  .orders-view > .orders-header {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0.06rem !important;
+    align-items: flex-start !important;
+  }
+
+  .orders-view > .orders-header > div:first-child {
+    align-self: start;
+  }
+
+  .orders-view > .orders-header h2 {
+    margin-top: 0 !important;
+  }
+
+  .orders-view > .orders-header p {
+    margin-top: 0.08rem !important;
+  }
+}
