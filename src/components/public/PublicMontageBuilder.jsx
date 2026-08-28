@@ -167,7 +167,7 @@ function Chair({ chair, selections, visuals }) {
   const coverVisual = selections.cobertor ? visuals[selections.cobertor.id] : null;
   const cushionVisual = selections.cojin ? visuals[selections.cojin.id] : null;
   return (
-    <Group x={chair.x} y={chair.y} rotation={chair.rotation} scaleX={scale} scaleY={scale} listening={false}>
+    <Group x={chair.x} y={chair.y} rotation={chair.rotation ?? 0} scaleX={scale} scaleY={scale} listening={false}>
       <Ellipse x={0} y={39} radiusX={38} radiusY={10} fill="rgba(45,30,18,.16)" />
       <ProductImage item={selections.silla} visual={visuals[selections.silla.id]} x={-50} y={-64} width={100} height={116} />
       {selections.cobertor ? (
