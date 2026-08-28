@@ -10250,42 +10250,12 @@ const consumeUniqueCommercialDocumentCode = (state, fieldPrefix, fieldNext, coll
   if (!state.settings) state.settings = {};
   if (!state.settings.numbering) state.settings.numbering = {};
   const numbering = state.settings.numbering;
-  const rows = Array.isArray(state?.[collectionName]) ? state[collectionName] : [];
-
-  let prefix = String(numbering[fieldPrefix] ?? '');
+  const prefix = String(numbering[fieldPrefix] ?? '');
   let next = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
 
-  const existingCodes = rows
-    .map((row) => String(row?.[codeField] ?? '').trim())
-    .filter(Boolean);
-  const configuredPrefixHasHistory = existingCodes.some((code) => parseDocumentPrefix(code) === prefix);
-
-  // Si la configuración volvió al valor por defecto pero ya existe historia comercial,
-  // reconstruye la secuencia a partir de los documentos reales en vez de empezar en 1.
-  if (existingCodes.length > 0 && !configuredPrefixHasHistory) {
-    const latest = existingCodes
-      .map((code) => ({
-        code,
-        number: parseDocumentNumericPart(code),
-        prefix: parseDocumentPrefix(code),
-      }))
-      .filter((entry) => entry.number)
-      .sort((a, b) => b.number - a.number)[0];
-
-    if (latest) {
-      prefix = latest.prefix;
-      next = Math.max(next, latest.number + 1);
-      numbering[fieldPrefix] = prefix;
-      numbering[fieldNext] = next;
-    }
-  } else if (configuredPrefixHasHistory) {
-    const latestNumber = existingCodes
-      .filter((code) => parseDocumentPrefix(code) === prefix)
-      .map((code) => parseDocumentNumericPart(code))
-      .filter(Boolean)
-      .reduce((maximum, value) => Math.max(maximum, value), 0);
-    next = Math.max(next, latestNumber + 1);
-  }
+  // El correlativo configurado es la fuente de verdad. Los códigos históricos o
+  // manuales pueden ser mayores, pero no deben arrastrar la secuencia automática.
+  // Las colisiones reales se omiten en el bucle de abajo.
 
   let attempts = 0;
   while (attempts < 100000) {
@@ -10323,26 +10293,6 @@ const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, c
     state.settings.numbering[fieldNext] = numericPart + 1;
   }
   return manualCode;
-};
-
-const releaseLatestCommercialDocumentCode = (state, code, fieldPrefix, fieldNext) => {
-  const numericPart = parseDocumentNumericPart(code);
-  if (!numericPart) return;
-  if (!state.settings) state.settings = {};
-  if (!state.settings.numbering) state.settings.numbering = {};
-  const numbering = state.settings.numbering;
-  const currentPrefix = String(numbering[fieldPrefix] ?? '');
-  const codePrefix = parseDocumentPrefix(code);
-  const currentNext = Math.max(1, Math.trunc(Number(numbering[fieldNext] ?? 1)));
-  if (currentPrefix === codePrefix && currentNext === numericPart + 1) {
-    let next = numericPart;
-    while (next > 1) {
-      const previousCode = currentPrefix ? `${currentPrefix}${formatDocNumber(next - 1)}` : String(next - 1);
-      if (commercialDocumentCodeExists(state, 'contracts', 'contractCode', previousCode)) break;
-      next -= 1;
-    }
-    numbering[fieldNext] = next;
-  }
 };
 
 const rentalMatchesContract = (rental, contract) => {
@@ -10682,7 +10632,6 @@ const cleanupContractDeletionEffects = (state, contract, now, options = {}) => {
     }
   });
 
-  releaseLatestCommercialDocumentCode(state, contract.contractCode, 'contractPrefix', 'contractNext');
 };
 
 const repairDeletedContractOperationalResidues = (state, now) => {
@@ -16576,7 +16525,6 @@ const createWebBridge = () => ({
         quote.orderCode = null;
         quote.updatedAt = now;
 
-        releaseLatestCommercialDocumentCode(state, contract.contractCode, 'contractPrefix', 'contractNext');
         contract.deletedAt = now;
         contract.status = 'revertido';
         contract.revertedToQuoteAt = now;

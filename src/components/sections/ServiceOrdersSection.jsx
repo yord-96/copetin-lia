@@ -2130,39 +2130,21 @@ function ServiceOrdersSection({
     const configuredPrefix = String(numbering.contractPrefix ?? '');
     const configuredNext = Math.max(1, Math.trunc(Number(numbering.contractNext ?? 1)));
     const occupiedCodes = new Set();
-    const allNumberedCodes = [];
     const addCode = (code) => {
       const normalizedCode = String(code ?? '').trim();
       if (!normalizedCode) return;
       occupiedCodes.add(normalizedCode);
-      const numericPart = parseCommercialCodeNumericPart(normalizedCode);
-      if (!numericPart) return;
-      allNumberedCodes.push({
-        code: normalizedCode,
-        number: numericPart,
-        prefix: parseCommercialCodePrefix(normalizedCode),
-      });
     };
 
-    contracts.forEach((contract) => addCode(contract?.contractCode));
+    contracts
+      .filter((contract) => contract && !contract.deletedAt)
+      .forEach((contract) => addCode(contract?.contractCode));
     rentals
       .filter((rental) => rental && !rental.deletedAt && rental.status !== 'cancelled')
       .forEach((rental) => addCode(rental?.contractCode));
 
-    const configuredHistory = allNumberedCodes.filter((entry) => entry.prefix === configuredPrefix);
-    const latestActual = allNumberedCodes
-      .slice()
-      .sort((a, b) => b.number - a.number)[0] ?? null;
-
-    const prefix = configuredHistory.length > 0 || !latestActual
-      ? configuredPrefix
-      : latestActual.prefix;
-    const matchingNumbers = allNumberedCodes
-      .filter((entry) => entry.prefix === prefix)
-      .map((entry) => entry.number);
-
-    const latest = matchingNumbers.length > 0 ? Math.max(...matchingNumbers) : null;
-    let next = Math.max(configuredNext, latest ? latest + 1 : 1);
+    const prefix = configuredPrefix;
+    let next = configuredNext;
     let attempts = 0;
     while (attempts < 100000 && occupiedCodes.has(formatCommercialDocumentCode(prefix, next))) {
       next += 1;
@@ -2175,8 +2157,6 @@ function ServiceOrdersSection({
       next,
       nextCode: formatCommercialDocumentCode(prefix, next),
       followingCode: formatCommercialDocumentCode(prefix, next + 1),
-      latestCode: latest ? formatCommercialDocumentCode(prefix, latest) : '',
-      nextAfterLatestCode: latest ? formatCommercialDocumentCode(prefix, latest + 1) : '',
     };
   }, [contracts, rentals, settings]);
 
@@ -2195,22 +2175,11 @@ function ServiceOrdersSection({
   const saveContractNumbering = async () => {
     if (!canEditContractNumbering) return;
     const currentCode = String(numberingDraft.currentCode ?? '').trim();
-    const followingCode = String(numberingDraft.followingCode ?? '').trim();
     const currentNumber = parseCommercialCodeNumericPart(currentCode);
-    const followingNumber = parseCommercialCodeNumericPart(followingCode);
     const currentPrefix = parseCommercialCodePrefix(currentCode);
-    const followingPrefix = parseCommercialCodePrefix(followingCode);
 
-    if (!currentNumber || !followingNumber) {
-      setNumberingError('Ambos codigos deben terminar en un numero.');
-      return;
-    }
-    if (currentPrefix !== followingPrefix) {
-      setNumberingError('Actual y siguiente deben usar el mismo prefijo.');
-      return;
-    }
-    if (followingNumber !== currentNumber + 1) {
-      setNumberingError('El siguiente debe ser exactamente el numero posterior al actual.');
+    if (!currentNumber) {
+      setNumberingError('El proximo contrato debe terminar en un numero.');
       return;
     }
 
@@ -2224,7 +2193,7 @@ function ServiceOrdersSection({
         },
       });
       setNumberingEditorOpen(false);
-      setActionFeedback(`Numeracion de contratos actualizada: actual ${currentCode}, siguiente ${followingCode}.`);
+      setActionFeedback(`Numeracion actualizada: el proximo contrato automatico sera ${currentCode}.`);
     } catch (requestError) {
       setNumberingError(requestError.message || 'No se pudo actualizar la numeracion.');
     } finally {
@@ -10837,11 +10806,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   className={`orders-board-next-code ${canEditContractNumbering ? 'can-edit' : ''}`}
                   onClick={openContractNumberingEditor}
                   disabled={!canEditContractNumbering}
-                  title={canEditContractNumbering ? 'Editar numeracion de contratos' : 'Numeracion actual de contratos'}
+                  title={canEditContractNumbering ? 'Editar el proximo correlativo' : 'Correlativo de contratos'}
                 >
                   <span>Numeracion</span>
-                  <strong><small>Actual</small>{contractNumberingInfo.nextCode}</strong>
-                  <strong><small>Siguiente</small>{contractNumberingInfo.followingCode}</strong>
+                  <strong><small>Proximo</small>{contractNumberingInfo.nextCode}</strong>
+                  <strong><small>Despues</small>{contractNumberingInfo.followingCode}</strong>
                 </button>
               ) : null}
             </Fragment>
@@ -17709,18 +17678,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <div className="orders-numbering-preview" aria-label="Vista previa de numeracion">
                 <span>Numeracion</span>
                 <strong>
-                  <small>Actual</small>
+                  <small>Proximo</small>
                   {numberingDraft.currentCode || '-'}
                 </strong>
                 <strong>
-                  <small>Siguiente</small>
+                  <small>Despues</small>
                   {numberingDraft.followingCode || '-'}
                 </strong>
               </div>
 
               <div className="orders-numbering-fields">
                 <label>
-                  Codigo actual
+                  Proximo contrato automatico
                   <input
                     value={numberingDraft.currentCode}
                     onChange={(event) => {
@@ -17737,18 +17706,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   />
                 </label>
                 <label>
-                  Codigo siguiente
+                  Despues se usara
                   <input
                     value={numberingDraft.followingCode}
-                    onChange={(event) => {
-                      setNumberingDraft((current) => ({ ...current, followingCode: event.target.value }));
-                      setNumberingError('');
-                    }}
+                    readOnly
+                    aria-readonly="true"
                     placeholder="Ej: 1574"
                   />
                 </label>
               </div>
-              <p className="orders-numbering-help">El codigo actual sera el proximo contrato automatico. El siguiente debe ser el correlativo inmediato.</p>
+              <p className="orders-numbering-help">Los numeros historicos o ingresados manualmente no cambiaran este correlativo. Si el numero ya esta ocupado, el sistema avanzara al siguiente libre.</p>
               {numberingError ? <p className="status error">{numberingError}</p> : null}
             </div>
 
