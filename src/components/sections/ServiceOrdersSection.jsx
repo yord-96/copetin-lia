@@ -841,6 +841,7 @@ const normalizeWhatsAppNumber = (value) => {
 };
 
 const getResponsibleDisplayName = (record) => {
+  if (record?.awaitingAssignment || record?.source === 'public_catalog') return 'Sin asignar';
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.name) : [];
   if (responsibles.length > 1) return `${responsibles[0].name} + ${responsibles.length - 1} mas`;
   if (responsibles.length === 1) return responsibles[0].name;
@@ -853,6 +854,7 @@ const getResponsibleDisplayName = (record) => {
 };
 
 const getResponsibleDisplayRole = (record) => {
+  if (record?.awaitingAssignment || record?.source === 'public_catalog') return 'Esperando contacto';
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.role) : [];
   if (responsibles.length > 1) return 'Responsables multiples';
   if (responsibles.length === 1) return responsibles[0].role;

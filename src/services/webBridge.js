@@ -2469,7 +2469,8 @@ const normalizeState = (state) => {
       const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
       const overpaidBs = Math.max(0, Number((Number(quote?.payment?.overpaidBs ?? paidAtApprovalBs - totalBs)).toFixed(2)));
-      const responsibles = normalizeRecordResponsibles(quote);
+      const awaitingAssignment = Boolean(quote?.awaitingAssignment || quote?.source === 'public_catalog');
+      const responsibles = awaitingAssignment ? [] : normalizeRecordResponsibles(quote);
       const primaryResponsible = responsibles[0] ?? null;
 
       return {
@@ -2508,6 +2509,10 @@ const normalizeState = (state) => {
         observations: String(quote?.observations ?? '').trim(),
         billingMode: ['con_factura', 'sin_factura'].includes(quote?.billingMode) ? quote.billingMode : 'sin_factura',
         status: String(quote?.status ?? 'borrador').trim() || 'borrador',
+        source: String(quote?.source ?? '').trim(),
+        awaitingAssignment,
+        publicRequestStatus: String(quote?.publicRequestStatus ?? '').trim(),
+        publicDocumentTokenHash: String(quote?.publicDocumentTokenHash ?? '').trim(),
         totals: {
           itemsGrossSubtotalBs: Number(Math.max(0, itemsGrossSubtotalBs).toFixed(2)),
           itemDiscountsBs: Number(Math.max(0, itemDiscountsBs).toFixed(2)),

@@ -8,6 +8,7 @@ import {
   renderHtmlDocumentToPdf,
 } from '../storage/documentPdfRenderer.js';
 import { getProductUploadInfo } from '../storage/productImageStore.js';
+import { hasValidPublicQuoteAccess } from '../security/publicQuoteAccess.js';
 import {
   buildContractDocumentHtml,
   buildWeeklyInventoryHtml,
@@ -600,6 +601,56 @@ router.get(
     }
   },
 );
+
+router.get('/api/public/quotes/:id/pdf', async (req, res, next) => {
+  const startedAt = Date.now();
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    const token = String(req.query?.token ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar la cotizacion.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const context = resolveQuoteContext(snapshot?.state, requestedId);
+    if (!context?.quote) {
+      res.status(404).json({ error: 'Cotizacion no encontrada.' });
+      return;
+    }
+    if (!hasValidPublicQuoteAccess(context.quote, token)) {
+      res.status(403).json({ error: 'El enlace de descarga no es valido.' });
+      return;
+    }
+
+    const quote = context.quote;
+    const paperSize = 'carta';
+    const rawHtml = buildContractDocumentHtml({
+      contract: quote,
+      rental: quote,
+      deliveries: [],
+      settings: snapshot?.state?.settings ?? {},
+      items: Array.isArray(snapshot?.state?.items) ? snapshot.state.items : [],
+      paperSize,
+      documentKind: 'quote',
+    });
+    const html = await embedContractAssets(rawHtml);
+    const result = await renderHtmlDocumentToPdf({
+      html,
+      baseUrl: `${req.protocol}://${req.get('host')}`,
+      fileName: buildQuotePdfFileName(quote),
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.setHeader('Content-Length', String(result.buffer.length));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+    res.send(result.buffer);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get(
   '/__copetin_db/inventory-orders/:id/pdf',

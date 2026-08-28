@@ -11,7 +11,7 @@ import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
-import PublicMontageBuilder from './components/public/PublicMontageBuilder';
+import PublicQuoteBuilder from './components/public/PublicQuoteBuilder';
 import {
   canAccessCompany,
   canAccessTab,
@@ -1008,8 +1008,12 @@ function App() {
     ? window.location.pathname.replace(/\/+$/, '') || '/'
     : '/';
 
+  if (publicPath === '/catalogo/cotizar') {
+    return <PublicQuoteBuilder />;
+  }
+
   if (publicPath === '/catalogo/montado') {
-    return <PublicMontageBuilder />;
+    return <PublicCatalogPage />;
   }
 
   if (publicPath === '/catalogo') {

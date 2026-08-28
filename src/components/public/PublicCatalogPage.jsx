@@ -176,8 +176,8 @@ export default function PublicCatalogPage() {
           <h1>Catalogo de alquiler para eventos</h1>
           <p>Cristaleria, manteleria y mobiliario para revisar antes de cotizar. La disponibilidad se confirma por fecha.</p>
           <div className="public-catalog-hero-actions">
-            <a href="/catalogo/montado">Diseña tu mesa</a>
-            <span>Combina gratis manteles, vajilla, servilletas, sillas y más</span>
+            <a href="/catalogo/cotizar">Realizar cotización</a>
+            <span>Consulta disponibilidad por fecha, elige productos y descarga tu PDF</span>
           </div>
         </div>
       </section>
