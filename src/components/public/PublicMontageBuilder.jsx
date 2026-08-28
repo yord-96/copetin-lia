@@ -11,18 +11,21 @@ import {
   Text,
 } from 'react-konva';
 import useImage from 'use-image';
+import {
+  analyzeProductVisual,
+  colorFromItem,
+  normalizeText,
+  productNameText,
+  productText,
+  scoreVisualHarmony,
+} from './montage/montageVisualAnalysis.js';
+import { buildSceneModel, TABLE_TYPES } from './montage/montageSceneModel.js';
 
 const PUBLIC_CATALOG_ENDPOINTS = ['/__copetin_db/public/catalog', '/api/public/catalog'];
-const STORAGE_KEY = 'copetin-public-montage-canvas-v1';
-
-const normalizeText = (value) => String(value ?? '')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase()
-  .trim();
+const STORAGE_KEY = 'copetin-public-montage-v6';
 
 const SLOT_DEFINITIONS = [
-  { id: 'mesa', label: 'Mesa', keywords: ['mesa'], excludes: ['muleton', 'mantel', 'caminito', 'coctelera', 'mesa infantil'] },
+  { id: 'mesa', label: 'Mesa', keywords: ['mesa'], excludes: ['muleton', 'mantel', 'caminito', 'coctelera', 'infantil'] },
   { id: 'mantel', label: 'Mantel', keywords: ['mantel'], excludes: ['caminito', 'sobre mantel', 'sobremantel', 'muleton'] },
   { id: 'caminito', label: 'Caminito / sobremantel', keywords: ['caminito', 'camino', 'sobre mantel', 'sobremantel', 'faldon'] },
   { id: 'plaquet', label: 'Plaquet', keywords: ['plaquet', 'bajoplato', 'bajo plato'] },
@@ -37,33 +40,6 @@ const SLOT_DEFINITIONS = [
   { id: 'centro', label: 'Centro de mesa', keywords: ['centro', 'arreglo', 'florero', 'candelabro', 'portavela', 'porta vela', 'vela', 'base decorativa'] },
 ];
 
-const TABLE_TYPES = [
-  { id: 'round', label: 'Redonda', seats: 8 },
-  { id: 'rect', label: 'Rectangular', seats: 10 },
-  { id: 'square', label: 'Cuadrada', seats: 8 },
-];
-
-const COLOR_RULES = [
-  ['negro', '#232326'], ['blanco', '#f3efe7'], ['marfil', '#e8ddc6'], ['hueso', '#e2d2b4'],
-  ['beige', '#cbb89b'], ['arena', '#c8ac86'], ['cafe', '#7b5336'], ['café', '#7b5336'],
-  ['dorado', '#c59a48'], ['oro', '#c59a48'], ['plata', '#b9bdc5'], ['plateado', '#b9bdc5'],
-  ['guindo', '#6d1f2c'], ['vino', '#732b39'], ['rojo', '#a72d2d'], ['fucsia', '#d83379'],
-  ['rosado', '#d99aa8'], ['rosa', '#d99aa8'], ['lila', '#8d70a9'], ['morado', '#694b8c'],
-  ['naranja', '#d97935'], ['amarillo', '#d9b340'], ['mostaza', '#b8932f'], ['turquesa', '#3c9e9f'],
-  ['menta', '#95b9a4'], ['verde olivo', '#66734a'], ['verde', '#537a59'], ['azul marino', '#283b58'],
-  ['azul', '#52749d'], ['celeste', '#87a9c7'],
-];
-
-const productText = (item) => normalizeText([
-  item?.name,
-  item?.category,
-  item?.color,
-  item?.material,
-  item?.areaLabel,
-].join(' '));
-
-const productNameText = (item) => normalizeText(item?.name);
-
 const belongsToSlot = (item, slot) => {
   if (!item || item.kind === 'combo') return false;
   const name = productNameText(item);
@@ -73,375 +49,234 @@ const belongsToSlot = (item, slot) => {
   return slot.keywords.some((word) => normalizeText(word).length >= 6 && category === normalizeText(word));
 };
 
-const colorFromItem = (item, fallback = '#ddd4c7') => {
-  const haystack = productText(item);
-  const match = COLOR_RULES.find(([word]) => haystack.includes(normalizeText(word)));
-  return match?.[1] ?? fallback;
-};
-
-const hexToRgb = (hex) => {
-  const value = String(hex || '').replace('#', '');
-  if (!/^[0-9a-f]{6}$/i.test(value)) return { r: 210, g: 200, b: 185 };
-  return {
-    r: Number.parseInt(value.slice(0, 2), 16),
-    g: Number.parseInt(value.slice(2, 4), 16),
-    b: Number.parseInt(value.slice(4, 6), 16),
-  };
-};
-
-const colorDistance = (left, right) => {
-  const a = hexToRgb(left);
-  const b = hexToRgb(right);
-  return Math.sqrt(((a.r - b.r) ** 2) + ((a.g - b.g) ** 2) + ((a.b - b.b) ** 2));
-};
-
-const loadImageAnalysis = (item) => new Promise((resolve) => {
-  if (!item?.imageUrl) {
-    resolve({ dominantColor: colorFromItem(item), textureStrength: 0.16, cutoutUrl: '' });
-    return;
-  }
-
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.decoding = 'async';
-  image.onload = () => {
-    try {
-      const size = 72;
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) throw new Error('Canvas no disponible');
-      context.drawImage(image, 0, 0, size, size);
-      const pixels = context.getImageData(0, 0, size, size);
-      const { data } = pixels;
-
-      const corners = [[2, 2], [size - 3, 2], [2, size - 3], [size - 3, size - 3]];
-      const background = corners.reduce((sum, [x, y]) => {
-        const offset = ((y * size) + x) * 4;
-        return {
-          r: sum.r + data[offset] / corners.length,
-          g: sum.g + data[offset + 1] / corners.length,
-          b: sum.b + data[offset + 2] / corners.length,
-        };
-      }, { r: 0, g: 0, b: 0 });
-
-      const distanceFromBackground = (r, g, b) => Math.sqrt(
-        ((r - background.r) ** 2) + ((g - background.g) ** 2) + ((b - background.b) ** 2),
-      );
-
-      let r = 0; let g = 0; let b = 0; let count = 0;
-      let minX = size; let minY = size; let maxX = 0; let maxY = 0;
-      let luminanceSum = 0; let luminanceSquaredSum = 0;
-
-      for (let y = 0; y < size; y += 1) {
-        for (let x = 0; x < size; x += 1) {
-          const index = ((y * size) + x) * 4;
-          if (data[index + 3] < 20) continue;
-          const pr = data[index]; const pg = data[index + 1]; const pb = data[index + 2];
-          if (distanceFromBackground(pr, pg, pb) < 36) continue;
-          r += pr; g += pg; b += pb; count += 1;
-          minX = Math.min(minX, x); minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
-          const lum = ((pr * 299) + (pg * 587) + (pb * 114)) / 1000;
-          luminanceSum += lum;
-          luminanceSquaredSum += lum ** 2;
-        }
-      }
-
-      if (!count) throw new Error('Sin muestra');
-      const sampledColor = `#${[r / count, g / count, b / count]
-        .map((value) => Math.round(value).toString(16).padStart(2, '0'))
-        .join('')}`;
-      const namedColor = colorFromItem(item, sampledColor);
-      const dominantColor = colorDistance(namedColor, sampledColor) > 130 ? namedColor : sampledColor;
-      const averageLum = luminanceSum / count;
-      const variance = Math.max(0, (luminanceSquaredSum / count) - (averageLum ** 2));
-      const textureStrength = Math.max(0.10, Math.min(0.26, 0.10 + (Math.sqrt(variance) / 240)));
-
-      const outputSize = 360;
-      const cutout = document.createElement('canvas');
-      cutout.width = outputSize;
-      cutout.height = outputSize;
-      const cutoutContext = cutout.getContext('2d', { willReadFrequently: true });
-      if (!cutoutContext) throw new Error('Canvas no disponible');
-
-      const sx = Math.max(0, Math.floor((minX / size) * image.naturalWidth));
-      const sy = Math.max(0, Math.floor((minY / size) * image.naturalHeight));
-      const sw = Math.max(1, Math.ceil(((maxX - minX + 1) / size) * image.naturalWidth));
-      const sh = Math.max(1, Math.ceil(((maxY - minY + 1) / size) * image.naturalHeight));
-      const scale = Math.min((outputSize * 0.88) / sw, (outputSize * 0.88) / sh);
-      const dw = sw * scale; const dh = sh * scale;
-      const dx = (outputSize - dw) / 2; const dy = (outputSize - dh) / 2;
-      cutoutContext.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
-
-      const cutPixels = cutoutContext.getImageData(0, 0, outputSize, outputSize);
-      const cutData = cutPixels.data;
-      for (let index = 0; index < cutData.length; index += 4) {
-        if (!cutData[index + 3]) continue;
-        const distance = distanceFromBackground(cutData[index], cutData[index + 1], cutData[index + 2]);
-        const alpha = Math.max(0, Math.min(1, (distance - 15) / 62));
-        cutData[index + 3] = Math.round(cutData[index + 3] * (alpha ** 0.74));
-      }
-      cutoutContext.putImageData(cutPixels, 0, 0);
-
-      resolve({
-        dominantColor,
-        textureStrength,
-        cutoutUrl: cutout.toDataURL('image/png', 0.92),
-      });
-    } catch {
-      resolve({ dominantColor: colorFromItem(item), textureStrength: 0.14, cutoutUrl: item.imageUrl });
-    }
-  };
-  image.onerror = () => resolve({ dominantColor: colorFromItem(item), textureStrength: 0.14, cutoutUrl: item.imageUrl });
-  image.src = item.imageUrl;
-});
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 function ProductImage({ item, visual, ...props }) {
   const [image] = useImage(visual?.cutoutUrl || item?.imageUrl || '', 'anonymous');
   if (!image) return null;
-  return <KonvaImage image={image} {...props} />;
+  return <KonvaImage image={image} listening={false} {...props} />;
 }
 
-function MaterialEllipse({ item, visual, x, y, radiusX, radiusY, ...props }) {
-  const [image] = useImage(item?.imageUrl || '', 'anonymous');
-  const base = visual?.dominantColor || colorFromItem(item);
+function MaterialEllipse({ item, visual, x, y, radiusX, radiusY, opacity = 1, ...props }) {
+  const [texture] = useImage(item?.imageUrl || '', 'anonymous');
+  const base = visual?.dominantColor || colorFromItem(item, '#e8ddcd');
+  const patternOpacity = clamp((visual?.textureStrength ?? 0.1) + (visual?.patternDensity ?? 0.06) * 0.35, 0.08, 0.24);
   return (
-    <Group>
+    <Group listening={false} opacity={opacity}>
       <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill={base} {...props} />
-      {image ? (
-        <Group clipFunc={(ctx) => { ctx.beginPath(); ctx.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2); ctx.closePath(); }}>
-          <KonvaImage
-            image={image}
-            x={x - radiusX}
-            y={y - radiusY}
-            width={radiusX * 2}
-            height={radiusY * 2}
-            opacity={visual?.textureStrength ?? 0.14}
-            globalCompositeOperation="multiply"
-          />
-        </Group>
+      {texture ? (
+        <Ellipse
+          x={x}
+          y={y}
+          radiusX={radiusX * 0.985}
+          radiusY={radiusY * 0.985}
+          fillPatternImage={texture}
+          fillPatternRepeat="repeat"
+          fillPatternScaleX={0.28}
+          fillPatternScaleY={0.28}
+          opacity={patternOpacity}
+          globalCompositeOperation="multiply"
+        />
       ) : null}
-      <Ellipse x={x} y={y - radiusY * 0.08} radiusX={radiusX * 0.96} radiusY={radiusY * 0.78} fill="rgba(255,255,255,.09)" />
+      <Ellipse
+        x={x}
+        y={y - radiusY * 0.15}
+        radiusX={radiusX * 0.93}
+        radiusY={radiusY * 0.62}
+        fillLinearGradientStartPoint={{ x: 0, y: -radiusY }}
+        fillLinearGradientEndPoint={{ x: 0, y: radiusY }}
+        fillLinearGradientColorStops={[0, 'rgba(255,255,255,.22)', 0.72, 'rgba(255,255,255,.03)', 1, 'rgba(0,0,0,.05)']}
+      />
     </Group>
   );
 }
 
-function MaterialRect({ item, visual, x, y, width, height, cornerRadius = 0, ...props }) {
-  const [image] = useImage(item?.imageUrl || '', 'anonymous');
-  const base = visual?.dominantColor || colorFromItem(item);
+function MaterialRect({ item, visual, x, y, width, height, cornerRadius = 0, opacity = 1, ...props }) {
+  const [texture] = useImage(item?.imageUrl || '', 'anonymous');
+  const base = visual?.dominantColor || colorFromItem(item, '#e8ddcd');
+  const patternOpacity = clamp((visual?.textureStrength ?? 0.1) + (visual?.patternDensity ?? 0.06) * 0.35, 0.08, 0.24);
   return (
-    <Group>
+    <Group listening={false} opacity={opacity}>
       <Rect x={x} y={y} width={width} height={height} cornerRadius={cornerRadius} fill={base} {...props} />
-      {image ? (
-        <Group clipX={x} clipY={y} clipWidth={width} clipHeight={height}>
-          <KonvaImage
-            image={image}
-            x={x}
-            y={y}
-            width={width}
-            height={height}
-            opacity={visual?.textureStrength ?? 0.14}
-            globalCompositeOperation="multiply"
-          />
+      {texture ? (
+        <Rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          cornerRadius={cornerRadius}
+          fillPatternImage={texture}
+          fillPatternRepeat="repeat"
+          fillPatternScaleX={0.25}
+          fillPatternScaleY={0.25}
+          opacity={patternOpacity}
+          globalCompositeOperation="multiply"
+        />
+      ) : null}
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        cornerRadius={cornerRadius}
+        fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+        fillLinearGradientEndPoint={{ x: width, y: height }}
+        fillLinearGradientColorStops={[0, 'rgba(255,255,255,.17)', 0.55, 'rgba(255,255,255,.02)', 1, 'rgba(0,0,0,.05)']}
+      />
+    </Group>
+  );
+}
+
+function PlaceSetting({ seat, selections, visuals, scale = 1 }) {
+  const plateVisual = selections.plato ? visuals[selections.plato.id] : null;
+  const plaquetVisual = selections.plaquet ? visuals[selections.plaquet.id] : null;
+  const napkinVisual = selections.servilleta ? visuals[selections.servilleta.id] : null;
+  const plaquetColor = plaquetVisual?.dominantColor || colorFromItem(selections.plaquet, '#c6a45e');
+  const plateColor = plateVisual?.dominantColor || colorFromItem(selections.plato, '#f5f2ea');
+  const napkinColor = napkinVisual?.dominantColor || colorFromItem(selections.servilleta, '#665944');
+  const s = scale * (0.82 + seat.depth * 0.18);
+
+  return (
+    <Group x={seat.x} y={seat.y} rotation={seat.rotation} scaleX={s} scaleY={s} listening={false}>
+      <Ellipse y={5} radiusX={39} radiusY={13} fill="rgba(65,44,27,.12)" />
+      <Circle radius={34} fill={plaquetColor} shadowColor="#342313" shadowBlur={8} shadowOpacity={0.16} />
+      <Circle radius={28} fill={plateColor} stroke="rgba(90,70,45,.18)" strokeWidth={1.4} />
+      <Circle radius={23} fill="rgba(255,255,255,.28)" stroke="rgba(255,255,255,.35)" strokeWidth={1} />
+      {selections.servilleta ? (
+        <Group rotation={-9}>
+          <Rect x={-12} y={-16} width={24} height={34} cornerRadius={4} fill={napkinColor} shadowColor="#251a13" shadowBlur={4} shadowOpacity={0.14} />
+          <Line points={[-8, -10, 8, 8]} stroke="rgba(255,255,255,.25)" strokeWidth={1} />
         </Group>
       ) : null}
-      <Rect x={x} y={y} width={width} height={height * 0.45} cornerRadius={cornerRadius} fill="rgba(255,255,255,.06)" />
-    </Group>
-  );
-}
-
-const getTableGeometry = (type, width, height, view) => {
-  const topY = view === 'main' ? height * 0.48 : height * 0.5;
-  if (type.id === 'rect') {
-    return {
-      cx: width * 0.5,
-      cy: topY,
-      rx: width * 0.29,
-      ry: view === 'main' ? height * 0.105 : height * 0.22,
-      shape: 'rect',
-      rectW: width * 0.62,
-      rectH: view === 'main' ? height * 0.18 : height * 0.4,
-    };
-  }
-  if (type.id === 'square') {
-    return {
-      cx: width * 0.5,
-      cy: topY,
-      rx: width * 0.22,
-      ry: view === 'main' ? height * 0.115 : height * 0.26,
-      shape: 'square',
-      rectW: width * 0.46,
-      rectH: view === 'main' ? height * 0.20 : height * 0.46,
-    };
-  }
-  return {
-    cx: width * 0.5,
-    cy: topY,
-    rx: width * 0.285,
-    ry: view === 'main' ? height * 0.11 : height * 0.25,
-    shape: 'ellipse',
-  };
-};
-
-const makeSeatLayout = (type, width, height, view) => {
-  const geometry = getTableGeometry(type, width, height, view);
-  const count = type.seats;
-
-  if (type.id === 'rect') {
-    const topCount = Math.ceil(count / 2);
-    const bottomCount = count - topCount;
-    const rows = [];
-    const xStart = geometry.cx - geometry.rectW * 0.39;
-    const xEnd = geometry.cx + geometry.rectW * 0.39;
-    for (let index = 0; index < topCount; index += 1) {
-      const x = xStart + ((xEnd - xStart) / Math.max(1, topCount - 1)) * index;
-      rows.push({
-        x,
-        y: geometry.cy - geometry.rectH * 0.27,
-        rotation: 0,
-        chairX: x,
-        chairY: geometry.cy - geometry.rectH * 0.72 - (view === 'main' ? 70 : 40),
-        depth: 0.2,
-      });
-    }
-    for (let index = 0; index < bottomCount; index += 1) {
-      const x = xStart + ((xEnd - xStart) / Math.max(1, bottomCount - 1)) * index;
-      rows.push({
-        x,
-        y: geometry.cy + geometry.rectH * 0.27,
-        rotation: 180,
-        chairX: x,
-        chairY: geometry.cy + geometry.rectH * 0.65 + (view === 'main' ? 80 : 42),
-        depth: 0.9,
-      });
-    }
-    return rows;
-  }
-
-  const seatRx = geometry.rx * (type.id === 'square' ? 0.80 : 0.82);
-  const seatRy = geometry.ry * (view === 'main' ? 0.62 : 0.78);
-  const chairRx = geometry.rx * (type.id === 'square' ? 1.25 : 1.32);
-  const chairRy = geometry.ry * (view === 'main' ? 2.05 : 1.42);
-
-  return Array.from({ length: count }, (_, index) => {
-    const angle = ((Math.PI * 2) / count) * index - Math.PI / 2;
-    const normalizedDepth = (Math.sin(angle) + 1) / 2;
-    return {
-      x: geometry.cx + Math.cos(angle) * seatRx,
-      y: geometry.cy + Math.sin(angle) * seatRy,
-      rotation: (angle * 180 / Math.PI) + 90,
-      chairX: geometry.cx + Math.cos(angle) * chairRx,
-      chairY: geometry.cy + Math.sin(angle) * chairRy,
-      depth: normalizedDepth,
-    };
-  });
-};
-
-function PlaceSettingCanvas({ x, y, rotation, selections, visuals, scale = 1 }) {
-  const plateColor = colorFromItem(selections.plato, '#f5f2ea');
-  const plaquetColor = colorFromItem(selections.plaquet, '#c6a45e');
-  const napkinColor = colorFromItem(selections.servilleta, '#665944');
-  return (
-    <Group x={x} y={y} rotation={rotation} scaleX={scale} scaleY={scale}>
-      <Circle radius={34} fill={plaquetColor} shadowColor="#4c321f" shadowBlur={8} shadowOpacity={0.18} />
-      <Circle radius={27} fill={plateColor} stroke="#d8d2c8" strokeWidth={1.5} />
-      {selections.servilleta ? (
-        <Rect x={-11} y={-17} width={22} height={34} cornerRadius={4} fill={napkinColor} rotation={-7} />
+      {selections.copa ? (
+        <ProductImage item={selections.copa} visual={visuals[selections.copa.id]} x={28} y={-43} width={24} height={42} shadowColor="#000" shadowBlur={4} shadowOpacity={0.16} />
       ) : null}
-      {selections.copa ? <ProductImage item={selections.copa} visual={selections.copa ? visuals?.[selections.copa.id] : null} x={27} y={-34} width={22} height={34} /> : null}
-      {selections.tenedor ? <ProductImage item={selections.tenedor} visual={selections.tenedor ? visuals?.[selections.tenedor.id] : null} x={-47} y={-22} width={13} height={42} /> : null}
-      {selections.cuchillo ? <ProductImage item={selections.cuchillo} visual={selections.cuchillo ? visuals?.[selections.cuchillo.id] : null} x={35} y={-22} width={13} height={42} /> : null}
+      {selections.tenedor ? (
+        <ProductImage item={selections.tenedor} visual={visuals[selections.tenedor.id]} x={-49} y={-24} width={13} height={44} />
+      ) : null}
+      {selections.cuchillo ? (
+        <ProductImage item={selections.cuchillo} visual={visuals[selections.cuchillo.id]} x={37} y={-24} width={13} height={44} />
+      ) : null}
     </Group>
   );
 }
 
-function ChairCanvas({ x, y, rotation, item, itemVisual, cover, cushion, scale = 1 }) {
-  if (!item) return null;
+function Chair({ chair, selections, visuals }) {
+  if (!selections.silla) return null;
+  const scale = chair.scale;
+  const coverVisual = selections.cobertor ? visuals[selections.cobertor.id] : null;
+  const cushionVisual = selections.cojin ? visuals[selections.cojin.id] : null;
   return (
-    <Group x={x} y={y} rotation={rotation} scaleX={scale} scaleY={scale}>
-      <ProductImage item={item} visual={itemVisual} x={-42} y={-48} width={84} height={96} />
-      {cover ? <Rect x={-20} y={-22} width={40} height={43} cornerRadius={9} fill={colorFromItem(cover, '#ece2d1')} opacity={0.42} /> : null}
-      {cushion ? <Ellipse x={0} y={20} radiusX={17} radiusY={6} fill={colorFromItem(cushion, '#d4c3a3')} opacity={0.78} /> : null}
+    <Group x={chair.x} y={chair.y} rotation={chair.rotation} scaleX={scale} scaleY={scale} listening={false}>
+      <Ellipse x={0} y={39} radiusX={38} radiusY={10} fill="rgba(45,30,18,.16)" />
+      <ProductImage item={selections.silla} visual={visuals[selections.silla.id]} x={-50} y={-64} width={100} height={116} />
+      {selections.cobertor ? (
+        <Rect
+          x={-21}
+          y={-32}
+          width={42}
+          height={52}
+          cornerRadius={10}
+          fill={coverVisual?.dominantColor || colorFromItem(selections.cobertor, '#ede4d7')}
+          opacity={0.45}
+        />
+      ) : null}
+      {selections.cojin ? (
+        <Ellipse
+          y={20}
+          radiusX={18}
+          radiusY={7}
+          fill={cushionVisual?.dominantColor || colorFromItem(selections.cojin, '#d8c8aa')}
+          opacity={0.78}
+        />
+      ) : null}
     </Group>
   );
 }
 
-function TableCanvas({ type, selections, visuals, width, height, view }) {
-  const geometry = getTableGeometry(type, width, height, view);
+function Table({ model, selections, visuals, view }) {
+  const { geometry } = model;
   const mantelVisual = selections.mantel ? visuals[selections.mantel.id] : null;
   const runnerVisual = selections.caminito ? visuals[selections.caminito.id] : null;
-  const clothColor = mantelVisual?.dominantColor || colorFromItem(selections.mantel, '#e8ddcd');
+  const cloth = mantelVisual?.dominantColor || colorFromItem(selections.mantel, '#e8ddcd');
 
   if (view === 'main') {
-    const skirtTop = geometry.cy + geometry.ry * 0.15;
-    const skirtBottom = geometry.cy + geometry.ry + height * 0.22;
-    const halfWidth = geometry.shape === 'ellipse' ? geometry.rx * 0.92 : geometry.rectW * 0.47;
-    const left = geometry.cx - halfWidth;
-    const right = geometry.cx + halfWidth;
-    const bottomInset = halfWidth * 0.11;
-
+    const topY = geometry.cy;
+    const halfW = geometry.topW / 2;
+    const skirtTop = topY + geometry.topH * 0.16;
+    const skirtBottom = skirtTop + geometry.skirtH;
+    const inset = geometry.topW * 0.08;
     return (
-      <Group>
+      <Group listening={false}>
         <Line
-          points={[left, skirtTop, right, skirtTop, right - bottomInset, skirtBottom, left + bottomInset, skirtBottom]}
+          points={[geometry.cx - halfW * 0.94, skirtTop, geometry.cx + halfW * 0.94, skirtTop, geometry.cx + halfW - inset, skirtBottom, geometry.cx - halfW + inset, skirtBottom]}
           closed
-          fill={clothColor}
-          shadowColor="#4c321f"
-          shadowBlur={20}
-          shadowOpacity={0.18}
+          fill={cloth}
+          fillLinearGradientStartPoint={{ x: geometry.cx - halfW, y: skirtTop }}
+          fillLinearGradientEndPoint={{ x: geometry.cx + halfW, y: skirtBottom }}
+          fillLinearGradientColorStops={[0, cloth, 0.45, cloth, 0.72, 'rgba(0,0,0,.12)', 1, cloth]}
+          shadowColor="#3a2819"
+          shadowBlur={22}
+          shadowOpacity={0.2}
         />
-
+        <Line
+          points={[geometry.cx - halfW * 0.82, skirtTop + 8, geometry.cx - halfW * 0.68, skirtBottom - 4]}
+          stroke="rgba(255,255,255,.13)"
+          strokeWidth={2}
+        />
+        <Line
+          points={[geometry.cx + halfW * 0.56, skirtTop + 6, geometry.cx + halfW * 0.45, skirtBottom - 4]}
+          stroke="rgba(0,0,0,.09)"
+          strokeWidth={3}
+        />
         {geometry.shape === 'ellipse' ? (
           <MaterialEllipse
             item={selections.mantel}
             visual={mantelVisual}
             x={geometry.cx}
-            y={geometry.cy}
-            radiusX={geometry.rx}
-            radiusY={geometry.ry}
-            shadowColor="#52361f"
-            shadowBlur={14}
+            y={topY}
+            radiusX={halfW}
+            radiusY={geometry.topH / 2}
+            shadowColor="#342313"
+            shadowBlur={16}
             shadowOpacity={0.2}
           />
         ) : (
           <MaterialRect
             item={selections.mantel}
             visual={mantelVisual}
-            x={geometry.cx - geometry.rectW / 2}
-            y={geometry.cy - geometry.rectH / 2}
-            width={geometry.rectW}
-            height={geometry.rectH}
-            cornerRadius={geometry.shape === 'square' ? 16 : 38}
-            shadowColor="#52361f"
-            shadowBlur={14}
+            x={geometry.cx - halfW}
+            y={topY - geometry.topH / 2}
+            width={geometry.topW}
+            height={geometry.topH}
+            cornerRadius={geometry.shape === 'square' ? 16 : 36}
+            shadowColor="#342313"
+            shadowBlur={16}
             shadowOpacity={0.2}
           />
         )}
-
         {selections.caminito ? (
           geometry.shape === 'ellipse' ? (
             <MaterialRect
               item={selections.caminito}
               visual={runnerVisual}
-              x={geometry.cx - geometry.rx * 0.10}
-              y={geometry.cy - geometry.ry * 0.95}
-              width={geometry.rx * 0.20}
-              height={geometry.ry * 1.9}
+              x={geometry.cx - geometry.topW * 0.055}
+              y={topY - geometry.topH * 0.48}
+              width={geometry.topW * 0.11}
+              height={geometry.topH * 0.96}
               cornerRadius={10}
-              opacity={0.93}
+              opacity={0.92}
             />
           ) : (
             <MaterialRect
               item={selections.caminito}
               visual={runnerVisual}
-              x={geometry.cx - geometry.rectW * 0.07}
-              y={geometry.cy - geometry.rectH * 0.5}
-              width={geometry.rectW * 0.14}
-              height={geometry.rectH}
+              x={geometry.cx - geometry.topW * 0.055}
+              y={topY - geometry.topH * 0.5}
+              width={geometry.topW * 0.11}
+              height={geometry.topH}
               cornerRadius={8}
-              opacity={0.93}
+              opacity={0.92}
             />
           )
         ) : null}
@@ -449,58 +284,77 @@ function TableCanvas({ type, selections, visuals, width, height, view }) {
     );
   }
 
-  return (
+  return geometry.shape === 'ellipse' ? (
     <Group>
-      {geometry.shape === 'ellipse' ? (
-        <MaterialEllipse item={selections.mantel} visual={mantelVisual} x={geometry.cx} y={geometry.cy} radiusX={geometry.rx} radiusY={geometry.ry} shadowColor="#52361f" shadowBlur={14} shadowOpacity={0.16} />
-      ) : (
-        <MaterialRect item={selections.mantel} visual={mantelVisual} x={geometry.cx - geometry.rectW / 2} y={geometry.cy - geometry.rectH / 2} width={geometry.rectW} height={geometry.rectH} cornerRadius={geometry.shape === 'square' ? 18 : 42} shadowColor="#52361f" shadowBlur={14} shadowOpacity={0.16} />
-      )}
+      <MaterialEllipse
+        item={selections.mantel}
+        visual={mantelVisual}
+        x={geometry.cx}
+        y={geometry.cy}
+        radiusX={geometry.topW / 2}
+        radiusY={geometry.topH / 2}
+        shadowColor="#342313"
+        shadowBlur={14}
+        shadowOpacity={0.16}
+      />
       {selections.caminito ? (
-        <MaterialRect
-          item={selections.caminito}
-          visual={runnerVisual}
-          x={geometry.cx - (geometry.shape === 'ellipse' ? geometry.rx * 0.09 : geometry.rectW * 0.065)}
-          y={geometry.cy - geometry.ry * 0.92}
-          width={geometry.shape === 'ellipse' ? geometry.rx * 0.18 : geometry.rectW * 0.13}
-          height={geometry.ry * 1.84}
-          cornerRadius={8}
-        />
+        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - geometry.topW * 0.055} y={geometry.cy - geometry.topH * 0.46} width={geometry.topW * 0.11} height={geometry.topH * 0.92} cornerRadius={10} opacity={0.92} />
+      ) : null}
+    </Group>
+  ) : (
+    <Group>
+      <MaterialRect
+        item={selections.mantel}
+        visual={mantelVisual}
+        x={geometry.cx - geometry.topW / 2}
+        y={geometry.cy - geometry.topH / 2}
+        width={geometry.topW}
+        height={geometry.topH}
+        cornerRadius={geometry.shape === 'square' ? 18 : 42}
+        shadowColor="#342313"
+        shadowBlur={14}
+        shadowOpacity={0.16}
+      />
+      {selections.caminito ? (
+        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - geometry.topW * 0.055} y={geometry.cy - geometry.topH * 0.48} width={geometry.topW * 0.11} height={geometry.topH * 0.96} cornerRadius={8} opacity={0.92} />
       ) : null}
     </Group>
   );
 }
 
 function MontageCanvasScene({ selections, visuals, tableType, view }) {
-  const containerRef = useRef(null);
-  const [size, setSize] = useState({ width: 920, height: 560 });
+  const wrapperRef = useRef(null);
+  const [size, setSize] = useState({ width: 900, height: 520 });
 
   useEffect(() => {
-    const element = containerRef.current;
+    const element = wrapperRef.current;
     if (!element) return undefined;
-    const update = () => {
-      const width = Math.max(620, Math.floor(element.clientWidth || 920));
-      setSize({ width, height: Math.round(width * 0.59) });
+    const sync = () => {
+      const width = Math.max(620, Math.floor(element.clientWidth || 900));
+      setSize({ width, height: Math.round(width * 0.56) });
     };
-    update();
-    const observer = new ResizeObserver(update);
+    sync();
+    const observer = new ResizeObserver(sync);
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
-  const seats = useMemo(() => makeSeatLayout(tableType, size.width, size.height, view), [tableType, size, view]);
-  const geometry = useMemo(() => getTableGeometry(tableType, size.width, size.height, view), [tableType, size, view]);
+  const model = useMemo(() => buildSceneModel(tableType, size.width, size.height, view), [size, tableType, view]);
+  const backChairs = model.chairs.filter((chair) => chair.side === 'back');
+  const frontChairs = model.chairs.filter((chair) => chair.side === 'front');
 
   if (view === 'place') {
+    const seat = { x: size.width * 0.44, y: size.height * 0.55, rotation: 0, depth: 0.8 };
     return (
-      <div className="montage-konva-wrap" ref={containerRef}>
+      <div className="montage-canvas-host" ref={wrapperRef}>
         <Stage width={size.width} height={size.height}>
           <Layer>
-            <Rect width={size.width} height={size.height} fill="#d7b995" />
-            <MaterialRect item={selections.mantel} visual={selections.mantel ? visuals[selections.mantel.id] : null} x={size.width * 0.08} y={size.height * 0.08} width={size.width * 0.7} height={size.height * 0.84} cornerRadius={24} />
-            <PlaceSettingCanvas x={size.width * 0.43} y={size.height * 0.54} rotation={0} selections={selections} visuals={visuals} scale={2.5} />
-            {selections.centro ? <ProductImage item={selections.centro} visual={visuals[selections.centro.id]} x={size.width * 0.4} y={size.height * 0.12} width={100} height={120} /> : null}
-            <ChairCanvas x={size.width * 0.88} y={size.height * 0.58} rotation={0} item={selections.silla} itemVisual={selections.silla ? visuals[selections.silla.id] : null} cover={selections.cobertor} cushion={selections.cojin} scale={1.65} />
+            <Rect width={size.width} height={size.height} fill="#f2e7d8" />
+            <Rect y={size.height * 0.67} width={size.width} height={size.height * 0.33} fill="#b38a63" />
+            <MaterialRect item={selections.mantel} visual={selections.mantel ? visuals[selections.mantel.id] : null} x={size.width * 0.08} y={size.height * 0.10} width={size.width * 0.72} height={size.height * 0.82} cornerRadius={28} />
+            <PlaceSetting seat={seat} selections={selections} visuals={visuals} scale={2.6} />
+            {selections.centro ? <ProductImage item={selections.centro} visual={visuals[selections.centro.id]} x={size.width * 0.35} y={size.height * 0.08} width={130} height={145} /> : null}
+            {selections.silla ? <Chair chair={{ x: size.width * 0.88, y: size.height * 0.60, rotation: 0, scale: 1.8 }} selections={selections} visuals={visuals} /> : null}
           </Layer>
         </Stage>
       </div>
@@ -508,79 +362,45 @@ function MontageCanvasScene({ selections, visuals, tableType, view }) {
   }
 
   return (
-    <div className="montage-konva-wrap" ref={containerRef}>
+    <div className="montage-canvas-host" ref={wrapperRef}>
       <Stage width={size.width} height={size.height}>
         <Layer>
-          <Rect width={size.width} height={size.height * 0.58} fill={view === 'main' ? '#efe2d2' : '#d8c2a7'} />
-          <Rect y={size.height * 0.58} width={size.width} height={size.height * 0.42} fill="#a98460" />
+          <Rect width={size.width} height={size.height} fill="#efe3d3" />
+          <Rect y={model.backdrop.horizonY} width={size.width} height={size.height - model.backdrop.horizonY} fill="#b48a63" />
           {view === 'main' ? (
-            <Group opacity={0.3}>
-              {Array.from({ length: 16 }, (_, index) => (
-                <Circle key={index} x={(index * 173) % size.width} y={35 + ((index * 77) % (size.height * 0.42))} radius={2.5} fill="#f6df9d" />
-              ))}
-            </Group>
+            <>
+              <Circle x={size.width * 0.12} y={size.height * 0.18} radius={2} fill="rgba(214,173,81,.48)" />
+              <Circle x={size.width * 0.78} y={size.height * 0.15} radius={2} fill="rgba(214,173,81,.48)" />
+              <Circle x={size.width * 0.56} y={size.height * 0.11} radius={1.7} fill="rgba(214,173,81,.42)" />
+            </>
           ) : null}
 
-          {view === 'main' ? seats.filter((seat) => seat.depth < 0.5).map((seat, index) => (
-            <ChairCanvas
-              key={`back-chair-${index}`}
-              x={seat.chairX ?? seat.x}
-              y={seat.chairY ?? seat.y}
-              rotation={seat.rotation}
-              item={selections.silla}
-              itemVisual={selections.silla ? visuals[selections.silla.id] : null}
-              cover={selections.cobertor}
-              cushion={selections.cojin}
-              scale={0.60 + (seat.depth * 0.20)}
-            />
-          )) : null}
+          {backChairs.map((chair, index) => <Chair key={`back-${index}`} chair={chair} selections={selections} visuals={visuals} />)}
 
-          <TableCanvas type={tableType} selections={selections} visuals={visuals} width={size.width} height={size.height} view={view} />
+          <Table model={model} selections={selections} visuals={visuals} view={view} />
 
-          {seats.map((seat, index) => (
-            <PlaceSettingCanvas
-              key={`setting-${index}`}
-              x={seat.x}
-              y={seat.y}
-              rotation={seat.rotation}
-              selections={selections}
-              visuals={visuals}
-              scale={view === 'main' ? 0.66 + (seat.depth * 0.12) : 0.76}
-            />
+          {model.seats.map((seat, index) => (
+            <PlaceSetting key={`seat-${index}`} seat={seat} selections={selections} visuals={visuals} scale={view === 'main' ? 0.76 : 0.82} />
           ))}
 
           {selections.centro ? (
-            <ProductImage item={selections.centro} visual={visuals[selections.centro.id]} x={geometry.cx - 50} y={geometry.cy - 88} width={100} height={118} />
+            <ProductImage
+              item={selections.centro}
+              visual={visuals[selections.centro.id]}
+              x={model.geometry.cx - 54}
+              y={model.geometry.cy - (view === 'main' ? 96 : 70)}
+              width={108}
+              height={126}
+              shadowColor="#2d1f14"
+              shadowBlur={8}
+              shadowOpacity={0.2}
+            />
           ) : null}
 
-          {view === 'main' ? seats.filter((seat) => seat.depth >= 0.5).map((seat, index) => (
-            <ChairCanvas
-              key={`front-chair-${index}`}
-              x={seat.chairX ?? seat.x}
-              y={seat.chairY ?? seat.y}
-              rotation={seat.rotation}
-              item={selections.silla}
-              itemVisual={selections.silla ? visuals[selections.silla.id] : null}
-              cover={selections.cobertor}
-              cushion={selections.cojin}
-              scale={0.72 + (seat.depth * 0.16)}
-            />
-          )) : seats.map((seat, index) => (
-            <ChairCanvas
-              key={`top-chair-${index}`}
-              x={seat.chairX ?? seat.x}
-              y={seat.chairY ?? seat.y}
-              rotation={seat.rotation}
-              item={selections.silla}
-              itemVisual={selections.silla ? visuals[selections.silla.id] : null}
-              cover={selections.cobertor}
-              cushion={selections.cojin}
-              scale={0.62}
-            />
-          ))}
+          {frontChairs.map((chair, index) => <Chair key={`front-${index}`} chair={chair} selections={selections} visuals={visuals} />)}
 
-          <Rect x={18} y={size.height - 42} width={286} height={28} cornerRadius={14} fill="rgba(16,35,68,.78)" />
-          <Text x={32} y={size.height - 34} text="Vista referencial del montaje" fill="#fff" fontSize={12} fontStyle="bold" />
+          <Rect x={size.width - 248} y={size.height - 42} width={226} height={28} cornerRadius={14} fill="rgba(16,35,68,.78)" />
+          <Text x={size.width - 234} y={size.height - 34} text="Montado referencial con items reales" fill="#fff" fontSize={11} fontStyle="bold" />
         </Layer>
       </Stage>
     </div>
@@ -589,11 +409,9 @@ function MontageCanvasScene({ selections, visuals, tableType, view }) {
 
 function ProductThumb({ item, selected, onClick }) {
   return (
-    <button type="button" className={`montage-product-thumb${selected ? ' is-selected' : ''}`} onClick={onClick} title={item.name}>
-      <span className="montage-product-thumb-image">
-        {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : <span>EC</span>}
-      </span>
-      <span className="montage-product-thumb-name">{item.name}</span>
+    <button type="button" className={selected ? 'is-selected' : ''} onClick={onClick} title={item.name}>
+      <span>{item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" /> : 'EC'}</span>
+      <strong>{item.name}</strong>
     </button>
   );
 }
@@ -603,12 +421,13 @@ export default function PublicMontageBuilder() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tableTypeId, setTableTypeId] = useState('round');
-  const [view, setView] = useState('main');
   const [activeSlot, setActiveSlot] = useState('mantel');
   const [slotQuery, setSlotQuery] = useState('');
+  const [view, setView] = useState('main');
   const [selections, setSelections] = useState({});
   const [visuals, setVisuals] = useState({});
   const [savedAt, setSavedAt] = useState('');
+  const [designing, setDesigning] = useState(false);
 
   useEffect(() => {
     try {
@@ -616,35 +435,33 @@ export default function PublicMontageBuilder() {
       if (stored?.tableTypeId) setTableTypeId(stored.tableTypeId);
       if (stored?.selections && typeof stored.selections === 'object') setSelections(stored.selections);
     } catch {
-      // Configuración local opcional.
+      localStorage.removeItem(STORAGE_KEY);
     }
   }, []);
 
   useEffect(() => {
     let active = true;
-    (async () => {
-      try {
-        let payload = null;
-        let lastError = null;
-        for (const endpoint of PUBLIC_CATALOG_ENDPOINTS) {
-          try {
-            const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-            if (!response.ok) throw new Error(`No se pudo cargar ${endpoint}`);
-            payload = await response.json();
-            break;
-          } catch (requestError) {
-            lastError = requestError;
-          }
+    const load = async () => {
+      let lastError = null;
+      for (const endpoint of PUBLIC_CATALOG_ENDPOINTS) {
+        try {
+          const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || !contentType.includes('application/json')) throw new Error(`Respuesta inválida de ${endpoint}`);
+          const payload = await response.json();
+          if (!active) return;
+          setCatalog({ products: Array.isArray(payload.products) ? payload.products : [] });
+          setLoading(false);
+          return;
+        } catch (loadError) {
+          lastError = loadError;
         }
-        if (!payload) throw lastError || new Error('No se pudo cargar el catálogo.');
-        if (!active) return;
-        setCatalog({ products: Array.isArray(payload.products) ? payload.products : [] });
-      } catch (requestError) {
-        if (active) setError(requestError.message || 'No se pudo cargar el catálogo.');
-      } finally {
-        if (active) setLoading(false);
       }
-    })();
+      if (!active) return;
+      setError(lastError?.message || 'No se pudo cargar el catálogo.');
+      setLoading(false);
+    };
+    load();
     return () => { active = false; };
   }, []);
 
@@ -652,59 +469,44 @@ export default function PublicMontageBuilder() {
     let cancelled = false;
     Object.values(selections).filter((item) => item?.id).forEach((item) => {
       if (visuals[item.id]) return;
-      loadImageAnalysis(item).then((analysis) => {
-        if (!cancelled) setVisuals((current) => current[item.id] ? current : { ...current, [item.id]: analysis });
+      analyzeProductVisual(item).then((visual) => {
+        if (cancelled) return;
+        setVisuals((current) => current[item.id] ? current : { ...current, [item.id]: visual });
       });
     });
     return () => { cancelled = true; };
   }, [selections, visuals]);
 
-  const tableType = TABLE_TYPES.find((entry) => entry.id === tableTypeId) ?? TABLE_TYPES[0];
+  const candidatesBySlot = useMemo(() => Object.fromEntries(
+    SLOT_DEFINITIONS.map((slot) => [slot.id, catalog.products.filter((item) => belongsToSlot(item, slot))]),
+  ), [catalog.products]);
+
   const activeDefinition = SLOT_DEFINITIONS.find((slot) => slot.id === activeSlot) ?? SLOT_DEFINITIONS[0];
-
-  const candidatesBySlot = useMemo(() => {
-    const result = {};
-    SLOT_DEFINITIONS.forEach((slot) => {
-      result[slot.id] = catalog.products.filter((item) => belongsToSlot(item, slot));
-    });
-    return result;
-  }, [catalog.products]);
-
   const activeCandidates = useMemo(() => {
     const query = normalizeText(slotQuery);
-    return (candidatesBySlot[activeSlot] ?? []).filter((item) => !query || productText(item).includes(query));
+    const base = candidatesBySlot[activeSlot] ?? [];
+    if (!query) return base;
+    return base.filter((item) => productText(item).includes(query));
   }, [activeSlot, candidatesBySlot, slotQuery]);
 
-  const selectedRows = SLOT_DEFINITIONS
-    .map((slot) => ({ slot, item: selections[slot.id] }))
-    .filter((entry) => entry.item);
+  const tableType = TABLE_TYPES.find((type) => type.id === tableTypeId) ?? TABLE_TYPES[0];
+  const selectedRows = SLOT_DEFINITIONS.map((slot) => ({ slot, item: selections[slot.id] })).filter((entry) => entry.item);
 
-  const scoreCandidate = (slotId, item, baseColor) => {
-    const candidateColor = colorFromItem(item, '#c6b89e');
-    const distance = colorDistance(baseColor, candidateColor);
-    const text = productText(item);
-    let score = 100 - Math.abs(distance - 115) * 0.42;
-    if (slotId === 'plato' && (text.includes('blanco') || text.includes('marfil'))) score += 90;
-    if ((slotId === 'tenedor' || slotId === 'cuchillo') && (text.includes('dorado') || text.includes('plata') || text.includes('acero'))) score += 90;
-    if (slotId === 'silla' && (text.includes('tiffany') || text.includes('crossback') || text.includes('dorado') || text.includes('madera'))) score += 70;
-    if (slotId === 'plaquet' && (text.includes('dorado') || text.includes('plata') || text.includes('vidrio'))) score += 75;
-    if (slotId === 'copa' && (text.includes('copa') || text.includes('cristal') || text.includes('transpar'))) score += 70;
-    return score + Math.min(20, Number(item.totalStock ?? 0) / 10);
-  };
-
-  const autoCompose = () => {
+  const autoCompose = async () => {
+    setDesigning(true);
     const mantel = selections.mantel ?? (candidatesBySlot.mantel ?? [])[0] ?? null;
-    const baseColor = colorFromItem(mantel, '#e4dac9');
     const next = { ...selections, ...(mantel ? { mantel } : {}) };
-    ['caminito', 'plaquet', 'plato', 'servilleta', 'copa', 'tenedor', 'cuchillo', 'silla', 'centro'].forEach((slotId) => {
-      if (next[slotId]) return;
-      const best = (candidatesBySlot[slotId] ?? [])
+    const roles = ['caminito', 'plaquet', 'plato', 'servilleta', 'copa', 'tenedor', 'cuchillo', 'silla', 'centro'];
+    roles.forEach((role) => {
+      if (next[role]) return;
+      const best = (candidatesBySlot[role] ?? [])
         .slice(0, 180)
-        .map((item) => ({ item, score: scoreCandidate(slotId, item, baseColor) }))
+        .map((item) => ({ item, score: scoreVisualHarmony(mantel, item, role) }))
         .sort((a, b) => b.score - a.score)[0]?.item;
-      if (best) next[slotId] = best;
+      if (best) next[role] = best;
     });
     setSelections(next);
+    setTimeout(() => setDesigning(false), 420);
   };
 
   const saveMontage = () => {
@@ -714,6 +516,7 @@ export default function PublicMontageBuilder() {
 
   const clearMontage = () => {
     setSelections({});
+    setVisuals({});
     localStorage.removeItem(STORAGE_KEY);
     setSavedAt('');
   };
@@ -735,12 +538,12 @@ export default function PublicMontageBuilder() {
   };
 
   return (
-    <main className="public-catalog-page public-montage-page public-montage-page-canvas">
+    <main className="public-catalog-page public-montage-page public-montage-page-v6">
       <section className="public-montage-hero">
         <div>
           <span>El Copetín</span>
           <h1>Crear montado</h1>
-          <p>Construye una escena con geometría real, materiales del catálogo y puestos calculados automáticamente.</p>
+          <p>Combina productos reales y visualiza una escena calculada por geometría, profundidad, color y material.</p>
         </div>
         <div className="public-montage-hero-actions">
           <a href="/catalogo">← Volver al catálogo</a>
@@ -774,11 +577,11 @@ export default function PublicMontageBuilder() {
               ))}
             </div>
 
-            <div className="montage-canvas-ai-card">
-              <span>Motor de diseño local</span>
-              <strong>Completar combinación</strong>
-              <p>Calcula una propuesta con reglas de contraste y familias del catálogo. No usa APIs externas.</p>
-              <button type="button" onClick={autoCompose}>✨ Diseñar montaje</button>
+            <div className="montage-canvas-ai-card montage-v6-engine-card">
+              <span>Motor inteligente local</span>
+              <strong>Diseñar combinación</strong>
+              <p>Analiza color, contraste, material, familia y disponibilidad. Todo corre localmente, sin API externa.</p>
+              <button type="button" onClick={autoCompose} disabled={designing}>{designing ? 'Analizando…' : '✨ Diseñar montaje'}</button>
             </div>
 
             <div className="montage-product-picker">
@@ -810,7 +613,7 @@ export default function PublicMontageBuilder() {
 
           <section className="public-montage-preview public-montage-preview-canvas">
             <header className="montage-preview-header">
-              <div><span>Escena inteligente</span><strong>Canvas 2D con geometría y materiales</strong></div>
+              <div><span>Escena inteligente local</span><strong>Geometría + materiales + profundidad</strong></div>
               <div className="montage-view-tabs">
                 <button type="button" className={view === 'main' ? 'is-active' : ''} onClick={() => setView('main')}>Principal</button>
                 <button type="button" className={view === 'top' ? 'is-active' : ''} onClick={() => setView('top')}>Superior</button>
@@ -819,7 +622,7 @@ export default function PublicMontageBuilder() {
             </header>
             <MontageCanvasScene selections={selections} visuals={visuals} tableType={tableType} view={view} />
             <div className="montage-preview-foot">
-              <span>El mantel y el caminito se renderizan como materiales; los puestos se calculan según la geometría.</span>
+              <span>Los textiles se aplican como materiales y los objetos se ubican según profundidad y geometría de mesa.</span>
               <button type="button" onClick={clearMontage}>Limpiar montaje</button>
             </div>
           </section>
@@ -835,8 +638,8 @@ export default function PublicMontageBuilder() {
               )) : <p className="montage-empty-summary">Selecciona productos para construir tu propuesta.</p>}
             </div>
             <div className="montage-no-price-note">
-              <strong>Sin precios en el montado público</strong>
-              <span>La cotización se prepara después de confirmar la combinación y disponibilidad.</span>
+              <strong>Montado visual, sin precios</strong>
+              <span>La cotización se realiza después de confirmar la combinación y la disponibilidad.</span>
             </div>
             <button type="button" className="montage-secondary-action" onClick={saveMontage}>♡ Guardar montaje</button>
             {savedAt ? <small className="montage-saved-note">Guardado en este dispositivo a las {savedAt}.</small> : null}

@@ -71039,3 +71039,99 @@ button.inventory-loss-row-action:hover {
 .public-montage-preview-canvas .montage-preview-foot span {
   max-width: 48rem;
 }
+
+/* ==========================================================================
+   CREADOR DE MONTADOS V6 — motor visual local por geometría y materiales
+   ========================================================================== */
+.public-montage-page-v6 .montage-canvas-host {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #efe4d5;
+}
+
+.public-montage-page-v6 .montage-canvas-host canvas {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+}
+
+.public-montage-page-v6 .montage-v6-engine-card {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(239, 90, 16, .13), transparent 35%),
+    linear-gradient(145deg, #fff8f2, #fff);
+  border-color: rgba(239, 90, 16, .30);
+}
+
+.public-montage-page-v6 .montage-v6-engine-card button:disabled {
+  opacity: .64;
+  cursor: wait;
+}
+
+.public-montage-page-v6 .montage-no-price-note {
+  display: grid;
+  gap: .18rem;
+  padding: .82rem .9rem;
+  border: 1px solid #dbe5f0;
+  border-radius: .8rem;
+  background: #f7faff;
+}
+
+.public-montage-page-v6 .montage-no-price-note strong {
+  color: #142c54;
+  font-size: .76rem;
+  font-weight: 900;
+}
+
+.public-montage-page-v6 .montage-no-price-note span {
+  color: #6f7f97;
+  font-size: .68rem;
+  line-height: 1.35;
+}
+
+.public-montage-page-v6 .montage-summary-list {
+  max-height: 520px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.public-montage-page-v6 .montage-preview-header > div:first-child span {
+  color: #ef5a10;
+}
+
+.public-montage-page-v6 .montage-preview-header > div:first-child strong {
+  color: #102344;
+}
+
+.public-montage-page-v6 .public-montage-preview-canvas {
+  overflow: hidden;
+}
+
+.public-montage-page-v6 .montage-preview-foot {
+  background: #fff;
+}
+
+.public-montage-page-v6 .montage-product-strip button.is-selected {
+  border-color: #ef5a10;
+  box-shadow: 0 0 0 2px rgba(239, 90, 16, .12);
+}
+
+.public-montage-page-v6 .montage-product-strip button > span {
+  background: #f7f4ef;
+}
+
+.public-montage-page-v6 .montage-product-strip img {
+  object-fit: contain;
+}
+
+@media (max-width: 980px) {
+  .public-montage-page-v6 .public-montage-workspace-canvas {
+    grid-template-columns: 1fr;
+  }
+
+  .public-montage-page-v6 .public-montage-controls,
+  .public-montage-page-v6 .public-montage-summary-panel {
+    position: static;
+    max-height: none;
+  }
+}
