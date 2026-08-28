@@ -71135,3 +71135,181 @@ button.inventory-loss-row-action:hover {
     max-height: none;
   }
 }
+
+/* Creador de montados V7: combinador gratuito, sin recortes ni servicios externos */
+.public-montage-page-v7 .montage-palette {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .72rem 1rem;
+  border-top: 1px solid #e8edf4;
+  border-bottom: 1px solid #e8edf4;
+  background: linear-gradient(90deg, #fbfcfe, #fffaf6);
+}
+
+.public-montage-page-v7 .montage-palette > div:first-child {
+  display: grid;
+  gap: .08rem;
+}
+
+.public-montage-page-v7 .montage-palette > div:first-child span {
+  color: #ef5a10;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.public-montage-page-v7 .montage-palette > div:first-child strong {
+  color: #102344;
+  font-size: .76rem;
+}
+
+.public-montage-page-v7 .montage-palette-swatches {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.public-montage-page-v7 .montage-palette-swatches span {
+  width: 2rem;
+  height: 2rem;
+  margin-left: -.32rem;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(16, 35, 68, .18);
+}
+
+.public-montage-page-v7 .montage-exact-products {
+  display: grid;
+  gap: .8rem;
+  padding: 1rem;
+  border-top: 1px solid #e6ebf2;
+  background: #fff;
+}
+
+.public-montage-page-v7 .montage-exact-products > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.public-montage-page-v7 .montage-exact-products > header > div {
+  display: grid;
+  gap: .1rem;
+}
+
+.public-montage-page-v7 .montage-exact-products > header span {
+  color: #ef5a10;
+  font-size: .64rem;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.public-montage-page-v7 .montage-exact-products > header strong {
+  color: #102344;
+  font-size: .82rem;
+}
+
+.public-montage-page-v7 .montage-exact-products > header small {
+  color: #75839a;
+  font-size: .65rem;
+  white-space: nowrap;
+}
+
+.public-montage-page-v7 .montage-exact-products > div {
+  display: grid;
+  grid-auto-columns: minmax(9rem, 1fr);
+  grid-auto-flow: column;
+  gap: .65rem;
+  overflow-x: auto;
+  padding-bottom: .35rem;
+  scrollbar-width: thin;
+}
+
+.public-montage-page-v7 .montage-exact-products article {
+  display: grid;
+  grid-template-rows: 7rem auto;
+  min-width: 9rem;
+  overflow: hidden;
+  border: 1px solid #e1e7ef;
+  border-radius: .85rem;
+  background: #fff;
+}
+
+.public-montage-page-v7 .montage-exact-products article > span {
+  display: grid;
+  place-items: center;
+  padding: .45rem;
+  overflow: hidden;
+  background: #f6f3ee;
+  color: #ef5a10;
+  font-weight: 950;
+}
+
+.public-montage-page-v7 .montage-exact-products article img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.public-montage-page-v7 .montage-exact-products article p {
+  display: grid;
+  gap: .12rem;
+  margin: 0;
+  padding: .58rem .65rem .68rem;
+}
+
+.public-montage-page-v7 .montage-exact-products article small {
+  color: #ef5a10;
+  font-size: .58rem;
+  font-weight: 900;
+}
+
+.public-montage-page-v7 .montage-exact-products article strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #102344;
+  font-size: .68rem;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.public-montage-page-v7 .montage-exact-products article em {
+  color: #8a96a9;
+  font-size: .57rem;
+  font-style: normal;
+}
+
+.public-montage-page-v7 .montage-exact-empty {
+  padding: 1rem;
+  border-top: 1px solid #e6ebf2;
+  background: #fff;
+  color: #738198;
+  font-size: .72rem;
+  text-align: center;
+}
+
+.public-montage-page-v7 .montage-summary-image,
+.public-montage-page-v7 .montage-product-strip button > span {
+  background: #f6f3ee;
+}
+
+.public-montage-page-v7 .montage-summary-image img,
+.public-montage-page-v7 .montage-product-strip img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important;
+}
+
+@media (max-width: 680px) {
+  .public-montage-page-v7 .montage-palette,
+  .public-montage-page-v7 .montage-exact-products > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

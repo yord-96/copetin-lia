@@ -3,16 +3,13 @@ import {
   Circle,
   Ellipse,
   Group,
-  Image as KonvaImage,
   Layer,
   Line,
   Rect,
   Stage,
   Text,
 } from 'react-konva';
-import useImage from 'use-image';
 import {
-  analyzeProductVisual,
   colorFromItem,
   normalizeText,
   productNameText,
@@ -49,35 +46,11 @@ const belongsToSlot = (item, slot) => {
   return slot.keywords.some((word) => normalizeText(word).length >= 6 && category === normalizeText(word));
 };
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-function ProductImage({ item, visual, ...props }) {
-  const [image] = useImage(visual?.cutoutUrl || item?.imageUrl || '', 'anonymous');
-  if (!image) return null;
-  return <KonvaImage image={image} listening={false} {...props} />;
-}
-
 function MaterialEllipse({ item, visual, x, y, radiusX, radiusY, opacity = 1, ...props }) {
-  const [texture] = useImage(item?.imageUrl || '', 'anonymous');
   const base = visual?.dominantColor || colorFromItem(item, '#e8ddcd');
-  const patternOpacity = clamp((visual?.textureStrength ?? 0.1) + (visual?.patternDensity ?? 0.06) * 0.35, 0.08, 0.24);
   return (
     <Group listening={false} opacity={opacity}>
       <Ellipse x={x} y={y} radiusX={radiusX} radiusY={radiusY} fill={base} {...props} />
-      {texture ? (
-        <Ellipse
-          x={x}
-          y={y}
-          radiusX={radiusX * 0.985}
-          radiusY={radiusY * 0.985}
-          fillPatternImage={texture}
-          fillPatternRepeat="repeat"
-          fillPatternScaleX={0.28}
-          fillPatternScaleY={0.28}
-          opacity={patternOpacity}
-          globalCompositeOperation="multiply"
-        />
-      ) : null}
       <Ellipse
         x={x}
         y={y - radiusY * 0.15}
@@ -92,27 +65,10 @@ function MaterialEllipse({ item, visual, x, y, radiusX, radiusY, opacity = 1, ..
 }
 
 function MaterialRect({ item, visual, x, y, width, height, cornerRadius = 0, opacity = 1, ...props }) {
-  const [texture] = useImage(item?.imageUrl || '', 'anonymous');
   const base = visual?.dominantColor || colorFromItem(item, '#e8ddcd');
-  const patternOpacity = clamp((visual?.textureStrength ?? 0.1) + (visual?.patternDensity ?? 0.06) * 0.35, 0.08, 0.24);
   return (
     <Group listening={false} opacity={opacity}>
       <Rect x={x} y={y} width={width} height={height} cornerRadius={cornerRadius} fill={base} {...props} />
-      {texture ? (
-        <Rect
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          cornerRadius={cornerRadius}
-          fillPatternImage={texture}
-          fillPatternRepeat="repeat"
-          fillPatternScaleX={0.25}
-          fillPatternScaleY={0.25}
-          opacity={patternOpacity}
-          globalCompositeOperation="multiply"
-        />
-      ) : null}
       <Rect
         x={x}
         y={y}
@@ -135,13 +91,19 @@ function PlaceSetting({ seat, selections, visuals, scale = 1 }) {
   const plateColor = plateVisual?.dominantColor || colorFromItem(selections.plato, '#f5f2ea');
   const napkinColor = napkinVisual?.dominantColor || colorFromItem(selections.servilleta, '#665944');
   const s = scale * (0.82 + seat.depth * 0.18);
+  const hasPlateStack = Boolean(selections.plaquet || selections.plato);
 
   return (
     <Group x={seat.x} y={seat.y} rotation={seat.rotation} scaleX={s} scaleY={s} listening={false}>
       <Ellipse y={5} radiusX={39} radiusY={13} fill="rgba(65,44,27,.12)" />
-      <Circle radius={34} fill={plaquetColor} shadowColor="#342313" shadowBlur={8} shadowOpacity={0.16} />
-      <Circle radius={28} fill={plateColor} stroke="rgba(90,70,45,.18)" strokeWidth={1.4} />
-      <Circle radius={23} fill="rgba(255,255,255,.28)" stroke="rgba(255,255,255,.35)" strokeWidth={1} />
+      {selections.plaquet ? <Circle radius={34} fill={plaquetColor} shadowColor="#342313" shadowBlur={8} shadowOpacity={0.16} /> : null}
+      {selections.plato ? (
+        <>
+          <Circle radius={28} fill={plateColor} stroke="rgba(90,70,45,.18)" strokeWidth={1.4} />
+          <Circle radius={23} fill="rgba(255,255,255,.28)" stroke="rgba(255,255,255,.35)" strokeWidth={1} />
+        </>
+      ) : null}
+      {!hasPlateStack ? <Circle radius={29} stroke="rgba(16,35,68,.16)" strokeWidth={1.5} dash={[5, 5]} /> : null}
       {selections.servilleta ? (
         <Group rotation={-9}>
           <Rect x={-12} y={-16} width={24} height={34} cornerRadius={4} fill={napkinColor} shadowColor="#251a13" shadowBlur={4} shadowOpacity={0.14} />
@@ -149,13 +111,23 @@ function PlaceSetting({ seat, selections, visuals, scale = 1 }) {
         </Group>
       ) : null}
       {selections.copa ? (
-        <ProductImage item={selections.copa} visual={visuals[selections.copa.id]} x={28} y={-43} width={24} height={42} shadowColor="#000" shadowBlur={4} shadowOpacity={0.16} />
+        <Group x={36} y={-29}>
+          <Ellipse radiusX={8} radiusY={10} fill="rgba(255,255,255,.38)" stroke="rgba(64,76,92,.42)" strokeWidth={1.4} />
+          <Line points={[0, 10, 0, 28]} stroke="rgba(64,76,92,.48)" strokeWidth={1.4} />
+          <Line points={[-6, 29, 6, 29]} stroke="rgba(64,76,92,.48)" strokeWidth={1.4} />
+        </Group>
       ) : null}
       {selections.tenedor ? (
-        <ProductImage item={selections.tenedor} visual={visuals[selections.tenedor.id]} x={-49} y={-24} width={13} height={44} />
+        <Group x={-42} y={-22}>
+          <Line points={[0, 5, 0, 38]} stroke="#9b8260" strokeWidth={3} lineCap="round" />
+          {[-4, 0, 4].map((offset) => <Line key={offset} points={[offset, 0, offset, 10]} stroke="#9b8260" strokeWidth={1.5} lineCap="round" />)}
+        </Group>
       ) : null}
       {selections.cuchillo ? (
-        <ProductImage item={selections.cuchillo} visual={visuals[selections.cuchillo.id]} x={37} y={-24} width={13} height={44} />
+        <Group x={48} y={-22}>
+          <Rect x={-2} width={5} height={39} cornerRadius={3} fill="#a58a66" />
+          <Line points={[-2, 0, 5, 7, 3, 22]} closed fill="#c3ad8e" />
+        </Group>
       ) : null}
     </Group>
   );
@@ -166,10 +138,16 @@ function Chair({ chair, selections, visuals }) {
   const scale = chair.scale;
   const coverVisual = selections.cobertor ? visuals[selections.cobertor.id] : null;
   const cushionVisual = selections.cojin ? visuals[selections.cojin.id] : null;
+  const chairVisual = visuals[selections.silla.id];
+  const chairColor = chairVisual?.dominantColor || colorFromItem(selections.silla, '#78533e');
   return (
     <Group x={chair.x} y={chair.y} rotation={chair.rotation ?? 0} scaleX={scale} scaleY={scale} listening={false}>
-      <Ellipse x={0} y={39} radiusX={38} radiusY={10} fill="rgba(45,30,18,.16)" />
-      <ProductImage item={selections.silla} visual={visuals[selections.silla.id]} x={-50} y={-64} width={100} height={116} />
+      <Ellipse x={0} y={43} radiusX={31} radiusY={8} fill="rgba(45,30,18,.14)" />
+      <Rect x={-24} y={-42} width={48} height={52} cornerRadius={13} fill="rgba(255,255,255,.10)" stroke={chairColor} strokeWidth={5} />
+      <Line points={[-18, -35, 18, 3, -18, 3, 18, -35]} stroke={chairColor} strokeWidth={3.5} lineCap="round" lineJoin="round" />
+      <Rect x={-25} y={8} width={50} height={12} cornerRadius={6} fill={chairColor} />
+      <Line points={[-19, 18, -24, 48]} stroke={chairColor} strokeWidth={4} lineCap="round" />
+      <Line points={[19, 18, 24, 48]} stroke={chairColor} strokeWidth={4} lineCap="round" />
       {selections.cobertor ? (
         <Rect
           x={-21}
@@ -178,7 +156,7 @@ function Chair({ chair, selections, visuals }) {
           height={52}
           cornerRadius={10}
           fill={coverVisual?.dominantColor || colorFromItem(selections.cobertor, '#ede4d7')}
-          opacity={0.45}
+          opacity={0.72}
         />
       ) : null}
       {selections.cojin ? (
@@ -194,11 +172,34 @@ function Chair({ chair, selections, visuals }) {
   );
 }
 
+function Centerpiece({ x, y, selections, visuals, scale = 1 }) {
+  if (!selections.centro) return null;
+  const visual = visuals[selections.centro.id];
+  const accent = visual?.dominantColor || colorFromItem(selections.centro, '#8e7658');
+  return (
+    <Group x={x} y={y} scaleX={scale} scaleY={scale} listening={false}>
+      <Ellipse y={32} radiusX={31} radiusY={8} fill="rgba(45,30,18,.13)" />
+      <Rect x={-16} y={6} width={32} height={28} cornerRadius={[4, 4, 13, 13]} fill={accent} opacity={0.82} />
+      {[-23, -12, 0, 12, 23].map((offset, index) => (
+        <Group key={offset} rotation={offset * 0.7}>
+          <Line points={[0, 10, offset * 0.55, -34 - (index % 2) * 9]} stroke="#667955" strokeWidth={3} lineCap="round" />
+          <Circle x={offset * 0.55} y={-35 - (index % 2) * 9} radius={8} fill={index % 2 ? accent : '#efe3d3'} stroke="rgba(45,30,18,.12)" />
+        </Group>
+      ))}
+    </Group>
+  );
+}
+
 function Table({ model, selections, visuals, view }) {
   const { geometry } = model;
   const mantelVisual = selections.mantel ? visuals[selections.mantel.id] : null;
   const runnerVisual = selections.caminito ? visuals[selections.caminito.id] : null;
   const cloth = mantelVisual?.dominantColor || colorFromItem(selections.mantel, '#e8ddcd');
+  const runnerName = productNameText(selections.caminito);
+  const isWideOverlay = runnerName.includes('sobremantel')
+    || runnerName.includes('sobre mantel')
+    || runnerName.includes('faldon');
+  const overlayWidth = geometry.topW * (isWideOverlay ? 0.48 : 0.11);
 
   if (view === 'main') {
     const topY = geometry.cy;
@@ -260,9 +261,9 @@ function Table({ model, selections, visuals, view }) {
             <MaterialRect
               item={selections.caminito}
               visual={runnerVisual}
-              x={geometry.cx - geometry.topW * 0.055}
+              x={geometry.cx - overlayWidth / 2}
               y={topY - geometry.topH * 0.48}
-              width={geometry.topW * 0.11}
+              width={overlayWidth}
               height={geometry.topH * 0.96}
               cornerRadius={10}
               opacity={0.92}
@@ -271,9 +272,9 @@ function Table({ model, selections, visuals, view }) {
             <MaterialRect
               item={selections.caminito}
               visual={runnerVisual}
-              x={geometry.cx - geometry.topW * 0.055}
+              x={geometry.cx - overlayWidth / 2}
               y={topY - geometry.topH * 0.5}
-              width={geometry.topW * 0.11}
+              width={overlayWidth}
               height={geometry.topH}
               cornerRadius={8}
               opacity={0.92}
@@ -298,7 +299,7 @@ function Table({ model, selections, visuals, view }) {
         shadowOpacity={0.16}
       />
       {selections.caminito ? (
-        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - geometry.topW * 0.055} y={geometry.cy - geometry.topH * 0.46} width={geometry.topW * 0.11} height={geometry.topH * 0.92} cornerRadius={10} opacity={0.92} />
+        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - overlayWidth / 2} y={geometry.cy - geometry.topH * 0.46} width={overlayWidth} height={geometry.topH * 0.92} cornerRadius={10} opacity={0.92} />
       ) : null}
     </Group>
   ) : (
@@ -316,7 +317,7 @@ function Table({ model, selections, visuals, view }) {
         shadowOpacity={0.16}
       />
       {selections.caminito ? (
-        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - geometry.topW * 0.055} y={geometry.cy - geometry.topH * 0.48} width={geometry.topW * 0.11} height={geometry.topH * 0.96} cornerRadius={8} opacity={0.92} />
+        <MaterialRect item={selections.caminito} visual={runnerVisual} x={geometry.cx - overlayWidth / 2} y={geometry.cy - geometry.topH * 0.48} width={overlayWidth} height={geometry.topH * 0.96} cornerRadius={8} opacity={0.92} />
       ) : null}
     </Group>
   );
@@ -352,8 +353,20 @@ function MontageCanvasScene({ selections, visuals, tableType, view }) {
             <Rect width={size.width} height={size.height} fill="#f2e7d8" />
             <Rect y={size.height * 0.67} width={size.width} height={size.height * 0.33} fill="#b38a63" />
             <MaterialRect item={selections.mantel} visual={selections.mantel ? visuals[selections.mantel.id] : null} x={size.width * 0.08} y={size.height * 0.10} width={size.width * 0.72} height={size.height * 0.82} cornerRadius={28} />
+            {selections.caminito ? (
+              <MaterialRect
+                item={selections.caminito}
+                visual={visuals[selections.caminito.id]}
+                x={size.width * 0.34}
+                y={size.height * 0.10}
+                width={size.width * 0.20}
+                height={size.height * 0.82}
+                cornerRadius={16}
+                opacity={0.94}
+              />
+            ) : null}
             <PlaceSetting seat={seat} selections={selections} visuals={visuals} scale={2.6} />
-            {selections.centro ? <ProductImage item={selections.centro} visual={visuals[selections.centro.id]} x={size.width * 0.35} y={size.height * 0.08} width={130} height={145} /> : null}
+            <Centerpiece x={size.width * 0.40} y={size.height * 0.30} selections={selections} visuals={visuals} scale={1.5} />
             {selections.silla ? <Chair chair={{ x: size.width * 0.88, y: size.height * 0.60, rotation: 0, scale: 1.8 }} selections={selections} visuals={visuals} /> : null}
           </Layer>
         </Stage>
@@ -383,24 +396,18 @@ function MontageCanvasScene({ selections, visuals, tableType, view }) {
             <PlaceSetting key={`seat-${index}`} seat={seat} selections={selections} visuals={visuals} scale={view === 'main' ? 0.76 : 0.82} />
           ))}
 
-          {selections.centro ? (
-            <ProductImage
-              item={selections.centro}
-              visual={visuals[selections.centro.id]}
-              x={model.geometry.cx - 54}
-              y={model.geometry.cy - (view === 'main' ? 96 : 70)}
-              width={108}
-              height={126}
-              shadowColor="#2d1f14"
-              shadowBlur={8}
-              shadowOpacity={0.2}
-            />
-          ) : null}
+          <Centerpiece
+            x={model.geometry.cx}
+            y={model.geometry.cy - (view === 'main' ? 48 : 8)}
+            selections={selections}
+            visuals={visuals}
+            scale={view === 'main' ? 0.82 : 1.05}
+          />
 
           {frontChairs.map((chair, index) => <Chair key={`front-${index}`} chair={chair} selections={selections} visuals={visuals} />)}
 
-          <Rect x={size.width - 248} y={size.height - 42} width={226} height={28} cornerRadius={14} fill="rgba(16,35,68,.78)" />
-          <Text x={size.width - 234} y={size.height - 34} text="Montado referencial con items reales" fill="#fff" fontSize={11} fontStyle="bold" />
+          <Rect x={size.width - 258} y={size.height - 42} width={236} height={28} cornerRadius={14} fill="rgba(16,35,68,.82)" />
+          <Text x={size.width - 244} y={size.height - 34} text="Vista de colores y distribucion" fill="#fff" fontSize={11} fontStyle="bold" />
         </Layer>
       </Stage>
     </div>
@@ -416,6 +423,49 @@ function ProductThumb({ item, selected, onClick }) {
   );
 }
 
+function MontagePalette({ selectedRows, visuals }) {
+  const colors = selectedRows
+    .filter(({ slot }) => ['mantel', 'caminito', 'servilleta', 'plaquet', 'silla', 'cobertor', 'cojin', 'centro'].includes(slot.id))
+    .map(({ slot, item }) => ({
+      id: slot.id,
+      label: slot.label,
+      color: visuals[item.id]?.dominantColor || colorFromItem(item, '#d8cfc2'),
+    }));
+  if (!colors.length) return null;
+  return (
+    <div className="montage-palette" aria-label="Paleta de la combinacion">
+      <div><span>Paleta elegida</span><strong>{colors.length} colores y materiales</strong></div>
+      <div className="montage-palette-swatches">
+        {colors.map((entry) => (
+          <span key={entry.id} title={entry.label} style={{ backgroundColor: entry.color }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExactProductsGallery({ selectedRows }) {
+  if (!selectedRows.length) {
+    return <div className="montage-exact-empty">Elige productos para ver aqui sus fotografias originales.</div>;
+  }
+  return (
+    <section className="montage-exact-products">
+      <header>
+        <div><span>Productos exactos</span><strong>Estas son las fotografias reales de tu seleccion</strong></div>
+        <small>Sin recortes ni deformaciones</small>
+      </header>
+      <div>
+        {selectedRows.map(({ slot, item }) => (
+          <article key={slot.id}>
+            <span>{item.imageUrl ? <img src={item.imageUrl} alt={item.name} loading="lazy" /> : 'EC'}</span>
+            <p><small>{slot.label}</small><strong>{item.name}</strong><em>Cod. {item.sku}</em></p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function PublicMontageBuilder() {
   const [catalog, setCatalog] = useState({ products: [] });
   const [loading, setLoading] = useState(true);
@@ -425,9 +475,13 @@ export default function PublicMontageBuilder() {
   const [slotQuery, setSlotQuery] = useState('');
   const [view, setView] = useState('main');
   const [selections, setSelections] = useState({});
-  const [visuals, setVisuals] = useState({});
   const [savedAt, setSavedAt] = useState('');
   const [designing, setDesigning] = useState(false);
+  const visuals = useMemo(() => Object.fromEntries(
+    Object.values(selections)
+      .filter((item) => item?.id)
+      .map((item) => [item.id, { dominantColor: colorFromItem(item, '#d8cfc2') }]),
+  ), [selections]);
 
   useEffect(() => {
     try {
@@ -464,18 +518,6 @@ export default function PublicMontageBuilder() {
     load();
     return () => { active = false; };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    Object.values(selections).filter((item) => item?.id).forEach((item) => {
-      if (visuals[item.id]) return;
-      analyzeProductVisual(item).then((visual) => {
-        if (cancelled) return;
-        setVisuals((current) => current[item.id] ? current : { ...current, [item.id]: visual });
-      });
-    });
-    return () => { cancelled = true; };
-  }, [selections, visuals]);
 
   const candidatesBySlot = useMemo(() => Object.fromEntries(
     SLOT_DEFINITIONS.map((slot) => [slot.id, catalog.products.filter((item) => belongsToSlot(item, slot))]),
@@ -516,7 +558,6 @@ export default function PublicMontageBuilder() {
 
   const clearMontage = () => {
     setSelections({});
-    setVisuals({});
     localStorage.removeItem(STORAGE_KEY);
     setSavedAt('');
   };
@@ -538,12 +579,12 @@ export default function PublicMontageBuilder() {
   };
 
   return (
-    <main className="public-catalog-page public-montage-page public-montage-page-v6">
+    <main className="public-catalog-page public-montage-page public-montage-page-v6 public-montage-page-v7">
       <section className="public-montage-hero">
         <div>
           <span>El Copetín</span>
-          <h1>Crear montado</h1>
-          <p>Combina productos reales y visualiza una escena calculada por geometría, profundidad, color y material.</p>
+          <h1>Diseña tu mesa</h1>
+          <p>Prueba colores, textiles, vajilla y mobiliario. La vista representa la armonía y debajo verás cada producto real sin recortes.</p>
         </div>
         <div className="public-montage-hero-actions">
           <a href="/catalogo">← Volver al catálogo</a>
@@ -567,7 +608,7 @@ export default function PublicMontageBuilder() {
               ))}
             </div>
 
-            <div className="montage-control-heading"><span>2. Productos reales</span><strong>Construye la escena</strong></div>
+            <div className="montage-control-heading"><span>2. Productos reales</span><strong>Construye tu combinación</strong></div>
             <div className="montage-slot-tabs montage-slot-tabs-canvas">
               {SLOT_DEFINITIONS.map((slot) => (
                 <button key={slot.id} type="button" className={activeSlot === slot.id ? 'is-active' : ''} onClick={() => { setActiveSlot(slot.id); setSlotQuery(''); }}>
@@ -578,10 +619,10 @@ export default function PublicMontageBuilder() {
             </div>
 
             <div className="montage-canvas-ai-card montage-v6-engine-card">
-              <span>Motor inteligente local</span>
-              <strong>Diseñar combinación</strong>
-              <p>Analiza color, contraste, material, familia y disponibilidad. Todo corre localmente, sin API externa.</p>
-              <button type="button" onClick={autoCompose} disabled={designing}>{designing ? 'Analizando…' : '✨ Diseñar montaje'}</button>
+              <span>Sugerencia automática gratuita</span>
+              <strong>Completar la combinación</strong>
+              <p>Usa reglas locales de color, contraste y disponibilidad. No utiliza IA, API, cuentas ni pagos externos.</p>
+              <button type="button" onClick={autoCompose} disabled={designing}>{designing ? 'Combinando…' : 'Completar mi mesa'}</button>
             </div>
 
             <div className="montage-product-picker">
@@ -613,18 +654,20 @@ export default function PublicMontageBuilder() {
 
           <section className="public-montage-preview public-montage-preview-canvas">
             <header className="montage-preview-header">
-              <div><span>Escena inteligente local</span><strong>Geometría + materiales + profundidad</strong></div>
+              <div><span>Vista de armonía</span><strong>Colores, capas y distribución proporcional</strong></div>
               <div className="montage-view-tabs">
                 <button type="button" className={view === 'main' ? 'is-active' : ''} onClick={() => setView('main')}>Principal</button>
                 <button type="button" className={view === 'top' ? 'is-active' : ''} onClick={() => setView('top')}>Superior</button>
                 <button type="button" className={view === 'place' ? 'is-active' : ''} onClick={() => setView('place')}>Puesto individual</button>
               </div>
             </header>
+            <MontagePalette selectedRows={selectedRows} visuals={visuals} />
             <MontageCanvasScene selections={selections} visuals={visuals} tableType={tableType} view={view} />
             <div className="montage-preview-foot">
-              <span>Los textiles se aplican como materiales y los objetos se ubican según profundidad y geometría de mesa.</span>
+              <span>Esta vista compara colores y posiciones. Las fotografías originales de los productos se muestran completas debajo.</span>
               <button type="button" onClick={clearMontage}>Limpiar montaje</button>
             </div>
+            <ExactProductsGallery selectedRows={selectedRows} />
           </section>
 
           <aside className="public-montage-summary-panel public-montage-summary-canvas">
@@ -638,8 +681,8 @@ export default function PublicMontageBuilder() {
               )) : <p className="montage-empty-summary">Selecciona productos para construir tu propuesta.</p>}
             </div>
             <div className="montage-no-price-note">
-              <strong>Montado visual, sin precios</strong>
-              <span>La cotización se realiza después de confirmar la combinación y la disponibilidad.</span>
+              <strong>Vista referencial gratuita</strong>
+              <span>Los colores y la distribución son orientativos; las fotos identifican los productos exactos. La disponibilidad se confirma al cotizar.</span>
             </div>
             <button type="button" className="montage-secondary-action" onClick={saveMontage}>♡ Guardar montaje</button>
             {savedAt ? <small className="montage-saved-note">Guardado en este dispositivo a las {savedAt}.</small> : null}
