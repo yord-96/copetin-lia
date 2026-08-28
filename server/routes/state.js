@@ -1400,6 +1400,132 @@ const buildResetEconomicLedger = ({ seed, now, userId, userName }) => {
 
 const directMoney = (value) => Number(Math.max(0, Number(value ?? 0)).toFixed(2));
 const directId = (prefix) => `${prefix}-${crypto.randomUUID()}`;
+
+const rebuildClientPrepaidBalances = (client) => {
+  if (!client) return;
+  const movements = Array.isArray(client.prepaidMovements) ? client.prepaidMovements : [];
+  movements.sort((left, right) => (
+    new Date(left?.createdAt ?? 0).getTime() - new Date(right?.createdAt ?? 0).getTime()
+  ));
+
+  let runningBalanceBs = 0;
+  let totalDepositedBs = 0;
+  let totalUsedBs = 0;
+
+  movements.forEach((movement) => {
+    const type = String(movement?.type ?? '').trim().toLowerCase();
+    const rawAmountBs = Number(movement?.amountBs ?? 0);
+    const absoluteAmountBs = directMoney(Math.abs(rawAmountBs));
+
+    if (type === 'deposit') {
+      runningBalanceBs = directMoney(runningBalanceBs + absoluteAmountBs);
+      totalDepositedBs = directMoney(totalDepositedBs + absoluteAmountBs);
+    } else if (type === 'charge') {
+      runningBalanceBs = directMoney(Math.max(0, runningBalanceBs - absoluteAmountBs));
+      totalUsedBs = directMoney(totalUsedBs + absoluteAmountBs);
+    } else {
+      runningBalanceBs = directMoney(Math.max(0, runningBalanceBs + rawAmountBs));
+    }
+
+    movement.balanceAfterBs = runningBalanceBs;
+  });
+
+  client.prepaidTotalDepositedBs = totalDepositedBs;
+  client.prepaidTotalUsedBs = totalUsedBs;
+  client.prepaidBalanceBs = runningBalanceBs;
+};
+
+const resetContractVipPrepaid = (state, contract, rental, now, userName) => {
+  state.clients = Array.isArray(state.clients) ? state.clients : [];
+
+  // El Reset económico debe obedecer al contrato vigente. Nunca revive un
+  // prepago antiguo guardado solamente en la orden/rental.
+  const currentPrepaidBs = directMoney(
+    contract?.payment?.prepaidAppliedBs
+    ?? contract?.prepaidAppliedBs
+    ?? 0,
+  );
+  const clientId = String(contract?.clientId ?? rental?.clientId ?? '').trim();
+  const customerName = String(contract?.customerName ?? rental?.customerName ?? '').trim().toLowerCase();
+  const client = state.clients.find((entry) => clientId && String(entry?.id ?? '') === clientId)
+    ?? state.clients.find((entry) => customerName && String(entry?.name ?? '').trim().toLowerCase() === customerName)
+    ?? null;
+
+  let removedPrepaidMovements = 0;
+  if (client) {
+    const rentalId = String(rental?.id ?? contract?.rentalId ?? '').trim();
+    const contractId = String(contract?.id ?? '').trim();
+    const orderCode = String(rental?.orderCode ?? contract?.orderCode ?? '').trim();
+
+    const previousMovements = Array.isArray(client.prepaidMovements) ? client.prepaidMovements : [];
+    const preservedMovements = previousMovements.filter((movement) => {
+      if (String(movement?.type ?? '').trim().toLowerCase() !== 'charge') return true;
+      const sourceId = String(movement?.sourceId ?? '').trim();
+      const movementOrderCode = String(movement?.orderCode ?? '').trim();
+      const belongsToContract = Boolean(
+        (rentalId && sourceId === rentalId)
+        || (contractId && sourceId === contractId)
+        || (orderCode && movementOrderCode === orderCode)
+      );
+      if (belongsToContract) removedPrepaidMovements += 1;
+      return !belongsToContract;
+    });
+
+    client.prepaidMovements = preservedMovements;
+
+    if (currentPrepaidBs > 0) {
+      client.prepaidMovements.push({
+        id: directId('pre'),
+        type: 'charge',
+        amountBs: -currentPrepaidBs,
+        description: `CONSUMO PREPAGO ${orderCode || contract?.contractCode || ''}`.trim(),
+        sourceType: 'rental',
+        sourceId: rentalId || contractId,
+        orderCode: orderCode || null,
+        balanceAfterBs: 0,
+        nonPhysical: false,
+        paymentMethod: '',
+        paymentAccount: '',
+        createdBy: userName,
+        cashMovementId: null,
+        cashReceiptCode: '',
+        createdAt: now,
+        economicResetAt: now,
+      });
+    }
+
+    rebuildClientPrepaidBalances(client);
+    client.updatedAt = now;
+  }
+
+  contract.payment = {
+    ...(contract.payment ?? {}),
+    prepaidAppliedBs: currentPrepaidBs,
+    prepaidUsedBs: currentPrepaidBs,
+  };
+  contract.prepaidAppliedBs = currentPrepaidBs;
+
+  if (rental) {
+    rental.payment = {
+      ...(rental.payment ?? {}),
+      prepaidAppliedBs: currentPrepaidBs,
+      prepaidUsedBs: currentPrepaidBs,
+    };
+    rental.totals = {
+      ...(rental.totals ?? {}),
+      prepaidAppliedBs: currentPrepaidBs,
+    };
+    rental.prepaidAppliedBs = currentPrepaidBs;
+  }
+
+  return {
+    currentPrepaidBs,
+    removedPrepaidMovements,
+    clientId: client?.id ?? null,
+    prepaidBalanceBs: client ? directMoney(client.prepaidBalanceBs) : null,
+  };
+};
+
 const directNormalizeText = (value) =>
   String(value ?? '')
     .normalize('NFD')
@@ -1584,6 +1710,13 @@ const buildDirectMovement = (state, payload = {}) => {
 
 const reconcileVipPrepaidRental = (state, rental, contract = null) => {
   if (!rental || rental?.deletedAt || String(rental?.status ?? '').toLowerCase() === 'cancelled') return null;
+
+  // Una vez ejecutado Reset económico, el contrato vigente es la fuente de
+  // verdad. No se vuelve a inferir prepago desde cargos históricos del cliente.
+  if (contract && (contract?.economicResetAt || Number(contract?.economicResetVersion ?? 0) >= 1)) {
+    return null;
+  }
+
   // Las liquidaciones de devolución tienen su propio desglose (alquiler + daños).
   // No se reescriben aquí para no mezclar el prepago comercial con penalidades.
   if (String(rental?.status ?? '').toLowerCase() === 'returned' || rental?.returnSettlement) return null;
@@ -4818,6 +4951,7 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       state.cashDebts = Array.isArray(state.cashDebts) ? state.cashDebts : [];
       state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
       state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.clients = Array.isArray(state.clients) ? state.clients : [];
 
       const requestedKey = normalizeStrictEconomicKey(requestedId);
       const matchingContracts = state.contracts.filter((entry) => [
@@ -4842,6 +4976,10 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       const serviceOrder = resolveServiceOrderForContract(state.serviceOrders, contract, rental)
         ?? preliminaryOrder;
       const keys = getStrictEconomicLinkKeys(contract, rental, serviceOrder);
+
+      // Limpia primero cualquier consumo VIP obsoleto ligado a esta orden y
+      // reconstruye el saldo del cliente desde el valor vigente del contrato.
+      const prepaidReset = resetContractVipPrepaid(state, contract, rental, now, userName);
       const seed = getContractCurrentEconomicSeed(contract, rental);
 
       const removedMovementIds = new Set(
@@ -5124,6 +5262,9 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           initialPaymentBs: seed.initialPaymentBs,
           guaranteePaidBs: seed.guaranteePaidBs,
           pendingCollectionBs,
+          prepaidAppliedBs: prepaidReset.currentPrepaidBs,
+          removedPrepaidMovements: prepaidReset.removedPrepaidMovements,
+          prepaidBalanceBs: prepaidReset.prepaidBalanceBs,
         },
       };
       return state;

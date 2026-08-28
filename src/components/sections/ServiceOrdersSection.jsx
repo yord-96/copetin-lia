@@ -3551,7 +3551,56 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     );
     const penaltiesBs = toMoneyNumber(settlement.penaltiesBs ?? rental?.penaltiesBs);
     const refundBs = toMoneyNumber(settlement.refundBs ?? rental?.refundBs);
-    const discountBs = toMoneyNumber(contract?.totals?.discountBs ?? rental?.totals?.discountBs);
+    const storedDiscountMode = String(
+      contract?.totals?.discountMode
+      ?? contract?.discountMode
+      ?? rental?.totals?.discountMode
+      ?? rental?.discountMode
+      ?? '',
+    ).trim().toLowerCase();
+    const discountPercent = Math.min(
+      100,
+      Math.max(
+        0,
+        toMoneyNumber(
+          contract?.totals?.discountPercent
+          ?? contract?.discountPercent
+          ?? rental?.totals?.discountPercent
+          ?? rental?.discountPercent,
+        ),
+      ),
+    );
+    const discountMode = storedDiscountMode === 'fixed'
+      ? 'fixed'
+      : storedDiscountMode === 'percent'
+        ? 'percent'
+        : discountPercent > 0
+          ? 'percent'
+          : 'fixed';
+    const storedDiscountBs = toMoneyNumber(
+      contract?.totals?.discountBs
+      ?? contract?.discountBs
+      ?? rental?.totals?.discountBs
+      ?? rental?.discountBs,
+    );
+    const discountBaseBs = Math.max(
+      0,
+      toMoneyNumber(
+        contract?.pricingPlan?.chargeableSubtotalBs
+        ?? contract?.totals?.chargeableSubtotalBs
+        ?? rental?.pricingPlan?.chargeableSubtotalBs
+        ?? rental?.totals?.chargeableSubtotalBs
+        ?? contract?.totals?.itemsNetSubtotalBs
+        ?? contract?.totals?.itemsSubtotalBs
+        ?? rental?.totals?.itemsNetSubtotalBs
+        ?? rental?.totals?.itemsSubtotalBs,
+      ),
+    );
+    const discountBs = storedDiscountBs > 0
+      ? storedDiscountBs
+      : discountMode === 'percent' && discountPercent > 0 && discountBaseBs > 0
+        ? Number((discountBaseBs * (discountPercent / 100)).toFixed(2))
+        : 0;
     const itemDiscountsBs = toMoneyNumber(contract?.totals?.itemDiscountsBs ?? rental?.totals?.itemDiscountsBs);
     const deliveryFeeBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? rental?.deliveryFeeBs ?? rental?.totals?.deliveryFeeBs);
     const servicesBs = (Array.isArray(contract?.services) ? contract.services : Array.isArray(rental?.services) ? rental.services : [])
@@ -3595,15 +3644,23 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // El prepago aplicado reduce lo que debe ingresar fisicamente a Caja. Los
     // contratos antiguos lo guardan como `prepaidAppliedBs` en la orden, aunque
     // el contrato comercial todavia conserve 0 o no tenga `prepaidUsedBs`.
-    const prepaidUsedBs = Math.max(
-      toMoneyNumber(contract?.payment?.prepaidUsedBs),
-      toMoneyNumber(contract?.payment?.prepaidAppliedBs),
-      toMoneyNumber(contract?.prepaidAppliedBs),
-      toMoneyNumber(rental?.payment?.prepaidUsedBs),
-      toMoneyNumber(rental?.payment?.prepaidAppliedBs),
-      toMoneyNumber(rental?.totals?.prepaidAppliedBs),
-      toMoneyNumber(rental?.prepaidAppliedBs),
-    );
+    const economicResetApplied = Boolean(contract?.economicResetAt)
+      || Number(contract?.economicResetVersion ?? 0) >= 1;
+    const prepaidUsedBs = economicResetApplied
+      ? Math.max(
+        toMoneyNumber(contract?.payment?.prepaidUsedBs),
+        toMoneyNumber(contract?.payment?.prepaidAppliedBs),
+        toMoneyNumber(contract?.prepaidAppliedBs),
+      )
+      : Math.max(
+        toMoneyNumber(contract?.payment?.prepaidUsedBs),
+        toMoneyNumber(contract?.payment?.prepaidAppliedBs),
+        toMoneyNumber(contract?.prepaidAppliedBs),
+        toMoneyNumber(rental?.payment?.prepaidUsedBs),
+        toMoneyNumber(rental?.payment?.prepaidAppliedBs),
+        toMoneyNumber(rental?.totals?.prepaidAppliedBs),
+        toMoneyNumber(rental?.prepaidAppliedBs),
+      );
 
     const clientPendingPickup = rental?.operational?.clientPendingPickup?.active
       ? rental.operational.clientPendingPickup
@@ -4258,6 +4315,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       incomeBs,
       expenseBs,
       discountBs,
+      discountMode,
+      discountPercent,
       deliveryFeeBs,
       prepaidUsedBs,
       economicLedger,
@@ -12291,6 +12350,25 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <span>Descuentos items</span>
                     <strong>- {formatBs(contractEconomicsData.itemDiscountsBs)}</strong>
                     <small>Sobre {formatBs(contractEconomicsData.itemsGrossSubtotalBs)}</small>
+                  </article>
+                ) : null}
+                {contractEconomicsData.discountBs > 0 ? (
+                  <article>
+                    <span>
+                      {contractEconomicsData.discountMode === 'fixed'
+                        ? 'Descuento fijo'
+                        : `Descuento ${Number(contractEconomicsData.discountPercent ?? 0).toFixed(
+                          Number(contractEconomicsData.discountPercent ?? 0) % 1 === 0 ? 0 : 2,
+                        )}%`}
+                    </span>
+                    <strong>- {formatBs(contractEconomicsData.discountBs)}</strong>
+                    <small>
+                      {contractEconomicsData.discountMode === 'fixed'
+                        ? 'Monto directo aplicado al contrato'
+                        : `Porcentaje aplicado: ${Number(contractEconomicsData.discountPercent ?? 0).toFixed(
+                          Number(contractEconomicsData.discountPercent ?? 0) % 1 === 0 ? 0 : 2,
+                        )}%`}
+                    </small>
                   </article>
                 ) : null}
                 <article>
