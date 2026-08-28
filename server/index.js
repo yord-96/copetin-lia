@@ -230,7 +230,21 @@ app.use(
 );
 
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        return;
+      }
+
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
+
   app.use((req, res, next) => {
     if (
       req.method !== 'GET'
@@ -242,6 +256,18 @@ if (fs.existsSync(distPath)) {
       next();
       return;
     }
+
+    // Nunca responder index.html a un asset inexistente. Si un navegador conserva
+    // un index viejo y solicita un bundle con hash anterior, devolver HTML como JS
+    // provoca: "Failed to load module script ... MIME type text/html".
+    if (req.path.startsWith('/assets/')) {
+      res.status(404).type('text/plain').send('Asset no encontrado');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
