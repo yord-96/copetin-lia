@@ -175,6 +175,10 @@ export default function PublicCatalogPage() {
           <span>El Copetin</span>
           <h1>Catalogo de alquiler para eventos</h1>
           <p>Cristaleria, manteleria y mobiliario para revisar antes de cotizar. La disponibilidad se confirma por fecha.</p>
+          <div className="public-catalog-hero-actions">
+            <a href="/catalogo/montado">Crear montado</a>
+            <span>Combina manteles, plaquets, servilletas, sillas y más</span>
+          </div>
         </div>
       </section>
 

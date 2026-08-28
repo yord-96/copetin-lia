@@ -11,6 +11,7 @@ import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
+import PublicMontageBuilder from './components/public/PublicMontageBuilder';
 import {
   canAccessCompany,
   canAccessTab,
@@ -1003,10 +1004,15 @@ function AdminApp() {
 }
 
 function App() {
-  const isPublicCatalogRoute = typeof window !== 'undefined'
-    && window.location.pathname.replace(/\/+$/, '') === '/catalogo';
+  const publicPath = typeof window !== 'undefined'
+    ? window.location.pathname.replace(/\/+$/, '') || '/'
+    : '/';
 
-  if (isPublicCatalogRoute) {
+  if (publicPath === '/catalogo/montado') {
+    return <PublicMontageBuilder />;
+  }
+
+  if (publicPath === '/catalogo') {
     return <PublicCatalogPage />;
   }
 

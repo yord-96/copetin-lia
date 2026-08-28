@@ -96,6 +96,7 @@ const buildPublicCatalog = (state) => {
         sku: sku || 'GEN',
         imageUrl: getProductImageSrc(item),
         totalStock,
+        rentalPriceBs: Math.max(0, toNumber(item?.rentalPriceBs)),
         kind: 'product',
         searchText: normalizeText([name, category, color, material, sku, area].join(' ')),
       };
@@ -144,6 +145,7 @@ const buildPublicCatalog = (state) => {
         sku: sku || 'COMBO',
         imageUrl: getProductImageSrc(combo),
         totalStock,
+        rentalPriceBs: Math.max(0, toNumber(combo?.rentalPriceBs)),
         kind: 'combo',
         ingredientsCount: ingredients.length,
         detailText: ingredientText,
