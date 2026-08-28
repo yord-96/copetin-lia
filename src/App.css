@@ -71559,3 +71559,242 @@ button.inventory-loss-row-action:hover {
     flex-direction: column;
   }
 }
+/* Cotizaciones · tabla comercial alineada al lenguaje visual de Contratos.
+   Alcance deliberadamente aislado para no alterar la operativa ni la tabla de contratos. */
+@media (min-width: 769px) {
+  .orders-view .orders-quotes-table-wrap {
+    border: 1px solid #d9e1ef;
+    border-radius: 0.9rem;
+    background: #ffffff;
+    overflow-x: auto;
+    box-shadow: 0 0.65rem 1.6rem rgba(20, 45, 86, 0.07);
+  }
+
+  .orders-view .orders-quotes-table {
+    min-width: 1120px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+
+  .orders-view .orders-quotes-table thead th {
+    height: 2.7rem;
+    padding: 0.6rem 0.48rem;
+    border-bottom: 0;
+    background: #102b59;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 850;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+  }
+
+  .orders-view .orders-quotes-table thead th:first-child {
+    border-radius: 0.78rem 0 0 0;
+  }
+
+  .orders-view .orders-quotes-table thead th:last-child {
+    border-radius: 0 0.78rem 0 0;
+    text-align: center;
+  }
+
+  .orders-view .orders-quotes-table tbody tr {
+    transition: background 150ms ease, box-shadow 150ms ease;
+  }
+
+  .orders-view .orders-quotes-table tbody tr:nth-child(even) td {
+    background: #f8fafd;
+  }
+
+  .orders-view .orders-quotes-table tbody tr:hover td {
+    background: #fff7f1;
+  }
+
+  .orders-view .orders-quotes-table tbody td {
+    height: 4.65rem;
+    padding: 0.56rem 0.48rem;
+    border-bottom: 1px solid #dce4f0;
+    color: #263552;
+    vertical-align: middle;
+    white-space: normal;
+  }
+
+  .orders-view .orders-quotes-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .orders-view .orders-quotes-table tbody td:first-child {
+    border-left: 3px solid #ef5a18;
+  }
+
+  .orders-view .orders-quotes-table tbody tr.is-public-catalog-quote td:first-child {
+    border-left-color: #0ea5e9;
+  }
+
+  .orders-view .orders-quotes-table tbody tr.is-public-catalog-quote td {
+    background-image: linear-gradient(90deg, rgba(14, 165, 233, 0.035), rgba(255, 255, 255, 0));
+  }
+
+  .orders-view .orders-quotes-table tbody tr.is-public-catalog-quote:nth-child(even) td {
+    background-color: #f7fbff;
+  }
+
+  .orders-view .orders-quotes-table tbody tr.is-public-catalog-quote:hover td {
+    background-color: #eef9ff;
+  }
+
+  .orders-view .orders-quotes-table .orders-cell-main {
+    gap: 0.16rem;
+  }
+
+  .orders-view .orders-quotes-table .orders-cell-main strong,
+  .orders-view .orders-quotes-table .orders-responsible-cell strong,
+  .orders-view .orders-quotes-table .orders-transport-cell strong {
+    color: #102b59;
+    font-size: 0.8rem;
+    line-height: 1.24;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .orders-view .orders-quotes-table .orders-cell-main span,
+  .orders-view .orders-quotes-table .orders-responsible-cell small,
+  .orders-view .orders-quotes-table .orders-transport-cell span {
+    color: #758199;
+    font-size: 0.69rem;
+    line-height: 1.28;
+    white-space: normal;
+  }
+
+  .orders-view .orders-quotes-table .orders-quote-code-cell {
+    align-content: center;
+  }
+
+  .orders-view .orders-quotes-table .orders-quote-code {
+    display: inline-flex;
+    width: max-content;
+    min-width: 5.6rem;
+    border-radius: 0.48rem;
+    background: #fff0e7;
+    color: #d94a0b !important;
+    padding: 0.28rem 0.44rem;
+    font-size: 0.82rem !important;
+    font-weight: 950;
+    letter-spacing: 0.01em;
+  }
+
+  .orders-quote-source-badge {
+    width: max-content;
+    min-height: 1.35rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    border: 1px solid #7dd3fc;
+    border-radius: 999px;
+    background: #eaf8ff;
+    color: #0369a1 !important;
+    padding: 0.18rem 0.45rem;
+    font-size: 0.58rem !important;
+    font-weight: 950;
+    letter-spacing: 0.045em;
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap !important;
+  }
+
+  .orders-quote-source-badge i {
+    width: 0.42rem;
+    height: 0.42rem;
+    border-radius: 999px;
+    background: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+    flex: 0 0 auto;
+  }
+
+  .orders-quote-source-badge.is-internal {
+    border-color: #e2e8f0;
+    background: #f8fafc;
+    color: #64748b !important;
+  }
+
+  .orders-view .orders-quotes-table .orders-quote-created-meta {
+    color: #7a869c !important;
+    font-size: 0.64rem !important;
+  }
+
+  .orders-view .orders-quotes-table .orders-responsible-cell > span {
+    width: 1.72rem;
+    height: 1.72rem;
+    flex: none;
+    background: #fff0e7;
+    color: #d94a0b;
+  }
+
+  .orders-view .orders-quotes-table .orders-responsible-cell.is-public-catalog > span {
+    width: 2.05rem;
+    border: 1px solid #7dd3fc;
+    background: #eaf8ff;
+    color: #0369a1;
+    font-size: 0.55rem;
+    letter-spacing: 0.03em;
+  }
+
+  .orders-view .orders-quotes-table .orders-responsible-cell.is-public-catalog small {
+    color: #0284c7;
+    font-weight: 850;
+  }
+
+  .orders-view .orders-quotes-table .orders-status-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.7rem;
+  }
+
+  .orders-view .orders-quotes-table .orders-total {
+    color: #102b59;
+    font-size: 0.86rem;
+    font-weight: 900;
+  }
+
+  .orders-view .orders-quotes-table th:nth-child(6),
+  .orders-view .orders-quotes-table th:nth-child(7),
+  .orders-view .orders-quotes-table th:nth-child(8),
+  .orders-view .orders-quotes-table td:nth-child(6),
+  .orders-view .orders-quotes-table td:nth-child(7),
+  .orders-view .orders-quotes-table td:nth-child(8) {
+    text-align: center;
+  }
+
+  .orders-view .orders-quotes-table .orders-row-actions {
+    justify-content: center;
+    gap: 0.34rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .orders-mobile-contract-card.is-public-catalog-quote {
+    border-color: #8bd8f8;
+    box-shadow: inset 3px 0 0 #0ea5e9;
+  }
+
+  .orders-mobile-quote-source {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    margin: -0.08rem 0 0.5rem;
+    padding: 0 0.1rem;
+  }
+
+  .orders-mobile-quote-source small {
+    color: #0284c7;
+    font-size: 0.66rem;
+    font-weight: 850;
+  }
+
+  .orders-mobile-quote-source .orders-quote-source-badge {
+    font-size: 0.58rem !important;
+  }
+}

@@ -865,6 +865,22 @@ const getResponsibleDisplayRole = (record) => {
     ?? 'Operacion';
 };
 
+const isPublicCatalogQuote = (record) => {
+  const source = normalizeText(record?.source).replace(/[^a-z0-9]+/g, '_');
+  return source === 'public_catalog'
+    || source === 'catalogo_web'
+    || source === 'catalog_web'
+    || Boolean(record?.publicRequestStatus);
+};
+
+const getPublicCatalogQuoteStatus = (record) => {
+  const status = normalizeText(record?.publicRequestStatus);
+  if (status === 'waiting_contact' || record?.awaitingAssignment) return 'Esperando contacto';
+  if (status === 'contacted') return 'Contactado';
+  if (status === 'assigned') return 'Asignado';
+  return 'Solicitud web';
+};
+
 const buildResponsibleOption = ({ id, name, role, source }) => {
   const normalizedName = String(name ?? '').trim();
   if (!normalizedName) return null;
@@ -11205,8 +11221,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               </div>
             </div>
 
-            <div className="orders-table-wrap orders-commercial-table-wrap">
-              <table className="orders-table orders-commercial-table">
+            <div className="orders-table-wrap orders-commercial-table-wrap orders-quotes-table-wrap">
+              <table className="orders-table orders-commercial-table orders-quotes-table">
+                <colgroup>
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '8%' }} />
+                  <col style={{ width: '10%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Cotizacion</th>
@@ -11222,12 +11248,27 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 <tbody>
                   {filteredQuotes.map((row) => {
                     const statusMeta = QUOTE_STATUS_META[row.status] ?? QUOTE_STATUS_META.borrador;
+                    const isCatalogWebQuote = isPublicCatalogQuote(row);
                     return (
-                      <tr key={row.id} className={`orders-row quote-${row.status}`}>
+                      <tr
+                        key={row.id}
+                        className={`orders-row quote-${row.status}${isCatalogWebQuote ? ' is-public-catalog-quote' : ''}`}
+                      >
                         <td>
-                          <div className="orders-cell-main">
-                            <strong>{row.quoteCode}</strong>
-                            <span>{row.itemsCount} items | {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'} | {formatDateTime(row.createdAt)}</span>
+                          <div className="orders-cell-main orders-quote-code-cell">
+                            <strong className="orders-quote-code">{row.quoteCode}</strong>
+                            {isCatalogWebQuote ? (
+                              <span className="orders-quote-source-badge">
+                                <i aria-hidden="true" />
+                                CATÁLOGO WEB
+                              </span>
+                            ) : (
+                              <span className="orders-quote-source-badge is-internal">INTERNA</span>
+                            )}
+                            <span className="orders-quote-created-meta">
+                              {row.itemsCount} items · {BILLING_MODE_META[row.billingMode] ?? 'Sin factura'}
+                            </span>
+                            <span className="orders-quote-created-meta">{formatDateTime(row.createdAt)}</span>
                           </div>
                         </td>
                         <td>
@@ -11244,16 +11285,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </div>
                         </td>
                         <td>
-                          <div className="orders-responsible-cell">
-                            <span>{String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
+                          <div className={`orders-responsible-cell${isCatalogWebQuote ? ' is-public-catalog' : ''}`}>
+                            <span>{isCatalogWebQuote ? 'WEB' : String(row.responsibleName ?? 'Sistema').slice(0, 2).toUpperCase()}</span>
                             <div>
                               <strong>{row.responsibleName}</strong>
-                              <small>{row.responsibleRole}</small>
+                              <small>{isCatalogWebQuote ? getPublicCatalogQuoteStatus(row) : row.responsibleRole}</small>
                             </div>
                           </div>
                         </td>
                         <td>
-                          <div className="orders-cell-main">
+                          <div className="orders-transport-cell">
                             <strong>{formatDate(row.deliveryDate)} / {formatDate(row.pickupDate)}</strong>
                             <span>{row.address || 'Direccion pendiente'}</span>
                           </div>
@@ -11312,13 +11353,23 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <div className="orders-mobile-commercial-list">
                 {filteredQuotes.map((row) => {
                   const statusMeta = QUOTE_STATUS_META[row.status] ?? QUOTE_STATUS_META.borrador;
+                  const isCatalogWebQuote = isPublicCatalogQuote(row);
                   return (
-                    <article key={row.id} className={`orders-mobile-contract-card quote-${row.status}`}>
+                    <article
+                      key={row.id}
+                      className={`orders-mobile-contract-card quote-${row.status}${isCatalogWebQuote ? ' is-public-catalog-quote' : ''}`}
+                    >
                       <header>
                         <strong>{row.quoteCode}</strong>
                         <span className={`orders-status-badge quote-${statusMeta.className}`}>{statusMeta.label}</span>
                         <b>{formatBs(row.totalBs)}</b>
                       </header>
+                      {isCatalogWebQuote ? (
+                        <div className="orders-mobile-quote-source">
+                          <span className="orders-quote-source-badge"><i aria-hidden="true" /> CATÁLOGO WEB</span>
+                          <small>{getPublicCatalogQuoteStatus(row)}</small>
+                        </div>
+                      ) : null}
                       <div className="orders-mobile-contract-main">
                         <p><span>Cliente:</span> <strong>{row.customerName}</strong></p>
                         <p><span>Evento:</span> <strong>{row.eventType || 'Evento general'}</strong></p>
