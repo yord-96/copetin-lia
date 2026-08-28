@@ -7915,6 +7915,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             ? 0
             : undefined,
           confirmSupplierPlanRemoval: Boolean(supplierPlanRemovalConfirmed && removedSupplierLines.length > 0),
+          supplierPlanRemovalFromRows: originalSupplierPlan.length,
+          supplierPlanRemovalToRows: nextSupplierPlan.length,
           supplierPlanRemovalDetails: removedSupplierLines.map((line) => ({
             supplierName: String(line?.supplierName ?? 'Proveedor').trim() || 'Proveedor',
             itemName: String(line?.itemName ?? 'Item').trim() || 'Item',

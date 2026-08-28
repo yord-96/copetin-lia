@@ -15920,15 +15920,28 @@ const createWebBridge = () => ({
         });
         const totalBs = Math.max(0, subtotalBs - discountBs + deliveryCharge.deliveryFeeBs);
         const now = new Date().toISOString();
-        if (removesSupplierCoverage && payload?.confirmSupplierPlanRemoval === true) {
+        const confirmedSupplierPlanRemoval = payload?.confirmSupplierPlanRemoval === true;
+        const confirmedSupplierPlanFromRows = Math.max(
+          previousSupplierPlanRows,
+          Math.trunc(Number(payload?.supplierPlanRemovalFromRows ?? 0)),
+        );
+        const confirmedSupplierPlanToRows = Math.max(
+          0,
+          Math.trunc(Number(payload?.supplierPlanRemovalToRows ?? nextSupplierPlanRows)),
+        );
+        if (
+          confirmedSupplierPlanRemoval
+          && confirmedSupplierPlanFromRows > confirmedSupplierPlanToRows
+          && confirmedSupplierPlanToRows === nextSupplierPlanRows
+        ) {
           contract.supplierPlanRemovalApproval = {
             id: makeId('supplier-removal-approval'),
             confirmedAt: now,
             confirmedById: payload?.updatedById ?? payload?.userId ?? null,
             confirmedByName: getAuditUserName(payload),
             confirmedByRole: getAuditUserRole(payload),
-            fromRows: previousSupplierPlanRows,
-            toRows: nextSupplierPlanRows,
+            fromRows: confirmedSupplierPlanFromRows,
+            toRows: confirmedSupplierPlanToRows,
             removedLines: (Array.isArray(payload?.supplierPlanRemovalDetails)
               ? payload.supplierPlanRemovalDetails
               : []).map((line) => ({
