@@ -2912,6 +2912,9 @@ const normalizeState = (state) => {
         items,
         services,
         supplierFulfillmentPlan: normalizeSupplierFulfillmentPlan(contract?.supplierFulfillmentPlan),
+        supplierPlanRemovalApproval: contract?.supplierPlanRemovalApproval
+          ? deepClone(contract.supplierPlanRemovalApproval)
+          : null,
         economicLedger: normalizedEconomicLedger,
         economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
         economicResetAt: contract?.economicResetAt ?? null,

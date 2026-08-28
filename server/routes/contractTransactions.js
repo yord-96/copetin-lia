@@ -483,4 +483,88 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
   }
 });
 
+router.put('/__copetin_db/contracts/:id/update', requireInternalKey, async (req, res, next) => {
+  const startedAt = Date.now();
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    const contractPayload = req.body?.contract;
+    if (!requestedId || !contractPayload || typeof contractPayload !== 'object' || Array.isArray(contractPayload)) {
+      res.status(400).json({ error: 'Debes enviar el contrato completo que deseas actualizar.' });
+      return;
+    }
+
+    let responseBundle = null;
+    const result = await updateStateSnapshot(async (state) => {
+      const bridge = getWebBridge();
+      await bridge.__storage.beginBatch(state);
+      try {
+        const updatedContract = await bridge.contracts.update({
+          ...contractPayload,
+          id: requestedId,
+        });
+        const linkedRental = (state.rentals ?? []).find((entry) => (
+          !entry?.deletedAt
+          && (
+            String(entry.id ?? '') === String(updatedContract.rentalId ?? '')
+            || String(entry.contractId ?? '') === String(updatedContract.id ?? '')
+            || (updatedContract.orderCode && String(entry.orderCode ?? '') === String(updatedContract.orderCode))
+          )
+        )) ?? null;
+        const itemIds = new Set((updatedContract.items ?? [])
+          .map((line) => String(line?.itemId ?? '').trim())
+          .filter(Boolean));
+
+        responseBundle = {
+          contract: updatedContract,
+          rental: linkedRental,
+          changes: {
+            contracts: [updatedContract],
+            rentals: linkedRental ? [linkedRental] : [],
+            items: (state.items ?? []).filter((item) => itemIds.has(String(item?.id ?? '').trim())),
+          },
+        };
+
+        return await bridge.__storage.commitBatch();
+      } catch (error) {
+        await bridge.__storage.rollbackBatch();
+        throw error;
+      }
+    }, req.body?.revision);
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    res.set('Server-Timing', `total;dur=${Date.now() - startedAt}`);
+    res.json({
+      ok: true,
+      ...responseBundle,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      res.status(409).json({
+        error: 'Los datos fueron actualizados por otro usuario. Vuelve a abrir el contrato antes de guardar.',
+        code: error.code,
+        currentRevision: error.currentRevision,
+        providedRevision: error.providedRevision,
+      });
+      return;
+    }
+    if (error?.statusCode || error?.status === 409 || error?.code === 'CONTRACT_CODE_CONFLICT') {
+      res.status(Number(error?.statusCode ?? error?.status ?? 409)).json({
+        error: error?.message || 'No se pudo actualizar el contrato.',
+        code: error?.code || 'CONTRACT_UPDATE_BLOCKED',
+        details: error?.details ?? null,
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
 export default router;

@@ -2096,6 +2096,45 @@ const createAndApproveContractOnServer = async ({ contract, trace } = {}) => {
   return payload;
 };
 
+const updateContractOnServer = async (contract = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('contracts', 'update', true, contract);
+  }
+  const requestedId = String(contract?.id ?? '').trim();
+  if (!requestedId) throw new Error('Debes indicar el contrato que deseas actualizar.');
+  const knownRevision = getKnownLocalRevision();
+  const revision = knownRevision || (await fetchServerMeta())?.revision || null;
+
+  const response = await fetch(getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/update`), {
+    method: 'PUT',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      contract,
+      revision,
+    }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo actualizar el contrato.');
+  }
+
+  const result = await response.json();
+  if (!result?.contract?.id) {
+    throw new Error('El servidor no devolvio el contrato actualizado.');
+  }
+  await mergeTransactionChangesIntoLocalState(result?.changes ?? {});
+  if (result?.revision) {
+    rememberServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+  announceDataChange({
+    domain: 'contracts',
+    method: 'update',
+    collections: Object.keys(result?.changes ?? {}),
+  });
+  return result.contract;
+};
+
 const pollRemoteRevision = async () => {
   if (!shouldUseServerState() || syncSubscribers.size === 0) return;
 
@@ -3367,7 +3406,7 @@ export const api = {
     },
     update: async (payload) => {
       forgetFullRecordCache(fullContractCache, payload);
-      const updated = await callBridge('contracts', 'update', true, payload);
+      const updated = await updateContractOnServer(payload);
       forgetFullRecordCache(fullContractCache, updated);
       return updated;
     },
