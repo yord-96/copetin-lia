@@ -3592,7 +3592,18 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       rentalTotalBs,
       toMoneyNumber(contract?.totals?.itemsNetSubtotalBs ?? contract?.totals?.itemsSubtotalBs ?? rental?.totals?.itemsNetSubtotalBs ?? rental?.totals?.itemsSubtotalBs),
     );
-    const prepaidUsedBs = toMoneyNumber(contract?.payment?.prepaidUsedBs ?? rental?.payment?.prepaidUsedBs);
+    // El prepago aplicado reduce lo que debe ingresar fisicamente a Caja. Los
+    // contratos antiguos lo guardan como `prepaidAppliedBs` en la orden, aunque
+    // el contrato comercial todavia conserve 0 o no tenga `prepaidUsedBs`.
+    const prepaidUsedBs = Math.max(
+      toMoneyNumber(contract?.payment?.prepaidUsedBs),
+      toMoneyNumber(contract?.payment?.prepaidAppliedBs),
+      toMoneyNumber(contract?.prepaidAppliedBs),
+      toMoneyNumber(rental?.payment?.prepaidUsedBs),
+      toMoneyNumber(rental?.payment?.prepaidAppliedBs),
+      toMoneyNumber(rental?.totals?.prepaidAppliedBs),
+      toMoneyNumber(rental?.prepaidAppliedBs),
+    );
 
     const clientPendingPickup = rental?.operational?.clientPendingPickup?.active
       ? rental.operational.clientPendingPickup
@@ -4051,7 +4062,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // El total comercial del contrato no debe sumar nuevamente los daños.
     // Los daños se controlan como obligación separada para evitar que un contrato
     // totalmente pagado aparezca con saldo de alquiler.
-    const ledgerChargeTargetBs = Number(totalBs.toFixed(2));
+    // La hoja economica registra dinero recibido. El consumo VIP ya pago una
+    // parte del contrato sin pasar por Caja, por lo que no puede volver a formar
+    // parte de la asignacion de un recibo. Cualquier deposito por encima de este
+    // objetivo queda correctamente identificado como excedente del cliente.
+    const ledgerChargeTargetBs = Math.max(
+      0,
+      Number((totalBs - Math.min(totalBs, prepaidUsedBs)).toFixed(2)),
+    );
     const rentalReceivedBs = Math.min(
       ledgerChargeTargetBs,
       Math.max(
