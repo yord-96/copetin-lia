@@ -70078,3 +70078,643 @@ button.inventory-loss-row-action:hover {
   .montage-main-place { width: 4.4rem; height: 4.4rem; }
   .montage-chair { width: 6.3rem; height: 8.5rem; }
 }
+/* ==========================================================================
+   CREADOR DE MONTADOS V2
+   Motor visual por capas: mesa real, mantelería aplicada, puesto completo,
+   cristalería, cubiertos y sillas integradas sin tarjetas cuadradas visibles.
+   ========================================================================== */
+
+.public-montage-page-v2 {
+  --montage-orange: #ef5a10;
+  --montage-navy: #102344;
+}
+
+.public-montage-workspace-v2 {
+  grid-template-columns: minmax(19rem, 24rem) minmax(40rem, 1fr) minmax(18rem, 21rem);
+}
+
+.montage-slot-tabs-v2 {
+  max-height: 25rem;
+  overflow: auto;
+  padding-right: .18rem;
+}
+
+.montage-scene-v2 {
+  position: relative;
+  min-height: 34rem;
+  overflow: hidden;
+  isolation: isolate;
+  background: #d9c5ad;
+}
+
+.montage-scene-v2--main {
+  perspective: 1100px;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(255,255,255,.92), rgba(255,244,225,.3) 37%, transparent 62%),
+    linear-gradient(#efe4d7 0 58%, #ae865e 58% 100%);
+}
+
+.montage-room-wall {
+  position: absolute;
+  inset: 0 0 41% 0;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.25), transparent 20% 80%, rgba(255,255,255,.25)),
+    radial-gradient(circle at 20% 35%, rgba(255,244,201,.55) 0 2px, transparent 3px),
+    radial-gradient(circle at 38% 28%, rgba(255,244,201,.55) 0 2px, transparent 3px),
+    radial-gradient(circle at 62% 31%, rgba(255,244,201,.55) 0 2px, transparent 3px),
+    radial-gradient(circle at 80% 36%, rgba(255,244,201,.55) 0 2px, transparent 3px),
+    linear-gradient(180deg, #f2e8dc, #d9c2aa);
+  background-size: auto, 8rem 8rem, 9rem 9rem, 8rem 8rem, 9rem 9rem, auto;
+  z-index: 0;
+}
+
+.montage-room-wall::before,
+.montage-room-wall::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18%;
+  background: linear-gradient(90deg, rgba(122,83,48,.17), transparent);
+  opacity: .55;
+}
+
+.montage-room-wall::before { left: 0; }
+.montage-room-wall::after { right: 0; transform: scaleX(-1); }
+
+.montage-room-floor {
+  position: absolute;
+  inset: 58% 0 0;
+  background:
+    linear-gradient(90deg, rgba(80,49,26,.12) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255,255,255,.12), transparent),
+    #a9825d;
+  background-size: 6rem 100%, auto, auto;
+  z-index: 0;
+}
+
+.montage-real-table {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.montage-real-table--main {
+  top: 29%;
+  width: 64%;
+  height: 49%;
+}
+
+.montage-real-table--main.montage-real-table--round {
+  width: 56%;
+}
+
+.montage-real-table--main.montage-real-table--square {
+  width: 52%;
+}
+
+.montage-table-skirt {
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  top: 31%;
+  bottom: 0;
+  overflow: hidden;
+  background-color: var(--item-color);
+  background-image:
+    linear-gradient(90deg, rgba(255,255,255,.12), rgba(0,0,0,.13), rgba(255,255,255,.08)),
+    var(--item-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 1.7rem 2.5rem rgba(65,39,22,.28);
+  filter: saturate(.9) contrast(.98);
+}
+
+.montage-real-table--round .montage-table-skirt {
+  border-radius: 0 0 47% 47% / 0 0 16% 16%;
+  clip-path: polygon(6% 0, 94% 0, 84% 100%, 16% 100%);
+}
+
+.montage-real-table--rect .montage-table-skirt {
+  border-radius: 0 0 1.8rem 1.8rem;
+  clip-path: polygon(2% 0, 98% 0, 93% 100%, 7% 100%);
+}
+
+.montage-real-table--square .montage-table-skirt {
+  left: 10%;
+  right: 10%;
+  border-radius: 0 0 2rem 2rem;
+  clip-path: polygon(4% 0, 96% 0, 90% 100%, 10% 100%);
+}
+
+.montage-table-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11%;
+  height: 39%;
+  overflow: hidden;
+  background-color: var(--item-color);
+  background-image:
+    radial-gradient(circle at 50% 15%, rgba(255,255,255,.32), transparent 45%),
+    var(--item-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.35),
+    0 .8rem 1.6rem rgba(69,44,26,.24);
+  transform: rotateX(58deg);
+  transform-origin: 50% 50%;
+  filter: saturate(.9) contrast(.98);
+}
+
+.montage-real-table--round .montage-table-top {
+  border-radius: 50%;
+}
+
+.montage-real-table--rect .montage-table-top {
+  border-radius: 14% / 36%;
+}
+
+.montage-real-table--square .montage-table-top {
+  left: 8%;
+  right: 8%;
+  border-radius: 13%;
+}
+
+.montage-cloth-texture {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(88deg, transparent 0 12%, rgba(255,255,255,.08) 13%, transparent 15%),
+    repeating-linear-gradient(96deg, transparent 0 18%, rgba(0,0,0,.035) 19%, transparent 21%);
+  mix-blend-mode: soft-light;
+  opacity: .85;
+}
+
+.montage-runner-surface {
+  position: absolute;
+  z-index: 4;
+  left: 42%;
+  right: 42%;
+  top: -8%;
+  bottom: -8%;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: var(--item-color);
+  background-image: var(--item-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.22);
+  filter: saturate(.95);
+}
+
+.montage-real-table--rect .montage-runner-surface {
+  left: 44%;
+  right: 44%;
+}
+
+.montage-table-identity {
+  position: absolute;
+  left: 50%;
+  bottom: -7%;
+  width: 36%;
+  height: 34%;
+  object-fit: contain;
+  transform: translateX(-50%);
+  opacity: .13;
+  mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 35%, transparent 74%);
+  mask-image: radial-gradient(ellipse at center, #000 35%, transparent 74%);
+}
+
+.montage-setting {
+  position: absolute;
+  z-index: 13;
+  width: 5.8rem;
+  height: 5.8rem;
+  transform-origin: 50% 50%;
+}
+
+.montage-setting--main {
+  width: 5.2rem;
+  height: 5.2rem;
+}
+
+.montage-setting-plaquet,
+.montage-setting-plate {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.montage-setting-plaquet {
+  width: 4.8rem;
+  height: 4.8rem;
+  background:
+    radial-gradient(circle, rgba(255,255,255,.7) 0 53%, transparent 54%),
+    var(--item-color);
+  border: .34rem solid var(--item-color);
+  box-shadow: 0 .28rem .5rem rgba(53,36,22,.22);
+}
+
+.montage-setting-plate {
+  z-index: 2;
+  width: 3.7rem;
+  height: 3.7rem;
+  background:
+    radial-gradient(circle, rgba(255,255,255,.88) 0 57%, rgba(218,214,206,.76) 59% 62%, rgba(255,255,255,.82) 64%),
+    var(--item-color);
+  border: 1px solid rgba(118,105,88,.2);
+  box-shadow: inset 0 .1rem .35rem rgba(255,255,255,.8);
+}
+
+.montage-soft-asset {
+  user-select: none;
+  pointer-events: none;
+}
+
+.montage-setting-photo {
+  position: absolute;
+  inset: -6%;
+  width: 112%;
+  height: 112%;
+  object-fit: cover;
+  opacity: .42;
+  mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(circle, #000 35%, rgba(0,0,0,.8) 60%, transparent 82%);
+  mask-image: radial-gradient(circle, #000 35%, rgba(0,0,0,.8) 60%, transparent 82%);
+}
+
+.montage-setting-photo--plate {
+  opacity: .32;
+}
+
+.montage-setting-napkin {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  width: 2rem;
+  height: 2.55rem;
+  transform: translate(-50%, -50%) rotate(-8deg);
+  border-radius: .22rem;
+  box-shadow: 0 .2rem .4rem rgba(32,24,16,.2);
+  overflow: hidden;
+}
+
+.montage-setting-photo--napkin {
+  width: 125%;
+  height: 125%;
+  margin: -12%;
+  object-fit: cover;
+  opacity: .75;
+  mix-blend-mode: multiply;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 52%, transparent 92%);
+  mask-image: radial-gradient(ellipse at center, #000 52%, transparent 92%);
+}
+
+.montage-setting-glass {
+  position: absolute;
+  z-index: 7;
+  right: -.15rem;
+  top: -.55rem;
+  width: 1.65rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+}
+
+.montage-setting-fork,
+.montage-setting-knife {
+  position: absolute;
+  z-index: 6;
+  top: 1rem;
+  width: .9rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+}
+
+.montage-setting-fork { left: -.6rem; }
+.montage-setting-knife { right: -.6rem; }
+
+.montage-setting-photo--glass,
+.montage-setting-photo--cutlery {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: .9;
+  mix-blend-mode: multiply;
+  filter: contrast(1.06) saturate(.8);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 44%, transparent 86%);
+  mask-image: radial-gradient(ellipse at center, #000 44%, transparent 86%);
+}
+
+.montage-real-chair {
+  position: absolute;
+  z-index: 8;
+  width: 8rem;
+  height: 8.8rem;
+}
+
+.montage-real-chair-base {
+  position: absolute;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  object-fit: contain;
+  opacity: .94;
+  mix-blend-mode: multiply;
+  filter: contrast(1.05) saturate(.92) drop-shadow(0 .7rem .45rem rgba(54,35,21,.18));
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0,0,0,.88) 66%, transparent 87%);
+  mask-image: radial-gradient(ellipse at center, #000 48%, rgba(0,0,0,.88) 66%, transparent 87%);
+}
+
+.montage-real-chair-cover {
+  position: absolute;
+  left: 27%;
+  right: 27%;
+  top: 15%;
+  bottom: 17%;
+  opacity: .48;
+  border-radius: 42% 42% 18% 18%;
+  mix-blend-mode: multiply;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+
+.montage-real-chair-cover-photo,
+.montage-real-chair-cushion-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: .5;
+  mix-blend-mode: multiply;
+}
+
+.montage-real-chair-cushion {
+  position: absolute;
+  z-index: 5;
+  left: 31%;
+  right: 31%;
+  top: 51%;
+  height: 15%;
+  border-radius: 50%;
+  box-shadow: 0 .16rem .32rem rgba(40,27,17,.2);
+  overflow: hidden;
+}
+
+.montage-real-centerpiece {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  top: 39%;
+  width: 9rem;
+  height: 10rem;
+  transform: translate(-50%, -50%);
+}
+
+.montage-real-centerpiece-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  filter: contrast(1.04) saturate(.92) drop-shadow(0 .6rem .45rem rgba(45,30,20,.18));
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 45%, transparent 86%);
+  mask-image: radial-gradient(ellipse at center, #000 45%, transparent 86%);
+}
+
+.montage-scene-v2 .montage-scene-note {
+  z-index: 50;
+  right: .8rem;
+  bottom: .8rem;
+  background: rgba(16,35,68,.82);
+  color: #fff;
+  padding: .38rem .58rem;
+  border-radius: 999px;
+  font-size: .62rem;
+  font-weight: 900;
+}
+
+/* Vista superior */
+.montage-scene-v2--top {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, rgba(255,255,255,.75), transparent 58%),
+    #c9af90;
+}
+
+.montage-top-stage {
+  position: relative;
+  width: min(88%, 48rem);
+  aspect-ratio: 1.35 / 1;
+}
+
+.montage-real-table--top {
+  inset: 4% 5%;
+  width: auto;
+  height: auto;
+  transform: none;
+}
+
+.montage-real-table--top .montage-table-skirt {
+  display: none;
+}
+
+.montage-real-table--top .montage-table-top {
+  inset: 8%;
+  height: auto;
+  transform: none;
+}
+
+.montage-real-table--top.montage-real-table--rect .montage-table-top {
+  inset: 17% 5%;
+  border-radius: 12%;
+}
+
+.montage-real-table--top.montage-real-table--square .montage-table-top {
+  inset: 8% 18%;
+  border-radius: 14%;
+}
+
+.montage-setting--top {
+  width: 5.4rem;
+  height: 5.4rem;
+  z-index: 15;
+}
+
+.montage-real-centerpiece--top {
+  top: 50%;
+}
+
+/* Puesto individual */
+.montage-scene-v2--place {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 15rem;
+  align-items: stretch;
+  background: linear-gradient(135deg, #e5d2b8, #b58c64);
+}
+
+.montage-place-real-surface {
+  position: relative;
+  margin: 2rem;
+  border-radius: 2rem;
+  overflow: hidden;
+  background-color: var(--item-color);
+  background-image:
+    radial-gradient(circle at 50% 25%, rgba(255,255,255,.35), transparent 52%),
+    var(--item-image);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 1.2rem 2.6rem rgba(65,40,22,.2);
+}
+
+.montage-place-runner {
+  position: absolute;
+  left: 41%;
+  right: 41%;
+  top: 0;
+  bottom: 0;
+  background-color: var(--item-color);
+  background-image: var(--item-image);
+  background-size: cover;
+  background-position: center;
+}
+
+.montage-setting--hero {
+  left: 50%;
+  top: 57%;
+  width: 14rem;
+  height: 14rem;
+  transform: translate(-50%, -50%);
+}
+
+.montage-setting--hero .montage-setting-plaquet {
+  width: 12rem;
+  height: 12rem;
+  border-width: .75rem;
+}
+
+.montage-setting--hero .montage-setting-plate {
+  width: 9.6rem;
+  height: 9.6rem;
+}
+
+.montage-setting--hero .montage-setting-napkin {
+  width: 4.8rem;
+  height: 6.2rem;
+}
+
+.montage-setting--hero .montage-setting-glass {
+  right: .2rem;
+  top: -.7rem;
+  width: 4rem;
+  height: 5rem;
+}
+
+.montage-setting--hero .montage-setting-fork,
+.montage-setting--hero .montage-setting-knife {
+  top: 3.4rem;
+  width: 2.2rem;
+  height: 7rem;
+}
+
+.montage-setting--hero .montage-setting-fork { left: -1.8rem; }
+.montage-setting--hero .montage-setting-knife { right: -1.8rem; }
+
+.montage-place-chair-hero {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 3rem;
+}
+
+.montage-place-chair-hero .montage-real-chair {
+  position: relative;
+  width: 13rem;
+  height: 17rem;
+}
+
+.montage-place-centerpiece {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  width: 8rem;
+  height: 8rem;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 1360px) {
+  .public-montage-workspace-v2 {
+    grid-template-columns: minmax(18rem, 22rem) minmax(38rem, 1fr);
+  }
+
+  .public-montage-summary-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 980px) {
+  .public-montage-workspace-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .montage-scene-v2 {
+    min-height: 30rem;
+  }
+
+  .montage-real-table--main {
+    width: 78%;
+  }
+
+  .montage-real-table--main.montage-real-table--round {
+    width: 70%;
+  }
+
+  .montage-real-chair {
+    width: 6.5rem;
+    height: 7.2rem;
+  }
+
+  .montage-scene-v2--place {
+    grid-template-columns: 1fr;
+  }
+
+  .montage-place-chair-hero {
+    min-height: 17rem;
+  }
+}
+
+@media (max-width: 680px) {
+  .montage-scene-v2 {
+    min-height: 27rem;
+  }
+
+  .montage-setting--main {
+    width: 4.2rem;
+    height: 4.2rem;
+  }
+
+  .montage-setting-plaquet {
+    width: 3.8rem;
+    height: 3.8rem;
+  }
+
+  .montage-setting-plate {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .montage-real-chair {
+    width: 5rem;
+    height: 5.7rem;
+  }
+}
