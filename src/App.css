@@ -71006,3 +71006,36 @@ button.inventory-loss-row-action:hover {
     min-height: 24rem;
   }
 }
+
+/* Creador de montados V5 · profundidad, perspectiva y vista publica sin precios */
+.public-montage-page .montage-estimate,
+.public-montage-page .montage-estimate strong,
+.public-montage-page [class*="montage-estimate"] {
+  display: none !important;
+}
+
+.public-montage-preview-canvas .montage-konva-wrap {
+  border-radius: 0 0 0.9rem 0.9rem;
+  overflow: hidden;
+  background: linear-gradient(180deg, #efe4d7 0 57%, #aa825e 57% 100%);
+  box-shadow: inset 0 0 0 1px rgba(16, 35, 68, 0.06);
+}
+
+.public-montage-preview-canvas canvas {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+}
+
+.public-montage-summary-canvas .montage-no-price-note {
+  border: 1px solid #dbe4ef;
+  background: linear-gradient(135deg, #f8fbff, #fff);
+}
+
+.public-montage-summary-canvas .montage-no-price-note strong {
+  color: #102344;
+}
+
+.public-montage-preview-canvas .montage-preview-foot span {
+  max-width: 48rem;
+}
