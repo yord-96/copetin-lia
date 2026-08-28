@@ -70718,3 +70718,162 @@ button.inventory-loss-row-action:hover {
     height: 5.7rem;
   }
 }
+/* ==========================================================================
+   CREADOR DE MONTADOS V3 — análisis visual de producto
+   ========================================================================== */
+
+.montage-auto-design-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .7rem;
+  align-items: center;
+  margin: .7rem 0 .85rem;
+  padding: .78rem;
+  border: 1px solid rgba(239, 90, 16, .22);
+  border-radius: .9rem;
+  background:
+    radial-gradient(circle at 92% 15%, rgba(239, 90, 16, .11), transparent 34%),
+    linear-gradient(135deg, #fffaf5, #fff);
+}
+
+.montage-auto-design-card > div {
+  display: grid;
+  gap: .15rem;
+  min-width: 0;
+}
+
+.montage-auto-design-card span {
+  color: #ef5a10;
+  font-size: .65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.montage-auto-design-card strong {
+  color: #102344;
+  font-size: .8rem;
+}
+
+.montage-auto-design-card small {
+  color: #71809b;
+  font-size: .64rem;
+  line-height: 1.35;
+}
+
+.montage-auto-design-card button {
+  min-height: 2.55rem;
+  padding: 0 .85rem;
+  border: 0;
+  border-radius: .72rem;
+  background: #ef5a10;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 .45rem .9rem rgba(239, 90, 16, .16);
+}
+
+.montage-auto-design-card button:disabled {
+  opacity: .62;
+  cursor: wait;
+}
+
+.montage-table-skirt,
+.montage-table-top,
+.montage-runner-surface,
+.montage-place-real-surface,
+.montage-place-runner {
+  background-image: none !important;
+  background-color: var(--item-color) !important;
+}
+
+.montage-cloth-texture {
+  overflow: hidden;
+  opacity: 1;
+}
+
+.montage-cloth-texture::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  background-image: var(--item-image);
+  background-repeat: repeat;
+  background-size: 11rem auto;
+  background-position: center;
+  opacity: var(--texture-strength, .22);
+  mix-blend-mode: multiply;
+  filter: saturate(.8) contrast(.9) brightness(1.04);
+  transform: rotate(-1deg) scale(1.05);
+}
+
+.montage-cloth-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(95deg, rgba(255,255,255,.18), transparent 18% 72%, rgba(0,0,0,.07)),
+    repeating-linear-gradient(88deg, transparent 0 12%, rgba(255,255,255,.07) 13%, transparent 15%);
+  pointer-events: none;
+}
+
+.montage-table-skirt .montage-cloth-texture::before {
+  background-size: 13rem auto;
+  transform: rotate(0deg) scale(1.12);
+}
+
+.montage-runner-surface .montage-cloth-texture::before,
+.montage-place-runner .montage-cloth-texture::before {
+  background-size: 8rem auto;
+  opacity: min(.38, calc(var(--texture-strength, .22) + .08));
+}
+
+.montage-real-chair-base,
+.montage-real-centerpiece-photo,
+.montage-setting-photo--glass,
+.montage-setting-photo--cutlery {
+  mix-blend-mode: normal;
+  opacity: 1;
+  filter: drop-shadow(0 .55rem .45rem rgba(53,35,21,.18));
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.montage-real-chair-base {
+  object-fit: contain;
+}
+
+.montage-setting-photo--glass,
+.montage-setting-photo--cutlery {
+  object-fit: contain;
+}
+
+.montage-setting-photo--plaquet,
+.montage-setting-photo--plate {
+  opacity: .76;
+  mix-blend-mode: multiply;
+}
+
+.montage-setting-photo--napkin {
+  opacity: .88;
+  mix-blend-mode: multiply;
+}
+
+.montage-table-identity {
+  display: none;
+}
+
+.public-montage-page-v2 .montage-product-picker-head > div > span::after {
+  content: " · análisis visual automático al seleccionar";
+  color: #ef5a10;
+}
+
+@media (max-width: 680px) {
+  .montage-auto-design-card {
+    grid-template-columns: 1fr;
+  }
+
+  .montage-auto-design-card button {
+    width: 100%;
+  }
+}

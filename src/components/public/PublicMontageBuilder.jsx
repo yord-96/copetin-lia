@@ -47,11 +47,26 @@ const productHaystack = (item) => normalizeText([
   item?.areaLabel,
 ].join(' '));
 
+const productNameText = (item) => normalizeText(item?.name);
+
 const belongsToSlot = (item, slot) => {
   if (!item || item.kind === 'combo') return false;
-  const haystack = productHaystack(item);
-  if (slot.excludes?.some((word) => haystack.includes(normalizeText(word)))) return false;
-  return slot.keywords.some((word) => haystack.includes(normalizeText(word)));
+  const nameText = productNameText(item);
+  const fullText = productHaystack(item);
+
+  if (slot.excludes?.some((word) => nameText.includes(normalizeText(word)))) return false;
+
+  // Las familias de montaje se determinan primero por el NOMBRE REAL del item.
+  // Evita falsos positivos como "mantel" dentro de la categoría "mantelería".
+  const nameMatch = slot.keywords.some((word) => nameText.includes(normalizeText(word)));
+  if (nameMatch) return true;
+
+  // Fallback muy conservador para categorías explícitas.
+  const categoryText = normalizeText(item?.category);
+  return slot.keywords.some((word) => {
+    const keyword = normalizeText(word);
+    return keyword.length >= 6 && categoryText === keyword && fullText.includes(keyword);
+  });
 };
 
 const COLOR_RULES = [
@@ -93,10 +108,229 @@ const colorFromItem = (item, fallback = '#ded3c2') => {
   return match?.[1] ?? fallback;
 };
 
-const itemTextureStyle = (item, fallback) => ({
-  '--item-color': colorFromItem(item, fallback),
-  '--item-image': item?.imageUrl ? `url("${item.imageUrl}")` : 'none',
+const hexToRgb = (hex) => {
+  const normalized = String(hex ?? '').replace('#', '').trim();
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return { r: 210, g: 200, b: 185 };
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  };
+};
+
+const rgbToHex = ({ r, g, b }) => `#${[r, g, b]
+  .map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0'))
+  .join('')}`;
+
+const colorDistance = (left, right) => {
+  const a = hexToRgb(left);
+  const b = hexToRgb(right);
+  return Math.sqrt(
+    ((a.r - b.r) ** 2)
+    + ((a.g - b.g) ** 2)
+    + ((a.b - b.b) ** 2),
+  );
+};
+
+const perceivedLightness = (hex) => {
+  const { r, g, b } = hexToRgb(hex);
+  return ((r * 299) + (g * 587) + (b * 114)) / 1000;
+};
+
+const makeVisualFallback = (item) => ({
+  dominantColor: colorFromItem(item, '#d8cab6'),
+  accentColor: colorFromItem(item, '#b99b73'),
+  textureStrength: 0.22,
+  cutoutUrl: item?.imageUrl || '',
+  textureUrl: item?.imageUrl || '',
+  analyzed: false,
 });
+
+const analyzeProductImage = (item) => new Promise((resolve) => {
+  if (!item?.imageUrl || typeof document === 'undefined') {
+    resolve(makeVisualFallback(item));
+    return;
+  }
+
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.decoding = 'async';
+
+  image.onload = () => {
+    try {
+      const sampleSize = 72;
+      const sampleCanvas = document.createElement('canvas');
+      sampleCanvas.width = sampleSize;
+      sampleCanvas.height = sampleSize;
+      const sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true });
+      if (!sampleContext) throw new Error('Canvas no disponible');
+
+      sampleContext.drawImage(image, 0, 0, sampleSize, sampleSize);
+      const pixels = sampleContext.getImageData(0, 0, sampleSize, sampleSize);
+      const data = pixels.data;
+
+      const cornerPoints = [
+        [2, 2],
+        [sampleSize - 3, 2],
+        [2, sampleSize - 3],
+        [sampleSize - 3, sampleSize - 3],
+      ];
+
+      const cornerColors = cornerPoints.map(([x, y]) => {
+        const offset = ((y * sampleSize) + x) * 4;
+        return { r: data[offset], g: data[offset + 1], b: data[offset + 2] };
+      });
+
+      const background = cornerColors.reduce(
+        (sum, color) => ({
+          r: sum.r + color.r / cornerColors.length,
+          g: sum.g + color.g / cornerColors.length,
+          b: sum.b + color.b / cornerColors.length,
+        }),
+        { r: 0, g: 0, b: 0 },
+      );
+
+      let minX = sampleSize;
+      let minY = sampleSize;
+      let maxX = 0;
+      let maxY = 0;
+      let foregroundCount = 0;
+      let colorSum = { r: 0, g: 0, b: 0 };
+      let luminanceSum = 0;
+      let luminanceSquaredSum = 0;
+
+      const distanceFromBackground = (r, g, b) => Math.sqrt(
+        ((r - background.r) ** 2)
+        + ((g - background.g) ** 2)
+        + ((b - background.b) ** 2),
+      );
+
+      for (let y = 0; y < sampleSize; y += 1) {
+        for (let x = 0; x < sampleSize; x += 1) {
+          const offset = ((y * sampleSize) + x) * 4;
+          const alpha = data[offset + 3];
+          if (alpha < 16) continue;
+          const r = data[offset];
+          const g = data[offset + 1];
+          const b = data[offset + 2];
+          const distance = distanceFromBackground(r, g, b);
+          if (distance < 38) continue;
+
+          foregroundCount += 1;
+          colorSum = { r: colorSum.r + r, g: colorSum.g + g, b: colorSum.b + b };
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+
+          const lum = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+          luminanceSum += lum;
+          luminanceSquaredSum += lum ** 2;
+        }
+      }
+
+      if (foregroundCount < 25) {
+        resolve(makeVisualFallback(item));
+        return;
+      }
+
+      const dominantColor = rgbToHex({
+        r: colorSum.r / foregroundCount,
+        g: colorSum.g / foregroundCount,
+        b: colorSum.b / foregroundCount,
+      });
+
+      const averageLum = luminanceSum / foregroundCount;
+      const variance = Math.max(0, (luminanceSquaredSum / foregroundCount) - (averageLum ** 2));
+      const textureStrength = Math.max(0.12, Math.min(0.52, 0.13 + (Math.sqrt(variance) / 115)));
+
+      const sourceX = Math.max(0, Math.floor((minX / sampleSize) * image.naturalWidth));
+      const sourceY = Math.max(0, Math.floor((minY / sampleSize) * image.naturalHeight));
+      const sourceWidth = Math.max(
+        1,
+        Math.ceil(((maxX - minX + 1) / sampleSize) * image.naturalWidth),
+      );
+      const sourceHeight = Math.max(
+        1,
+        Math.ceil(((maxY - minY + 1) / sampleSize) * image.naturalHeight),
+      );
+
+      const outputSize = 320;
+      const cutoutCanvas = document.createElement('canvas');
+      cutoutCanvas.width = outputSize;
+      cutoutCanvas.height = outputSize;
+      const cutoutContext = cutoutCanvas.getContext('2d', { willReadFrequently: true });
+      if (!cutoutContext) throw new Error('Canvas no disponible');
+
+      const scale = Math.min(
+        (outputSize * 0.88) / sourceWidth,
+        (outputSize * 0.88) / sourceHeight,
+      );
+      const drawWidth = sourceWidth * scale;
+      const drawHeight = sourceHeight * scale;
+      const drawX = (outputSize - drawWidth) / 2;
+      const drawY = (outputSize - drawHeight) / 2;
+
+      cutoutContext.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight,
+      );
+
+      const cutPixels = cutoutContext.getImageData(0, 0, outputSize, outputSize);
+      const cutData = cutPixels.data;
+      for (let index = 0; index < cutData.length; index += 4) {
+        const r = cutData[index];
+        const g = cutData[index + 1];
+        const b = cutData[index + 2];
+        const originalAlpha = cutData[index + 3];
+        if (originalAlpha === 0) continue;
+
+        const distance = distanceFromBackground(r, g, b);
+        const normalized = Math.max(0, Math.min(1, (distance - 18) / 60));
+        cutData[index + 3] = Math.round(originalAlpha * (normalized ** 0.78));
+      }
+      cutoutContext.putImageData(cutPixels, 0, 0);
+
+      const fallbackColor = colorFromItem(item, dominantColor);
+      const analyzedColor = colorDistance(fallbackColor, dominantColor) > 125
+        ? fallbackColor
+        : dominantColor;
+
+      resolve({
+        dominantColor: analyzedColor,
+        accentColor: perceivedLightness(analyzedColor) > 155 ? '#9d815d' : '#e1c99c',
+        textureStrength,
+        cutoutUrl: cutoutCanvas.toDataURL('image/png', 0.92),
+        textureUrl: item.imageUrl,
+        analyzed: true,
+      });
+    } catch {
+      resolve(makeVisualFallback(item));
+    }
+  };
+
+  image.onerror = () => resolve(makeVisualFallback(item));
+  image.src = item.imageUrl;
+});
+
+const itemTextureStyle = (item, visual, fallback) => ({
+  '--item-color': visual?.dominantColor || colorFromItem(item, fallback),
+  '--item-image': (visual?.textureUrl || item?.imageUrl)
+    ? `url("${visual?.textureUrl || item.imageUrl}")`
+    : 'none',
+  '--texture-strength': String(visual?.textureStrength ?? 0.22),
+});
+
+const visualFor = (visuals, item) => (
+  item?.id ? visuals?.[item.id] ?? makeVisualFallback(item) : null
+);
 
 function ProductThumb({ item, selected, onClick }) {
   return (
@@ -114,12 +348,13 @@ function ProductThumb({ item, selected, onClick }) {
   );
 }
 
-function SoftAsset({ item, className = '', alt = '', style }) {
-  if (!item?.imageUrl) return null;
+function SoftAsset({ item, visual, className = '', alt = '', style }) {
+  const source = visual?.cutoutUrl || item?.imageUrl;
+  if (!source) return null;
   return (
     <img
       className={`montage-soft-asset ${className}`}
-      src={item.imageUrl}
+      src={source}
       alt={alt || item.name}
       draggable="false"
       style={style}
@@ -127,40 +362,84 @@ function SoftAsset({ item, className = '', alt = '', style }) {
   );
 }
 
-function PlaceSetting({ selections, className = '', style }) {
+function PlaceSetting({ selections, visuals, className = '', style }) {
+  const plaquetVisual = visualFor(visuals, selections.plaquet);
+  const plateVisual = visualFor(visuals, selections.plato);
+  const napkinVisual = visualFor(visuals, selections.servilleta);
+  const glassVisual = visualFor(visuals, selections.copa);
+  const forkVisual = visualFor(visuals, selections.tenedor);
+  const knifeVisual = visualFor(visuals, selections.cuchillo);
+
   return (
     <div className={`montage-setting ${className}`} style={style}>
-      <div className="montage-setting-plaquet" style={itemTextureStyle(selections.plaquet, '#d1ad62')}>
-        {selections.plaquet?.imageUrl ? <SoftAsset item={selections.plaquet} className="montage-setting-photo montage-setting-photo--plaquet" /> : null}
+      <div
+        className="montage-setting-plaquet"
+        style={itemTextureStyle(selections.plaquet, plaquetVisual, '#d1ad62')}
+      >
+        {selections.plaquet?.imageUrl ? (
+          <SoftAsset
+            item={selections.plaquet}
+            visual={plaquetVisual}
+            className="montage-setting-photo montage-setting-photo--plaquet"
+          />
+        ) : null}
       </div>
 
-      <div className="montage-setting-plate" style={itemTextureStyle(selections.plato, '#f7f5ef')}>
-        {selections.plato?.imageUrl ? <SoftAsset item={selections.plato} className="montage-setting-photo montage-setting-photo--plate" /> : null}
+      <div
+        className="montage-setting-plate"
+        style={itemTextureStyle(selections.plato, plateVisual, '#f7f5ef')}
+      >
+        {selections.plato?.imageUrl ? (
+          <SoftAsset
+            item={selections.plato}
+            visual={plateVisual}
+            className="montage-setting-photo montage-setting-photo--plate"
+          />
+        ) : null}
       </div>
 
       {selections.servilleta ? (
-        <div className="montage-setting-napkin" style={{ backgroundColor: colorFromItem(selections.servilleta, '#665944') }}>
-          <SoftAsset item={selections.servilleta} className="montage-setting-photo montage-setting-photo--napkin" />
+        <div
+          className="montage-setting-napkin"
+          style={{ backgroundColor: napkinVisual?.dominantColor || colorFromItem(selections.servilleta, '#665944') }}
+        >
+          <SoftAsset
+            item={selections.servilleta}
+            visual={napkinVisual}
+            className="montage-setting-photo montage-setting-photo--napkin"
+          />
         </div>
       ) : null}
 
       {selections.copa ? (
         <div className="montage-setting-glass">
-          <SoftAsset item={selections.copa} className="montage-setting-photo montage-setting-photo--glass" />
+          <SoftAsset
+            item={selections.copa}
+            visual={glassVisual}
+            className="montage-setting-photo montage-setting-photo--glass"
+          />
           {!selections.copa?.imageUrl ? <span>◯</span> : null}
         </div>
       ) : null}
 
       {selections.tenedor ? (
         <div className="montage-setting-fork">
-          <SoftAsset item={selections.tenedor} className="montage-setting-photo montage-setting-photo--cutlery" />
+          <SoftAsset
+            item={selections.tenedor}
+            visual={forkVisual}
+            className="montage-setting-photo montage-setting-photo--cutlery"
+          />
           {!selections.tenedor?.imageUrl ? <span>♜</span> : null}
         </div>
       ) : null}
 
       {selections.cuchillo ? (
         <div className="montage-setting-knife">
-          <SoftAsset item={selections.cuchillo} className="montage-setting-photo montage-setting-photo--cutlery" />
+          <SoftAsset
+            item={selections.cuchillo}
+            visual={knifeVisual}
+            className="montage-setting-photo montage-setting-photo--cutlery"
+          />
           {!selections.cuchillo?.imageUrl ? <span>│</span> : null}
         </div>
       ) : null}
@@ -229,9 +508,13 @@ const chairLayouts = {
   ],
 };
 
-function TableDressing({ selections, tableType, mode = 'main' }) {
-  const style = itemTextureStyle(selections.mantel, '#e5dccd');
-  const runnerStyle = itemTextureStyle(selections.caminito, 'rgba(191,156,110,.65)');
+function TableDressing({ selections, visuals, tableType, mode = 'main' }) {
+  const mantelVisual = visualFor(visuals, selections.mantel);
+  const runnerVisual = visualFor(visuals, selections.caminito);
+  const tableVisual = visualFor(visuals, selections.mesa);
+
+  const style = itemTextureStyle(selections.mantel, mantelVisual, '#e5dccd');
+  const runnerStyle = itemTextureStyle(selections.caminito, runnerVisual, 'rgba(191,156,110,.65)');
 
   return (
     <div className={`montage-real-table montage-real-table--${mode} montage-real-table--${tableType.id}`}>
@@ -247,38 +530,59 @@ function TableDressing({ selections, tableType, mode = 'main' }) {
         ) : null}
       </div>
       {selections.mesa?.imageUrl ? (
-        <SoftAsset item={selections.mesa} className="montage-table-identity" />
+        <SoftAsset
+          item={selections.mesa}
+          visual={tableVisual}
+          className="montage-table-identity"
+        />
       ) : null}
     </div>
   );
 }
 
-function ChairAsset({ selections, style }) {
+function ChairAsset({ selections, visuals, style }) {
   if (!selections.silla) return null;
+
+  const chairVisual = visualFor(visuals, selections.silla);
+  const coverVisual = visualFor(visuals, selections.cobertor);
+  const cushionVisual = visualFor(visuals, selections.cojin);
+
   return (
     <div className="montage-real-chair" style={style}>
-      <SoftAsset item={selections.silla} className="montage-real-chair-base" />
+      <SoftAsset
+        item={selections.silla}
+        visual={chairVisual}
+        className="montage-real-chair-base"
+      />
       {selections.cobertor ? (
         <div
           className="montage-real-chair-cover"
-          style={{ backgroundColor: colorFromItem(selections.cobertor, 'rgba(238,231,217,.78)') }}
+          style={{ backgroundColor: coverVisual?.dominantColor || colorFromItem(selections.cobertor, 'rgba(238,231,217,.78)') }}
         >
-          <SoftAsset item={selections.cobertor} className="montage-real-chair-cover-photo" />
+          <SoftAsset
+            item={selections.cobertor}
+            visual={coverVisual}
+            className="montage-real-chair-cover-photo"
+          />
         </div>
       ) : null}
       {selections.cojin ? (
         <div
           className="montage-real-chair-cushion"
-          style={{ backgroundColor: colorFromItem(selections.cojin, '#dbcaa9') }}
+          style={{ backgroundColor: cushionVisual?.dominantColor || colorFromItem(selections.cojin, '#dbcaa9') }}
         >
-          <SoftAsset item={selections.cojin} className="montage-real-chair-cushion-photo" />
+          <SoftAsset
+            item={selections.cojin}
+            visual={cushionVisual}
+            className="montage-real-chair-cushion-photo"
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-function MainScene({ selections, tableType }) {
+function MainScene({ selections, visuals, tableType }) {
   const placeLayout = tableType.id === 'rect'
     ? rectMainPlaces
     : tableType.id === 'square'
@@ -295,7 +599,7 @@ function MainScene({ selections, tableType }) {
       </div>
       <div className="montage-room-floor" />
 
-      <TableDressing selections={selections} tableType={tableType} mode="main" />
+      <TableDressing selections={selections} visuals={visuals} tableType={tableType} mode="main" />
 
       {Array.from({ length: placeCount }, (_, index) => {
         const pos = placeLayout[index];
@@ -303,6 +607,7 @@ function MainScene({ selections, tableType }) {
           <PlaceSetting
             key={index}
             selections={selections}
+            visuals={visuals}
             className="montage-setting--main"
             style={{
               ...pos,
@@ -316,6 +621,7 @@ function MainScene({ selections, tableType }) {
         <ChairAsset
           key={index}
           selections={selections}
+          visuals={visuals}
           style={{
             ...pos,
             transform: `rotate(${pos.rotate})`,
@@ -325,7 +631,7 @@ function MainScene({ selections, tableType }) {
 
       {selections.centro ? (
         <div className="montage-real-centerpiece">
-          <SoftAsset item={selections.centro} className="montage-real-centerpiece-photo" />
+          <SoftAsset item={selections.centro} visual={visualFor(visuals, selections.centro)} className="montage-real-centerpiece-photo" />
         </div>
       ) : null}
 
@@ -334,7 +640,7 @@ function MainScene({ selections, tableType }) {
   );
 }
 
-function TopScene({ selections, tableType }) {
+function TopScene({ selections, visuals, tableType }) {
   const placeCount = Math.min(tableType.seats, 10);
   const positions = Array.from({ length: placeCount }, (_, index) => {
     const angle = ((Math.PI * 2) / placeCount) * index - Math.PI / 2;
@@ -350,13 +656,13 @@ function TopScene({ selections, tableType }) {
   return (
     <div className={`montage-scene montage-scene-v2 montage-scene-v2--top montage-scene-v2--${tableType.id}`}>
       <div className="montage-top-stage">
-        <TableDressing selections={selections} tableType={tableType} mode="top" />
+        <TableDressing selections={selections} visuals={visuals} tableType={tableType} mode="top" />
         {positions.map((style, index) => (
-          <PlaceSetting key={index} selections={selections} className="montage-setting--top" style={style} />
+          <PlaceSetting key={index} selections={selections} visuals={visuals} className="montage-setting--top" style={style} />
         ))}
         {selections.centro ? (
           <div className="montage-real-centerpiece montage-real-centerpiece--top">
-            <SoftAsset item={selections.centro} className="montage-real-centerpiece-photo" />
+            <SoftAsset item={selections.centro} visual={visualFor(visuals, selections.centro)} className="montage-real-centerpiece-photo" />
           </div>
         ) : null}
       </div>
@@ -364,34 +670,34 @@ function TopScene({ selections, tableType }) {
   );
 }
 
-function PlaceScene({ selections }) {
+function PlaceScene({ selections, visuals }) {
   return (
     <div className="montage-scene montage-scene-v2 montage-scene-v2--place">
-      <div className="montage-place-real-surface" style={itemTextureStyle(selections.mantel, '#e6ddcf')}>
+      <div className="montage-place-real-surface" style={itemTextureStyle(selections.mantel, visualFor(visuals, selections.mantel), '#e6ddcf')}>
         <div className="montage-cloth-texture" />
         {selections.caminito ? (
-          <div className="montage-place-runner" style={itemTextureStyle(selections.caminito, '#bca77f')}>
+          <div className="montage-place-runner" style={itemTextureStyle(selections.caminito, visualFor(visuals, selections.caminito), '#bca77f')}>
             <div className="montage-cloth-texture" />
           </div>
         ) : null}
-        <PlaceSetting selections={selections} className="montage-setting--hero" />
+        <PlaceSetting selections={selections} visuals={visuals} className="montage-setting--hero" />
         {selections.centro ? (
           <div className="montage-place-centerpiece">
-            <SoftAsset item={selections.centro} className="montage-real-centerpiece-photo" />
+            <SoftAsset item={selections.centro} visual={visualFor(visuals, selections.centro)} className="montage-real-centerpiece-photo" />
           </div>
         ) : null}
       </div>
       <div className="montage-place-chair-hero">
-        <ChairAsset selections={selections} />
+        <ChairAsset selections={selections} visuals={visuals} />
       </div>
     </div>
   );
 }
 
-function MontageScene({ selections, tableType, view }) {
-  if (view === 'top') return <TopScene selections={selections} tableType={tableType} />;
-  if (view === 'place') return <PlaceScene selections={selections} />;
-  return <MainScene selections={selections} tableType={tableType} />;
+function MontageScene({ selections, visuals, tableType, view }) {
+  if (view === 'top') return <TopScene selections={selections} visuals={visuals} tableType={tableType} />;
+  if (view === 'place') return <PlaceScene selections={selections} visuals={visuals} />;
+  return <MainScene selections={selections} visuals={visuals} tableType={tableType} />;
 }
 
 export default function PublicMontageBuilder() {
@@ -404,6 +710,8 @@ export default function PublicMontageBuilder() {
   const [slotQuery, setSlotQuery] = useState('');
   const [selections, setSelections] = useState({});
   const [savedAt, setSavedAt] = useState('');
+  const [visuals, setVisuals] = useState({});
+  const [autoDesigning, setAutoDesigning] = useState(false);
 
   useEffect(() => {
     try {
@@ -446,6 +754,23 @@ export default function PublicMontageBuilder() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const selectedItems = Object.values(selections).filter((item) => item?.id);
+
+    selectedItems.forEach((item) => {
+      if (visuals[item.id]) return;
+      analyzeProductImage(item).then((visual) => {
+        if (cancelled) return;
+        setVisuals((current) => (
+          current[item.id] ? current : { ...current, [item.id]: visual }
+        ));
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [selections, visuals]);
+
   const tableType = tableTypes.find((entry) => entry.id === tableTypeId) ?? tableTypes[0];
   const activeDefinition = SLOT_DEFINITIONS.find((slot) => slot.id === activeSlot) ?? SLOT_DEFINITIONS[0];
 
@@ -472,6 +797,68 @@ export default function PublicMontageBuilder() {
     const qty = perSeatSlots.has(slot.id) ? tableType.seats : 1;
     return sum + (money(item.rentalPriceBs) * qty);
   }, 0);
+
+  const scoreCandidateForSlot = (slotId, item, baseColor) => {
+    const candidateColor = colorFromItem(item, '#c6b89e');
+    const distance = colorDistance(baseColor, candidateColor);
+    const text = productHaystack(item);
+    let score = 0;
+
+    if (slotId === 'plato') {
+      score += perceivedLightness(candidateColor) > 175 ? 110 : 25;
+      if (text.includes('blanco') || text.includes('marfil')) score += 90;
+    } else if (slotId === 'copa') {
+      score += 70;
+      if (text.includes('transpar') || text.includes('cristal') || text.includes('copa')) score += 60;
+    } else if (slotId === 'tenedor' || slotId === 'cuchillo') {
+      if (text.includes('dorado') || text.includes('plata') || text.includes('acero')) score += 100;
+      score += Math.max(0, 70 - Math.abs(distance - 110) * 0.35);
+    } else if (slotId === 'silla') {
+      if (text.includes('dorado') || text.includes('tiffany') || text.includes('crossback') || text.includes('madera')) score += 85;
+      score += Math.max(0, 95 - Math.abs(distance - 125) * 0.42);
+    } else if (slotId === 'plaquet') {
+      if (text.includes('dorado') || text.includes('plata') || text.includes('vidrio')) score += 80;
+      score += Math.max(0, 110 - Math.abs(distance - 120) * 0.45);
+    } else if (slotId === 'servilleta' || slotId === 'caminito') {
+      score += Math.max(0, 130 - Math.abs(distance - 145) * 0.48);
+    } else if (slotId === 'centro') {
+      score += 80;
+      if (text.includes('flor') || text.includes('vela') || text.includes('candelabro')) score += 55;
+    } else {
+      score += Math.max(0, 100 - Math.abs(distance - 110) * 0.4);
+    }
+
+    score += Math.min(20, Number(item.totalStock ?? 0) / 10);
+    return score;
+  };
+
+  const autoCompose = () => {
+    setAutoDesigning(true);
+    const mantelItem = selections.mantel ?? (candidatesBySlot.mantel ?? [])[0] ?? null;
+    const baseColor = colorFromItem(mantelItem, '#e4dac9');
+
+    const nextSelections = {
+      ...selections,
+      ...(mantelItem ? { mantel: mantelItem } : {}),
+    };
+
+    const slotsToComplete = ['caminito', 'plaquet', 'plato', 'servilleta', 'copa', 'tenedor', 'cuchillo', 'silla', 'centro'];
+    slotsToComplete.forEach((slotId) => {
+      if (nextSelections[slotId]) return;
+      const candidates = (candidatesBySlot[slotId] ?? [])
+        .slice(0, 160)
+        .map((item) => ({
+          item,
+          score: scoreCandidateForSlot(slotId, item, baseColor),
+        }))
+        .sort((left, right) => right.score - left.score);
+
+      if (candidates[0]?.item) nextSelections[slotId] = candidates[0].item;
+    });
+
+    setSelections(nextSelections);
+    window.setTimeout(() => setAutoDesigning(false), 450);
+  };
 
   const saveMontage = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ tableTypeId, selections }));
@@ -569,6 +956,17 @@ export default function PublicMontageBuilder() {
               })}
             </div>
 
+            <div className="montage-auto-design-card">
+              <div>
+                <span>Diseño inteligente</span>
+                <strong>Completar montado automáticamente</strong>
+                <small>Analiza color, contraste y familia de tus productos reales para proponer una combinación completa.</small>
+              </div>
+              <button type="button" onClick={autoCompose} disabled={autoDesigning}>
+                {autoDesigning ? 'Armando…' : '✨ Diseñar montaje'}
+              </button>
+            </div>
+
             <div className="montage-product-picker">
               <div className="montage-product-picker-head">
                 <div>
@@ -597,7 +995,15 @@ export default function PublicMontageBuilder() {
                     key={item.id}
                     item={item}
                     selected={selections[activeSlot]?.id === item.id}
-                    onClick={() => setSelections((current) => ({ ...current, [activeSlot]: item }))}
+                    onClick={() => {
+                      setSelections((current) => ({ ...current, [activeSlot]: item }));
+                      if (activeSlot === 'mesa') {
+                        const tableName = productNameText(item);
+                        if (tableName.includes('rectangular')) setTableTypeId('rect');
+                        else if (tableName.includes('cuadrad')) setTableTypeId('square');
+                        else if (tableName.includes('redond')) setTableTypeId('round');
+                      }
+                    }}
                   />
                 ))}
                 {!activeCandidates.length ? <p>No encontramos productos para esta familia con el filtro actual.</p> : null}
@@ -618,7 +1024,7 @@ export default function PublicMontageBuilder() {
               </div>
             </header>
 
-            <MontageScene selections={selections} tableType={tableType} view={view} />
+            <MontageScene selections={selections} visuals={visuals} tableType={tableType} view={view} />
 
             <div className="montage-preview-foot">
               <span>Vista referencial: respeta producto, color y textura; la perspectiva se adapta a la escena.</span>
