@@ -262,7 +262,7 @@ const sendPublicCatalog = async (_req, res, next) => {
 router.get('/api/public/catalog', sendPublicCatalog);
 router.get('/__copetin_db/public/catalog', sendPublicCatalog);
 
-router.get('/api/public/availability', async (req, res, next) => {
+router.get(['/api/public/availability', '/__copetin_db/public/availability'], async (req, res, next) => {
   try {
     const eventDate = String(req.query?.date ?? '').trim();
     const eventTime = String(req.query?.time ?? '12:00').trim();
@@ -285,7 +285,7 @@ router.get('/api/public/availability', async (req, res, next) => {
   }
 });
 
-router.post('/api/public/quotes', publicQuoteLimiter, async (req, res, next) => {
+router.post(['/api/public/quotes', '/__copetin_db/public/quotes'], publicQuoteLimiter, async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const customerName = String(payload.customerName ?? '').trim().replace(/\s+/g, ' ').slice(0, 100);
@@ -477,7 +477,7 @@ router.post('/api/public/quotes', publicQuoteLimiter, async (req, res, next) => 
         eventDate: created.eventDate,
         totalBs: created.totals.totalBs,
       },
-      pdfUrl: `/api/public/quotes/${encodedId}/pdf?token=${encodedToken}`,
+      pdfUrl: `/__copetin_db/public/quotes/${encodedId}/pdf?token=${encodedToken}`,
       contactPhones,
     });
   } catch (error) {

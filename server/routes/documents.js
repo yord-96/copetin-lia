@@ -602,7 +602,7 @@ router.get(
   },
 );
 
-router.get('/api/public/quotes/:id/pdf', async (req, res, next) => {
+router.get(['/api/public/quotes/:id/pdf', '/__copetin_db/public/quotes/:id/pdf'], async (req, res, next) => {
   const startedAt = Date.now();
   try {
     const requestedId = String(req.params.id ?? '').trim();

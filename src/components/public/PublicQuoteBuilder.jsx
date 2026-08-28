@@ -16,6 +16,22 @@ const todayKey = () => new Intl.DateTimeFormat('en-CA', {
 const normalizeText = (value) => String(value ?? '')
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
+
+const PUBLIC_API_BASE = '/__copetin_db/public';
+
+const readJsonResponse = async (response, fallbackMessage) => {
+  const contentType = String(response.headers.get('content-type') ?? '').toLowerCase();
+  const text = await response.text();
+  if (!contentType.includes('application/json')) {
+    throw new Error(fallbackMessage);
+  }
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+};
+
 const whatsappNumber = (phone) => {
   const digits = String(phone ?? '').replace(/\D/g, '');
   return digits.length === 8 ? `591${digits}` : digits;
@@ -50,9 +66,9 @@ export default function PublicQuoteBuilder() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/public/catalog', { headers: { Accept: 'application/json' } })
+    fetch(`${PUBLIC_API_BASE}/catalog`, { headers: { Accept: 'application/json' } })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readJsonResponse(response, 'No se pudo cargar el catálogo público.');
         if (!response.ok) throw new Error(payload.error || 'No se pudo cargar el catálogo.');
         const products = Array.isArray(payload.products) ? payload.products.filter((item) => item.kind !== 'combo') : [];
         if (active) setCatalog({
@@ -75,12 +91,12 @@ export default function PublicQuoteBuilder() {
     const controller = new AbortController();
     setChecking(true);
     setError('');
-    fetch(`/api/public/availability?date=${encodeURIComponent(form.eventDate)}&time=${encodeURIComponent(form.eventTime)}`, {
+    fetch(`${PUBLIC_API_BASE}/availability?date=${encodeURIComponent(form.eventDate)}&time=${encodeURIComponent(form.eventTime)}`, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readJsonResponse(response, 'No se pudo consultar la disponibilidad del catálogo.');
         if (!response.ok) throw new Error(payload.error || 'No se pudo consultar la disponibilidad.');
         setAvailability(new Map((payload.items ?? []).map((entry) => [String(entry.itemId), entry])));
         if (Array.isArray(payload.contactPhones)) {
@@ -139,7 +155,7 @@ export default function PublicQuoteBuilder() {
     setSubmitting(true);
     setError('');
     try {
-      const response = await fetch('/api/public/quotes', {
+      const response = await fetch(`${PUBLIC_API_BASE}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
@@ -147,7 +163,7 @@ export default function PublicQuoteBuilder() {
           items: cartLines.map((item) => ({ itemId: item.id, quantity: item.quantity })),
         }),
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response, 'No se pudo registrar la cotización en este momento.');
       if (!response.ok) throw new Error(payload.error || 'No se pudo registrar la cotización.');
       setResult(payload);
       setStep(4);
