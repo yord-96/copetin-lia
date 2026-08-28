@@ -8386,7 +8386,25 @@ export const buildContractDocumentHtml = ({
   );
   const isGuaranteeValidated = String(contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? rental?.guarantee?.status ?? rental?.payment?.guaranteeStatus ?? '').trim() === 'validado';
   const paidBs = contract?.payment?.paidAtApprovalBs ?? rental?.payment?.paidAtRentalBs ?? rental?.totals?.paidAtRentalBs ?? 0;
-  const prepaidAppliedBs = contract?.payment?.prepaidAppliedBs ?? rental?.payment?.prepaidAppliedBs ?? rental?.totals?.prepaidAppliedBs ?? rental?.prepaidAppliedBs ?? 0;
+  const economicResetApplied = Boolean(contract?.economicResetAt)
+    || Number(contract?.economicResetVersion ?? 0) >= 1;
+  const prepaidAppliedBs = economicResetApplied
+    ? Number(
+      contract?.payment?.prepaidUsedBs
+      ?? contract?.payment?.prepaidAppliedBs
+      ?? contract?.prepaidAppliedBs
+      ?? 0
+    )
+    : Number(
+      contract?.payment?.prepaidUsedBs
+      ?? contract?.payment?.prepaidAppliedBs
+      ?? contract?.prepaidAppliedBs
+      ?? rental?.payment?.prepaidUsedBs
+      ?? rental?.payment?.prepaidAppliedBs
+      ?? rental?.totals?.prepaidAppliedBs
+      ?? rental?.prepaidAppliedBs
+      ?? 0
+    );
   const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
   const hasDurationPricing = pricingPlan?.mode === 'duration';
   const hasDailySchedulePricing = pricingPlan?.mode === 'daily_schedule';
@@ -8414,6 +8432,17 @@ export const buildContractDocumentHtml = ({
   });
   const activeEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
     .filter((entry) => !entry?.deletedAt);
+  const confirmedEconomicDepositBs = activeEconomicLedger
+    .filter((entry) => (
+      entry?.type === 'deposit'
+      && !entry?.reclassifiedFromPayment
+      && Boolean(
+        entry?.isCashRegistered
+        || String(entry?.cashMovementId ?? '').trim()
+        || String(entry?.cashReceiptCode ?? '').trim()
+      )
+    ))
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
   const ledgerChargeCoverageBs = activeEconomicLedger
     .filter((entry) => entry?.type === 'charge')
     .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
@@ -8864,9 +8893,14 @@ export const buildContractDocumentHtml = ({
   ).toFixed(2));
   const printedTotalBs = Math.max(Number(totalBs ?? 0), computedContractTotalBs);
   const printedManagedBs = printedTotalBs + Math.max(0, Number(guaranteeBs ?? 0));
+  const effectiveDocumentPaidBs = Math.max(
+    0,
+    Number(paidBs ?? 0),
+    Math.min(printedTotalBs, confirmedEconomicDepositBs),
+  );
   const printedPendingBs = Math.max(
     0,
-    printedTotalBs - Math.max(0, Number(paidBs ?? 0)) - Math.max(0, Number(prepaidAppliedBs ?? 0))
+    printedTotalBs - effectiveDocumentPaidBs - Math.max(0, Number(prepaidAppliedBs ?? 0))
       + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0))),
   );
   const serviceRows = contractServices
@@ -9044,7 +9078,7 @@ export const buildContractDocumentHtml = ({
   );
   const currentCommercialPendingBs = Math.max(
     0,
-    printedTotalBs - Math.max(0, Number(paidBs ?? 0)),
+    printedTotalBs - effectiveDocumentPaidBs - Math.max(0, Number(prepaidAppliedBs ?? 0)),
   );
   const economicPendingBs = Math.max(
     0,
@@ -9156,7 +9190,7 @@ export const buildContractDocumentHtml = ({
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
             <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'pagada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
-            <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(paidBs)}</strong></div>
+            <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(effectiveDocumentPaidBs)}</strong></div>
             <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(printedPendingBs)}</strong></div>
             <div class="rc-financial-item manual"><span>A cuenta</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>

@@ -4123,9 +4123,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // parte del contrato sin pasar por Caja, por lo que no puede volver a formar
     // parte de la asignacion de un recibo. Cualquier deposito por encima de este
     // objetivo queda correctamente identificado como excedente del cliente.
+    const effectivePrepaidForChargeTargetBs = hasEconomicResetLedger
+      ? Math.max(
+        0,
+        toMoneyNumber(contract?.payment?.prepaidUsedBs),
+        toMoneyNumber(contract?.payment?.prepaidAppliedBs),
+        toMoneyNumber(contract?.prepaidAppliedBs),
+      )
+      : prepaidUsedBs;
     const ledgerChargeTargetBs = Math.max(
       0,
-      Number((totalBs - Math.min(totalBs, prepaidUsedBs)).toFixed(2)),
+      Number((totalBs - Math.min(totalBs, effectivePrepaidForChargeTargetBs)).toFixed(2)),
     );
     const rentalReceivedBs = Math.min(
       ledgerChargeTargetBs,
@@ -4318,7 +4326,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       discountMode,
       discountPercent,
       deliveryFeeBs,
-      prepaidUsedBs,
+      prepaidUsedBs: effectivePrepaidForChargeTargetBs,
       economicLedger,
       ledgerTotals,
       confirmedGuaranteeRefundBs,
