@@ -567,4 +567,129 @@ router.put('/__copetin_db/contracts/:id/update', requireInternalKey, async (req,
   }
 });
 
+router.post('/__copetin_db/contracts/:id/remove', requireInternalKey, async (req, res, next) => {
+  const startedAt = Date.now();
+  try {
+    const requestedId = String(req.params.id ?? '').trim();
+    if (!requestedId) {
+      res.status(400).json({ error: 'Debes indicar el contrato que deseas eliminar.' });
+      return;
+    }
+
+    const trace = req.body?.trace && typeof req.body.trace === 'object' && !Array.isArray(req.body.trace)
+      ? req.body.trace
+      : {};
+    let responseBundle = null;
+    const result = await updateStateSnapshot(async (state) => {
+      const contractBefore = (state.contracts ?? []).find((entry) => (
+        String(entry?.id ?? '').trim() === requestedId && !entry?.deletedAt
+      ));
+      if (!contractBefore) {
+        const error = new Error('Contrato no encontrado o ya eliminado.');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (String(contractBefore.status ?? '').trim() !== 'anulado') {
+        const error = new Error('Por seguridad, solo se puede eliminar definitivamente de la lista un contrato anulado.');
+        error.statusCode = 409;
+        error.code = 'CONTRACT_REMOVE_REQUIRES_CANCELLED';
+        throw error;
+      }
+
+      // Esta operacion nunca debe recalcular ni reemplazar el inventario. La
+      // comparacion completa protege cantidad, disponibilidad, precios y fotos.
+      const inventoryBefore = JSON.stringify(Array.isArray(state.items) ? state.items : []);
+      const inventoryCountBefore = Array.isArray(state.items) ? state.items.length : 0;
+      const linkedRentalIds = new Set((state.rentals ?? [])
+        .filter((rental) => (
+          String(rental?.id ?? '') === String(contractBefore.rentalId ?? '')
+          || String(rental?.contractId ?? '') === String(contractBefore.id ?? '')
+          || (contractBefore.orderCode && String(rental?.orderCode ?? '') === String(contractBefore.orderCode))
+        ))
+        .map((rental) => String(rental?.id ?? ''))
+        .filter(Boolean));
+
+      const bridge = getWebBridge();
+      await bridge.__storage.beginBatch(state);
+      try {
+        const removedContract = await bridge.contracts.remove({
+          ...trace,
+          id: requestedId,
+        });
+        const finalState = await bridge.__storage.exportState();
+        const inventoryAfter = JSON.stringify(Array.isArray(finalState.items) ? finalState.items : []);
+        if (inventoryAfter !== inventoryBefore) {
+          const error = new Error('Eliminacion detenida: la operacion intentaba modificar el inventario. No se guardo ningun cambio.');
+          error.statusCode = 409;
+          error.code = 'CONTRACT_REMOVE_INVENTORY_MUTATION_BLOCKED';
+          throw error;
+        }
+
+        const finalContract = (finalState.contracts ?? []).find((entry) => String(entry?.id ?? '') === requestedId);
+        if (!finalContract?.deletedAt || String(finalContract.status ?? '') !== 'eliminado') {
+          throw new Error('El servidor no pudo confirmar la eliminacion del contrato.');
+        }
+
+        const linkedRentals = (finalState.rentals ?? []).filter((rental) => linkedRentalIds.has(String(rental?.id ?? '')));
+        const linkedOrderCodes = new Set(linkedRentals.map((rental) => String(rental?.orderCode ?? '')).filter(Boolean));
+        responseBundle = {
+          contract: removedContract,
+          changes: {
+            contracts: [finalContract],
+            rentals: linkedRentals,
+            deliveries: (finalState.deliveries ?? []).filter((delivery) => (
+              linkedRentalIds.has(String(delivery?.rentalId ?? ''))
+              || linkedOrderCodes.has(String(delivery?.orderCode ?? ''))
+            )),
+          },
+          safety: {
+            inventoryRowsBefore: inventoryCountBefore,
+            inventoryRowsAfter: Array.isArray(finalState.items) ? finalState.items.length : 0,
+            inventoryUnchanged: true,
+            removedContractId: requestedId,
+            releasedContractCode: String(contractBefore.contractCode ?? '').trim(),
+          },
+        };
+        return await bridge.__storage.commitBatch();
+      } catch (error) {
+        await bridge.__storage.rollbackBatch();
+        throw error;
+      }
+    }, req.body?.revision);
+
+    if (!result.initialized) {
+      res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+      return;
+    }
+
+    res.set('Server-Timing', `total;dur=${Date.now() - startedAt}`);
+    res.json({
+      ok: true,
+      ...responseBundle,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    if (error?.code === 'STATE_REVISION_CONFLICT') {
+      res.status(409).json({
+        error: 'Los datos fueron actualizados por otro usuario. Recarga antes de eliminar el contrato.',
+        code: error.code,
+        currentRevision: error.currentRevision,
+        providedRevision: error.providedRevision,
+      });
+      return;
+    }
+    if (error?.statusCode || error?.status) {
+      res.status(Number(error.statusCode ?? error.status)).json({
+        error: error.message || 'No se pudo eliminar el contrato.',
+        code: error.code || 'CONTRACT_REMOVE_BLOCKED',
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
 export default router;

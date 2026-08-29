@@ -2135,6 +2135,47 @@ const updateContractOnServer = async (contract = {}) => {
   return result.contract;
 };
 
+const removeContractOnServer = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    return callBridge('contracts', 'remove', true, payload);
+  }
+  const requestedId = String(payload?.id ?? '').trim();
+  if (!requestedId) throw new Error('Debes indicar el contrato que deseas eliminar.');
+  const knownRevision = getKnownLocalRevision();
+  const revision = knownRevision || (await fetchServerMeta())?.revision || null;
+  const trace = {
+    updatedById: payload?.updatedById ?? payload?.userId ?? null,
+    updatedByName: payload?.updatedByName ?? payload?.userName ?? 'Sistema',
+    updatedByRole: payload?.updatedByRole ?? payload?.userRole ?? 'Sistema',
+  };
+
+  const response = await fetch(getServerStateUrl(`/contracts/${encodeURIComponent(requestedId)}/remove`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ trace, revision }),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo eliminar el contrato anulado.');
+  }
+
+  const result = await response.json();
+  if (!result?.contract?.id || !result?.safety?.inventoryUnchanged) {
+    throw new Error('El servidor no confirmo una eliminacion segura del contrato.');
+  }
+  await mergeTransactionChangesIntoLocalState(result?.changes ?? {});
+  if (result?.revision) {
+    rememberServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+  announceDataChange({
+    domain: 'contracts',
+    method: 'remove',
+    collections: Object.keys(result?.changes ?? {}),
+  });
+  return result.contract;
+};
+
 const pollRemoteRevision = async () => {
   if (!shouldUseServerState() || syncSubscribers.size === 0) return;
 
@@ -3421,7 +3462,7 @@ export const api = {
     updateNote: (payload) => updateContractNoteOnServer(payload),
     deleteNote: (payload) => deleteContractNoteOnServer(payload),
     resetEconomics: (payload) => resetContractEconomicsOnServer(payload),
-    remove: (payload) => callBridge('contracts', 'remove', true, payload),
+    remove: (payload) => removeContractOnServer(payload),
     restore: (payload) => callBridge('contracts', 'restore', true, payload),
     revertToQuote: (payload) => callBridge('contracts', 'revertToQuote', true, payload),
   },

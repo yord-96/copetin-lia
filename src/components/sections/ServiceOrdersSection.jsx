@@ -8281,6 +8281,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const handleDeleteContractClick = async (contract) => {
+    const confirmed = window.confirm(
+      `¿Eliminar el contrato anulado ${contract?.contractCode || contract?.id}?\n\nEl código quedará libre para otro contrato. El inventario no será modificado.`,
+    );
+    if (!confirmed) {
+      setMenuState(null);
+      return;
+    }
     if (!beginSubmit()) return;
     try {
       await onRemoveContract?.({ id: contract.id });
