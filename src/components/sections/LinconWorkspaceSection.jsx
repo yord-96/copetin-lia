@@ -451,11 +451,52 @@ const buildContractDraft = (reservation) => {
     contractor1Name: reservation?.contractor1Name ?? reservation?.clientName ?? '', contractor1Ci: reservation?.contractor1Ci ?? reservation?.clientCi ?? '', contractor1Phone: reservation?.contractor1Phone ?? reservation?.clientPhone ?? '',
     contractor2Name: reservation?.contractor2Name ?? reservation?.secondContractorName ?? '', contractor2Ci: reservation?.contractor2Ci ?? reservation?.secondContractorCi ?? '', contractor2Phone: reservation?.contractor2Phone ?? reservation?.secondContractorPhone ?? '',
     eventType: reservation?.eventType ?? '', eventDate: reservation?.eventDate ?? '', startTime: reservation?.startTime ?? '', durationHours: Number(reservation?.durationHours ?? 8), roomName: reservation?.roomName ?? '', roomId: reservation?.roomId ?? '',
-    guestCount, packageName: reservation?.packageName ?? snapshot.templateName ?? '', packageVariantName: reservation?.packageVariantName ?? variant?.name ?? '', packageVariantId: variantId, packageVariants, pricingGroups,
+    guestCount, packageId: reservation?.packageId ?? snapshot.templateId ?? '', packageName: reservation?.packageName ?? snapshot.templateName ?? '', packageVariantName: reservation?.packageVariantName ?? variant?.name ?? '', packageVariantId: variantId, packageVariants, pricingGroups, packageSnapshot: Object.keys(snapshot).length ? snapshot : null,
     pricePerPersonBs, services: includedServices, extras, discountPercent: 0, advanceBs, guaranteeBs: Number(reservation?.guaranteeBs ?? 0), balanceDueDays: 7,
     contractDate: lincolnTodayKey(), notes: reservation?.notes ?? '',
   };
   return { ...base, clauses: contractDefaultClauses(base), clausesCustomized: false };
+};
+
+const contractPackagePatch = (pkg, guestCount = 0, preferredVariantId = '') => {
+  if (!pkg) return {
+    packageId: '', packageName: '', packageVariantId: '', packageVariantName: '',
+    packageVariants: [], pricingGroups: [], services: [], extras: [], pricePerPersonBs: 0,
+    packageSnapshot: null,
+  };
+  const variants = (Array.isArray(pkg.variants) && pkg.variants.length
+    ? pkg.variants.filter((variant) => variant?.status !== 'inactive')
+    : [{ id: 'base', name: pkg.name || 'BASE', pricePerPersonBs: Number(pkg.pricePerPersonBs ?? 0), minimumGuests: Number(pkg.minimumGuests ?? 0) }]);
+  const matchedIndex = variants.findIndex((variant) => String(variant.id) === String(preferredVariantId));
+  const selectedIndex = matchedIndex >= 0 ? matchedIndex : 0;
+  const selectedVariant = variants[selectedIndex] ?? null;
+  const lines = Array.isArray(pkg.serviceLines) ? pkg.serviceLines : [];
+  return {
+    packageId: pkg.id,
+    packageName: pkg.name || '',
+    packageVariantId: selectedVariant?.id || '',
+    packageVariantName: selectedVariant?.name || '',
+    packageVariants: variants.map((variant) => ({ ...variant })),
+    pricingGroups: variants.map((variant, index) => ({
+      id: variant.id || `variant-${index}`,
+      variantId: variant.id || `variant-${index}`,
+      name: variant.name || `Grupo ${index + 1}`,
+      selected: index === selectedIndex,
+      guestCount: index === selectedIndex ? Number(guestCount || 0) : 0,
+      pricePerPersonBs: Number(variant.pricePerPersonBs ?? 0),
+    })),
+    pricePerPersonBs: Number(selectedVariant?.pricePerPersonBs ?? 0),
+    services: lines.filter((line) => line?.included !== false && line?.catalogKind !== 'extra').map((line, index) => ({ ...line, id: line.id || `service-${index}`, selected: true, variantIds: Array.isArray(line.variantIds) ? [...line.variantIds] : [] })),
+    extras: lines.filter((line) => line?.catalogKind === 'extra' || line?.included === false).map((line, index) => ({ ...line, id: line.id || `extra-${index}`, selected: false, quantity: Number(line.quantity || 1), unitCostBs: Number(line.unitCostBs || 0) })),
+    packageSnapshot: {
+      templateId: pkg.id, templateCode: pkg.code || '', templateName: pkg.name || '', roomId: pkg.roomId || null,
+      roomName: pkg.roomName || '', eventTypes: Array.isArray(pkg.eventTypes) ? [...pkg.eventTypes] : [],
+      selectedVariant: selectedVariant ? { ...selectedVariant } : null,
+      variants: variants.map((variant) => ({ ...variant })),
+      serviceLines: lines.map((line) => ({ ...line, variantIds: Array.isArray(line.variantIds) ? [...line.variantIds] : [] })),
+      capturedAt: new Date().toISOString(),
+    },
+  };
 };
 
 const contractTotals = (draft) => {
@@ -484,6 +525,8 @@ function ContractDocumentSheet({ document, compact = false }) {
   const services = Array.isArray(document?.services) ? document.services.filter((line) => line.selected !== false) : [];
   const extras = Array.isArray(document?.extras) ? document.extras.filter((line) => line.selected) : [];
   const grouped = services.reduce((acc, line) => { const key = line.category || 'OTROS'; (acc[key] ||= []).push(line); return acc; }, {});
+  const pricingGroups = Array.isArray(document?.pricingGroups) ? document.pricingGroups.filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0) : [];
+  const serviceAppliesToGroup = (line, group) => !Array.isArray(line.variantIds) || !line.variantIds.length || line.variantIds.some((id) => String(id) === String(group.variantId));
   return <div className={`lincoln-contract-paper-stack ${compact ? 'is-compact' : ''}`}>
     <article className="lincoln-contract-paper">
       <header className="lincoln-contract-doc-head"><div><small>CENTRO DE EVENTOS</small><h1>LINCOLN</h1><p>Pachamama #2250 y Waldo Ballivian · Cochabamba</p></div><div><strong>{document?.contractCode || 'CONTRATO'}</strong><span>{formatDate(document?.contractDate)}</span></div></header>
@@ -500,8 +543,13 @@ function ContractDocumentSheet({ document, compact = false }) {
     </article>
     <article className="lincoln-contract-paper">
       <header className="lincoln-contract-doc-head is-cost"><div><small>ANEXO DEL CONTRATO</small><h1>HOJA DE COSTOS Y SERVICIOS</h1><p>{document?.eventType || 'EVENTO'} · {document?.contractor1Name || ''}{document?.contractor2Name ? ` / ${document.contractor2Name}` : ''}</p></div><div><strong>{document?.contractCode || 'BORRADOR'}</strong><span>{contractDateLong(document?.eventDate)}</span></div></header>
-      <section className="lincoln-contract-package-summary"><div><span>Paquete</span><strong>{document?.packageName || 'SIN PAQUETE'}</strong></div><div><span>Nivel</span><strong>{document?.packageVariantName || 'BASE'}</strong></div><div><span>Invitados</span><strong>{document?.guestCount || 0}</strong></div><div><span>Precio / persona</span><strong>{contractMoney(document?.pricePerPersonBs)}</strong></div></section>
-      <div className="lincoln-contract-service-table">{Object.entries(grouped).map(([category, lines]) => <section key={category}><h3>{category}</h3>{lines.map((line) => <div key={line.id}><span>{line.description}</span><b>✓</b></div>)}</section>)}</div>
+      <section className="lincoln-contract-package-summary"><div><span>Paquete</span><strong>{document?.packageName || 'SIN PAQUETE'}</strong></div><div><span>Niveles</span><strong>{pricingGroups.map((group) => group.name).join(' + ') || document?.packageVariantName || 'BASE'}</strong></div><div><span>Invitados</span><strong>{document?.guestCount || 0}</strong></div><div><span>Total</span><strong>{contractMoney(totals.totalBs)}</strong></div></section>
+      <div className="lincoln-contract-matrix" style={{ '--contract-groups': Math.max(1, pricingGroups.length) }}>
+        <div className="is-head"><strong>Servicios incluidos</strong>{pricingGroups.map((group) => <b key={group.id}>{group.name}</b>)}</div>
+        {Object.entries(grouped).map(([category, lines]) => <section key={category}><h3>{category}</h3>{lines.map((line) => <div key={line.id}><span>{line.description}</span>{pricingGroups.map((group) => <b key={group.id}>{serviceAppliesToGroup(line, group) ? '✓' : ''}</b>)}</div>)}</section>)}
+        <div className="is-cost"><strong>Costo por persona</strong>{pricingGroups.map((group) => <b key={group.id}>{contractMoney(group.pricePerPersonBs)}</b>)}</div>
+        <div className="is-cost"><strong>Cantidad de invitados</strong>{pricingGroups.map((group) => <b key={group.id}>{group.guestCount}</b>)}</div>
+      </div>
       {extras.length ? <section className="lincoln-contract-extras"><h3>SERVICIOS ADICIONALES</h3>{extras.map((line) => <div key={line.id}><span>{line.description}</span><small>{line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1))}</small></div>)}</section> : null}
       <section className="lincoln-contract-totals"><div><span>Paquete base</span><strong>{contractMoney(totals.baseBs)}</strong></div>{totals.extrasBs > 0 ? <div><span>Extras</span><strong>{contractMoney(totals.extrasBs)}</strong></div> : null}{totals.discountBs > 0 ? <div><span>Descuento ({Number(document?.discountPercent || 0)}%)</span><strong>- {contractMoney(totals.discountBs)}</strong></div> : null}<div className="is-total"><span>Total servicio</span><strong>{contractMoney(totals.totalBs)}</strong></div><div><span>Anticipo / a cuenta</span><strong>{contractMoney(document?.advanceBs)}</strong></div><div><span>Saldo servicio</span><strong>{contractMoney(totals.balanceBs)}</strong></div><div><span>Garantía separada</span><strong>{contractMoney(document?.guaranteeBs)}</strong></div></section>
       {document?.notes ? <section className="lincoln-contract-notes"><b>Observaciones / acuerdos</b><p>{document.notes}</p></section> : null}
@@ -509,7 +557,7 @@ function ContractDocumentSheet({ document, compact = false }) {
   </div>;
 }
 
-function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
+function ContractConversionModal({ reservation, packages = [], saving, onClose, onConfirm }) {
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState(() => buildContractDraft(reservation));
   const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
@@ -519,9 +567,19 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
   const updatePricingGroup = (id, patch) => setDraft((current) => {
     const pricingGroups = current.pricingGroups.map((group) => group.id === id ? { ...group, ...patch } : group);
     const guestCount = pricingGroups.filter((group) => group.selected !== false).reduce((total, group) => total + Number(group.guestCount || 0), 0);
-    return { ...current, pricingGroups, guestCount };
+    const activeGroups = pricingGroups.filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0);
+    return { ...current, pricingGroups, guestCount, packageVariantName: activeGroups.map((group) => group.name).join(' + '), packageVariantId: activeGroups.length === 1 ? activeGroups[0].variantId : 'mixed' };
   });
-  const goNext = () => setStep((current) => Math.min(4, current + 1));
+  const activePackages = packages.filter((pkg) => pkg?.status !== 'inactive');
+  const choosePackage = (pkg) => setDraft((current) => ({ ...current, ...contractPackagePatch(pkg, current.guestCount, pkg.id === current.packageId ? current.packageVariantId : '') }));
+  const validateStep = () => {
+    if (step === 1 && !draft.contractor1Name.trim()) return 'Completa el nombre del Contratante 1.';
+    if (step === 1 && !draft.eventDate) return 'Selecciona la fecha del evento.';
+    if (step === 2 && !draft.packageId) return 'Selecciona un paquete para el contrato.';
+    if (step === 2 && !(draft.pricingGroups ?? []).some((group) => group.selected !== false && Number(group.guestCount || 0) > 0)) return 'Activa al menos un nivel e indica cuántos invitados tendrá.';
+    return '';
+  };
+  const goNext = () => { const message = validateStep(); if (message) return window.alert(message); setStep((current) => Math.min(4, current + 1)); };
   const goBack = () => setStep((current) => Math.max(1, current - 1));
   const confirm = () => {
     if (!draft.contractor1Name.trim()) return window.alert('El Contratante 1 es obligatorio.');
@@ -539,17 +597,19 @@ function ContractConversionModal({ reservation, saving, onClose, onConfirm }) {
     const contractDocumentSnapshot = { ...documentDraft, totals, version: 1, generatedAt: new Date().toISOString(), sourceReservationCode: reservation?.code ?? '' };
     onConfirm({
       guaranteeBs: Number(draft.guaranteeBs || 0), guestCount: Number(totals.guestCount || 0), estimatedTotalBs: totals.totalBs, totalBs: totals.totalBs,
-      packageName: draft.packageName, packageVariantName: draft.packageVariantName, packagePricePerPersonBs: Number(draft.pricePerPersonBs || 0),
+      packageId: draft.packageId, packageName: draft.packageName, packageVariantId: draft.packageVariantId, packageVariantName: draft.packageVariantName,
+      packagePricePerPersonBs: Number(draft.pricePerPersonBs || 0), packageSnapshot: draft.packageSnapshot,
       contractDocumentSnapshot, contractDocumentVersion: 1, status: 'contracted', contractedAt: new Date().toISOString(), notes: draft.notes,
     });
   };
   return <div className="lincoln-contract-flow-backdrop"><section className="lincoln-contract-flow-modal">
-    <header><div><small>RESERVA CONFIRMADA · {reservation?.code}</small><h2>Generar contrato</h2><p>La reserva ya fue concretada. Revisa la propuesta y el documento antes de convertirla en contrato.</p></div><button type="button" onClick={onClose}>×</button></header>
-    <nav className="lincoln-contract-flow-steps">{[['1','Datos'],['2','Propuesta'],['3','Condiciones'],['4','Documento']].map(([number,label]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => setStep(Number(number))}><b>{number}</b><span>{label}</span></button>)}</nav>
+    <header><div><small>RESERVA CONFIRMADA · {reservation?.code}</small><h2>Preparar contrato</h2><p>Completa la propuesta comercial y revisa las dos páginas antes de formalizar.</p></div><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></header>
+    <nav className="lincoln-contract-flow-steps">{[['1','Cliente y evento','Datos legales'],['2','Paquete y servicios','Propuesta comercial'],['3','Pagos y condiciones','Acuerdos'],['4','Revisar y generar','2 páginas']].map(([number,label,detail]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => Number(number) <= step && setStep(Number(number))}><b>{step > Number(number) ? '✓' : number}</b><span><strong>{label}</strong><small>{detail}</small></span></button>)}</nav>
     <div className="lincoln-contract-flow-body">
       {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Vienen desde la reserva; puedes completar lo necesario antes de confirmar.</p></div><div className="lincoln-contract-flow-grid"><Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><input value={draft.roomName} onChange={(e) => set('roomName', e.target.value)} /></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
       {step === 2 ? <section className="lincoln-contract-flow-section">
-        <div className="lincoln-contract-flow-title"><small>PASO 2</small><h3>Propuesta comercial congelada</h3><p>Selecciona uno o varios grupos del paquete. Esto permite contratos mixtos, por ejemplo Jóvenes y Adultos.</p></div>
+        <div className="lincoln-contract-flow-title"><small>PASO 2 DE 4 · PROPUESTA</small><h3>Elige el paquete que irá en el contrato</h3><p>Activa uno o varios niveles y distribuye los invitados, por ejemplo 70 Jóvenes y 80 Adultos.</p></div>
+        <div className="lincoln-contract-package-picker">{activePackages.map((pkg) => { const variants = Array.isArray(pkg.variants) && pkg.variants.length ? pkg.variants.filter((variant) => variant?.status !== 'inactive') : [{ name: 'BASE', pricePerPersonBs: pkg.pricePerPersonBs }]; const selected = String(pkg.id) === String(draft.packageId); return <button type="button" key={pkg.id} className={selected ? 'is-selected' : ''} onClick={() => choosePackage(pkg)}><span>{selected ? '✓ Seleccionado' : 'Seleccionar'}</span><strong>{pkg.name}</strong><small>{pkg.roomName || 'Todos los salones'} · mínimo {pkg.minimumGuests || 0} personas</small><div>{variants.map((variant) => <em key={variant.id || variant.name}>{variant.name} <b>{contractMoney(variant.pricePerPersonBs)}</b></em>)}</div></button>; })}{!activePackages.length ? <div className="lincoln-contract-picker-empty"><strong>No hay paquetes activos</strong><span>Crea o activa una plantilla desde el módulo Paquetes.</span></div> : null}</div>
         <div className="lincoln-contract-proposal-head"><div><span>Paquete</span><strong>{draft.packageName || 'SIN PAQUETE'}</strong><small>{totals.guestCount || 0} invitados contratados</small></div><div><span>Subtotal del paquete</span><strong>{contractMoney(totals.baseBs)}</strong></div><div><span>Total con extras</span><strong>{contractMoney(totals.totalBs)}</strong></div></div>
         {draft.pricingGroups?.length ? <div className="lincoln-contract-pricing-groups">{draft.pricingGroups.map((group) => <article key={group.id} className={group.selected !== false ? 'is-selected' : ''}>
           <label className="is-toggle"><input type="checkbox" checked={group.selected !== false} onChange={(e) => updatePricingGroup(group.id, { selected: e.target.checked })} /><strong>{group.name}</strong></label>
@@ -1218,7 +1278,7 @@ function LinconWorkspaceSection({
       {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
       {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
-      {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
+      {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} packages={state.packages} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
       {modal?.mode === 'contractDocument' ? <ContractDocumentModal eventRecord={modal.record} onClose={() => setModal(null)} /> : null}
       {modal?.mode === 'commercialDetail' ? <CommercialRecordDetailModal
         kind={modal.kind}
