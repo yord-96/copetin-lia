@@ -511,7 +511,11 @@ const contractTotals = (draft) => {
   const extrasBs = (draft.extras ?? []).filter((line) => line.selected).reduce((total, line) => {
     const qty = Number(line.quantity || 1);
     const unit = Number(line.unitCostBs || 0);
-    return total + (line.costMode === 'per_person' ? unit * effectiveGuests * qty : unit * qty);
+    const assignedVariantIds = Array.isArray(line.variantIds) ? line.variantIds.map(String) : [];
+    const applicableGuests = assignedVariantIds.length
+      ? activeGroups.filter((group) => assignedVariantIds.includes(String(group.variantId))).reduce((sum, group) => sum + Number(group.guestCount || 0), 0)
+      : effectiveGuests;
+    return total + (line.costMode === 'per_person' ? unit * applicableGuests * qty : unit * qty);
   }, 0);
   const grossBs = baseBs + extrasBs;
   const discountBs = grossBs * Math.max(0, Number(draft.discountPercent || 0)) / 100;
@@ -527,6 +531,10 @@ function ContractDocumentSheet({ document, compact = false }) {
   const grouped = services.reduce((acc, line) => { const key = line.category || 'OTROS'; (acc[key] ||= []).push(line); return acc; }, {});
   const pricingGroups = Array.isArray(document?.pricingGroups) ? document.pricingGroups.filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0) : [];
   const serviceAppliesToGroup = (line, group) => !Array.isArray(line.variantIds) || !line.variantIds.length || line.variantIds.some((id) => String(id) === String(group.variantId));
+  const extraScope = (line) => {
+    const names = pricingGroups.filter((group) => serviceAppliesToGroup(line, group)).map((group) => group.name);
+    return names.length === pricingGroups.length ? 'Todo el evento' : names.join(' + ');
+  };
   return <div className={`lincoln-contract-paper-stack ${compact ? 'is-compact' : ''}`}>
     <article className="lincoln-contract-paper">
       <header className="lincoln-contract-doc-head"><div><small>CENTRO DE EVENTOS</small><h1>LINCOLN</h1><p>Pachamama #2250 y Waldo Ballivian · Cochabamba</p></div><div><strong>{document?.contractCode || 'CONTRATO'}</strong><span>{formatDate(document?.contractDate)}</span></div></header>
@@ -550,7 +558,7 @@ function ContractDocumentSheet({ document, compact = false }) {
         <div className="is-cost"><strong>Costo por persona</strong>{pricingGroups.map((group) => <b key={group.id}>{contractMoney(group.pricePerPersonBs)}</b>)}</div>
         <div className="is-cost"><strong>Cantidad de invitados</strong>{pricingGroups.map((group) => <b key={group.id}>{group.guestCount}</b>)}</div>
       </div>
-      {extras.length ? <section className="lincoln-contract-extras"><h3>SERVICIOS ADICIONALES</h3>{extras.map((line) => <div key={line.id}><span>{line.description}</span><small>{line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1))}</small></div>)}</section> : null}
+      {extras.length ? <section className="lincoln-contract-extras"><h3>SERVICIOS ADICIONALES</h3>{extras.map((line) => <div key={line.id}><span>{line.description}<em>{extraScope(line)}</em></span><small>{line.costMode === 'per_person' ? `${contractMoney(line.unitCostBs)} / persona` : contractMoney(Number(line.unitCostBs || 0) * Number(line.quantity || 1))}</small></div>)}</section> : null}
       <section className="lincoln-contract-totals"><div><span>Paquete base</span><strong>{contractMoney(totals.baseBs)}</strong></div>{totals.extrasBs > 0 ? <div><span>Extras</span><strong>{contractMoney(totals.extrasBs)}</strong></div> : null}{totals.discountBs > 0 ? <div><span>Descuento ({Number(document?.discountPercent || 0)}%)</span><strong>- {contractMoney(totals.discountBs)}</strong></div> : null}<div className="is-total"><span>Total servicio</span><strong>{contractMoney(totals.totalBs)}</strong></div><div><span>Anticipo / a cuenta</span><strong>{contractMoney(document?.advanceBs)}</strong></div><div><span>Saldo servicio</span><strong>{contractMoney(totals.balanceBs)}</strong></div><div><span>Garantía separada</span><strong>{contractMoney(document?.guaranteeBs)}</strong></div></section>
       {document?.notes ? <section className="lincoln-contract-notes"><b>Observaciones / acuerdos</b><p>{document.notes}</p></section> : null}
     </article>
@@ -563,7 +571,25 @@ function ContractConversionModal({ reservation, packages = [], saving, onClose, 
   const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const totals = contractTotals(draft);
   const updateExtra = (id, patch) => setDraft((current) => ({ ...current, extras: current.extras.map((line) => line.id === id ? { ...line, ...patch } : line) }));
-  const updateService = (id, selected) => setDraft((current) => ({ ...current, services: current.services.map((line) => line.id === id ? { ...line, selected } : line) }));
+  const activePricingGroups = (draft.pricingGroups ?? []).filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0);
+  const lineAppliesToVariant = (line, variantId) => {
+    if (line.selected === false) return false;
+    const variantIds = Array.isArray(line.variantIds) ? line.variantIds.map(String) : [];
+    return !variantIds.length || variantIds.includes(String(variantId));
+  };
+  const toggleLineVariant = (collection, lineId, variantId) => setDraft((current) => {
+    const activeIds = (current.pricingGroups ?? []).filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0).map((group) => String(group.variantId));
+    return {
+      ...current,
+      [collection]: current[collection].map((line) => {
+        if (line.id !== lineId) return line;
+        const configuredIds = Array.isArray(line.variantIds) ? line.variantIds.map(String) : [];
+        const selectedIds = line.selected === false ? [] : configuredIds.length ? configuredIds.filter((id) => activeIds.includes(id)) : [...activeIds];
+        const nextIds = selectedIds.includes(String(variantId)) ? selectedIds.filter((id) => id !== String(variantId)) : [...selectedIds, String(variantId)];
+        return { ...line, selected: nextIds.length > 0, variantIds: nextIds };
+      }),
+    };
+  });
   const updatePricingGroup = (id, patch) => setDraft((current) => {
     const pricingGroups = current.pricingGroups.map((group) => group.id === id ? { ...group, ...patch } : group);
     const guestCount = pricingGroups.filter((group) => group.selected !== false).reduce((total, group) => total + Number(group.guestCount || 0), 0);
@@ -617,7 +643,10 @@ function ContractConversionModal({ reservation, packages = [], saving, onClose, 
           <label><span>Bs por persona</span><input type="number" min="0" step="0.01" value={group.pricePerPersonBs} disabled={group.selected === false} onChange={(e) => updatePricingGroup(group.id, { pricePerPersonBs: toNumber(e.target.value) })} /></label>
           <b>{contractMoney(Number(group.guestCount || 0) * Number(group.pricePerPersonBs || 0))}</b>
         </article>)}</div> : null}
-        <div className="lincoln-contract-proposal-cols"><article><h4>Servicios incluidos</h4>{draft.services.length ? draft.services.map((line) => <label className="lincoln-contract-check-row" key={line.id}><input type="checkbox" checked={line.selected !== false} onChange={(e) => updateService(line.id, e.target.checked)} /><span><b>{line.category}</b>{line.description}</span></label>) : <p className="is-empty">La reserva no tiene servicios congelados.</p>}</article><article><h4>Extras disponibles</h4>{draft.extras.length ? draft.extras.map((line) => <div className="lincoln-contract-extra-row" key={line.id}><label><input type="checkbox" checked={Boolean(line.selected)} onChange={(e) => updateExtra(line.id, { selected: e.target.checked })} /><span>{line.description}</span></label><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></div>) : <p className="is-empty">No hay extras cargados en este paquete.</p>}</article></div>
+        <div className="lincoln-contract-proposal-cols">
+          <article className="lincoln-contract-choice-table"><header><div><h4>Servicios incluidos</h4><p>Marca qué recibe cada nivel del mix.</p></div><span>{draft.services.filter((line) => line.selected !== false).length} activos</span></header>{activePricingGroups.length ? <div className="lincoln-contract-choice-head" style={{ '--choice-groups': activePricingGroups.length }}><strong>Servicio</strong>{activePricingGroups.map((group) => <b key={group.id}>{group.name}</b>)}</div> : null}{draft.services.length ? draft.services.map((line) => <div className="lincoln-contract-choice-row" style={{ '--choice-groups': activePricingGroups.length }} key={line.id}><span><b>{line.category}</b><strong>{line.description}</strong></span>{activePricingGroups.map((group) => <label key={group.id} title={`${line.description} · ${group.name}`}><input type="checkbox" checked={lineAppliesToVariant(line, group.variantId)} onChange={() => toggleLineVariant('services', line.id, group.variantId)} /><i>✓</i></label>)}</div>) : <p className="is-empty">El paquete no tiene servicios configurados.</p>}</article>
+          <article className="lincoln-contract-choice-table is-extras"><header><div><h4>Extras disponibles</h4><p>Elige para quién aplica cada adicional.</p></div><span>{draft.extras.filter((line) => line.selected).length} elegidos</span></header>{activePricingGroups.length ? <div className="lincoln-contract-choice-head" style={{ '--choice-groups': activePricingGroups.length }}><strong>Extra y precio</strong>{activePricingGroups.map((group) => <b key={group.id}>{group.name}</b>)}</div> : null}{draft.extras.length ? draft.extras.map((line) => <div className="lincoln-contract-choice-row" style={{ '--choice-groups': activePricingGroups.length }} key={line.id}><span><b>{line.costMode === 'per_person' ? 'POR PERSONA' : 'POR EVENTO'}</b><strong>{line.description}</strong><label className="is-price"><small>Bs</small><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></label></span>{activePricingGroups.map((group) => <label key={group.id} title={`${line.description} · ${group.name}`}><input type="checkbox" checked={lineAppliesToVariant(line, group.variantId)} onChange={() => toggleLineVariant('extras', line.id, group.variantId)} /><i>✓</i></label>)}</div>) : <p className="is-empty">Este paquete no tiene extras configurados.</p>}</article>
+        </div>
       </section> : null}
       {step === 3 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 3</small><h3>Condiciones y cláusulas</h3><p>Los montos permanecen separados para no mezclar servicio y garantía.</p></div><div className="lincoln-contract-condition-grid"><Field label="Anticipo / a cuenta Bs"><input type="number" min="0" step="0.01" value={draft.advanceBs} onChange={(e) => set('advanceBs', toNumber(e.target.value))} /></Field><Field label="Garantía Bs"><input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field><Field label="Descuento %"><input type="number" min="0" max="100" step="0.01" value={draft.discountPercent} onChange={(e) => set('discountPercent', toNumber(e.target.value))} /></Field><Field label="Saldo antes del evento (días)"><input type="number" min="0" value={draft.balanceDueDays} onChange={(e) => set('balanceDueDays', toNumber(e.target.value))} /></Field></div><div className="lincoln-contract-clause-editor">{draft.clauses.map((clause,index) => <label key={index}><span>Cláusula {index + 1}</span><textarea value={clause} onChange={(e) => setDraft((current) => ({ ...current, clausesCustomized: true, clauses: current.clauses.map((item,i) => i === index ? e.target.value : item) }))} /></label>)}</div><Field label="Observaciones / acuerdos" wide><textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></Field></section> : null}
       {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, guestCount: totals.guestCount, clauses: draft.clausesCustomized ? draft.clauses : contractDefaultClauses({ ...draft, guestCount: totals.guestCount }), totals }} compact /></section> : null}

@@ -68,3 +68,23 @@ test('renders the legal contract and package matrix as two professional pages', 
   assert.match(html, /BASILIA HERBAS SAHONERO/);
   assert.equal((html.match(/<section class="page(?: |")/g) ?? []).length, 2);
 });
+
+test('charges a per-person extra only to the selected group in a mixed package', () => {
+  const mixedEvent = structuredClone(event);
+  mixedEvent.contractDocumentSnapshot.discountPercent = 0;
+  mixedEvent.contractDocumentSnapshot.advanceBs = 0;
+  mixedEvent.contractDocumentSnapshot.extras = [{
+    id: 'e-young',
+    description: 'Bar para jóvenes',
+    costMode: 'per_person',
+    unitCostBs: 10,
+    quantity: 1,
+    selected: true,
+    variantIds: ['young'],
+  }];
+  const document = normalizeLincolnContractDocument(mixedEvent);
+  assert.equal(document.totals.baseBs, 27800);
+  assert.equal(document.totals.extrasBs, 700);
+  assert.equal(document.totals.totalBs, 28500);
+  assert.match(buildLincolnContractDocumentHtml({ event: mixedEvent }), /Bar para jóvenes<small>JÓVENES<\/small>/);
+});
