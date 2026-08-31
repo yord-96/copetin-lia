@@ -36,6 +36,7 @@ import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
+import { distributeComboUnits } from '../../utils/comboDistribution';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
 
@@ -6802,17 +6803,20 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     return safeQuantity <= upToQuantity ? upToUnitPriceBs : aboveUnitPriceBs;
   };
 
-  const getComboLineUnitPriceForQuantity = (line, quantity) => {
-    const combo = (combos ?? []).find((entry) => entry.id === line?.comboId);
-    const condition = line?.comboPricingCondition ?? combo?.pricingCondition ?? {};
-    if (!condition.enabled) return Math.max(0, Number(line?.unitPriceBs ?? combo?.rentalPriceBs ?? 0));
-    return getComboUnitPriceForQuantity({ rentalPriceBs: combo?.rentalPriceBs ?? line?.unitPriceBs ?? 0, pricingCondition: condition }, quantity);
-  };
-
   const appendConfiguredCombo = (combo, selections = {}, existingComboLineKey = '') => {
     const comboLineKey = existingComboLineKey || `combo-${combo.id}-${Date.now()}`;
     const ingredients = getComboRules(combo);
     const requestedComboQuantity = Math.max(1, Math.trunc(Number(selections.__comboQuantity ?? 1)));
+    const invalidRule = ingredients.find((rule, index) => {
+      const selectedIds = getSelectedComboOptionIds(selections[index], []);
+      const assignedUnits = getComboSelectedUnitsForRule(index, selectedIds, selections);
+      const requiredUnits = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1))) * requestedComboQuantity;
+      return selectedIds.length === 0 || assignedUnits !== requiredUnits;
+    });
+    if (invalidRule) {
+      setFormError(`Revisa ${invalidRule.slotLabel || invalidRule.itemName || 'los componentes'}: la distribución debe coincidir con lo incluido en el combo.`);
+      return false;
+    }
     const { allocations, shortages } = buildComboAllocations(combo, selections, requestedComboQuantity);
     if (ingredients.length > 0 && allocations.length === 0) {
       setFormError('Selecciona al menos una opcion disponible para el combo.');
@@ -6940,20 +6944,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       const selectedIds = getSelectedComboOptionIds(nextSelections[index], []);
       if (selectedIds.length === 0) return;
       const requiredUnits = Math.max(1, Math.trunc(Number(rule.quantity ?? 1))) * comboQty;
-      let assignedUnits = getComboSelectedUnitsForRule(index, selectedIds, { __quantities: nextQuantityMap });
-      if (assignedUnits >= requiredUnits) return;
-      selectedIds.forEach((itemId, optionIndex) => {
-        if (assignedUnits >= requiredUnits) return;
-        const item = items.find((entry) => entry.id === itemId);
-        const available = getComboOptionAvailable(item);
-        const key = `${index}:${itemId}`;
-        const currentQty = Math.max(0, Math.trunc(Number(nextQuantityMap[key] ?? 0)));
-        const missing = requiredUnits - assignedUnits;
-        const extra = Math.min(missing, Math.max(0, available - currentQty));
-        const fallbackExtra = optionIndex === selectedIds.length - 1 && extra <= 0 ? missing : extra;
-        nextQuantityMap[key] = currentQty + Math.max(0, fallbackExtra);
-        assignedUnits += Math.max(0, fallbackExtra);
-      });
+      const distribution = distributeComboUnits({ requiredUnits, selectedIds });
+      selectedIds.forEach((itemId) => { nextQuantityMap[`${index}:${itemId}`] = distribution[itemId] ?? 0; });
     });
 
     nextSelections.__quantities = nextQuantityMap;
@@ -6967,30 +6959,26 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   const updateComboOptionQuantity = (ruleIndex, itemId, value) => {
     setComboConfigurator((current) => {
       if (!current) return current;
-      const parsedQty = Math.max(0, Math.trunc(Number(value ?? 0)));
+      const comboQty = Math.max(1, Math.trunc(Number(current.quantity ?? 1)));
       const rule = getComboRules(current.combo)[ruleIndex] ?? {};
       const requiredPerCombo = Math.max(1, Math.trunc(Number(rule.quantity ?? 1)));
+      const requiredUnits = requiredPerCombo * comboQty;
+      const parsedQty = Math.min(requiredUnits, Math.max(0, Math.trunc(Number(value ?? 0))));
       const currentSelectedIds = getSelectedComboOptionIds(current.selections?.[ruleIndex], []);
       const selectedIds = currentSelectedIds.includes(itemId)
         ? currentSelectedIds
         : [...currentSelectedIds, itemId];
       const quantityMap = { ...getComboSelectionQuantityMap(current.selections) };
-      quantityMap[`${ruleIndex}:${itemId}`] = parsedQty;
-      const selectedUnits = getComboSelectedUnitsForRule(ruleIndex, selectedIds, { __quantities: quantityMap });
-      const nextComboQuantity = Math.max(1, Math.ceil(selectedUnits / requiredPerCombo));
-      const nextState = {
+      const distribution = distributeComboUnits({ requiredUnits, selectedIds, lockedId: itemId, lockedQuantity: parsedQty });
+      selectedIds.forEach((selectedId) => { quantityMap[`${ruleIndex}:${selectedId}`] = distribution[selectedId] ?? 0; });
+      return {
         ...current,
-        selections: {
-          ...current.selections,
-          [ruleIndex]: selectedIds,
-          __quantities: quantityMap,
-        },
+        selections: { ...current.selections, [ruleIndex]: selectedIds, __quantities: quantityMap },
       };
-      return normalizeComboConfiguratorQuantities(nextState, nextComboQuantity);
     });
   };
 
-  const toggleComboOption = (ruleIndex, itemId, requiredPerCombo, comboQty) => {
+  const toggleComboOption = (ruleIndex, itemId, comboQty) => {
     setComboConfigurator((current) => {
       if (!current) return current;
       const selectedIds = getSelectedComboOptionIds(current.selections?.[ruleIndex], []);
@@ -7000,13 +6988,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         : [...selectedIds, itemId];
       const quantityMap = { ...getComboSelectionQuantityMap(current.selections) };
       if (selected) {
+        if (selectedIds.length === 1) return current;
         delete quantityMap[`${ruleIndex}:${itemId}`];
       } else {
-        const item = items.find((entry) => entry.id === itemId);
-        const neededUnits = Math.max(1, Math.trunc(Number(requiredPerCombo ?? 1))) * Math.max(1, Math.trunc(Number(comboQty ?? current.quantity ?? 1)));
-        const selectedUnits = getComboSelectedUnitsForRule(ruleIndex, selectedIds, { __quantities: quantityMap });
-        const missingUnits = Math.max(1, neededUnits - selectedUnits);
-        quantityMap[`${ruleIndex}:${itemId}`] = Math.min(missingUnits, Math.max(1, getComboOptionAvailable(item)));
+        quantityMap[`${ruleIndex}:${itemId}`] = 0;
       }
       const nextState = {
         ...current,
@@ -7016,7 +7001,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           __quantities: quantityMap,
         },
       };
-      return normalizeComboConfiguratorQuantities(nextState, current.quantity);
+      return normalizeComboConfiguratorQuantities(nextState, comboQty);
     });
   };
 
@@ -7084,40 +7069,24 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
     const parsed = Math.max(1, parseIntegerInput(cleanedValue, 1));
     if (draftLine?.comboId && draftLine.comboLineKey) {
-      const baseComponentQuantity = Math.max(
-        1,
-        Math.trunc(Number(
-          draftLine.comboComponentQuantity
-          ?? (Number(draftLine.quantity ?? 1) / Math.max(1, Number(draftLine.comboQuantity ?? 1))),
-        )),
-      );
-      const nextComboQuantity = Math.max(1, Math.ceil(parsed / baseComponentQuantity));
       setDraft((current) => ({
         ...current,
-        items: current.items.map((line) => {
-          if (line.comboLineKey !== draftLine.comboLineKey) return line;
-          const componentQuantity = Math.max(
-            1,
-            Math.trunc(Number(
-              line.comboComponentQuantity
-              ?? (Number(line.quantity ?? 1) / Math.max(1, Number(line.comboQuantity ?? 1))),
-            )),
-          );
-          const nextQuantity = componentQuantity * nextComboQuantity;
-          const nextUnitPrice = line.comboPricingRole === 'price'
-            ? getComboLineUnitPriceForQuantity(line, nextComboQuantity)
-            : 0;
-          return {
-            ...line,
-            quantity: nextQuantity,
-            unitPriceBs: line.comboPricingRole === 'price' ? nextUnitPrice : line.unitPriceBs,
-            comboQuantity: nextComboQuantity,
-            comboComponentQuantity: componentQuantity,
-            lineTotalBs: line.comboPricingRole === 'price'
-              ? Number((nextUnitPrice * nextComboQuantity).toFixed(2))
-              : 0,
-          };
-        }),
+        items: (() => {
+          const siblings = current.items.filter((line) => (
+            line.comboLineKey === draftLine.comboLineKey
+            && Number(line.comboRuleIndex) === Number(draftLine.comboRuleIndex)
+          ));
+          const comboQty = Math.max(1, Math.trunc(Number(draftLine.comboQuantity ?? 1)));
+          const requiredPerCombo = Math.max(1, Math.trunc(Number(draftLine.comboComponentQuantity ?? 1)));
+          const requiredUnits = comboQty * requiredPerCombo;
+          const editedLineKey = draftLine.lineKey ?? draftLine.itemId;
+          const siblingIds = siblings.map((line) => line.lineKey ?? line.itemId);
+          const distribution = distributeComboUnits({ requiredUnits, selectedIds: siblingIds, lockedId: editedLineKey, lockedQuantity: parsed });
+          return current.items.map((line) => {
+            if (line.comboLineKey !== draftLine.comboLineKey || Number(line.comboRuleIndex) !== Number(draftLine.comboRuleIndex)) return line;
+            return { ...line, quantity: distribution[line.lineKey ?? line.itemId] ?? line.quantity };
+          });
+        })(),
       }));
       return;
     }
@@ -7335,42 +7304,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const draftLine = draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId || line.itemId === lineKeyOrItemId);
     if (draftLine?.comboId && draftLine.comboLineKey) {
       const parsed = Math.max(1, parseIntegerInput(draftLine.quantity, 1));
-      const baseComponentQuantity = Math.max(
-        1,
-        Math.trunc(Number(
-          draftLine.comboComponentQuantity
-          ?? (Number(draftLine.quantity ?? 1) / Math.max(1, Number(draftLine.comboQuantity ?? 1))),
-        )),
-      );
-      const nextComboQuantity = Math.max(1, Math.ceil(parsed / baseComponentQuantity));
-      setDraft((current) => ({
-        ...current,
-        items: current.items.map((line) => {
-          if (line.comboLineKey !== draftLine.comboLineKey) return line;
-          const componentQuantity = Math.max(
-            1,
-            Math.trunc(Number(
-              line.comboComponentQuantity
-              ?? (Number(line.quantity ?? 1) / Math.max(1, Number(line.comboQuantity ?? 1))),
-            )),
-          );
-          const nextQuantity = componentQuantity * nextComboQuantity;
-          const nextUnitPrice = line.comboPricingRole === 'price'
-            ? getComboLineUnitPriceForQuantity(line, nextComboQuantity)
-            : 0;
-          return {
-            ...line,
-            quantity: nextQuantity,
-            unitPriceBs: line.comboPricingRole === 'price' ? nextUnitPrice : line.unitPriceBs,
-            comboQuantity: nextComboQuantity,
-            comboComponentQuantity: componentQuantity,
-            grossLineTotalBs: undefined,
-            lineTotalBs: line.comboPricingRole === 'price'
-              ? Number((nextUnitPrice * nextComboQuantity).toFixed(2))
-              : 0,
-          };
-        }),
-      }));
+      setDraftItemQuantity(draftLine.lineKey ?? draftLine.itemId, parsed);
       return;
     }
     setDraft((current) => ({
@@ -14771,21 +14705,20 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <div>
                 <span className="orders-combo-configurator-kicker">Configurar combo</span>
                 <h3>{comboConfigurator.combo.name}</h3>
-                <p>Selecciona una o varias opciones por componente. El sistema reparte las unidades segun disponibilidad.</p>
+                <p>Define cuántos combos necesitas y reparte cada componente entre los modelos que prefieras. Tus cantidades manuales no cambiarán el número de combos.</p>
               </div>
               <label className="orders-combo-quantity-field">
                 <span>Cantidad de combos</span>
                 <input
                   type="number"
                   min="1"
-                  max={Math.max(1, getComboMaxQuantity(comboConfigurator.combo, comboConfigurator.selections))}
                   value={comboConfigurator.quantity ?? '1'}
                   onFocus={selectNumericInput}
                   onChange={(event) => setComboConfigurator((current) => (
                     normalizeComboConfiguratorQuantities(current, event.target.value)
                   ))}
                 />
-                <small>Max. {getComboMaxQuantity(comboConfigurator.combo, comboConfigurator.selections)}</small>
+                <small>{getComboMaxQuantity(comboConfigurator.combo, comboConfigurator.selections)} con stock propio · puedes solicitar más</small>
               </label>
               <button type="button" className="orders-modal-close" onClick={() => setComboConfigurator(null)} aria-label="Cerrar">
                 <X aria-hidden="true" />
@@ -14809,12 +14742,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 const neededUnits = requiredPerCombo * comboQty;
                 const componentStatusClass = selectedIds.length === 0
                   ? 'muted'
-                  : selectedUnits >= neededUnits
+                  : selectedUnits === neededUnits
                     ? 'ok'
                     : 'danger';
                 const componentStatusText = selectedIds.length === 0
                   ? 'No incluido'
-                  : `${selectedUnits} marc. / ${neededUnits} sug.`;
+                  : `${selectedUnits} asign. / ${neededUnits} incluidos`;
                 const isExpanded = Boolean(comboConfigurator.expandedGroups?.[index]);
                 const selectedNames = selectedIds
                   .map((itemId) => allOptions.find((item) => item.id === itemId)?.name)
@@ -14891,7 +14824,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <button
                               type="button"
                               className="orders-combo-option-pick"
-                              onClick={() => toggleComboOption(index, item.id, requiredPerCombo, comboQty)}
+                              onClick={() => toggleComboOption(index, item.id, comboQty)}
                             >
                               <span className="orders-combo-option-image">
                                 {getProductImageSrc(item) ? (
@@ -14911,7 +14844,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 <input
                                   type="number"
                                   min="0"
-                                  max={optionAvailable >= 999 ? undefined : optionAvailable}
+                                  max={neededUnits}
                                   value={selectedQuantity}
                                   onFocus={selectNumericInput}
                                   onChange={(event) => updateComboOptionQuantity(index, item.id, event.target.value)}
