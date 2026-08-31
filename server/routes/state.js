@@ -7729,6 +7729,129 @@ const summarizeInventoryMovement = (movement = {}) => {
     .map((field) => [field, movement[field]]));
 };
 
+const toInventoryDateKey = (value) => {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const direct = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+const getInventoryTodayKey = (state = {}) => {
+  const timeZone = String(state?.settings?.timezone ?? 'America/La_Paz').trim() || 'America/La_Paz';
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${byType.year}-${byType.month}-${byType.day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
+const buildCurrentInventoryCommitments = (state = {}) => {
+  const todayKey = getInventoryTodayKey(state);
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : [];
+  const rentals = Array.isArray(state?.rentals) ? state.rentals : [];
+  const contractById = new Map(contracts
+    .filter((contract) => contract && !contract.deletedAt)
+    .map((contract) => [String(contract.id ?? ''), contract]));
+  const totalsByItem = new Map();
+  const detailsByItem = new Map();
+
+  rentals.forEach((rental) => {
+    if (!rental || rental.deletedAt) return;
+    const status = String(rental.status ?? '').trim().toLowerCase();
+    if (['returned', 'cancelled', 'anulado'].includes(status)) return;
+    const inventoryStatus = String(rental?.operational?.inventoryStatus ?? '').trim().toLowerCase();
+    if (['devuelto', 'anulado'].includes(inventoryStatus)) return;
+
+    const startKey = toInventoryDateKey(rental.rentalDate ?? rental.deliveryDate);
+    const endKey = toInventoryDateKey(rental.dueDate ?? rental.pickupDate ?? startKey);
+    const affectsCurrentStock = inventoryStatus === 'salio'
+      || Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+    if (!affectsCurrentStock) return;
+
+    const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
+    const contractCode = String(contract?.contractCode ?? rental.contractCode ?? '').trim();
+    const orderCode = String(rental.orderCode ?? contract?.orderCode ?? '').trim();
+
+    (Array.isArray(rental.items) ? rental.items : []).forEach((line, index) => {
+      const itemId = String(line?.itemId ?? '').trim();
+      if (!itemId || line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
+      const quantity = Math.max(0, Number(line?.internalReservedQty ?? line?.quantity ?? 0));
+      if (!quantity) return;
+      totalsByItem.set(itemId, Number(totalsByItem.get(itemId) ?? 0) + quantity);
+      const rows = detailsByItem.get(itemId) ?? [];
+      rows.push({
+        id: `current-reservation:${rental.id ?? orderCode}:${line?.lineKey ?? index}`,
+        itemId,
+        itemName: line?.itemName ?? line?.name ?? '',
+        category: line?.category ?? '',
+        type: 'reserva',
+        reason: contractCode ? `COMPROMETIDO POR CONTRATO ${contractCode}` : `COMPROMETIDO POR ${orderCode || 'ORDEN ACTIVA'}`,
+        detail: [
+          `${quantity} UNIDADES COMPROMETIDAS ACTUALMENTE`,
+          orderCode ? `ORDEN ${orderCode}` : '',
+          rental?.customerName ? String(rental.customerName).trim() : '',
+        ].filter(Boolean).join(' · '),
+        reference: contractCode || orderCode,
+        displayReference: contractCode || orderCode,
+        contractCode,
+        orderCode,
+        deltaUnits: -quantity,
+        operationDate: (startKey || rental.rentalDate) ?? rental.createdAt ?? null,
+        deliveryDate: (startKey || rental.rentalDate) ?? null,
+        status: inventoryStatus || status || 'pendiente',
+        userName: rental?.operational?.inventoryConfirmedByName ?? rental.createdByName ?? rental.createdBy ?? 'Sistema',
+        userRole: rental?.operational?.inventoryConfirmedByRole ?? rental.createdByRole ?? 'Inventario',
+        _currentCommitment: true,
+      });
+      detailsByItem.set(itemId, rows);
+    });
+  });
+
+  return { todayKey, totalsByItem, detailsByItem, contractById, rentals };
+};
+
+const enrichInventoryMovementReference = (movement = {}, commitmentContext = {}) => {
+  const rentals = Array.isArray(commitmentContext?.rentals) ? commitmentContext.rentals : [];
+  const rawReference = String(movement?.reference ?? '').trim();
+  const orderCode = String(
+    movement?.orderCode
+      ?? (rawReference.toUpperCase().startsWith('OS-') ? rawReference : '')
+      ?? '',
+  ).trim();
+  const linkedRental = orderCode
+    ? rentals.find((rental) => String(rental?.orderCode ?? '').trim() === orderCode)
+    : null;
+  const linkedContract = linkedRental
+    ? commitmentContext?.contractById?.get(String(linkedRental?.contractId ?? '')) ?? null
+    : null;
+  const contractCode = String(
+    movement?.contractCode
+      ?? linkedRental?.contractCode
+      ?? linkedContract?.contractCode
+      ?? '',
+  ).trim();
+  const summarized = summarizeInventoryMovement(movement);
+  return {
+    ...summarized,
+    ...(contractCode ? { contractCode } : {}),
+    ...(orderCode ? { orderCode } : {}),
+    displayReference: contractCode || rawReference || orderCode || summarized.id || '',
+    displayReason: String(movement?.type ?? '').trim().toLowerCase() === 'reserva' && contractCode
+      ? `ASIGNADO A CONTRATO ${contractCode}`
+      : (summarized.reason ?? summarized.detail ?? ''),
+  };
+};
+
 router.get('/__copetin_db/availability/overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
@@ -8318,11 +8441,20 @@ router.get('/__copetin_db/inventory/products-kardex', async (req, res, next) => 
   try {
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
-    const rows = buildInventoryKardexRows(state.items, state.inventoryMovements);
+    const commitmentContext = buildCurrentInventoryCommitments(state);
+    const rows = buildInventoryKardexRows(state.items, state.inventoryMovements).map((row) => {
+      const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(String(row.itemId ?? '')) ?? 0));
+      return {
+        ...row,
+        availableStock: Math.max(0, Number(row.currentStock ?? 0) - committedStock),
+        committedStock,
+      };
+    });
     await sendJsonPayload(req, res, {
       revision: snapshot.revision,
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
+      asOfDate: commitmentContext.todayKey,
       rows,
     });
   } catch (error) {
@@ -8347,13 +8479,42 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
 
     const allItemMovements = (Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [])
       .filter((movement) => String(movement?.itemId ?? '') === itemId);
-    const [summary] = buildInventoryKardexRows([item], allItemMovements);
-    const matchingMovements = filterInventoryKardexMovements(allItemMovements, metric)
+    const commitmentContext = buildCurrentInventoryCommitments(state);
+    const [baseSummary] = buildInventoryKardexRows([item], allItemMovements);
+    const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(itemId) ?? 0));
+    const summary = {
+      ...baseSummary,
+      availableStock: Math.max(0, Number(baseSummary?.currentStock ?? item.totalStock ?? 0) - committedStock),
+      committedStock,
+    };
+
+    const currentCommitments = (commitmentContext.detailsByItem.get(itemId) ?? [])
+      .slice()
+      .sort((a, b) => new Date(a?.operationDate ?? 0) - new Date(b?.operationDate ?? 0));
+    let runningAvailable = Number(summary.currentStock ?? 0);
+    const currentAvailabilityRows = currentCommitments.map((movement) => {
+      const quantity = Math.max(0, Math.abs(Number(movement.deltaUnits ?? 0)));
+      const beforeAvailableStock = runningAvailable;
+      const afterAvailableStock = Math.max(0, runningAvailable - quantity);
+      runningAvailable = afterAvailableStock;
+      return {
+        ...movement,
+        beforeTotalStock: Number(summary.currentStock ?? 0),
+        afterTotalStock: Number(summary.currentStock ?? 0),
+        beforeAvailableStock,
+        afterAvailableStock,
+        reservedStockAfter: Number(summary.currentStock ?? 0) - afterAvailableStock,
+      };
+    });
+
+    const matchingMovements = (metric === 'available'
+      ? currentAvailabilityRows
+      : filterInventoryKardexMovements(allItemMovements, metric))
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
     const limit = Math.min(500, Math.max(25, Math.trunc(Number(req.query?.limit ?? 200)) || 200));
     const movements = matchingMovements.slice(0, limit).map((movement) => ({
-      ...summarizeInventoryMovement(movement),
+      ...enrichInventoryMovementReference(movement, commitmentContext),
       physicalDelta: getMovementPhysicalDelta(movement),
       availableDelta: getMovementAvailableDelta(movement),
     }));
@@ -8369,6 +8530,7 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
         createdByName: item.createdByName ?? item.createdBy ?? '',
       },
       metric,
+      asOfDate: commitmentContext.todayKey,
       summary,
       movements,
       totalMatches: matchingMovements.length,

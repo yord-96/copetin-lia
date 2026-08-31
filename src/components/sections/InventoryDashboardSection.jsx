@@ -6621,8 +6621,8 @@ function InventoryDashboardSection({
                           return (
                             <tr key={movement.id}>
                               <td><strong>{formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
-                              <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && movement.reason ? <small>{movement.detail}</small> : null}</td>
-                              <td>{movement.reference || movement.contractCode || '-'}</td>
+                              <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.displayReason || movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && (movement.displayReason || movement.reason) ? <small>{movement.detail}</small> : null}</td>
+                              <td>{movement.displayReference || movement.contractCode || movement.reference || '-'}</td>
                               <td><strong className={delta >= 0 ? 'positive' : 'negative'}>{delta > 0 ? `+${delta}` : delta}</strong></td>
                               <td>{before ?? '-'}</td>
                               <td><strong>{after ?? '-'}</strong></td>
