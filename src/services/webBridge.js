@@ -8766,14 +8766,11 @@ export const buildContractDocumentHtml = ({
           : Number((rawSaleBs * (1 - (discountPercent / 100))).toFixed(2));
         return sum + effectiveSaleBs;
       }, 0);
-    const ownStoredLineTotalBs = hasStoredLineTotal ? storedLineTotalBs : ownLineTotalBs;
-    const baseLineTotalBs = fulfillmentBreakdown.supplierQty > 0
-      ? (
-        ownStoredLineTotalBs >= totalQuantityLineTotalBs - 0.01
-          ? ownStoredLineTotalBs
-          : Number((ownStoredLineTotalBs + supplierSaleBs).toFixed(2))
-      )
-      : (hasStoredLineTotal ? ownStoredLineTotalBs : totalQuantityLineTotalBs);
+    const baseLineTotalBs = hasStoredLineTotal
+      ? storedLineTotalBs
+      : fulfillmentBreakdown.supplierQty > 0
+        ? Number((ownLineTotalBs + supplierSaleBs).toFixed(2))
+        : totalQuantityLineTotalBs;
 
     return Number((baseLineTotalBs * multiplier).toFixed(2));
   };
