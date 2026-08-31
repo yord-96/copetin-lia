@@ -371,6 +371,17 @@ export const useAppController = () => {
 
   const prepareTabData = useCallback(async (targetTab) => {
     const requestedTab = String(targetTab);
+    if (requestedTab === 'usuarios') {
+      // La autenticacion ya descarga la pequena coleccion de usuarios. La vista
+      // puede pintarla directamente sin iniciar el bootstrap de todo el negocio.
+      let userRows = await api.users.listCached();
+      if (!Array.isArray(userRows) || userRows.length === 0) {
+        await api.sync.refreshCollections(['users'], 'users-view');
+        userRows = await api.users.listCached();
+      }
+      setUsers(Array.isArray(userRows) ? userRows : []);
+      return;
+    }
     if (requestedTab.startsWith('contabilidad')) {
       await loadAccountingData({ includeCommercial: requestedTab !== 'contabilidad_caja_chica' });
       return;
@@ -482,17 +493,17 @@ export const useAppController = () => {
     if (
       !authReady
       || !currentUser
-      || (!['alquiler', 'disponibilidad'].includes(requestedTab) && !requestedTab.startsWith('contabilidad'))
+      || (!['alquiler', 'disponibilidad', 'usuarios'].includes(requestedTab) && !requestedTab.startsWith('contabilidad'))
     ) return;
     prepareTabData(activeTab).catch(() => {});
   }, [activeTab, authReady, currentUser, prepareTabData]);
 
   useEffect(() => {
     if (!authReady || !currentUser || fullWorkspaceLoadedRef.current) return;
-    // Calendario, Ordenes y Asistencia tienen endpoints pequenos propios. El
-    // resto del sistema conserva la carga completa, pero ya de forma diferida.
+    // Calendario, Ordenes, Usuarios y Asistencia tienen cargas pequenas propias.
+    // El resto del sistema conserva la carga completa, pero de forma diferida.
     if (
-      ['caja', 'alquiler', 'disponibilidad', 'asistencia'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) return;

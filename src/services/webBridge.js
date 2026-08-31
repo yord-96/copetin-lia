@@ -3802,6 +3802,34 @@ const transaction = (mutator) => {
   return toPersist;
 };
 
+// Mutaciones pequenas, como Usuarios, no deben clonar ni normalizar contratos,
+// inventario e historiales que no participan en la operacion. Conservamos el
+// mismo aislamiento transaccional, pero solo para las colecciones indicadas.
+const transactionCollections = (collectionNames, mutator) => {
+  if (activeServerBatchState) return transaction(mutator);
+
+  ensureStateHydrated();
+  const names = [...new Set((Array.isArray(collectionNames) ? collectionNames : [])
+    .map((name) => String(name ?? '').trim())
+    .filter(Boolean))];
+  const workingState = { ...inMemoryState };
+  names.forEach((name) => {
+    workingState[name] = deepClone(inMemoryState[name]);
+  });
+
+  const result = mutator(workingState);
+  const mutatedState = result ?? workingState;
+  const nextState = { ...inMemoryState };
+  names.forEach((name) => {
+    nextState[name] = mutatedState[name];
+  });
+  inMemoryState = nextState;
+  inMemoryStateHydrated = true;
+  invalidateQueryStateSnapshot();
+  persistLocalStateSnapshot(inMemoryState);
+  return mutatedState;
+};
+
 const RESET_MODULES = [
   {
     id: 'cash_accounting',
@@ -13356,7 +13384,7 @@ const createWebBridge = () => ({
       if (!password || password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
 
       let created = null;
-      transaction((state) => {
+      transactionCollections(['users'], (state) => {
         assertDeveloperUserManagementAccess(state);
         if (state.users.some((user) => user.username === username)) {
           throw new Error('Ya existe un usuario con ese nombre de usuario.');
@@ -13395,7 +13423,7 @@ const createWebBridge = () => ({
       if (!id) throw new Error('Debes indicar el usuario.');
 
       let updated = null;
-      transaction((state) => {
+      transactionCollections(['users'], (state) => {
         assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id);
         if (!user) throw new Error('Usuario no encontrado.');
@@ -13677,7 +13705,7 @@ const createWebBridge = () => ({
       if (!id) throw new Error('Debes indicar el usuario.');
 
       let removed = null;
-      transaction((state) => {
+      transactionCollections(['users'], (state) => {
         assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id && !entry.deletedAt);
         if (!user) throw new Error('Usuario no encontrado.');
@@ -13717,7 +13745,7 @@ const createWebBridge = () => ({
       if (!id) throw new Error('Debes indicar el usuario.');
 
       let result = null;
-      transaction((state) => {
+      transactionCollections(['users'], (state) => {
         assertDeveloperUserManagementAccess(state);
         const user = state.users.find((entry) => entry.id === id);
         if (!user) throw new Error('Usuario no encontrado.');
@@ -20206,14 +20234,14 @@ const createWebBridge = () => ({
     },
     exportState: async () => deepClone(activeServerBatchState ?? readState()),
     exportCollections: async (names = []) => {
-      const state = readState();
+      ensureStateHydrated();
       const requestedNames = [...new Set((Array.isArray(names) ? names : [])
         .map((name) => String(name ?? '').trim())
         .filter(Boolean))];
-      const snapshot = { settings: deepClone(state.settings ?? {}) };
+      const snapshot = { settings: deepClone(inMemoryState.settings ?? {}) };
       for (const name of requestedNames) {
-        if (Object.prototype.hasOwnProperty.call(state, name)) {
-          snapshot[name] = deepClone(state[name]);
+        if (Object.prototype.hasOwnProperty.call(inMemoryState, name)) {
+          snapshot[name] = deepClone(inMemoryState[name]);
         }
       }
       return snapshot;
