@@ -17,7 +17,7 @@ let cachedPayload = null;
 let cachedSignature = null;
 
 const createEmptyLincolnState = () => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   company: {
     id: 'lincoln',
     name: 'Centro de Eventos Lincoln',
@@ -40,6 +40,7 @@ const createEmptyLincolnState = () => ({
   incomeEntries: [],
   expenseEntries: [],
   eventSettlements: [],
+  economicLedgerEntries: [],
   settings: {
     eventTypes: ['BODA', '15 AÑOS', 'CUMPLEAÑOS', 'EVENTO CORPORATIVO', 'OTRO'],
     paymentDestinations: ['CAJA CHICA', 'SRA. LIA'],
@@ -327,7 +328,7 @@ const applyInitialPackageDocumentSeed = (state) => {
       },
     },
   };
-  state.schemaVersion = Math.max(5, Number(state.schemaVersion ?? 1));
+  state.schemaVersion = Math.max(6, Number(state.schemaVersion ?? 1));
   return { state, changed: true };
 };
 
@@ -445,10 +446,10 @@ const normalizeLincolnStateShape = (state) => {
     company: { ...base.company, ...(source.company ?? {}), id: 'lincoln' },
     settings: { ...base.settings, ...(source.settings ?? {}) },
   };
-  ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'auditLog'].forEach((key) => {
+  ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'economicLedgerEntries', 'auditLog'].forEach((key) => {
     next[key] = Array.isArray(source[key]) ? source[key] : [];
   });
-  next.schemaVersion = Math.max(5, Number(source.schemaVersion ?? 1));
+  next.schemaVersion = Math.max(6, Number(source.schemaVersion ?? 1));
   return next;
 };
 
@@ -711,6 +712,7 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
 
 const SERVICE_PAYMENT_TYPES = new Set(['advance', 'installment', 'balance']);
 const PAYMENT_TYPE_LABELS = {
+  deposit: 'PAGO FLEXIBLE',
   advance: 'ANTICIPO',
   installment: 'A CUENTA',
   balance: 'SALDO',
@@ -749,12 +751,38 @@ const activeEventPayments = (state, eventId) => state.payments.filter((row) =>
   String(row?.eventId ?? '') === String(eventId ?? '') && !row?.voidedAt,
 );
 
+const activeEventEconomicLedger = (state, eventId) => (Array.isArray(state.economicLedgerEntries) ? state.economicLedgerEntries : [])
+  .filter((row) => String(row?.eventId ?? '') === String(eventId ?? '') && !row?.voidedAt && !row?.deletedAt);
+
+const getPaymentAllocations = (payment = {}) => {
+  const amountBs = roundMoney(payment.amountBs);
+  const hasExplicitAllocation = ['serviceAllocationBs', 'guaranteeAllocationBs', 'replacementAllocationBs', 'surplusAllocationBs']
+    .some((key) => payment?.[key] !== undefined && payment?.[key] !== null && payment?.[key] !== '');
+  if (hasExplicitAllocation) {
+    return {
+      serviceBs: roundMoney(payment.serviceAllocationBs),
+      guaranteeBs: roundMoney(payment.guaranteeAllocationBs),
+      replacementBs: roundMoney(payment.replacementAllocationBs),
+      surplusBs: roundMoney(payment.surplusAllocationBs),
+    };
+  }
+  if (SERVICE_PAYMENT_TYPES.has(String(payment.type ?? '').toLowerCase())) return { serviceBs: amountBs, guaranteeBs: 0, replacementBs: 0, surplusBs: 0 };
+  if (String(payment.type ?? '').toLowerCase() === 'guarantee') return { serviceBs: 0, guaranteeBs: amountBs, replacementBs: 0, surplusBs: 0 };
+  if (String(payment.type ?? '').toLowerCase() === 'replacement') return { serviceBs: 0, guaranteeBs: 0, replacementBs: amountBs, surplusBs: 0 };
+  return { serviceBs: 0, guaranteeBs: 0, replacementBs: 0, surplusBs: amountBs };
+};
+
 const buildEventFinancialSummary = (state, event) => {
   const payments = activeEventPayments(state, event.id);
-  const servicePaidBs = roundMoney(sumMoney(payments.filter((row) => SERVICE_PAYMENT_TYPES.has(row.type)), 'amountBs'));
-  const guaranteeCollectedBs = roundMoney(sumMoney(payments.filter((row) => row.type === 'guarantee'), 'amountBs'));
+  const ledger = activeEventEconomicLedger(state, event.id);
+  const allocations = payments.map(getPaymentAllocations);
+  const servicePaidBs = roundMoney(allocations.reduce((sum, row) => sum + row.serviceBs, 0));
+  const guaranteeCollectedBs = roundMoney(allocations.reduce((sum, row) => sum + row.guaranteeBs, 0));
   const guaranteeReturnedBs = roundMoney(sumMoney(payments.filter((row) => row.type === 'guarantee_return'), 'amountBs'));
-  const replacementBs = roundMoney(sumMoney(payments.filter((row) => row.type === 'replacement'), 'amountBs'));
+  const replacementCollectedBs = roundMoney(allocations.reduce((sum, row) => sum + row.replacementBs, 0));
+  const replacementChargedBs = roundMoney(ledger.filter((row) => row.type === 'charge').reduce((sum, row) => sum + roundMoney(row.amountBs), 0));
+  const guaranteeAppliedBs = roundMoney(ledger.filter((row) => row.type === 'guarantee_apply').reduce((sum, row) => sum + roundMoney(row.amountBs), 0));
+  const replacementPendingBs = Math.max(0, roundMoney(replacementChargedBs - replacementCollectedBs - guaranteeAppliedBs));
   const eventTotalBs = roundMoney(event.totalBs ?? event.estimatedTotalBs ?? 0);
   const guaranteeRequiredBs = roundMoney(event.guaranteeBs ?? 0);
   return {
@@ -765,8 +793,12 @@ const buildEventFinancialSummary = (state, event) => {
     guaranteeCollectedBs,
     guaranteePendingBs: Math.max(0, roundMoney(guaranteeRequiredBs - guaranteeCollectedBs)),
     guaranteeReturnedBs,
-    guaranteeHeldBs: Math.max(0, roundMoney(guaranteeCollectedBs - guaranteeReturnedBs)),
-    replacementBs,
+    guaranteeAppliedBs,
+    guaranteeHeldBs: Math.max(0, roundMoney(guaranteeCollectedBs - guaranteeReturnedBs - guaranteeAppliedBs)),
+    replacementBs: replacementCollectedBs,
+    replacementChargedBs,
+    replacementCollectedBs,
+    replacementPendingBs,
   };
 };
 
@@ -788,6 +820,10 @@ const appendIncomeForPayment = (state, payment, actor) => {
     method: payment.method,
     destination: payment.destination,
     amountBs: payment.amountBs,
+    serviceAllocationBs: roundMoney(payment.serviceAllocationBs),
+    guaranteeAllocationBs: roundMoney(payment.guaranteeAllocationBs),
+    replacementAllocationBs: roundMoney(payment.replacementAllocationBs),
+    surplusAllocationBs: roundMoney(payment.surplusAllocationBs),
     createdAt: payment.createdAt,
     createdById: String(actor?.id ?? '').trim() || null,
     createdByName: String(actor?.name ?? '').trim() || null,
@@ -799,7 +835,7 @@ const appendIncomeForPayment = (state, payment, actor) => {
 export const registerLincolnEventPayment = async (eventId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {
     const event = findLincolnEvent(state, eventId);
-    const type = String(payload?.type ?? 'installment').trim().toLowerCase();
+    const type = String(payload?.type ?? 'deposit').trim().toLowerCase();
     if (!Object.prototype.hasOwnProperty.call(PAYMENT_TYPE_LABELS, type)) {
       const error = new Error('Tipo de pago Lincoln no permitido.');
       error.statusCode = 400;
@@ -807,6 +843,22 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
       throw error;
     }
     const amountBs = requirePositiveMoney(payload?.amountBs, 'monto del pago');
+    let serviceAllocationBs = roundMoney(payload?.serviceAllocationBs);
+    let guaranteeAllocationBs = roundMoney(payload?.guaranteeAllocationBs);
+    let replacementAllocationBs = roundMoney(payload?.replacementAllocationBs);
+    if (type !== 'deposit') {
+      serviceAllocationBs = SERVICE_PAYMENT_TYPES.has(type) ? amountBs : 0;
+      guaranteeAllocationBs = type === 'guarantee' ? amountBs : 0;
+      replacementAllocationBs = type === 'replacement' ? amountBs : 0;
+    }
+    const allocatedBs = roundMoney(serviceAllocationBs + guaranteeAllocationBs + replacementAllocationBs);
+    if (allocatedBs > amountBs + 0.009) {
+      const error = new Error('La distribución del ingreso supera el monto recibido.');
+      error.statusCode = 400;
+      error.code = 'LINCOLN_PAYMENT_ALLOCATION_INVALID';
+      throw error;
+    }
+    const surplusAllocationBs = roundMoney(Math.max(0, amountBs - allocatedBs));
     const createdAt = nowIso();
     const receipt = {
       id: makeLincolnId('RCL'),
@@ -817,11 +869,16 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
       clientName: event.clientName ?? '',
       date: String(payload?.date ?? '').trim() || createdAt.slice(0, 10),
       type,
+      direction: 'income',
       concept: String(payload?.description ?? '').trim() || PAYMENT_TYPE_LABELS[type],
       method: String(payload?.method ?? 'cash').trim().toLowerCase(),
       destination: String(payload?.destination ?? '').trim() || 'CAJA CHICA',
       payerName: String(payload?.payerName ?? event.clientName ?? '').trim(),
       amountBs,
+      serviceAllocationBs,
+      guaranteeAllocationBs,
+      replacementAllocationBs,
+      surplusAllocationBs,
       status: 'active',
       createdAt,
       createdById: String(actor?.id ?? '').trim() || null,
@@ -839,6 +896,10 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
       date: receipt.date,
       type,
       amountBs,
+      serviceAllocationBs,
+      guaranteeAllocationBs,
+      replacementAllocationBs,
+      surplusAllocationBs,
       method: receipt.method,
       destination: receipt.destination,
       payerName: receipt.payerName,
@@ -851,6 +912,33 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
     state.receipts.unshift(receipt);
     state.payments.unshift(payment);
     const income = appendIncomeForPayment(state, payment, actor);
+    state.economicLedgerEntries = Array.isArray(state.economicLedgerEntries) ? state.economicLedgerEntries : [];
+    const ledgerEntry = {
+      id: makeLincolnId('ECO'),
+      code: nextLincolnCode('ECO', state.economicLedgerEntries),
+      eventId: event.id,
+      eventCode: event.code,
+      type: type === 'guarantee' ? 'guarantee' : 'deposit',
+      subtype: type,
+      amountBs,
+      serviceAllocationBs,
+      guaranteeAllocationBs,
+      replacementAllocationBs,
+      surplusAllocationBs,
+      method: payment.method,
+      destination: payment.destination,
+      note: payment.description,
+      reference: payment.reference,
+      paymentId: payment.id,
+      receiptId: receipt.id,
+      receiptCode: receipt.code,
+      incomeEntryId: income.id,
+      isCashRegistered: true,
+      createdAt,
+      createdById: payment.createdById,
+      createdByName: payment.createdByName,
+    };
+    state.economicLedgerEntries.unshift(ledgerEntry);
     event.updatedAt = createdAt;
     event.financial = buildEventFinancialSummary(state, event);
     appendLincolnAudit(state, {
@@ -858,7 +946,7 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
       actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null,
       eventId: event.id, receiptCode: receipt.code, amountBs,
     });
-    return { payment, receipt, income, eventFinancial: event.financial };
+    return { payment, receipt, income, ledgerEntry, eventFinancial: event.financial };
   });
 
 export const voidLincolnPayment = async (paymentId, payload, expectedRevision, actor = {}) =>
@@ -888,6 +976,13 @@ export const voidLincolnPayment = async (paymentId, payload, expectedRevision, a
       income.voidedAt = voidedAt;
       income.voidReason = reason;
     }
+    (Array.isArray(state.economicLedgerEntries) ? state.economicLedgerEntries : []).forEach((entry) => {
+      if (String(entry?.paymentId ?? '') !== String(payment.id)) return;
+      entry.voidedAt = voidedAt;
+      entry.voidReason = reason;
+      entry.voidedById = String(actor?.id ?? '').trim() || null;
+      entry.voidedByName = String(actor?.name ?? '').trim() || null;
+    });
     const event = findLincolnEvent(state, payment.eventId);
     event.updatedAt = voidedAt;
     event.financial = buildEventFinancialSummary(state, event);
@@ -911,53 +1006,134 @@ export const returnLincolnGuarantee = async (eventId, payload, expectedRevision,
       throw error;
     }
     const createdAt = nowIso();
+    const receipt = {
+      id: makeLincolnId('RCL'), code: nextLincolnCode('RCL', state.receipts),
+      eventId: event.id, eventCode: event.code, clientId: event.clientId ?? null, clientName: event.clientName ?? '',
+      date: String(payload?.date ?? '').trim() || createdAt.slice(0, 10), type: 'guarantee_return', direction: 'expense',
+      concept: String(payload?.description ?? '').trim() || 'DEVOLUCION DE GARANTIA',
+      method: String(payload?.method ?? 'cash').trim().toLowerCase(), destination: String(payload?.destination ?? '').trim() || 'CAJA CHICA',
+      payerName: event.clientName ?? '', amountBs, status: 'active', createdAt,
+      createdById: String(actor?.id ?? '').trim() || null, createdByName: String(actor?.name ?? '').trim() || null,
+    };
     const payment = {
-      id: makeLincolnId('PAG'),
-      code: nextLincolnCode('PAG', state.payments),
-      receiptId: null,
-      receiptCode: null,
-      eventId: event.id,
-      eventCode: event.code,
-      clientId: event.clientId ?? null,
-      clientName: event.clientName ?? '',
-      date: String(payload?.date ?? '').trim() || createdAt.slice(0, 10),
-      type: 'guarantee_return',
-      amountBs,
-      method: String(payload?.method ?? 'cash').trim().toLowerCase(),
-      destination: String(payload?.destination ?? '').trim() || 'CAJA CHICA',
-      payerName: event.clientName ?? '',
-      description: String(payload?.description ?? '').trim() || 'DEVOLUCION DE GARANTIA',
-      reference: String(payload?.reference ?? '').trim(),
-      createdAt,
-      createdById: String(actor?.id ?? '').trim() || null,
-      createdByName: String(actor?.name ?? '').trim() || null,
+      id: makeLincolnId('PAG'), code: nextLincolnCode('PAG', state.payments), receiptId: receipt.id, receiptCode: receipt.code,
+      eventId: event.id, eventCode: event.code, clientId: event.clientId ?? null, clientName: event.clientName ?? '',
+      date: receipt.date, type: 'guarantee_return', amountBs, method: receipt.method, destination: receipt.destination,
+      payerName: event.clientName ?? '', description: receipt.concept, reference: String(payload?.reference ?? '').trim(), createdAt,
+      createdById: receipt.createdById, createdByName: receipt.createdByName,
     };
     const expense = {
-      id: makeLincolnId('EGR'),
-      code: nextLincolnCode('EGR', state.expenseEntries),
-      eventId: event.id,
-      eventCode: event.code,
-      date: payment.date,
-      category: 'DEVOLUCION GARANTIA',
-      description: payment.description,
-      method: payment.method,
-      destination: payment.destination,
-      amountBs,
-      paymentId: payment.id,
-      createdAt,
-      createdById: payment.createdById,
-      createdByName: payment.createdByName,
+      id: makeLincolnId('EGR'), code: nextLincolnCode('EGR', state.expenseEntries), eventId: event.id, eventCode: event.code,
+      date: payment.date, category: 'DEVOLUCION GARANTIA', description: payment.description, method: payment.method,
+      destination: payment.destination, amountBs, paymentId: payment.id, receiptId: receipt.id, receiptCode: receipt.code,
+      createdAt, createdById: payment.createdById, createdByName: payment.createdByName,
     };
+    state.receipts.unshift(receipt);
     state.payments.unshift(payment);
     state.expenseEntries.unshift(expense);
+    state.economicLedgerEntries = Array.isArray(state.economicLedgerEntries) ? state.economicLedgerEntries : [];
+    const ledgerEntry = {
+      id: makeLincolnId('ECO'), code: nextLincolnCode('ECO', state.economicLedgerEntries), eventId: event.id, eventCode: event.code,
+      type: 'refund', subtype: 'guarantee_return', refundSource: 'guarantee', amountBs, method: payment.method,
+      destination: payment.destination, note: payment.description, reference: payment.reference, paymentId: payment.id,
+      receiptId: receipt.id, receiptCode: receipt.code, expenseEntryId: expense.id, isCashRegistered: true,
+      createdAt, createdById: payment.createdById, createdByName: payment.createdByName,
+    };
+    state.economicLedgerEntries.unshift(ledgerEntry);
     event.updatedAt = createdAt;
     event.financial = buildEventFinancialSummary(state, event);
     appendLincolnAudit(state, {
       action: 'events.guarantee.return', entityType: 'expenseEntries', entityId: expense.id, entityCode: expense.code,
       actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null,
-      eventId: event.id, amountBs,
+      eventId: event.id, amountBs, receiptCode: receipt.code,
     });
-    return { payment, expense, eventFinancial: event.financial };
+    return { payment, receipt, expense, ledgerEntry, eventFinancial: event.financial };
+  });
+
+export const registerLincolnEconomicLedgerEntry = async (eventId, payload, expectedRevision, actor = {}) =>
+  mutateLincolnState(expectedRevision, (state) => {
+    const event = findLincolnEvent(state, eventId);
+    const type = String(payload?.type ?? 'note').trim().toLowerCase();
+    if (!['charge', 'guarantee_apply', 'note'].includes(type)) {
+      const error = new Error('Tipo de movimiento económico Lincoln no permitido.');
+      error.statusCode = 400;
+      error.code = 'LINCOLN_ECONOMIC_TYPE_INVALID';
+      throw error;
+    }
+    const before = buildEventFinancialSummary(state, event);
+    const amountBs = type === 'note' ? 0 : requirePositiveMoney(payload?.amountBs, 'monto del movimiento');
+    if (type === 'guarantee_apply') {
+      if (amountBs > before.guaranteeHeldBs + 0.009) {
+        const error = new Error('La aplicación supera la garantía retenida disponible.');
+        error.statusCode = 400;
+        error.code = 'LINCOLN_GUARANTEE_APPLY_EXCEEDS_HELD';
+        throw error;
+      }
+      if (amountBs > before.replacementPendingBs + 0.009) {
+        const error = new Error('La aplicación supera los cargos/reposiciones pendientes.');
+        error.statusCode = 400;
+        error.code = 'LINCOLN_GUARANTEE_APPLY_EXCEEDS_CHARGE';
+        throw error;
+      }
+    }
+    const createdAt = nowIso();
+    state.economicLedgerEntries = Array.isArray(state.economicLedgerEntries) ? state.economicLedgerEntries : [];
+    const entry = {
+      id: makeLincolnId('ECO'), code: nextLincolnCode('ECO', state.economicLedgerEntries), eventId: event.id, eventCode: event.code,
+      type, amountBs, note: String(payload?.note ?? payload?.description ?? '').trim(), reference: String(payload?.reference ?? '').trim(),
+      isCashRegistered: false, createdAt, createdById: String(actor?.id ?? '').trim() || null, createdByName: String(actor?.name ?? '').trim() || null,
+    };
+    state.economicLedgerEntries.unshift(entry);
+    event.updatedAt = createdAt;
+    event.financial = buildEventFinancialSummary(state, event);
+    appendLincolnAudit(state, { action: `events.economic.${type}`, entityType: 'economicLedgerEntries', entityId: entry.id, entityCode: entry.code,
+      actorId: entry.createdById, actorName: entry.createdByName, eventId: event.id, amountBs });
+    return { ledgerEntry: entry, eventFinancial: event.financial };
+  });
+
+export const resetLincolnEventEconomics = async (eventId, payload, expectedRevision, actor = {}) =>
+  mutateLincolnState(expectedRevision, (state) => {
+    const event = findLincolnEvent(state, eventId);
+    const role = String(actor?.role ?? '').trim().toLowerCase();
+    if (role !== 'developer') {
+      const error = new Error('Solo el rol developer puede ejecutar el Reset económico del evento.');
+      error.statusCode = 403;
+      error.code = 'LINCOLN_ECONOMIC_RESET_FORBIDDEN';
+      throw error;
+    }
+    const confirmation = String(payload?.confirmation ?? '').trim().toUpperCase();
+    if (confirmation !== 'RESET ECONOMICO') {
+      const error = new Error('Escribe RESET ECONOMICO para confirmar la reconstrucción económica.');
+      error.statusCode = 400;
+      error.code = 'LINCOLN_ECONOMIC_RESET_CONFIRMATION';
+      throw error;
+    }
+    const eventIdKey = String(event.id);
+    const linkedPayments = state.payments.filter((row) => String(row?.eventId ?? '') === eventIdKey);
+    const paymentIds = new Set(linkedPayments.map((row) => String(row.id)));
+    const receiptIds = new Set(linkedPayments.map((row) => String(row.receiptId ?? '')).filter(Boolean));
+    const beforeCounts = {
+      payments: linkedPayments.length,
+      receipts: state.receipts.filter((row) => String(row?.eventId ?? '') === eventIdKey || receiptIds.has(String(row?.id ?? ''))).length,
+      incomeEntries: state.incomeEntries.filter((row) => String(row?.eventId ?? '') === eventIdKey && (paymentIds.has(String(row?.paymentId ?? '')) || row?.paymentId)).length,
+      guaranteeReturnExpenses: state.expenseEntries.filter((row) => String(row?.eventId ?? '') === eventIdKey && paymentIds.has(String(row?.paymentId ?? ''))).length,
+      ledgerEntries: (state.economicLedgerEntries ?? []).filter((row) => String(row?.eventId ?? '') === eventIdKey).length,
+    };
+    state.payments = state.payments.filter((row) => String(row?.eventId ?? '') !== eventIdKey);
+    state.receipts = state.receipts.filter((row) => String(row?.eventId ?? '') !== eventIdKey && !receiptIds.has(String(row?.id ?? '')));
+    state.incomeEntries = state.incomeEntries.filter((row) => !(String(row?.eventId ?? '') === eventIdKey && paymentIds.has(String(row?.paymentId ?? ''))));
+    state.expenseEntries = state.expenseEntries.filter((row) => !(String(row?.eventId ?? '') === eventIdKey && paymentIds.has(String(row?.paymentId ?? ''))));
+    state.economicLedgerEntries = (state.economicLedgerEntries ?? []).filter((row) => String(row?.eventId ?? '') !== eventIdKey);
+    const resetAt = nowIso();
+    event.financial = buildEventFinancialSummary(state, event);
+    event.economicResetAt = resetAt;
+    event.economicResetById = String(actor?.id ?? '').trim() || null;
+    event.economicResetByName = String(actor?.name ?? '').trim() || null;
+    event.updatedAt = resetAt;
+    appendLincolnAudit(state, { action: 'events.economic.reset', entityType: 'events', entityId: event.id, entityCode: event.code,
+      actorId: event.economicResetById, actorName: event.economicResetByName, eventId: event.id,
+      reason: String(payload?.reason ?? '').trim(), beforeCounts });
+    return { eventFinancial: event.financial, resetSummary: beforeCounts, economicResetAt: resetAt };
   });
 
 export const createLincolnExpense = async (payload, expectedRevision, actor = {}) =>

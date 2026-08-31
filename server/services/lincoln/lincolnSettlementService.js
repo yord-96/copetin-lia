@@ -6,6 +6,7 @@ const roundMoney = (value) => {
 };
 
 const sumMoney = (rows) => roundMoney(rows.reduce((total, row) => total + roundMoney(row?.amountBs), 0));
+const allocationValue = (row, key, fallback = 0) => row?.[key] !== undefined && row?.[key] !== null ? roundMoney(row[key]) : roundMoney(fallback);
 const activeRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => !row?.voidedAt && row?.status !== 'voided');
 const SERVICE_TYPES = new Set(['advance', 'installment', 'balance']);
 
@@ -20,12 +21,17 @@ const settlementForEvent = (state, event) => {
   const guaranteeCollected = payments.filter((row) => String(row?.type ?? '').toLowerCase() === 'guarantee');
   const guaranteeReturned = payments.filter((row) => String(row?.type ?? '').toLowerCase() === 'guarantee_return');
   const operatingExpenses = expenses.filter((row) => String(row?.category ?? '').toUpperCase() !== 'DEVOLUCION GARANTIA' && !row?.paymentId);
-  const serviceIncomeBs = sumMoney(serviceIncome);
-  const replacementIncomeBs = sumMoney(replacements);
-  const operatingIncomeBs = roundMoney(serviceIncomeBs + replacementIncomeBs);
+  const serviceIncomeBs = roundMoney(serviceIncome.reduce((sum, row) => sum + allocationValue(row, 'serviceAllocationBs', row.amountBs), 0)
+    + payments.filter((row) => String(row?.type ?? '').toLowerCase() === 'deposit').reduce((sum, row) => sum + allocationValue(row, 'serviceAllocationBs', 0), 0));
+  const replacementIncomeBs = roundMoney(replacements.reduce((sum, row) => sum + allocationValue(row, 'replacementAllocationBs', row.amountBs), 0)
+    + payments.filter((row) => String(row?.type ?? '').toLowerCase() === 'deposit').reduce((sum, row) => sum + allocationValue(row, 'replacementAllocationBs', 0), 0));
+  const guaranteeAppliedBs = roundMoney((state.economicLedgerEntries ?? []).filter((row) => String(row?.eventId ?? '') === String(event.id) && !row?.voidedAt && row?.type === 'guarantee_apply').reduce((sum, row) => sum + roundMoney(row.amountBs), 0));
+  const realizedReplacementIncomeBs = roundMoney(replacementIncomeBs + guaranteeAppliedBs);
+  const operatingIncomeBs = roundMoney(serviceIncomeBs + realizedReplacementIncomeBs);
   const operatingExpenseBs = sumMoney(operatingExpenses);
   const utilityBs = roundMoney(operatingIncomeBs - operatingExpenseBs);
-  const guaranteeCollectedBs = sumMoney(guaranteeCollected);
+  const guaranteeCollectedBs = roundMoney(guaranteeCollected.reduce((sum, row) => sum + allocationValue(row, 'guaranteeAllocationBs', row.amountBs), 0)
+    + payments.filter((row) => String(row?.type ?? '').toLowerCase() === 'deposit').reduce((sum, row) => sum + allocationValue(row, 'guaranteeAllocationBs', 0), 0));
   const guaranteeReturnedBs = sumMoney(guaranteeReturned);
   const settlement = (Array.isArray(state.eventSettlements) ? state.eventSettlements : [])
     .find((row) => String(row?.eventId ?? '') === String(event.id));
@@ -43,15 +49,16 @@ const settlementForEvent = (state, event) => {
     closedAt: settlement?.closedAt ?? null,
     closedByName: settlement?.closedByName ?? null,
     serviceIncomeBs,
-    replacementIncomeBs,
+    replacementIncomeBs: realizedReplacementIncomeBs,
     operatingIncomeBs,
     operatingExpenseBs,
     utilityBs,
     guaranteeCollectedBs,
     guaranteeReturnedBs,
-    guaranteeHeldBs: Math.max(0, roundMoney(guaranteeCollectedBs - guaranteeReturnedBs)),
+    guaranteeAppliedBs,
+    guaranteeHeldBs: Math.max(0, roundMoney(guaranteeCollectedBs - guaranteeReturnedBs - guaranteeAppliedBs)),
     expenseCount: operatingExpenses.length,
-    paymentCount: serviceIncome.length + replacements.length,
+    paymentCount: payments.filter((row) => SERVICE_TYPES.has(String(row?.type ?? '').toLowerCase()) || ['replacement', 'deposit'].includes(String(row?.type ?? '').toLowerCase())).length,
   };
 };
 
@@ -101,7 +108,7 @@ export const getLincolnSettlementDetail = async ({ eventId }) => {
   const summary = settlementForEvent(state, event);
   const payments = activeRows(state.payments)
     .filter((row) => String(row?.eventId ?? '') === String(event.id))
-    .filter((row) => SERVICE_TYPES.has(String(row?.type ?? '').toLowerCase()) || String(row?.type ?? '').toLowerCase() === 'replacement')
+    .filter((row) => SERVICE_TYPES.has(String(row?.type ?? '').toLowerCase()) || ['replacement', 'deposit'].includes(String(row?.type ?? '').toLowerCase()))
     .sort((a, b) => `${a?.date ?? ''}${a?.createdAt ?? ''}`.localeCompare(`${b?.date ?? ''}${b?.createdAt ?? ''}`));
   const expenses = activeRows(state.expenseEntries)
     .filter((row) => String(row?.eventId ?? '') === String(event.id))
@@ -109,7 +116,7 @@ export const getLincolnSettlementDetail = async ({ eventId }) => {
     .sort((a, b) => `${a?.date ?? ''}${a?.createdAt ?? ''}`.localeCompare(`${b?.date ?? ''}${b?.createdAt ?? ''}`));
   const guaranteeMovements = activeRows(state.payments)
     .filter((row) => String(row?.eventId ?? '') === String(event.id))
-    .filter((row) => ['guarantee', 'guarantee_return'].includes(String(row?.type ?? '').toLowerCase()));
+    .filter((row) => ['guarantee', 'guarantee_return', 'deposit'].includes(String(row?.type ?? '').toLowerCase()));
 
   return {
     revision: snapshot.revision,

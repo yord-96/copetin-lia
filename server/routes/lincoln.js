@@ -22,6 +22,8 @@ import {
   createLincolnRecord,
   getLincolnStateSnapshot,
   registerLincolnEventPayment,
+  registerLincolnEconomicLedgerEntry,
+  resetLincolnEventEconomics,
   replaceLincolnStateSnapshot,
   returnLincolnGuarantee,
   setLincolnSettlementStatus,
@@ -380,6 +382,35 @@ router.post('/__lincoln_db/events/:id/payments', async (req, res, next) => {
       actorFromRequest(req),
     );
     res.status(201).json(result);
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
+
+
+router.post('/__lincoln_db/events/:id/economic-ledger', async (req, res, next) => {
+  try {
+    const result = await registerLincolnEconomicLedgerEntry(
+      req.params.id,
+      req.body?.entry,
+      req.body?.revision,
+      actorFromRequest(req),
+    );
+    res.status(201).json(result);
+  } catch (error) {
+    handleLincolnMutationError(error, res, next);
+  }
+});
+
+router.post('/__lincoln_db/events/:id/economic-reset', async (req, res, next) => {
+  try {
+    const result = await resetLincolnEventEconomics(
+      req.params.id,
+      req.body,
+      req.body?.revision,
+      actorFromRequest(req),
+    );
+    res.json(result);
   } catch (error) {
     handleLincolnMutationError(error, res, next);
   }

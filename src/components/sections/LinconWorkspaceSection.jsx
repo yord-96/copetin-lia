@@ -37,6 +37,7 @@ const emptyState = {
   incomeEntries: [],
   expenseEntries: [],
   eventSettlements: [],
+  economicLedgerEntries: [],
   auditLog: [],
   settings: {},
 };
@@ -81,6 +82,7 @@ const paymentTypeLabel = (type) => ({
   guarantee: 'Garantía',
   replacement: 'Reposición',
   guarantee_return: 'Devolución garantía',
+  deposit: 'Ingreso flexible',
 }[type] ?? type ?? 'Movimiento');
 const paymentMethodLabel = (method) => ({ cash: 'Efectivo', transfer: 'Transferencia', qr: 'QR' }[method] ?? method ?? '—');
 const activeRows = (rows) => (Array.isArray(rows) ? rows : []).filter((row) => !row?.voidedAt && row?.status !== 'voided');
@@ -809,28 +811,55 @@ function PaymentModal({ eventRecord, state, saving, onClose, onSave }) {
   const today = new Date().toISOString().slice(0, 10);
   const destinations = Array.isArray(state.settings?.paymentDestinations) ? state.settings.paymentDestinations : ['CAJA CHICA', 'SRA. LIA'];
   const [form, setForm] = useState({
-    type: 'installment',
-    amountBs: '',
-    date: today,
-    method: 'cash',
-    destination: destinations[0] ?? 'CAJA CHICA',
-    payerName: eventRecord?.clientName ?? '',
-    description: '',
-    reference: '',
+    type: 'deposit', amountBs: '', serviceAllocationBs: '', guaranteeAllocationBs: '', replacementAllocationBs: '',
+    date: today, method: 'cash', destination: destinations[0] ?? 'CAJA CHICA', payerName: eventRecord?.clientName ?? '', description: '', reference: '',
   });
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const amountBs = toNumber(form.amountBs);
+  const serviceAllocationBs = toNumber(form.serviceAllocationBs);
+  const guaranteeAllocationBs = toNumber(form.guaranteeAllocationBs);
+  const replacementAllocationBs = toNumber(form.replacementAllocationBs);
+  const allocatedBs = serviceAllocationBs + guaranteeAllocationBs + replacementAllocationBs;
+  const surplusBs = Math.max(0, amountBs - allocatedBs);
+  const submit = (e) => {
+    e.preventDefault();
+    if (form.type === 'deposit' && allocatedBs > amountBs + 0.009) {
+      window.alert('La distribución no puede superar el monto recibido.');
+      return;
+    }
+    onSave({ ...form, amountBs, serviceAllocationBs, guaranteeAllocationBs, replacementAllocationBs });
+  };
   return (
-    <Modal title={`Registrar movimiento · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: toNumber(form.amountBs) }); }}>
-      <Field label="Tipo"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="advance">Anticipo</option><option value="installment">A cuenta</option><option value="balance">Saldo</option><option value="guarantee">Garantía</option><option value="replacement">Reposición</option></select></Field>
-      <Field label="Monto (Bs)"><input required type="number" min="0.01" step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field>
+    <Modal title={`Registrar dinero · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={submit}>
+      <Field label="Tipo"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="deposit">Ingreso flexible</option><option value="advance">Anticipo</option><option value="installment">A cuenta</option><option value="balance">Saldo</option><option value="guarantee">Garantía</option><option value="replacement">Reposición cobrada</option></select></Field>
+      <Field label="Monto recibido (Bs)"><input required type="number" min="0.01" step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field>
+      {form.type === 'deposit' ? <div className="lincoln-economic-allocation is-wide">
+        <strong>Distribuir este único ingreso</strong><p>Un solo recibo y un solo ingreso de Caja Lincoln, repartido internamente sin duplicar dinero.</p>
+        <div><Field label="Aplicar al servicio"><input type="number" min="0" step="0.01" value={form.serviceAllocationBs} onChange={(e) => set('serviceAllocationBs', e.target.value)} /></Field><Field label="Separar como garantía"><input type="number" min="0" step="0.01" value={form.guaranteeAllocationBs} onChange={(e) => set('guaranteeAllocationBs', e.target.value)} /></Field><Field label="Cobro de reposición"><input type="number" min="0" step="0.01" value={form.replacementAllocationBs} onChange={(e) => set('replacementAllocationBs', e.target.value)} /></Field></div>
+        <span className={allocatedBs > amountBs + 0.009 ? 'is-error' : ''}>Distribuido: <b>{formatBs(allocatedBs)}</b> · Excedente sin aplicar: <b>{formatBs(surplusBs)}</b></span>
+      </div> : null}
       <Field label="Fecha"><input required type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></Field>
       <Field label="Medio de pago"><select value={form.method} onChange={(e) => set('method', e.target.value)}><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="qr">QR</option></select></Field>
       <Field label="Destino"><input list="lincoln-payment-destinations" value={form.destination} onChange={(e) => set('destination', e.target.value)} /><datalist id="lincoln-payment-destinations">{destinations.map((item) => <option key={item} value={item} />)}</datalist></Field>
       <Field label="Pagado por"><input value={form.payerName} onChange={(e) => set('payerName', e.target.value)} /></Field>
-      <Field label="Concepto" wide><input value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Opcional; si queda vacío se usa el tipo de movimiento." /></Field>
+      <Field label="Concepto" wide><input value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalle del dinero recibido" /></Field>
       <Field label="Referencia / respaldo" wide><input value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="N° transferencia, QR, observación, etc." /></Field>
     </Modal>
   );
+}
+
+function EconomicEntryModal({ eventRecord, summary, saving, onClose, onSave }) {
+  const [form, setForm] = useState({ type: 'charge', amountBs: '', note: '', reference: '' });
+  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const isNote = form.type === 'note';
+  const maxApply = Math.max(0, Math.min(Number(summary?.guaranteeHeldBs ?? 0), Number(summary?.replacementPendingBs ?? 0)));
+  return <Modal title={`Hoja económica · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: isNote ? 0 : toNumber(form.amountBs) }); }}>
+    <Field label="Movimiento"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="charge">Cargo / reposición pendiente</option><option value="guarantee_apply">Aplicar garantía a cargo</option><option value="note">Nota económica</option></select></Field>
+    {!isNote ? <Field label="Monto (Bs)"><input required type="number" min="0.01" max={form.type === 'guarantee_apply' ? maxApply || undefined : undefined} step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field> : null}
+    {form.type === 'guarantee_apply' ? <div className="lincoln-economic-hint is-wide"><strong>Disponible para aplicar: {formatBs(maxApply)}</strong><span>Garantía retenida {formatBs(summary?.guaranteeHeldBs ?? 0)} · cargos pendientes {formatBs(summary?.replacementPendingBs ?? 0)}</span></div> : null}
+    <Field label="Detalle" wide><textarea required value={form.note} onChange={(e) => set('note', e.target.value)} placeholder={isNote ? 'Observación económica interna' : 'Ej. 10 copas rotas, limpieza extraordinaria...'} /></Field>
+    <Field label="Referencia / respaldo" wide><input value={form.reference} onChange={(e) => set('reference', e.target.value)} /></Field>
+  </Modal>;
 }
 
 function ExpenseModal({ record, state, saving, onClose, onSave }) {
@@ -883,53 +912,71 @@ function GuaranteeReturnModal({ eventRecord, summary, state, saving, onClose, on
   );
 }
 
+const getPaymentAllocations = (payment = {}) => {
+  const amountBs = Number(payment.amountBs ?? 0);
+  const explicit = ['serviceAllocationBs', 'guaranteeAllocationBs', 'replacementAllocationBs', 'surplusAllocationBs'].some((key) => payment?.[key] !== undefined && payment?.[key] !== null);
+  if (explicit) return { serviceBs: Number(payment.serviceAllocationBs ?? 0), guaranteeBs: Number(payment.guaranteeAllocationBs ?? 0), replacementBs: Number(payment.replacementAllocationBs ?? 0), surplusBs: Number(payment.surplusAllocationBs ?? 0) };
+  if (servicePaymentTypes.has(payment.type)) return { serviceBs: amountBs, guaranteeBs: 0, replacementBs: 0, surplusBs: 0 };
+  if (payment.type === 'guarantee') return { serviceBs: 0, guaranteeBs: amountBs, replacementBs: 0, surplusBs: 0 };
+  if (payment.type === 'replacement') return { serviceBs: 0, guaranteeBs: 0, replacementBs: amountBs, surplusBs: 0 };
+  return { serviceBs: 0, guaranteeBs: 0, replacementBs: 0, surplusBs: amountBs };
+};
+
 const getEventFinancialSummary = (state, eventRecord) => {
   const payments = activeRows(state.payments).filter((row) => row.eventId === eventRecord.id);
-  const servicePaidBs = sum(payments.filter((row) => servicePaymentTypes.has(row.type)), (row) => row.amountBs);
-  const guaranteeCollectedBs = sum(payments.filter((row) => row.type === 'guarantee'), (row) => row.amountBs);
+  const ledger = activeRows(state.economicLedgerEntries).filter((row) => row.eventId === eventRecord.id);
+  const allocations = payments.map(getPaymentAllocations);
+  const servicePaidBs = sum(allocations, (row) => row.serviceBs);
+  const guaranteeCollectedBs = sum(allocations, (row) => row.guaranteeBs);
   const guaranteeReturnedBs = sum(payments.filter((row) => row.type === 'guarantee_return'), (row) => row.amountBs);
-  const replacementBs = sum(payments.filter((row) => row.type === 'replacement'), (row) => row.amountBs);
+  const replacementCollectedBs = sum(allocations, (row) => row.replacementBs);
+  const replacementChargedBs = sum(ledger.filter((row) => row.type === 'charge'), (row) => row.amountBs);
+  const guaranteeAppliedBs = sum(ledger.filter((row) => row.type === 'guarantee_apply'), (row) => row.amountBs);
   const eventTotalBs = Number(eventRecord.totalBs ?? eventRecord.estimatedTotalBs ?? 0);
   const guaranteeRequiredBs = Number(eventRecord.guaranteeBs ?? 0);
   return {
-    payments,
-    eventTotalBs,
-    servicePaidBs,
-    serviceBalanceBs: Math.max(0, eventTotalBs - servicePaidBs),
-    guaranteeRequiredBs,
-    guaranteeCollectedBs,
-    guaranteePendingBs: Math.max(0, guaranteeRequiredBs - guaranteeCollectedBs),
-    guaranteeReturnedBs,
-    guaranteeHeldBs: Math.max(0, guaranteeCollectedBs - guaranteeReturnedBs),
-    replacementBs,
+    payments, ledger, eventTotalBs, servicePaidBs, serviceBalanceBs: Math.max(0, eventTotalBs - servicePaidBs), guaranteeRequiredBs,
+    guaranteeCollectedBs, guaranteePendingBs: Math.max(0, guaranteeRequiredBs - guaranteeCollectedBs), guaranteeReturnedBs, guaranteeAppliedBs,
+    guaranteeHeldBs: Math.max(0, guaranteeCollectedBs - guaranteeReturnedBs - guaranteeAppliedBs), replacementBs: replacementCollectedBs,
+    replacementChargedBs, replacementCollectedBs, replacementPendingBs: Math.max(0, replacementChargedBs - replacementCollectedBs - guaranteeAppliedBs),
   };
 };
 
-function EventEconomicView({ state, eventRecord, onBack, onNewPayment, onVoidPayment, onReturnGuarantee, onPrintReceipt }) {
+const economicEntryLabel = (row) => ({ deposit: 'Ingreso / depósito', guarantee: 'Garantía recibida', charge: 'Cargo / reposición', guarantee_apply: 'Aplicado desde garantía', refund: 'Devolución', note: 'Nota económica' }[row?.type] ?? paymentTypeLabel(row?.subtype || row?.type));
+
+function EventEconomicView({ state, eventRecord, canReset, onBack, onNewPayment, onNewEconomicEntry, onResetEconomic, onVoidPayment, onReturnGuarantee, onPrintReceipt }) {
   const summary = getEventFinancialSummary(state, eventRecord);
-  const history = [...summary.payments].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
+  const linkedPaymentIds = new Set(summary.ledger.map((row) => String(row?.paymentId ?? '')).filter(Boolean));
+  const legacyRows = summary.payments.filter((row) => !linkedPaymentIds.has(String(row.id))).map((row) => ({
+    id: `legacy-${row.id}`, code: row.code, eventId: row.eventId, type: row.type === 'guarantee_return' ? 'refund' : row.type === 'guarantee' ? 'guarantee' : 'deposit', subtype: row.type,
+    amountBs: row.amountBs, method: row.method, destination: row.destination, note: row.description, reference: row.reference, paymentId: row.id,
+    receiptId: row.receiptId, receiptCode: row.receiptCode, isCashRegistered: true, date: row.date, createdAt: row.createdAt,
+  }));
+  const history = [...summary.ledger, ...legacyRows].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
   return (
     <div className="lincoln-content">
-      <article className="lincoln-card">
-        <header><div><small>Economía del evento</small><h2>{eventRecord.code} · {eventRecord.clientName || eventRecord.eventType}</h2></div><div className="lincoln-header-actions"><button type="button" className="is-secondary" onClick={onBack}>← Volver</button><button type="button" onClick={onNewPayment}>+ Registrar ingreso</button></div></header>
-        <div className="lincoln-event-summary">
+      <article className="lincoln-card lincoln-economic-sheet">
+        <header><div><small>Hoja económica del evento</small><h2>{eventRecord.code} · {eventRecord.clientName || eventRecord.eventType}</h2><p>El dinero real se refleja en Caja Lincoln; cargos, garantía y notas conservan su propia trazabilidad.</p></div><div className="lincoln-header-actions"><button type="button" className="is-secondary" onClick={onBack}>← Volver</button>{canReset ? <button type="button" className="is-secondary lincoln-reset-economic" onClick={onResetEconomic}>Reset económico</button> : null}<button type="button" className="is-secondary" onClick={onNewEconomicEntry}>+ Cargo / nota</button><button type="button" onClick={onNewPayment}>+ Registrar dinero</button></div></header>
+        <div className="lincoln-event-summary lincoln-event-summary-economic">
           <div><small>Costo servicio</small><strong>{formatBs(summary.eventTotalBs)}</strong></div>
           <div><small>Pagado servicio</small><strong>{formatBs(summary.servicePaidBs)}</strong></div>
           <div className={summary.serviceBalanceBs > 0 ? 'has-warning' : 'has-ok'}><small>Saldo servicio</small><strong>{formatBs(summary.serviceBalanceBs)}</strong></div>
           <div><small>Garantía requerida</small><strong>{formatBs(summary.guaranteeRequiredBs)}</strong></div>
-          <div><small>Garantía retenida</small><strong>{formatBs(summary.guaranteeHeldBs)}</strong></div>
-          <div><small>Reposiciones</small><strong>{formatBs(summary.replacementBs)}</strong></div>
+          <div><small>Garantía retenida</small><strong>{formatBs(summary.guaranteeHeldBs)}</strong><span>Aplicada {formatBs(summary.guaranteeAppliedBs)}</span></div>
+          <div><small>Cargos / reposiciones</small><strong>{formatBs(summary.replacementChargedBs)}</strong><span>Cobrado {formatBs(summary.replacementCollectedBs)}</span></div>
+          <div className={summary.replacementPendingBs > 0 ? 'has-warning' : 'has-ok'}><small>Pendiente reposiciones</small><strong>{formatBs(summary.replacementPendingBs)}</strong></div>
         </div>
-        {summary.guaranteeHeldBs > 0 ? <div className="lincoln-inline-actions"><span>Hay {formatBs(summary.guaranteeHeldBs)} de garantía retenida.</span><button type="button" onClick={onReturnGuarantee}>Devolver garantía</button></div> : null}
-        <DataTable rows={history} emptyText="Registra el primer pago, garantía o reposición del evento." columns={[
-          { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
+        {summary.guaranteeHeldBs > 0 ? <div className="lincoln-inline-actions"><span>Hay {formatBs(summary.guaranteeHeldBs)} de garantía retenida y disponible.</span><button type="button" onClick={onReturnGuarantee}>Devolver garantía</button></div> : null}
+        <DataTable rows={history} emptyText="Registra el primer ingreso, cargo, garantía o nota económica del evento." columns={[
+          { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date ?? row.createdAt) },
           { key: 'code', label: 'Movimiento' },
-          { key: 'type', label: 'Concepto', render: (row) => paymentTypeLabel(row.type) },
-          { key: 'method', label: 'Medio', render: (row) => paymentMethodLabel(row.method) },
-          { key: 'destination', label: 'Destino' },
+          { key: 'type', label: 'Concepto', render: (row) => <span>{economicEntryLabel(row)}</span> },
+          { key: 'detail', label: 'Detalle', render: (row) => <span>{row.note || '—'}{row.reference ? <small> · {row.reference}</small> : null}</span> },
+          { key: 'method', label: 'Medio', render: (row) => row.isCashRegistered ? paymentMethodLabel(row.method) : 'Interno' },
+          { key: 'destination', label: 'Destino', render: (row) => row.destination || '—' },
           { key: 'receipt', label: 'Recibo', render: (row) => row.receiptCode ? <button type="button" className="lincoln-link-action" onClick={(e) => { e.stopPropagation(); onPrintReceipt(row.receiptId); }}>{row.receiptCode}</button> : '—' },
-          { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
-          { key: 'action', label: '', render: (row) => row.type !== 'guarantee_return' ? <button type="button" className="lincoln-danger-action" onClick={(e) => { e.stopPropagation(); onVoidPayment(row); }}>Anular</button> : null },
+          { key: 'amount', label: 'Monto', render: (row) => row.type === 'note' ? <strong>—</strong> : <strong>{formatBs(row.amountBs)}</strong> },
+          { key: 'action', label: '', render: (row) => row.paymentId && row.subtype !== 'guarantee_return' && row.type !== 'refund' ? <button type="button" className="lincoln-danger-action" onClick={(e) => { e.stopPropagation(); const payment = summary.payments.find((item) => item.id === row.paymentId); if (payment) onVoidPayment(payment); }}>Anular</button> : null },
         ]} />
       </article>
     </div>
@@ -1252,6 +1299,46 @@ function LinconWorkspaceSection({
     }
   };
 
+  const saveEconomicEntry = async (eventRecord, entry) => {
+    if (!snapshot?.revision) return;
+    setSaving(true);
+    try {
+      await api.lincoln.createEconomicEntry({ eventId: eventRecord.id, entry, revision: snapshot.revision, actor });
+      setModal(null);
+      await loadLincoln();
+      setEconomicEventId(eventRecord.id);
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo registrar el movimiento económico.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetEventEconomics = async (eventRecord) => {
+    if (!snapshot?.revision || !eventRecord?.id) return;
+    const confirmation = window.prompt(`RESET ECONÓMICO · ${eventRecord.code}
+
+Esto eliminará pagos, recibos, ingresos de caja, devoluciones de garantía y hoja económica vinculados a ESTE evento. No elimina el contrato ni los egresos operativos manuales.
+
+Escribe RESET ECONOMICO para continuar:`);
+    if (confirmation === null) return;
+    if (String(confirmation).trim().toUpperCase() !== 'RESET ECONOMICO') {
+      window.alert('Confirmación incorrecta. No se realizó ningún cambio.');
+      return;
+    }
+    const reason = window.prompt('Motivo del Reset económico:', 'RECONSTRUCCION ECONOMICA DEL EVENTO') ?? '';
+    setSaving(true);
+    try {
+      await api.lincoln.resetEventEconomics({ eventId: eventRecord.id, confirmation: 'RESET ECONOMICO', reason, revision: snapshot.revision, actor });
+      await loadLincoln();
+      setEconomicEventId(eventRecord.id);
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo ejecutar el Reset económico.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveExpense = async (expense) => {
     if (!snapshot?.revision) return;
     setSaving(true);
@@ -1282,7 +1369,7 @@ function LinconWorkspaceSection({
     }
     const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     try { popup.opener = null; } catch (error) { void error; }
-    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(receipt.code)}</title><style>@page{size:Letter portrait;margin:16mm}body{font-family:Arial,sans-serif;color:#173a29}.sheet{border:1px solid #dfe7e2;border-radius:14px;padding:22px}.head{display:flex;justify-content:space-between;border-bottom:3px solid #276342;padding-bottom:14px}.head h1{font-size:22px;margin:0}.code{font-size:22px;font-weight:800;color:#276342}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.grid div{padding:10px;border:1px solid #e2e8e4;border-radius:8px}.grid small{display:block;color:#738078;text-transform:uppercase;font-weight:700}.amount{margin-top:20px;padding:16px;border-radius:10px;background:#edf5ef;text-align:right}.amount strong{font-size:28px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:60px;text-align:center}.line{border-top:1px solid #333;padding-top:7px}button{margin-top:20px;padding:10px 14px}@media print{button{display:none}}</style></head><body><section class="sheet"><div class="head"><div><small>Centro de Eventos Lincoln</small><h1>RECIBO DE INGRESO</h1></div><div class="code">${safe(receipt.code)}</div></div><div class="grid"><div><small>Evento</small><strong>${safe(receipt.eventCode)}</strong></div><div><small>Fecha</small><strong>${safe(formatDate(receipt.date))}</strong></div><div><small>Cliente</small><strong>${safe(receipt.clientName)}</strong></div><div><small>Concepto</small><strong>${safe(receipt.concept)}</strong></div><div><small>Medio</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div><div><small>Destino</small><strong>${safe(receipt.destination)}</strong></div><div><small>Pagado por</small><strong>${safe(receipt.payerName)}</strong></div><div><small>Recibido por</small><strong>${safe(receipt.createdByName)}</strong></div></div><div class="amount"><small>TOTAL RECIBIDO</small><br><strong>${safe(formatBs(receipt.amountBs))}</strong></div><div class="sign"><div class="line">Entregué</div><div class="line">Recibí</div></div><button onclick="window.print()">Imprimir</button></section></body></html>`);
+    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(receipt.code)}</title><style>@page{size:Letter portrait;margin:16mm}body{font-family:Arial,sans-serif;color:#173a29}.sheet{border:1px solid #dfe7e2;border-radius:14px;padding:22px}.head{display:flex;justify-content:space-between;border-bottom:3px solid #276342;padding-bottom:14px}.head h1{font-size:22px;margin:0}.code{font-size:22px;font-weight:800;color:#276342}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.grid div{padding:10px;border:1px solid #e2e8e4;border-radius:8px}.grid small{display:block;color:#738078;text-transform:uppercase;font-weight:700}.amount{margin-top:20px;padding:16px;border-radius:10px;background:#edf5ef;text-align:right}.amount strong{font-size:28px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:60px;text-align:center}.line{border-top:1px solid #333;padding-top:7px}button{margin-top:20px;padding:10px 14px}@media print{button{display:none}}</style></head><body><section class="sheet"><div class="head"><div><small>Centro de Eventos Lincoln</small><h1>${receipt.direction === 'expense' ? 'COMPROBANTE DE DEVOLUCIÓN' : 'RECIBO DE INGRESO'}</h1></div><div class="code">${safe(receipt.code)}</div></div><div class="grid"><div><small>Evento</small><strong>${safe(receipt.eventCode)}</strong></div><div><small>Fecha</small><strong>${safe(formatDate(receipt.date))}</strong></div><div><small>Cliente</small><strong>${safe(receipt.clientName)}</strong></div><div><small>Concepto</small><strong>${safe(receipt.concept)}</strong></div><div><small>Medio</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div><div><small>Destino</small><strong>${safe(receipt.destination)}</strong></div><div><small>${receipt.direction === 'expense' ? 'Devuelto a' : 'Pagado por'}</small><strong>${safe(receipt.payerName)}</strong></div><div><small>${receipt.direction === 'expense' ? 'Entregado por' : 'Recibido por'}</small><strong>${safe(receipt.createdByName)}</strong></div></div><div class="amount"><small>${receipt.direction === 'expense' ? 'TOTAL DEVUELTO' : 'TOTAL RECIBIDO'}</small><br><strong>${safe(formatBs(receipt.amountBs))}</strong></div><div class="sign"><div class="line">Entregué</div><div class="line">Recibí</div></div><button onclick="window.print()">Imprimir</button></section></body></html>`);
     popup.document.close();
     popup.focus();
   };
@@ -1304,6 +1391,7 @@ function LinconWorkspaceSection({
 
   const overlay = (
     <>
+      {modal?.mode === 'economicEntry' ? <EconomicEntryModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} saving={saving} onClose={() => setModal(null)} onSave={(entry) => saveEconomicEntry(modal.record, entry)} /> : null}
       {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
       {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
@@ -1327,7 +1415,7 @@ function LinconWorkspaceSection({
         onGenerateContract={() => setModal({ mode: 'contractConvert', record: modal.record })}
         onOpenDocument={() => setModal({ mode: 'contractDocument', record: modal.record })}
       /> : null}
-      {modal && !['payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {modal && !['economicEntry', 'payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
       {isResetDialogOpen ? (
         <SystemResetPanel
           onClose={() => setIsResetDialogOpen(false)}
@@ -1372,7 +1460,7 @@ function LinconWorkspaceSection({
         <>
           {activeView === 'panel' ? <LinconPanelView state={state} onNavigate={openView} /> : null}
           {activeView === 'agenda' ? <LincolnAgenda state={state} /> : null}
-          {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onVoidPayment={voidPayment} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
+          {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} canReset={canResetLincoln} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onNewEconomicEntry={() => setModal({ mode: 'economicEntry', record: economicEvent })} onResetEconomic={() => resetEventEconomics(economicEvent)} onVoidPayment={voidPayment} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'comercial' && !economicEvent ? (
             <LincolnCommercialWorkspace
               refreshKey={snapshot?.revision}

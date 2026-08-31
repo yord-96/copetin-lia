@@ -1240,6 +1240,16 @@ const createLincolnEventPayment = ({ eventId, payment, revision, actor }) => cal
   { body: { payment, revision, actor }, fallback: 'No se pudo registrar el pago del evento Lincoln.' },
 );
 
+const createLincolnEconomicEntry = ({ eventId, entry, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/events/${encodeURIComponent(eventId)}/economic-ledger`,
+  { body: { entry, revision, actor }, fallback: 'No se pudo registrar el movimiento económico Lincoln.' },
+);
+
+const resetLincolnEventEconomics = ({ eventId, confirmation, reason, revision, actor }) => callLincolnMutation(
+  `/__lincoln_db/events/${encodeURIComponent(eventId)}/economic-reset`,
+  { body: { confirmation, reason, revision, actor }, fallback: 'No se pudo ejecutar el Reset económico del evento.' },
+);
+
 const voidLincolnEventPayment = ({ paymentId, reason, revision, actor }) => callLincolnMutation(
   `/__lincoln_db/payments/${encodeURIComponent(paymentId)}/void`,
   { body: { reason, revision, actor }, fallback: 'No se pudo anular el pago de Lincoln.' },
@@ -4107,6 +4117,8 @@ export const api = {
     updateRecord: (payload) => mutateLincolnRecord(payload),
     convertReservation: (payload) => convertLincolnReservation(payload),
     createEventPayment: (payload) => createLincolnEventPayment(payload),
+    createEconomicEntry: (payload) => createLincolnEconomicEntry(payload),
+    resetEventEconomics: (payload) => resetLincolnEventEconomics(payload),
     voidEventPayment: (payload) => voidLincolnEventPayment(payload),
     returnGuarantee: (payload) => returnLincolnEventGuarantee(payload),
     createExpense: (payload) => mutateLincolnExpense(payload),

@@ -3415,3 +3415,20 @@
     display: none !important;
   }
 }
+
+
+/* Hoja económica Lincoln */
+.lincoln-economic-sheet > header { align-items:flex-start; gap:18px; }
+.lincoln-economic-sheet > header p { margin:5px 0 0; max-width:760px; color:var(--lincoln-muted, #667085); }
+.lincoln-event-summary-economic { grid-template-columns:repeat(7,minmax(120px,1fr)); }
+.lincoln-event-summary-economic > div span { display:block; margin-top:4px; font-size:11px; color:var(--lincoln-muted, #667085); }
+.lincoln-economic-allocation { border:1px solid rgba(15,23,42,.12); border-radius:14px; padding:14px; background:rgba(248,250,252,.85); }
+.lincoln-economic-allocation > p { margin:4px 0 12px; color:#667085; font-size:12px; }
+.lincoln-economic-allocation > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.lincoln-economic-allocation > span { display:block; margin-top:8px; font-size:12px; }
+.lincoln-economic-allocation > span.is-error { color:#b42318; font-weight:700; }
+.lincoln-economic-hint { display:flex; flex-direction:column; gap:3px; padding:11px 13px; border-radius:12px; background:#f8fafc; border:1px solid #e2e8f0; }
+.lincoln-economic-hint span { color:#667085; font-size:12px; }
+.lincoln-reset-economic { border-color:#f1b8b8 !important; color:#a61b1b !important; }
+@media (max-width:1180px){.lincoln-event-summary-economic{grid-template-columns:repeat(3,minmax(140px,1fr));}}
+@media (max-width:720px){.lincoln-event-summary-economic,.lincoln-economic-allocation>div{grid-template-columns:1fr;}.lincoln-economic-sheet>header{flex-direction:column;}.lincoln-economic-sheet .lincoln-header-actions{width:100%;flex-wrap:wrap;}}

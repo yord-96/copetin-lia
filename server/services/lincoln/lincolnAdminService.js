@@ -19,7 +19,7 @@ export const LINCOLN_RESET_MODULES = [
     name: 'Caja y contabilidad',
     description: 'Elimina pagos, recibos, ingresos, egresos y rendiciones de Lincoln.',
     warnings: ['Descarga la base Lincoln antes de ejecutar esta limpieza.'],
-    collections: ['payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements'],
+    collections: ['payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'economicLedgerEntries'],
   },
   {
     id: 'clients',
@@ -58,7 +58,7 @@ export const LINCOLN_RESET_MODULES = [
     collections: [
       'reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras',
       'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries',
-      'expenseEntries', 'eventSettlements', 'auditLog',
+      'expenseEntries', 'eventSettlements', 'economicLedgerEntries', 'auditLog',
     ],
   },
 ];
