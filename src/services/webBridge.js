@@ -1968,6 +1968,9 @@ const normalizeState = (state) => {
           : getPrimaryRoleId(user),
       role: getDisplayRoleForIds(getUserRoleIds(user)),
       permissions: normalizeUserPermissions(user?.permissions),
+      companyAccess: normalizeCompanyAccess(user?.companyAccess, {
+        developer: getUserRoleIds(user).includes('developer'),
+      }),
       status: String(user?.status ?? 'active').trim() || 'active',
       phone: String(user?.phone ?? '').trim(),
       isCurrentUser: Boolean(user?.isCurrentUser),
