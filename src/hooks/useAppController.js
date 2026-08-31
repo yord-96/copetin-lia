@@ -994,7 +994,7 @@ export const useAppController = () => {
   const handleCreateUser = async (payload) => {
     setError('');
     try {
-      const createdUser = await api.users.create(payload);
+      const createdUser = await api.users.create({ ...payload, actorUserId: currentUser?.id });
       setUsers((current) => (
         [...current.filter((user) => user.id !== createdUser.id), createdUser]
           .sort((a, b) => String(a.fullName ?? '').localeCompare(String(b.fullName ?? ''), 'es'))
@@ -1053,7 +1053,7 @@ export const useAppController = () => {
   const handleUpdateUser = async (payload) => {
     setError('');
     try {
-      const updatedUser = await api.users.update(payload);
+      const updatedUser = await api.users.update({ ...payload, actorUserId: currentUser?.id });
       setUsers((current) => (
         current
           .map((user) => (user.id === updatedUser.id ? updatedUser : user))
@@ -1075,7 +1075,7 @@ export const useAppController = () => {
   const handleRemoveUser = async (payload) => {
     setError('');
     try {
-      const removedUser = await api.users.remove(payload);
+      const removedUser = await api.users.remove({ ...payload, actorUserId: currentUser?.id });
       const removedId = removedUser?.id ?? payload?.id;
       setUsers((current) => current.filter((user) => user.id !== removedId));
       return removedUser;
@@ -1088,7 +1088,7 @@ export const useAppController = () => {
   const handleResendInvite = async (payload) => {
     setError('');
     try {
-      const updatedUser = await api.users.resendInvite(payload);
+      const updatedUser = await api.users.resendInvite({ ...payload, actorUserId: currentUser?.id });
       if (updatedUser?.id) {
         setUsers((current) => current.map((user) => (
           user.id === updatedUser.id ? updatedUser : user

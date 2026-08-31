@@ -3350,6 +3350,47 @@ const isAccountingOnlyReset = (payload = {}) => {
   return modules.length === 1 && modules[0] === 'cash_accounting';
 };
 
+const mutateUserOnServer = (method, payload = {}) => {
+  if (!shouldUseServerState()) return callBridge('users', method, true, payload);
+
+  return enqueueMutation(async () => {
+    let localUser = null;
+    try {
+      localUser = await getBridge().users[method](payload);
+      const userId = String(localUser?.id ?? payload?.id ?? '').trim();
+      if (!userId || !localUser) throw new Error('No se pudo preparar el usuario para guardar.');
+
+      const response = await fetch(getServerStateUrl(`/users/${encodeURIComponent(userId)}`), {
+        method: 'PUT',
+        cache: 'no-store',
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          actorUserId: String(payload?.actorUserId ?? '').trim(),
+          user: localUser,
+        }),
+      });
+      if (!response.ok) {
+        throw await createServerStateError(response, 'No se pudo guardar el usuario.');
+      }
+
+      const result = await response.json();
+      if (result?.revision) {
+        rememberServerRevision(result.revision);
+        localServerCommitSerial += 1;
+      }
+      announceDataChange({ domain: 'users', method, collections: USER_PATCH_COLLECTIONS });
+      return result?.user ?? localUser;
+    } catch (error) {
+      // Si el servidor rechaza la operacion, restauramos la coleccion oficial
+      // para que la pantalla no muestre un cambio que nunca fue confirmado.
+      if (localUser) {
+        await fetchServerCollections(['users'], `users.${method}:rollback`).catch(() => {});
+      }
+      throw error;
+    }
+  });
+};
+
 export const runtimeInfo =
   {
     ...getWebRuntimeInfo(),
@@ -3550,10 +3591,10 @@ export const api = {
     // Lectura estrictamente local para vistas progresivas. No debe iniciar ni
     // esperar el bootstrap global del servidor.
     listCached: () => getBridge().users.list(),
-    create: (payload) => callBridge('users', 'create', true, payload),
-    update: (payload) => callBridge('users', 'update', true, payload),
-    remove: (payload) => callBridge('users', 'remove', true, payload),
-    resendInvite: (payload) => callBridge('users', 'resendInvite', true, payload),
+    create: (payload) => mutateUserOnServer('create', payload),
+    update: (payload) => mutateUserOnServer('update', payload),
+    remove: (payload) => mutateUserOnServer('remove', payload),
+    resendInvite: (payload) => mutateUserOnServer('resendInvite', payload),
   },
   auth: {
     getSession: async () => {

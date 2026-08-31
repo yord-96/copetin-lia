@@ -8421,6 +8421,141 @@ router.get('/__copetin_db/calendar/mobile-overview', async (req, res, next) => {
   }
 });
 
+const getDirectUserRoleIds = (user = {}) => {
+  const source = Array.isArray(user?.roleIds)
+    ? user.roleIds
+    : [user?.roleId ?? user?.role];
+  return [...new Set(source
+    .map((value) => directNormalizeText(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
+    .filter(Boolean))];
+};
+
+const isDirectDeveloperUser = (user) => getDirectUserRoleIds(user).includes('developer');
+
+const isDirectAdministrativeUser = (user) => getDirectUserRoleIds(user)
+  .some((roleId) => ['developer', 'super_admin', 'admin'].includes(roleId));
+
+const normalizeDirectCompanyAccess = (user = {}) => {
+  if (isDirectDeveloperUser(user)) return ['copetin', 'lincoln'];
+  const values = (Array.isArray(user?.companyAccess) ? user.companyAccess : [user?.companyAccess])
+    .map((value) => directNormalizeText(value).trim())
+    .map((value) => (value === 'lincon' ? 'lincoln' : value))
+    .filter((value) => ['copetin', 'lincoln'].includes(value));
+  return [...new Set(values)];
+};
+
+// Usuarios se confirma de forma atomica sobre su propia coleccion. Esto evita
+// que una carga global atrasada revierta companyAccess despues de cerrar el modal.
+router.put('/__copetin_db/users/:id', async (req, res, next) => {
+  try {
+    const userId = String(req.params.id ?? '').trim();
+    const actorUserId = String(req.body?.actorUserId ?? '').trim();
+    const submittedUser = req.body?.user && typeof req.body.user === 'object' && !Array.isArray(req.body.user)
+      ? req.body.user
+      : null;
+    if (!userId || !submittedUser || String(submittedUser.id ?? '').trim() !== userId) {
+      res.status(400).json({ error: 'El registro de usuario no es valido.' });
+      return;
+    }
+
+    let savedUser = null;
+    const result = await updateStateSnapshot((state) => {
+      state.users = Array.isArray(state.users) ? state.users : [];
+      const actor = state.users.find((user) => (
+        String(user?.id ?? '') === actorUserId
+        && !user?.deletedAt
+        && String(user?.status ?? 'active') === 'active'
+      ));
+      if (!actor || !isDirectDeveloperUser(actor)) {
+        const error = new Error('Solo el rol developer puede gestionar usuarios.');
+        error.statusCode = 403;
+        throw error;
+      }
+
+      const existingIndex = state.users.findIndex((user) => String(user?.id ?? '') === userId);
+      const existing = existingIndex >= 0 ? state.users[existingIndex] : null;
+      const username = String(submittedUser.username ?? '').trim().toLowerCase();
+      const fullName = String(submittedUser.fullName ?? '').trim();
+      const roleIds = getDirectUserRoleIds(submittedUser);
+      const companyAccess = normalizeDirectCompanyAccess(submittedUser);
+      if (!username || !fullName || roleIds.length === 0) {
+        const error = new Error('Nombre, usuario y rol son obligatorios.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (!isDirectDeveloperUser(submittedUser) && companyAccess.length === 0) {
+        const error = new Error('Selecciona al menos una empresa para el usuario.');
+        error.statusCode = 400;
+        throw error;
+      }
+      const duplicate = state.users.some((user) => (
+        String(user?.id ?? '') !== userId
+        && !user?.deletedAt
+        && String(user?.username ?? '').trim().toLowerCase() === username
+      ));
+      if (duplicate) {
+        const error = new Error('Ya existe otro usuario con ese nombre de usuario.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const candidate = {
+        ...(existing ?? {}),
+        ...submittedUser,
+        id: userId,
+        fullName,
+        username,
+        roleIds,
+        companyAccess,
+      };
+      if (!existing && !candidate.passwordHash) {
+        const error = new Error('El usuario nuevo debe tener una contrasena valida.');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (actorUserId === userId && (candidate.deletedAt || candidate.status === 'suspended')) {
+        const error = new Error('No puedes suspender ni eliminar al usuario actual.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const projectedUsers = existingIndex >= 0
+        ? state.users.map((user, index) => (index === existingIndex ? candidate : user))
+        : [...state.users, candidate];
+      const activeUsers = projectedUsers.filter((user) => !user?.deletedAt && user?.status === 'active');
+      if (!activeUsers.some(isDirectDeveloperUser)) {
+        const error = new Error('No puedes dejar el sistema sin un usuario developer activo.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (!activeUsers.some(isDirectAdministrativeUser)) {
+        const error = new Error('No puedes dejar el sistema sin usuarios administrativos activos.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      if (existingIndex >= 0) state.users[existingIndex] = candidate;
+      else state.users.push(candidate);
+      savedUser = structuredClone(candidate);
+      return state;
+    });
+
+    res.json({
+      ok: true,
+      user: savedUser,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/collections', async (req, res, next) => {
   try {
     const requestedNames = String(req.query.names ?? '')
