@@ -94,6 +94,7 @@ const readPayload = async () => {
 
 
 const INITIAL_PACKAGE_DOCUMENTS_MIGRATION = 'packageDocuments20260826';
+const SALON_GRANDE_EXTRAS_MIGRATION = 'salonGrandeExtras20260831';
 
 const seedServiceLine = ({ id, category, description, variantIds = [], catalogId = '' }) => ({
   id,
@@ -252,6 +253,7 @@ const initialPackageDocumentSeed = (state) => {
         seedServiceLine({ id: 'L-GR-012', category: 'SONIDO', description: 'Amplificación, iluminación y maestro de ceremonia', variantIds: ['VAR-GRANDE-PLATINO'], catalogId: 'SRV-DOC-012' }),
         seedServiceLine({ id: 'L-GR-013', category: 'PERSONAL', description: 'Coordinador de evento, recepcionista, guardia de seguridad, personal de limpieza y garzones', variantIds: [], catalogId: 'SRV-DOC-013' }),
         seedServiceLine({ id: 'L-GR-014', category: 'SALÓN', description: 'Alquiler de instalaciones del Salón Grande, gaseado de salón', variantIds: [], catalogId: 'SRV-DOC-014' }),
+        ...extraCatalog.map((item, index) => seedExtraLine({ id: `L-GR-EXT-${index + 1}`, description: item.description, priceBs: item.unitCostBs, costMode: item.costMode, catalogId: item.id })),
       ],
       servicesText: '', sourceDocument: 'PAQUETES SALÓN GRANDE', createdAt: nowIso(), updatedAt: nowIso(),
     },
@@ -329,11 +331,51 @@ const applyInitialPackageDocumentSeed = (state) => {
   return { state, changed: true };
 };
 
+const applySalonGrandeExtrasMigration = (state) => {
+  const settings = state.settings && typeof state.settings === 'object' && !Array.isArray(state.settings) ? state.settings : {};
+  const migrations = settings.dataMigrations && typeof settings.dataMigrations === 'object' && !Array.isArray(settings.dataMigrations)
+    ? settings.dataMigrations
+    : {};
+  if (migrations[SALON_GRANDE_EXTRAS_MIGRATION]) return { state, changed: false };
+
+  const largePackage = (state.packages ?? []).find((pkg) => (
+    String(pkg?.id ?? '') === 'PKG-DOC-SALON-GRANDE'
+    || String(pkg?.code ?? '') === 'PAQ-DOC-001'
+  ));
+  let extrasAdded = 0;
+  if (largePackage) {
+    const { extraCatalog } = initialPackageDocumentSeed(state);
+    const existingLines = Array.isArray(largePackage.serviceLines) ? largePackage.serviceLines : [];
+    const existingCatalogIds = new Set(existingLines.map((line) => String(line?.catalogId ?? '')).filter(Boolean));
+    const missingExtras = extraCatalog
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => !existingCatalogIds.has(String(item.id)))
+      .map(({ item, index }) => seedExtraLine({
+        id: `L-GR-EXT-${index + 1}`,
+        description: item.description,
+        priceBs: item.unitCostBs,
+        costMode: item.costMode,
+        catalogId: item.id,
+      }));
+    largePackage.serviceLines = [...existingLines, ...missingExtras];
+    largePackage.updatedAt = nowIso();
+    extrasAdded = missingExtras.length;
+  }
+  state.settings = {
+    ...settings,
+    dataMigrations: {
+      ...migrations,
+      [SALON_GRANDE_EXTRAS_MIGRATION]: { appliedAt: nowIso(), extrasAdded },
+    },
+  };
+  return { state, changed: true };
+};
+
 export const ensureLincolnStateStore = async () => {
   await fs.mkdir(path.dirname(stateFilePath), { recursive: true });
   const signature = await signatureForFile();
   if (!signature) {
-    const seeded = applyInitialPackageDocumentSeed(createEmptyLincolnState()).state;
+    const seeded = applySalonGrandeExtrasMigration(applyInitialPackageDocumentSeed(createEmptyLincolnState()).state).state;
     const updatedAt = new Date().toISOString();
     await writePayload({
       state: seeded,
@@ -346,8 +388,9 @@ export const ensureLincolnStateStore = async () => {
 
   const payload = await readPayload();
   const normalized = normalizeLincolnStateShape(payload?.state ?? createEmptyLincolnState());
-  const migration = applyInitialPackageDocumentSeed(normalized);
-  if (!migration.changed) return;
+  const initialMigration = applyInitialPackageDocumentSeed(normalized);
+  const migration = applySalonGrandeExtrasMigration(initialMigration.state);
+  if (!initialMigration.changed && !migration.changed) return;
   const version = Number(payload?.version ?? 1) + 1;
   const checksum = checksumForState(migration.state);
   const updatedAt = new Date().toISOString();
