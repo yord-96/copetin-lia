@@ -1,5 +1,6 @@
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups';
+import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex';
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
@@ -757,6 +758,56 @@ const fetchInventoryDamageLossOverview = async () => {
   const payload = await response.json();
   if (payload?.revision) rememberServerRevision(payload.revision);
   return payload;
+};
+
+const fetchProductsKardex = async () => {
+  if (!shouldUseServerState()) {
+    const [items, movements] = await Promise.all([
+      callBridge('inventory', 'list', false),
+      callBridge('inventory', 'listMovements', false),
+    ]);
+    return { rows: buildInventoryKardexRows(items, movements) };
+  }
+  const response = await fetch(getServerStateUrl('/inventory/products-kardex'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar el kardex de productos.');
+  return response.json();
+};
+
+const fetchProductKardexHistory = async ({ itemId, metric = 'current' } = {}) => {
+  const normalizedItemId = String(itemId ?? '').trim();
+  if (!normalizedItemId) throw new Error('Debes seleccionar un producto.');
+  if (!shouldUseServerState()) {
+    const [items, movements] = await Promise.all([
+      callBridge('inventory', 'list', false),
+      callBridge('inventory', 'listMovements', false),
+    ]);
+    const item = items.find((entry) => String(entry?.id ?? '') === normalizedItemId);
+    const itemMovements = movements.filter((entry) => String(entry?.itemId ?? '') === normalizedItemId);
+    const matching = filterInventoryKardexMovements(itemMovements, metric)
+      .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
+    return {
+      item,
+      metric,
+      summary: buildInventoryKardexRows(item ? [item] : [], itemMovements)[0] ?? null,
+      movements: matching.slice(0, 200).map((movement) => ({
+        ...movement,
+        physicalDelta: getMovementPhysicalDelta(movement),
+        availableDelta: getMovementAvailableDelta(movement),
+      })),
+      totalMatches: matching.length,
+      truncated: matching.length > 200,
+    };
+  }
+  const query = new URLSearchParams({ metric: String(metric ?? 'current') });
+  const response = await fetch(getServerStateUrl(`/inventory/products/${encodeURIComponent(normalizedItemId)}/kardex?${query}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar el historial del producto.');
+  return response.json();
 };
 
 const ensureServerCollectionsLoaded = async (names, reason = 'deferred-load') => {
@@ -3434,6 +3485,8 @@ export const api = {
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     getDamageLossOverview: fetchInventoryDamageLossOverview,
+    getProductsKardex: fetchProductsKardex,
+    getProductKardexHistory: fetchProductKardexHistory,
     reinsertRepairedDamage: (payload) => callDirectDamageRepairReinsert(payload),
     listRecoveries: async () => {
       if (shouldUseServerState()) {

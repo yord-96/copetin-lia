@@ -71798,3 +71798,207 @@ button.inventory-loss-row-action:hover {
     font-size: 0.58rem !important;
   }
 }
+
+/* Kardex de productos: resumen operativo con trazabilidad bajo demanda. */
+.inventory-view-products .inventory-table-modern {
+  min-width: 1380px;
+}
+
+.inventory-view-products .inventory-table-modern th:nth-child(1),
+.inventory-view-products .inventory-table-modern td:nth-child(1) { width: 23%; }
+.inventory-view-products .inventory-table-modern th:nth-child(2),
+.inventory-view-products .inventory-table-modern td:nth-child(2) { width: 9%; }
+.inventory-view-products .inventory-table-modern th:nth-child(3),
+.inventory-view-products .inventory-table-modern td:nth-child(3) { width: 9%; }
+.inventory-view-products .inventory-table-modern th:nth-child(4),
+.inventory-view-products .inventory-table-modern td:nth-child(4) { width: 10%; }
+.inventory-view-products .inventory-table-modern th:nth-child(5),
+.inventory-view-products .inventory-table-modern td:nth-child(5),
+.inventory-view-products .inventory-table-modern th:nth-child(6),
+.inventory-view-products .inventory-table-modern td:nth-child(6),
+.inventory-view-products .inventory-table-modern th:nth-child(7),
+.inventory-view-products .inventory-table-modern td:nth-child(7),
+.inventory-view-products .inventory-table-modern th:nth-child(8),
+.inventory-view-products .inventory-table-modern td:nth-child(8),
+.inventory-view-products .inventory-table-modern th:nth-child(9),
+.inventory-view-products .inventory-table-modern td:nth-child(9) { width: 7%; text-align: center; }
+.inventory-view-products .inventory-table-modern th:nth-child(10),
+.inventory-view-products .inventory-table-modern td:nth-child(10) { width: 8%; }
+.inventory-view-products .inventory-table-modern th:nth-child(11),
+.inventory-view-products .inventory-table-modern td:nth-child(11) { width: 5%; text-align: center; }
+
+.inventory-kardex-price,
+.inventory-kardex-charges {
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-kardex-price strong {
+  display: block;
+  color: #102b59;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.inventory-kardex-price span,
+.inventory-kardex-charges > span {
+  display: block;
+  color: #73809b;
+  font-size: 0.69rem;
+  font-weight: 760;
+}
+
+.inventory-kardex-charges > span + span { margin-top: 0.26rem; }
+.inventory-kardex-charges strong { color: #102b59; }
+
+.inventory-kardex-number {
+  display: inline-flex;
+  min-width: 3.7rem;
+  min-height: 3.05rem;
+  padding: 0.35rem 0.42rem;
+  border: 1px solid #d8e0ec;
+  border-radius: 0.68rem;
+  background: #f8faff;
+  color: #102b59;
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.inventory-kardex-number:hover {
+  z-index: 1;
+  border-color: #ef5a18;
+  box-shadow: 0 0.4rem 0.9rem rgba(239, 90, 24, 0.14);
+  transform: translateY(-1px);
+}
+
+.inventory-kardex-number strong {
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-kardex-number span {
+  margin-top: 0.3rem;
+  color: #77839a;
+  font-size: 0.6rem;
+  font-weight: 850;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.inventory-kardex-number.is-in { border-color: #b9e2d2; background: #f0fbf6; color: #187552; }
+.inventory-kardex-number.is-out { border-color: #f2c8cb; background: #fff5f5; color: #c24450; }
+.inventory-kardex-number.is-current { border-color: #aebdd7; background: #edf3ff; }
+.inventory-kardex-number.is-available { border-color: #b9e2d2; background: #f1fbf7; color: #187552; }
+.inventory-kardex-number.is-available.is-low { border-color: #f0c98e; background: #fff8e8; color: #a55c00; }
+
+.inventory-kardex-backdrop { z-index: 240; }
+.inventory-kardex-modal {
+  width: min(1180px, calc(100vw - 2rem));
+  max-width: 1180px;
+  max-height: min(88vh, 850px);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+.inventory-kardex-modal-header {
+  display: flex;
+  padding: 1.15rem 1.3rem;
+  border-bottom: 1px solid #e3e8f1;
+  background: linear-gradient(120deg, #fffaf7, #f4f8ff);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inventory-kardex-modal-header span { color: #c3451d; font-size: 0.68rem; font-weight: 950; letter-spacing: 0.06em; }
+.inventory-kardex-modal-header h3 { margin: 0.18rem 0 0; color: #102b59; font-size: 1.3rem; text-transform: uppercase; }
+.inventory-kardex-modal-header p { margin: 0.28rem 0 0; color: #6d7890; font-size: 0.82rem; }
+.inventory-kardex-close {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid #e4d2c8;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: #a3202b;
+  font-size: 1.3rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.inventory-kardex-summary {
+  display: grid;
+  padding: 1rem 1.3rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.inventory-kardex-summary button {
+  display: flex;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #dce3ee;
+  border-radius: 0.72rem;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  flex-direction: column;
+}
+.inventory-kardex-summary button.active { border-color: #ef5a18; box-shadow: inset 0 0 0 1px #ef5a18; background: #fff8f3; }
+.inventory-kardex-summary span { color: #6d7890; font-size: 0.68rem; font-weight: 850; text-transform: uppercase; }
+.inventory-kardex-summary strong { margin-top: 0.18rem; color: #102b59; font-size: 1.2rem; font-weight: 950; }
+.inventory-kardex-summary .positive, .inventory-kardex-history .positive { color: #16835a; }
+.inventory-kardex-summary .negative, .inventory-kardex-history .negative { color: #c23e49; }
+
+.inventory-kardex-equation {
+  display: grid;
+  margin: 0 1.3rem 1.3rem;
+  padding: 1.5rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 0.85rem;
+  background: #f8faff;
+  grid-template-columns: repeat(7, auto);
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.8rem;
+}
+.inventory-kardex-equation strong { color: #102b59; font-size: 1.65rem; font-weight: 950; text-align: center; }
+.inventory-kardex-equation strong.result { color: #e65016; }
+.inventory-kardex-equation > span { color: #748098; font-size: 0.68rem; font-weight: 800; text-align: center; grid-row: 2; }
+.inventory-kardex-equation b { color: #7d8798; font-size: 1.15rem; grid-row: 1 / span 2; }
+.inventory-kardex-equation p { margin: 1rem 0 0; color: #5f6e87; font-size: 0.8rem; text-align: center; grid-column: 1 / -1; }
+
+.inventory-kardex-history-wrap {
+  max-height: 52vh;
+  margin: 0 1.3rem;
+  overflow: auto;
+  border: 1px solid #dce3ee;
+  border-radius: 0.78rem;
+}
+.inventory-kardex-history { width: 100%; border-collapse: collapse; }
+.inventory-kardex-history th { position: sticky; z-index: 1; top: 0; padding: 0.7rem; background: #102b59; color: #fff; font-size: 0.68rem; text-align: left; text-transform: uppercase; }
+.inventory-kardex-history td { padding: 0.7rem; border-bottom: 1px solid #e3e8f0; color: #263653; font-size: 0.76rem; vertical-align: middle; }
+.inventory-kardex-history tbody tr:nth-child(even) { background: #f7f9fd; }
+.inventory-kardex-history td:nth-child(2) { min-width: 240px; }
+.inventory-kardex-history td strong, .inventory-kardex-history td small { display: block; }
+.inventory-kardex-history td small { margin-top: 0.2rem; color: #7b8698; }
+.inventory-kardex-type { display: inline-flex; margin-bottom: 0.28rem; padding: 0.15rem 0.4rem; border-radius: 999px; background: #eef3fa; font-size: 0.62rem; font-weight: 900; text-transform: uppercase; }
+.inventory-kardex-truncated { margin: 0.7rem 1.3rem 1rem; color: #7a8496; font-size: 0.72rem; text-align: right; }
+
+@media (max-width: 900px) {
+  .inventory-view-products .inventory-table-wrap-modern { overflow-x: auto; }
+  .inventory-view-products .inventory-table-modern { display: table; min-width: 1320px; }
+  .inventory-view-products .inventory-table-modern thead { display: table-header-group; }
+  .inventory-view-products .inventory-table-modern tbody { display: table-row-group; }
+  .inventory-view-products .inventory-table-modern tr { display: table-row; }
+  .inventory-view-products .inventory-table-modern th,
+  .inventory-view-products .inventory-table-modern td { display: table-cell; }
+  .inventory-view-products .inventory-table-modern td::before,
+  .inventory-view-products .inventory-table-modern td::after,
+  .inventory-view-products .inventory-table-modern tr::before { display: none !important; }
+  .inventory-kardex-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory-kardex-equation { overflow-x: auto; justify-content: start; }
+}

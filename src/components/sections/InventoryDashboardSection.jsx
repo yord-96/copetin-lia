@@ -1608,6 +1608,9 @@ function InventoryDashboardSection({
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
   const [productError, setProductError] = useState('');
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [productKardexById, setProductKardexById] = useState({});
+  const [productKardexLoading, setProductKardexLoading] = useState(false);
+  const [productKardexModal, setProductKardexModal] = useState(null);
   const [areaAssignment, setAreaAssignment] = useState(null);
   const [isSavingArea, setIsSavingArea] = useState(false);
   const [comboModalMode, setComboModalMode] = useState(null);
@@ -1750,6 +1753,29 @@ function InventoryDashboardSection({
   const isAdjustModule = activeModule === 'inventario_ajustes';
   const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isMaintenanceModule && !isAdjustModule;
 
+  useEffect(() => {
+    if (!isProductsModule) return undefined;
+    let isCurrent = true;
+    setProductKardexLoading(true);
+    api.inventory.getProductsKardex()
+      .then((payload) => {
+        if (!isCurrent) return;
+        const nextRows = Object.fromEntries((Array.isArray(payload?.rows) ? payload.rows : [])
+          .map((row) => [String(row?.itemId ?? ''), row])
+          .filter(([itemId]) => itemId));
+        setProductKardexById(nextRows);
+      })
+      .catch((error) => {
+        if (!isCurrent) return;
+        setFeedback(error?.message || 'No se pudo cargar el resumen kardex.');
+        setFeedbackType('error');
+      })
+      .finally(() => {
+        if (isCurrent) setProductKardexLoading(false);
+      });
+    return () => { isCurrent = false; };
+  }, [isProductsModule, items]);
+
   const moduleViewClass = isMaintenanceModule
     ? 'inventory-view-maintenance'
     : isMovementsModule
@@ -1781,7 +1807,7 @@ function InventoryDashboardSection({
   const moduleSubtitle = isMaintenanceModule
     ? 'Kardex de pérdidas confirmadas por devolución: unidades dañadas, faltantes, valores, contratos y fechas'
     : isProductsModule
-    ? 'Gestiona el catalogo de items alquilables'
+    ? 'Kardex completo por producto: precios, movimientos, stock físico y disponibilidad trazable'
     : isCombosModule
     ? 'Arma paquetes con productos existentes, precio propio y control de stock por ingrediente'
     : isCategoriesModule
@@ -2707,6 +2733,7 @@ function InventoryDashboardSection({
         && totalStock > 0;
       const lowThreshold = Math.max(3, Math.ceil(totalStock * 0.15));
       const lowAvailability = stockControlled && effectiveAvailable <= lowThreshold;
+      const kardex = productKardexById[String(item.id ?? '')] ?? null;
       return {
         id: item.id,
         name: item.name,
@@ -2724,6 +2751,10 @@ function InventoryDashboardSection({
         reserved,
         maintenance,
         total: totalStock,
+        initialStock: Number(kardex?.initialStock ?? totalStock),
+        stockIn: Number(kardex?.stockIn ?? 0),
+        stockOut: Number(kardex?.stockOut ?? 0),
+        kardexMovementCount: Number(kardex?.movementCount ?? 0),
         controlsStock: stockControlled,
         verificationStatus: item.verificationStatus ?? (stockControlled ? 'verified' : 'pending_verification'),
         adoptionSource: item.adoptionSource ?? '',
@@ -2737,7 +2768,7 @@ function InventoryDashboardSection({
         usage: itemUsageById.get(item.id) ?? [],
       };
     });
-  }, [itemUsageById, items, maintenanceByItem, reservedByItem]);
+  }, [itemUsageById, items, maintenanceByItem, productKardexById, reservedByItem]);
 
   const detailUsageRows = useMemo(() => {
     const rows = Array.isArray(detailRow?.usage) ? detailRow.usage : [];
@@ -3342,6 +3373,24 @@ function InventoryDashboardSection({
   const showMessage = (message, type = 'ok') => {
     setFeedback(message);
     setFeedbackType(type);
+  };
+
+  const openProductKardex = async (row, metric) => {
+    setProductKardexModal({ row, metric, loading: true, data: null, error: '' });
+    try {
+      const data = await api.inventory.getProductKardexHistory({ itemId: row.id, metric });
+      setProductKardexModal((current) => (
+        current?.row?.id === row.id && current?.metric === metric
+          ? { ...current, loading: false, data }
+          : current
+      ));
+    } catch (error) {
+      setProductKardexModal((current) => (
+        current?.row?.id === row.id && current?.metric === metric
+          ? { ...current, loading: false, error: error?.message || 'No se pudo cargar el historial.' }
+          : current
+      ));
+    }
   };
 
   const resetAdvancedFilters = () => {
@@ -6265,10 +6314,12 @@ function InventoryDashboardSection({
                     <tr>
                       <th>Producto</th>
                       <th>Categoria</th>
-                      {isProductsModule ? <th>Marca</th> : null}
-                      {isProductsModule ? <th>Color / descripcion</th> : null}
-                      {isProductsModule ? <th>Unidad</th> : null}
-                      {isProductsModule ? <th>Stock</th> : null}
+                      {isProductsModule ? <th>Precio alquiler</th> : null}
+                      {isProductsModule ? <th>Cargos unitarios</th> : null}
+                      {isProductsModule ? <th>Inicio</th> : null}
+                      {isProductsModule ? <th>Entradas</th> : null}
+                      {isProductsModule ? <th>Bajas</th> : null}
+                      {isProductsModule ? <th>Stock actual</th> : null}
                       <th>Disponible</th>
                       {!isProductsModule ? <th>Reservado</th> : null}
                       {!isProductsModule ? <th>En Mantenimiento</th> : null}
@@ -6303,20 +6354,36 @@ function InventoryDashboardSection({
                             <div>
                               <strong>{row.name}</strong>
                               <span>Codigo: {row.sku}</span>
+                              {isProductsModule && (row.brand || row.itemColor) ? (
+                                <span>{[row.brand, row.itemColor].filter(Boolean).join(' · ')}</span>
+                              ) : null}
                             </div>
                           </div>
                         </td>
                         <td><span className={`inventory-pill ${toCategoryClass(row.category)}`}>{row.category}</span></td>
-                        {isProductsModule ? <td className="inventory-attribute-cell">{row.brand || '-'}</td> : null}
-                        {isProductsModule ? <td className="inventory-attribute-cell">{row.itemColor || '-'}</td> : null}
-                        {isProductsModule ? <td>Unidad</td> : null}
-                        {isProductsModule ? <td>{row.total}</td> : null}
-                        <td className={!row.controlsStock ? 'muted' : row.lowAvailability ? 'bad' : 'good'}>
-                          {row.controlsStock ? row.available : 'No controla'}
-                        </td>
-                        {!isProductsModule ? <td className="warn">{row.reserved}</td> : null}
-                        {!isProductsModule ? <td className="bad">{row.maintenance}</td> : null}
-                        {!isProductsModule ? <td>{row.total}</td> : null}
+                        {isProductsModule ? (
+                          <>
+                            <td className="inventory-kardex-price"><strong>{formatBs(row.price)}</strong><span>por unidad</span></td>
+                            <td className="inventory-kardex-charges">
+                              <span>Daño <strong>{formatBs(row.damagedUnitChargeBs)}</strong></span>
+                              <span>Falta <strong>{formatBs(row.missingUnitChargeBs)}</strong></span>
+                            </td>
+                            <td><button type="button" className="inventory-kardex-number is-initial" onClick={() => openProductKardex(row, 'initial')}><strong>{row.initialStock}</strong><span>Ver origen</span></button></td>
+                            <td><button type="button" className="inventory-kardex-number is-in" onClick={() => openProductKardex(row, 'increases')}><strong>+{row.stockIn}</strong><span>Ver entradas</span></button></td>
+                            <td><button type="button" className="inventory-kardex-number is-out" onClick={() => openProductKardex(row, 'decreases')}><strong>-{row.stockOut}</strong><span>Ver bajas</span></button></td>
+                            <td><button type="button" className="inventory-kardex-number is-current" onClick={() => openProductKardex(row, 'current')}><strong>{row.total}</strong><span>Físico</span></button></td>
+                            <td><button type="button" className={`inventory-kardex-number is-available ${row.lowAvailability ? 'is-low' : ''}`} onClick={() => openProductKardex(row, 'available')}><strong>{row.controlsStock ? row.available : '-'}</strong><span>{row.reserved > 0 ? `${row.reserved} comprometido` : 'Libre'}</span></button></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className={!row.controlsStock ? 'muted' : row.lowAvailability ? 'bad' : 'good'}>
+                              {row.controlsStock ? row.available : 'No controla'}
+                            </td>
+                            <td className="warn">{row.reserved}</td>
+                            <td className="bad">{row.maintenance}</td>
+                            <td>{row.total}</td>
+                          </>
+                        )}
                         <td>
                           <span className={!row.controlsStock ? 'inventory-status pending' : row.lowAvailability ? 'inventory-status low' : 'inventory-status ok'}>
                             {!row.controlsStock ? 'Por validar' : row.lowAvailability ? 'Stock Bajo' : 'Controlado'}
@@ -6344,7 +6411,7 @@ function InventoryDashboardSection({
                     ))}
                     {pagedRows.length === 0 ? (
                       <tr>
-                        <td colSpan={isProductsModule ? 10 : 9}><p className="status">No hay productos para los filtros actuales.</p></td>
+                        <td colSpan={isProductsModule ? 11 : 9}><p className="status">No hay productos para los filtros actuales.</p></td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -6354,7 +6421,9 @@ function InventoryDashboardSection({
 
             <footer className="inventory-table-footer-modern">
               <span>
-                Mostrando {pagedRows.length} de {filteredRows.length} {isMovementsModule ? 'movimientos' : isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}
+                {isProductsModule && productKardexLoading
+                  ? 'Actualizando cifras del kardex...'
+                  : `Mostrando ${pagedRows.length} de ${filteredRows.length} ${isMovementsModule ? 'movimientos' : isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}`}
               </span>
               <div className="inventory-pagination-modern">
                 <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))}>{'<'}</button>
@@ -6489,6 +6558,86 @@ function InventoryDashboardSection({
                 Gestionar categorias
               </button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {productKardexModal ? (
+        <div className="reset-modal-backdrop inventory-kardex-backdrop" onClick={() => setProductKardexModal(null)}>
+          <section className="reset-modal inventory-kardex-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="inventory-kardex-modal-header">
+              <div>
+                <span>KARDEX DEL PRODUCTO</span>
+                <h3>{productKardexModal.row.name}</h3>
+                <p>
+                  {productKardexModal.metric === 'initial' ? 'Cómo se obtiene el stock de inicio'
+                    : productKardexModal.metric === 'increases' ? 'Historial de aumentos de stock físico'
+                    : productKardexModal.metric === 'decreases' ? 'Historial de bajas de stock físico'
+                    : productKardexModal.metric === 'available' ? 'Movimientos que explican la disponibilidad'
+                    : 'Movimientos que explican el stock físico actual'}
+                </p>
+              </div>
+              <button type="button" className="inventory-kardex-close" onClick={() => setProductKardexModal(null)} aria-label="Cerrar kardex">×</button>
+            </header>
+
+            {productKardexModal.loading ? <p className="status">Cargando trazabilidad del producto...</p> : null}
+            {productKardexModal.error ? <p className="status error">{productKardexModal.error}</p> : null}
+            {productKardexModal.data ? (
+              <>
+                <div className="inventory-kardex-summary">
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'initial')} className={productKardexModal.metric === 'initial' ? 'active' : ''}><span>Inicio</span><strong>{productKardexModal.data.summary?.initialStock ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'increases')} className={productKardexModal.metric === 'increases' ? 'active' : ''}><span>Entradas</span><strong className="positive">+{productKardexModal.data.summary?.stockIn ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'decreases')} className={productKardexModal.metric === 'decreases' ? 'active' : ''}><span>Bajas</span><strong className="negative">-{productKardexModal.data.summary?.stockOut ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'current')} className={productKardexModal.metric === 'current' ? 'active' : ''}><span>Stock actual</span><strong>{productKardexModal.data.summary?.currentStock ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'available')} className={productKardexModal.metric === 'available' ? 'active' : ''}><span>Disponible</span><strong>{productKardexModal.data.summary?.availableStock ?? 0}</strong></button>
+                </div>
+
+                {productKardexModal.metric === 'initial' ? (
+                  <div className="inventory-kardex-equation">
+                    <strong>{productKardexModal.data.summary?.currentStock ?? 0}</strong>
+                    <span>stock actual</span><b>−</b>
+                    <strong>{productKardexModal.data.summary?.stockIn ?? 0}</strong>
+                    <span>entradas</span><b>+</b>
+                    <strong>{productKardexModal.data.summary?.stockOut ?? 0}</strong>
+                    <span>bajas</span><b>=</b>
+                    <strong className="result">{productKardexModal.data.summary?.initialStock ?? 0}</strong>
+                    <span>stock inicial</span>
+                    <p>
+                      El inicio se reconstruye con todos los movimientos físicos registrados, por eso siempre concilia con el stock actual.
+                      {productKardexModal.data.item?.createdAt ? ` Producto registrado el ${formatDateTime(productKardexModal.data.item.createdAt)}` : ''}
+                      {productKardexModal.data.item?.createdByName ? ` por ${productKardexModal.data.item.createdByName}.` : '.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="inventory-kardex-history-wrap">
+                    <table className="inventory-kardex-history">
+                      <thead><tr><th>Fecha y hora</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
+                      <tbody>
+                        {(productKardexModal.data.movements ?? []).map((movement) => {
+                          const availabilityMetric = productKardexModal.metric === 'available';
+                          const delta = Number(availabilityMetric ? movement.availableDelta : movement.physicalDelta);
+                          const before = availabilityMetric ? movement.beforeAvailableStock : movement.beforeTotalStock;
+                          const after = availabilityMetric ? movement.afterAvailableStock : movement.afterTotalStock;
+                          return (
+                            <tr key={movement.id}>
+                              <td><strong>{formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
+                              <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && movement.reason ? <small>{movement.detail}</small> : null}</td>
+                              <td>{movement.reference || movement.contractCode || '-'}</td>
+                              <td><strong className={delta >= 0 ? 'positive' : 'negative'}>{delta > 0 ? `+${delta}` : delta}</strong></td>
+                              <td>{before ?? '-'}</td>
+                              <td><strong>{after ?? '-'}</strong></td>
+                              <td>{movement.userName || 'Sistema'}<small>{movement.userRole || ''}</small></td>
+                            </tr>
+                          );
+                        })}
+                        {(productKardexModal.data.movements ?? []).length === 0 ? <tr><td colSpan={7}><p className="status">No existen movimientos de este tipo.</p></td></tr> : null}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {productKardexModal.data.truncated ? <p className="inventory-kardex-truncated">Mostrando los 200 movimientos más recientes de {productKardexModal.data.totalMatches}.</p> : null}
+              </>
+            ) : null}
           </section>
         </div>
       ) : null}

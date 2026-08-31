@@ -13,6 +13,12 @@ import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRenta
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
+import {
+  buildInventoryKardexRows,
+  filterInventoryKardexMovements,
+  getMovementAvailableDelta,
+  getMovementPhysicalDelta,
+} from '../../src/utils/inventoryKardex.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -8302,6 +8308,71 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
         inventoryMovements: recentMovements,
         movementStats,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/inventory/products-kardex', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const rows = buildInventoryKardexRows(state.items, state.inventoryMovements);
+    await sendJsonPayload(req, res, {
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, next) => {
+  try {
+    const itemId = String(req.params.itemId ?? '').trim();
+    const metric = String(req.query?.metric ?? 'current').trim().toLowerCase();
+    const allowedMetrics = new Set(['initial', 'increases', 'decreases', 'current', 'available']);
+    if (!itemId || !allowedMetrics.has(metric)) {
+      return res.status(400).json({ error: 'La consulta de kardex no es válida.' });
+    }
+
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const item = (Array.isArray(state.items) ? state.items : [])
+      .find((entry) => String(entry?.id ?? '') === itemId && !entry?.deletedAt);
+    if (!item) return res.status(404).json({ error: 'El producto ya no existe.' });
+
+    const allItemMovements = (Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [])
+      .filter((movement) => String(movement?.itemId ?? '') === itemId);
+    const [summary] = buildInventoryKardexRows([item], allItemMovements);
+    const matchingMovements = filterInventoryKardexMovements(allItemMovements, metric)
+      .slice()
+      .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
+    const limit = Math.min(500, Math.max(25, Math.trunc(Number(req.query?.limit ?? 200)) || 200));
+    const movements = matchingMovements.slice(0, limit).map((movement) => ({
+      ...summarizeInventoryMovement(movement),
+      physicalDelta: getMovementPhysicalDelta(movement),
+      availableDelta: getMovementAvailableDelta(movement),
+    }));
+
+    return res.json({
+      revision: snapshot.revision,
+      item: {
+        id: item.id,
+        name: item.name,
+        sku: item.sku ?? '',
+        category: item.category ?? '',
+        createdAt: item.createdAt ?? null,
+        createdByName: item.createdByName ?? item.createdBy ?? '',
+      },
+      metric,
+      summary,
+      movements,
+      totalMatches: matchingMovements.length,
+      truncated: matchingMovements.length > movements.length,
     });
   } catch (error) {
     next(error);
