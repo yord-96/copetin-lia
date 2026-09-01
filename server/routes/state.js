@@ -1953,6 +1953,55 @@ const getDirectCurrentCashSession = (state) => (
     )) ?? null
 );
 
+const reconstructDirectCashSessionFromMovements = (state) => {
+  if (getDirectCurrentCashSession(state)) return null;
+
+  const currentPettyMovements = (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !isArchivedAccountingRecord(movement))
+    .filter((movement) => !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
+    .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH')
+    .filter((movement) => String(movement?.sessionId ?? '').trim());
+
+  if (!currentPettyMovements.length) return null;
+
+  const pettyCashBalanceBs = Number(currentPettyMovements
+    .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
+    .toFixed(2));
+  if (pettyCashBalanceBs <= 0) return null;
+
+  const latestMovement = [...currentPettyMovements]
+    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))[0];
+  const sessionId = String(latestMovement?.sessionId ?? '').trim();
+  const sessionMovements = currentPettyMovements.filter(
+    (movement) => String(movement?.sessionId ?? '').trim() === sessionId,
+  );
+  const firstMovement = [...sessionMovements]
+    .sort((a, b) => new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0))[0] ?? latestMovement;
+  const accountingPeriodId = String(
+    latestMovement?.accountingPeriodId
+    ?? firstMovement?.accountingPeriodId
+    ?? state?.settings?.accounting?.currentPeriodId
+    ?? '',
+  ).trim() || null;
+
+  return {
+    id: sessionId,
+    status: 'open',
+    openingAmountBs: 0,
+    openingBigCashBs: 0,
+    openingPettyCashBs: 0,
+    openedBy: String(firstMovement?.createdBy ?? firstMovement?.responsible ?? 'Sistema').trim() || 'Sistema',
+    openedAt: firstMovement?.createdAt ?? new Date().toISOString(),
+    openNotes: 'Sesion recuperada automaticamente desde movimientos vigentes de Caja Chica.',
+    accountingPeriodId,
+    accountingPeriodStatus: 'current',
+    treasuryAccounts: [],
+    treasuryUpdatedAt: null,
+    treasuryUpdatedBy: '',
+    recoveredFromMovements: true,
+  };
+};
+
 const getDirectCurrentCashBalance = (state, cashBoxType) => Number(
   (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
     .filter((movement) => !isArchivedAccountingRecord(movement))
@@ -3816,7 +3865,7 @@ router.get('/__copetin_db/accounting/summary', async (req, res, next) => {
       .filter((session) => !isArchivedAccountingRecord(session));
     const activeSession = currentSessions.find(
       (session) => String(session?.status ?? '').toLowerCase() === 'open',
-    ) ?? null;
+    ) ?? reconstructDirectCashSessionFromMovements(state);
 
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -4190,6 +4239,13 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
       }
 
       let activeSession = getDirectCurrentCashSession(state);
+      if (!activeSession) {
+        const recoveredSession = reconstructDirectCashSessionFromMovements(state);
+        if (recoveredSession) {
+          state.cashSessions.push(recoveredSession);
+          activeSession = recoveredSession;
+        }
+      }
       if (!activeSession && payload.type === 'transferencia') {
         activeSession = {
           id: directId('cash'),
