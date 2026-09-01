@@ -2868,7 +2868,7 @@ function InventoryDashboardSection({
   }, [activeRentals]);
 
   const inventoryRows = useMemo(() => {
-    return items.map((item) => {
+    return items.filter((item) => item && !item.deletedAt).map((item) => {
       const reserved = Number(reservedByItem[item.id] ?? 0);
       const maintenance = Number(maintenanceByItem[item.id] ?? 0);
       const totalStock = Number(item.totalStock ?? 0);
