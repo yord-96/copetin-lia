@@ -72136,3 +72136,59 @@ button.inventory-loss-row-action:hover {
   border-color: #ef9b6c;
   background: #fff5ee;
 }
+
+/* Proveedores / Caja Chica: vinculo claro entre subalquiler y contrato comercial. */
+.suppliers-loans-table td {
+  vertical-align: top;
+}
+
+.suppliers-loans-table td > small,
+.petty-supplier-loans-table td > small {
+  display: block;
+  margin-top: 0.18rem;
+}
+
+.supplier-contract-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #173b72;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.supplier-contract-link:hover {
+  color: #e65300;
+}
+
+.supplier-items-cell {
+  min-width: 220px;
+}
+
+.supplier-items-cell span {
+  display: block;
+  line-height: 1.35;
+}
+
+.supplier-items-cell span + span {
+  margin-top: 0.2rem;
+}
+
+.supplier-cost-missing {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0.2rem 0.48rem;
+  border: 1px solid #f3c9a9;
+  border-radius: 999px;
+  background: #fff6ee;
+  color: #b94b0a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}

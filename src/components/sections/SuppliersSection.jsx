@@ -178,7 +178,9 @@ const writeSuppliersViewCache = (bundle) => {
 function SuppliersSection({
   supplierBundle,
   items = [],
+  contracts = [],
   formatBs,
+  onPrintContractDocument,
   onCreateSupplier,
   onUpdateSupplier,
   onCreateSupplierQuote,
@@ -200,6 +202,40 @@ function SuppliersSection({
     () => localBundle?.loans ?? supplierBundle?.loans ?? [],
     [localBundle?.loans, supplierBundle?.loans],
   );
+
+  const contractById = useMemo(
+    () => new Map(contracts.filter((contract) => contract?.id).map((contract) => [String(contract.id), contract])),
+    [contracts],
+  );
+
+  const getLinkedContract = useCallback((loan) => {
+    const sourceContractId = String(loan?.sourceContractId ?? '').trim();
+    return sourceContractId ? contractById.get(sourceContractId) ?? null : null;
+  }, [contractById]);
+
+  const openLinkedContract = useCallback(async (loan) => {
+    const contract = getLinkedContract(loan);
+    if (!contract) {
+      setError('No se encontro el contrato vinculado a esta solicitud.');
+      return;
+    }
+    try {
+      const preview = await onPrintContractDocument?.({
+        contractId: contract.id,
+        contractCode: contract.contractCode,
+        rentalId: contract.rentalId ?? loan?.sourceRentalId ?? null,
+        orderCode: loan?.sourceOrderCode ?? null,
+      });
+      if (!preview?.html) throw new Error('No se pudo generar la vista del contrato.');
+      setDocumentPreview({
+        title: preview.title ?? `Contrato ${contract.contractCode}`,
+        html: preview.html,
+        contractPreview: true,
+      });
+    } catch (requestError) {
+      setError(requestError?.message || 'No se pudo abrir el contrato vinculado.');
+    }
+  }, [getLinkedContract, onPrintContractDocument]);
 
   const [activeView, setActiveView] = useState('proveedores');
   const [supplierForm, setSupplierForm] = useState(EMPTY_SUPPLIER);
@@ -1147,14 +1183,27 @@ function SuppliersSection({
               <button type="button" className="ghost-button" onClick={clearLoanFilters}>Limpiar filtros</button>
             </div>
             <div className="suppliers-table-wrap">
-              <table className="suppliers-table"><thead><tr><th>Codigo</th><th>Proveedor</th><th>Referencia</th><th>Fecha</th><th>A pagar</th><th>Venta ref.</th><th>Estado</th><th></th></tr></thead><tbody>
-                {filteredLoans.map((loan) => (
-                  <tr key={loan.id}>
-                    <td>{loan.loanCode}</td><td>{loan.supplierName}</td><td>{getSupplierLoanReferenceLabel(loan)}</td><td>{formatDate(getSupplierLoanEventDate(loan))}</td><td>{formatBs(loan?.totals?.totalBs ?? 0)}</td><td>{formatBs((loan.items ?? []).reduce((sum, line) => sum + getLineSaleTotal(line), 0))}</td><td>{loan.status}</td>
-                    <td className="supplier-table-actions"><button type="button" className="link-button" onClick={() => setDocumentPreview({ title: loan.loanCode, html: createDocumentHtml(loan) })}>Documento</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'devuelto')}>Devuelto</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'liquidado')}>Liquidado</button></td>
-                  </tr>
-                ))}
-                {filteredLoans.length === 0 ? <tr><td colSpan={8}>Sin solicitudes con esos filtros.</td></tr> : null}
+              <table className="suppliers-table suppliers-loans-table"><thead><tr><th>Solicitud</th><th>Proveedor</th><th>Contrato</th><th>Cliente</th><th>Items / cantidad</th><th>Fecha</th><th>Costo proveedor</th><th>Estado</th><th></th></tr></thead><tbody>
+                {filteredLoans.map((loan) => {
+                  const linkedContract = getLinkedContract(loan);
+                  const contractCode = linkedContract?.contractCode || getSupplierLoanContractCode(loan) || '-';
+                  const customerName = linkedContract?.customerName || linkedContract?.companyName || '-';
+                  const totalCostBs = Number(loan?.totals?.totalBs ?? 0);
+                  return (
+                    <tr key={loan.id}>
+                      <td><strong>{loan.loanCode}</strong><small>{loan.sourceOrderCode || 'Solicitud manual'}</small></td>
+                      <td>{loan.supplierName}</td>
+                      <td>{linkedContract ? <button type="button" className="supplier-contract-link" onClick={() => openLinkedContract(loan)}>{contractCode}</button> : <strong>{contractCode}</strong>}</td>
+                      <td><strong>{customerName}</strong></td>
+                      <td className="supplier-items-cell">{(loan.items ?? []).map((line) => <span key={line.id || `${line.itemId}-${line.itemName}`}>{Math.max(0, Number(line.quantity ?? 0))} u. · {line.itemName || 'Item'}</span>)}</td>
+                      <td>{formatDate(getSupplierLoanEventDate(loan))}</td>
+                      <td>{totalCostBs > 0 ? <strong>{formatBs(totalCostBs)}</strong> : <span className="supplier-cost-missing">Sin costo registrado</span>}</td>
+                      <td>{loan.status}</td>
+                      <td className="supplier-table-actions"><button type="button" className="link-button" onClick={() => setDocumentPreview({ title: loan.loanCode, html: createDocumentHtml(loan) })}>Documento</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'devuelto')}>Devuelto</button><button type="button" className="link-button" onClick={() => updateLoanStatus(loan, 'liquidado')}>Liquidado</button></td>
+                    </tr>
+                  );
+                })}
+                {filteredLoans.length === 0 ? <tr><td colSpan={9}>Sin solicitudes con esos filtros.</td></tr> : null}
               </tbody></table>
             </div>
           </section>
@@ -1255,7 +1304,7 @@ function SuppliersSection({
             <header className="orders-modal-head">
               <div>
                 <h3>{documentPreview.title}</h3>
-                <p>Documento operativo para coordinar la solicitud al proveedor.</p>
+                <p>{documentPreview.contractPreview ? 'Contrato comercial vinculado a la solicitud de proveedor.' : 'Documento operativo para coordinar la solicitud al proveedor.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setDocumentPreview(null)}>x</button>
             </header>

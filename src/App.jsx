@@ -659,7 +659,9 @@ function AdminApp() {
           <SuppliersSection
             supplierBundle={controller.supplierBundle}
             items={controller.items}
+            contracts={controller.contracts}
             formatBs={formatBs}
+            onPrintContractDocument={controller.handlePrintContractDocument}
             onCreateSupplier={controller.handleCreateSupplier}
             onUpdateSupplier={controller.handleUpdateSupplier}
             onCreateSupplierQuote={controller.handleCreateSupplierQuote}
@@ -730,6 +732,7 @@ function AdminApp() {
             onVoidAndReplaceCashMovementReceipt={controller.handleVoidAndReplaceCashMovementReceipt}
             onCollectReceivable={controller.handleCollectReceivable}
             onPrintCashMovementReceipt={controller.handlePrintCashMovementReceipt}
+            onPrintContractDocument={controller.handlePrintContractDocument}
             onCreateEmployee={controller.handleCreatePersonnelEmployee}
           />
         )}

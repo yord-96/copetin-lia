@@ -570,8 +570,10 @@ function AccountingSection({
   onVoidAndReplaceCashMovementReceipt,
   onCollectReceivable,
   onPrintCashMovementReceipt,
+  onPrintContractDocument,
 }) {
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
+  const [supplierContractPreview, setSupplierContractPreview] = useState(null);
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
   const [bigCashTypeFilter, setBigCashTypeFilter] = useState('all');
   const [bigCashPeriod, setBigCashPeriod] = useState('recent');
@@ -1092,7 +1094,7 @@ function AccountingSection({
     const totalBs = toNumber(loan?.totals?.totalBs ?? loan?.totalBs);
     const contract = loan?.sourceContractId ? contractById.get(String(loan.sourceContractId)) : null;
     const rental = loan?.sourceRentalId ? rentalById.get(String(loan.sourceRentalId)) : null;
-    const reference = contract?.contractCode ?? rental?.contractCode ?? loan?.sourceOrderCode ?? '-';
+    const reference = contract?.contractCode ?? rental?.contractCode ?? loan?.sourceContractCode ?? '-';
     const items = Array.isArray(loan?.items) ? loan.items : [];
     const statusKey = normalizeText(loan?.status || 'programado');
     return {
@@ -1100,7 +1102,9 @@ function AccountingSection({
       totalBs,
       items,
       reference,
-      itemSummary: items.slice(0, 2).map((item) => `${item.quantity}x ${item.itemName}`).join(' | '),
+      linkedContractId: contract?.id ?? loan?.sourceContractId ?? rental?.contractId ?? null,
+      customerName: contract?.customerName ?? rental?.customerName ?? '-',
+      itemSummary: items.map((item) => `${item.quantity}x ${item.itemName}`).join(' | '),
       isPaid: ['liquidado', 'pagado', 'cerrado'].includes(statusKey),
       requestDate: loan?.requestDate || loan?.createdAt,
     };
@@ -1123,6 +1127,24 @@ function AccountingSection({
     () => supplierLoanRows.filter((loan) => !loan.isPaid && loan.totalBs > 0),
     [supplierLoanRows],
   );
+
+  const openSupplierLinkedContract = useCallback(async (loan) => {
+    const contractId = loan?.linkedContractId ?? loan?.sourceContractId ?? null;
+    const contractCode = loan?.reference && loan.reference !== '-' ? loan.reference : null;
+    if (!contractId && !contractCode) return;
+    try {
+      const preview = await onPrintContractDocument?.({
+        contractId,
+        contractCode,
+        rentalId: loan?.sourceRentalId ?? null,
+        orderCode: loan?.sourceOrderCode ?? null,
+      });
+      if (!preview?.html) throw new Error('No se pudo generar la vista del contrato.');
+      setSupplierContractPreview({ title: preview.title ?? `Contrato ${contractCode || ''}`.trim(), html: preview.html });
+    } catch (error) {
+      setCashActionError(error?.message || 'No se pudo abrir el contrato vinculado.');
+    }
+  }, [onPrintContractDocument]);
 
   const bigCashPositiveRows = useMemo(
     () => postedMovements.filter((movement) => isBigCash(movement) && !movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
@@ -4323,6 +4345,18 @@ function AccountingSection({
 
   const renderCashModals = () => (
     <>
+      {supplierContractPreview ? (
+        <div className="orders-modal-backdrop" onClick={() => setSupplierContractPreview(null)}>
+          <div className="orders-modal orders-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="orders-modal-head">
+              <div><h3>{supplierContractPreview.title}</h3><p>Contrato vinculado al subalquiler seleccionado.</p></div>
+              <button type="button" className="orders-modal-close" onClick={() => setSupplierContractPreview(null)}>x</button>
+            </header>
+            <div className="orders-preview-body"><iframe title={supplierContractPreview.title} srcDoc={supplierContractPreview.html} className="orders-document-frame" /></div>
+            <footer className="orders-modal-foot"><button type="button" className="ghost-button" onClick={() => setSupplierContractPreview(null)}>Cerrar</button></footer>
+          </div>
+        </div>
+      ) : null}
       {renderPettyHistoryModal()}
       {cashActionFeedback ? <p className="status success accounting-floating-feedback">{cashActionFeedback}</p> : null}
       {cashActionError && !cashModal && !collectModal && !voidReceiptModal && !guaranteeRefundModal ? <p className="status error accounting-floating-feedback">{cashActionError}</p> : null}
@@ -7229,6 +7263,7 @@ function AccountingSection({
                     <th>Prestamo</th>
                     <th>Proveedor</th>
                     <th>Contrato</th>
+                    <th>Cliente</th>
                     <th>Items</th>
                     <th>Costo</th>
                     <th>Estado</th>
@@ -7244,14 +7279,17 @@ function AccountingSection({
                       </td>
                       <td>{loan.supplierName}</td>
                       <td>
-                        <strong>{loan.reference}</strong>
+                        {loan.linkedContractId || (loan.reference && loan.reference !== '-') ? (
+                          <button type="button" className="supplier-contract-link" onClick={() => openSupplierLinkedContract(loan)}>{loan.reference}</button>
+                        ) : <strong>-</strong>}
                         <small>{loan.sourceOrderCode || loan.eventName || '-'}</small>
                       </td>
+                      <td><strong>{loan.customerName || '-'}</strong></td>
                       <td>
                         <strong>{loan.items.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0)} u.</strong>
                         <small>{loan.itemSummary || 'Sin detalle de items'}</small>
                       </td>
-                      <td><strong className={loan.isPaid ? 'value-green' : 'value-orange'}>{formatBs(loan.totalBs)}</strong></td>
+                      <td>{loan.totalBs > 0 ? <strong className={loan.isPaid ? 'value-green' : 'value-orange'}>{formatBs(loan.totalBs)}</strong> : <span className="supplier-cost-missing">Sin costo registrado</span>}</td>
                       <td><span className={`petty-debt-status ${loan.isPaid ? 'paid' : 'pending'}`}>{loan.isPaid ? 'Liquidado' : 'Pendiente'}</span></td>
                       <td>
                         {!loan.isPaid ? (
@@ -7276,9 +7314,9 @@ function AccountingSection({
                     </tr>
                   ))}
                   {!pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? (
-                    <tr><td colSpan={7}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
+                    <tr><td colSpan={8}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
                   ) : null}
-                  {pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? <tr><td colSpan={7}><p className="status">Cargando proveedores...</p></td></tr> : null}
+                  {pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? <tr><td colSpan={8}><p className="status">Cargando proveedores...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
