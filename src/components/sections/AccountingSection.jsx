@@ -636,6 +636,13 @@ function AccountingSection({
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyWorkspaceTab, setPettyWorkspaceTab] = useState('expenses');
+  const [pettyWorkspaceRanges, setPettyWorkspaceRanges] = useState(() => ({
+    expenses: { dateFrom: '', dateTo: '' },
+    advances: { dateFrom: '', dateTo: '' },
+    suppliers: { dateFrom: '', dateTo: '' },
+    debts: { dateFrom: '', dateTo: '' },
+  }));
+  const [accountingSectionReportBusy, setAccountingSectionReportBusy] = useState('');
   const [isPettyHistoryOpen, setIsPettyHistoryOpen] = useState(false);
   const [pettyHistorySource, setPettyHistorySource] = useState(null);
   const [pettyHistoryLoading, setPettyHistoryLoading] = useState(false);
@@ -844,19 +851,24 @@ function AccountingSection({
   useEffect(() => {
     if (activeModule !== 'contabilidad_caja_chica') return undefined;
     const timer = setTimeout(() => {
+      const activeRange = pettyWorkspaceRanges[pettyWorkspaceTab] ?? {};
       if (pettyWorkspaceTab === 'expenses') {
         void loadPettySector('expenses', {
           filters: {
             category: pettyCashTypeFilter,
             query: pettyCashQuery,
+            dateFrom: activeRange.dateFrom,
+            dateTo: activeRange.dateTo,
           },
         });
         return;
       }
-      void loadPettySector(pettyWorkspaceTab);
+      void loadPettySector(pettyWorkspaceTab, {
+        filters: { dateFrom: activeRange.dateFrom, dateTo: activeRange.dateTo },
+      });
     }, pettyWorkspaceTab === 'expenses' && pettyCashQuery ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceTab]);
+  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceRanges, pettyWorkspaceTab]);
 
   useEffect(() => {
     if (!isPettyHistoryOpen) return undefined;
@@ -5049,6 +5061,212 @@ function AccountingSection({
     </>
   );
 
+  const updatePettyWorkspaceRange = (rangeKey, field, value) => {
+    setPettyWorkspaceRanges((current) => ({
+      ...current,
+      [rangeKey]: { ...current[rangeKey], [field]: value },
+    }));
+  };
+
+  const clearPettyWorkspaceRange = (rangeKey) => {
+    setPettyWorkspaceRanges((current) => ({
+      ...current,
+      [rangeKey]: { dateFrom: '', dateTo: '' },
+    }));
+  };
+
+  const getReportRangeLabel = (range = {}) => {
+    if (!range.dateFrom && !range.dateTo) return 'Todo el historial';
+    return `${range.dateFrom ? formatDate(range.dateFrom) : 'Inicio'} al ${range.dateTo ? formatDate(range.dateTo) : 'Hoy'}`;
+  };
+
+  const fetchAllPettySectionRows = async (section) => {
+    const range = pettyWorkspaceRanges[section] ?? {};
+    const filters = {
+      dateFrom: range.dateFrom,
+      dateTo: range.dateTo,
+      ...(section === 'expenses' ? { category: pettyCashTypeFilter, query: pettyCashQuery } : {}),
+    };
+    const rows = [];
+    let offset = 0;
+    let hasMore = true;
+    while (hasMore && offset < 10000) {
+      const result = await api.cash.getPettySector({ sector: section, offset, limit: 80, ...filters });
+      const pageRows = Array.isArray(result?.rows) ? result.rows : [];
+      rows.push(...pageRows);
+      hasMore = Boolean(result?.hasMore) && pageRows.length > 0;
+      offset += pageRows.length;
+    }
+    return rows;
+  };
+
+  const getBigCashReportDefinition = (section) => {
+    if (section === 'summary') return {
+      title: 'Resumen de Caja Grande',
+      subtitle: 'Movimientos confirmados del período seleccionado.',
+      rows: periodBigCashRows,
+      columns: [
+        ['Fecha', (row) => formatDate(row.createdAt)],
+        ['Concepto', (row) => row.description || row.type || '-'],
+        ['Referencia', (row) => getMovementReference(row)],
+        ['Medio', (row) => getPaymentMethodMeta(row.paymentMethod).label],
+        ['Responsable', (row) => row.responsible || row.createdBy || '-'],
+        ['Monto', (row) => toNumber(row.amountBs)],
+      ],
+      range: bigCashWorkspaceRanges.summary,
+    };
+    if (section === 'accounts') return {
+      title: 'Cuentas de Caja Grande', subtitle: 'Ingresos y egresos por cuenta receptora.', rows: accountLedgerData.rows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cuenta', (r) => r.accountLabel || r.paymentAccount || 'Caja física'], ['Movimiento', (r) => r.description || '-'], ['Referencia', (r) => r.reference || r.receipt || '-'], ['Ingreso', (r) => toNumber(r.amountBs) > 0 ? toNumber(r.amountBs) : 0], ['Egreso', (r) => toNumber(r.amountBs) < 0 ? Math.abs(toNumber(r.amountBs)) : 0], ['Registrado por', (r) => r.createdBy || r.responsible || '-']],
+      range: bigCashWorkspaceRanges.accounts,
+    };
+    if (section === 'receipts') return {
+      title: 'Comprobantes de Caja Grande', subtitle: 'Comprobantes y recibos del período seleccionado.', rows: receiptBrowserData.rows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt || r.date)], ['Tipo', (r) => r.typeLabel || r.kind || r.type || 'Comprobante'], ['Referencia', (r) => r.receiptCode || r.receipt || r.code || '-'], ['Concepto', (r) => r.description || r.title || '-'], ['Cuenta', (r) => r.accountLabel || r.paymentAccount || '-'], ['Monto', (r) => toNumber(r.amountBs || r.amount)], ['Registrado por', (r) => r.createdBy || r.responsible || '-']],
+      range: bigCashWorkspaceRanges.receipts,
+    };
+    if (section === 'receivables') {
+      const rows = receivablesView === 'pending' ? visibleReceivableRows : visibleFinalizedReceivableRows;
+      return { title: receivablesView === 'pending' ? 'Contratos por cobrar' : 'Contratos cobrados y finalizados', subtitle: 'Control económico de contratos según fecha de evento.', rows,
+        columns: [['Contrato', (r) => r.contractCode || r.code || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha evento', (r) => formatDate(r.eventDate)], ['Total contrato', (r) => toNumber(r.totalBs)], ['Pagado', (r) => toNumber(r.paidBs || r.collectedBs)], ['Saldo', (r) => receivablesView === 'pending' ? toNumber(r.pendingBs) : 0], ['Estado', () => receivablesView === 'pending' ? 'Por cobrar' : 'Finalizado']], range: bigCashWorkspaceRanges.receivables };
+    }
+    if (section === 'guarantees') {
+      const rows = guaranteesView === 'pending' ? visibleGuaranteeRows : visibleReturnedGuaranteeRows;
+      return { title: guaranteesView === 'pending' ? 'Garantías pendientes' : 'Garantías devueltas', subtitle: 'Seguimiento de garantías por contrato.', rows,
+        columns: [['Contrato', (r) => r.contractCode || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha evento', (r) => formatDate(r.eventDate)], ['Garantía', (r) => toNumber(r.guaranteeBs || r.guaranteePaidBs)], ['Devuelto', (r) => toNumber(r.refundedBs)], ['Pendiente', (r) => toNumber(r.refundableBs || r.unvalidatedBs)], ['Estado', () => guaranteesView === 'pending' ? 'Pendiente' : 'Devuelta']], range: bigCashWorkspaceRanges.guarantees };
+    }
+    if (section === 'issues') return { title: returnIssuesView === 'pending' ? 'Daños y faltantes pendientes' : 'Daños y faltantes liquidados', subtitle: 'Resumen por contrato de novedades de recepción.', rows: visibleReturnIssueContractRows,
+      columns: [['Contrato', (r) => r.contractCode || '-'], ['OS', (r) => r.orderCode || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha', (r) => formatDate(r.returnedAt || r.createdAt)], ['Ítems', (r) => toNumber(r.itemCount || r.items?.length)], ['Daños/faltantes', (r) => toNumber(r.totalAffectedQty || r.affectedQty)], ['Monto', (r) => toNumber(r.pendingBs || r.settledBs || r.totalBs)], ['Estado', () => returnIssuesView === 'pending' ? 'Pendiente' : 'Liquidado']], range: bigCashWorkspaceRanges.issues };
+    if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
+    return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Tipo', (r) => r.category || r.type || '-'], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receipt || '-'], ['Monto', (r) => toNumber(r.amountBs)]], range: bigCashWorkspaceRanges.movements };
+  };
+
+  const getPettyReportDefinition = async (section) => {
+    const rawRows = await fetchAllPettySectionRows(section);
+    const range = pettyWorkspaceRanges[section] ?? {};
+    if (section === 'expenses') return { title: 'Gastos de Caja Chica', subtitle: 'Gastos registrados según filtros actuales.', rows: rawRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range };
+    if (section === 'advances') return { title: 'Adelantos al personal', subtitle: 'Adelantos pagados desde Caja Chica.', rows: rawRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Trabajador', (r) => r.responsible || '-'], ['CI', (r) => String(r.receipt || '').replace(/^CI\s*/i, '').trim() || '-'], ['Concepto', (r) => r.description || '-'], ['Registrado por', (r) => getPersonnelAdvanceRegisteredBy(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range };
+    if (section === 'suppliers') {
+      const rows = rawRows.map(normalizeSupplierLoanRow);
+      return { title: 'Préstamos de proveedores', subtitle: 'Material cubierto por proveedor y control de pagos.', rows,
+        columns: [['Préstamo', (r) => r.loanCode || '-'], ['Fecha', (r) => formatDate(r.requestDate)], ['Proveedor', (r) => r.supplierName || '-'], ['Contrato', (r) => r.reference || '-'], ['Cliente', (r) => r.customerName || '-'], ['Ítems', (r) => r.itemSummary || '-'], ['Costo', (r) => toNumber(r.totalBs)], ['Estado', (r) => r.isPaid ? 'Liquidado' : 'Pendiente']], range };
+    }
+    return { title: 'Deudas de Caja Chica', subtitle: 'Deudas por pagar y reembolsos registrados.', rows: rawRows,
+      columns: [['Código', (r) => r.code || '-'], ['Fecha', (r) => formatDate(r.debtDate || r.createdAt)], ['Tipo', (r) => getCashDebtMeta(r).shortLabel], ['Detalle', (r) => r.description || '-'], ['Responsable', (r) => r.personName || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Pagado', (r) => toNumber(r.paidBs)], ['Saldo', (r) => toNumber(r.balanceBs ?? r.amountBs)], ['Estado', (r) => toNumber(r.balanceBs ?? r.amountBs) <= 0 ? 'Pagada' : 'Pendiente']], range };
+  };
+
+  const buildReportMatrix = (definition) => {
+    const headers = definition.columns.map(([label]) => label);
+    const rows = definition.rows.map((row) => definition.columns.map(([, getter]) => getter(row)));
+    return { headers, rows };
+  };
+
+  const exportAccountingSectionExcel = async (scope, section) => {
+    const busyKey = `${scope}-${section}-excel`;
+    setAccountingSectionReportBusy(busyKey);
+    try {
+      const definition = scope === 'petty' ? await getPettyReportDefinition(section) : getBigCashReportDefinition(section);
+      const { headers, rows } = buildReportMatrix(definition);
+      const { Workbook } = await import('exceljs');
+      const workbook = new Workbook();
+      workbook.creator = 'EL COPETÍN';
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet('Reporte', { views: [{ state: 'frozen', ySplit: 5 }] });
+      sheet.mergeCells(1, 1, 1, headers.length);
+      sheet.getCell(1, 1).value = 'EL COPETÍN';
+      sheet.getCell(1, 1).font = { bold: true, size: 18, color: { argb: 'FF173A70' } };
+      sheet.mergeCells(2, 1, 2, headers.length);
+      sheet.getCell(2, 1).value = definition.title;
+      sheet.getCell(2, 1).font = { bold: true, size: 14 };
+      sheet.mergeCells(3, 1, 3, headers.length);
+      sheet.getCell(3, 1).value = `${definition.subtitle} · ${getReportRangeLabel(definition.range)}`;
+      sheet.getCell(3, 1).font = { italic: true, color: { argb: 'FF667085' } };
+      const headerRow = sheet.getRow(5);
+      headerRow.values = headers;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+      rows.forEach((values, index) => {
+        const row = sheet.addRow(values);
+        row.alignment = { vertical: 'top', wrapText: true };
+        if (index % 2 === 1) row.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F9FC' } }; });
+      });
+      sheet.columns.forEach((column, index) => {
+        const maxLength = Math.min(42, Math.max(12, headers[index]?.length || 12, ...rows.slice(0, 200).map((row) => String(row[index] ?? '').length)));
+        column.width = maxLength + 2;
+      });
+      sheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: headers.length } };
+      sheet.pageSetup = { orientation: headers.length > 7 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
+      sheet.headerFooter.oddFooter = '&LEl Copetín&C&P de &N&RDocumento interno';
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${definition.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}-${getInputDate()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    } catch (error) {
+      setCashActionError(error?.message || 'No se pudo generar el Excel.');
+    } finally {
+      setAccountingSectionReportBusy('');
+    }
+  };
+
+  const printAccountingSectionPdf = async (scope, section) => {
+    const busyKey = `${scope}-${section}-pdf`;
+    setAccountingSectionReportBusy(busyKey);
+    try {
+      const definition = scope === 'petty' ? await getPettyReportDefinition(section) : getBigCashReportDefinition(section);
+      const { headers, rows } = buildReportMatrix(definition);
+      const popup = window.open('', '_blank', 'noopener,noreferrer,width=1280,height=860');
+      if (!popup) throw new Error('El navegador bloqueó la ventana del reporte.');
+      const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+      const moneyIndexes = headers.map((label, index) => /monto|saldo|total|pagado|ingreso|egreso|costo|garant/i.test(label) ? index : -1).filter((index) => index >= 0);
+      const tableRows = rows.map((values) => `<tr>${values.map((value, index) => `<td class="${moneyIndexes.includes(index) && typeof value === 'number' ? 'money' : ''}">${moneyIndexes.includes(index) && typeof value === 'number' ? esc(formatBs(value)) : esc(value)}</td>`).join('')}</tr>`).join('');
+      popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(definition.title)}</title><style>@page{size:A4 ${headers.length > 7 ? 'landscape' : 'portrait'};margin:10mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #173a70;padding-bottom:10px;margin-bottom:12px}.brand{font-weight:900;color:#173a70;letter-spacing:.08em}.brand h1{margin:4px 0;font-size:22px}.meta{text-align:right;min-width:220px}.meta strong{display:block;font-size:12px}.summary{display:flex;gap:10px;margin:10px 0 14px}.summary div{border:1px solid #d9e1ec;border-top:3px solid #e84a00;border-radius:7px;padding:8px 12px;min-width:150px}.summary small{display:block;color:#667085}.summary strong{font-size:16px}table{width:100%;border-collapse:collapse;table-layout:auto}th{background:#173a70;color:white;text-transform:uppercase;font-size:7px;padding:7px;text-align:left}td{padding:7px;border:1px solid #dbe2ea;vertical-align:top}tbody tr:nth-child(even){background:#f7f9fc}.money{text-align:right;font-weight:800;white-space:nowrap}.no-print{text-align:right;margin-top:12px}.no-print button{border:0;border-radius:8px;background:#e84a00;color:#fff;padding:9px 14px;font-weight:800}@media print{.no-print{display:none}}</style></head><body><header><div class="brand">EL COPETÍN<h1>${esc(definition.title)}</h1><div>${esc(definition.subtitle)}</div></div><div class="meta"><strong>${esc(getReportRangeLabel(definition.range))}</strong><span>Generado: ${esc(formatDateTime(new Date().toISOString()))}</span></div></header><section class="summary"><div><small>Registros incluidos</small><strong>${rows.length}</strong></div><div><small>Rango</small><strong>${esc(getReportRangeLabel(definition.range))}</strong></div></section><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join('')}</tr></thead><tbody>${tableRows || `<tr><td colspan="${headers.length}">Sin resultados para el rango seleccionado.</td></tr>`}</tbody></table><div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div></body></html>`);
+      popup.document.close();
+      popup.focus();
+    } catch (error) {
+      setCashActionError(error?.message || 'No se pudo generar el PDF.');
+    } finally {
+      setAccountingSectionReportBusy('');
+    }
+  };
+
+  const renderAccountingReportActions = (scope, section, { compact = false } = {}) => (
+    <div className={`accounting-report-actions ${compact ? 'compact' : ''}`}>
+      <button type="button" className="accounting-report-button pdf" onClick={() => void printAccountingSectionPdf(scope, section)} disabled={Boolean(accountingSectionReportBusy)}>
+        {accountingSectionReportBusy === `${scope}-${section}-pdf` ? 'Generando PDF...' : 'Reporte PDF'}
+      </button>
+      <button type="button" className="accounting-report-button excel" onClick={() => void exportAccountingSectionExcel(scope, section)} disabled={Boolean(accountingSectionReportBusy)}>
+        {accountingSectionReportBusy === `${scope}-${section}-excel` ? 'Generando Excel...' : 'Exportar Excel'}
+      </button>
+    </div>
+  );
+
+  const renderPettyReportBar = (section) => {
+    const range = pettyWorkspaceRanges[section] ?? { dateFrom: '', dateTo: '' };
+    return (
+      <div className="accounting-section-reportbar petty-reportbar">
+        <div className="accounting-report-range">
+          <span>Rango del reporte</span>
+          <label><small>Desde</small><input type="date" value={range.dateFrom} onChange={(event) => updatePettyWorkspaceRange(section, 'dateFrom', event.target.value)} /></label>
+          <label><small>Hasta</small><input type="date" value={range.dateTo} onChange={(event) => updatePettyWorkspaceRange(section, 'dateTo', event.target.value)} /></label>
+          {(range.dateFrom || range.dateTo) ? <button type="button" className="accounting-report-clear" onClick={() => clearPettyWorkspaceRange(section)}>Todo el período</button> : null}
+        </div>
+        {renderAccountingReportActions('petty', section)}
+      </div>
+    );
+  };
+
   const updateBigCashWorkspaceRange = (rangeKey, field, value) => {
     if (rangeKey === 'movements') setBigCashPeriod('custom');
     setBigCashWorkspaceRanges((current) => ({
@@ -5090,6 +5308,7 @@ function AccountingSection({
             </span>
           ) : null}
           {(range.dateFrom || range.dateTo) ? <button type="button" onClick={() => clearBigCashWorkspaceRange(rangeKey)}>Limpiar fechas</button> : null}
+          {renderAccountingReportActions('big', rangeKey, { compact: true })}
         </div>
       </div>
     );
@@ -5103,6 +5322,7 @@ function AccountingSection({
         <label><small>Desde</small><input type="date" value={range.dateFrom} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateFrom', event.target.value)} /></label>
         <label><small>Hasta</small><input type="date" value={range.dateTo} onChange={(event) => updateBigCashWorkspaceRange(rangeKey, 'dateTo', event.target.value)} /></label>
         {(range.dateFrom || range.dateTo) ? <button type="button" onClick={() => clearBigCashWorkspaceRange(rangeKey)}>Limpiar fechas</button> : null}
+        {renderAccountingReportActions('big', rangeKey, { compact: true })}
       </div>
     );
   };
@@ -7068,6 +7288,7 @@ function AccountingSection({
                 </button>
               </div>
             </header>
+            {renderPettyReportBar('expenses')}
 
             <div className="petty-toolbar">
               <label>
@@ -7193,6 +7414,7 @@ function AccountingSection({
                 </button>
               </div>
             </header>
+            {renderPettyReportBar('advances')}
             <div className="bigcash-table-wrap petty-table-wrap">
               <table className="accounting-table petty-table petty-advances-table">
                 <thead>
@@ -7268,6 +7490,7 @@ function AccountingSection({
                 </button>
               </div>
             </header>
+            {renderPettyReportBar('suppliers')}
             <div className="bigcash-table-wrap petty-table-wrap">
               <table className="accounting-table petty-table petty-supplier-loans-table">
                 <thead>
@@ -7359,6 +7582,7 @@ function AccountingSection({
                 Pagar deuda
               </button>
             </header>
+            {renderPettyReportBar('debts')}
             <div className="bigcash-table-wrap petty-table-wrap">
               <table className="accounting-table petty-table petty-debt-table">
                 <thead>
