@@ -403,6 +403,10 @@ function CalendarSection({
     const rentalByOrderCode = new Map();
     const deliveryById = new Map();
     const deliveryByCode = new Map();
+    const outboundDeliveryRentalIds = new Set();
+    const outboundDeliveryOrderCodes = new Set();
+    const returnDeliveryRentalIds = new Set();
+    const returnDeliveryOrderCodes = new Set();
 
     contracts.forEach((contract) => {
       if (contract.id) contractById.set(String(contract.id), contract);
@@ -417,6 +421,22 @@ function CalendarSection({
     deliveries.forEach((delivery) => {
       if (delivery.id) deliveryById.set(String(delivery.id), delivery);
       if (delivery.deliveryCode) deliveryByCode.set(String(delivery.deliveryCode), delivery);
+      if (delivery.deletedAt || isCancelledOperationalStatus(delivery.status)) return;
+      const rental = rentalById.get(String(delivery.rentalId ?? ''))
+        ?? rentalByOrderCode.get(String(delivery.orderCode ?? ''));
+      const contract = rental
+        ? (contractByRentalId.get(String(rental.id ?? '')) ?? contractByOrderCode.get(String(rental.orderCode ?? '')))
+        : contractByOrderCode.get(String(delivery.orderCode ?? ''));
+      const isReturn = isDeliveryReturnLeg(delivery, contract, rental);
+      const rentalId = String(delivery.rentalId ?? rental?.id ?? '').trim();
+      const orderCode = String(delivery.orderCode ?? rental?.orderCode ?? '').trim();
+      if (isReturn) {
+        if (rentalId) returnDeliveryRentalIds.add(rentalId);
+        if (orderCode) returnDeliveryOrderCodes.add(orderCode);
+      } else {
+        if (rentalId) outboundDeliveryRentalIds.add(rentalId);
+        if (orderCode) outboundDeliveryOrderCodes.add(orderCode);
+      }
     });
 
     return {
@@ -428,6 +448,10 @@ function CalendarSection({
       rentalByOrderCode,
       deliveryById,
       deliveryByCode,
+      outboundDeliveryRentalIds,
+      outboundDeliveryOrderCodes,
+      returnDeliveryRentalIds,
+      returnDeliveryOrderCodes,
     };
   }, [contracts, deliveries, rentals]);
 
@@ -480,12 +504,8 @@ function CalendarSection({
       const logisticsMode = contract?.logisticsMode ?? rental.logisticsMode ?? 'envio';
       if (logisticsMode === 'recojo') {
         const deliveryKey = toDateKey(contract?.deliveryDate || rental.rentalDate || rental.createdAt);
-        const hasOutboundDelivery = deliveries.some((delivery) => {
-          if (delivery.deletedAt) return false;
-          const sameRental = delivery.rentalId && delivery.rentalId === rental.id;
-          const sameOrder = delivery.orderCode && delivery.orderCode === rental.orderCode;
-          return (sameRental || sameOrder) && !isDeliveryReturnLeg(delivery, contract, rental);
-        });
+        const hasOutboundDelivery = relationshipMaps.outboundDeliveryRentalIds.has(String(rental.id ?? ''))
+          || relationshipMaps.outboundDeliveryOrderCodes.has(String(rental.orderCode ?? ''));
         if (deliveryKey && !hasOutboundDelivery) {
           const deliveryStart = contract?.deliveryWindowStart || rental.deliveryWindowStart || '08:00';
           const deliveryEnd = contract?.deliveryWindowEnd && contract.deliveryWindowEnd !== deliveryStart
@@ -532,12 +552,8 @@ function CalendarSection({
       const returnEnd = contract?.pickupWindowEnd && contract.pickupWindowEnd !== returnStart
         ? contract.pickupWindowEnd
         : addHoursToTime(returnStart, 2) || '22:00';
-      const hasReturnDelivery = deliveries.some((delivery) => {
-        if (delivery.deletedAt) return false;
-        const sameRental = delivery.rentalId && delivery.rentalId === rental.id;
-        const sameOrder = delivery.orderCode && delivery.orderCode === rental.orderCode;
-        return (sameRental || sameOrder) && isDeliveryReturnLeg(delivery, contract, rental);
-      });
+      const hasReturnDelivery = relationshipMaps.returnDeliveryRentalIds.has(String(rental.id ?? ''))
+        || relationshipMaps.returnDeliveryOrderCodes.has(String(rental.orderCode ?? ''));
       if (hasReturnDelivery) return;
       const returnVerb = isReturned ? 'Devuelto' : logisticsMode === 'recojo' ? 'Devolucion' : 'Recojo';
       rows.push({
@@ -616,7 +632,7 @@ function CalendarSection({
     });
 
     return rows;
-  }, [contracts, deliveries, items, relationshipMaps, rentals, supplierBundle, todayKey]);
+  }, [contracts, items, relationshipMaps, rentals, supplierBundle, todayKey]);
 
   const normalizedEvents = useMemo(() => {
     return [...events, ...systemEvents]

@@ -585,9 +585,9 @@ const fetchMobileCalendarOverview = async () => {
     setCachedServerRevision(payload.revision);
   }
   const overview = payload?.overview ?? { contracts: [], rentals: [], deliveries: [], calendarEvents: [] };
-  await mergeLocalState(overview);
-  // Es una vista parcial: cualquier mutacion que necesite contratos o
-  // alquileres completos debe ejecutar su precarga de seguridad habitual.
+  // Calendario es una vista efimera. No mezclamos sus cientos de resumenes en
+  // webBridge porque esa reconciliacion bloquea el hilo principal y puede
+  // provocar cargas completas de contratos/rentals al cambiar de modulo.
   serverStateIsPartial = true;
   return overview;
 };

@@ -534,7 +534,18 @@ export const useAppController = () => {
     let group = null;
     let loader = null;
     const activeInventoryTab = String(activeTab);
-    if (activeTab === 'asistencia') {
+    if (activeTab === 'caja') {
+      group = 'calendar-overview';
+      loader = async () => {
+        const overview = await api.sync.getMobileCalendarOverview();
+        setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
+        setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
+        setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+        setCalendarEvents(Array.isArray(overview?.calendarEvents) ? overview.calendarEvents : []);
+        calendarOverviewLoadedRef.current = true;
+        setLoading(false);
+      };
+    } else if (activeTab === 'asistencia') {
       group = 'attendance-users';
       loader = async () => {
         setAttendanceUsersLoading(true);
@@ -911,9 +922,14 @@ export const useAppController = () => {
       setLoading(false);
       return;
     }
-    if (['alquiler', 'disponibilidad'].includes(String(activeTab)) || String(activeTab).startsWith('contabilidad')) {
-      // Ordenes es la vista inicial preferida. Evitamos cargar Calendario primero:
-      // su resumen se solicitará únicamente cuando el usuario abra esa sección.
+    if (
+      ['caja', 'alquiler', 'disponibilidad'].includes(String(activeTab))
+      || String(activeTab).startsWith('contabilidad')
+      || String(activeTab).startsWith('inventario')
+    ) {
+      // Calendario, Ordenes, Disponibilidad, Contabilidad e Inventario tienen
+      // endpoints reducidos propios. Nunca deben disparar la carga completa del
+      // workspace al navegar entre modulos.
       setLoading(false);
       return;
     }

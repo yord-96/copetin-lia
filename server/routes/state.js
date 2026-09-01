@@ -8503,7 +8503,7 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
     const recentMovements = allMovements
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0))
-      .slice(0, 300)
+      .slice(0, 120)
       .map(summarizeInventoryMovement);
 
     await sendJsonPayload(req, res, {
@@ -8737,10 +8737,17 @@ router.get('/__copetin_db/calendar/mobile-overview', async (req, res, next) => {
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        contracts: (Array.isArray(state.contracts) ? state.contracts : []).map(summarizeCalendarContract),
-        rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeCalendarRental),
-        deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeCalendarDelivery),
-        calendarEvents: Array.isArray(state.calendarEvents) ? state.calendarEvents : [],
+        contracts: (Array.isArray(state.contracts) ? state.contracts : [])
+          .filter((row) => !row?.deletedAt && !['anulado', 'cancelled'].includes(String(row?.status ?? '').trim().toLowerCase()))
+          .map(summarizeCalendarContract),
+        rentals: (Array.isArray(state.rentals) ? state.rentals : [])
+          .filter((row) => !row?.deletedAt && !['anulado', 'cancelled'].includes(String(row?.status ?? '').trim().toLowerCase()))
+          .map(summarizeCalendarRental),
+        deliveries: (Array.isArray(state.deliveries) ? state.deliveries : [])
+          .filter((row) => !row?.deletedAt && !['anulado', 'cancelled'].includes(String(row?.status ?? '').trim().toLowerCase()))
+          .map(summarizeCalendarDelivery),
+        calendarEvents: (Array.isArray(state.calendarEvents) ? state.calendarEvents : [])
+          .filter((row) => !row?.deletedAt && !['anulado', 'cancelled'].includes(String(row?.status ?? '').trim().toLowerCase())),
       },
     });
   } catch (error) {
