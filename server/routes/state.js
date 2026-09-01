@@ -8609,12 +8609,13 @@ router.post('/__copetin_db/inventory/items/:itemId/remove', async (req, res, nex
     }
 
     const snapshot = await getStateSnapshot();
-    const initialItem = (Array.isArray(snapshot?.items) ? snapshot.items : []).find((entry) => String(entry?.id ?? '') === itemId && !entry?.deletedAt);
+    const snapshotState = snapshot?.state && typeof snapshot.state === 'object' ? snapshot.state : {};
+    const initialItem = (Array.isArray(snapshotState?.items) ? snapshotState.items : []).find((entry) => String(entry?.id ?? '') === itemId && !entry?.deletedAt);
     if (!initialItem) {
       res.status(404).json({ error: 'No se encontro el producto seleccionado.' });
       return;
     }
-    const initialBlockers = directInventoryDeleteCommitments(snapshot, itemId);
+    const initialBlockers = directInventoryDeleteCommitments(snapshotState, itemId);
     if (initialBlockers.length) {
       res.status(409).json({
         code: 'INVENTORY_ITEM_COMMITTED',

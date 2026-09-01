@@ -6753,7 +6753,7 @@ function InventoryDashboardSection({
               <label>
                 Categoria
                 <select value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} required>
-                  {categories.map((category) => (
+                  {categoriesList.map((category) => (
                     <option key={category.id} value={category.name}>{category.name}</option>
                   ))}
                 </select>
