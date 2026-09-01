@@ -2505,13 +2505,73 @@ export const useAppController = () => {
   }) => {
     setError('');
     try {
+      const normalizedRentalId = String(rentalId ?? '').trim();
+      const normalizedOrderCode = String(orderCode ?? '').trim();
+      const normalizedContractId = String(contractId ?? '').trim();
+      const normalizedContractCode = String(contractCode ?? '').trim();
+
+      let resolvedContract = fullContract && !fullContract._summaryOnly ? fullContract : null;
+      let resolvedRental = fullRental && !fullRental._summaryOnly ? fullRental : null;
+
+      if (!resolvedContract) {
+        resolvedContract = contracts.find(
+          (row) =>
+            !row?._summaryOnly
+            && !row?.deletedAt
+            && (
+              (normalizedContractId && row.id === normalizedContractId)
+              || (normalizedContractCode && row.contractCode === normalizedContractCode)
+              || (normalizedOrderCode && row.orderCode === normalizedOrderCode)
+            ),
+        ) ?? null;
+      }
+
+      if (!resolvedRental) {
+        resolvedRental = rentals.find(
+          (row) =>
+            !row?._summaryOnly
+            && (
+              (normalizedRentalId && row.id === normalizedRentalId)
+              || (normalizedOrderCode && row.orderCode === normalizedOrderCode)
+              || (normalizedContractId && row.contractId === normalizedContractId)
+            ),
+        ) ?? null;
+      }
+
+      if (!resolvedContract) {
+        await api.sync.ensureCollectionsLoaded(
+          ['contracts', 'rentals'],
+          'contract-print-details',
+        );
+        const [allContracts, allRentals] = await Promise.all([
+          api.contracts.list(),
+          api.rentals.list(),
+        ]);
+        resolvedContract = allContracts.find(
+          (row) =>
+            !row?.deletedAt
+            && (
+              (normalizedContractId && row.id === normalizedContractId)
+              || (normalizedContractCode && row.contractCode === normalizedContractCode)
+              || (normalizedOrderCode && row.orderCode === normalizedOrderCode)
+            ),
+        ) ?? null;
+        resolvedRental = resolvedRental ?? allRentals.find(
+          (row) =>
+            (normalizedRentalId && row.id === normalizedRentalId)
+            || (normalizedOrderCode && row.orderCode === normalizedOrderCode)
+            || (resolvedContract?.rentalId && row.id === resolvedContract.rentalId)
+            || (resolvedContract?.id && row.contractId === resolvedContract.id),
+        ) ?? null;
+      }
+
       return await api.printer.printContract({
         rentalId,
         orderCode,
         contractId,
         contractCode,
-        fullContract,
-        fullRental,
+        fullContract: resolvedContract,
+        fullRental: resolvedRental,
       });
     } catch (requestError) {
       if (isPrintCanceledError(requestError)) return;
