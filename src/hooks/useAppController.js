@@ -217,6 +217,24 @@ export const useAppController = () => {
 
   const [imagePreview, setImagePreview] = useState(null);
 
+  const loadInventoryMovementsOverview = useCallback(async ({ from = '', to = '', query = '' } = {}) => {
+    setInventoryModuleLoading(true);
+    try {
+      const overview = await api.sync.getInventoryMovementsOverview({ from, to, query });
+      setItems(Array.isArray(overview?.items) ? overview.items : []);
+      setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
+      setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
+      setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
+      setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
+      setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+      setInventoryMovements(Array.isArray(overview?.inventoryMovements) ? overview.inventoryMovements : []);
+      setInventoryMovementStats(overview?.movementStats ?? null);
+      return overview;
+    } finally {
+      setInventoryModuleLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async (options = {}) => {
     const silent = Boolean(options?.silent);
     const calendarFirst = !options?.forceComplete && !calendarOverviewLoadedRef.current;
@@ -562,6 +580,11 @@ export const useAppController = () => {
           setInventoryModuleLoading(false);
         }
       };
+    } else if (activeInventoryTab === 'inventario_movimientos') {
+      // InventoryDashboardSection solicita su rango visible directamente al
+      // backend. Evitamos precargar aquí el overview pesado por duplicado.
+      group = '';
+      loader = null;
     } else if (activeInventoryTab.startsWith('inventario')) {
       group = 'inventory-overview';
       loader = async () => {
@@ -3207,6 +3230,7 @@ export const useAppController = () => {
     inventoryMovements,
     inventoryMovementStats,
     inventoryModuleLoading,
+    loadInventoryMovementsOverview,
     availabilityBundle,
     stockRecoveries,
     damageLossOverview,

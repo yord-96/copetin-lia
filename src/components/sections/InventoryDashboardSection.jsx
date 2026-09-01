@@ -1552,6 +1552,7 @@ function InventoryDashboardSection({
   inventoryMovements = [],
   inventoryMovementStats = null,
   moduleLoading = false,
+  onLoadMovementsOverview,
   formatBs,
   formatDateTime,
   onSwitchInventoryModule,
@@ -1752,6 +1753,32 @@ function InventoryDashboardSection({
   const isMaintenanceModule = activeModule === 'inventario_mantenimiento';
   const isAdjustModule = activeModule === 'inventario_ajustes';
   const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isMaintenanceModule && !isAdjustModule;
+
+  useEffect(() => {
+    if (!isMovementsModule || !onLoadMovementsOverview) return undefined;
+    let cancelled = false;
+    const timerId = window.setTimeout(() => {
+      Promise.resolve(onLoadMovementsOverview({
+        from: inventoryOperationDateFrom,
+        to: inventoryOperationDateTo,
+        query: inventoryOrderQuery,
+      })).catch((error) => {
+        if (cancelled) return;
+        setFeedback(error?.message || 'No se pudieron cargar las órdenes de inventario.');
+        setFeedbackType('error');
+      });
+    }, inventoryOrderQuery ? 220 : 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [
+    inventoryOperationDateFrom,
+    inventoryOperationDateTo,
+    inventoryOrderQuery,
+    isMovementsModule,
+    onLoadMovementsOverview,
+  ]);
 
   useEffect(() => {
     if (!isProductsModule) return undefined;
@@ -3049,16 +3076,18 @@ function InventoryDashboardSection({
       else counts.ajuste += 1;
     });
     }
-    activeRentals.forEach((rental) => {
-      const lines = Array.isArray(rental?.items) ? rental.items : [];
-      const status = rental?.operational?.inventoryStatus ?? 'pendiente';
-      if (['confirmado', 'salio', 'devuelto', 'anulado'].includes(status)) return;
-      lines.forEach((line) => {
-        if (!line?.itemId || Number(line?.quantity ?? 0) <= 0) return;
-        counts.total += 1;
-        counts.salida += 1;
+    if (!inventoryMovementStats?.includesPendingReservations) {
+      activeRentals.forEach((rental) => {
+        const lines = Array.isArray(rental?.items) ? rental.items : [];
+        const status = rental?.operational?.inventoryStatus ?? 'pendiente';
+        if (['confirmado', 'salio', 'devuelto', 'anulado'].includes(status)) return;
+        lines.forEach((line) => {
+          if (!line?.itemId || Number(line?.quantity ?? 0) <= 0) return;
+          counts.total += 1;
+          counts.salida += 1;
+        });
       });
-    });
+    }
     return counts;
   }, [activeRentals, inventoryMovements, inventoryMovementStats]);
 

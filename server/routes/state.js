@@ -7740,6 +7740,43 @@ const summarizeInventoryContract = (contract = {}) => ({
   _inventorySummaryOnly: true,
 });
 
+const summarizeInventoryMovementItem = (item = {}) => ({
+  id: item.id ?? '',
+  name: item.name ?? item.itemName ?? 'Producto',
+  sku: item.sku ?? '',
+  category: item.category ?? '',
+  brand: item.brand ?? '',
+  itemColor: item.itemColor ?? item.color ?? '',
+  description: item.description ?? '',
+  inventoryArea: item.inventoryArea ?? '',
+  controlsStock: item.controlsStock !== false,
+  verificationStatus: item.verificationStatus ?? '',
+  totalStock: Number(item.totalStock ?? 0),
+  availableStock: Number(item.availableStock ?? 0),
+  rentalPriceBs: Number(item.rentalPriceBs ?? item.unitPriceBs ?? 0),
+  damagedUnitChargeBs: Number(item.damagedUnitChargeBs ?? 0),
+  missingUnitChargeBs: Number(item.missingUnitChargeBs ?? 0),
+  imageUrl: item.thumbnailUrl || item.imageUrl || '',
+  _summaryOnly: true,
+  _inventoryMovementSummaryOnly: true,
+});
+
+const getInventoryMovementOverviewDate = (rental = {}, contract = null) => (
+  toInventoryDateKey(contract?.eventDate ?? rental?.eventDate ?? rental?.rentalDate)
+);
+
+const matchesInventoryMovementOverviewQuery = (rental = {}, contract = null, query = '') => {
+  const needle = String(query ?? '').trim().toLowerCase();
+  if (!needle) return true;
+  return [
+    contract?.contractCode,
+    rental?.contractCode,
+    rental?.orderCode,
+    contract?.customerName,
+    rental?.customerName,
+  ].some((value) => String(value ?? '').toLowerCase().includes(needle));
+};
+
 const summarizeInventoryMovement = (movement = {}) => {
   const fields = [
     'id', 'itemId', 'itemName', 'category', 'type', 'reason', 'detail', 'reference',
@@ -8411,15 +8448,27 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
   try {
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
+    const from = toInventoryDateKey(req.query?.from);
+    const to = toInventoryDateKey(req.query?.to);
+    const query = String(req.query?.query ?? '').trim();
+    const allContracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const contractById = new Map(allContracts
+      .filter((contract) => contract && !contract.deletedAt)
+      .map((contract) => [String(contract.id ?? ''), contract]));
     const allRentals = Array.isArray(state.rentals) ? state.rentals : [];
-    // Movimientos filtra por fecha real del evento en el cliente. Por eso el
-    // overview no puede recortar devoluciones antiguas a "las últimas 100": ese
-    // límite hacía que un mismo rango devolviera cantidades distintas según qué
-    // devoluciones hubieran ocurrido después. Enviamos todas las órdenes válidas
-    // en forma resumida; canceladas/anuladas no forman parte del flujo operativo.
+
+    // La vista inicial de Movimientos solo necesita las órdenes del rango visible.
+    // El filtrado ocurre en servidor para evitar enviar cientos de contratos/rentals
+    // completos al navegador y luego volver a procesarlos en React.
     const overviewRentals = allRentals.filter((rental) => {
       const status = String(rental?.status ?? '').trim().toLowerCase();
-      return !rental?.deletedAt && status !== 'cancelled' && status !== 'anulado';
+      if (rental?.deletedAt || status === 'cancelled' || status === 'anulado') return false;
+      const contract = contractById.get(String(rental?.contractId ?? '')) ?? null;
+      const eventDate = getInventoryMovementOverviewDate(rental, contract);
+      if (from && (!eventDate || eventDate < from)) return false;
+      if (to && (!eventDate || eventDate > to)) return false;
+      if (!matchesInventoryMovementOverviewQuery(rental, contract, query)) return false;
+      return true;
     });
     const overviewRentalIds = new Set(overviewRentals.map((rental) => String(rental?.id ?? '')).filter(Boolean));
     const overviewContractIds = new Set(overviewRentals.map((rental) => String(rental?.contractId ?? '')).filter(Boolean));
@@ -8431,6 +8480,26 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
       else counts.ajuste += 1;
       return counts;
     }, { total: 0, entrada: 0, salida: 0, ajuste: 0 });
+    // Las reservas operativas que todavía no generaron movimiento persistido
+    // también forman parte de los KPI. Se calculan aquí sobre TODAS las órdenes,
+    // aunque la tabla solo reciba el rango solicitado.
+    const persistedReservationKeys = new Set(allMovements
+      .filter((movement) => movement?.type === 'reserva')
+      .map((movement) => `${movement?.reference ?? ''}::${movement?.itemId ?? ''}`));
+    allRentals.forEach((rental) => {
+      const rentalStatus = String(rental?.status ?? '').trim().toLowerCase();
+      const inventoryStatus = String(rental?.operational?.inventoryStatus ?? 'pendiente').trim().toLowerCase();
+      if (rental?.deletedAt || ['cancelled', 'anulado'].includes(rentalStatus)
+        || ['confirmado', 'salio', 'devuelto', 'anulado'].includes(inventoryStatus)) return;
+      const reference = rental?.orderCode ?? rental?.id ?? '';
+      (Array.isArray(rental?.items) ? rental.items : []).forEach((line) => {
+        if (!line?.itemId || Number(line?.quantity ?? 0) <= 0) return;
+        if (persistedReservationKeys.has(`${reference}::${line.itemId}`)) return;
+        movementStats.total += 1;
+        movementStats.salida += 1;
+      });
+    });
+    movementStats.includesPendingReservations = true;
     const recentMovements = allMovements
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0))
@@ -8442,10 +8511,10 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        items: Array.isArray(state.items) ? state.items : [],
-        inventoryCombos: Array.isArray(state.inventoryCombos) ? state.inventoryCombos : [],
-        categories: Array.isArray(state.categories) ? state.categories : [],
-        contracts: (Array.isArray(state.contracts) ? state.contracts : [])
+        items: (Array.isArray(state.items) ? state.items : []).map(summarizeInventoryMovementItem),
+        inventoryCombos: [],
+        categories: [],
+        contracts: allContracts
           .filter((contract) => overviewContractIds.has(String(contract?.id ?? '')))
           .map(summarizeInventoryContract),
         rentals: overviewRentals.map(summarizeInventoryRental),
@@ -8454,6 +8523,7 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
           .map(summarizeOrdersDelivery),
         inventoryMovements: recentMovements,
         movementStats,
+        filters: { from, to, query },
       },
     });
   } catch (error) {

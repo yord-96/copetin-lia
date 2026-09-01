@@ -720,7 +720,7 @@ const fetchAvailabilityOverview = async () => {
   return overview;
 };
 
-const fetchInventoryMovementsOverview = async () => {
+const fetchInventoryMovementsOverview = async ({ from = '', to = '', query = '' } = {}) => {
   if (!shouldUseServerState()) {
     await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements');
     return {
@@ -730,7 +730,12 @@ const fetchInventoryMovementsOverview = async () => {
       movementStats: null,
     };
   }
-  const response = await fetch(getServerStateUrl('/inventory/movements-overview'), {
+  const params = new URLSearchParams();
+  if (from) params.set('from', String(from).slice(0, 10));
+  if (to) params.set('to', String(to).slice(0, 10));
+  if (String(query ?? '').trim()) params.set('query', String(query).trim());
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const response = await fetch(getServerStateUrl(`/inventory/movements-overview${suffix}`), {
     cache: 'no-store',
     headers: getInternalHeaders(),
   });
@@ -743,7 +748,9 @@ const fetchInventoryMovementsOverview = async () => {
     items: [], inventoryCombos: [], categories: [], contracts: [], rentals: [],
     deliveries: [], inventoryMovements: [], movementStats: null,
   };
-  await mergeLocalState(overview);
+  // Este overview es efímero y específico de la pantalla. No se mezcla en
+  // webBridge: hacerlo obligaba a reconciliar contratos/rentals resumidos y
+  // disparaba trabajo adicional con decenas de MB en el navegador.
   serverStateIsPartial = true;
   return overview;
 };
