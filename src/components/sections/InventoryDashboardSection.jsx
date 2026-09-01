@@ -1661,6 +1661,10 @@ function InventoryDashboardSection({
   const [legacyError, setLegacyError] = useState('');
   const [legacyForm, setLegacyForm] = useState({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
   const [legacyItemDraft, setLegacyItemDraft] = useState({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+  const [legacyClientSearch, setLegacyClientSearch] = useState('');
+  const [legacyClientResultsOpen, setLegacyClientResultsOpen] = useState(false);
+  const [legacyItemSearch, setLegacyItemSearch] = useState('');
+  const [legacyItemResultsOpen, setLegacyItemResultsOpen] = useState(false);
   const [operationalOverrides, setOperationalOverrides] = useState({});
   const [dispatchReviewModal, setDispatchReviewModal] = useState(null);
   const [dispatchReviewForm, setDispatchReviewForm] = useState(buildDispatchReviewForm);
@@ -1781,7 +1785,56 @@ function InventoryDashboardSection({
     try { await onEnsureClients?.(); } catch (error) { setLegacyError(error?.message || 'No se pudieron cargar los clientes.'); }
     setLegacyForm({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: currentUser?.name ?? '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
     setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+    setLegacyClientSearch('');
+    setLegacyClientResultsOpen(false);
+    setLegacyItemSearch('');
+    setLegacyItemResultsOpen(false);
     setLegacyModalOpen(true);
+  };
+
+  const matchesLegacySearch = (query, values = []) => {
+    const tokens = normalizeText(query).split(' ').filter(Boolean);
+    if (!tokens.length) return true;
+    const haystack = normalizeText(values.filter(Boolean).join(' '));
+    return tokens.every((token) => haystack.includes(token));
+  };
+
+  const filteredLegacyClients = useMemo(() => {
+    const source = Array.isArray(clients) ? clients : [];
+    const matches = source.filter((client) => matchesLegacySearch(legacyClientSearch, [
+      client?.name,
+      client?.companyName,
+      client?.contactName,
+      client?.phone,
+      client?.whatsapp,
+      client?.nitCi,
+      client?.email,
+    ]));
+    return matches.slice(0, 40);
+  }, [clients, legacyClientSearch]);
+
+  const filteredLegacyItems = useMemo(() => {
+    const source = Array.isArray(items) ? items : [];
+    const matches = source.filter((item) => matchesLegacySearch(legacyItemSearch, [
+      item?.name,
+      item?.category,
+      item?.code,
+      item?.sku,
+    ]));
+    return matches.slice(0, 40);
+  }, [items, legacyItemSearch]);
+
+  const selectLegacyClient = (client) => {
+    const label = client?.name || client?.companyName || '';
+    setLegacyForm((current) => ({ ...current, clientId: client?.id || '', customerName: label }));
+    setLegacyClientSearch(label);
+    setLegacyClientResultsOpen(false);
+  };
+
+  const selectLegacyItem = (item) => {
+    setLegacyItemDraft((current) => ({ ...current, itemId: item?.id || '' }));
+    setLegacyItemSearch(item?.name || '');
+    setLegacyItemResultsOpen(false);
   };
   const addLegacyItem = () => {
     const item = items.find((entry) => String(entry?.id ?? '') === String(legacyItemDraft.itemId ?? ''));
@@ -1789,6 +1842,8 @@ function InventoryDashboardSection({
     if (!item || quantity <= 0) return;
     setLegacyForm((current) => ({ ...current, items: [...current.items, { id: `draft-${Date.now()}-${current.items.length}`, itemId: item.id, itemName: item.name, quantity, status: legacyItemDraft.status, chargeBs: Number(legacyItemDraft.chargeBs || 0) }] }));
     setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+    setLegacyItemSearch('');
+    setLegacyItemResultsOpen(false);
   };
   const submitLegacyContract = async (event) => {
     event.preventDefault(); setLegacyError('');
@@ -8206,17 +8261,136 @@ function InventoryDashboardSection({
       ) : null}
 
       {legacyModalOpen ? (
-        <div className="reset-modal-backdrop" onClick={() => setLegacyModalOpen(false)}><form className="reset-modal inventory-legacy-modal" onSubmit={submitLegacyContract} onClick={(event) => event.stopPropagation()}>
-          <header className="inventory-ops-all-head"><div><small>REGULARIZACION HISTORICA</small><h3>Registrar contrato rezagado</h3><p>No crea reservas, OS ni salidas retroactivas.</p></div><button type="button" className="orders-modal-close" onClick={() => setLegacyModalOpen(false)}>x</button></header>
-          <div className="inventory-legacy-form-grid">
-            <label>Numero antiguo<input value={legacyForm.contractCode} onChange={(e)=>setLegacyForm({...legacyForm,contractCode:e.target.value})}/></label><label>Fecha contrato<input type="date" value={legacyForm.contractDate} onChange={(e)=>setLegacyForm({...legacyForm,contractDate:e.target.value})}/></label>
-            <label>Cliente existente<select value={legacyForm.clientId} onChange={(e)=>{const c=clients.find(x=>String(x.id)===e.target.value);setLegacyForm({...legacyForm,clientId:e.target.value,customerName:c?.name||c?.companyName||''});}}><option value="">Seleccionar...</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name||c.companyName}</option>)}</select></label><label>Cliente / nombre<input value={legacyForm.customerName} onChange={(e)=>setLegacyForm({...legacyForm,customerName:e.target.value})}/></label>
-            <label>Responsable<input value={legacyForm.responsibleName} onChange={(e)=>setLegacyForm({...legacyForm,responsibleName:e.target.value})}/></label><label>Evento / referencia<input value={legacyForm.eventName} onChange={(e)=>setLegacyForm({...legacyForm,eventName:e.target.value})}/></label>
-            <label>Saldo por cobrar<input type="number" min="0" step="0.01" value={legacyForm.commercialPendingBs} onChange={(e)=>setLegacyForm({...legacyForm,commercialPendingBs:e.target.value})}/></label><label>Garantia retenida<input type="number" min="0" step="0.01" value={legacyForm.guaranteeHeldBs} onChange={(e)=>setLegacyForm({...legacyForm,guaranteeHeldBs:e.target.value})}/></label><label>Por devolver al cliente<input type="number" min="0" step="0.01" value={legacyForm.refundDueBs} onChange={(e)=>setLegacyForm({...legacyForm,refundDueBs:e.target.value})}/></label>
-          </div>
-          <div className="inventory-legacy-item-builder"><h4>Items pendientes / incidencias</h4><div><select value={legacyItemDraft.itemId} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,itemId:e.target.value})}><option value="">Producto...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select><input type="number" min="1" value={legacyItemDraft.quantity} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,quantity:e.target.value})}/><select value={legacyItemDraft.status} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,status:e.target.value})}><option value="pending_return">Falta devolver</option><option value="missing">Faltante</option><option value="damaged">Danado</option></select><input type="number" min="0" step="0.01" placeholder="Cargo total Bs" value={legacyItemDraft.chargeBs} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,chargeBs:e.target.value})}/><button type="button" className="ghost-button" onClick={addLegacyItem}>Agregar</button></div>{legacyForm.items.map((line,index)=><p key={line.id}><strong>{line.quantity} x {line.itemName}</strong> · {line.status==='pending_return'?'Falta devolver':line.status==='missing'?'Faltante':'Danado'} · {formatBs(line.chargeBs||0)} <button type="button" className="link-button" onClick={()=>setLegacyForm({...legacyForm,items:legacyForm.items.filter((_,i)=>i!==index)})}>Quitar</button></p>)}</div>
-          <label>Notas<textarea value={legacyForm.notes} onChange={(e)=>setLegacyForm({...legacyForm,notes:e.target.value})}/></label>{legacyError?<p className="status error">{legacyError}</p>:null}<div className="reset-modal-actions"><button type="button" className="ghost-button" onClick={()=>setLegacyModalOpen(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={legacySaving}>{legacySaving?'Guardando...':'Registrar rezagado'}</button></div>
-        </form></div>
+        <div className="reset-modal-backdrop inventory-legacy-backdrop" onClick={() => setLegacyModalOpen(false)}>
+          <form className="reset-modal inventory-legacy-modal inventory-legacy-modal-premium" onSubmit={submitLegacyContract} onClick={(event) => event.stopPropagation()}>
+            <header className="inventory-legacy-modal-head">
+              <div className="inventory-legacy-modal-title">
+                <span className="inventory-legacy-eyebrow">REGULARIZACIÓN HISTÓRICA</span>
+                <h3>Registrar contrato rezagado</h3>
+                <p>Registra pendientes antiguos sin crear reservas, órdenes de servicio ni salidas retroactivas.</p>
+              </div>
+              <button type="button" className="orders-modal-close" onClick={() => setLegacyModalOpen(false)} aria-label="Cerrar">×</button>
+            </header>
+
+            <div className="inventory-legacy-modal-body">
+              <section className="inventory-legacy-form-section">
+                <div className="inventory-legacy-section-head">
+                  <span className="inventory-legacy-section-index">01</span>
+                  <div><h4>Identificación del contrato</h4><p>Datos históricos y responsable del registro.</p></div>
+                </div>
+                <div className="inventory-legacy-form-grid">
+                  <label><span>Número antiguo</span><input placeholder="Ej. 1291" value={legacyForm.contractCode} onChange={(e)=>setLegacyForm({...legacyForm,contractCode:e.target.value})}/></label>
+                  <label><span>Fecha del contrato</span><input type="date" value={legacyForm.contractDate} onChange={(e)=>setLegacyForm({...legacyForm,contractDate:e.target.value})}/></label>
+                  <label><span>Responsable</span><input placeholder="Responsable del seguimiento" value={legacyForm.responsibleName} onChange={(e)=>setLegacyForm({...legacyForm,responsibleName:e.target.value})}/></label>
+                  <label className="inventory-legacy-span-3"><span>Evento / referencia</span><input placeholder="Lugar, evento o referencia histórica" value={legacyForm.eventName} onChange={(e)=>setLegacyForm({...legacyForm,eventName:e.target.value})}/></label>
+                </div>
+              </section>
+
+              <section className="inventory-legacy-form-section">
+                <div className="inventory-legacy-section-head">
+                  <span className="inventory-legacy-section-index">02</span>
+                  <div><h4>Cliente</h4><p>Busca por nombre, empresa, teléfono, WhatsApp o NIT/CI.</p></div>
+                </div>
+                <div className="inventory-legacy-client-layout">
+                  <label className="inventory-legacy-search-field">
+                    <span>Buscar cliente existente</span>
+                    <div className={`inventory-smart-combobox ${legacyClientResultsOpen ? 'is-open' : ''}`}>
+                      <span className="inventory-smart-search-icon" aria-hidden="true">⌕</span>
+                      <input
+                        autoComplete="off"
+                        placeholder="Escribe nombre, empresa, celular o CI..."
+                        value={legacyClientSearch}
+                        onFocus={() => setLegacyClientResultsOpen(true)}
+                        onBlur={() => window.setTimeout(() => setLegacyClientResultsOpen(false), 140)}
+                        onChange={(e) => {
+                          setLegacyClientSearch(e.target.value);
+                          setLegacyClientResultsOpen(true);
+                          setLegacyForm((current) => ({ ...current, clientId: '' }));
+                        }}
+                      />
+                      {legacyClientSearch ? <button type="button" className="inventory-smart-clear" onMouseDown={(e)=>e.preventDefault()} onClick={()=>{setLegacyClientSearch('');setLegacyForm((current)=>({...current,clientId:'',customerName:''}));setLegacyClientResultsOpen(true);}}>×</button> : null}
+                      {legacyClientResultsOpen ? <div className="inventory-smart-results">
+                        <div className="inventory-smart-results-head"><span>{filteredLegacyClients.length} resultado(s)</span><small>Escribe varias palabras para afinar</small></div>
+                        {filteredLegacyClients.map((client) => <button type="button" key={client.id} className="inventory-smart-option" onMouseDown={(e)=>e.preventDefault()} onClick={()=>selectLegacyClient(client)}>
+                          <span className="inventory-smart-option-avatar">{String(client?.name || client?.companyName || 'C').trim().charAt(0).toUpperCase()}</span>
+                          <span className="inventory-smart-option-copy"><strong>{client?.name || client?.companyName || 'Sin nombre'}</strong><small>{[client?.companyName && client?.companyName !== client?.name ? client.companyName : '', client?.phone || client?.whatsapp || '', client?.nitCi ? `CI/NIT ${client.nitCi}` : ''].filter(Boolean).join(' · ') || 'Sin datos adicionales'}</small></span>
+                        </button>)}
+                        {!filteredLegacyClients.length ? <div className="inventory-smart-empty"><strong>No encontramos coincidencias</strong><span>Puedes escribir el cliente manualmente a la derecha.</span></div> : null}
+                      </div> : null}
+                    </div>
+                    {legacyForm.clientId ? <small className="inventory-smart-selected">✓ Cliente existente vinculado</small> : null}
+                  </label>
+                  <label><span>Cliente / nombre</span><input placeholder="Nombre que quedará en el rezagado" value={legacyForm.customerName} onChange={(e)=>setLegacyForm({...legacyForm,customerName:e.target.value,clientId:''})}/><small className="inventory-field-help">También permite registrar un cliente histórico que no exista en la base.</small></label>
+                </div>
+              </section>
+
+              <section className="inventory-legacy-form-section inventory-legacy-economic-section">
+                <div className="inventory-legacy-section-head">
+                  <span className="inventory-legacy-section-index">03</span>
+                  <div><h4>Situación económica</h4><p>Registra solo saldos que continúan pendientes a la fecha.</p></div>
+                </div>
+                <div className="inventory-legacy-money-grid">
+                  <label><span>Saldo por cobrar</span><div className="inventory-money-input"><b>Bs</b><input type="number" min="0" step="0.01" placeholder="0,00" value={legacyForm.commercialPendingBs} onChange={(e)=>setLegacyForm({...legacyForm,commercialPendingBs:e.target.value})}/></div><small>El cliente debe a EL COPETÍN.</small></label>
+                  <label><span>Garantía retenida</span><div className="inventory-money-input"><b>Bs</b><input type="number" min="0" step="0.01" placeholder="0,00" value={legacyForm.guaranteeHeldBs} onChange={(e)=>setLegacyForm({...legacyForm,guaranteeHeldBs:e.target.value})}/></div><small>Garantía aún en poder de EL COPETÍN.</small></label>
+                  <label><span>Por devolver al cliente</span><div className="inventory-money-input"><b>Bs</b><input type="number" min="0" step="0.01" placeholder="0,00" value={legacyForm.refundDueBs} onChange={(e)=>setLegacyForm({...legacyForm,refundDueBs:e.target.value})}/></div><small>Obligación pendiente de EL COPETÍN.</small></label>
+                </div>
+              </section>
+
+              <section className="inventory-legacy-form-section inventory-legacy-incidents-section">
+                <div className="inventory-legacy-section-head inventory-legacy-section-head-inline">
+                  <div className="inventory-legacy-section-title-group"><span className="inventory-legacy-section-index">04</span><div><h4>Ítems pendientes / incidencias</h4><p>Busca productos por varias palabras, en cualquier orden.</p></div></div>
+                  <span className="inventory-legacy-item-count">{legacyForm.items.length} agregado(s)</span>
+                </div>
+                <div className="inventory-legacy-item-builder inventory-legacy-item-builder-premium">
+                  <div className="inventory-legacy-item-row">
+                    <label className="inventory-legacy-search-field inventory-legacy-product-search"><span>Producto</span>
+                      <div className={`inventory-smart-combobox ${legacyItemResultsOpen ? 'is-open' : ''}`}>
+                        <span className="inventory-smart-search-icon" aria-hidden="true">⌕</span>
+                        <input
+                          autoComplete="off"
+                          placeholder="Ej. boal gasa, mantel azul, silla crossback..."
+                          value={legacyItemSearch}
+                          onFocus={() => setLegacyItemResultsOpen(true)}
+                          onBlur={() => window.setTimeout(() => setLegacyItemResultsOpen(false), 140)}
+                          onChange={(e)=>{setLegacyItemSearch(e.target.value);setLegacyItemResultsOpen(true);setLegacyItemDraft((current)=>({...current,itemId:''}));}}
+                        />
+                        {legacyItemSearch ? <button type="button" className="inventory-smart-clear" onMouseDown={(e)=>e.preventDefault()} onClick={()=>{setLegacyItemSearch('');setLegacyItemDraft((current)=>({...current,itemId:''}));setLegacyItemResultsOpen(true);}}>×</button> : null}
+                        {legacyItemResultsOpen ? <div className="inventory-smart-results inventory-smart-results-products">
+                          <div className="inventory-smart-results-head"><span>{filteredLegacyItems.length} resultado(s)</span><small>Coinciden todas las palabras</small></div>
+                          {filteredLegacyItems.map((item) => <button type="button" key={item.id} className="inventory-smart-option inventory-smart-product-option" onMouseDown={(e)=>e.preventDefault()} onClick={()=>selectLegacyItem(item)}>
+                            <span className="inventory-smart-product-dot" />
+                            <span className="inventory-smart-option-copy"><strong>{item?.name || 'Sin nombre'}</strong><small>{[item?.category, item?.code || item?.sku].filter(Boolean).join(' · ') || 'Inventario'}</small></span>
+                          </button>)}
+                          {!filteredLegacyItems.length ? <div className="inventory-smart-empty"><strong>Sin coincidencias</strong><span>Prueba con menos palabras o revisa el nombre del producto.</span></div> : null}
+                        </div> : null}
+                      </div>
+                      {legacyItemDraft.itemId ? <small className="inventory-smart-selected">✓ Producto seleccionado</small> : null}
+                    </label>
+                    <label><span>Cantidad</span><input type="number" min="1" value={legacyItemDraft.quantity} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,quantity:e.target.value})}/></label>
+                    <label><span>Situación</span><select value={legacyItemDraft.status} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,status:e.target.value})}><option value="pending_return">Falta devolver</option><option value="missing">Faltante</option><option value="damaged">Dañado</option></select></label>
+                    <label><span>Cargo total</span><div className="inventory-money-input"><b>Bs</b><input type="number" min="0" step="0.01" placeholder="0,00" value={legacyItemDraft.chargeBs} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,chargeBs:e.target.value})}/></div></label>
+                    <button type="button" className="primary-button inventory-legacy-add-item" onClick={addLegacyItem} disabled={!legacyItemDraft.itemId}>+ Agregar</button>
+                  </div>
+                  {legacyForm.items.length ? <div className="inventory-legacy-added-items">
+                    {legacyForm.items.map((line,index)=><article key={line.id}><div className="inventory-legacy-added-main"><span className={`inventory-legacy-incidence-dot is-${line.status}`} /><div><strong>{line.itemName}</strong><small>{line.quantity} u. · {line.status==='pending_return'?'Falta devolver':line.status==='missing'?'Faltante':'Dañado'}</small></div></div><div className="inventory-legacy-added-actions"><strong>{formatBs(line.chargeBs||0)}</strong><button type="button" className="inventory-legacy-remove-item" onClick={()=>setLegacyForm({...legacyForm,items:legacyForm.items.filter((_,i)=>i!==index)})}>Quitar</button></div></article>)}
+                  </div> : <div className="inventory-legacy-items-empty"><strong>Sin incidencias agregadas</strong><span>Puedes registrar solo economía o añadir material pendiente.</span></div>}
+                </div>
+              </section>
+
+              <section className="inventory-legacy-form-section inventory-legacy-notes-section">
+                <div className="inventory-legacy-section-head"><span className="inventory-legacy-section-index">05</span><div><h4>Notas y antecedentes</h4><p>Información útil para futuras revisiones y auditoría.</p></div></div>
+                <label><textarea rows="3" placeholder="Detalle adicional del contrato rezagado..." value={legacyForm.notes} onChange={(e)=>setLegacyForm({...legacyForm,notes:e.target.value})}/></label>
+              </section>
+
+              {legacyError?<p className="status error inventory-legacy-error">{legacyError}</p>:null}
+            </div>
+
+            <footer className="inventory-legacy-modal-footer">
+              <div className="inventory-legacy-safety-note"><span>✓</span><p><strong>Registro aislado</strong><small>No modifica reservas ni disponibilidad al guardar.</small></p></div>
+              <div className="reset-modal-actions"><button type="button" className="ghost-button" onClick={()=>setLegacyModalOpen(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={legacySaving}>{legacySaving?'Guardando...':'Registrar rezagado'}</button></div>
+            </footer>
+          </form>
+        </div>
       ) : null}
 
       {legacyDetail ? (
