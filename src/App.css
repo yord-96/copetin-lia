@@ -51629,13 +51629,24 @@ button.calendar-dispatch-row:focus-visible {
   background: #fffaf7;
 }
 
-.inventory-ops-all-modal {
-  width: min(1180px, calc(100vw - 2.4rem));
-  max-height: 88vh;
-  padding: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+.inventory-ops-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.inventory-ops-pagination > span {
+  min-width: 7.5rem;
+  text-align: center;
+  color: #53617d;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.inventory-ops-pagination .ghost-button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .inventory-ops-all-head {
@@ -51657,12 +51668,6 @@ button.calendar-dispatch-row:focus-visible {
   margin: 0.22rem 0 0;
   color: #6b7690;
   font-size: 0.78rem;
-}
-
-.inventory-ops-list-modal {
-  margin: 0.88rem;
-  max-height: calc(88vh - 7.5rem);
-  overflow: auto;
 }
 
 @media (min-width: 1101px) {
@@ -51704,13 +51709,8 @@ button.calendar-dispatch-row:focus-visible {
     flex-direction: column;
   }
 
-  .inventory-ops-all-modal {
-    width: min(430px, calc(100vw - 1rem));
-    max-height: 92vh;
-  }
-
-  .inventory-ops-list-modal {
-    margin: 0.6rem;
+  .inventory-ops-pagination {
+    justify-content: space-between;
   }
 }
 
