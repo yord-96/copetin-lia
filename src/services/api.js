@@ -755,6 +755,32 @@ const fetchInventoryMovementsOverview = async ({ from = '', to = '', query = '' 
   return overview;
 };
 
+
+const fetchLegacyContracts = async () => {
+  const response = await fetch(getServerStateUrl('/inventory/legacy-contracts'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudieron cargar los contratos rezagados.');
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  return Array.isArray(payload?.rows) ? payload.rows : [];
+};
+
+const postLegacyContract = async (path, payload = {}) => {
+  const response = await fetch(getServerStateUrl(`/inventory/legacy-contracts${path}`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo actualizar el contrato rezagado.');
+  const result = await response.json();
+  if (result?.revision) rememberServerRevision(result.revision);
+  markServerStateStale('inventory.legacyContracts');
+  return result;
+};
+
 const fetchInventoryDamageLossOverview = async () => {
   if (!shouldUseServerState()) return { rows: [], total: 0, summary: {} };
   const response = await fetch(getServerStateUrl('/inventory/damage-loss-overview'), {
@@ -3502,6 +3528,10 @@ export const api = {
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     getDamageLossOverview: fetchInventoryDamageLossOverview,
+    getLegacyContracts: fetchLegacyContracts,
+    createLegacyContract: (payload) => postLegacyContract('', payload),
+    receiveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/receive`, payload),
+    resolveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/resolve-item`, payload),
     getProductsKardex: fetchProductsKardex,
     getProductKardexHistory: fetchProductKardexHistory,
     reinsertRepairedDamage: (payload) => callDirectDamageRepairReinsert(payload),

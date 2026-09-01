@@ -743,6 +743,8 @@ function AdminApp() {
             items={controller.items}
             combos={controller.inventoryCombos}
             categories={controller.categories}
+            clients={controller.clients}
+            currentUser={controller.currentUser}
             contracts={controller.contracts}
             rentals={controller.rentals}
             activeRentals={controller.activeRentals}

@@ -573,6 +573,7 @@ function AccountingSection({
   onPrintContractDocument,
 }) {
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
+  const [legacyReceivableRows, setLegacyReceivableRows] = useState([]);
   const [supplierContractPreview, setSupplierContractPreview] = useState(null);
   const [visibleRows, setVisibleRows] = useState({ incomes: 5, transfers: 5, expenses: 5 });
   const [bigCashTypeFilter, setBigCashTypeFilter] = useState('all');
@@ -1900,8 +1901,16 @@ function AccountingSection({
     [bigCashGuaranteeRows, selectedDate],
   );
 
+  useEffect(() => {
+    if (activeModule !== 'contabilidad_caja_grande') return;
+    let current = true;
+    api.inventory.getLegacyContracts().then((rows) => { if (current) setLegacyReceivableRows(rows); }).catch(() => { if (current) setLegacyReceivableRows([]); });
+    return () => { current = false; };
+  }, [activeModule, cashMovements]);
+
   const pendingReceivableRows = useMemo(
-    () => rentals
+    () => {
+      const regularRows = rentals
       .filter((rental) => !receivableExcludedRentalIds.has(String(rental?.id ?? rental?.rentalId ?? '')))
       .map((rental) => {
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
@@ -1932,8 +1941,11 @@ function AccountingSection({
         };
       })
       .filter(Boolean)
-      .sort((a, b) => b.pendingBs - a.pendingBs),
-    [contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, receivableExcludedRentalIds, rentals],
+      .sort((a, b) => b.pendingBs - a.pendingBs);
+      const legacyRows = legacyReceivableRows.filter((row) => Number(row?.totalDueBs ?? 0) > 0.009).map((row) => ({ id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, orderCode: 'REZAGADO', contractCode: row.contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialPendingBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.itemChargesBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.collectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialPendingBs || 0), refundBs: Number(row.refundDueBs || 0) }));
+      return [...regularRows, ...legacyRows].sort((a, b) => b.pendingBs - a.pendingBs);
+    },
+    [legacyReceivableRows,contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, receivableExcludedRentalIds, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -3975,7 +3987,7 @@ function AccountingSection({
               <strong>{formatBs(row.pendingBs)}</strong>
               <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
             </td>
-            <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
+            <td>{row.isLegacy ? <span className="cash-receipt-muted">Gestionar en Movimientos</span> : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
           </tr>
         ),
         monthlyBrowser: true,
@@ -6189,7 +6201,7 @@ function AccountingSection({
                         <td className="amount">{formatBs(row.transportPendingBs)}</td>
                         <td className="amount">{formatBs(row.damagePendingBs)}</td>
                         <td className="amount bigcash-total-due">{formatBs(row.pendingBs)}</td>
-                        <td><button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button></td>
+                        <td>{row.isLegacy ? <span className="cash-receipt-muted">Gestionar en Movimientos</span> : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
                       </tr>
                     )) : visibleFinalizedReceivableRows.flatMap((row) => {
                       const isExpanded = expandedFinalizedReceivableId === row.id;

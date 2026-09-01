@@ -1544,6 +1544,8 @@ function InventoryDashboardSection({
   items = [],
   combos = [],
   categories = [],
+  clients = [],
+  currentUser = null,
   contracts = [],
   activeRentals = [],
   cancelledRentals = [],
@@ -1649,6 +1651,15 @@ function InventoryDashboardSection({
   const [inventoryOperationDateTo, setInventoryOperationDateTo] = useState(initialInventoryOpsFiltersRef.current.dateTo);
   const [showAllInventoryOrders, setShowAllInventoryOrders] = useState(false);
   const [inventoryOrdersPage, setInventoryOrdersPage] = useState(1);
+  const [movementsWorkspaceTab, setMovementsWorkspaceTab] = useState('orders');
+  const [legacyContracts, setLegacyContracts] = useState([]);
+  const [legacyLoading, setLegacyLoading] = useState(false);
+  const [legacyModalOpen, setLegacyModalOpen] = useState(false);
+  const [legacyDetail, setLegacyDetail] = useState(null);
+  const [legacySaving, setLegacySaving] = useState(false);
+  const [legacyError, setLegacyError] = useState('');
+  const [legacyForm, setLegacyForm] = useState({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
+  const [legacyItemDraft, setLegacyItemDraft] = useState({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
   const [operationalOverrides, setOperationalOverrides] = useState({});
   const [dispatchReviewModal, setDispatchReviewModal] = useState(null);
   const [dispatchReviewForm, setDispatchReviewForm] = useState(buildDispatchReviewForm);
@@ -1754,6 +1765,48 @@ function InventoryDashboardSection({
   const isMaintenanceModule = activeModule === 'inventario_mantenimiento';
   const isAdjustModule = activeModule === 'inventario_ajustes';
   const isOverviewModule = !isProductsModule && !isCombosModule && !isCategoriesModule && !isMovementsModule && !isMaintenanceModule && !isAdjustModule;
+
+  const loadLegacyContracts = async () => {
+    setLegacyLoading(true);
+    try { setLegacyContracts(await api.inventory.getLegacyContracts()); }
+    catch (error) { setFeedback(error?.message || 'No se pudieron cargar los contratos rezagados.'); setFeedbackType('error'); }
+    finally { setLegacyLoading(false); }
+  };
+
+  useEffect(() => { if (isMovementsModule) loadLegacyContracts(); }, [isMovementsModule]);
+
+  const openLegacyCreate = () => {
+    setLegacyError('');
+    setLegacyForm({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: currentUser?.name ?? '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
+    setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+    setLegacyModalOpen(true);
+  };
+  const addLegacyItem = () => {
+    const item = items.find((entry) => String(entry?.id ?? '') === String(legacyItemDraft.itemId ?? ''));
+    const quantity = Math.max(0, Math.trunc(Number(legacyItemDraft.quantity ?? 0)));
+    if (!item || quantity <= 0) return;
+    setLegacyForm((current) => ({ ...current, items: [...current.items, { id: `draft-${Date.now()}-${current.items.length}`, itemId: item.id, itemName: item.name, quantity, status: legacyItemDraft.status, chargeBs: Number(legacyItemDraft.chargeBs || 0) }] }));
+    setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+  };
+  const submitLegacyContract = async (event) => {
+    event.preventDefault(); setLegacyError('');
+    if (!legacyForm.contractCode.trim() || !legacyForm.contractDate || !legacyForm.customerName.trim()) { setLegacyError('Completa numero, fecha y cliente.'); return; }
+    setLegacySaving(true);
+    try {
+      await api.inventory.createLegacyContract({ ...legacyForm, responsibleName: legacyForm.responsibleName || currentUser?.name || 'Sin responsable', createdByName: currentUser?.name || legacyForm.responsibleName });
+      setLegacyModalOpen(false); await loadLegacyContracts(); setFeedback('Contrato rezagado registrado sin afectar reservas ni disponibilidad actual.'); setFeedbackType('ok');
+    } catch (error) { setLegacyError(error?.message || 'No se pudo registrar el contrato rezagado.'); } finally { setLegacySaving(false); }
+  };
+  const receiveLegacyItem = async (legacy, line) => {
+    const quantity = Number(window.prompt(`Cantidad recibida de ${line.itemName}`, String(line.quantity ?? 1)) ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    try { const result = await api.inventory.receiveLegacyContractItem(legacy.id, { lineId: line.id, quantity, userName: currentUser?.name ?? '' }); setLegacyContracts((rows) => rows.map((row) => row.id === legacy.id ? result.row : row)); setLegacyDetail(result.row); setFeedback(`${quantity} unidad(es) reingresadas al stock general.`); setFeedbackType('ok'); }
+    catch (error) { setFeedback(error?.message || 'No se pudo recibir el material.'); setFeedbackType('error'); }
+  };
+  const resolveLegacyItem = async (legacy, line) => {
+    try { const result = await api.inventory.resolveLegacyContractItem(legacy.id, { lineId: line.id, userName: currentUser?.name ?? '' }); setLegacyContracts((rows) => rows.map((row) => row.id === legacy.id ? result.row : row)); setLegacyDetail(result.row); }
+    catch (error) { setFeedback(error?.message || 'No se pudo resolver la incidencia.'); setFeedbackType('error'); }
+  };
 
   useEffect(() => {
     if (!isMovementsModule || !onLoadMovementsOverview) return undefined;
@@ -5295,12 +5348,8 @@ function InventoryDashboardSection({
               <button type="button" className="link-button" onClick={() => onSwitchInventoryModule?.('inventario_productos')}>
                 Ir a Productos
               </button>
-              <button type="button" className="ghost-button" onClick={handleExport}>
-                Exportar Movimientos
-              </button>
-              <button type="button" className="primary-button" onClick={() => openMovementModal({}, 'entrada')}>
-                + Registrar Movimiento
-              </button>
+              {movementsWorkspaceTab === 'orders' ? <button type="button" className="ghost-button" onClick={handleExport}>Exportar Movimientos</button> : null}
+              {movementsWorkspaceTab === 'orders' ? <button type="button" className="primary-button" onClick={() => openMovementModal({}, 'entrada')}>+ Registrar Movimiento</button> : <button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button>}
             </>
           ) : null}
 
@@ -5349,7 +5398,9 @@ function InventoryDashboardSection({
           ) : null}
 
           {isMovementsModule ? (
-            <article className="inventory-ops-card">
+            <>
+              <div className="inventory-legacy-tabs"><button type="button" className={movementsWorkspaceTab === 'orders' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('orders')}>Órdenes operativas <b>{filteredPrepOrderRows.length}</b></button><button type="button" className={movementsWorkspaceTab === 'legacy' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('legacy')}>Contratos rezagados <b>{legacyContracts.length}</b></button></div>
+            <article className="inventory-ops-card" hidden={movementsWorkspaceTab !== 'orders'}>
               <header className="inventory-ops-head">
                 <div>
                   <h3>Ordenes operativas de inventario</h3>
@@ -5584,6 +5635,15 @@ function InventoryDashboardSection({
                 )}
               </div>
             </article>
+            <article className="inventory-ops-card inventory-legacy-card" hidden={movementsWorkspaceTab !== 'legacy'}>
+              <header className="inventory-ops-head"><div><h3>Contratos rezagados</h3><span>Regularizacion historica independiente: no reserva stock ni altera contratos vigentes.</span></div><button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button></header>
+              {legacyLoading ? <p className="status">Cargando contratos rezagados...</p> : null}
+              <div className="inventory-legacy-table-wrap"><table className="inventory-legacy-table"><thead><tr><th>Contrato</th><th>Fecha</th><th>Cliente</th><th>Responsable</th><th>Material pendiente</th><th>Economia</th><th>Estado</th><th /></tr></thead><tbody>
+                {legacyContracts.map((row) => <tr key={row.id}><td><strong>{row.contractCode}</strong><small>REZAGADO</small></td><td>{row.contractDate}</td><td><strong>{row.customerName}</strong></td><td>{row.responsibleName}</td><td><strong>{row.pendingUnits} u.</strong><small>{row.pendingItemCount} incidencia(s)</small></td><td><strong>{row.totalDueBs > 0 ? `Por cobrar ${formatBs(row.totalDueBs)}` : row.refundDueBs > 0 ? `Por devolver ${formatBs(row.refundDueBs)}` : 'Sin saldo'}</strong><small>Garantia retenida {formatBs(row.guaranteeHeldBs || 0)}</small></td><td><span className={`inventory-legacy-status ${row.isResolved ? 'resolved' : 'pending'}`}>{row.isResolved ? 'Finalizado' : 'Pendiente'}</span></td><td><button type="button" className="ghost-button" onClick={() => setLegacyDetail(row)}>Abrir</button></td></tr>)}
+                {!legacyLoading && legacyContracts.length === 0 ? <tr><td colSpan={8}><p className="status">Aun no hay contratos rezagados registrados.</p></td></tr> : null}
+              </tbody></table></div>
+            </article>
+            </>
           ) : null}
 
 
@@ -8141,6 +8201,24 @@ function InventoryDashboardSection({
             </footer>
           </div>
         </div>
+      ) : null}
+
+      {legacyModalOpen ? (
+        <div className="reset-modal-backdrop" onClick={() => setLegacyModalOpen(false)}><form className="reset-modal inventory-legacy-modal" onSubmit={submitLegacyContract} onClick={(event) => event.stopPropagation()}>
+          <header className="inventory-ops-all-head"><div><small>REGULARIZACION HISTORICA</small><h3>Registrar contrato rezagado</h3><p>No crea reservas, OS ni salidas retroactivas.</p></div><button type="button" className="orders-modal-close" onClick={() => setLegacyModalOpen(false)}>x</button></header>
+          <div className="inventory-legacy-form-grid">
+            <label>Numero antiguo<input value={legacyForm.contractCode} onChange={(e)=>setLegacyForm({...legacyForm,contractCode:e.target.value})}/></label><label>Fecha contrato<input type="date" value={legacyForm.contractDate} onChange={(e)=>setLegacyForm({...legacyForm,contractDate:e.target.value})}/></label>
+            <label>Cliente existente<select value={legacyForm.clientId} onChange={(e)=>{const c=clients.find(x=>String(x.id)===e.target.value);setLegacyForm({...legacyForm,clientId:e.target.value,customerName:c?.name||c?.companyName||''});}}><option value="">Seleccionar...</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name||c.companyName}</option>)}</select></label><label>Cliente / nombre<input value={legacyForm.customerName} onChange={(e)=>setLegacyForm({...legacyForm,customerName:e.target.value})}/></label>
+            <label>Responsable<input value={legacyForm.responsibleName} onChange={(e)=>setLegacyForm({...legacyForm,responsibleName:e.target.value})}/></label><label>Evento / referencia<input value={legacyForm.eventName} onChange={(e)=>setLegacyForm({...legacyForm,eventName:e.target.value})}/></label>
+            <label>Saldo por cobrar<input type="number" min="0" step="0.01" value={legacyForm.commercialPendingBs} onChange={(e)=>setLegacyForm({...legacyForm,commercialPendingBs:e.target.value})}/></label><label>Garantia retenida<input type="number" min="0" step="0.01" value={legacyForm.guaranteeHeldBs} onChange={(e)=>setLegacyForm({...legacyForm,guaranteeHeldBs:e.target.value})}/></label><label>Por devolver al cliente<input type="number" min="0" step="0.01" value={legacyForm.refundDueBs} onChange={(e)=>setLegacyForm({...legacyForm,refundDueBs:e.target.value})}/></label>
+          </div>
+          <div className="inventory-legacy-item-builder"><h4>Items pendientes / incidencias</h4><div><select value={legacyItemDraft.itemId} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,itemId:e.target.value})}><option value="">Producto...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select><input type="number" min="1" value={legacyItemDraft.quantity} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,quantity:e.target.value})}/><select value={legacyItemDraft.status} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,status:e.target.value})}><option value="pending_return">Falta devolver</option><option value="missing">Faltante</option><option value="damaged">Danado</option></select><input type="number" min="0" step="0.01" placeholder="Cargo total Bs" value={legacyItemDraft.chargeBs} onChange={(e)=>setLegacyItemDraft({...legacyItemDraft,chargeBs:e.target.value})}/><button type="button" className="ghost-button" onClick={addLegacyItem}>Agregar</button></div>{legacyForm.items.map((line,index)=><p key={line.id}><strong>{line.quantity} x {line.itemName}</strong> · {line.status==='pending_return'?'Falta devolver':line.status==='missing'?'Faltante':'Danado'} · {formatBs(line.chargeBs||0)} <button type="button" className="link-button" onClick={()=>setLegacyForm({...legacyForm,items:legacyForm.items.filter((_,i)=>i!==index)})}>Quitar</button></p>)}</div>
+          <label>Notas<textarea value={legacyForm.notes} onChange={(e)=>setLegacyForm({...legacyForm,notes:e.target.value})}/></label>{legacyError?<p className="status error">{legacyError}</p>:null}<div className="reset-modal-actions"><button type="button" className="ghost-button" onClick={()=>setLegacyModalOpen(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={legacySaving}>{legacySaving?'Guardando...':'Registrar rezagado'}</button></div>
+        </form></div>
+      ) : null}
+
+      {legacyDetail ? (
+        <div className="reset-modal-backdrop" onClick={()=>setLegacyDetail(null)}><section className="reset-modal inventory-legacy-detail-modal" onClick={(event)=>event.stopPropagation()}><header className="inventory-ops-all-head"><div><small>CONTRATO REZAGADO</small><h3>Contrato {legacyDetail.contractCode}</h3><p>{legacyDetail.customerName} · {legacyDetail.contractDate}</p></div><button type="button" className="orders-modal-close" onClick={()=>setLegacyDetail(null)}>x</button></header><div className="inventory-legacy-summary"><article><small>Por cobrar</small><strong>{formatBs(legacyDetail.totalDueBs||0)}</strong></article><article><small>Garantia retenida</small><strong>{formatBs(legacyDetail.guaranteeHeldBs||0)}</strong></article><article><small>Por devolver</small><strong>{formatBs(legacyDetail.refundDueBs||0)}</strong></article><article><small>Material pendiente</small><strong>{legacyDetail.pendingUnits||0} u.</strong></article></div><div className="inventory-legacy-table-wrap"><table className="inventory-legacy-table"><thead><tr><th>Item</th><th>Cantidad</th><th>Situacion</th><th>Cargo</th><th>Accion</th></tr></thead><tbody>{(legacyDetail.items||[]).map(line=><tr key={line.id}><td>{line.itemName}</td><td>{line.quantity}</td><td>{line.status==='pending_return'?'Pendiente devolucion':line.status==='missing'?'Faltante':line.status==='damaged'?'Danado':line.status==='returned'?'Devuelto':'Resuelto'}</td><td>{formatBs(line.chargeBs||0)}</td><td>{line.status==='pending_return'&&line.quantity>0?<button type="button" className="primary-button" onClick={()=>receiveLegacyItem(legacyDetail,line)}>Recibir al stock</button>:['missing','damaged'].includes(line.status)?<button type="button" className="ghost-button" onClick={()=>resolveLegacyItem(legacyDetail,line)}>Marcar resuelto</button>:'-'}</td></tr>)}</tbody></table></div><p className="status">Recibir material crea una reinsercion real al stock. Registrar el rezagado no descuenta stock actual.</p><div className="reset-modal-actions"><button type="button" className="primary-button" onClick={()=>setLegacyDetail(null)}>Cerrar</button></div></section></div>
       ) : null}
 
       {valuationOpen ? (
