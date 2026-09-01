@@ -1624,7 +1624,7 @@ const directActiveReservedStockForItem = (state, itemId) => {
     .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
       .reduce((lineTotal, line, index) => (
         String(line?.itemId ?? '').trim() === requestedItemId
-          ? lineTotal + directOutstandingReservedQty(rental, line, index)
+          ? lineTotal + directOutstandingCommittedQty(rental, line, index)
           : lineTotal
       ), 0), 0);
 };
@@ -8530,6 +8530,175 @@ const summarizeLegacyContract = (entry = {}) => {
     isResolved: pendingUnits <= 0 && totalDueBs <= 0.009 && refundDueBs <= 0.009,
   };
 };
+
+
+const directOutstandingCommittedQty = (rental, line, index = 0) => {
+  if (!line) return 0;
+  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
+  if (quantity <= 0) return 0;
+  const lineKey = directInventoryLineKey(line, index);
+  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+    .filter((entry) => (
+      String(entry?.lineKey ?? '') === String(lineKey)
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
+    ))
+    .reduce((sum, entry) => sum
+      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+  return Math.max(0, quantity - processedQty);
+};
+
+const directInventoryDeleteCommitments = (state, itemId) => {
+  const requestedItemId = String(itemId ?? '').trim();
+  if (!requestedItemId) return [];
+  const todayKey = directDateKey(new Date());
+  const contracts = Array.isArray(state?.contracts) ? state.contracts : [];
+  const contractById = new Map(contracts.map((contract) => [String(contract?.id ?? ''), contract]));
+  const contractByRentalId = new Map(contracts.map((contract) => [String(contract?.rentalId ?? ''), contract]));
+  const rows = [];
+
+  (Array.isArray(state?.rentals) ? state.rentals : []).forEach((rental) => {
+    if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return;
+    const status = directNormalizeText(rental?.status);
+    if (!['active', 'confirmed', 'pending'].includes(status)) return;
+    const inventoryStatus = directNormalizeText(rental?.operational?.inventoryStatus);
+    if (inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return;
+
+    const startKey = directDateKey(rental?.rentalDate ?? rental?.deliveryDate);
+    const endKey = directDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
+    const isCurrentOrFuture = inventoryStatus === 'salio'
+      || inventoryStatus === 'confirmado'
+      || inventoryStatus === 'alistado'
+      || inventoryStatus === 'retorno_parcial'
+      || Boolean((startKey && startKey >= todayKey) || (endKey && endKey >= todayKey));
+    if (!isCurrentOrFuture) return;
+
+    const matchingLines = (Array.isArray(rental?.items) ? rental.items : [])
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => String(line?.itemId ?? '') === requestedItemId);
+    if (!matchingLines.length) return;
+
+    const quantity = matchingLines.reduce((sum, { line, index }) => sum + directOutstandingReservedQty(rental, line, index), 0);
+    if (quantity <= 0) return;
+
+    const contract = contractById.get(String(rental?.contractId ?? ''))
+      || contractByRentalId.get(String(rental?.id ?? ''))
+      || null;
+    rows.push({
+      rentalId: rental.id,
+      contractId: contract?.id ?? rental?.contractId ?? null,
+      contractCode: String(contract?.contractCode ?? rental?.contractCode ?? rental?.contractNumber ?? '').trim() || 'SIN CODIGO',
+      orderCode: String(rental?.orderCode ?? contract?.orderCode ?? '').trim(),
+      clientName: String(contract?.customerName ?? rental?.customerName ?? rental?.clientName ?? '').trim() || 'SIN CLIENTE',
+      eventDate: startKey || directDateKey(contract?.eventDate) || '',
+      pickupDate: endKey || '',
+      quantity,
+      inventoryStatus: inventoryStatus || 'pendiente',
+    });
+  });
+
+  return rows.sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)) || String(a.contractCode).localeCompare(String(b.contractCode), 'es', { numeric: true }));
+};
+
+router.post('/__copetin_db/inventory/items/:itemId/remove', async (req, res, next) => {
+  try {
+    const itemId = String(req.params.itemId ?? '').trim();
+    if (!itemId) {
+      res.status(400).json({ error: 'Debes indicar el producto que deseas eliminar.' });
+      return;
+    }
+
+    const snapshot = await getStateSnapshot();
+    const initialItem = (Array.isArray(snapshot?.items) ? snapshot.items : []).find((entry) => String(entry?.id ?? '') === itemId && !entry?.deletedAt);
+    if (!initialItem) {
+      res.status(404).json({ error: 'No se encontro el producto seleccionado.' });
+      return;
+    }
+    const initialBlockers = directInventoryDeleteCommitments(snapshot, itemId);
+    if (initialBlockers.length) {
+      res.status(409).json({
+        code: 'INVENTORY_ITEM_COMMITTED',
+        error: 'No se puede eliminar este producto porque esta comprometido en contratos vigentes o futuros. Reemplazalo o retiralo de esos contratos antes de eliminarlo.',
+        blockers: initialBlockers,
+      });
+      return;
+    }
+
+    let deletedItem = null;
+    const now = new Date().toISOString();
+    const result = await updateStateSnapshot((state) => {
+      state.items = Array.isArray(state.items) ? state.items : [];
+      const item = state.items.find((entry) => String(entry?.id ?? '') === itemId);
+      if (!item || item.deletedAt) {
+        const error = new Error('No se encontro el producto seleccionado.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const blockers = directInventoryDeleteCommitments(state, itemId);
+      if (blockers.length) {
+        const error = new Error('No se puede eliminar este producto porque fue comprometido en un contrato mientras intentabas eliminarlo.');
+        error.statusCode = 409;
+        error.code = 'INVENTORY_ITEM_COMMITTED';
+        error.blockers = blockers;
+        throw error;
+      }
+
+      const hasRecoveryQueue = (Array.isArray(state.stockRecoveries) ? state.stockRecoveries : [])
+        .some((entry) => String(entry?.itemId ?? '') === itemId);
+      if (hasRecoveryQueue) {
+        const error = new Error('No puedes eliminar este producto porque tiene unidades pendientes de lavado o reparacion.');
+        error.statusCode = 409;
+        error.code = 'INVENTORY_ITEM_RECOVERY_BLOCKED';
+        throw error;
+      }
+
+      if (item?.controlsStock !== false && String(item?.verificationStatus ?? '').trim() !== 'pending_verification' && Number(item.availableStock ?? 0) < Number(item.totalStock ?? 0)) {
+        const error = new Error('No puedes eliminar este producto porque tiene unidades no operativas o faltantes pendientes.');
+        error.statusCode = 409;
+        error.code = 'INVENTORY_ITEM_STOCK_BLOCKED';
+        throw error;
+      }
+
+      item.deletedAt = now;
+      item.updatedAt = now;
+      deletedItem = structuredClone(item);
+      state.systemAuditLog = Array.isArray(state.systemAuditLog) ? state.systemAuditLog : [];
+      state.systemAuditLog.unshift({
+        id: `audit-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+        type: 'inventory_item_deleted',
+        action: 'eliminar_producto',
+        entityType: 'item',
+        entityId: item.id,
+        entityCode: item.sku ?? '',
+        detail: `Producto eliminado: ${item.name ?? ''}`,
+        userId: String(req.body?.userId ?? '').trim() || null,
+        userName: String(req.body?.userName ?? '').trim() || 'Usuario',
+        userRole: String(req.body?.userRole ?? '').trim(),
+        createdAt: now,
+      });
+      return state;
+    });
+
+    res.json({
+      ok: true,
+      item: deletedItem,
+      revision: result.revision,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({
+        code: error.code ?? '',
+        error: error.message,
+        ...(Array.isArray(error?.blockers) ? { blockers: error.blockers } : {}),
+      });
+      return;
+    }
+    next(error);
+  }
+});
 
 router.get('/__copetin_db/inventory/legacy-contracts', async (req, res, next) => {
   try {

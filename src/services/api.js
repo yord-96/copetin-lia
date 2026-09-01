@@ -2569,6 +2569,28 @@ const callBridge = async (domain, method, mutates, ...args) => {
 };
 
 
+
+const callDirectInventoryItemRemove = async (payload = {}) => {
+  if (!shouldUseServerState()) return callBridge('inventory', 'remove', true, payload);
+  const itemId = String(payload?.id ?? '').trim();
+  if (!itemId) throw new Error('Debes indicar el producto que deseas eliminar.');
+  const response = await fetch(getServerStateUrl(`/inventory/items/${encodeURIComponent(itemId)}/remove`), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo eliminar el producto.');
+  const result = await response.json();
+  if (result?.revision) {
+    rememberServerRevision(result.revision);
+    localServerCommitSerial += 1;
+  }
+  await fetchServerCollections(['items'], 'inventory.remove:confirmed');
+  announceDataChange({ domain: 'inventory', method: 'remove', collections: ['items', 'systemAuditLog'] });
+  return result?.item ?? { id: itemId };
+};
+
 const callDirectCashOperation = async (path, payload = {}) => {
   if (!shouldUseServerState()) return null;
   const controller = new AbortController();
@@ -3540,7 +3562,7 @@ export const api = {
     listCombos: () => callBridge('inventory', 'listCombos', false),
     create: (payload) => callBridge('inventory', 'create', true, payload),
     update: (payload) => callBridge('inventory', 'update', true, payload),
-    remove: (payload) => callBridge('inventory', 'remove', true, payload),
+    remove: (payload) => callDirectInventoryItemRemove(payload),
     createCombo: (payload) => callBridge('inventory', 'createCombo', true, payload),
     updateCombo: (payload) => callBridge('inventory', 'updateCombo', true, payload),
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),

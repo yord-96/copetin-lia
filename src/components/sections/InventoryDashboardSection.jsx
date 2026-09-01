@@ -4219,6 +4219,17 @@ function InventoryDashboardSection({
       showMessage('Producto eliminado correctamente.');
       setRowMenuOpenId(null);
     } catch (error) {
+      if (error?.payload?.code === 'INVENTORY_ITEM_COMMITTED' && Array.isArray(error.payload.blockers)) {
+        const blockers = error.payload.blockers;
+        const detail = blockers.slice(0, 8).map((entry) => {
+          const date = entry.eventDate ? ` · ${entry.eventDate}` : '';
+          return `Contrato ${entry.contractCode}${date} · ${entry.clientName} · ${entry.quantity} u.`;
+        }).join('\n');
+        const extra = blockers.length > 8 ? `\n... y ${blockers.length - 8} compromiso(s) mas.` : '';
+        window.alert(`No se puede eliminar "${row.name}".\n\nEl producto esta comprometido en contratos vigentes o futuros:\n\n${detail}${extra}\n\nPrimero reemplaza o retira este producto de esos contratos para liberarlo.`);
+        setRowMenuOpenId(null);
+        return;
+      }
       showMessage(error?.message || 'No se pudo eliminar el producto.', 'error');
     }
   };
