@@ -135,7 +135,7 @@ const summarizeBootstrapCollection = (name, rows) => {
   if (name === 'rentals') return rows.map(summarizeRental);
   return rows;
 };
-const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'guarantee_apply', 'refund', 'note']);
 const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia']);
 const patchableCollections = new Set([
   'categories',
@@ -204,7 +204,7 @@ const normalizeEconomicLedgerRows = (rows) => {
   return rows.map((entry) => {
     const type = allowedEconomicLedgerTypes.has(entry?.type) ? entry.type : 'note';
     const paymentMethodCandidate = String(entry?.paymentMethod ?? entry?.method ?? '').trim().toLowerCase();
-    const paymentMethod = type === 'note'
+    const paymentMethod = ['note', 'guarantee_apply'].includes(type)
       ? ''
       : allowedEconomicLedgerPaymentMethods.has(paymentMethodCandidate)
         ? paymentMethodCandidate
@@ -236,6 +236,8 @@ const normalizeEconomicLedgerRows = (rows) => {
       contractAllocationBs: toPositiveRoundedNumber(entry?.contractAllocationBs),
       guaranteeAllocationBs: toPositiveRoundedNumber(entry?.guaranteeAllocationBs),
       surplusAllocationBs: toPositiveRoundedNumber(entry?.surplusAllocationBs),
+      damageAllocationBs: toPositiveRoundedNumber(entry?.damageAllocationBs),
+      applicationTarget: String(entry?.applicationTarget ?? '').trim().toLowerCase(),
       attachment: normalizeEconomicLedgerAttachment(entry?.attachment),
       deletedAt: String(entry?.deletedAt ?? '').trim() || null,
       deletedById: entry?.deletedById ?? null,
@@ -4528,7 +4530,8 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
         }
 
         const explicitGuaranteeAppliedBs = directMoney((Array.isArray(resolvedContract?.economicLedger) ? resolvedContract.economicLedger : []).reduce((sum, entry) => {
-          if (entry?.deletedAt || String(entry?.type ?? '').trim().toLowerCase() !== 'charge') return sum;
+          const entryType = String(entry?.type ?? '').trim().toLowerCase();
+          if (entry?.deletedAt || !['charge', 'guarantee_apply'].includes(entryType)) return sum;
           return sum + directMoney(entry?.amountBs);
         }, 0));
         const availableGuaranteeBs = directMoney(Math.max(
@@ -5853,6 +5856,15 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
             const normalizedEntry = normalizeEconomicLedgerRows([mutation?.entry])[0];
             if (!normalizedEntry?.id) return;
             const previous = ledgerById.get(String(normalizedEntry.id));
+            if (previous?.type === 'guarantee_apply') {
+              const previousComparable = JSON.stringify(normalizeEconomicLedgerRows([previous])[0]);
+              const nextComparable = JSON.stringify(normalizedEntry);
+              if (previousComparable !== nextComparable) {
+                const error = new Error('La aplicacion de garantia forma parte de una liquidacion conciliada y no puede editarse de forma aislada. Usa Reset economico para revertirla.');
+                error.statusCode = 409;
+                throw error;
+              }
+            }
             const mergedEntry = {
               ...(previous ?? {}),
               ...normalizedEntry,
@@ -5910,6 +5922,11 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
             const entryId = String(mutation?.entryId ?? '').trim();
             if (!entryId || !ledgerById.has(entryId)) return;
             const previous = ledgerById.get(entryId);
+            if (previous?.type === 'guarantee_apply') {
+              const error = new Error('La aplicacion de garantia forma parte de una liquidacion conciliada y no puede eliminarse de forma aislada. Usa Reset economico para revertirla.');
+              error.statusCode = 409;
+              throw error;
+            }
             const deletionReason = String(mutation?.reason ?? 'Linea anulada.').trim() || 'Linea anulada.';
             const deletedById = req.body.updatedById ?? req.body.userId ?? null;
             const deletedByName = String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema';
@@ -7044,6 +7061,8 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   contractAllocationBs: Number(entry.contractAllocationBs ?? 0),
   guaranteeAllocationBs: Number(entry.guaranteeAllocationBs ?? 0),
   surplusAllocationBs: Number(entry.surplusAllocationBs ?? 0),
+  damageAllocationBs: Number(entry.damageAllocationBs ?? 0),
+  applicationTarget: entry.applicationTarget ?? '',
   deletedAt: entry.deletedAt ?? null,
   deletedByName: entry.deletedByName ?? '',
 });
@@ -7103,6 +7122,9 @@ const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
   const appliedBs = toPositiveRoundedNumber(Math.min(
     Math.max(0, paidBs - refundedBs),
     ledger.reduce((sum, entry) => {
+      if (entry?.type === 'guarantee_apply') {
+        return sum + toPositiveRoundedNumber(entry?.amountBs);
+      }
       if (entry?.type !== 'charge') return sum;
       const note = String(entry?.note ?? '').trim().toLowerCase();
       const target = String(entry?.cashCollectionTarget ?? '').trim().toLowerCase();
@@ -7120,6 +7142,8 @@ const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
   const isFullyResolved = paidBs > 0 && pendingRefundBs <= 0.009;
   const status = declaredBs <= 0
     ? 'none'
+    : isFullyResolved && refundedBs > 0 && appliedBs > 0
+      ? 'mixed'
     : isFullyResolved && refundedBs > 0
       ? 'returned'
       : isFullyResolved && appliedBs > 0

@@ -145,6 +145,21 @@ test('solo reconoce como aplicada la garantia registrada en la hoja economica', 
   assert.equal(evidence.applicationEntries[0].id, 'apply-1');
 });
 
+test('reconstruye una garantia aplicada voluntariamente al saldo comercial', () => {
+  const evidence = getGuaranteeLedgerEvidence({
+    economicLedger: [{
+      id: 'apply-rental-1',
+      type: 'guarantee_apply',
+      amountBs: 159,
+      contractAllocationBs: 159,
+      applicationTarget: 'rental',
+    }],
+  });
+
+  assert.equal(evidence.appliedBs, 159);
+  assert.equal(evidence.applicationEntries.length, 1);
+});
+
 test('una validacion positiva del contrato prevalece sobre el estado antiguo del alquiler', () => {
   assert.deepEqual(getStoredGuaranteeValidation({
     declaredBs: 150,
@@ -166,10 +181,14 @@ test('una validacion positiva del contrato prevalece sobre el estado antiguo del
 test('distingue una garantia consumida por danos de una garantia devuelta', () => {
   assert.equal(
     getGuaranteeResolutionLabel({ appliedBs: 117.7, refundedBs: 0 }),
-    'Aplicada a daños',
+    'Aplicada a obligaciones',
   );
   assert.equal(
     getGuaranteeResolutionLabel({ appliedBs: 0, refundedBs: 150 }),
     'Devuelta y finalizada',
+  );
+  assert.equal(
+    getGuaranteeResolutionLabel({ appliedBs: 159, refundedBs: 41 }),
+    'Aplicada y devuelta',
   );
 });

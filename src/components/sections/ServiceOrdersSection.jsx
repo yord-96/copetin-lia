@@ -36,6 +36,7 @@ import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
+import { buildGuaranteeApplicationPlan } from '../../utils/guaranteeApplication';
 import { distributeComboUnits } from '../../utils/comboDistribution';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
@@ -600,6 +601,7 @@ const ECONOMIC_LEDGER_TYPE_META = {
   deposit: { label: 'Deposito / pago', tone: 'blue' },
   guarantee: { label: 'Apartar garantia', tone: 'violet' },
   charge: { label: 'Dano / faltante', tone: 'orange' },
+  guarantee_apply: { label: 'Garantia aplicada', tone: 'orange' },
   refund: { label: 'Devolucion al cliente', tone: 'green' },
   note: { label: 'Nota interna', tone: 'slate' },
 };
@@ -644,7 +646,9 @@ const normalizeEconomicCollectionTargets = (targets) => {
 
 const normalizeEconomicLedgerEntry = (entry, index = 0) => {
   const type = ECONOMIC_LEDGER_TYPE_META[entry?.type] ? entry.type : 'note';
-  const paymentMethod = type === 'note' ? '' : normalizeLedgerPaymentMethod(entry?.paymentMethod ?? entry?.method);
+  const paymentMethod = ['note', 'guarantee_apply'].includes(type)
+    ? ''
+    : normalizeLedgerPaymentMethod(entry?.paymentMethod ?? entry?.method);
   return {
     id: String(entry?.id ?? `economic-ledger-${index}`).trim(),
     type,
@@ -669,6 +673,8 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     contractAllocationBs: Math.max(0, toMoneyNumber(entry?.contractAllocationBs)),
     guaranteeAllocationBs: Math.max(0, toMoneyNumber(entry?.guaranteeAllocationBs)),
     surplusAllocationBs: Math.max(0, toMoneyNumber(entry?.surplusAllocationBs)),
+    damageAllocationBs: Math.max(0, toMoneyNumber(entry?.damageAllocationBs)),
+    applicationTarget: String(entry?.applicationTarget ?? '').trim().toLowerCase(),
     attachment: entry?.attachment && typeof entry.attachment === 'object'
       ? {
           url: String(entry.attachment.url ?? '').trim(),
@@ -2729,6 +2735,12 @@ function ServiceOrdersSection({
         if (entry.type === 'deposit') totals.receivedBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'guarantee') totals.guaranteeBs += toMoneyNumber(entry.amountBs);
         if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += toMoneyNumber(entry.amountBs);
+        if (entry.type === 'guarantee_apply') {
+          totals.guaranteeAppliedRentalBs += Math.min(
+            toMoneyNumber(entry.amountBs),
+            Math.max(0, toMoneyNumber(entry.contractAllocationBs)),
+          );
+        }
         if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) {
           totals.refundedBs += toMoneyNumber(entry.amountBs);
           if (entry.refundSource !== 'surplus') totals.guaranteeRefundedBs += toMoneyNumber(entry.amountBs);
@@ -2738,6 +2750,7 @@ function ServiceOrdersSection({
         receivedBs: 0,
         guaranteeBs: 0,
         chargesBs: 0,
+        guaranteeAppliedRentalBs: 0,
         refundedBs: 0,
         guaranteeRefundedBs: 0,
       });
@@ -2859,11 +2872,15 @@ function ServiceOrdersSection({
         Math.max(0, Number(rowLedgerConfirmedRentalBs.toFixed(2))),
       );
       const canonicalLedgerPaidBs = getConfirmedContractLedgerPaidBs(contract, rowChargeTargetBs);
-      const paidOnAccountBs = Math.max(
+      const cashPaidOnAccountBs = Math.max(
         0,
         Number(collectionRegisteredBs.toFixed(2)),
         Number(ledgerReceivedForRentalBs.toFixed(2)),
         canonicalLedgerPaidBs,
+      );
+      const paidOnAccountBs = Math.min(
+        rowChargeTargetBs,
+        Number((cashPaidOnAccountBs + rowLedgerTotals.guaranteeAppliedRentalBs).toFixed(2)),
       );
       const economicDueBs = Math.max(
         0,
@@ -2954,8 +2971,10 @@ function ServiceOrdersSection({
       const serverGuaranteeStatus = String(serverGuaranteeSummary?.status ?? '').trim().toLowerCase();
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : ['returned', 'partial', 'charged', 'held', 'pending'].includes(serverGuaranteeStatus)
+        : ['returned', 'mixed', 'partial', 'charged', 'held', 'pending'].includes(serverGuaranteeStatus)
           ? serverGuaranteeStatus
+          : guaranteeSettlement.isFullyResolved && guaranteeSettlement.appliedBs > 0 && guaranteeSettlement.refundedBs > 0
+            ? 'mixed'
           : guaranteeSettlement.isFullyResolved && guaranteeSettlement.refundedBs > 0
             ? 'returned'
             : guaranteeSettlement.isPartiallyRefunded
@@ -3008,6 +3027,8 @@ function ServiceOrdersSection({
             ? 'Debe'
             : guaranteeStatus === 'returned'
               ? 'Devuelta'
+              : guaranteeStatus === 'mixed'
+                ? 'Aplicada y devuelta'
               : guaranteeStatus === 'partial'
                 ? 'Por devolver'
                 : 'Pagada'
@@ -4045,12 +4066,22 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
       if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
+      if (entry.type === 'guarantee_apply') {
+        const rentalAppliedBs = Math.min(entry.amountBs, Math.max(0, toMoneyNumber(entry.contractAllocationBs)));
+        totals.guaranteeAppliedRentalBs += rentalAppliedBs;
+        totals.guaranteeAppliedDamageBs += Math.max(
+          0,
+          toMoneyNumber(entry.damageAllocationBs) || Number((entry.amountBs - rentalAppliedBs).toFixed(2)),
+        );
+      }
       if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) totals.refundedBs += entry.amountBs;
       return totals;
     }, {
       receivedBs: 0,
       guaranteeBs: 0,
       chargesBs: 0,
+      guaranteeAppliedRentalBs: 0,
+      guaranteeAppliedDamageBs: 0,
       refundedBs: 0,
     });
     const economicLedgerById = new Map(economicLedger.map((entry) => [String(entry.id), entry]));
@@ -4127,10 +4158,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // Solo se considera aplicada cuando existe una linea explicita de cargo
     // creada desde "Aplicar daños a garantia". Despues de un Reset economico,
     // esa linea ya no existe y los daños deben volver a mostrarse pendientes.
-    const guaranteeAppliedToChargesBs = Math.min(
+    const guaranteeAppliedToRentalBs = Math.min(
       guaranteeReserveBs,
-      Math.max(0, ledgerTotals.chargesBs),
+      Math.max(0, ledgerTotals.guaranteeAppliedRentalBs),
     );
+    const guaranteeAfterRentalApplicationBs = Math.max(0, Number((guaranteeReserveBs - guaranteeAppliedToRentalBs).toFixed(2)));
+    const guaranteeAppliedToChargesBs = Math.min(
+      guaranteeAfterRentalApplicationBs,
+      Math.max(0, ledgerTotals.chargesBs + ledgerTotals.guaranteeAppliedDamageBs),
+    );
+    const totalGuaranteeAppliedBs = Number((guaranteeAppliedToRentalBs + guaranteeAppliedToChargesBs).toFixed(2));
     const uncoveredChargesBs = Math.max(
       0,
       Number((effectiveChargesBs - guaranteeAppliedToChargesBs).toFixed(2)),
@@ -4154,13 +4191,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       0,
       Number((totalBs - Math.min(totalBs, effectivePrepaidForChargeTargetBs)).toFixed(2)),
     );
-    const rentalReceivedBs = Math.min(
+    const rentalCashReceivedBs = Math.min(
       ledgerChargeTargetBs,
       Math.max(
         paymentIncomeBs,
         collectionRegisteredBs,
         ledgerRecordedRentalBs,
       ),
+    );
+    const rentalReceivedBs = Math.min(
+      ledgerChargeTargetBs,
+      Number((rentalCashReceivedBs + guaranteeAppliedToRentalBs).toFixed(2)),
     );
     const collectionTargetTotals = {
       rentalBs: Math.max(0, Number((totalBs - deliveryFeeBs).toFixed(2))),
@@ -4190,7 +4231,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     let unclassifiedCollectionBs = Math.max(
       0,
       toMoneyNumber(collectionByTarget.unclassifiedBs),
-      Number((rentalReceivedBs - explicitlyClassifiedCollectionBs).toFixed(2)),
+      Number((rentalCashReceivedBs - explicitlyClassifiedCollectionBs).toFixed(2)),
     );
     // Algunos recibos históricos registraron el pago completo como "items".
     // El excedente sobre el subtotal de items debe cubrir transporte, no perderse
@@ -4218,14 +4259,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     // de garantía mediante el único botón disponible en el estado superior.
 
     const collectionTargetPending = {
-      rentalBs: Math.max(0, Number((collectionTargetTotals.rentalBs - effectiveCollectionByTarget.rentalBs).toFixed(2))),
+      rentalBs: Math.max(0, Number((collectionTargetTotals.rentalBs - effectiveCollectionByTarget.rentalBs - guaranteeAppliedToRentalBs).toFixed(2))),
       transportBs: Math.max(0, Number((collectionTargetTotals.transportBs - effectiveCollectionByTarget.transportBs).toFixed(2))),
       damageBs: Math.max(0, Number((collectionTargetTotals.damageBs - effectiveCollectionByTarget.damageBs).toFixed(2))),
     };
     const damagePendingBs = collectionTargetPending.damageBs;
     const damagesSettled = penaltiesBs > 0 && damagePendingBs <= 0.009;
     const ledgerFundsAvailableForRentalBs = Math.max(rentalReceivedBs, ledgerRecordedRentalBs);
-    const ledgerAppliedToRentalBs = Math.min(ledgerFundsAvailableForRentalBs, ledgerChargeTargetBs);
+    const ledgerAppliedToRentalBs = Math.min(rentalCashReceivedBs, ledgerChargeTargetBs);
     const ledgerDebtBs = Math.max(0, Number((ledgerChargeTargetBs - ledgerFundsAvailableForRentalBs).toFixed(2)));
     const ledgerGrossSurplusBs = Math.max(
       0,
@@ -4253,7 +4294,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const ledgerRefundSuggestedBs = Math.max(0, Number((ledgerGrossSurplusBs - ledgerSurplusRefundedBs).toFixed(2)));
     const guaranteeRefundAvailableBs = Math.max(
       0,
-      Number((guaranteeReserveBs - guaranteeAppliedToChargesBs - effectiveGuaranteeRefundedBs).toFixed(2)),
+      Number((guaranteeReserveBs - totalGuaranteeAppliedBs - effectiveGuaranteeRefundedBs).toFixed(2)),
     );
     // Las obligaciones pendientes se muestran como contexto, pero NO consumen la
     // garantia automaticamente. La garantia solo baja cuando el usuario la aplica
@@ -4269,7 +4310,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       0,
       Number((ledgerCustomerDepositsBs - reclassifiedGuaranteeBs).toFixed(2)),
     );
-    const realIncomeBs = Number((rentalReceivedBs + collectionByTarget.damageBs).toFixed(2));
+    const realIncomeBs = Number((rentalCashReceivedBs + collectionByTarget.damageBs).toFixed(2));
     const totalManagedBs = Number((rentalTotalBs + effectiveGuaranteeDeclaredBs + deliveryFeeBs + servicesBs).toFixed(2));
     const usesLedgerBalance = economicLedger.length > 0;
     const effectivePaidBs = usesLedgerBalance
@@ -4277,7 +4318,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       : paidBs;
     const paidOnAccountBs = Math.max(
       0,
-      Number(rentalReceivedBs.toFixed(2)),
+      Number(rentalCashReceivedBs.toFixed(2)),
       Number(collectionRegisteredBs.toFixed(2)),
     );
     const separatelyCollectedGuaranteeBs = backedGuaranteeEntries.reduce((sum, entry) => (
@@ -4299,7 +4340,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       : Math.max(0, Number((totalBs - paidOnAccountBs).toFixed(2)));
     const effectiveBalanceBs = managedDebtBs;
     const balanceDetailLabel = usesLedgerBalance
-      ? `Cobrado con recibo ${formatBs(rentalReceivedBs)} - garantia en caja ${formatBs(guaranteeReserveBs)}`
+      ? `Cobrado con recibo ${formatBs(rentalCashReceivedBs)} + garantia aplicada ${formatBs(guaranteeAppliedToRentalBs)} - garantia en caja ${formatBs(guaranteeReserveBs)}`
       : pendingPaymentBs > 0
       ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(effectiveGuaranteeValidatedBs)}`
       : `Total ${formatBs(totalBs)} - pagado ${formatBs(paidBs)}`;
@@ -4370,17 +4411,22 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       ledgerRefundSuggestedBs,
       guaranteeReserveBs,
       guaranteeAppliedToChargesBs,
+      guaranteeAppliedToRentalBs,
+      totalGuaranteeAppliedBs,
       uncoveredChargesBs,
       excessPaymentBs,
       reclassifiedGuaranteeBs,
       rentalReceivedBs,
+      rentalCashReceivedBs,
       realIncomeBs,
       guaranteeDeclaredBs: effectiveGuaranteeDeclaredBs,
       guaranteeValidatedBs: effectiveGuaranteeValidatedBs,
       guaranteeStatus: effectiveGuaranteeDeclaredBs <= 0
         ? 'Sin garantia'
-        : guaranteeAppliedToChargesBs >= guaranteeReserveBs && guaranteeReserveBs > 0
-          ? 'Cobrada por danos'
+        : guaranteeRefundAvailableBs <= 0 && totalGuaranteeAppliedBs > 0 && effectiveGuaranteeRefundedBs > 0
+          ? 'Aplicada y devuelta'
+          : totalGuaranteeAppliedBs >= guaranteeReserveBs && guaranteeReserveBs > 0
+          ? guaranteeAppliedToRentalBs > 0 ? 'Aplicada al contrato' : 'Cobrada por danos'
           : effectiveGuaranteeRefundedBs > 0 && guaranteeRefundAvailableBs <= 0
             ? 'Devuelta'
             : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
@@ -4408,6 +4454,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           : 'Sin saldo pendiente',
     };
   }, [activeEconomicResetLedger, effectiveCashMovements, contractEconomicsFullRental, contractEconomicsTarget, contracts, economicResetLedgerByContract, formatBs, orderRowsWithMeta, rentals]);
+
+  const contractGuaranteeCommercialPlan = useMemo(() => buildGuaranteeApplicationPlan({
+    availableGuaranteeBs: contractEconomicsData?.guaranteeRefundAvailableBs,
+    rentalPendingBs: contractEconomicsData?.managedDebtBs,
+  }), [contractEconomicsData?.guaranteeRefundAvailableBs, contractEconomicsData?.managedDebtBs]);
 
   const contractEconomicsCollectionOptions = useMemo(() => {
     if (!contractEconomicsData) return [];
@@ -4651,9 +4702,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
       if (entry.type === 'guarantee') totals.guaranteeBs += entry.amountBs;
       if (entry.type === 'charge' && !isCashCollectedDamageLedgerEntry(entry)) totals.chargesBs += entry.amountBs;
+      if (entry.type === 'guarantee_apply') totals.guaranteeAppliedBs += entry.amountBs;
       if (entry.type === 'refund' && isEconomicLedgerEntryConfirmedInCash(entry)) totals.refundedBs += entry.amountBs;
       return totals;
-    }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, refundedBs: 0 });
+    }, { receivedBs: 0, guaranteeBs: 0, chargesBs: 0, guaranteeAppliedBs: 0, refundedBs: 0 });
     const returnIssues = consolidateReturnIssueLines(
       Array.isArray(rental?.returnIssueSummary) && rental.returnIssueSummary.length > 0
         ? rental.returnIssueSummary
@@ -4670,7 +4722,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const isGuaranteeClosed = !selectedDocumentsContractRow?.guaranteeBs
       || ['returned', 'charged', 'none'].includes(guaranteeStatus)
       || ledgerTotals.refundedBs > 0
-      || (ledgerTotals.chargesBs > 0 && ledgerTotals.guaranteeBs <= ledgerTotals.chargesBs);
+      || ((ledgerTotals.chargesBs + ledgerTotals.guaranteeAppliedBs) > 0
+        && ledgerTotals.guaranteeBs <= ledgerTotals.chargesBs + ledgerTotals.guaranteeAppliedBs);
     const isFinalized = finalizedContractOverrides.has(selectedDocumentsContractRow?.id)
       ? finalizedContractOverrides.get(selectedDocumentsContractRow.id)
       : Boolean(contract?.isFinalized ?? selectedDocumentsContractRow?.isFinalized);
@@ -9602,7 +9655,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       contractEconomicsLedgerTypeRef.current?.value ?? 'deposit',
     ).trim();
 
-    const type = ECONOMIC_LEDGER_TYPE_META[selectedType]
+    const type = ECONOMIC_LEDGER_TYPE_META[selectedType] && selectedType !== 'guarantee_apply'
       ? selectedType
       : 'note';
 
@@ -9624,7 +9677,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       : null;
     const createdAt = buildDateTimeFromDateKey(selectedDate, editingEntry?.createdAt);
 
-    const paymentMethod = type === 'note'
+    const paymentMethod = ['note', 'guarantee_apply'].includes(type)
       ? ''
       : normalizeLedgerPaymentMethod(contractEconomicsLedgerDraft.paymentMethod);
     const paymentAccount = paymentMethod === 'qr'
@@ -9951,6 +10004,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const handleDeleteContractEconomicLedgerEntry = async (entry) => {
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
+    if (entry?.type === 'guarantee_apply') {
+      window.alert('Esta aplicación forma parte de una liquidación de garantía. Para revertirla sin dejar el recibo descuadrado, usa Reset económico y vuelve a registrar los movimientos correctos.');
+      return;
+    }
     const linkedReceiptCode = String(entry?.cashReceiptCode ?? '').trim();
     const linkedMovementId = String(entry?.cashMovementId ?? '').trim();
     const confirmed = window.confirm(
@@ -10061,6 +10118,168 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         receiptWindow,
       });
       resetContractEconomicLedgerForm();
+    }
+  };
+
+  const handleApplyGuaranteeToCommercialBalance = async () => {
+    if (
+      !canManageContractEconomicLedger
+      || !contractEconomicsData
+      || isSavingContractEconomicsLedger
+      || isSavingContractEconomicsGuaranteeRefund
+    ) return;
+
+    const plan = buildGuaranteeApplicationPlan({
+      availableGuaranteeBs: contractEconomicsData.guaranteeRefundAvailableBs,
+      rentalPendingBs: contractEconomicsData.managedDebtBs,
+    });
+    if (plan.rentalAppliedBs <= 0) {
+      setContractEconomicsError('No existe saldo comercial que pueda cubrirse con la garantía.');
+      return;
+    }
+
+    const confirmed = window.confirm([
+      `¿Aplicar ${formatBs(plan.rentalAppliedBs)} de la garantía al saldo de ítems?`,
+      '',
+      `Garantía disponible: ${formatBs(plan.guaranteeBs)}`,
+      `Aplicado a ítems: ${formatBs(plan.rentalAppliedBs)}`,
+      `A devolver al cliente: ${formatBs(plan.refundBs)}`,
+      '',
+      'Esta es una opción voluntaria y generará el respaldo económico correspondiente.',
+    ].join('\n'));
+    if (!confirmed) return;
+
+    const refundMethod = normalizeLedgerPaymentMethod(contractEconomicsGuaranteeRefundDraft.paymentMethod);
+    const refundAccount = refundMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(contractEconomicsGuaranteeRefundDraft.paymentAccount)
+      : '';
+    if (plan.refundBs > 0 && refundMethod === 'qr' && !refundAccount) {
+      setContractEconomicsError('Selecciona la cuenta QR en “Devolver dinero” antes de aplicar y devolver la garantía.');
+      return;
+    }
+
+    let receiptWindow = null;
+    try {
+      receiptWindow = openCashReceiptWindow();
+    } catch (error) {
+      setContractEconomicsError(error?.message || 'No se pudo preparar el recibo.');
+      return;
+    }
+    const createdAt = new Date().toISOString();
+    const createdByName = String(
+      currentUser?.fullName
+      ?? currentUser?.name
+      ?? currentUser?.username
+      ?? currentUser?.email
+      ?? 'Sistema',
+    ).trim() || 'Sistema';
+    const contractCode = contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || '';
+    const customerName = contractEconomicsData.contract?.customerName || contractEconomicsData.rental?.customerName || 'cliente';
+    const detail = [
+      `Garantía disponible: ${formatBs(plan.guaranteeBs)}`,
+      `Aplicado al saldo de ítems: ${formatBs(plan.rentalAppliedBs)}`,
+      `Total devuelto al cliente: ${formatBs(plan.refundBs)}`,
+      `Saldo final de garantía: ${formatBs(0)}`,
+    ].join(' | ');
+    const applicationEntry = {
+      id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'guarantee_apply',
+      amountBs: plan.rentalAppliedBs,
+      contractAllocationBs: plan.rentalAppliedBs,
+      damageAllocationBs: 0,
+      applicationTarget: 'rental',
+      cashCollectionTarget: 'guarantee',
+      paymentMethod: '',
+      paymentAccount: '',
+      note: `Garantía aplicada voluntariamente al saldo de ítems del contrato ${contractCode}. ${detail}`,
+      createdAt,
+      createdByName,
+    };
+
+    setIsSavingContractEconomicsGuaranteeRefund(true);
+    setContractEconomicsError('');
+    try {
+      const baseLedger = contractEconomicsData.economicLedger ?? [];
+      const appliedContract = await saveContractEconomicLedgerRows(
+        [...baseLedger, applicationEntry],
+        `Se aplicaron ${formatBs(plan.rentalAppliedBs)} de la garantía al saldo de ítems.`,
+        { force: true },
+      );
+      if (!appliedContract) throw new Error('No se pudo registrar la aplicación de garantía.');
+
+      const pendingOverrideKey = String(
+        contractEconomicsData.contract?.id ?? contractEconomicsData.contract?.contractCode ?? '',
+      ).trim();
+      if (pendingOverrideKey) {
+        setEconomicResetPendingByContract((current) => ({
+          ...current,
+          [pendingOverrideKey]: Math.max(0, Number((contractEconomicsData.managedDebtBs - plan.rentalAppliedBs).toFixed(2))),
+        }));
+      }
+
+      if (plan.refundBs > 0) {
+        const result = await api.cash.createManualMovement({
+          type: 'egreso',
+          cashBoxType: 'BIG_CASH',
+          amountBs: plan.refundBs,
+          description: `Liquidación de garantía contrato ${contractCode}: ${customerName}`,
+          category: 'garantia_devuelta_manual',
+          paymentMethod: refundMethod,
+          paymentAccount: refundAccount,
+          responsible: createdByName,
+          receipt: contractEconomicsGuaranteeRefundDraft.receipt,
+          receiptDetail: detail,
+          notes: contractEconomicsGuaranteeRefundDraft.note || detail,
+          linkedRentalId: contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '',
+          linkedContractId: contractEconomicsData.contract?.id ?? '',
+          linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+          accountingTag: 'guarantee_refund',
+          createdBy: createdByName,
+        });
+        rememberEconomicCashResult(result);
+        const movementId = resolveEconomicMovementId(result);
+        const movement = result?.movement ?? result ?? {};
+        const refundEntry = {
+          id: `eco-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: 'refund',
+          refundSource: 'guarantee',
+          amountBs: plan.refundBs,
+          paymentMethod: refundMethod,
+          paymentAccount: refundAccount,
+          note: `Remanente devuelto al liquidar la garantía. ${detail}`,
+          createdAt: new Date().toISOString(),
+          createdByName,
+          cashMovementId: movementId || null,
+          cashReceiptCode: String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim(),
+          cashRegisteredAt: movement?.createdAt ?? result?.createdAt ?? new Date().toISOString(),
+        };
+        const updated = await saveContractEconomicLedgerRows(
+          [...baseLedger, applicationEntry, refundEntry],
+          `Garantía liquidada: ${formatBs(plan.rentalAppliedBs)} aplicada y ${formatBs(plan.refundBs)} devuelta con recibo.`,
+          { force: true },
+        );
+        if (!updated) throw new Error('La aplicación fue guardada, pero no se pudo vincular la devolución al cuaderno económico.');
+        if (movementId) await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
+      } else {
+        printGuaranteeOperationReceipt({
+          title: 'Aplicación de garantía al contrato',
+          amountBs: plan.rentalAppliedBs,
+          detail,
+          guaranteeBeforeBs: plan.guaranteeBs,
+          guaranteeAfterBs: 0,
+          receiptWindow,
+        });
+      }
+
+      setContractEconomicsGuaranteeRefundDraft({
+        source: 'guarantee', amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', receipt: '', note: '',
+      });
+      setActionFeedback(`Garantía conciliada: ${formatBs(plan.rentalAppliedBs)} aplicada a ítems y ${formatBs(plan.refundBs)} devuelta.`);
+    } catch (error) {
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
+      setContractEconomicsError(error?.message || 'No se pudo aplicar la garantía al saldo comercial.');
+    } finally {
+      setIsSavingContractEconomicsGuaranteeRefund(false);
     }
   };
 
@@ -12457,7 +12676,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   </article>
                   <article>
                     <span>Total cobrado</span>
-                    <strong>{formatBs(contractEconomicsData.rentalReceivedBs)}</strong>
+                    <strong>{formatBs(contractEconomicsData.rentalCashReceivedBs)}</strong>
                     <small>Ingresos confirmados del contrato</small>
                   </article>
                   <article className={contractEconomicsData.managedDebtBs > 0 ? 'is-due' : 'is-paid'}>
@@ -12658,31 +12877,50 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           }}
                         >
                           <span style={{ color: '#c2410c', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
-                            B. Aplicar daños
+                            B. Aplicar garantía (opcional)
                           </span>
                           <div>
                             <h4 style={{ margin: '0 0 3px', fontSize: '14px' }}>Usar garantia retenida</h4>
                             <p style={{ margin: 0, color: '#667085', lineHeight: 1.45 }}>
-                              Descuenta los daños pendientes de la garantia. No registra un nuevo ingreso en Caja Grande.
+                              Tú decides si la usas para cubrir el saldo de ítems o daños. Nunca se aplica automáticamente.
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={handleApplyEconomicCharge}
-                            disabled={
-                              readOnly
-                              || isSavingContractEconomicsLedger
-                              || contractEconomicsData.guaranteeRefundAvailableBs <= 0
-                              || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0
-                            }
-                            style={{ width: '100%' }}
-                          >
-                            Aplicar a garantia {formatBs(Math.min(
-                              Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs),
-                              contractEconomicsData.guaranteeRefundAvailableBs,
-                            ))}
-                          </button>
+                          <div style={{ display: 'grid', gap: '7px' }}>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={handleApplyGuaranteeToCommercialBalance}
+                              disabled={
+                                readOnly
+                                || isSavingContractEconomicsLedger
+                                || isSavingContractEconomicsGuaranteeRefund
+                                || contractGuaranteeCommercialPlan.rentalAppliedBs <= 0
+                              }
+                              style={{ width: '100%' }}
+                            >
+                              {contractGuaranteeCommercialPlan.rentalAppliedBs > 0
+                                ? `Aplicar ${formatBs(contractGuaranteeCommercialPlan.rentalAppliedBs)} a ítems${contractGuaranteeCommercialPlan.refundBs > 0 ? ` y devolver ${formatBs(contractGuaranteeCommercialPlan.refundBs)}` : ''}`
+                                : 'Sin saldo de ítems para aplicar'}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={handleApplyEconomicCharge}
+                              disabled={
+                                readOnly
+                                || isSavingContractEconomicsLedger
+                                || isSavingContractEconomicsGuaranteeRefund
+                                || contractEconomicsData.guaranteeRefundAvailableBs <= 0
+                                || Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs) <= 0
+                              }
+                              style={{ width: '100%' }}
+                            >
+                              Aplicar a daños {formatBs(Math.min(
+                                Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs),
+                                contractEconomicsData.guaranteeRefundAvailableBs,
+                              ))}
+                            </button>
+                          </div>
                         </section>
 
                         <form
@@ -12708,7 +12946,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <h4 style={{ margin: '2px 0', fontSize: '14px' }}>Garantia o excedente con recibo</h4>
                             <p style={{ margin: 0, color: '#667085', lineHeight: 1.4 }}>
                               {contractEconomicsData.totalRefundAvailableBs > 0
-                                ? `Garantia disponible: ${formatBs(contractEconomicsData.guaranteeRefundableBs)} · Excedente: ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}.${contractEconomicsData.guaranteePendingObligationsBs > 0 ? ` Hay ${formatBs(contractEconomicsData.guaranteePendingObligationsBs)} de obligaciones pendientes; aplicar garantia a danos es una accion separada.` : ''}`
+                                ? `Garantia disponible: ${formatBs(contractEconomicsData.guaranteeRefundableBs)} · Excedente: ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}.${contractEconomicsData.guaranteePendingObligationsBs > 0 ? ` Hay ${formatBs(contractEconomicsData.guaranteePendingObligationsBs)} de obligaciones pendientes; usar la garantía es una opción separada y voluntaria.` : ''}`
                                 : 'No existe dinero disponible para devolver.'}
                             </p>
                           </div>
@@ -12805,8 +13043,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <strong>- {formatBs(contractEconomicsData.reclassifiedGuaranteeBs)}</strong>
                   </div>
                   <div>
-                    <span>Aplicado al contrato</span>
+                    <span>Aplicado desde depósitos</span>
                     <strong>- {formatBs(contractEconomicsData.ledgerAppliedToRentalBs)}</strong>
+                  </div>
+                  <div>
+                    <span>Garantia aplicada a ítems</span>
+                    <strong>- {formatBs(contractEconomicsData.guaranteeAppliedToRentalBs)}</strong>
                   </div>
                   <div>
                     <span>Excedente pendiente de devolver</span>
@@ -12899,6 +13141,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         disabled={readOnly || isSavingContractEconomicsLedger}
                       >
                         {Object.entries(ECONOMIC_LEDGER_TYPE_META)
+                          .filter(([value]) => value !== 'guarantee_apply')
                           .filter(([value]) => value !== 'refund' || Boolean(contractEconomicsLedgerEditingId))
                           .map(([value, meta]) => (
                           <option key={value} value={value}>{meta.label}</option>
@@ -13015,7 +13258,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           : 'Ingreso anotado en el cuaderno economico'
                         : entry.type === 'refund'
                           ? `Devolucion confirmada en Caja Grande${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
-                          : 'Dinero separado como garantia en el cuaderno economico';
+                          : entry.type === 'guarantee_apply'
+                            ? 'Compensacion interna: la garantia cubrio saldo del contrato sin registrar un nuevo ingreso'
+                            : 'Dinero separado como garantia en el cuaderno economico';
                       return (
                         <article
                           className={`contract-economics-notebook-line tone-${meta.tone}${entry.isCashRegistered ? ' is-cash-registered' : ''}${isIncomeFlow ? ' is-income-flow' : ''}${isReservedGuarantee ? ' is-reserved-guarantee' : ''}${isRefundFlow ? ' is-refund-flow' : ''}`}
@@ -13056,9 +13301,21 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   : 'Anotado sin recibo'}
                               </b>
                             ) : null}
+                            {entry.type === 'guarantee_apply' ? (
+                              <b
+                                className="contract-economics-reserved-guarantee-pill"
+                                title={moneyFlowTitle}
+                              >
+                                Sin movimiento de caja
+                              </b>
+                            ) : null}
                           </span>
                           <strong>{entry.type === 'note' ? '-' : formatBs(entry.amountBs)}</strong>
-                          <em>{entry.type === 'note' ? 'Sin metodo' : formatPaymentMethodLabel(entry.paymentMethod)}</em>
+                          <em>{entry.type === 'note'
+                            ? 'Sin metodo'
+                            : entry.type === 'guarantee_apply'
+                              ? 'Garantia'
+                              : formatPaymentMethodLabel(entry.paymentMethod)}</em>
                           <small>{entry.paymentAccount || '-'}</small>
                           <p>
                             {entry.note}
@@ -13164,8 +13421,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               type="button"
                               className="contract-economics-row-action danger"
                               onClick={() => handleDeleteContractEconomicLedgerEntry(entry)}
-                              disabled={readOnly || isSavingContractEconomicsLedger}
-                              title={entry.cashMovementId ? 'Elimina la linea, el movimiento de Caja Grande y el recibo vinculado.' : 'Elimina esta linea del cuaderno economico.'}
+                              disabled={readOnly || isSavingContractEconomicsLedger || entry.type === 'guarantee_apply'}
+                              title={entry.type === 'guarantee_apply'
+                                ? 'Esta línea pertenece a una liquidación conciliada. Para revertirla usa Reset económico.'
+                                : entry.cashMovementId
+                                  ? 'Elimina la linea, el movimiento de Caja Grande y el recibo vinculado.'
+                                  : 'Elimina esta linea del cuaderno economico.'}
                               aria-label={`Eliminar linea ${meta.label}`}
                             >
                               <Trash2 aria-hidden="true" />

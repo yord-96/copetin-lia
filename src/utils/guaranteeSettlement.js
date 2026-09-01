@@ -76,7 +76,8 @@ export const getGuaranteeLedgerEvidence = (contract) => {
   );
   const refundEntries = ledger.filter((entry) => isGuaranteeRefundEntry(entry) && isConfirmedLedgerEntry(entry));
   const applicationEntries = ledger.filter((entry) => (
-    entry?.type === 'charge' && !isCashCollectedDamageEntry(entry)
+    entry?.type === 'guarantee_apply'
+    || (entry?.type === 'charge' && !isCashCollectedDamageEntry(entry))
   ));
 
   return {
@@ -119,8 +120,8 @@ export const getStoredGuaranteeValidation = ({ rental, contract, declaredBs = 0 
 export const getGuaranteeResolutionLabel = ({ appliedBs = 0, refundedBs = 0 } = {}) => {
   const applied = toMoney(appliedBs);
   const refunded = toMoney(refundedBs);
-  if (applied > 0 && refunded > 0) return 'Aplicada a cargos y devuelta';
-  if (applied > 0) return 'Aplicada a daños';
+  if (applied > 0 && refunded > 0) return 'Aplicada y devuelta';
+  if (applied > 0) return 'Aplicada a obligaciones';
   if (refunded > 0) return 'Devuelta y finalizada';
   return 'Liquidada';
 };
