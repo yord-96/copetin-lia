@@ -8921,7 +8921,9 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        items: (Array.isArray(state.items) ? state.items : []).map(summarizeInventoryMovementItem),
+        items: (Array.isArray(state.items) ? state.items : [])
+          .filter((item) => item && !item.deletedAt)
+          .map(summarizeInventoryMovementItem),
         inventoryCombos: [],
         categories: [],
         contracts: allContracts
@@ -8946,7 +8948,8 @@ router.get('/__copetin_db/inventory/products-kardex', async (req, res, next) => 
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
     const commitmentContext = buildCurrentInventoryCommitments(state);
-    const rows = buildInventoryKardexRows(state.items, state.inventoryMovements).map((row) => {
+    const activeItems = (Array.isArray(state.items) ? state.items : []).filter((item) => item && !item.deletedAt);
+    const rows = buildInventoryKardexRows(activeItems, state.inventoryMovements).map((row) => {
       const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(String(row.itemId ?? '')) ?? 0));
       return {
         ...row,
