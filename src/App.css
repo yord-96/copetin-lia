@@ -72002,3 +72002,137 @@ button.inventory-loss-row-action:hover {
   .inventory-kardex-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-kardex-equation { overflow-x: auto; justify-content: start; }
 }
+
+/* Movimientos: alinea la tabla operativa con el lenguaje visual de Ordenes de Servicio. */
+.inventory-view-movements .inventory-ops-card {
+  border-color: #eee1d8;
+  border-radius: 0.92rem;
+  padding: 1rem;
+  gap: 0.9rem;
+}
+
+.inventory-view-movements .inventory-ops-head h3 {
+  color: #202a5c;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.inventory-view-movements .inventory-ops-head > div:first-child > span {
+  color: #7883aa;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.inventory-view-movements .inventory-ops-toolbar {
+  gap: 0.52rem;
+  padding: 0.66rem;
+  border-color: #eee1d8;
+  border-radius: 0.84rem;
+  background: #fffaf6;
+}
+
+.inventory-view-movements .inventory-ops-search input,
+.inventory-view-movements .inventory-ops-date-filter input {
+  min-height: 2.55rem;
+  border-color: #ead7ca;
+  border-radius: 0.62rem;
+  color: #102b59;
+  font: 750 0.78rem/1 Arial, sans-serif;
+}
+
+.inventory-view-movements .inventory-ops-search > span,
+.inventory-view-movements .inventory-ops-date-filter > span {
+  color: #7a5b47;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
+.inventory-view-movements .inventory-ops-filter-summary {
+  min-height: 2.55rem;
+  border-radius: 0.62rem;
+}
+
+.inventory-view-movements .inventory-ops-list {
+  border-color: #eee1d8;
+  border-radius: 0.84rem;
+}
+
+.inventory-view-movements .inventory-ops-table-head {
+  min-height: 2.45rem;
+  padding: 0.58rem 0.72rem;
+  background: #173a70;
+}
+
+.inventory-view-movements .inventory-ops-table-head span {
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+}
+
+.inventory-view-movements .inventory-ops-row {
+  border-bottom-color: #f0e8e1;
+  padding: 0.72rem;
+  background: #ffffff;
+}
+
+.inventory-view-movements .inventory-ops-row:nth-child(odd) {
+  background: #fffdfb;
+}
+
+.inventory-view-movements .inventory-ops-row:hover {
+  background: #fff8f3;
+}
+
+.inventory-view-movements .inventory-ops-row strong {
+  color: #17233f;
+  font-size: 0.79rem;
+}
+
+.inventory-view-movements .inventory-ops-row span {
+  font-size: 0.71rem;
+}
+
+.inventory-view-movements .inventory-ops-contract-link {
+  color: #173a70;
+  font-size: 0.88rem;
+}
+
+.inventory-view-movements .inventory-ops-contract-line > span {
+  border-color: #dce4f0;
+  border-radius: 0.42rem;
+  background: #f5f7fb;
+  font-size: 0.62rem;
+}
+
+.inventory-view-movements .inventory-ops-customer {
+  color: #17233f !important;
+  font-size: 0.74rem !important;
+}
+
+.inventory-view-movements .inventory-ops-row .inventory-ops-address {
+  font-size: 0.67rem;
+}
+
+.inventory-view-movements .inventory-ops-stock-state {
+  border-radius: 0.42rem;
+  padding: 0.2rem 0.46rem;
+}
+
+.inventory-view-movements .inventory-ops-priority,
+.inventory-view-movements .inventory-ops-alert {
+  border-radius: 999px;
+}
+
+.inventory-view-movements .inventory-ops-actions .ghost-button {
+  min-height: 2rem;
+  border-color: #efc6ad;
+  border-radius: 0.62rem;
+  color: #d94b08;
+  background: #fffdfb;
+  font-size: 0.69rem;
+}
+
+.inventory-view-movements .inventory-ops-actions .ghost-button:hover,
+.inventory-view-movements .inventory-ops-actions .ghost-button:focus-visible {
+  border-color: #ef9b6c;
+  background: #fff5ee;
+}

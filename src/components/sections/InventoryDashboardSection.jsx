@@ -5322,20 +5322,22 @@ function InventoryDashboardSection({
 
       <div className="inventory-content-grid">
         <div className="inventory-left-stack">
-          <div className="inventory-kpis">
-            {kpiCards.map((card) => (
-              <article key={card.label} className={`inventory-kpi-card ${card.tone}`}>
-                <div className="inventory-kpi-head">
-                  <span className={`inventory-kpi-icon ${card.tone}`}><KpiIcon kind={card.icon} /></span>
-                </div>
-                <strong>{card.value}</strong>
-                <p>{card.label}</p>
-                <button type="button" className="inventory-kpi-link" onClick={() => handleKpiLink(card)}>
-                  {card.link} {card.link?.startsWith('Bs') ? '' : '->'}
-                </button>
-              </article>
-            ))}
-          </div>
+          {!isMovementsModule ? (
+            <div className="inventory-kpis">
+              {kpiCards.map((card) => (
+                <article key={card.label} className={`inventory-kpi-card ${card.tone}`}>
+                  <div className="inventory-kpi-head">
+                    <span className={`inventory-kpi-icon ${card.tone}`}><KpiIcon kind={card.icon} /></span>
+                  </div>
+                  <strong>{card.value}</strong>
+                  <p>{card.label}</p>
+                  <button type="button" className="inventory-kpi-link" onClick={() => handleKpiLink(card)}>
+                    {card.link} {card.link?.startsWith('Bs') ? '' : '->'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : null}
 
           {isMovementsModule ? (
             <article className="inventory-ops-card">
