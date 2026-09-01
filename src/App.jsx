@@ -629,6 +629,7 @@ function AdminApp() {
         {controller.activeTab === 'items' && (
           <ClientsSection
             clients={controller.clients}
+            overviewStats={controller.clientsOverviewStats}
             quotes={controller.quotes}
             rentals={controller.rentals}
             contracts={controller.contracts}
@@ -756,6 +757,7 @@ function AdminApp() {
             inventoryMovementStats={controller.inventoryMovementStats}
             moduleLoading={controller.inventoryModuleLoading}
             onLoadMovementsOverview={controller.loadInventoryMovementsOverview}
+            onEnsureClients={controller.prepareClientsOverview}
             formatBs={formatBs}
             formatDateTime={formatDateTime}
             onSwitchInventoryModule={controller.setActiveTab}

@@ -679,6 +679,24 @@ const fetchFastAccountingSummary = async () => {
   };
 };
 
+const fetchClientsOverview = async () => {
+  if (!shouldUseServerState()) {
+    const clients = await callBridge('clients', 'list', false);
+    return { clients, stats: null };
+  }
+  const response = await fetch(getServerStateUrl('/clients/overview'), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo cargar el resumen de Clientes.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  serverStateIsPartial = true;
+  return payload?.overview ?? { clients: [], stats: null };
+};
+
 const fetchOrdersEditorOverview = async () => {
   const response = await fetch(getServerStateUrl('/orders/editor-overview'), {
     cache: 'no-store',
@@ -3510,6 +3528,7 @@ export const api = {
     getMobileOrdersOverview: fetchMobileOrdersOverview,
     getAccountingBaseOverview: fetchAccountingBaseOverview,
     getOrdersEditorOverview: fetchOrdersEditorOverview,
+    getClientsOverview: fetchClientsOverview,
     getAvailabilityOverview: fetchAvailabilityOverview,
     getInventoryMovementsOverview: fetchInventoryMovementsOverview,
     getRevision: fetchServerMeta,

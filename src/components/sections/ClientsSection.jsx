@@ -361,6 +361,7 @@ function CardIcon({ kind }) {
 
 function ClientsSection({
   clients = [],
+  overviewStats = null,
   quotes = [],
   rentals = [],
   contracts = [],
@@ -488,25 +489,33 @@ function ClientsSection({
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const activeClients = clients.filter((client) => String(client.status ?? '').toLowerCase() === 'active').length;
+    const activeClients = Number.isFinite(Number(overviewStats?.activeClients))
+      ? Number(overviewStats.activeClients)
+      : clients.filter((client) => String(client.status ?? '').toLowerCase() === 'active').length;
 
-    const revenueMonth = rentals
-      .filter((rental) => {
-        const created = new Date(rental.createdAt ?? rental.rentalAt ?? now.toISOString());
+    const revenueMonth = Number.isFinite(Number(overviewStats?.revenueMonthBs))
+      ? Number(overviewStats.revenueMonthBs)
+      : rentals
+        .filter((rental) => {
+          const created = new Date(rental.createdAt ?? rental.rentalAt ?? now.toISOString());
+          return created.getMonth() === currentMonth && created.getFullYear() === currentYear;
+        })
+        .reduce((sum, rental) => sum + Number(rental?.totals?.totalBs ?? 0), 0);
+
+    const newMonth = Number.isFinite(Number(overviewStats?.newClientsThisMonth))
+      ? Number(overviewStats.newClientsThisMonth)
+      : clients.filter((client) => {
+        const created = new Date(client.createdAt ?? now.toISOString());
         return created.getMonth() === currentMonth && created.getFullYear() === currentYear;
-      })
-      .reduce((sum, rental) => sum + Number(rental?.totals?.totalBs ?? 0), 0);
+      }).length;
 
-    const newMonth = clients.filter((client) => {
-      const created = new Date(client.createdAt ?? now.toISOString());
-      return created.getMonth() === currentMonth && created.getFullYear() === currentYear;
-    }).length;
-
-    const avgOrders = clients.length > 0
-      ? Number(
-        (clients.reduce((sum, client) => sum + Number(client.ordersCount ?? 0), 0) / clients.length).toFixed(1),
-      )
-      : 0;
+    const avgOrders = Number.isFinite(Number(overviewStats?.averageOrders))
+      ? Number(overviewStats.averageOrders)
+      : clients.length > 0
+        ? Number(
+          (clients.reduce((sum, client) => sum + Number(client.ordersCount ?? 0), 0) / clients.length).toFixed(1),
+        )
+        : 0;
 
     return [
       { tone: 'lilac', value: String(activeClients), mobileValue: String(activeClients), label: 'Clientes registrados', mobileLabel: 'Clientes registrados', icon: 'customerService' },
@@ -514,7 +523,7 @@ function ClientsSection({
       { tone: 'sky', value: String(avgOrders), mobileValue: String(avgOrders), label: 'Ordenes promedio', mobileLabel: 'Ordenes promedio', icon: 'averageOrders' },
       { tone: 'peach', value: String(newMonth), mobileValue: String(newMonth), label: 'Clientes nuevos este mes', mobileLabel: 'Nuevos este mes', icon: 'newClients' },
     ];
-  }, [clients, formatBs, rentals]);
+  }, [clients, formatBs, overviewStats, rentals]);
 
   const getRelatedClientRecords = useCallback((client) => {
     if (!client) return { orders: [], contracts: [], quotes: [], deliveries: [] };

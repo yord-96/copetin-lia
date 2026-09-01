@@ -212,7 +212,10 @@ export const useAppController = () => {
   const accountingCommercialLoadedRef = useRef(false);
   const accountingOverviewRequestRef = useRef(null);
   const fullWorkspaceLoadedRef = useRef(false);
+  const clientsOverviewLoadedRef = useRef(false);
+  const clientsOverviewRequestRef = useRef(null);
   const [ordersModuleLoading, setOrdersModuleLoading] = useState(false);
+  const [clientsOverviewStats, setClientsOverviewStats] = useState(null);
   const [availabilityModuleLoading, setAvailabilityModuleLoading] = useState(false);
 
   const [imagePreview, setImagePreview] = useState(null);
@@ -387,8 +390,31 @@ export const useAppController = () => {
     await request;
   }, []);
 
+  const prepareClientsOverview = useCallback(async ({ force = false } = {}) => {
+    if (!force && clientsOverviewLoadedRef.current) return;
+    if (clientsOverviewRequestRef.current) {
+      await clientsOverviewRequestRef.current;
+      return;
+    }
+    const request = api.sync.getClientsOverview()
+      .then((overview) => {
+        setClients(Array.isArray(overview?.clients) ? overview.clients : []);
+        setClientsOverviewStats(overview?.stats ?? null);
+        clientsOverviewLoadedRef.current = true;
+      })
+      .finally(() => {
+        clientsOverviewRequestRef.current = null;
+      });
+    clientsOverviewRequestRef.current = request;
+    await request;
+  }, []);
+
   const prepareTabData = useCallback(async (targetTab) => {
     const requestedTab = String(targetTab);
+    if (requestedTab === 'items') {
+      await prepareClientsOverview();
+      return;
+    }
     if (requestedTab === 'usuarios') {
       // La autenticacion ya descarga la pequena coleccion de usuarios. La vista
       // puede pintarla directamente sin iniciar el bootstrap de todo el negocio.
@@ -466,7 +492,7 @@ export const useAppController = () => {
 
     ordersOverviewRequestRef.current = request;
     await request;
-  }, [loadAccountingData]);
+  }, [loadAccountingData, prepareClientsOverview]);
 
   const prepareOrdersEditorData = useCallback(async () => {
     if (ordersEditorDataLoadedRef.current) return;
@@ -511,7 +537,7 @@ export const useAppController = () => {
     if (
       !authReady
       || !currentUser
-      || (!['alquiler', 'disponibilidad', 'usuarios'].includes(requestedTab) && !requestedTab.startsWith('contabilidad'))
+      || (!['alquiler', 'disponibilidad', 'usuarios', 'items'].includes(requestedTab) && !requestedTab.startsWith('contabilidad'))
     ) return;
     prepareTabData(activeTab).catch(() => {});
   }, [activeTab, authReady, currentUser, prepareTabData]);
@@ -521,7 +547,7 @@ export const useAppController = () => {
     // Calendario, Ordenes, Usuarios y Asistencia tienen cargas pequenas propias.
     // El resto del sistema conserva la carga completa, pero de forma diferida.
     if (
-      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios', 'items'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) return;
@@ -3289,6 +3315,7 @@ export const useAppController = () => {
     availabilityModuleLoading,
     prepareTabData,
     prepareOrdersEditorData,
+    prepareClientsOverview,
     error,
     loadData,
     dashboard,
@@ -3329,6 +3356,7 @@ export const useAppController = () => {
     updateNotice,
     activeCashSession,
     clients,
+    clientsOverviewStats,
     users,
     deliveries,
     transportRoutes,

@@ -1555,6 +1555,7 @@ function InventoryDashboardSection({
   inventoryMovementStats = null,
   moduleLoading = false,
   onLoadMovementsOverview,
+  onEnsureClients,
   formatBs,
   formatDateTime,
   onSwitchInventoryModule,
@@ -1775,8 +1776,9 @@ function InventoryDashboardSection({
 
   useEffect(() => { if (isMovementsModule) loadLegacyContracts(); }, [isMovementsModule]);
 
-  const openLegacyCreate = () => {
+  const openLegacyCreate = async () => {
     setLegacyError('');
+    try { await onEnsureClients?.(); } catch (error) { setLegacyError(error?.message || 'No se pudieron cargar los clientes.'); }
     setLegacyForm({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: currentUser?.name ?? '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
     setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
     setLegacyModalOpen(true);

@@ -8912,6 +8912,80 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
   }
 });
 
+router.get('/__copetin_db/clients/overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const clients = (Array.isArray(state.clients) ? state.clients : []).filter((client) => !client?.deletedAt);
+    const rentals = (Array.isArray(state.rentals) ? state.rentals : []).filter((rental) => !rental?.deletedAt);
+    const byClientId = new Map();
+    const byName = new Map();
+    const normalizeName = (value) => String(value ?? '').trim().toLowerCase();
+
+    clients.forEach((client) => {
+      const id = String(client?.id ?? '').trim();
+      if (id) byClientId.set(id, client);
+      [client?.name, client?.companyName].map(normalizeName).filter(Boolean).forEach((name) => {
+        if (!byName.has(name)) byName.set(name, client);
+      });
+    });
+
+    const metrics = new Map();
+    let revenueMonthBs = 0;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    rentals.forEach((rental) => {
+      const clientId = String(rental?.clientId ?? '').trim();
+      const customerName = normalizeName(rental?.customerName);
+      const client = (clientId && byClientId.get(clientId)) || (customerName && byName.get(customerName)) || null;
+      if (!client) return;
+      const key = String(client.id ?? '').trim();
+      if (!key) return;
+      const current = metrics.get(key) ?? { ordersCount: 0, lastOrderAt: null, totalBilledBs: 0 };
+      const orderDate = rental?.createdAt ?? rental?.rentalAt ?? null;
+      current.ordersCount += 1;
+      current.totalBilledBs += Number(rental?.totals?.totalBs ?? 0) || 0;
+      if (orderDate && (!current.lastOrderAt || new Date(orderDate) > new Date(current.lastOrderAt))) current.lastOrderAt = orderDate;
+      metrics.set(key, current);
+
+      const created = new Date(orderDate ?? '');
+      if (!Number.isNaN(created.getTime()) && created.getMonth() === currentMonth && created.getFullYear() === currentYear) {
+        revenueMonthBs += Number(rental?.totals?.totalBs ?? 0) || 0;
+      }
+    });
+
+    const clientRows = clients.map((client) => ({
+      ...client,
+      ...(metrics.get(String(client.id ?? '').trim()) ?? { ordersCount: 0, lastOrderAt: null, totalBilledBs: 0 }),
+    }));
+    const newClientsThisMonth = clients.filter((client) => {
+      const created = new Date(client?.createdAt ?? '');
+      return !Number.isNaN(created.getTime()) && created.getMonth() === currentMonth && created.getFullYear() === currentYear;
+    }).length;
+    const activeClients = clients.filter((client) => String(client?.status ?? '').toLowerCase() === 'active').length;
+    const totalOrders = [...metrics.values()].reduce((sum, row) => sum + Number(row.ordersCount ?? 0), 0);
+
+    await sendJsonPayload(req, res, {
+      initialized: snapshot.initialized,
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      overview: {
+        clients: clientRows,
+        stats: {
+          activeClients,
+          revenueMonthBs,
+          averageOrders: clients.length ? Number((totalOrders / clients.length).toFixed(1)) : 0,
+          newClientsThisMonth,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
