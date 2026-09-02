@@ -4927,11 +4927,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const draftAvailabilityPeriod = useMemo(
     () => {
-      // En el paso Items todavía no se definió la logística del nuevo documento.
-      // La disponibilidad que se muestra aquí debe responder exclusivamente a la
-      // FECHA DEL EVENTO visible en pantalla; usar un pickupDate heredado/oculto
-      // puede ampliar el rango varias semanas y descontar contratos posteriores.
-      if (currentStep === 2) {
+      const isEditingOperationalContract = draft.entityType === 'contract' && Boolean(draft.recordId);
+
+      // En un documento nuevo, el paso Items todavía no tiene una logística
+      // confirmada y usa el día del evento como estimación inicial. Al editar un
+      // contrato existente sí conocemos entrega y recojo: deben aplicarse desde
+      // este paso para mostrar exactamente la misma disponibilidad que validará
+      // el guardado (incluidos contratos que devuelven el día de la entrega).
+      if (currentStep === 2 && !isEditingOperationalContract) {
         return buildAvailabilityPeriod({
           deliveryDate: draft.eventDate,
           deliveryWindowStart: '00:00',
@@ -4957,12 +4960,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       currentStep,
       draft.deliveryDate,
       draft.deliveryWindowStart,
+      draft.entityType,
       draft.eventDate,
       draft.eventTime,
       draft.pickupDate,
       draft.pickupDateMode,
       draft.pickupWindowEnd,
       draft.pickupTimeMode,
+      draft.recordId,
     ],
   );
 

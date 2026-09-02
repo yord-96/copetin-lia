@@ -2442,7 +2442,13 @@ const getMutationPreflightCollections = (domain, method, targetedCollections) =>
       'inventoryMovements',
     ];
   }
-  if (domain === 'inventory' && ['create', 'update', 'remove'].includes(method)) {
+  if (domain === 'inventory' && ['create', 'update'].includes(method)) {
+    // Crear o editar valida la categoria dentro del bridge. Si solo precargamos
+    // items, el selector puede mostrar categorias inferidas del inventario pero
+    // la mutacion recibe state.categories vacio y rechaza una categoria real.
+    return ['items', 'categories'];
+  }
+  if (domain === 'inventory' && method === 'remove') {
     return ['items'];
   }
   if (domain === 'inventory' && ['createCombo', 'updateCombo', 'removeCombo'].includes(method)) {
