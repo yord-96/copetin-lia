@@ -785,9 +785,9 @@ const fetchLegacyContracts = async () => {
   return Array.isArray(payload?.rows) ? payload.rows : [];
 };
 
-const postLegacyContract = async (path, payload = {}) => {
+const mutateLegacyContract = async (method, path, payload = {}) => {
   const response = await fetch(getServerStateUrl(`/inventory/legacy-contracts${path}`), {
-    method: 'POST',
+    method,
     cache: 'no-store',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
@@ -798,6 +798,8 @@ const postLegacyContract = async (path, payload = {}) => {
   markServerStateStale('inventory.legacyContracts');
   return result;
 };
+
+const postLegacyContract = (path, payload = {}) => mutateLegacyContract('POST', path, payload);
 
 const fetchInventoryDamageLossOverview = async () => {
   if (!shouldUseServerState()) return { rows: [], total: 0, summary: {} };
@@ -3577,6 +3579,8 @@ export const api = {
     getDamageLossOverview: fetchInventoryDamageLossOverview,
     getLegacyContracts: fetchLegacyContracts,
     createLegacyContract: (payload) => postLegacyContract('', payload),
+    updateLegacyContract: (id, payload) => mutateLegacyContract('PUT', `/${encodeURIComponent(id)}`, payload),
+    deleteLegacyContract: (id, payload) => mutateLegacyContract('DELETE', `/${encodeURIComponent(id)}`, payload),
     receiveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/receive`, payload),
     resolveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/resolve-item`, payload),
     getProductsKardex: fetchProductsKardex,

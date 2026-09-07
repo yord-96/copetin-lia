@@ -72312,3 +72312,25 @@ button.inventory-loss-row-action:hover {
   .accounting-report-actions { justify-content: stretch; }
   .accounting-report-button { flex: 1; }
 }
+
+/* Acciones CRUD de contratos rezagados. */
+.inventory-legacy-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.inventory-legacy-row-actions .inventory-actions-menu-wrap {
+  flex: 0 0 auto;
+}
+
+.inventory-legacy-row-actions .inventory-row-menu-button {
+  width: 34px;
+  height: 34px;
+}
+
+.inventory-legacy-table th:last-child,
+.inventory-legacy-table td:last-child {
+  min-width: 130px;
+}

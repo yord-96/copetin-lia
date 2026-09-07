@@ -8766,6 +8766,104 @@ router.post('/__copetin_db/inventory/legacy-contracts', async (req, res, next) =
   } catch (error) { next(error); }
 });
 
+router.put('/__copetin_db/inventory/legacy-contracts/:id', async (req, res, next) => {
+  try {
+    const legacyId = String(req.params.id ?? '').trim();
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const contractCode = String(payload.contractCode ?? '').trim().slice(0, 80);
+    const customerName = String(payload.customerName ?? '').trim().slice(0, 240);
+    const contractDate = toInventoryDateKey(payload.contractDate);
+    if (!legacyId || !contractCode || !customerName || !contractDate) {
+      return res.status(400).json({ error: 'Debes indicar contrato rezagado, fecha y cliente.' });
+    }
+
+    const editableItems = (Array.isArray(payload.items) ? payload.items : [])
+      .map((line) => ({
+        id: String(line?.id ?? '').trim() || `legacy-line-${crypto.randomUUID()}`,
+        itemId: String(line?.itemId ?? '').trim(),
+        itemName: String(line?.itemName ?? line?.name ?? 'Item').trim().slice(0, 240),
+        quantity: Math.max(0, Math.trunc(Number(line?.quantity ?? 0))),
+        status: normalizeLegacyContractItemStatus(line?.status),
+        chargeBs: directMoney(line?.chargeBs),
+        note: String(line?.note ?? '').trim().slice(0, 1200),
+        resolvedAt: null,
+        resolvedByName: '',
+      }))
+      .filter((line) => line.itemId && line.quantity > 0 && ['pending_return', 'missing', 'damaged'].includes(line.status));
+
+    let updated = null;
+    const now = new Date().toISOString();
+    const result = await updateStateSnapshot((state) => {
+      state.legacyContracts = Array.isArray(state.legacyContracts) ? state.legacyContracts : [];
+      const legacy = state.legacyContracts.find((entry) => String(entry?.id ?? '') === legacyId && !entry?.deletedAt);
+      if (!legacy) {
+        const error = new Error('Contrato rezagado no encontrado.');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const closedItems = (Array.isArray(legacy.items) ? legacy.items : []).filter((line) => {
+        const status = normalizeLegacyContractItemStatus(line?.status);
+        return ['returned', 'resolved'].includes(status) || Number(line?.quantity ?? 0) <= 0;
+      });
+      legacy.contractCode = contractCode;
+      legacy.contractDate = contractDate;
+      legacy.clientId = String(payload.clientId ?? '').trim() || null;
+      legacy.customerName = customerName;
+      legacy.responsibleId = String(payload.responsibleId ?? legacy.responsibleId ?? '').trim() || null;
+      legacy.responsibleName = String(payload.responsibleName ?? '').trim().slice(0, 240) || 'Sin responsable';
+      legacy.eventName = String(payload.eventName ?? '').trim().slice(0, 240);
+      legacy.notes = String(payload.notes ?? '').trim().slice(0, 2400);
+      legacy.guaranteeHeldBs = directMoney(payload.guaranteeHeldBs);
+      legacy.refundDueBs = directMoney(payload.refundDueBs);
+      legacy.commercialPendingBs = directMoney(payload.commercialPendingBs);
+      legacy.items = [...editableItems, ...closedItems];
+      legacy.history = Array.isArray(legacy.history) ? legacy.history : [];
+      legacy.history.unshift({
+        id: `legacy-h-${crypto.randomUUID()}`,
+        type: 'updated',
+        detail: 'Contrato rezagado editado.',
+        createdAt: now,
+        createdByName: String(payload.updatedByName ?? payload.responsibleName ?? 'Sistema').trim().slice(0, 240),
+      });
+      legacy.updatedAt = now;
+      updated = structuredClone(legacy);
+      return state;
+    });
+    res.json({ ok: true, row: summarizeLegacyContract(updated), revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.delete('/__copetin_db/inventory/legacy-contracts/:id', async (req, res, next) => {
+  try {
+    const legacyId = String(req.params.id ?? '').trim();
+    if (!legacyId) return res.status(400).json({ error: 'Debes indicar el contrato rezagado.' });
+    let deleted = null;
+    const now = new Date().toISOString();
+    const result = await updateStateSnapshot((state) => {
+      state.legacyContracts = Array.isArray(state.legacyContracts) ? state.legacyContracts : [];
+      const legacy = state.legacyContracts.find((entry) => String(entry?.id ?? '') === legacyId && !entry?.deletedAt);
+      if (!legacy) {
+        const error = new Error('Contrato rezagado no encontrado.');
+        error.statusCode = 404;
+        throw error;
+      }
+      legacy.deletedAt = now;
+      legacy.deletedByName = String(req.body?.userName ?? '').trim().slice(0, 240) || 'Usuario';
+      legacy.updatedAt = now;
+      deleted = structuredClone(legacy);
+      return state;
+    });
+    res.json({ ok: true, row: summarizeLegacyContract(deleted), revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/inventory/legacy-contracts/:id/receive', async (req, res, next) => {
   try {
     const legacyId = String(req.params.id ?? '').trim();

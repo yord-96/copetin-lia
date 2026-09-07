@@ -1659,6 +1659,7 @@ function InventoryDashboardSection({
   const [legacyDateTo, setLegacyDateTo] = useState('');
   const [legacyLoading, setLegacyLoading] = useState(false);
   const [legacyModalOpen, setLegacyModalOpen] = useState(false);
+  const [legacyEditingId, setLegacyEditingId] = useState(null);
   const [legacyDetail, setLegacyDetail] = useState(null);
   const [legacySaving, setLegacySaving] = useState(false);
   const [legacyError, setLegacyError] = useState('');
@@ -1786,9 +1787,39 @@ function InventoryDashboardSection({
   const openLegacyCreate = async () => {
     setLegacyError('');
     try { await onEnsureClients?.(); } catch (error) { setLegacyError(error?.message || 'No se pudieron cargar los clientes.'); }
+    setLegacyEditingId(null);
     setLegacyForm({ contractCode: '', contractDate: '', clientId: '', customerName: '', responsibleName: currentUser?.name ?? '', eventName: '', commercialPendingBs: '', guaranteeHeldBs: '', refundDueBs: '', notes: '', items: [] });
     setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
     setLegacyClientSearch('');
+    setLegacyClientResultsOpen(false);
+    setLegacyItemSearch('');
+    setLegacyItemResultsOpen(false);
+    setLegacyModalOpen(true);
+  };
+
+  const openLegacyEdit = async (row) => {
+    setRowMenuOpenId(null);
+    setRowMenuPosition(null);
+    setLegacyError('');
+    try { await onEnsureClients?.(); } catch (error) { setLegacyError(error?.message || 'No se pudieron cargar los clientes.'); }
+    setLegacyEditingId(row.id);
+    setLegacyForm({
+      contractCode: row.contractCode ?? '',
+      contractDate: getDateKey(row.contractDate),
+      clientId: row.clientId ?? '',
+      customerName: row.customerName ?? '',
+      responsibleName: row.responsibleName ?? '',
+      eventName: row.eventName ?? '',
+      commercialPendingBs: String(row.commercialPendingBs ?? ''),
+      guaranteeHeldBs: String(row.guaranteeHeldBs ?? ''),
+      refundDueBs: String(row.refundDueBs ?? ''),
+      notes: row.notes ?? '',
+      items: (Array.isArray(row.items) ? row.items : [])
+        .filter((line) => Number(line?.quantity ?? 0) > 0 && ['pending_return', 'missing', 'damaged'].includes(line?.status))
+        .map((line) => ({ ...line })),
+    });
+    setLegacyItemDraft({ itemId: '', quantity: '1', status: 'pending_return', chargeBs: '' });
+    setLegacyClientSearch(row.customerName ?? '');
     setLegacyClientResultsOpen(false);
     setLegacyItemSearch('');
     setLegacyItemResultsOpen(false);
@@ -1853,9 +1884,35 @@ function InventoryDashboardSection({
     if (!legacyForm.contractCode.trim() || !legacyForm.contractDate || !legacyForm.customerName.trim()) { setLegacyError('Completa numero, fecha y cliente.'); return; }
     setLegacySaving(true);
     try {
-      await api.inventory.createLegacyContract({ ...legacyForm, responsibleName: legacyForm.responsibleName || currentUser?.name || 'Sin responsable', createdByName: currentUser?.name || legacyForm.responsibleName });
-      setLegacyModalOpen(false); await loadLegacyContracts(); setFeedback('Contrato rezagado registrado sin afectar reservas ni disponibilidad actual.'); setFeedbackType('ok');
+      const payload = { ...legacyForm, responsibleName: legacyForm.responsibleName || currentUser?.name || 'Sin responsable' };
+      if (legacyEditingId) {
+        await api.inventory.updateLegacyContract(legacyEditingId, { ...payload, updatedByName: currentUser?.name || legacyForm.responsibleName });
+      } else {
+        await api.inventory.createLegacyContract({ ...payload, createdByName: currentUser?.name || legacyForm.responsibleName });
+      }
+      setLegacyModalOpen(false);
+      setLegacyEditingId(null);
+      await loadLegacyContracts();
+      setFeedback(legacyEditingId ? 'Contrato rezagado actualizado correctamente.' : 'Contrato rezagado registrado sin afectar reservas ni disponibilidad actual.');
+      setFeedbackType('ok');
     } catch (error) { setLegacyError(error?.message || 'No se pudo registrar el contrato rezagado.'); } finally { setLegacySaving(false); }
+  };
+
+  const deleteLegacyContract = async (row) => {
+    setRowMenuOpenId(null);
+    setRowMenuPosition(null);
+    const confirmed = window.confirm(`¿Eliminar el contrato rezagado ${row.contractCode}? Esta acción lo quitará de la tabla.`);
+    if (!confirmed) return;
+    try {
+      await api.inventory.deleteLegacyContract(row.id, { userName: currentUser?.name ?? '' });
+      setLegacyContracts((rows) => rows.filter((entry) => entry.id !== row.id));
+      if (legacyDetail?.id === row.id) setLegacyDetail(null);
+      setFeedback(`Contrato rezagado ${row.contractCode} eliminado.`);
+      setFeedbackType('ok');
+    } catch (error) {
+      setFeedback(error?.message || 'No se pudo eliminar el contrato rezagado.');
+      setFeedbackType('error');
+    }
   };
   const receiveLegacyItem = async (legacy, line) => {
     const quantity = Number(window.prompt(`Cantidad recibida de ${line.itemName}`, String(line.quantity ?? 1)) ?? 0);
@@ -5170,6 +5227,17 @@ function InventoryDashboardSection({
     </div>
   );
 
+  const renderLegacyRowMenu = (row, openUp = false) => (
+    <div className={`inventory-row-dropdown floating ${openUp ? 'open-up' : ''}`} style={getRowMenuStyle()} role="menu">
+      <button type="button" onClick={() => openLegacyEdit(row)}>
+        Editar
+      </button>
+      <button type="button" className="danger" onClick={() => deleteLegacyContract(row)}>
+        Eliminar
+      </button>
+    </div>
+  );
+
   const comboIngredientRows = comboForm.ingredients
     .map((line, index) => {
       const item = inventoryRows.find((row) => row.id === line.itemId);
@@ -5790,8 +5858,12 @@ function InventoryDashboardSection({
                 ) : null}
               </div>
               {legacyLoading ? <p className="status">Cargando contratos rezagados...</p> : null}
-              <div className="inventory-legacy-table-wrap"><table className="inventory-legacy-table"><thead><tr><th>Contrato</th><th>Fecha</th><th>Cliente</th><th>Responsable</th><th>Material pendiente</th><th>Economia</th><th>Estado</th><th /></tr></thead><tbody>
-                {filteredLegacyContracts.map((row) => <tr key={row.id}><td><strong>{row.contractCode}</strong><small>REZAGADO</small></td><td>{row.contractDate}</td><td><strong>{row.customerName}</strong></td><td>{row.responsibleName}</td><td><strong>{row.pendingUnits} u.</strong><small>{row.pendingItemCount} incidencia(s)</small></td><td><strong>{row.totalDueBs > 0 ? `Por cobrar ${formatBs(row.totalDueBs)}` : row.refundDueBs > 0 ? `Por devolver ${formatBs(row.refundDueBs)}` : 'Sin saldo'}</strong><small>Garantia retenida {formatBs(row.guaranteeHeldBs || 0)}</small></td><td><span className={`inventory-legacy-status ${row.isResolved ? 'resolved' : 'pending'}`}>{row.isResolved ? 'Finalizado' : 'Pendiente'}</span></td><td><button type="button" className="ghost-button" onClick={() => setLegacyDetail(row)}>Abrir</button></td></tr>)}
+              <div className="inventory-legacy-table-wrap"><table className="inventory-legacy-table"><thead><tr><th>Contrato</th><th>Fecha</th><th>Cliente</th><th>Responsable</th><th>Material pendiente</th><th>Economia</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+                {filteredLegacyContracts.map((row, rowIndex) => {
+                  const menuId = `legacy-${row.id}`;
+                  const openUp = shouldOpenMenuUp(rowIndex, filteredLegacyContracts.length);
+                  return <tr key={row.id}><td><strong>{row.contractCode}</strong><small>REZAGADO</small></td><td>{row.contractDate}</td><td><strong>{row.customerName}</strong></td><td>{row.responsibleName}</td><td><strong>{row.pendingUnits} u.</strong><small>{row.pendingItemCount} incidencia(s)</small></td><td><strong>{row.totalDueBs > 0 ? `Por cobrar ${formatBs(row.totalDueBs)}` : row.refundDueBs > 0 ? `Por devolver ${formatBs(row.refundDueBs)}` : 'Sin saldo'}</strong><small>Garantia retenida {formatBs(row.guaranteeHeldBs || 0)}</small></td><td><span className={`inventory-legacy-status ${row.isResolved ? 'resolved' : 'pending'}`}>{row.isResolved ? 'Finalizado' : 'Pendiente'}</span></td><td><div className="inventory-legacy-row-actions"><button type="button" className="ghost-button" onClick={() => setLegacyDetail(row)}>Abrir</button><div className="inventory-actions-menu-wrap" ref={rowMenuOpenId === menuId ? rowMenuRef : null}><button type="button" className="inventory-row-menu-button" aria-label={`Más opciones para el contrato ${row.contractCode}`} aria-expanded={rowMenuOpenId === menuId} onClick={(event) => toggleRowMenu(menuId, event, openUp)}>⋮</button>{rowMenuOpenId === menuId ? renderLegacyRowMenu(row, openUp) : null}</div></div></td></tr>;
+                })}
                 {!legacyLoading && filteredLegacyContracts.length === 0 ? <tr><td colSpan={8}><p className="status">{legacyContractQuery || legacyDateFrom || legacyDateTo ? 'No hay contratos rezagados para los filtros seleccionados.' : 'Aun no hay contratos rezagados registrados.'}</p></td></tr> : null}
               </tbody></table></div>
             </article>
@@ -8362,8 +8434,8 @@ function InventoryDashboardSection({
             <header className="inventory-legacy-modal-head">
               <div className="inventory-legacy-modal-title">
                 <span className="inventory-legacy-eyebrow">REGULARIZACIÓN HISTÓRICA</span>
-                <h3>Registrar contrato rezagado</h3>
-                <p>Registra pendientes antiguos sin crear reservas, órdenes de servicio ni salidas retroactivas.</p>
+                <h3>{legacyEditingId ? 'Editar contrato rezagado' : 'Registrar contrato rezagado'}</h3>
+                <p>{legacyEditingId ? 'Actualiza los datos históricos y pendientes del contrato.' : 'Registra pendientes antiguos sin crear reservas, órdenes de servicio ni salidas retroactivas.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={() => setLegacyModalOpen(false)} aria-label="Cerrar">×</button>
             </header>
@@ -8482,8 +8554,8 @@ function InventoryDashboardSection({
             </div>
 
             <footer className="inventory-legacy-modal-footer">
-              <div className="inventory-legacy-safety-note"><span>✓</span><p><strong>Registro aislado</strong><small>No modifica reservas ni disponibilidad al guardar.</small></p></div>
-              <div className="reset-modal-actions"><button type="button" className="ghost-button" onClick={()=>setLegacyModalOpen(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={legacySaving}>{legacySaving?'Guardando...':'Registrar rezagado'}</button></div>
+              <div className="inventory-legacy-safety-note"><span>✓</span><p><strong>{legacyEditingId ? 'Edición segura' : 'Registro aislado'}</strong><small>No modifica reservas ni disponibilidad al guardar.</small></p></div>
+              <div className="reset-modal-actions"><button type="button" className="ghost-button" onClick={()=>setLegacyModalOpen(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={legacySaving}>{legacySaving ? 'Guardando...' : legacyEditingId ? 'Guardar cambios' : 'Registrar rezagado'}</button></div>
             </footer>
           </form>
         </div>
