@@ -1411,7 +1411,7 @@ const ensureServerStateReadyForMutation = async ({
 
   if (serverStateIsPartial) {
     const requestedCollections = Array.isArray(requiredCollections) && requiredCollections.length
-      ? requiredCollections.filter((name) => PARTIAL_BOOTSTRAP_COLLECTIONS.includes(name))
+      ? requiredCollections
       : PARTIAL_BOOTSTRAP_COLLECTIONS;
     const missingCollections = requestedCollections.filter(
       (name) => !loadedServerCollections.has(name),

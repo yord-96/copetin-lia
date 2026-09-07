@@ -59,6 +59,7 @@ const readablePartialCollectionSet = new Set([
   'cashSessions',
   'users',
   'items',
+  'categories',
   'suppliers',
   'supplierQuotes',
   'supplierLoans',
