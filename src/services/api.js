@@ -95,6 +95,7 @@ const INVENTORY_RECOVERY_PATCH_COLLECTIONS = Object.freeze([
 ]);
 const INVENTORY_ITEM_PATCH_COLLECTIONS = Object.freeze([
   'items',
+  'categories',
   'systemAuditLog',
 ]);
 const INVENTORY_COMBO_PATCH_COLLECTIONS = Object.freeze([

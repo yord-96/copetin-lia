@@ -10752,6 +10752,26 @@ const findOrCreateCategoryByName = (state, categoryName) => {
   return name;
 };
 
+const resolveExistingInventoryCategory = (state, categoryName) => {
+  const requestedName = toBusinessUppercase(categoryName ?? '');
+  const requestedKey = normalizeText(requestedName);
+  if (!requestedKey) return '';
+
+  const registeredCategory = state.categories.find(
+    (entry) => normalizeText(entry?.name) === requestedKey,
+  );
+  if (registeredCategory) return registeredCategory.name;
+
+  // Algunos datos antiguos conservan la categoria solo dentro del producto.
+  // La interfaz la muestra como categoria virtual; al reutilizarla, creamos su
+  // registro formal para que el selector y la validacion compartan la misma fuente.
+  const historicalCategory = state.items.find(
+    (entry) => !entry?.deletedAt && normalizeText(entry?.category) === requestedKey,
+  )?.category;
+  if (!historicalCategory) return '';
+  return findOrCreateCategoryByName(state, historicalCategory);
+};
+
 const buildQuickItemName = (quickItem = {}) => [
   quickItem.name,
   quickItem.color,
@@ -12304,7 +12324,7 @@ const createWebBridge = () => ({
 
       let createdItem = null;
       transaction((state) => {
-        const category = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(requestedCategory))?.name;
+        const category = resolveExistingInventoryCategory(state, requestedCategory);
         if (!category) {
           throw new Error('La categoria seleccionada no existe.');
         }
@@ -12386,7 +12406,7 @@ const createWebBridge = () => ({
           if (!requestedCategory) {
             throw new Error('La categoria no puede estar vacia.');
           }
-          const nextCategory = state.categories.find((entry) => normalizeText(entry.name) === normalizeText(requestedCategory))?.name;
+          const nextCategory = resolveExistingInventoryCategory(state, requestedCategory);
           if (!nextCategory) {
             throw new Error('La categoria seleccionada no existe.');
           }
