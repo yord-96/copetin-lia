@@ -1654,6 +1654,9 @@ function InventoryDashboardSection({
   const [inventoryOrdersPage, setInventoryOrdersPage] = useState(1);
   const [movementsWorkspaceTab, setMovementsWorkspaceTab] = useState('orders');
   const [legacyContracts, setLegacyContracts] = useState([]);
+  const [legacyContractQuery, setLegacyContractQuery] = useState('');
+  const [legacyDateFrom, setLegacyDateFrom] = useState('');
+  const [legacyDateTo, setLegacyDateTo] = useState('');
   const [legacyLoading, setLegacyLoading] = useState(false);
   const [legacyModalOpen, setLegacyModalOpen] = useState(false);
   const [legacyDetail, setLegacyDetail] = useState(null);
@@ -2362,6 +2365,28 @@ function InventoryDashboardSection({
       return matchesQuery && matchesDate;
     });
   }, [inventoryOperationDateFrom, inventoryOperationDateTo, inventoryOrderQuery, prepOrderRows]);
+
+  const filteredLegacyContracts = useMemo(() => {
+    const normalizedQuery = normalizeText(legacyContractQuery);
+    const selectedDateFrom = String(legacyDateFrom ?? '').slice(0, 10);
+    const selectedDateTo = String(legacyDateTo ?? '').slice(0, 10);
+
+    return legacyContracts.filter((row) => {
+      const matchesQuery = !normalizedQuery || [
+        row.contractCode,
+        row.customerName,
+        row.responsibleName,
+        row.eventName,
+      ].some((value) => normalizeText(value).includes(normalizedQuery));
+      const contractDateKey = getDateKey(row.contractDate);
+      const matchesDate = (!selectedDateFrom && !selectedDateTo) || Boolean(
+        contractDateKey
+        && (!selectedDateFrom || contractDateKey >= selectedDateFrom)
+        && (!selectedDateTo || contractDateKey <= selectedDateTo)
+      );
+      return matchesQuery && matchesDate;
+    });
+  }, [legacyContractQuery, legacyContracts, legacyDateFrom, legacyDateTo]);
 
   const inventoryFiltersAreCleared = !inventoryOrderQuery && !inventoryOperationDateFrom && !inventoryOperationDateTo;
   const inventoryOrdersPageSize = 25;
@@ -5467,8 +5492,12 @@ function InventoryDashboardSection({
 
           {isMovementsModule ? (
             <>
-              <div className="inventory-legacy-tabs"><button type="button" className={movementsWorkspaceTab === 'orders' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('orders')}>Órdenes operativas <b>{filteredPrepOrderRows.length}</b></button><button type="button" className={movementsWorkspaceTab === 'legacy' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('legacy')}>Contratos rezagados <b>{legacyContracts.length}</b></button></div>
-            <article className="inventory-ops-card" hidden={movementsWorkspaceTab !== 'orders'}>
+              <div className="inventory-legacy-tabs" role="tablist" aria-label="Vistas de movimientos">
+                <button type="button" role="tab" aria-selected={movementsWorkspaceTab === 'orders'} className={movementsWorkspaceTab === 'orders' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('orders')}>Órdenes operativas <b>{filteredPrepOrderRows.length}</b></button>
+                <button type="button" role="tab" aria-selected={movementsWorkspaceTab === 'legacy'} className={movementsWorkspaceTab === 'legacy' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('legacy')}>Contratos rezagados <b>{filteredLegacyContracts.length}</b></button>
+              </div>
+            {movementsWorkspaceTab === 'orders' ? (
+            <article className="inventory-ops-card">
               <header className="inventory-ops-head">
                 <div>
                   <h3>Ordenes operativas de inventario</h3>
@@ -5703,14 +5732,70 @@ function InventoryDashboardSection({
                 )}
               </div>
             </article>
-            <article className="inventory-ops-card inventory-legacy-card" hidden={movementsWorkspaceTab !== 'legacy'}>
+            ) : (
+            <article className="inventory-ops-card inventory-legacy-card">
               <header className="inventory-ops-head"><div><h3>Contratos rezagados</h3><span>Regularizacion historica independiente: no reserva stock ni altera contratos vigentes.</span></div><button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button></header>
+              <div className="inventory-ops-toolbar">
+                <label className="inventory-ops-search">
+                  <span>Buscar contrato o cliente</span>
+                  <input
+                    type="search"
+                    value={legacyContractQuery}
+                    onChange={(event) => setLegacyContractQuery(event.target.value)}
+                    placeholder="Ej. 1348 o Paola Fernandez"
+                  />
+                </label>
+                <label className="inventory-ops-date-filter">
+                  <span>Contrato desde</span>
+                  <input
+                    type="date"
+                    value={legacyDateFrom}
+                    max={legacyDateTo || undefined}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      setLegacyDateFrom(nextDate);
+                      if (legacyDateTo && nextDate > legacyDateTo) setLegacyDateTo(nextDate);
+                    }}
+                  />
+                </label>
+                <label className="inventory-ops-date-filter">
+                  <span>Contrato hasta</span>
+                  <input
+                    type="date"
+                    value={legacyDateTo}
+                    min={legacyDateFrom || undefined}
+                    onChange={(event) => {
+                      const nextDate = event.target.value;
+                      setLegacyDateTo(nextDate);
+                      if (legacyDateFrom && nextDate < legacyDateFrom) setLegacyDateFrom(nextDate);
+                    }}
+                  />
+                </label>
+                <div className="inventory-ops-filter-summary">
+                  <strong>{legacyLoading ? '…' : filteredLegacyContracts.length}</strong>
+                  <span>{legacyLoading ? 'cargando contratos' : filteredLegacyContracts.length === 1 ? 'contrato visible' : 'contratos visibles'}</span>
+                </div>
+                {(legacyContractQuery || legacyDateFrom || legacyDateTo) ? (
+                  <button
+                    type="button"
+                    className="link-button inventory-ops-clear"
+                    onClick={() => {
+                      setLegacyContractQuery('');
+                      setLegacyDateFrom('');
+                      setLegacyDateTo('');
+                    }}
+                  >
+                    Limpiar
+                  </button>
+                ) : null}
+              </div>
               {legacyLoading ? <p className="status">Cargando contratos rezagados...</p> : null}
               <div className="inventory-legacy-table-wrap"><table className="inventory-legacy-table"><thead><tr><th>Contrato</th><th>Fecha</th><th>Cliente</th><th>Responsable</th><th>Material pendiente</th><th>Economia</th><th>Estado</th><th /></tr></thead><tbody>
-                {legacyContracts.map((row) => <tr key={row.id}><td><strong>{row.contractCode}</strong><small>REZAGADO</small></td><td>{row.contractDate}</td><td><strong>{row.customerName}</strong></td><td>{row.responsibleName}</td><td><strong>{row.pendingUnits} u.</strong><small>{row.pendingItemCount} incidencia(s)</small></td><td><strong>{row.totalDueBs > 0 ? `Por cobrar ${formatBs(row.totalDueBs)}` : row.refundDueBs > 0 ? `Por devolver ${formatBs(row.refundDueBs)}` : 'Sin saldo'}</strong><small>Garantia retenida {formatBs(row.guaranteeHeldBs || 0)}</small></td><td><span className={`inventory-legacy-status ${row.isResolved ? 'resolved' : 'pending'}`}>{row.isResolved ? 'Finalizado' : 'Pendiente'}</span></td><td><button type="button" className="ghost-button" onClick={() => setLegacyDetail(row)}>Abrir</button></td></tr>)}
-                {!legacyLoading && legacyContracts.length === 0 ? <tr><td colSpan={8}><p className="status">Aun no hay contratos rezagados registrados.</p></td></tr> : null}
+                {filteredLegacyContracts.map((row) => <tr key={row.id}><td><strong>{row.contractCode}</strong><small>REZAGADO</small></td><td>{row.contractDate}</td><td><strong>{row.customerName}</strong></td><td>{row.responsibleName}</td><td><strong>{row.pendingUnits} u.</strong><small>{row.pendingItemCount} incidencia(s)</small></td><td><strong>{row.totalDueBs > 0 ? `Por cobrar ${formatBs(row.totalDueBs)}` : row.refundDueBs > 0 ? `Por devolver ${formatBs(row.refundDueBs)}` : 'Sin saldo'}</strong><small>Garantia retenida {formatBs(row.guaranteeHeldBs || 0)}</small></td><td><span className={`inventory-legacy-status ${row.isResolved ? 'resolved' : 'pending'}`}>{row.isResolved ? 'Finalizado' : 'Pendiente'}</span></td><td><button type="button" className="ghost-button" onClick={() => setLegacyDetail(row)}>Abrir</button></td></tr>)}
+                {!legacyLoading && filteredLegacyContracts.length === 0 ? <tr><td colSpan={8}><p className="status">{legacyContractQuery || legacyDateFrom || legacyDateTo ? 'No hay contratos rezagados para los filtros seleccionados.' : 'Aun no hay contratos rezagados registrados.'}</p></td></tr> : null}
               </tbody></table></div>
             </article>
+            )}
             </>
           ) : null}
 
