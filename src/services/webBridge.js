@@ -19600,7 +19600,11 @@ const createWebBridge = () => ({
           .map((id) => String(id ?? '').trim())
           .filter(Boolean),
       );
-      const movements = state.cashMovements
+      const providedMovements = Array.isArray(payload?.movements)
+        ? payload.movements.filter((movement) => movement && typeof movement === 'object')
+        : [];
+      const movementSource = providedMovements.length > 0 ? providedMovements : state.cashMovements;
+      const movements = movementSource
         .filter((movement) => isInRange(movement.createdAt, fromDate, toDate))
         .filter((movement) => !requestedCashBoxType || normalizeCashBoxType(movement.cashBoxType) === requestedCashBoxType)
         .filter((movement) => requestedIds.size === 0 || requestedIds.has(String(movement.id)))

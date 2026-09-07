@@ -3547,6 +3547,7 @@ function AccountingSection({
       const result = await api.cash.printHistoryReport({
         cashBoxType,
         movementIds: rows.map((movement) => movement.id),
+        movements: rows,
         title,
         dateFrom,
         dateTo,
