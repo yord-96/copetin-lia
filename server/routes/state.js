@@ -58,7 +58,9 @@ const summarizedBootstrapCollections = Object.freeze(['contracts', 'rentals']);
 const readablePartialCollectionSet = new Set([
   'cashSessions',
   'users',
+  'clients',
   'items',
+  'quotes',
   'categories',
   'suppliers',
   'supplierQuotes',
