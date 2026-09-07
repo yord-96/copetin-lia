@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole } from '../utils/permissions';
+import { mergeProgressiveRows } from '../utils/progressiveRows';
 
 const isPrintCanceledError = (error) => {
   const message = String(error?.message ?? '').toLowerCase();
@@ -43,29 +44,6 @@ const shouldWaitForCompanyChoice = (user) => {
     window.sessionStorage.getItem('copetin-developer-company-choice-v1') ?? '',
   ).trim();
   return !companies.includes(selectedCompany);
-};
-
-const mergeProgressiveRows = (currentRows, incomingRows) => {
-  const currentById = new Map((Array.isArray(currentRows) ? currentRows : [])
-    .map((row) => [String(row?.id ?? ''), row]));
-  return (Array.isArray(incomingRows) ? incomingRows : []).map((incoming) => {
-    const current = currentById.get(String(incoming?.id ?? ''));
-    if (!current) return incoming;
-    const currentIsFull = !current?._summaryOnly && !current?._accountingSummaryOnly;
-    if (!currentIsFull) return incoming;
-    return {
-      ...current,
-      ...incoming,
-      payment: { ...(current?.payment ?? {}), ...(incoming?.payment ?? {}) },
-      totals: { ...(current?.totals ?? {}), ...(incoming?.totals ?? {}) },
-      guarantee: { ...(current?.guarantee ?? {}), ...(incoming?.guarantee ?? {}) },
-      returnSettlement: incoming?.returnSettlement
-        ? { ...(current?.returnSettlement ?? {}), ...incoming.returnSettlement }
-        : null,
-      _summaryOnly: current?._summaryOnly,
-      _accountingSummaryOnly: false,
-    };
-  });
 };
 
 const mergeProgressiveClients = (currentRows, incomingRows) => {
@@ -224,12 +202,12 @@ export const useAppController = () => {
     setInventoryModuleLoading(true);
     try {
       const overview = await api.sync.getInventoryMovementsOverview({ from, to, query });
-      setItems(Array.isArray(overview?.items) ? overview.items : []);
-      setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
-      setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
-      setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
-      setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
-      setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+      setItems((current) => mergeProgressiveRows(current, overview?.items));
+      setInventoryCombos((current) => mergeProgressiveRows(current, overview?.inventoryCombos));
+      setCategories((current) => mergeProgressiveRows(current, overview?.categories));
+      setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
+      setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
+      setDeliveries((current) => mergeProgressiveRows(current, overview?.deliveries));
       setInventoryMovements(Array.isArray(overview?.inventoryMovements) ? overview.inventoryMovements : []);
       setInventoryMovementStats(overview?.movementStats ?? null);
       return overview;
@@ -628,12 +606,12 @@ export const useAppController = () => {
         setInventoryModuleLoading(true);
         try {
           const overview = await api.sync.getInventoryMovementsOverview();
-          setItems(Array.isArray(overview?.items) ? overview.items : []);
-          setInventoryCombos(Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : []);
-          setCategories(Array.isArray(overview?.categories) ? overview.categories : []);
-          setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
-          setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
-          setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+          setItems((current) => mergeProgressiveRows(current, overview?.items));
+          setInventoryCombos((current) => mergeProgressiveRows(current, overview?.inventoryCombos));
+          setCategories((current) => mergeProgressiveRows(current, overview?.categories));
+          setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
+          setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
+          setDeliveries((current) => mergeProgressiveRows(current, overview?.deliveries));
           setInventoryMovements(Array.isArray(overview?.inventoryMovements) ? overview.inventoryMovements : []);
           setInventoryMovementStats(overview?.movementStats ?? null);
         } finally {
