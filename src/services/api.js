@@ -6,6 +6,7 @@ const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
   'inventoryMovements',
   'stockRecoveries',
+  'legacyContracts',
   'cashMovements',
   'cashDebts',
   'generatedReports',
@@ -366,6 +367,7 @@ const businessCollections = [
   'resetLogs',
   'inventoryMovements',
   'stockRecoveries',
+  'legacyContracts',
   'systemAuditLog',
 ];
 const PATCHABLE_COLLECTIONS = businessCollections;
