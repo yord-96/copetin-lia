@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getCommercialContractCode,
   getRentalReceivableEventDate,
   isRentalExcludedFromReceivables,
 } from './accountingRentals.js';
+
+test('solo acepta referencias comerciales en la columna contrato', () => {
+  assert.equal(getCommercialContractCode('595'), '595');
+  assert.equal(getCommercialContractCode(' 1523 '), '1523');
+  assert.equal(getCommercialContractCode('OS-00002'), '');
+  assert.equal(getCommercialContractCode('os_00839'), '');
+});
 
 const deletedContract = {
   id: 'deleted-contract',

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
+  getCommercialContractCode,
   getRentalReceivableEventDate,
   isRentalExcludedFromReceivables,
 } from '../../utils/accountingRentals';
@@ -929,6 +930,11 @@ function AccountingSection({
       .filter((contract) => contract?.orderCode)
       .map((contract) => [String(contract.orderCode), contract]),
   ), [contracts]);
+  const contractByContractCode = useMemo(() => new Map(
+    contracts
+      .filter((contract) => getCommercialContractCode(contract?.contractCode))
+      .map((contract) => [getCommercialContractCode(contract.contractCode), contract]),
+  ), [contracts]);
   const receivableExcludedRentalIds = useMemo(() => new Set(
     rentals
       .filter((rental) => isRentalExcludedFromReceivables(rental, hiddenContracts, contracts))
@@ -1626,8 +1632,10 @@ function AccountingSection({
   const getRentalContract = useCallback((rental) => (
     contractByRentalId.get(rental?.id)
     ?? contractById.get(rental?.contractId)
+    ?? contractByOrderCode.get(String(rental?.orderCode ?? ''))
+    ?? contractByContractCode.get(getCommercialContractCode(rental?.contractCode))
     ?? null
-  ), [contractById, contractByRentalId]);
+  ), [contractByContractCode, contractById, contractByOrderCode, contractByRentalId]);
 
   const getRentalResponsibleName = useCallback((rental, contract = null) => {
     const primaryResponsible = Array.isArray(contract?.responsibles) ? contract.responsibles[0] : null;
@@ -1927,7 +1935,9 @@ function AccountingSection({
       .map((rental) => {
         const isReturned = String(rental?.status ?? '').toLowerCase() === 'returned';
         const settlement = rental?.returnSettlement ?? {};
-        const contract = contractByRentalId.get(rental.id);
+        const contract = getRentalContract(rental);
+        const contractCode = getCommercialContractCode(contract?.contractCode ?? rental?.contractCode);
+        if (!contractCode) return null;
         const breakdown = getRentalReceivableBreakdown(rental, contract);
         const totalBs = breakdown.totalBs;
         const pendingBs = breakdown.totalPendingBs;
@@ -1935,7 +1945,7 @@ function AccountingSection({
         return {
           id: rental.id,
           orderCode: rental.orderCode ?? rental.id,
-          contractCode: contract?.contractCode ?? '',
+          contractCode,
           customerName: rental.customerName ?? 'Cliente',
           responsibleName: getRentalResponsibleName(rental, contract),
           eventDate: getRentalReceivableEventDate(rental, contract),
@@ -1954,10 +1964,14 @@ function AccountingSection({
       })
       .filter(Boolean)
       .sort((a, b) => b.pendingBs - a.pendingBs);
-      const legacyRows = legacyReceivableRows.filter((row) => Number(row?.totalDueBs ?? 0) > 0.009).map((row) => ({ id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, orderCode: 'REZAGADO', contractCode: row.contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialPendingBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.itemChargesBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.collectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialPendingBs || 0), refundBs: Number(row.refundDueBs || 0) }));
+      const legacyRows = legacyReceivableRows.filter((row) => Number(row?.totalDueBs ?? 0) > 0.009).map((row) => {
+        const contractCode = getCommercialContractCode(row.contractCode);
+        if (!contractCode) return null;
+        return { id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, orderCode: 'REZAGADO', contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialPendingBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.itemChargesBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.collectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialPendingBs || 0), refundBs: Number(row.refundDueBs || 0) };
+      }).filter(Boolean);
       return [...regularRows, ...legacyRows].sort((a, b) => b.pendingBs - a.pendingBs);
     },
-    [legacyReceivableRows,contractByRentalId, getRentalReceivableBreakdown, getRentalResponsibleName, receivableExcludedRentalIds, rentals],
+    [legacyReceivableRows, getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, receivableExcludedRentalIds, rentals],
   );
 
   const pendingReceivableBs = useMemo(
@@ -1971,6 +1985,8 @@ function AccountingSection({
       .map((rental) => {
         const contract = getRentalContract(rental);
         if (!contract?.isFinalized) return null;
+        const contractCode = getCommercialContractCode(contract?.contractCode ?? rental?.contractCode);
+        if (!contractCode) return null;
         const settlement = rental?.returnSettlement ?? {};
         const breakdown = getRentalReceivableBreakdown(rental, contract);
         const pendingBs = breakdown.totalPendingBs;
@@ -2028,7 +2044,7 @@ function AccountingSection({
           id: rental.id,
           contractId: contract.id ?? rental.contractId ?? '',
           orderCode: rental.orderCode ?? rental.id,
-          contractCode: contract.contractCode ?? rental.contractCode ?? '',
+          contractCode,
           contractCreatedAtMs: contractReferences.createdAtMs,
           customerName: rental.customerName ?? contract.customerName ?? 'Cliente',
           responsibleName: getRentalResponsibleName(rental, contract),
@@ -3991,7 +4007,7 @@ function AccountingSection({
         ),
         renderRow: (row) => (
           <tr key={row.id}>
-            <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+            <td><strong>{row.contractCode}</strong></td>
             <td>{row.customerName}</td>
             <td>{row.responsibleName}</td>
             <td>{formatDate(row.eventDate)}</td>
@@ -6411,7 +6427,7 @@ function AccountingSection({
                 <tbody>
                   {receivablesView === 'pending' ? visibleReceivableRows.map((row) => (
                       <tr key={row.id}>
-                        <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                        <td><strong>{row.contractCode}</strong></td>
                         <td><strong>{row.customerName}</strong></td>
                         <td>{row.responsibleName}</td>
                         <td>{formatDate(row.eventDate)}</td>
@@ -6428,7 +6444,7 @@ function AccountingSection({
                       const isLoadingCollections = loadingFinalizedCollectionIds.includes(String(row.id));
                       return [
                         <tr key={row.id} className="bigcash-finalized-receivable-row">
-                          <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                          <td><strong>{row.contractCode}</strong></td>
                           <td><strong>{row.customerName}</strong></td>
                           <td>{row.responsibleName}</td>
                           <td>{formatDate(row.eventDate)}</td>
@@ -6960,7 +6976,7 @@ function AccountingSection({
                           {visibleFinalizedReceivableRows.map((row, index) => (
                             <tr key={`report-contract-${row.id}`}>
                               <td>{index + 1}</td>
-                              <td><strong>{row.contractCode || row.orderCode}</strong><small>{row.orderCode}</small></td>
+                              <td><strong>{row.contractCode}</strong></td>
                               <td>{row.customerName}</td>
                               <td>{row.responsibleName}</td>
                               <td>{formatDate(row.eventDate)}</td>

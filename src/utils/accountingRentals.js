@@ -7,6 +7,12 @@ const isCancelledStatus = (value) => [
   'eliminado',
 ].includes(normalizeReference(value));
 
+export const getCommercialContractCode = (value) => {
+  const code = String(value ?? '').trim();
+  if (!code || /^OS(?:[-_\s]|$)/i.test(code)) return '';
+  return code;
+};
+
 /**
  * Detecta alquileres historicos que sobrevivieron a la eliminacion de su
  * contrato. No elimina ni transforma el registro: solo evita presentarlo como
