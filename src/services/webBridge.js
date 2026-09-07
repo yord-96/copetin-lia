@@ -2472,7 +2472,8 @@ const normalizeState = (state) => {
       const paidAtApprovalBs = Number(quote?.payment?.paidAtApprovalBs ?? 0);
       const pendingBs = Number(quote?.payment?.pendingBs ?? Math.max(0, totalBs - paidAtApprovalBs));
       const overpaidBs = Math.max(0, Number((Number(quote?.payment?.overpaidBs ?? paidAtApprovalBs - totalBs)).toFixed(2)));
-      const awaitingAssignment = Boolean(quote?.awaitingAssignment || quote?.source === 'public_catalog');
+      const awaitingAssignment = Boolean(quote?.awaitingAssignment)
+        || String(quote?.publicRequestStatus ?? '').trim().toLowerCase() === 'waiting_contact';
       const responsibles = awaitingAssignment ? [] : normalizeRecordResponsibles(quote);
       const primaryResponsible = responsibles[0] ?? null;
 

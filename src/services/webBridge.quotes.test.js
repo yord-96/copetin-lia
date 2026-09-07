@@ -88,4 +88,20 @@ test('guarda precios y asigna al editor de una cotizacion del catalogo web', asy
     role: 'Ventas',
     source: 'quote_editor',
   }]);
+
+  // Simula una recarga completa desde el estado persistido. Una cotizacion
+  // del catalogo que ya fue asignada no debe volver a "Esperando contacto"
+  // solo por conservar source=public_catalog.
+  const persistedState = await bridge.__storage.exportState();
+  await bridge.__storage.replaceState(persistedState);
+  const reloaded = (await bridge.quotes.list()).find((quote) => quote.id === 'quote-catalogo');
+
+  assert.equal(reloaded.awaitingAssignment, false);
+  assert.equal(reloaded.publicRequestStatus, 'assigned');
+  assert.deepEqual(reloaded.responsibles, [{
+    id: 'usuario-ventas',
+    name: 'VENDEDORA PRUEBA',
+    role: 'Ventas',
+    source: 'quote_editor',
+  }]);
 });
