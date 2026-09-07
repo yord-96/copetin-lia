@@ -1889,7 +1889,13 @@ export const useAppController = () => {
   const handleUpdateQuote = async (payload) => {
     setError('');
     try {
-      const updated = await api.quotes.update(payload);
+      const trace = getCurrentUserTrace();
+      const updated = await api.quotes.update({
+        ...payload,
+        updatedById: trace.userId,
+        updatedByName: trace.userName,
+        updatedByRole: trace.userRole,
+      });
       await loadData();
       return updated;
     } catch (requestError) {

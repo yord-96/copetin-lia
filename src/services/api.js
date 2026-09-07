@@ -1969,7 +1969,7 @@ const syncServerState = async ({ force = false, required = false, reason = 'sync
       loadedServerCollections.clear();
       const excludedCollections = Array.isArray(payload.excludedCollections) ? payload.excludedCollections : [];
       const summarizedCollections = Array.isArray(payload.summarizedCollections) ? payload.summarizedCollections : [];
-      PARTIAL_BOOTSTRAP_COLLECTIONS.forEach((name) => {
+      Object.keys(payload.state).forEach((name) => {
         if (!excludedCollections.includes(name) && !summarizedCollections.includes(name)) {
           loadedServerCollections.add(name);
         }

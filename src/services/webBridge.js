@@ -15256,7 +15256,9 @@ const createWebBridge = () => ({
         if (payload.pickupDate !== undefined) quote.pickupDate = quote.pickupDateMode === 'coordinate' ? null : String(payload.pickupDate ?? '').trim() || quote.pickupDate;
         if (payload.pickupWindowStart !== undefined) quote.pickupWindowStart = quote.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowStart ?? '').trim() || quote.pickupWindowStart;
         if (payload.pickupWindowEnd !== undefined) quote.pickupWindowEnd = quote.pickupTimeMode === 'coordinate' ? null : String(payload.pickupWindowEnd ?? '').trim() || quote.pickupWindowEnd;
-        assertSameDayTimeWindow(quote.deliveryWindowStart, quote.deliveryWindowEnd, 'La ventana de entrega');
+        if (quote.deliveryTimeMode !== 'coordinate') {
+          assertSameDayTimeWindow(quote.deliveryWindowStart, quote.deliveryWindowEnd, 'La ventana de entrega');
+        }
         if (quote.pickupTimeMode !== 'coordinate') assertSameDayTimeWindow(quote.pickupWindowStart, quote.pickupWindowEnd, 'La ventana de recojo');
         if (payload.clientId !== undefined) quote.clientId = payload.clientId ?? null;
         if (quote.clientId) {
@@ -15433,7 +15435,24 @@ const createWebBridge = () => ({
           paymentMethod: guaranteePaymentMethod,
           paymentAccount: guaranteePaymentAccount,
         };
-        if (payload.responsibles !== undefined) {
+        const editorId = String(payload?.updatedById ?? '').trim();
+        const editorName = String(payload?.updatedByName ?? '').trim();
+        const editorRole = String(payload?.updatedByRole ?? 'Operacion').trim() || 'Operacion';
+        const isPublicCatalogEdit = normalizeText(quote?.source).replace(/[^a-z0-9]+/g, '_') === 'public_catalog';
+        if (isPublicCatalogEdit && editorId && editorName) {
+          quote.responsibles = [{
+            id: editorId,
+            name: editorName,
+            role: editorRole,
+            source: 'quote_editor',
+          }];
+          quote.awaitingAssignment = false;
+          quote.publicRequestStatus = 'assigned';
+          quote.assignedToId = editorId;
+          quote.assignedToName = editorName;
+          quote.assignedToRole = editorRole;
+          quote.assignedAt = new Date().toISOString();
+        } else if (payload.responsibles !== undefined) {
           const responsibles = normalizeRecordResponsibles(payload);
           const primaryResponsible = responsibles[0] ?? null;
           quote.responsibles = responsibles;
@@ -15444,6 +15463,9 @@ const createWebBridge = () => ({
             quote.createdByRole = primaryResponsible.role;
           }
         }
+        quote.updatedById = editorId || quote.updatedById || null;
+        quote.updatedByName = editorName || quote.updatedByName || '';
+        quote.updatedByRole = editorRole || quote.updatedByRole || '';
         quote.updatedAt = new Date().toISOString();
 
         updated = deepClone(quote);

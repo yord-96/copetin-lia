@@ -848,8 +848,9 @@ const normalizeWhatsAppNumber = (value) => {
 };
 
 const getResponsibleDisplayName = (record) => {
-  if (record?.awaitingAssignment || record?.source === 'public_catalog') return 'Sin asignar';
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.name) : [];
+  const hasAssignedName = responsibles.length > 0 || record?.responsibleName || record?.assignedToName;
+  if ((record?.awaitingAssignment || record?.source === 'public_catalog') && !hasAssignedName) return 'Sin asignar';
   if (responsibles.length > 1) return `${responsibles[0].name} + ${responsibles.length - 1} mas`;
   if (responsibles.length === 1) return responsibles[0].name;
   return record?.responsibleName
@@ -861,8 +862,9 @@ const getResponsibleDisplayName = (record) => {
 };
 
 const getResponsibleDisplayRole = (record) => {
-  if (record?.awaitingAssignment || record?.source === 'public_catalog') return 'Esperando contacto';
   const responsibles = Array.isArray(record?.responsibles) ? record.responsibles.filter((entry) => entry?.role) : [];
+  const hasAssignedRole = responsibles.length > 0 || record?.responsibleRole || record?.assignedToRole;
+  if ((record?.awaitingAssignment || record?.source === 'public_catalog') && !hasAssignedRole) return 'Esperando contacto';
   if (responsibles.length > 1) return 'Responsables multiples';
   if (responsibles.length === 1) return responsibles[0].role;
   return record?.responsibleRole
@@ -6075,7 +6077,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     observations: record?.observations ?? '',
     responsibleIds: Array.isArray(record?.responsibles) && record.responsibles.length > 0
       ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
-      : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
+      : record?.awaitingAssignment || isPublicCatalogQuote(record)
+        ? []
+        : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
     items: recordItems.map((line, index) => {
       const lineDay = resolveScheduleDay(line);
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
