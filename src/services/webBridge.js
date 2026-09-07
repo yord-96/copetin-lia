@@ -15440,7 +15440,26 @@ const createWebBridge = () => ({
         const editorName = String(payload?.updatedByName ?? '').trim();
         const editorRole = String(payload?.updatedByRole ?? 'Operacion').trim() || 'Operacion';
         const isPublicCatalogEdit = normalizeText(quote?.source).replace(/[^a-z0-9]+/g, '_') === 'public_catalog';
-        if (isPublicCatalogEdit && editorId && editorName) {
+        const hasExplicitResponsibles = payload.responsibles !== undefined;
+        if (hasExplicitResponsibles) {
+          const responsibles = normalizeRecordResponsibles(payload);
+          const primaryResponsible = responsibles[0] ?? null;
+          quote.responsibles = responsibles;
+          if (primaryResponsible) {
+            quote.createdBy = primaryResponsible.name;
+            quote.createdById = primaryResponsible.id;
+            quote.createdByName = primaryResponsible.name;
+            quote.createdByRole = primaryResponsible.role;
+            if (isPublicCatalogEdit) {
+              quote.awaitingAssignment = false;
+              quote.publicRequestStatus = 'assigned';
+              quote.assignedToId = primaryResponsible.id;
+              quote.assignedToName = primaryResponsible.name;
+              quote.assignedToRole = primaryResponsible.role;
+              quote.assignedAt = new Date().toISOString();
+            }
+          }
+        } else if (isPublicCatalogEdit && editorId && editorName) {
           quote.responsibles = [{
             id: editorId,
             name: editorName,
@@ -15453,16 +15472,6 @@ const createWebBridge = () => ({
           quote.assignedToName = editorName;
           quote.assignedToRole = editorRole;
           quote.assignedAt = new Date().toISOString();
-        } else if (payload.responsibles !== undefined) {
-          const responsibles = normalizeRecordResponsibles(payload);
-          const primaryResponsible = responsibles[0] ?? null;
-          quote.responsibles = responsibles;
-          if (primaryResponsible) {
-            quote.createdBy = primaryResponsible.name;
-            quote.createdById = primaryResponsible.id;
-            quote.createdByName = primaryResponsible.name;
-            quote.createdByRole = primaryResponsible.role;
-          }
         }
         quote.updatedById = editorId || quote.updatedById || null;
         quote.updatedByName = editorName || quote.updatedByName || '';
