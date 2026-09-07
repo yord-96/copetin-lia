@@ -1897,6 +1897,20 @@ export const useAppController = () => {
         updatedByRole: trace.userRole,
       });
       await loadData();
+      // El PATCH ya devuelve la cotizacion persistida. Fuerza esa version en
+      // el estado React despues del refresco general para que la tabla refleje
+      // inmediatamente responsable, total y estado sin exigir F5.
+      setQuotes((current) => {
+        const updatedId = String(updated?.id ?? '').trim();
+        if (!updatedId) return current;
+        const exists = current.some((entry) => String(entry?.id ?? '').trim() === updatedId);
+        if (!exists) return [updated, ...current];
+        return current.map((entry) => (
+          String(entry?.id ?? '').trim() === updatedId
+            ? { ...entry, ...updated }
+            : entry
+        ));
+      });
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar la cotizacion.');
