@@ -835,15 +835,41 @@ function AccountingSection({
     setPettyHistoryLoading(true);
     setPettyHistoryError('');
     try {
-      const result = await api.cash.getPettySector({ sector: 'history', offset, limit: 80, ...filters });
+      const pageSize = 80;
+      let nextOffset = Math.max(0, Number(offset) || 0);
+      let total = 0;
+      let summary = null;
+      let hasMore = true;
+      const loadedRows = [];
+
+      // El endpoint pagina Caja Chica en bloques de 80 para no enviar respuestas
+      // pesadas. En el historial completo recorremos todas las paginas del filtro
+      // para que la tabla y el reporte representen realmente todo el rango.
+      while (hasMore) {
+        const result = await api.cash.getPettySector({
+          sector: 'history',
+          offset: nextOffset,
+          limit: pageSize,
+          ...filters,
+        });
+        if (pettySectorRequestRef.current.history !== requestId) return;
+
+        const pageRows = Array.isArray(result?.rows) ? result.rows : [];
+        loadedRows.push(...pageRows);
+        total = Number(result?.total ?? total ?? 0);
+        summary = result?.summary ?? summary;
+        hasMore = Boolean(result?.hasMore) && pageRows.length > 0;
+        nextOffset += pageRows.length;
+      }
+
       if (pettySectorRequestRef.current.history !== requestId) return;
       setPettyHistorySource((current) => (
-        append ? [...(Array.isArray(current) ? current : []), ...(result?.rows ?? [])] : (result?.rows ?? [])
+        append ? [...(Array.isArray(current) ? current : []), ...loadedRows] : loadedRows
       ));
       setPettyHistoryMeta({
-        total: Number(result?.total ?? 0),
-        hasMore: Boolean(result?.hasMore),
-        summary: result?.summary ?? null,
+        total,
+        hasMore: false,
+        summary,
       });
     } catch (historyError) {
       if (pettySectorRequestRef.current.history !== requestId) return;
