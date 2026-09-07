@@ -181,6 +181,9 @@ const groupReturnIssuesByContract = (rows) => {
         eventDate: row?.eventDate ?? '',
         returnedAt: row?.returnedAt ?? row?.createdAt ?? '',
         status: 'Liquidacion',
+        isLegacy: Boolean(row?.isLegacy),
+        legacyId: row?.legacyId ?? '',
+        legacySource: row?.legacySource ?? null,
         items: [],
         penaltyBs: 0,
         settledDamageBs: 0,
@@ -716,6 +719,8 @@ function AccountingSection({
   const [collectForm, setCollectForm] = useState({ amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', receipt: '', note: '' });
   const [guaranteeRefundModal, setGuaranteeRefundModal] = useState(null);
   const [guaranteeRefundForm, setGuaranteeRefundForm] = useState({ paymentMethod: 'efectivo', paymentAccount: '', note: '' });
+  const [legacyEconomicEditModal, setLegacyEconomicEditModal] = useState(null);
+  const [legacyEconomicEditForm, setLegacyEconomicEditForm] = useState({ commercialPendingBs: '', guaranteePendingBs: '', guaranteeHeldBs: '', refundDueBs: '' });
   const [isSubmittingCash, setIsSubmittingCash] = useState(false);
   const [cashActionError, setCashActionError] = useState('');
   const [cashActionFeedback, setCashActionFeedback] = useState('');
@@ -1681,7 +1686,7 @@ function AccountingSection({
     };
   }, []);
 
-  const guaranteeLifecycleRows = useMemo(() => rentals
+  const regularGuaranteeLifecycleRows = useMemo(() => rentals
     .filter((rental) => !rental?.deletedAt)
     .map((rental) => {
       const contract = getRentalContract(rental);
@@ -1883,6 +1888,57 @@ function AccountingSection({
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
   [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, postedMovements, rentals]);
 
+  const legacyGuaranteeLifecycleRows = useMemo(() => legacyReceivableRows
+    .map((row) => {
+      const contractCode = getCommercialContractCode(row?.contractCode);
+      if (!contractCode) return null;
+      const pendingBs = Math.max(0, toNumber(row?.guaranteePendingBs));
+      const heldBs = Math.max(0, toNumber(row?.guaranteeHeldBs));
+      const refundedBs = Math.max(0, toNumber(row?.guaranteeRefundedBs));
+      const refundableBs = Math.max(0, toNumber(row?.refundableGuaranteeBs));
+      if (pendingBs <= 0.009 && heldBs <= 0.009 && refundedBs <= 0.009 && refundableBs <= 0.009) return null;
+      const isReadyToReturn = toNumber(row?.pendingUnits) <= 0 && refundableBs > 0.009;
+      return {
+        id: `legacy-guarantee-${row.id}`,
+        legacyId: row.id,
+        isLegacy: true,
+        legacySource: row,
+        rentalId: '',
+        contractId: row.id,
+        orderCode: '',
+        contractCode,
+        customerName: row.customerName || 'Cliente',
+        responsibleName: row.responsibleName || 'Sin responsable',
+        eventDate: row.contractDate,
+        amountBs: refundableBs,
+        declaredBs: Number((pendingBs + heldBs + refundedBs).toFixed(2)),
+        guaranteePaidBs: Number((heldBs + refundedBs).toFixed(2)),
+        validatedBs: heldBs,
+        appliedBs: 0,
+        refundedBs,
+        refundableBs,
+        unvalidatedBs: pendingBs,
+        paymentMethodLabel: 'Registro histórico',
+        refundDefaultMethod: 'efectivo',
+        refundDefaultAccount: '',
+        isMoneyHeld: refundableBs > 0.009,
+        isReadyToReturn,
+        isPartiallyRefunded: refundedBs > 0.009 && heldBs > 0.009,
+        isFullyResolved: pendingBs <= 0.009 && heldBs <= 0.009 && refundableBs <= 0.009,
+        returnedAt: row.finalizedAt || row.updatedAt,
+        refundPaymentMethodLabel: 'Ver recibo en Caja Grande',
+        receiptCodes: '',
+        registeredBy: row.finalizedByName || row.responsibleName || '-',
+        statusLabel: pendingBs > 0.009 ? 'Garantía por cobrar' : isReadyToReturn ? 'Lista para devolver' : heldBs > 0.009 ? 'En custodia' : 'Liquidada',
+      };
+    })
+    .filter(Boolean), [legacyReceivableRows]);
+
+  const guaranteeLifecycleRows = useMemo(
+    () => [...regularGuaranteeLifecycleRows, ...legacyGuaranteeLifecycleRows],
+    [legacyGuaranteeLifecycleRows, regularGuaranteeLifecycleRows],
+  );
+
   const guaranteesToReturnRows = useMemo(() => guaranteeLifecycleRows
     .filter((row) => row.unvalidatedBs > 0.009 || row.refundableBs > 0.009)
     .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
@@ -1921,12 +1977,23 @@ function AccountingSection({
     [bigCashGuaranteeRows, selectedDate],
   );
 
+  const loadLegacyAccountingRows = useCallback(async () => {
+    try {
+      const rows = await api.inventory.getLegacyContracts();
+      setLegacyReceivableRows(rows);
+      return rows;
+    } catch (error) {
+      setLegacyReceivableRows([]);
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
     if (activeModule !== 'contabilidad_caja_grande') return;
     let current = true;
-    api.inventory.getLegacyContracts().then((rows) => { if (current) setLegacyReceivableRows(rows); }).catch(() => { if (current) setLegacyReceivableRows([]); });
+    loadLegacyAccountingRows().catch(() => { if (current) setLegacyReceivableRows([]); });
     return () => { current = false; };
-  }, [activeModule, cashMovements]);
+  }, [activeModule, cashMovements, loadLegacyAccountingRows]);
 
   const pendingReceivableRows = useMemo(
     () => {
@@ -1967,7 +2034,7 @@ function AccountingSection({
       const legacyRows = legacyReceivableRows.filter((row) => Number(row?.totalDueBs ?? 0) > 0.009).map((row) => {
         const contractCode = getCommercialContractCode(row.contractCode);
         if (!contractCode) return null;
-        return { id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, orderCode: 'REZAGADO', contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialPendingBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.itemChargesBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.collectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialPendingBs || 0), refundBs: Number(row.refundDueBs || 0) };
+        return { id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, legacySource: row, orderCode: '', contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialDueBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.damageDueBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.commercialCollectedBs || 0) + Number(row.damageCollectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialDueBs || 0), refundBs: Number(row.refundableGuaranteeBs || 0) };
       }).filter(Boolean);
       return [...regularRows, ...legacyRows].sort((a, b) => b.pendingBs - a.pendingBs);
     },
@@ -1979,7 +2046,7 @@ function AccountingSection({
     [pendingReceivableRows],
   );
 
-  const finalizedReceivableRows = useMemo(
+  const regularFinalizedReceivableRows = useMemo(
     () => rentals
       .filter((rental) => !receivableExcludedRentalIds.has(String(rental?.id ?? rental?.rentalId ?? '')))
       .map((rental) => {
@@ -2065,6 +2132,35 @@ function AccountingSection({
     [exactFinalizedCollections, getMovementUserLabel, getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, postedMovements, receivableExcludedRentalIds, rentals],
   );
 
+  const finalizedReceivableRows = useMemo(() => {
+    const legacyRows = legacyReceivableRows
+      .filter((row) => row?.isResolved && (toNumber(row?.commercialCollectedBs) > 0.009 || toNumber(row?.damageCollectedBs) > 0.009))
+      .map((row) => ({
+        id: `legacy-finalized-${row.id}`,
+        legacyId: row.id,
+        isLegacy: true,
+        legacySource: row,
+        contractId: row.id,
+        orderCode: '',
+        contractCode: getCommercialContractCode(row.contractCode),
+        customerName: row.customerName || 'Cliente',
+        responsibleName: row.responsibleName || 'Sin responsable',
+        eventDate: row.contractDate,
+        finalizedAt: row.finalizedAt || row.updatedAt,
+        finalizedByName: row.finalizedByName || row.responsibleName || '-',
+        totalBs: toNumber(row.commercialPendingBs) + toNumber(row.itemChargesBs),
+        paidBs: toNumber(row.commercialCollectedBs) + toNumber(row.damageCollectedBs),
+        transportBs: 0,
+        damageBs: toNumber(row.itemChargesBs),
+        settledBs: toNumber(row.commercialCollectedBs) + toNumber(row.damageCollectedBs),
+        collectionMovements: [],
+        collectionsLoaded: true,
+      }))
+      .filter((row) => row.contractCode);
+    return [...regularFinalizedReceivableRows, ...legacyRows]
+      .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0));
+  }, [legacyReceivableRows, regularFinalizedReceivableRows]);
+
   const derivedReturnIssueRows = useMemo(
     () => rentals
       .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
@@ -2135,7 +2231,7 @@ function AccountingSection({
     [getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, rentals],
   );
 
-  const returnIssueRows = useMemo(
+  const regularReturnIssueRows = useMemo(
     () => {
       if (!Array.isArray(cashReturnIssues) || cashReturnIssues.length === 0) return derivedReturnIssueRows;
 
@@ -2182,6 +2278,58 @@ function AccountingSection({
       }).sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
     },
     [cashReturnIssues, derivedReturnIssueRows],
+  );
+
+  const legacyReturnIssueRows = useMemo(() => legacyReceivableRows.flatMap((row) => {
+    const chargeLines = (Array.isArray(row?.items) ? row.items : [])
+      .filter((line) => ['missing', 'damaged', 'resolved'].includes(String(line?.status ?? '').toLowerCase()) && toNumber(line?.chargeBs) > 0.009);
+    let remainingPendingBs = Math.max(0, toNumber(row?.damageDueBs));
+    return chargeLines.map((line, index) => {
+      const penaltyBs = Math.max(0, toNumber(line.chargeBs));
+      const pendingDamageBs = Math.min(penaltyBs, remainingPendingBs);
+      remainingPendingBs = Math.max(0, Number((remainingPendingBs - pendingDamageBs).toFixed(2)));
+      return {
+        id: `legacy-issue-${row.id}-${line.id || index}`,
+        isLegacy: true,
+        legacyId: row.id,
+        legacySource: row,
+        rentalId: '',
+        contractId: row.id,
+        lineKey: line.id || `legacy-line-${index}`,
+        itemId: line.itemId || '',
+        orderCode: '',
+        contractCode: getCommercialContractCode(row.contractCode),
+        customerName: row.customerName || 'Cliente',
+        responsibleName: row.responsibleName || 'Sin responsable',
+        eventDate: row.contractDate,
+        returnedAt: line.resolvedAt || row.updatedAt || row.contractDate,
+        itemName: line.itemName || 'Ítem',
+        damagedQty: line.status === 'damaged' ? toNumber(line.quantity) : 0,
+        missingQty: line.status === 'damaged' ? 0 : toNumber(line.quantity),
+        damagedUnitChargeBs: 0,
+        missingUnitChargeBs: 0,
+        penaltyBs,
+        chargeOwner: 'cliente',
+        note: line.note || '',
+        pendingDamageBs,
+        settledDamageBs: Math.max(0, Number((penaltyBs - pendingDamageBs).toFixed(2))),
+        pendingCollectionBs: pendingDamageBs,
+        pendingBs: pendingDamageBs,
+        totalBs: toNumber(row.commercialPendingBs) + toNumber(row.itemChargesBs),
+        paidBs: toNumber(row.commercialCollectedBs) + toNumber(row.damageCollectedBs),
+        guaranteeBs: toNumber(row.guaranteeHeldBs),
+        penaltiesBs: toNumber(row.itemChargesBs),
+        outstandingRentalBs: toNumber(row.commercialDueBs),
+        refundBs: toNumber(row.refundableGuaranteeBs),
+        status: 'Rezagado',
+      };
+    }).filter((line) => line.contractCode);
+  }), [legacyReceivableRows]);
+
+  const returnIssueRows = useMemo(
+    () => [...regularReturnIssueRows, ...legacyReturnIssueRows]
+      .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0)),
+    [legacyReturnIssueRows, regularReturnIssueRows],
   );
 
   const normalizedBigCashWorkspaceQuery = useMemo(
@@ -3280,6 +3428,43 @@ function AccountingSection({
     setCashActionError('');
   };
 
+  const openLegacyEconomicEdit = (row) => {
+    const source = row?.legacySource ?? row;
+    if (!source?.id) return;
+    setLegacyEconomicEditModal(source);
+    setLegacyEconomicEditForm({
+      commercialPendingBs: String(source.commercialPendingBs ?? ''),
+      guaranteePendingBs: String(source.guaranteePendingBs ?? ''),
+      guaranteeHeldBs: String(source.guaranteeHeldBs ?? ''),
+      refundDueBs: String(source.refundDueBs ?? ''),
+    });
+    setCashActionError('');
+  };
+
+  const handleSubmitLegacyEconomicEdit = async (event) => {
+    event.preventDefault();
+    const source = legacyEconomicEditModal;
+    if (!source?.id || !beginCashSubmit()) return;
+    setCashActionError('');
+    try {
+      await api.inventory.updateLegacyContract(source.id, {
+        ...source,
+        commercialPendingBs: Math.max(0, toNumber(legacyEconomicEditForm.commercialPendingBs)),
+        guaranteePendingBs: Math.max(0, toNumber(legacyEconomicEditForm.guaranteePendingBs)),
+        guaranteeHeldBs: Math.max(0, toNumber(legacyEconomicEditForm.guaranteeHeldBs)),
+        refundDueBs: Math.max(0, toNumber(legacyEconomicEditForm.refundDueBs)),
+        updatedByName: currentUserName,
+      });
+      await loadLegacyAccountingRows();
+      setLegacyEconomicEditModal(null);
+      setCashActionFeedback(`Contrato ${source.contractCode} actualizado.`);
+    } catch (error) {
+      setCashActionError(error.message || 'No se pudo editar el contrato rezagado.');
+    } finally {
+      endCashSubmit();
+    }
+  };
+
   const openCollectAction = (row) => {
     const contractReference = row.contractCode || row.orderCode;
     setCollectModal(row);
@@ -3288,13 +3473,25 @@ function AccountingSection({
       paymentMethod: 'efectivo',
       paymentAccount: '',
       receipt: '',
-      note: row.status === 'Liquidacion'
+      note: row.collectionTarget === 'damage'
+        ? `Cobro daños o pérdidas contrato ${contractReference}`
+        : row.collectionTarget === 'guarantee_collect'
+          ? `Cobro garantía contrato ${contractReference}`
+          : row.status === 'Liquidacion'
         ? `Cobro liquidacion contrato ${contractReference}`
         : `Cobro saldo contrato ${contractReference}`,
     });
     setCashActionError('');
     setCashActionFeedback('');
   };
+
+  const renderLegacyFinancialActions = (row) => (
+    <div className="bigcash-receivable-actions">
+      {toNumber(row.contractPendingBs) > 0.009 ? <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...row, pendingBs: row.contractPendingBs, collectionTarget: 'commercial' })}>Cobrar saldo</button> : null}
+      {toNumber(row.damagePendingBs) > 0.009 ? <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...row, pendingBs: row.damagePendingBs, collectionTarget: 'damage' })}>Cobrar daños</button> : null}
+      <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(row)}>Editar</button>
+    </div>
+  );
 
   const closeCollectAction = () => {
     setCollectModal(null);
@@ -3724,9 +3921,20 @@ function AccountingSection({
     if (!beginCashSubmit()) return;
     setCashActionError('');
     try {
-      const result = await onCollectReceivable?.({
+      const amountBs = Math.max(0, toNumber(collectForm.amountBs));
+      const result = collectModal.isLegacy
+        ? await api.inventory.settleLegacyContract(collectModal.legacyId, {
+          target: collectModal.collectionTarget || 'commercial',
+          amountBs,
+          paymentMethod: collectForm.paymentMethod,
+          paymentAccount: collectForm.paymentMethod === 'qr' ? collectForm.paymentAccount : '',
+          receipt: collectForm.receipt,
+          notes: collectForm.note,
+          createdBy: currentUserName,
+        })
+        : await onCollectReceivable?.({
         rentalId: collectModal.id,
-        amountBs: Math.max(0, toNumber(collectForm.amountBs)),
+        amountBs,
         collectionTarget: collectModal.collectionTarget || 'balance',
         collectionBreakdown: collectModal.collectionTarget === 'damage'
           ? [{ target: 'damage', amountBs: Math.max(0, toNumber(collectForm.amountBs)) }]
@@ -3738,6 +3946,7 @@ function AccountingSection({
         createdBy: currentUserName,
       });
       await printCashReceipt(resolvePrintableCashMovementId(result, 'BIG_CASH'));
+      if (collectModal.isLegacy) await loadLegacyAccountingRows();
       setCashActionFeedback('Cobro registrado en Caja Grande.');
       closeCollectAction();
     } catch (error) {
@@ -3783,7 +3992,16 @@ function AccountingSection({
     }
     setCashActionError('');
     try {
-      const created = await onCreateCashMovement?.({
+      const created = row.isLegacy
+        ? await api.inventory.settleLegacyContract(row.legacyId, {
+          target: 'guarantee_refund',
+          amountBs: row.refundableBs,
+          paymentMethod: guaranteeRefundForm.paymentMethod,
+          paymentAccount: guaranteeRefundForm.paymentMethod === 'qr' ? guaranteeRefundForm.paymentAccount : '',
+          notes: guaranteeRefundForm.note,
+          createdBy: currentUserName,
+        })
+        : await onCreateCashMovement?.({
         type: 'egreso',
         cashBoxType: 'BIG_CASH',
         amountBs: row.refundableBs,
@@ -3801,6 +4019,7 @@ function AccountingSection({
         createdBy: currentUserName,
       });
       await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
+      if (row.isLegacy) await loadLegacyAccountingRows();
       setCashActionFeedback(`Garantía devuelta para contrato ${row.contractCode}.`);
       setGuaranteeRefundModal(null);
       setGuaranteeRefundForm({ paymentMethod: 'efectivo', paymentAccount: '', note: '' });
@@ -4015,7 +4234,7 @@ function AccountingSection({
               <strong>{formatBs(row.pendingBs)}</strong>
               <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
             </td>
-            <td>{row.isLegacy ? <span className="cash-receipt-muted">Gestionar en Movimientos</span> : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
+            <td>{row.isLegacy ? renderLegacyFinancialActions(row) : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
           </tr>
         ),
         monthlyBrowser: true,
@@ -4924,6 +5143,23 @@ function AccountingSection({
                   : 'Guardar movimiento'}
               </button>
             </footer>
+          </form>
+        </div>
+      ) : null}
+
+      {legacyEconomicEditModal ? (
+        <div className="accounting-modal-backdrop" onClick={() => !isSubmittingCash && setLegacyEconomicEditModal(null)}>
+          <form className="accounting-modal" onSubmit={handleSubmitLegacyEconomicEdit} onClick={(event) => event.stopPropagation()}>
+            <header><div><h3>Editar contrato rezagado</h3><small>Contrato {legacyEconomicEditModal.contractCode} | {legacyEconomicEditModal.customerName}</small></div><button type="button" className="orders-modal-close" onClick={() => setLegacyEconomicEditModal(null)}>x</button></header>
+            <p className="status">Corrige los saldos históricos iniciales. Los cobros y devoluciones ya registrados conservan su trazabilidad.</p>
+            <div className="accounting-form-grid two">
+              <label>Saldo comercial original<input type="number" min="0" step="0.01" value={legacyEconomicEditForm.commercialPendingBs} onChange={(event) => setLegacyEconomicEditForm((current) => ({ ...current, commercialPendingBs: event.target.value }))} /></label>
+              <label>Garantía por cobrar<input type="number" min="0" step="0.01" value={legacyEconomicEditForm.guaranteePendingBs} onChange={(event) => setLegacyEconomicEditForm((current) => ({ ...current, guaranteePendingBs: event.target.value }))} /></label>
+              <label>Garantía retenida<input type="number" min="0" step="0.01" value={legacyEconomicEditForm.guaranteeHeldBs} onChange={(event) => setLegacyEconomicEditForm((current) => ({ ...current, guaranteeHeldBs: event.target.value }))} /></label>
+              <label>Garantía por devolver<input type="number" min="0" step="0.01" value={legacyEconomicEditForm.refundDueBs} onChange={(event) => setLegacyEconomicEditForm((current) => ({ ...current, refundDueBs: event.target.value }))} /></label>
+            </div>
+            {cashActionError ? <p className="status error">{cashActionError}</p> : null}
+            <footer><button type="button" className="ghost-button" onClick={() => setLegacyEconomicEditModal(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={isSubmittingCash}>{isSubmittingCash ? 'Guardando...' : 'Guardar corrección'}</button></footer>
           </form>
         </div>
       ) : null}
@@ -6437,7 +6673,7 @@ function AccountingSection({
                         <td className="amount">{formatBs(row.transportPendingBs)}</td>
                         <td className="amount">{formatBs(row.damagePendingBs)}</td>
                         <td className="amount bigcash-total-due">{formatBs(row.pendingBs)}</td>
-                        <td>{row.isLegacy ? <span className="cash-receipt-muted">Gestionar en Movimientos</span> : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
+                        <td>{row.isLegacy ? renderLegacyFinancialActions(row) : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
                       </tr>
                     )) : visibleFinalizedReceivableRows.flatMap((row) => {
                       const isExpanded = expandedFinalizedReceivableId === row.id;
@@ -6456,7 +6692,7 @@ function AccountingSection({
                           <td>{formatDate(row.finalizedAt)}</td>
                           <td>{row.finalizedByName || '-'}</td>
                           <td className="bigcash-receivable-actions">
-                            <button
+                            {row.isLegacy ? <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(row)}>Editar</button> : <button
                               type="button"
                               className="accounting-inline-action"
                               onClick={() => toggleFinalizedCollections(row)}
@@ -6466,7 +6702,7 @@ function AccountingSection({
                                 : row.collectionsLoaded
                                   ? `Ver cobros (${row.collectionMovements.length})`
                                   : 'Ver cobros'}
-                            </button>
+                            </button>}
                           </td>
                         </tr>,
                         isExpanded ? (
@@ -6640,7 +6876,10 @@ function AccountingSection({
                       <td className="amount"><strong>{formatBs(row.refundableBs)}</strong></td>
                       <td className="amount">{formatBs(row.unvalidatedBs)}</td>
                       <td>
-                        {row.isReadyToReturn && row.isMoneyHeld ? (
+                        <div className="bigcash-receivable-actions">
+                        {row.isLegacy && row.unvalidatedBs > 0.009 ? (
+                          <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...row, pendingBs: row.unvalidatedBs, totalBs: row.declaredBs, paidBs: row.guaranteePaidBs, guaranteeBs: row.guaranteePaidBs, penaltiesBs: 0, collectionTarget: 'guarantee_collect', status: 'Garantía por cobrar' })}>Cobrar garantía</button>
+                        ) : row.isReadyToReturn && row.isMoneyHeld ? (
                           <button
                             type="button"
                             className="accounting-inline-action"
@@ -6653,6 +6892,8 @@ function AccountingSection({
                         ) : (
                           <span className="bigcash-action-muted">{row.isMoneyHeld ? 'No listo' : 'Sin dinero'}</span>
                         )}
+                        {row.isLegacy ? <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(row)}>Editar</button> : null}
+                        </div>
                       </td>
                     </tr>
                   )) : visibleReturnedGuaranteeRows.map((row) => (
@@ -6667,7 +6908,7 @@ function AccountingSection({
                       <td className="amount">{formatBs(row.appliedBs)}</td>
                       <td className="amount"><strong>{formatBs(row.refundedBs)}</strong></td>
                       <td><strong>{row.paymentMethodLabel}</strong><small>{row.receiptCodes || 'Sin recibo registrado'}</small></td>
-                      <td>{row.registeredBy}</td>
+                      <td>{row.registeredBy}{row.isLegacy ? <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(row)}>Editar</button> : null}</td>
                     </tr>
                   ))}
                   {guaranteesView === 'pending' && visibleGuaranteeRows.length === 0 ? (
@@ -6730,7 +6971,7 @@ function AccountingSection({
                   <tr key={group.id}>
                     <td>
                       <strong>{group.contractCode || group.orderCode}</strong>
-                      <small>{group.orderCode || 'Sin OS'}</small>
+                      {!group.isLegacy ? <small>{group.orderCode || 'Sin OS'}</small> : null}
                     </td>
                     <td>
                       <strong title={group.customerName}>{group.customerName}</strong>
@@ -6767,6 +7008,7 @@ function AccountingSection({
                       </span>
                     </td>
                     <td>
+                      <div className="bigcash-receivable-actions">
                       <button
                         type="button"
                         className="accounting-inline-action return-issue-detail-button"
@@ -6775,6 +7017,9 @@ function AccountingSection({
                       >
                         Ver
                       </button>
+                      {group.isLegacy && group.pendingDamageBs > 0.009 ? <button type="button" className="accounting-inline-action" onClick={() => openCollectAction({ ...group, pendingBs: group.pendingDamageBs, totalBs: group.penaltyBs, paidBs: group.settledDamageBs, guaranteeBs: toNumber(group.legacySource?.guaranteeHeldBs), penaltiesBs: group.penaltyBs, collectionTarget: 'damage', status: 'Daños / pérdidas' })}>Cobrar</button> : null}
+                      {group.isLegacy ? <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(group)}>Editar</button> : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -7169,6 +7414,8 @@ function AccountingSection({
                 </div>
               </div>
               <footer className="bigcash-report-footer">
+                {returnIssueDetailGroup.isLegacy && returnIssueDetailGroup.pendingDamageBs > 0.009 ? <button type="button" className="accounting-inline-action" onClick={() => { const group = returnIssueDetailGroup; setReturnIssueDetailGroup(null); openCollectAction({ ...group, pendingBs: group.pendingDamageBs, totalBs: group.penaltyBs, paidBs: group.settledDamageBs, guaranteeBs: toNumber(group.legacySource?.guaranteeHeldBs), penaltiesBs: group.penaltyBs, collectionTarget: 'damage', status: 'Daños / pérdidas' }); }}>Cobrar daños / pérdidas</button> : null}
+                {returnIssueDetailGroup.isLegacy ? <button type="button" className="ghost-button" onClick={() => { const group = returnIssueDetailGroup; setReturnIssueDetailGroup(null); openLegacyEconomicEdit(group); }}>Editar</button> : null}
                 <button type="button" className="primary-button" onClick={() => setReturnIssueDetailGroup(null)}>Cerrar</button>
               </footer>
             </section>

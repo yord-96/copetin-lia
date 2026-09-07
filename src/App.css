@@ -72334,3 +72334,6 @@ button.inventory-loss-row-action:hover {
 .inventory-legacy-table td:last-child {
   min-width: 130px;
 }
+.inventory-legacy-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+.inventory-legacy-money-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:900px){.inventory-legacy-summary,.inventory-legacy-money-grid{grid-template-columns:1fr 1fr}}

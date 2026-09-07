@@ -802,6 +802,13 @@ const mutateLegacyContract = async (method, path, payload = {}) => {
 
 const postLegacyContract = (path, payload = {}) => mutateLegacyContract('POST', path, payload);
 
+const settleLegacyContract = async (id, payload = {}) => {
+  const result = await callDirectCashOperation(`/inventory/legacy-contracts/${encodeURIComponent(id)}/settle`, payload);
+  await applyDirectCashResultLocally(result);
+  markServerStateStale('inventory.legacyContracts.settle');
+  return result;
+};
+
 const fetchInventoryDamageLossOverview = async () => {
   if (!shouldUseServerState()) return { rows: [], total: 0, summary: {} };
   const response = await fetch(getServerStateUrl('/inventory/damage-loss-overview'), {
@@ -3581,6 +3588,7 @@ export const api = {
     getLegacyContracts: fetchLegacyContracts,
     createLegacyContract: (payload) => postLegacyContract('', payload),
     updateLegacyContract: (id, payload) => mutateLegacyContract('PUT', `/${encodeURIComponent(id)}`, payload),
+    settleLegacyContract,
     deleteLegacyContract: (id, payload) => mutateLegacyContract('DELETE', `/${encodeURIComponent(id)}`, payload),
     receiveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/receive`, payload),
     resolveLegacyContractItem: (id, payload) => postLegacyContract(`/${encodeURIComponent(id)}/resolve-item`, payload),
