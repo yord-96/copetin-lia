@@ -198,10 +198,28 @@ export const useAppController = () => {
 
   const [imagePreview, setImagePreview] = useState(null);
 
-  const loadInventoryMovementsOverview = useCallback(async ({ from = '', to = '', query = '' } = {}) => {
+  const loadInventoryMovementsOverview = useCallback(async ({
+    from = '',
+    to = '',
+    query = '',
+    historyQuery = '',
+    historyFrom = '',
+    historyTo = '',
+    historyType = 'all',
+    historyUser = 'all',
+  } = {}) => {
     setInventoryModuleLoading(true);
     try {
-      const overview = await api.sync.getInventoryMovementsOverview({ from, to, query });
+      const overview = await api.sync.getInventoryMovementsOverview({
+        from,
+        to,
+        query,
+        historyQuery,
+        historyFrom,
+        historyTo,
+        historyType,
+        historyUser,
+      });
       setItems((current) => mergeProgressiveRows(current, overview?.items));
       setInventoryCombos((current) => mergeProgressiveRows(current, overview?.inventoryCombos));
       setCategories((current) => mergeProgressiveRows(current, overview?.categories));

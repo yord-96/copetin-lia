@@ -17743,6 +17743,29 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.movement-reference-cell strong {
+  display: block;
+  color: #25355f;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.movement-reference-cell span {
+  display: block;
+  margin-top: 0.08rem;
+  color: #6672b2;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.movement-reference-cell small {
+  display: block;
+  margin-top: 0.12rem;
+  color: #818aa8;
+  font-size: 0.62rem;
+  line-height: 1.25;
+}
+
 .movement-reference {
   color: #6571c7;
   font-weight: 700;

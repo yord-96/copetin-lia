@@ -741,7 +741,16 @@ const fetchAvailabilityOverview = async () => {
   return overview;
 };
 
-const fetchInventoryMovementsOverview = async ({ from = '', to = '', query = '' } = {}) => {
+const fetchInventoryMovementsOverview = async ({
+  from = '',
+  to = '',
+  query = '',
+  historyQuery = '',
+  historyFrom = '',
+  historyTo = '',
+  historyType = 'all',
+  historyUser = 'all',
+} = {}) => {
   if (!shouldUseServerState()) {
     await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements');
     return {
@@ -755,6 +764,11 @@ const fetchInventoryMovementsOverview = async ({ from = '', to = '', query = '' 
   if (from) params.set('from', String(from).slice(0, 10));
   if (to) params.set('to', String(to).slice(0, 10));
   if (String(query ?? '').trim()) params.set('query', String(query).trim());
+  if (String(historyQuery ?? '').trim()) params.set('movementQuery', String(historyQuery).trim());
+  if (historyFrom) params.set('movementFrom', String(historyFrom).slice(0, 10));
+  if (historyTo) params.set('movementTo', String(historyTo).slice(0, 10));
+  if (historyType && historyType !== 'all') params.set('movementType', String(historyType));
+  if (historyUser && historyUser !== 'all') params.set('movementUser', String(historyUser));
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const response = await fetch(getServerStateUrl(`/inventory/movements-overview${suffix}`), {
     cache: 'no-store',

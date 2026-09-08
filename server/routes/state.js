@@ -19,6 +19,7 @@ import {
   getMovementAvailableDelta,
   getMovementPhysicalDelta,
 } from '../../src/utils/inventoryKardex.js';
+import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovementHistory.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -7841,7 +7842,7 @@ const matchesInventoryMovementOverviewQuery = (rental = {}, contract = null, que
 const summarizeInventoryMovement = (movement = {}) => {
   const fields = [
     'id', 'itemId', 'itemName', 'category', 'type', 'reason', 'detail', 'reference',
-    'contractCode', 'deltaUnits', 'beforeTotalStock', 'afterTotalStock',
+    'contractCode', 'orderCode', 'customerName', 'deltaUnits', 'beforeTotalStock', 'afterTotalStock',
     'beforeAvailableStock', 'afterAvailableStock', 'reservedStockAfter', 'userName',
     'userRole', 'createdAt', 'operationDate', 'deliveryDate', 'status', 'valueAmount',
     'imageUrl', 'imageDataUrl',
@@ -7945,21 +7946,34 @@ const buildCurrentInventoryCommitments = (state = {}) => {
 const enrichInventoryMovementReference = (movement = {}, commitmentContext = {}) => {
   const rentals = Array.isArray(commitmentContext?.rentals) ? commitmentContext.rentals : [];
   const rawReference = String(movement?.reference ?? '').trim();
-  const orderCode = String(
+  const initialOrderCode = String(
     movement?.orderCode
       ?? (rawReference.toUpperCase().startsWith('OS-') ? rawReference : '')
       ?? '',
   ).trim();
-  const linkedRental = orderCode
-    ? rentals.find((rental) => String(rental?.orderCode ?? '').trim() === orderCode)
-    : null;
-  const linkedContract = linkedRental
+  const initialContractCode = String(movement?.contractCode ?? '').trim();
+  const linkedRental = commitmentContext?.rentalByOrderCode?.get(initialOrderCode)
+    ?? commitmentContext?.rentalByContractCode?.get(initialContractCode || rawReference)
+    ?? (initialOrderCode
+      ? rentals.find((rental) => String(rental?.orderCode ?? '').trim() === initialOrderCode)
+      : null);
+  const linkedContract = (linkedRental
     ? commitmentContext?.contractById?.get(String(linkedRental?.contractId ?? '')) ?? null
-    : null;
+    : null)
+    ?? commitmentContext?.contractByCode?.get(initialContractCode || rawReference)
+    ?? null;
   const contractCode = String(
-    movement?.contractCode
-      ?? linkedRental?.contractCode
-      ?? linkedContract?.contractCode
+    initialContractCode
+      || linkedRental?.contractCode
+      || linkedContract?.contractCode
+      || '',
+  ).trim();
+  const orderCode = String(initialOrderCode || linkedRental?.orderCode || linkedContract?.orderCode || '').trim();
+  const customerName = String(
+    movement?.customerName
+      ?? linkedRental?.customerName
+      ?? linkedContract?.customerName
+      ?? linkedContract?.clientName
       ?? '',
   ).trim();
   const summarized = summarizeInventoryMovement(movement);
@@ -7967,6 +7981,7 @@ const enrichInventoryMovementReference = (movement = {}, commitmentContext = {})
     ...summarized,
     ...(contractCode ? { contractCode } : {}),
     ...(orderCode ? { orderCode } : {}),
+    ...(customerName ? { customerName } : {}),
     displayReference: contractCode || rawReference || orderCode || summarized.id || '',
     displayReason: String(movement?.type ?? '').trim().toLowerCase() === 'reserva' && contractCode
       ? `ASIGNADO A CONTRATO ${contractCode}`
@@ -9111,6 +9126,15 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
       .filter((contract) => contract && !contract.deletedAt)
       .map((contract) => [String(contract.id ?? ''), contract]));
     const allRentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const contractByCode = new Map(allContracts
+      .filter((contract) => contract && !contract.deletedAt && contract.contractCode)
+      .map((contract) => [String(contract.contractCode).trim(), contract]));
+    const rentalByOrderCode = new Map(allRentals
+      .filter((rental) => rental && !rental.deletedAt && rental.orderCode)
+      .map((rental) => [String(rental.orderCode).trim(), rental]));
+    const rentalByContractCode = new Map(allRentals
+      .filter((rental) => rental && !rental.deletedAt && rental.contractCode)
+      .map((rental) => [String(rental.contractCode).trim(), rental]));
 
     // La vista inicial de Movimientos solo necesita las órdenes del rango visible.
     // El filtrado ocurre en servidor para evitar enviar cientos de contratos/rentals
@@ -9155,11 +9179,35 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
       });
     });
     movementStats.includesPendingReservations = true;
-    const recentMovements = allMovements
+    const movementQuery = String(req.query?.movementQuery ?? '').trim();
+    const movementFrom = toInventoryDateKey(req.query?.movementFrom);
+    const movementTo = toInventoryDateKey(req.query?.movementTo);
+    const movementType = String(req.query?.movementType ?? 'all').trim().toLowerCase();
+    const movementUser = String(req.query?.movementUser ?? 'all').trim();
+    const movementTraceContext = {
+      rentals: allRentals,
+      contractById,
+      contractByCode,
+      rentalByOrderCode,
+      rentalByContractCode,
+    };
+    const matchingMovements = filterInventoryMovementHistory(
+      allMovements.map((movement) => enrichInventoryMovementReference(movement, movementTraceContext)),
+      {
+        query: movementQuery,
+        from: movementFrom,
+        to: movementTo,
+        type: movementType,
+        user: movementUser,
+      },
+    );
+    const recentMovements = matchingMovements
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0))
-      .slice(0, 120)
-      .map(summarizeInventoryMovement);
+      .slice(0, 650);
+    movementStats.historyTotalMatches = matchingMovements.length;
+    movementStats.historyReturned = recentMovements.length;
+    movementStats.historyTruncated = matchingMovements.length > recentMovements.length;
 
     await sendJsonPayload(req, res, {
       revision: snapshot.revision,
