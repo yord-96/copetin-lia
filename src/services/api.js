@@ -2460,6 +2460,9 @@ const getTargetedMutationCollections = (domain, method) => {
     if (['createDebt', 'payDebt', 'deleteDebt'].includes(method)) {
       return CASH_DEBT_PATCH_COLLECTIONS;
     }
+    if (method === 'voidAndReplaceMovementReceipt') {
+      return ['cashSessions', 'cashMovements'];
+    }
     return CASH_MOVEMENT_PATCH_COLLECTIONS;
   }
   if (domain === 'inventory') {

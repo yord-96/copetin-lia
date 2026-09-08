@@ -19119,7 +19119,7 @@ const createWebBridge = () => ({
       }
 
       let result = null;
-      transaction((state) => {
+      transactionCollections(['cashMovements'], (state) => {
         const original = state.cashMovements.find((movement) => movement.id === movementId);
         if (!original) {
           throw new Error('No se encontro el movimiento de caja seleccionado.');
