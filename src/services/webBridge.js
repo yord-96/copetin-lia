@@ -9533,7 +9533,7 @@ export const buildWeeklyInventoryHtml = ({
         matchesWeek: operations.length > 0,
       };
     })
-    .filter((entry) => entry.matchesWeek);
+    .filter((entry) => format === 'individual' || entry.matchesWeek);
   const weeklyOrdersByKey = new Map();
   weeklyOrderEntries.forEach((entry) => {
     const key = getWeeklyDedupeKey(entry);
