@@ -19111,10 +19111,10 @@ const createWebBridge = () => ({
       if (!reason) {
         throw new Error('Debes indicar el motivo de anulacion.');
       }
-      if (amountRaw <= 0) {
-        throw new Error('El monto del nuevo recibo debe ser mayor a 0.');
+      if (amountRaw < 0) {
+        throw new Error('El monto del nuevo recibo no puede ser negativo.');
       }
-      if (!description) {
+      if (amountRaw > 0 && !description) {
         throw new Error('Debes escribir el concepto del nuevo recibo.');
       }
 
@@ -19137,7 +19137,6 @@ const createWebBridge = () => ({
           : [original];
         const activeSession = getActiveSession(state);
         const sessionId = original.sessionId ?? activeSession?.id ?? null;
-        const receiptCode = nextCashReceiptCode(state);
 
         originalGroup.forEach((movement) => {
           movement.receiptStatus = 'anulado';
@@ -19146,6 +19145,12 @@ const createWebBridge = () => ({
           movement.voidReason = reason;
         });
 
+        if (amountRaw === 0) {
+          result = { original, movements: [], replacement: null };
+          return state;
+        }
+
+        const receiptCode = nextCashReceiptCode(state);
         if (original.isInternalTransfer) {
           const transferGroupId = makeId('trf');
           const fromMovement = buildCashMovement({

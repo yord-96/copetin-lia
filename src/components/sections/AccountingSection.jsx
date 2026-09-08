@@ -3669,12 +3669,13 @@ function AccountingSection({
       const linkedTransportOption = transportContractOptions.find((entry) => entry.rentalId === voidReceiptForm.linkedRentalId) ?? null;
       const isTransportExpense = isPettyCash(voidReceiptModal)
         && (Boolean(linkedTransportOption) || String(voidReceiptForm.category ?? '').toLowerCase() === 'transporte');
+      const replacementAmountBs = Math.max(0, toNumber(voidReceiptForm.amountBs));
       const result = await onVoidAndReplaceCashMovementReceipt?.({
         movementId: voidReceiptModal.id,
         reason: voidReceiptReason,
         createdBy: currentUserName,
         replacement: {
-          amountBs: Math.max(0, toNumber(voidReceiptForm.amountBs)),
+          amountBs: replacementAmountBs,
           description: voidReceiptForm.description,
           category: voidReceiptForm.category,
           paymentMethod: voidReceiptForm.paymentMethod,
@@ -3686,12 +3687,16 @@ function AccountingSection({
           linkedContractId: linkedTransportOption?.contractId ?? '',
           linkedOrderCode: linkedTransportOption?.orderCode ?? '',
           accountingTag: isTransportExpense ? 'transport_expense' : '',
-          transportExpenseBs: isTransportExpense ? Math.max(0, toNumber(voidReceiptForm.amountBs)) : 0,
+          transportExpenseBs: isTransportExpense ? replacementAmountBs : 0,
           createdBy: currentUserName,
         },
       });
-      await printCashReceipt(resolvePrintableCashMovementId(result, isPettyCash(voidReceiptModal) ? 'PETTY_CASH' : 'BIG_CASH'));
-      setCashActionFeedback('Recibo anterior anulado y nuevo recibo generado.');
+      if (replacementAmountBs > 0) {
+        await printCashReceipt(resolvePrintableCashMovementId(result, isPettyCash(voidReceiptModal) ? 'PETTY_CASH' : 'BIG_CASH'));
+        setCashActionFeedback('Recibo anterior anulado y nuevo recibo generado.');
+      } else {
+        setCashActionFeedback('Movimiento anulado sin generar un recibo de reemplazo.');
+      }
       closeVoidReceiptAction();
     } catch (error) {
       setCashActionError(error.message || 'No se pudo anular y reemplazar el recibo.');
@@ -4691,7 +4696,7 @@ function AccountingSection({
                   Monto (Bs)
                   <input
                     type="number"
-                    min="0.01"
+                    min="0"
                     step="0.01"
                     value={voidReceiptForm.amountBs}
                     onChange={(event) => setVoidReceiptForm((current) => ({ ...current, amountBs: event.target.value }))}
@@ -4779,7 +4784,11 @@ function AccountingSection({
               <footer>
                 <button type="button" className="ghost-button" onClick={() => setVoidReceiptStep('reason')}>Volver</button>
                 <button type="submit" className="primary-button" disabled={isSubmittingCash}>
-                  {isSubmittingCash ? 'Generando...' : 'Anular y generar nuevo'}
+                  {isSubmittingCash
+                    ? 'Procesando...'
+                    : Math.max(0, toNumber(voidReceiptForm.amountBs)) > 0
+                      ? 'Anular y generar nuevo'
+                      : 'Anular sin reemplazo'}
                 </button>
               </footer>
             </form>
