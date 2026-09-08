@@ -6316,11 +6316,10 @@ function InventoryDashboardSection({
                             </div>
                           </div>
                         </td>
-                        <td className="movement-reference-cell" title={[row.contractCode, row.orderCode, row.customerName].filter(Boolean).join(' · ') || row.reference}>
+                        <td className="movement-reference-cell" title={[row.contractCode ? `Contrato ${row.contractCode}` : row.reference, row.customerName].filter(Boolean).join(' · ')}>
                           <div className="movement-reference-card">
                             <strong>{row.contractCode ? `Contrato ${row.contractCode}` : row.reference || '-'}</strong>
                             <div className="movement-reference-meta">
-                              {row.orderCode ? <span className="movement-reference-chip">{row.orderCode}</span> : null}
                               {row.customerName ? <span className="movement-reference-customer">{row.customerName}</span> : null}
                             </div>
                           </div>

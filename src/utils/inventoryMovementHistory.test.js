@@ -45,3 +45,9 @@ test('busca por contrato o cliente y respeta el periodo', () => {
     ['recent-reservation'],
   );
 });
+
+test('el filtro de usuario "all" no elimina el historial completo', () => {
+  const result = filterInventoryMovementHistory(movements, { query: 'servilleta', user: 'all' });
+
+  assert.deepEqual(result.map((row) => row.id), ['recent-reservation', 'historical-exit']);
+});

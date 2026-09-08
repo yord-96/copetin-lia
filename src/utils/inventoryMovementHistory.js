@@ -26,7 +26,8 @@ export const filterInventoryMovementHistory = (movements, filters = {}) => {
   const from = String(filters.from ?? '').slice(0, 10);
   const to = String(filters.to ?? '').slice(0, 10);
   const type = String(filters.type ?? 'all').trim().toLowerCase();
-  const user = normalizeMovementSearchText(filters.user);
+  const normalizedUser = normalizeMovementSearchText(filters.user);
+  const user = normalizedUser === 'all' ? '' : normalizedUser;
 
   return (Array.isArray(movements) ? movements : []).filter((movement) => {
     const movementDate = getMovementDateKey(movement);
