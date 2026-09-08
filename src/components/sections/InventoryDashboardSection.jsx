@@ -1606,6 +1606,9 @@ function InventoryDashboardSection({
   const [productFilterMenu, setProductFilterMenu] = useState(null);
   const [movementTypeFilter, setMovementTypeFilter] = useState('all');
   const [movementUserFilter, setMovementUserFilter] = useState('all');
+  const [movementHistoryRows, setMovementHistoryRows] = useState(null);
+  const [movementHistoryTotal, setMovementHistoryTotal] = useState(0);
+  const [movementHistoryLoading, setMovementHistoryLoading] = useState(false);
   const [adjustStatusFilter, setAdjustStatusFilter] = useState('all');
   const [categoryUsageFilter, setCategoryUsageFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -1947,20 +1950,12 @@ function InventoryDashboardSection({
         from: inventoryOperationDateFrom,
         to: inventoryOperationDateTo,
         query: inventoryOrderQuery,
-        // El historial se consulta en el VPS antes de recortar resultados.
-        // Así una búsqueda encuentra movimientos antiguos y no solamente
-        // coincidencias dentro del bloque reciente que ya llegó al navegador.
-        historyQuery: deferredQuery,
-        historyFrom: dateFrom,
-        historyTo: dateTo,
-        historyType: movementTypeFilter,
-        historyUser: movementUserFilter,
       })).catch((error) => {
         if (cancelled) return;
         setFeedback(error?.message || 'No se pudieron cargar las órdenes de inventario.');
         setFeedbackType('error');
       });
-    }, inventoryOrderQuery || deferredQuery ? 220 : 0);
+    }, inventoryOrderQuery ? 220 : 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timerId);
@@ -1969,13 +1964,53 @@ function InventoryDashboardSection({
     inventoryOperationDateFrom,
     inventoryOperationDateTo,
     inventoryOrderQuery,
+    isMovementsModule,
+    onLoadMovementsOverview,
+  ]);
+
+  useEffect(() => {
+    if (!isMovementsModule) {
+      setMovementHistoryRows(null);
+      setMovementHistoryTotal(0);
+      return undefined;
+    }
+    let cancelled = false;
+    const timerId = window.setTimeout(() => {
+      setMovementHistoryLoading(true);
+      api.inventory.searchMovementHistory({
+        query: deferredQuery,
+        from: dateFrom,
+        to: dateTo,
+        type: movementTypeFilter,
+        user: movementUserFilter,
+        limit: INVENTORY_MOVEMENT_RENDER_LIMIT,
+        offset: 0,
+      })
+        .then((payload) => {
+          if (cancelled) return;
+          setMovementHistoryRows(Array.isArray(payload?.rows) ? payload.rows : []);
+          setMovementHistoryTotal(Number(payload?.total ?? 0));
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setFeedback(error?.message || 'No se pudo buscar el historial completo de inventario.');
+          setFeedbackType('error');
+        })
+        .finally(() => {
+          if (!cancelled) setMovementHistoryLoading(false);
+        });
+    }, deferredQuery ? 220 : 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [
     deferredQuery,
     dateFrom,
     dateTo,
     movementTypeFilter,
     movementUserFilter,
     isMovementsModule,
-    onLoadMovementsOverview,
   ]);
 
   useEffect(() => {
@@ -3159,7 +3194,8 @@ function InventoryDashboardSection({
     const contractById = new Map(contracts.map((contract) => [String(contract.id), contract]));
     const rentalsForTrace = [...activeRentals, ...cancelledRentals];
     const rentalByOrderCode = new Map(rentalsForTrace.map((rental) => [rental.orderCode ?? rental.id, rental]));
-    const sortedInventoryMovements = inventoryMovements
+    const movementSource = Array.isArray(movementHistoryRows) ? movementHistoryRows : inventoryMovements;
+    const sortedInventoryMovements = movementSource
       .slice()
       .sort((a, b) => new Date(b.createdAt ?? b.operationDate ?? 0) - new Date(a.createdAt ?? a.operationDate ?? 0));
     const reservationMovementKeys = new Set(
@@ -3216,7 +3252,7 @@ function InventoryDashboardSection({
         itemId: movement.itemId ?? '',
         imageUrl: movement.imageUrl ?? itemRow?.imageUrl ?? null,
         imageDataUrl: movement.imageDataUrl ?? itemRow?.imageDataUrl ?? null,
-        sku: String(movement.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD',
+        sku: movement.sku ?? itemRow?.sku ?? (String(movement.itemId ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 7).toUpperCase() || 'COD'),
         contractCode: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.contractCode ?? '',
         orderCode: linkedRental?.orderCode ?? movement.orderCode ?? '',
         customerName: movement.customerName ?? linkedRental?.customerName ?? linkedContract?.customerName ?? '',
@@ -3235,7 +3271,14 @@ function InventoryDashboardSection({
       };
     });
 
-    const serviceOrderRows = rentalsForTrace.flatMap((rental) => {
+    const hasExplicitMovementFilter = Boolean(
+      deferredQuery.trim()
+      || dateFrom
+      || dateTo
+      || movementTypeFilter !== 'all'
+      || movementUserFilter !== 'all'
+    );
+    const serviceOrderRows = hasExplicitMovementFilter ? [] : rentalsForTrace.flatMap((rental) => {
       const reference = rental.orderCode ?? rental.id;
       const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
       const displayReference = contract?.contractCode ?? rental.contractCode ?? reference;
@@ -3290,7 +3333,7 @@ function InventoryDashboardSection({
     return [...persistedRows, ...serviceOrderRows]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, INVENTORY_MOVEMENT_RENDER_LIMIT);
-  }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows]);
+  }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows, movementHistoryRows, deferredQuery, dateFrom, dateTo, movementTypeFilter, movementUserFilter]);
 
   const movementStats = useMemo(() => {
     const counts = inventoryMovementStats
@@ -6274,9 +6317,13 @@ function InventoryDashboardSection({
                           </div>
                         </td>
                         <td className="movement-reference-cell" title={[row.contractCode, row.orderCode, row.customerName].filter(Boolean).join(' · ') || row.reference}>
-                          <strong>{row.contractCode ? `Contrato ${row.contractCode}` : row.reference || '-'}</strong>
-                          {row.orderCode ? <span>{row.orderCode}</span> : null}
-                          {row.customerName ? <small>{row.customerName}</small> : null}
+                          <div className="movement-reference-card">
+                            <strong>{row.contractCode ? `Contrato ${row.contractCode}` : row.reference || '-'}</strong>
+                            <div className="movement-reference-meta">
+                              {row.orderCode ? <span className="movement-reference-chip">{row.orderCode}</span> : null}
+                              {row.customerName ? <span className="movement-reference-customer">{row.customerName}</span> : null}
+                            </div>
+                          </div>
                         </td>
                         <td className={row.deltaUnits > 0 ? 'movement-delta-positive' : row.deltaUnits < 0 ? 'movement-delta-negative' : 'movement-delta-neutral'}>
                           {row.deltaUnits > 0 ? `+${row.deltaUnits}` : row.deltaUnits}
@@ -6706,9 +6753,11 @@ function InventoryDashboardSection({
               <span>
                 {isProductsModule && productKardexLoading
                   ? 'Actualizando cifras del kardex...'
-                  : isMovementsModule && Number(inventoryMovementStats?.historyTotalMatches ?? 0) > filteredRows.length
-                    ? `Mostrando ${pagedRows.length} de ${filteredRows.length} cargados · ${Number(inventoryMovementStats.historyTotalMatches)} coincidencias en el historial`
-                    : `Mostrando ${pagedRows.length} de ${filteredRows.length} ${isMovementsModule ? 'movimientos' : isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}`}
+                  : isMovementsModule && movementHistoryLoading
+                    ? 'Buscando en todo el historial del VPS...'
+                    : isMovementsModule
+                      ? `Mostrando ${pagedRows.length} de ${filteredRows.length} cargados · ${movementHistoryTotal || filteredRows.length} coincidencia(s) en todo el historial`
+                      : `Mostrando ${pagedRows.length} de ${filteredRows.length} ${isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}`}
               </span>
               <div className="inventory-pagination-modern">
                 <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))}>{'<'}</button>

@@ -72360,3 +72360,75 @@ button.inventory-loss-row-action:hover {
 .inventory-legacy-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
 .inventory-legacy-money-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:900px){.inventory-legacy-summary,.inventory-legacy-money-grid{grid-template-columns:1fr 1fr}}
+
+
+/* Historial de inventario: presentación tipo Órdenes, con filas-card y jerarquía clara. */
+.movements-table-modern {
+  border-collapse: separate;
+  border-spacing: 0 8px;
+  background: transparent;
+}
+.movements-table-modern thead th {
+  background: #173a70;
+  color: #fff;
+  border: 0;
+  padding-top: 11px;
+  padding-bottom: 11px;
+  font-size: 11px;
+  letter-spacing: .015em;
+  text-transform: uppercase;
+}
+.movements-table-modern thead th:first-child { border-radius: 10px 0 0 10px; }
+.movements-table-modern thead th:last-child { border-radius: 0 10px 10px 0; }
+.movements-table-modern tbody tr { filter: drop-shadow(0 2px 5px rgba(23, 58, 112, .06)); }
+.movements-table-modern tbody td {
+  background: #fff;
+  border-top: 1px solid #e7edf5;
+  border-bottom: 1px solid #e7edf5;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  vertical-align: middle;
+}
+.movements-table-modern tbody tr:nth-child(even) td { background: #fbfdff; }
+.movements-table-modern tbody td:first-child {
+  border-left: 1px solid #e7edf5;
+  border-radius: 11px 0 0 11px;
+}
+.movements-table-modern tbody td:last-child {
+  border-right: 1px solid #e7edf5;
+  border-radius: 0 11px 11px 0;
+}
+.movements-table-modern tbody tr:hover td {
+  background: #fff8f3;
+  border-color: #f3c8b4;
+}
+.movement-date-cell { min-width: 112px; }
+.movement-date-cell strong { color: #173a70; font-size: 12px; }
+.movement-date-cell span { display: block; margin-top: 3px; color: #7b8798; font-size: 11px; }
+.movement-product-table-cell .movement-product-cell { gap: 10px; }
+.movement-product-cell strong { color: #163463; line-height: 1.25; }
+.movement-reference-card { min-width: 145px; }
+.movement-reference-card > strong { color: #173a70; font-size: 12px; }
+.movement-reference-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 5px;
+}
+.movement-reference-chip {
+  display: inline-flex;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #3565a9;
+  font-size: 10px;
+  font-weight: 800;
+}
+.movement-reference-customer {
+  color: #68768b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.movement-observation { color: #5f6d80; line-height: 1.35; }

@@ -791,6 +791,53 @@ const fetchInventoryMovementsOverview = async ({
 };
 
 
+const fetchInventoryMovementHistory = async ({
+  query = '',
+  from = '',
+  to = '',
+  type = 'all',
+  user = 'all',
+  limit = 650,
+  offset = 0,
+} = {}) => {
+  if (!shouldUseServerState()) {
+    await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements-history');
+    const rows = await callBridge('inventory', 'listMovements', false);
+    return {
+      rows: Array.isArray(rows) ? rows : [],
+      total: Array.isArray(rows) ? rows.length : 0,
+      offset: 0,
+      limit: Array.isArray(rows) ? rows.length : 0,
+      hasMore: false,
+    };
+  }
+  const params = new URLSearchParams();
+  if (String(query ?? '').trim()) params.set('query', String(query).trim());
+  if (from) params.set('from', String(from).slice(0, 10));
+  if (to) params.set('to', String(to).slice(0, 10));
+  if (type && type !== 'all') params.set('type', String(type));
+  if (user && user !== 'all') params.set('user', String(user));
+  params.set('limit', String(Math.max(1, Number(limit) || 650)));
+  params.set('offset', String(Math.max(0, Number(offset) || 0)));
+  const response = await fetch(getServerStateUrl(`/inventory/movements-history?${params.toString()}`), {
+    cache: 'no-store',
+    headers: getInternalHeaders(),
+  });
+  if (!response.ok) {
+    throw await createServerStateError(response, 'No se pudo buscar el historial completo de inventario.');
+  }
+  const payload = await response.json();
+  if (payload?.revision) rememberServerRevision(payload.revision);
+  return {
+    rows: Array.isArray(payload?.rows) ? payload.rows : [],
+    total: Number(payload?.total ?? 0),
+    offset: Number(payload?.offset ?? 0),
+    limit: Number(payload?.limit ?? limit),
+    hasMore: Boolean(payload?.hasMore),
+  };
+};
+
+
 const fetchLegacyContracts = async () => {
   const response = await fetch(getServerStateUrl('/inventory/legacy-contracts'), {
     cache: 'no-store',
@@ -3601,6 +3648,7 @@ export const api = {
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
     getDamageLossOverview: fetchInventoryDamageLossOverview,
+    searchMovementHistory: fetchInventoryMovementHistory,
     getLegacyContracts: fetchLegacyContracts,
     createLegacyContract: (payload) => postLegacyContract('', payload),
     updateLegacyContract: (id, payload) => mutateLegacyContract('PUT', `/${encodeURIComponent(id)}`, payload),

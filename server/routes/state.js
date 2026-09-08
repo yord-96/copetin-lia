@@ -7945,6 +7945,7 @@ const buildCurrentInventoryCommitments = (state = {}) => {
 
 const enrichInventoryMovementReference = (movement = {}, commitmentContext = {}) => {
   const rentals = Array.isArray(commitmentContext?.rentals) ? commitmentContext.rentals : [];
+  const linkedItem = commitmentContext?.itemById?.get(String(movement?.itemId ?? '')) ?? null;
   const rawReference = String(movement?.reference ?? '').trim();
   const initialOrderCode = String(
     movement?.orderCode
@@ -7979,6 +7980,9 @@ const enrichInventoryMovementReference = (movement = {}, commitmentContext = {})
   const summarized = summarizeInventoryMovement(movement);
   return {
     ...summarized,
+    ...(!summarized.itemName && linkedItem?.name ? { itemName: linkedItem.name } : {}),
+    ...(!summarized.category && linkedItem?.category ? { category: linkedItem.category } : {}),
+    ...(!summarized.imageUrl && linkedItem?.imageUrl ? { imageUrl: linkedItem.imageUrl } : {}),
     ...(contractCode ? { contractCode } : {}),
     ...(orderCode ? { orderCode } : {}),
     ...(customerName ? { customerName } : {}),
@@ -9114,6 +9118,71 @@ router.post('/__copetin_db/inventory/legacy-contracts/:id/resolve-item', async (
   } catch (error) { if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
 });
 
+router.get('/__copetin_db/inventory/movements-history', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    const allContracts = Array.isArray(state.contracts) ? state.contracts : [];
+    const allRentals = Array.isArray(state.rentals) ? state.rentals : [];
+    const allItems = Array.isArray(state.items) ? state.items : [];
+    const allMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+
+    const contractById = new Map(allContracts
+      .filter((contract) => contract && !contract.deletedAt && contract.id)
+      .map((contract) => [String(contract.id), contract]));
+    const contractByCode = new Map(allContracts
+      .filter((contract) => contract && !contract.deletedAt && contract.contractCode)
+      .map((contract) => [String(contract.contractCode).trim(), contract]));
+    const rentalByOrderCode = new Map(allRentals
+      .filter((rental) => rental && !rental.deletedAt && rental.orderCode)
+      .map((rental) => [String(rental.orderCode).trim(), rental]));
+    const rentalByContractCode = new Map(allRentals
+      .filter((rental) => rental && !rental.deletedAt && rental.contractCode)
+      .map((rental) => [String(rental.contractCode).trim(), rental]));
+    const itemById = new Map(allItems
+      .filter((item) => item && !item.deletedAt && item.id)
+      .map((item) => [String(item.id), item]));
+
+    const traceContext = {
+      rentals: allRentals,
+      contractById,
+      contractByCode,
+      rentalByOrderCode,
+      rentalByContractCode,
+      itemById,
+    };
+
+    const query = String(req.query?.query ?? '').trim();
+    const from = toInventoryDateKey(req.query?.from);
+    const to = toInventoryDateKey(req.query?.to);
+    const type = String(req.query?.type ?? 'all').trim().toLowerCase();
+    const user = String(req.query?.user ?? 'all').trim();
+    const requestedLimit = Math.trunc(Number(req.query?.limit ?? 650));
+    const requestedOffset = Math.trunc(Number(req.query?.offset ?? 0));
+    const limit = Math.min(1000, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 650));
+    const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
+
+    const enriched = allMovements
+      .map((movement) => enrichInventoryMovementReference(movement, traceContext));
+    const matching = filterInventoryMovementHistory(enriched, { query, from, to, type, user })
+      .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
+
+    const rows = matching.slice(offset, offset + limit);
+    await sendJsonPayload(req, res, {
+      revision: snapshot.revision,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      total: matching.length,
+      offset,
+      limit,
+      hasMore: offset + rows.length < matching.length,
+      rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
@@ -9184,12 +9253,16 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
     const movementTo = toInventoryDateKey(req.query?.movementTo);
     const movementType = String(req.query?.movementType ?? 'all').trim().toLowerCase();
     const movementUser = String(req.query?.movementUser ?? 'all').trim();
+    const itemById = new Map((Array.isArray(state.items) ? state.items : [])
+      .filter((item) => item && !item.deletedAt && item.id)
+      .map((item) => [String(item.id), item]));
     const movementTraceContext = {
       rentals: allRentals,
       contractById,
       contractByCode,
       rentalByOrderCode,
       rentalByContractCode,
+      itemById,
     };
     const matchingMovements = filterInventoryMovementHistory(
       allMovements.map((movement) => enrichInventoryMovementReference(movement, movementTraceContext)),
