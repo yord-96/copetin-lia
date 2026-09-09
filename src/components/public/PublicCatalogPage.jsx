@@ -189,7 +189,7 @@ export default function PublicCatalogPage() {
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Buscar producto, categoria, color, material o codigo..."
+            placeholder="Buscar productos..."
           />
         </label>
         <label>
@@ -204,7 +204,7 @@ export default function PublicCatalogPage() {
         <label>
           <span>Categoria</span>
           <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-            <option value="all">Todas las categorias</option>
+            <option value="all">Todas</option>
             {catalog.categories.map((category) => (
               <option key={category} value={category}>{category}</option>
             ))}
