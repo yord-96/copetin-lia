@@ -3210,9 +3210,9 @@
 .public-quote-quantity span { min-width: 1.8rem; text-align: center; font-size: .8rem; font-weight: 950; }
 
 .public-quote-cart { position: sticky; top: 1rem; padding: 1rem; }
-.public-quote-cart > div:first-child { padding-bottom: .8rem; border-bottom: 1px solid #e7edf4; display: flex; justify-content: space-between; gap: .5rem; }
-.public-quote-cart > div:first-child span { display: flex; align-items: center; gap: .4rem; font-weight: 950; }
-.public-quote-cart > div:first-child strong { color: var(--pq-orange); font-size: .72rem; }
+.public-quote-cart > div:first-of-type { padding-bottom: .8rem; border-bottom: 1px solid #e7edf4; display: flex; justify-content: space-between; gap: .5rem; }
+.public-quote-cart > div:first-of-type span { display: flex; align-items: center; gap: .4rem; font-weight: 950; }
+.public-quote-cart > div:first-of-type strong { color: var(--pq-orange); font-size: .72rem; }
 .public-quote-cart-lines { max-height: 22rem; overflow: auto; }
 .public-quote-cart-lines > div { padding: .65rem 0; border-bottom: 1px solid #edf1f6; display: flex; gap: .4rem; }
 .public-quote-cart-lines > div > div { flex: 1; display: grid; gap: .25rem; }
