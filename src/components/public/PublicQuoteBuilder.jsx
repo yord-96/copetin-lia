@@ -38,12 +38,43 @@ const whatsappNumber = (phone) => {
   return digits.length === 8 ? `591${digits}` : digits;
 };
 
-function ProductImage({ item }) {
+function ProductImage({ item, onOpen }) {
   const [failed, setFailed] = useState(false);
   if (!item.imageUrl || failed) {
     return <div className="public-quote-product-placeholder"><PackageSearch size={30} /><span>El Copetín</span></div>;
   }
-  return <img src={item.imageUrl} alt={item.name} loading="lazy" onError={() => setFailed(true)} />;
+  return (
+    <button type="button" className="public-quote-image-button" onClick={() => onOpen(item)} aria-label={`Ver imagen ampliada de ${item.name}`}>
+      <img src={item.imageUrl} alt={item.name} loading="lazy" onError={() => setFailed(true)} />
+    </button>
+  );
+}
+
+function ProductImagePreview({ item, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = 'hidden';
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
+
+  return (
+    <dialog ref={dialogRef} className="public-quote-image-preview" aria-labelledby="quote-image-title" onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <button type="button" className="public-quote-image-close" aria-label="Cerrar imagen ampliada" onClick={onClose}><X size={24} /></button>
+      <figure>
+        <img src={item.imageUrl} alt={item.name} />
+        <figcaption id="quote-image-title">{item.name}</figcaption>
+      </figure>
+    </dialog>
+  );
 }
 
 export default function PublicQuoteBuilder() {
@@ -65,6 +96,7 @@ export default function PublicQuoteBuilder() {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [previewItem, setPreviewItem] = useState(null);
   const cartRef = useRef(null);
   const errorRef = useRef(null);
 
@@ -283,7 +315,7 @@ export default function PublicQuoteBuilder() {
                   const quantity = quantityFor(item.id);
                   return (
                     <article key={item.id} className={quantity ? 'is-selected' : ''}>
-                      <div className="public-quote-product-image"><ProductImage item={item} />{quantity ? <span><Check size={13} /> Elegido</span> : null}</div>
+                      <div className="public-quote-product-image"><ProductImage item={item} onOpen={setPreviewItem} />{quantity ? <span><Check size={13} /> Elegido</span> : null}</div>
                       <div className="public-quote-product-body"><small>{item.category}</small><h3>{item.name}</h3>
                         <div className="public-quote-stock"><strong>{available.toLocaleString('es-BO')} disponibles</strong>{requested > 0 ? <span>{requested.toLocaleString('es-BO')} solicitados en cotizaciones</span> : <span>Sin otras solicitudes</span>}</div>
                         <div className="public-quote-product-footer"><strong>{money(item.rentalPriceBs)} <small>/ u.</small></strong>
@@ -336,6 +368,7 @@ export default function PublicQuoteBuilder() {
           <a className="public-quote-home" href="/catalogo">Volver al catálogo</a>
         </section>
       ) : null}
+      {previewItem ? <ProductImagePreview item={previewItem} onClose={() => setPreviewItem(null)} /> : null}
     </main>
   );
 }
