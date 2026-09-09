@@ -2979,23 +2979,6 @@ function InventoryDashboardSection({
     });
   };
 
-  const cancelledOrderRows = useMemo(() => {
-    return cancelledRentals
-      .map((rental) => {
-        const totalItems = (rental.items ?? []).reduce((sum, line) => sum + Number(line.quantity ?? 0), 0);
-        const lines = (rental.items ?? []).length;
-        return {
-          id: rental.id,
-          orderCode: rental.orderCode ?? rental.id,
-          customerName: rental.customerName,
-          cancelledAt: rental.cancelledAt ?? rental.updatedAt ?? rental.createdAt,
-          itemsText: `${totalItems} unidades · ${lines} items`,
-          penaltyBs: Number(rental.cancellationPenaltyBs ?? 0),
-        };
-      })
-      .sort((a, b) => new Date(b.cancelledAt ?? 0) - new Date(a.cancelledAt ?? 0));
-  }, [cancelledRentals]);
-
   const receptionRows = useMemo(() => {
     return activeRentals
       .filter((rental) => rental.pickupChecklist && !rental.returnReport)
@@ -5584,8 +5567,8 @@ function InventoryDashboardSection({
               <button type="button" className="link-button" onClick={() => onSwitchInventoryModule?.('inventario_productos')}>
                 Ir a Productos
               </button>
-              {movementsWorkspaceTab === 'orders' ? <button type="button" className="ghost-button" onClick={handleExport}>Exportar Movimientos</button> : null}
-              {movementsWorkspaceTab === 'orders' ? <button type="button" className="primary-button" onClick={() => openMovementModal({}, 'entrada')}>+ Registrar Movimiento</button> : <button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button>}
+              {movementsWorkspaceTab === 'history' ? <button type="button" className="ghost-button" onClick={handleExport}>Exportar Movimientos</button> : null}
+              {movementsWorkspaceTab === 'legacy' ? <button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button> : <button type="button" className="primary-button" onClick={() => openMovementModal({}, 'entrada')}>+ Registrar Movimiento</button>}
             </>
           ) : null}
 
@@ -5638,6 +5621,7 @@ function InventoryDashboardSection({
               <div className="inventory-legacy-tabs" role="tablist" aria-label="Vistas de movimientos">
                 <button type="button" role="tab" aria-selected={movementsWorkspaceTab === 'orders'} className={movementsWorkspaceTab === 'orders' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('orders')}>Órdenes operativas <b>{filteredPrepOrderRows.length}</b></button>
                 <button type="button" role="tab" aria-selected={movementsWorkspaceTab === 'legacy'} className={movementsWorkspaceTab === 'legacy' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('legacy')}>Contratos rezagados <b>{filteredLegacyContracts.length}</b></button>
+                <button type="button" role="tab" aria-selected={movementsWorkspaceTab === 'history'} className={movementsWorkspaceTab === 'history' ? 'is-active' : ''} onClick={() => setMovementsWorkspaceTab('history')}>Historial de movimientos <b>{movementHistoryTotal || filteredRows.length}</b></button>
               </div>
             {movementsWorkspaceTab === 'orders' ? (
             <article className="inventory-ops-card">
@@ -5875,7 +5859,8 @@ function InventoryDashboardSection({
                 )}
               </div>
             </article>
-            ) : (
+            ) : null}
+            {movementsWorkspaceTab === 'legacy' ? (
             <article className="inventory-ops-card inventory-legacy-card">
               <header className="inventory-ops-head"><div><h3>Contratos rezagados</h3><span>Regularizacion historica independiente: no reserva stock ni altera contratos vigentes.</span></div><button type="button" className="primary-button" onClick={openLegacyCreate}>+ Registrar rezagado</button></header>
               <div className="inventory-ops-toolbar">
@@ -5942,7 +5927,7 @@ function InventoryDashboardSection({
                 {!legacyLoading && filteredLegacyContracts.length === 0 ? <tr><td colSpan={8}><p className="status">{legacyContractQuery || legacyDateFrom || legacyDateTo ? 'No hay contratos rezagados para los filtros seleccionados.' : 'Aun no hay contratos rezagados registrados.'}</p></td></tr> : null}
               </tbody></table></div>
             </article>
-            )}
+            ) : null}
             </>
           ) : null}
 
@@ -5995,38 +5980,8 @@ function InventoryDashboardSection({
             </div>
           ) : null}
 
-          {isMovementsModule && (cancelledOrderRows.length > 0 || receptionRows.length > 0) ? (
+          {isMovementsModule && movementsWorkspaceTab === 'orders' && receptionRows.length > 0 ? (
             <section className="inventory-movement-summary-grid" aria-label="Resumen de incidencias operativas">
-              {cancelledOrderRows.length > 0 ? (
-              <article className="inventory-ops-card inventory-movement-summary-card">
-                <header className="inventory-ops-head">
-                  <div>
-                    <h3>Ordenes anuladas</h3>
-                    <span>Historial visible del periodo consultado</span>
-                  </div>
-                  <strong className="inventory-summary-count cancelled">{cancelledOrderRows.length}</strong>
-                </header>
-                <div className="inventory-ops-list">
-                  {cancelledOrderRows.slice(0, 6).map((row) => (
-                    <div key={row.id} className="inventory-summary-row">
-                      <div>
-                        <strong>{row.orderCode}</strong>
-                        <span>{row.customerName}</span>
-                      </div>
-                      <div>
-                        <strong>{row.itemsText}</strong>
-                        <span>{row.cancelledAt ? formatDateTime(row.cancelledAt).split(',')[0] : 'Sin fecha'}</span>
-                      </div>
-                      <div className="inventory-summary-status">
-                        <span className="inventory-ops-priority alta">Anulado</span>
-                        <small>Penalidad {formatBs(row.penaltyBs)}</small>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </article>
-              ) : null}
-
               {receptionRows.length > 0 ? (
               <article className="inventory-ops-card inventory-movement-summary-card">
                 <header className="inventory-ops-head">
@@ -6061,6 +6016,7 @@ function InventoryDashboardSection({
             </section>
           ) : null}
 
+          {!isMovementsModule || movementsWorkspaceTab === 'history' ? (
           <article className="inventory-table-card">
             <header className={`inventory-toolbar ${isMovementsModule ? 'inventory-toolbar-movements' : ''} ${isAdjustModule ? 'inventory-toolbar-adjust' : ''}`}>
               {isMovementsModule ? (
@@ -6770,6 +6726,7 @@ function InventoryDashboardSection({
               </div>
             </footer>
           </article>
+          ) : null}
         </div>
 
         {isOverviewModule ? (
