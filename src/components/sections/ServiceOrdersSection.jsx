@@ -32,6 +32,7 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../.
 import { resolveInventoryArea } from '../../utils/inventoryArea';
 import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
+import { isInventoryCatalogItemActive } from '../../utils/inventoryCatalogVisibility';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
@@ -5895,18 +5896,23 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   );
   const selectedClientPrepaidPendingBs = Math.max(0, Number((quoteTotalBs - paidAtApprovalBs - selectedClientPrepaidCoverageBs).toFixed(2)));
 
+  const activeCatalogItems = useMemo(
+    () => items.filter(isInventoryCatalogItemActive),
+    [items],
+  );
+
   const itemCategoryOptions = useMemo(
     () => Array.from(new Set([
-      ...items.map((item) => item.category).filter(Boolean),
+      ...activeCatalogItems.map((item) => item.category).filter(Boolean),
       ...(combos.length ? ['COMBOS'] : []),
     ])).sort((a, b) => a.localeCompare(b, 'es')),
-    [combos, items],
+    [activeCatalogItems, combos],
   );
 
   const filteredCatalog = useMemo(() => {
     const shouldBuildCatalog = modalOpen && (currentStep === 2 || catalogModalOpen);
     if (!shouldBuildCatalog) return [];
-    const productEntries = items
+    const productEntries = activeCatalogItems
       .map((item) => {
         if (itemCategoryFilter !== 'all' && item.category !== itemCategoryFilter) return false;
         const score = getCatalogSearchScore(deferredItemSearch, [
@@ -5941,7 +5947,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     return [...productEntries, ...comboEntries].sort(
       (a, b) => b.searchScore - a.searchScore || a.name.localeCompare(b.name, 'es'),
     );
-  }, [catalogModalOpen, combos, currentStep, deferredItemSearch, itemCategoryFilter, items, modalOpen]);
+  }, [activeCatalogItems, catalogModalOpen, combos, currentStep, deferredItemSearch, itemCategoryFilter, modalOpen]);
 
   const visibleCatalog = useMemo(
     () => filteredCatalog.slice(0, catalogVisibleCount),
@@ -6603,7 +6609,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const addDraftItem = (itemId, options = {}) => {
     const item = items.find((entry) => entry.id === itemId);
-    if (!item) return;
+    if (!isInventoryCatalogItemActive(item)) return;
     const isCourtesy = Boolean(options?.courtesy);
     setDraft((current) => {
       const scheduleFields = current.pricingMode === 'daily_schedule' ? getActiveScheduleLineFields(current) : {};
