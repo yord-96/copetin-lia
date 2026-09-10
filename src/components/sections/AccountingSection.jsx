@@ -6756,8 +6756,23 @@ function AccountingSection({
                         <td className="amount">{formatBs(row.contractPendingBs)}</td>
                         <td className="amount">{formatBs(row.transportPendingBs)}</td>
                         <td className="amount">{formatBs(row.damagePendingBs)}</td>
-                        <td style={{ minWidth: 190, whiteSpace: 'normal', lineHeight: 1.35 }}>
-                          <strong>{formatPendingReturnItems(row.pendingReturnItems)}</strong>
+                        <td className="bigcash-pending-return-cell">
+                          {Array.isArray(row.pendingReturnItems) && row.pendingReturnItems.length > 0 ? (
+                            <div className="bigcash-pending-return-list">
+                              {row.pendingReturnItems.map((line, index) => (
+                                <span
+                                  key={`${row.id}-pending-return-${line?.itemId || index}`}
+                                  className="bigcash-pending-return-chip"
+                                  title={`${Math.trunc(toNumber(line?.quantity))} × ${line?.itemName || 'Ítem'}`}
+                                >
+                                  <b>{Math.trunc(toNumber(line?.quantity))}×</b>
+                                  <span>{line?.itemName || 'Ítem'}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="bigcash-pending-return-empty">—</span>
+                          )}
                         </td>
                         <td className="amount bigcash-total-due">{formatBs(row.pendingBs)}</td>
                         <td>{row.isLegacy ? renderLegacyFinancialActions(row) : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>

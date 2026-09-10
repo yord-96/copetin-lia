@@ -69108,44 +69108,118 @@ button.inventory-loss-row-action:hover {
 /* Caja Grande · Cobros pendientes con desglose económico por columna. */
 .accounting-bigcash-view .bigcash-command-table-wrap:has(.bigcash-receivables-table.is-pending) {
   overflow-x: auto !important;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
 }
 
 .accounting-bigcash-view .bigcash-receivables-table.is-pending {
   width: 100% !important;
-  min-width: 80rem !important;
+  min-width: 92rem !important;
   table-layout: fixed !important;
 }
 
 .accounting-bigcash-view .bigcash-receivables-table.is-pending th,
 .accounting-bigcash-view .bigcash-receivables-table.is-pending td {
   min-width: 0 !important;
-  padding: 0.76rem 0.46rem !important;
-  line-height: 1.16 !important;
+  padding: 0.72rem 0.5rem !important;
+  line-height: 1.18 !important;
+  vertical-align: middle !important;
   overflow-wrap: normal !important;
   word-break: normal !important;
 }
 
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(1) { width: 8% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(2) { width: 14% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(3) { width: 11% !important; }
+/* 12 columnas: dejamos aire real para Ítems por devolver y para las acciones. */
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(1) { width: 6% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(2) { width: 13% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(3) { width: 10% !important; }
 .accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(4) { width: 8% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(5) { width: 9% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(6) { width: 8% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(7) { width: 9% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(8) { width: 8% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(9) { width: 9% !important; }
-.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(10) { width: 9% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(5) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(6) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(7) { width: 8% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(8) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(9) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(10) { width: 14% !important; }
 .accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(11) { width: 7% !important; }
+.accounting-bigcash-view .bigcash-receivables-table.is-pending :is(th, td):nth-child(12) { width: 5% !important; }
 
-.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(n+5):nth-child(-n+10) {
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(5),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(6),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(7),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(8),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(9),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(11) {
   text-align: right !important;
   white-space: nowrap !important;
   font-variant-numeric: tabular-nums;
 }
 
+.accounting-bigcash-view .bigcash-receivables-table.is-pending th:nth-child(10),
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:nth-child(10) {
+  text-align: left !important;
+  white-space: normal !important;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-cell {
+  padding-block: 0.55rem !important;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-list {
+  display: grid;
+  gap: 0.28rem;
+  justify-items: start;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-chip {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.34rem;
+  border: 1px solid #c7dcf7;
+  border-radius: 0.48rem;
+  background: #f4f8ff;
+  padding: 0.3rem 0.42rem;
+  color: #173d73;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.22;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-chip > b {
+  flex: 0 0 auto;
+  color: #0f5aa6;
+  font-weight: 950;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-chip > span {
+  min-width: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.accounting-bigcash-view .bigcash-pending-return-empty {
+  display: block;
+  color: #94a3b8;
+  text-align: center;
+  font-weight: 850;
+}
+
 .accounting-bigcash-view .bigcash-receivables-table.is-pending .bigcash-total-due {
   color: #08733f !important;
   font-weight: 950 !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:last-child {
+  text-align: center !important;
+}
+
+.accounting-bigcash-view .bigcash-receivables-table.is-pending td:last-child .accounting-inline-action {
+  min-width: 0;
+  width: 100%;
+  padding-inline: 0.38rem;
 }
 
 /* Caja Grande · garantías resueltas compactas y con sus 11 columnas visibles. */
