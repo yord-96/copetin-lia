@@ -92,25 +92,20 @@ const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) => {
   return Math.max(0, reservedQty - processedQty);
 };
 
-const rentalAffectsCurrentStock = (rental, todayKey = toDateKey(new Date())) => {
+const rentalAffectsCurrentStock = (rental) => {
   if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
   const status = normalizeRentalStatus(rental?.status);
   if (!['active', 'confirmed', 'pending'].includes(status)) return false;
   const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus ?? '');
-  if (inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return false;
-  if (inventoryStatus === 'salio') return true;
-  const startKey = toDateKey(rental?.rentalDate ?? rental?.deliveryDate);
-  const endKey = toDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
-  return Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+  return inventoryStatus !== 'devuelto' && inventoryStatus !== 'anulado';
 };
 
 const getActiveReservedStockForItem = (state, itemId) => {
   const requestedItemId = String(itemId ?? '').trim();
   if (!requestedItemId) return 0;
 
-  const todayKey = toDateKey(new Date());
   return (Array.isArray(state?.rentals) ? state.rentals : [])
-    .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
+    .filter((rental) => rentalAffectsCurrentStock(rental))
     .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
       .reduce((lineTotal, line, index) => (
         String(line?.itemId ?? '').trim() === requestedItemId
@@ -3666,9 +3661,8 @@ const normalizeState = (state) => {
   repairDuplicateActiveRentalOrderCodes(source, now);
 
   const activeReservedByItem = new Map();
-  const todayKey = toDateKey(new Date());
   source.rentals
-    .filter((rental) => rentalAffectsCurrentStock(rental, todayKey))
+    .filter((rental) => rentalAffectsCurrentStock(rental))
     .forEach((rental) => {
       (Array.isArray(rental?.items) ? rental.items : []).forEach((line, index) => {
         const itemId = String(line?.itemId ?? '').trim();
