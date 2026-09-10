@@ -306,14 +306,12 @@ export function getProjectedInventoryAvailability({
 
   summaries.forEach((summary) => {
     if (!summary.stockControlled) return;
-    summary.unavailableOutsideRentals = Math.max(
-      0,
-      summary.totalStock - summary.currentAvailable - summary.activeRentalQty,
-    );
-    summary.projectedAvailable = Math.max(
-      0,
-      summary.totalStock - summary.unavailableOutsideRentals - summary.hardReservedQty,
-    );
+    // Lavado/mantenimiento ya no es una causa operativa de indisponibilidad.
+    // El stock fisico (totalStock) ya descuenta danos/faltantes y las reservas
+    // son la unica ocupacion temporal que debe restarse de la disponibilidad.
+    summary.currentAvailable = Math.max(0, summary.totalStock - summary.activeRentalQty);
+    summary.unavailableOutsideRentals = 0;
+    summary.projectedAvailable = Math.max(0, summary.totalStock - summary.hardReservedQty);
   });
 
   const softRecords = [];

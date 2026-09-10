@@ -119,21 +119,15 @@ const getActiveReservedStockForItem = (state, itemId) => {
       ), 0), 0);
 };
 
-const getRecoveryStockForItem = (state, itemId) => {
-  const requestedItemId = String(itemId ?? '').trim();
-  if (!requestedItemId) return 0;
-  return (Array.isArray(state?.stockRecoveries) ? state.stockRecoveries : [])
-    .filter((entry) => String(entry?.itemId ?? '').trim() === requestedItemId)
-    .reduce((total, entry) => total + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))), 0);
-};
-
 const getInventoryStockCommitment = (state, itemId) => {
   const reservedStock = getActiveReservedStockForItem(state, itemId);
-  const recoveryStock = getRecoveryStockForItem(state, itemId);
   return {
     reservedStock,
-    recoveryStock,
-    minimumPhysicalStock: reservedStock + recoveryStock,
+    // stockRecoveries se conserva solo como historial legacy. Desde que lavado/
+    // mantenimiento dejo de sacar unidades de disponibilidad, ya no representa
+    // un compromiso fisico del inventario.
+    recoveryStock: 0,
+    minimumPhysicalStock: reservedStock,
   };
 };
 
@@ -3677,19 +3671,14 @@ const normalizeState = (state) => {
         activeReservedByItem.set(itemId, Number(activeReservedByItem.get(itemId) ?? 0) + reservedQty);
       });
     });
-  const recoveryByItem = new Map();
-  source.stockRecoveries.forEach((entry) => {
-    const itemId = String(entry?.itemId ?? '').trim();
-    if (!itemId) return;
-    recoveryByItem.set(itemId, Number(recoveryByItem.get(itemId) ?? 0) + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))));
-  });
   source.items.forEach((item) => {
     if (!item || item.controlsStock === false) return;
     const totalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
     const reservedQty = Math.max(0, Math.trunc(Number(activeReservedByItem.get(String(item.id)) ?? 0)));
-    const recoveryQty = Math.max(0, Math.trunc(Number(recoveryByItem.get(String(item.id)) ?? 0)));
-    const expectedAvailable = Math.max(0, totalStock - reservedQty - recoveryQty);
-    item.availableStock = expectedAvailable;
+    // Los registros legacy de stockRecoveries (lavado/mantenimiento) ya no
+    // inmovilizan unidades. Solo las reservas activas reducen disponibilidad;
+    // danos y faltantes ya estan reflejados en totalStock.
+    item.availableStock = Math.max(0, totalStock - reservedQty);
   });
 
   return normalizeBusinessTextInState(source);
