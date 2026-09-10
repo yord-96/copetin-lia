@@ -7604,6 +7604,28 @@ const summarizeAccountingRental = (rental = {}) => {
       : null,
     returnReport,
     returnIssueSummary: returnReport,
+    // Contabilidad necesita distinguir material pendiente con el cliente de
+    // daños/faltantes. Se envía solo el resumen mínimo, sin cargar la orden completa.
+    operational: rental?.operational?.clientPendingPickup?.active
+      ? {
+          clientPendingPickup: {
+            active: true,
+            note: rental.operational.clientPendingPickup.note ?? '',
+            registeredAt: rental.operational.clientPendingPickup.registeredAt ?? null,
+            registeredByName: rental.operational.clientPendingPickup.registeredByName ?? '',
+            items: (Array.isArray(rental.operational.clientPendingPickup.items)
+              ? rental.operational.clientPendingPickup.items
+              : []).map((line) => ({
+              lineKey: line?.lineKey ?? '',
+              itemId: line?.itemId ?? '',
+              itemName: line?.itemName ?? line?.name ?? 'Ítem',
+              expectedQty: Math.max(0, Number(line?.expectedQty ?? 0)),
+              pendingQty: Math.max(0, Number(line?.pendingQty ?? 0)),
+              note: line?.note ?? '',
+            })).filter((line) => line.pendingQty > 0),
+          },
+        }
+      : { clientPendingPickup: null },
     _summaryOnly: true,
     _accountingSummaryOnly: true,
   };

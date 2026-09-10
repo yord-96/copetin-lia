@@ -35,6 +35,40 @@ const normalizeText = (value) =>
     .toLowerCase()
     .trim();
 
+const getPendingReturnItemsForRental = (rental) => {
+  if (!rental?.operational?.clientPendingPickup?.active) return [];
+  const rows = Array.isArray(rental.operational.clientPendingPickup.items)
+    ? rental.operational.clientPendingPickup.items
+    : [];
+  return rows
+    .map((line) => ({
+      itemId: String(line?.itemId ?? '').trim(),
+      itemName: String(line?.itemName ?? line?.name ?? 'Ítem').trim() || 'Ítem',
+      quantity: Math.max(0, Math.trunc(toNumber(line?.pendingQty ?? line?.quantity))),
+      note: String(line?.note ?? '').trim(),
+    }))
+    .filter((line) => line.quantity > 0);
+};
+
+const getPendingReturnItemsForLegacy = (row) => (Array.isArray(row?.items) ? row.items : [])
+  .map((line) => ({
+    itemId: String(line?.itemId ?? '').trim(),
+    itemName: String(line?.itemName ?? line?.name ?? 'Ítem').trim() || 'Ítem',
+    quantity: Math.max(0, Math.trunc(toNumber(line?.quantity))),
+    status: normalizeText(line?.status).replace(/\s+/g, '_'),
+    note: String(line?.note ?? line?.observations ?? '').trim(),
+  }))
+  // "Por devolver" es material que sigue físicamente con el cliente.
+  // Daños y faltantes tienen su propia columna y no deben mezclarse aquí.
+  .filter((line) => line.quantity > 0 && ['pending_return', 'pendiente_devolucion', 'pendiente'].includes(line.status));
+
+const formatPendingReturnItems = (items) => {
+  const rows = Array.isArray(items) ? items.filter((line) => toNumber(line?.quantity) > 0) : [];
+  return rows.length > 0
+    ? rows.map((line) => `${Math.trunc(toNumber(line.quantity))}× ${line.itemName}`).join(' · ')
+    : '-';
+};
+
 
 const consolidateReturnIssueLines = (rows, scopeKey = '') => {
   const source = Array.isArray(rows) ? rows : [];
@@ -2053,6 +2087,7 @@ function AccountingSection({
           penaltiesBs: toNumber(settlement.penaltiesBs ?? rental?.penaltiesBs),
           outstandingRentalBs: toNumber(settlement.outstandingRentalBs),
           refundBs: toNumber(settlement.refundBs ?? rental?.refundBs),
+          pendingReturnItems: getPendingReturnItemsForRental(rental),
         };
       })
       .filter(Boolean)
@@ -2060,7 +2095,7 @@ function AccountingSection({
       const legacyRows = legacyReceivableRows.filter((row) => Number(row?.totalDueBs ?? 0) > 0.009).map((row) => {
         const contractCode = getCommercialContractCode(row.contractCode);
         if (!contractCode) return null;
-        return { id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, legacySource: row, orderCode: '', contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialDueBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.damageDueBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.commercialCollectedBs || 0) + Number(row.damageCollectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialDueBs || 0), refundBs: Number(row.refundableGuaranteeBs || 0) };
+        return { id: `legacy-${row.id}`, legacyId: row.id, isLegacy: true, legacySource: row, orderCode: '', contractCode, customerName: row.customerName, responsibleName: row.responsibleName, eventDate: row.contractDate, status: 'Rezagado', pendingBs: Number(row.totalDueBs || 0), contractPendingBs: Number(row.commercialDueBs || 0), transportPendingBs: 0, damagePendingBs: Number(row.damageDueBs || 0), totalBs: Number(row.commercialPendingBs || 0) + Number(row.itemChargesBs || 0), paidBs: Number(row.commercialCollectedBs || 0) + Number(row.damageCollectedBs || 0), guaranteeBs: Number(row.guaranteeHeldBs || 0), penaltiesBs: Number(row.itemChargesBs || 0), outstandingRentalBs: Number(row.commercialDueBs || 0), refundBs: Number(row.refundableGuaranteeBs || 0), pendingReturnItems: getPendingReturnItemsForLegacy(row) };
       }).filter(Boolean);
       return [...regularRows, ...legacyRows].sort((a, b) => b.pendingBs - a.pendingBs);
     },
@@ -2813,28 +2848,28 @@ function AccountingSection({
       });
       sheet.columns = [
         { width: 7 }, { width: 16 }, { width: 16 }, { width: 30 }, { width: 25 }, { width: 15 },
-        { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 18 }, { width: 16 },
+        { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 17 }, { width: 34 }, { width: 18 }, { width: 16 },
       ];
-      sheet.mergeCells('A1:M1');
+      sheet.mergeCells('A1:N1');
       sheet.getCell('A1').value = 'EL COPETÍN · CONTROL UNIFICADO DE CUENTAS POR COBRAR';
       sheet.getCell('A1').font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
       sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
       sheet.mergeCells('A2:I2');
       sheet.getCell('A2').value = 'Pendientes por fecha de evento';
       sheet.getCell('A2').font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF172033' } };
-      sheet.mergeCells('J2:M2');
+      sheet.mergeCells('J2:N2');
       sheet.getCell('J2').value = `Periodo: ${finalizedReceivablesReportRange}`;
       sheet.getCell('J2').alignment = { horizontal: 'right' };
       sheet.mergeCells('A3:I3');
       sheet.getCell('A3').value = `${visibleReceivableRows.length} contrato(s) con deuda real · Total ${formatBs(visibleReceivableTotalBs)}`;
-      sheet.mergeCells('J3:M3');
+      sheet.mergeCells('J3:N3');
       sheet.getCell('J3').value = `Generado: ${new Intl.DateTimeFormat('es-BO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}`;
       sheet.getCell('J3').alignment = { horizontal: 'right' };
-      sheet.mergeCells('A4:M4');
+      sheet.mergeCells('A4:N4');
       sheet.getCell('A4').value = 'El estado operativo “Finalizado” es independiente. Este reporte incluye únicamente contratos cuyo total por cobrar es mayor a cero.';
       sheet.getCell('A4').font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
       const header = sheet.getRow(6);
-      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Saldo contrato', 'Transporte', 'Daños / faltantes', 'Total por cobrar', 'Estado financiero'];
+      header.values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Saldo contrato', 'Transporte', 'Daños / faltantes', 'Ítems por devolver', 'Total por cobrar', 'Estado financiero'];
       header.eachCell((cell) => {
         cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
@@ -2847,13 +2882,13 @@ function AccountingSection({
           row.responsibleName || '', dateKey ? new Date(`${dateKey}T12:00:00`) : '',
           toNumber(row.totalBs), toNumber(row.paidBs), toNumber(row.contractPendingBs),
           toNumber(row.transportPendingBs), toNumber(row.damagePendingBs),
-          toNumber(row.pendingBs), 'Por cobrar',
+          formatPendingReturnItems(row.pendingReturnItems), toNumber(row.pendingBs), 'Por cobrar',
         ]);
         excelRow.getCell(6).numFmt = 'dd/mm/yyyy';
-        [7, 8, 9, 10, 11, 12].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
+        [7, 8, 9, 10, 11, 13].forEach((column) => { excelRow.getCell(column).numFmt = '[$Bs-es-BO] #,##0.00'; });
       });
       const lastRow = Math.max(6, 6 + visibleReceivableRows.length);
-      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 13 } };
+      sheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: lastRow, column: 14 } };
       sheet.pageSetup.printTitlesRow = '1:6';
       const buffer = await workbook.xlsx.writeBuffer();
       const range = bigCashWorkspaceRanges.receivables ?? {};
@@ -4237,7 +4272,7 @@ function AccountingSection({
         title: 'Contratos por cobrar',
         subtitle: 'Saldos pendientes organizados por contrato, cliente, responsable y fecha del evento.',
         rows: pendingReceivableRows,
-        colSpan: 6,
+        colSpan: 7,
         searchText: (row) => [
           row.contractCode,
           row.orderCode,
@@ -4245,6 +4280,7 @@ function AccountingSection({
           row.responsibleName,
           row.eventDate,
           row.pendingBs,
+          formatPendingReturnItems(row.pendingReturnItems),
         ].join(' '),
         renderHeader: () => (
           <tr>
@@ -4252,6 +4288,7 @@ function AccountingSection({
             <th>Cliente</th>
             <th>Responsable</th>
             <th>Fecha evento</th>
+            <th>Ítems por devolver</th>
             <th>A cobrar</th>
             <th />
           </tr>
@@ -4262,6 +4299,7 @@ function AccountingSection({
             <td>{row.customerName}</td>
             <td>{row.responsibleName}</td>
             <td>{formatDate(row.eventDate)}</td>
+            <td style={{ whiteSpace: 'normal' }}>{formatPendingReturnItems(row.pendingReturnItems)}</td>
             <td className="amount">
               <strong>{formatBs(row.pendingBs)}</strong>
               <small>Contrato {formatBs(row.contractPendingBs)} · Transporte {formatBs(row.transportPendingBs)} · Daños {formatBs(row.damagePendingBs)}</small>
@@ -6685,6 +6723,7 @@ function AccountingSection({
                       <th>Saldo contrato</th>
                       <th>Transporte</th>
                       <th>Daños / faltantes</th>
+                      <th>Ítems por devolver</th>
                       <th>Total a cobrar</th>
                       <th />
                     </tr>
@@ -6717,6 +6756,9 @@ function AccountingSection({
                         <td className="amount">{formatBs(row.contractPendingBs)}</td>
                         <td className="amount">{formatBs(row.transportPendingBs)}</td>
                         <td className="amount">{formatBs(row.damagePendingBs)}</td>
+                        <td style={{ minWidth: 190, whiteSpace: 'normal', lineHeight: 1.35 }}>
+                          <strong>{formatPendingReturnItems(row.pendingReturnItems)}</strong>
+                        </td>
                         <td className="amount bigcash-total-due">{formatBs(row.pendingBs)}</td>
                         <td>{row.isLegacy ? renderLegacyFinancialActions(row) : <button type="button" className="accounting-inline-action" onClick={() => openCollectAction(row)}>Cobrar</button>}</td>
                       </tr>
@@ -6795,7 +6837,7 @@ function AccountingSection({
                       ].filter(Boolean);
                     })}
                   {receivablesView === 'pending' && visibleReceivableRows.length === 0 ? (
-                    <tr><td colSpan={11}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
+                    <tr><td colSpan={12}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
                   ) : null}
                   {receivablesView === 'finalized' && visibleFinalizedReceivableRows.length === 0 ? (
                     <tr><td colSpan={12}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
