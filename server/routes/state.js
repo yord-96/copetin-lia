@@ -1584,16 +1584,15 @@ const directDateKey = (value) => {
   const day = String(parsed.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-const directRentalAffectsCurrentStock = (rental, todayKey = directDateKey(new Date())) => {
+const directRentalAffectsCurrentStock = (rental) => {
   if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
   const status = directNormalizeText(rental?.status);
   if (!['active', 'confirmed', 'pending'].includes(status)) return false;
   const inventoryStatus = directNormalizeText(rental?.operational?.inventoryStatus);
   if (inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return false;
-  if (inventoryStatus === 'salio') return true;
-  const startKey = directDateKey(rental?.rentalDate ?? rental?.deliveryDate);
-  const endKey = directDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
-  return Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
+  // Una reserva activa compromete stock desde que queda guardada, aunque su
+  // fecha operativa sea futura. La disponibilidad por fecha se calcula aparte.
+  return true;
 };
 const directOutstandingReservedQty = (rental, line, index = 0) => {
   if (!line || line?.controlsStock === false) return 0;
@@ -1632,19 +1631,13 @@ const directActiveReservedStockForItem = (state, itemId) => {
           : lineTotal
       ), 0), 0);
 };
-const directRecoveryStockForItem = (state, itemId) => {
-  const requestedItemId = String(itemId ?? '').trim();
-  if (!requestedItemId) return 0;
-  return (Array.isArray(state?.stockRecoveries) ? state.stockRecoveries : [])
-    .filter((entry) => String(entry?.itemId ?? '').trim() === requestedItemId)
-    .reduce((total, entry) => total + Math.max(0, Math.trunc(Number(entry?.quantity ?? 0))), 0);
-};
 const directNormalizeAvailableStockForItem = (state, item) => {
   if (!item || item?.controlsStock === false) return Number(item?.availableStock ?? 0);
   const totalStock = Math.max(0, Math.trunc(Number(item?.totalStock ?? 0)));
   const reservedStock = directActiveReservedStockForItem(state, item?.id);
-  const recoveryStock = directRecoveryStockForItem(state, item?.id);
-  const canonicalAvailableStock = Math.max(0, totalStock - reservedStock - recoveryStock);
+  // Las colas legacy de lavado/mantenimiento ya no inmovilizan stock.
+  // Daños y faltantes se reflejan en el stock físico total.
+  const canonicalAvailableStock = Math.max(0, totalStock - reservedStock);
   item.availableStock = canonicalAvailableStock;
   return canonicalAvailableStock;
 };
@@ -7896,10 +7889,9 @@ const buildCurrentInventoryCommitments = (state = {}) => {
     if (['devuelto', 'anulado'].includes(inventoryStatus)) return;
 
     const startKey = toInventoryDateKey(rental.rentalDate ?? rental.deliveryDate);
-    const endKey = toInventoryDateKey(rental.dueDate ?? rental.pickupDate ?? startKey);
-    const affectsCurrentStock = inventoryStatus === 'salio'
-      || Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
-    if (!affectsCurrentStock) return;
+    // Toda reserva operativa activa compromete stock desde que se guarda, incluso
+    // si la entrega es futura. El cruce de fechas sigue resolviéndose en la capa
+    // de disponibilidad proyectada para cada nuevo contrato.
 
     const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
     const contractCode = String(contract?.contractCode ?? rental.contractCode ?? '').trim();
