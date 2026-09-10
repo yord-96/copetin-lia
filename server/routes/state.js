@@ -9381,7 +9381,7 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
   try {
     const itemId = String(req.params.itemId ?? '').trim();
     const metric = String(req.query?.metric ?? 'current').trim().toLowerCase();
-    const allowedMetrics = new Set(['initial', 'increases', 'decreases', 'current', 'available']);
+    const allowedMetrics = new Set(['initial', 'increases', 'decreases', 'outside', 'current', 'available']);
     if (!itemId || !allowedMetrics.has(metric)) {
       return res.status(400).json({ error: 'La consulta de kardex no es válida.' });
     }
@@ -9412,6 +9412,31 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
       .slice()
       .sort((a, b) => new Date(a?.operationDate ?? 0) - new Date(b?.operationDate ?? 0));
     const currentStock = Number(summary.currentStock ?? 0);
+    const currentOutsideRows = (commitmentContext.outsideDetailsByItem.get(itemId) ?? [])
+      .slice()
+      .sort((a, b) => new Date(a?.operationDate ?? 0) - new Date(b?.operationDate ?? 0));
+    let runningWarehouseStock = currentStock;
+    const outsideMovementRows = currentOutsideRows.map((movement) => {
+      const quantity = Math.max(0, Math.abs(Number(movement.deltaUnits ?? 0)));
+      const beforeWarehouseStock = runningWarehouseStock;
+      const afterWarehouseStock = Math.max(0, beforeWarehouseStock - quantity);
+      runningWarehouseStock = afterWarehouseStock;
+      return {
+        ...movement,
+        type: 'PENDIENTE CON CLIENTE',
+        reason: movement.contractCode
+          ? `PENDIENTE CON CLIENTE · CONTRATO ${movement.contractCode}`
+          : 'PENDIENTE CON CLIENTE',
+        detail: [
+          `${quantity} UNIDAD${quantity === 1 ? '' : 'ES'} NO DEVUELTA${quantity === 1 ? '' : 'S'}`,
+          movement.orderCode ? `ORDEN ${movement.orderCode}` : '',
+          String(movement.detail ?? '').split(' · ').slice(-1)[0],
+        ].filter(Boolean).join(' · '),
+        beforeTotalStock: beforeWarehouseStock,
+        afterTotalStock: afterWarehouseStock,
+        outsideDelta: -quantity,
+      };
+    });
     const currentAvailabilityRows = currentCommitments.map((movement) => {
       const quantity = Math.max(0, Math.abs(Number(movement.deltaUnits ?? 0)));
       const anchorDate = movement.eventDate || movement.periodStartKey || commitmentContext.todayKey;
@@ -9437,7 +9462,9 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
 
     const matchingMovements = (metric === 'available'
       ? currentAvailabilityRows
-      : filterInventoryKardexMovements(allItemMovements, metric))
+      : metric === 'outside'
+        ? outsideMovementRows
+        : filterInventoryKardexMovements(allItemMovements, metric))
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
     const limit = Math.min(500, Math.max(25, Math.trunc(Number(req.query?.limit ?? 200)) || 200));

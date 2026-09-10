@@ -6866,7 +6866,8 @@ function InventoryDashboardSection({
                 <p>
                   {productKardexModal.metric === 'initial' ? 'Cómo se obtiene el stock de inicio'
                     : productKardexModal.metric === 'increases' ? 'Historial de aumentos de stock físico'
-                    : productKardexModal.metric === 'decreases' ? 'Historial de bajas de stock físico'
+                    : productKardexModal.metric === 'decreases' ? 'Historial de bajas definitivas de stock físico'
+                    : productKardexModal.metric === 'outside' ? 'Material que salió y todavía permanece con clientes'
                     : productKardexModal.metric === 'available' ? 'Movimientos que explican la disponibilidad'
                     : 'Stock propio físicamente en almacén; lo que sigue con clientes se muestra fuera hasta su devolución'}
                 </p>
@@ -6882,6 +6883,7 @@ function InventoryDashboardSection({
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'initial')} className={productKardexModal.metric === 'initial' ? 'active' : ''}><span>Inicio</span><strong>{productKardexModal.data.summary?.initialStock ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'increases')} className={productKardexModal.metric === 'increases' ? 'active' : ''}><span>Entradas</span><strong className="positive">+{productKardexModal.data.summary?.stockIn ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'decreases')} className={productKardexModal.metric === 'decreases' ? 'active' : ''}><span>Bajas</span><strong className="negative">-{productKardexModal.data.summary?.stockOut ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'outside')} className={productKardexModal.metric === 'outside' ? 'active' : ''}><span>Con cliente</span><strong className={Number(productKardexModal.data.summary?.outsideStock ?? 0) > 0 ? 'negative' : ''}>{productKardexModal.data.summary?.outsideStock ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'current')} className={productKardexModal.metric === 'current' ? 'active' : ''}><span>En almacén</span><strong>{productKardexModal.data.summary?.warehouseStock ?? productKardexModal.data.summary?.currentStock ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'available')} className={productKardexModal.metric === 'available' ? 'active' : ''}><span>Disponible</span><strong>{productKardexModal.data.summary?.availableStock ?? 0}</strong></button>
                 </div>
@@ -6905,14 +6907,16 @@ function InventoryDashboardSection({
                 ) : (
                   <div className="inventory-kardex-history-wrap">
                     <table className="inventory-kardex-history">
-                      <thead><tr><th>{productKardexModal.metric === 'available' ? 'Fecha evento' : 'Fecha y hora'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
+                      <thead><tr><th>{['available', 'outside'].includes(productKardexModal.metric) ? 'Fecha evento' : 'Fecha y hora'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
                       <tbody>
                         {(productKardexModal.data.movements ?? []).map((movement) => {
                           const availabilityMetric = productKardexModal.metric === 'available';
-                          const delta = Number(availabilityMetric ? movement.availableDelta : movement.physicalDelta);
+                          const outsideMetric = productKardexModal.metric === 'outside';
+                          const delta = Number(availabilityMetric ? movement.availableDelta : outsideMetric ? movement.outsideDelta : movement.physicalDelta);
                           const before = availabilityMetric ? movement.beforeAvailableStock : movement.beforeTotalStock;
                           const after = availabilityMetric ? movement.afterAvailableStock : movement.afterTotalStock;
-                          const availabilityDateKey = availabilityMetric ? getDateKey(movement.eventDate ?? movement.operationDate) : '';
+                          const datedCommitmentMetric = availabilityMetric || outsideMetric;
+                          const availabilityDateKey = datedCommitmentMetric ? getDateKey(movement.eventDate ?? movement.operationDate) : '';
                           const availabilityDateLabel = availabilityDateKey
                             ? (() => {
                                 const [year, month, day] = availabilityDateKey.split('-');
@@ -6921,7 +6925,7 @@ function InventoryDashboardSection({
                             : '';
                           return (
                             <tr key={movement.id}>
-                              <td><strong>{availabilityMetric ? (availabilityDateLabel || 'Sin fecha') : formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
+                              <td><strong>{datedCommitmentMetric ? (availabilityDateLabel || 'Sin fecha') : formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
                               <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.displayReason || movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && (movement.displayReason || movement.reason) ? <small>{movement.detail}</small> : null}</td>
                               <td>{movement.displayReference || movement.contractCode || movement.reference || '-'}</td>
                               <td><strong className={delta >= 0 ? 'positive' : 'negative'}>{delta > 0 ? `+${delta}` : delta}</strong></td>

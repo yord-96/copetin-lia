@@ -72126,7 +72126,7 @@ button.inventory-loss-row-action:hover {
 .inventory-kardex-summary {
   display: grid;
   padding: 1rem 1.3rem;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.65rem;
 }
 
