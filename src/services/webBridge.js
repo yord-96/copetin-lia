@@ -85,9 +85,17 @@ const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) => {
       String(entry?.lineKey ?? '') === String(lineKey)
       || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
     ))
-    .reduce((sum, entry) => sum
-      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+    .reduce((sum, entry) => {
+      const legacyPending = !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
+        && Boolean(rental?.operational?.clientPendingPickup?.active);
+      const confirmedMissingQty = legacyPending
+        ? 0
+        : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0)));
+      return sum
+        + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+        + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
+        + confirmedMissingQty;
+    }, 0);
 
   return Math.max(0, reservedQty - processedQty);
 };
@@ -17942,7 +17950,9 @@ const createWebBridge = () => ({
     registerReturn: async (payload) => {
       const rentalId = payload?.rentalId;
       const lines = payload?.returnedItems ?? [];
-      const isPartialReturn = Boolean(payload?.partialReturn) || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client';
+      const isPartialReturn = Boolean(payload?.partialReturn)
+        || String(payload?.returnReview?.status ?? '').trim() === 'left_with_client'
+        || lines.some((line) => Math.max(0, Math.trunc(Number(line?.pendingClientQty ?? 0))) > 0);
 
       if (!rentalId) {
         throw new Error('Debe seleccionar un alquiler para registrar la devolucion.');
@@ -17989,13 +17999,23 @@ const createWebBridge = () => ({
           const chargeOwner = normalizeReturnChargeOwner(line?.chargeOwner);
           const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
           const damagedUnitChargeBs = Math.max(0, Number(line?.damagedUnitChargeBs ?? 0));
-          const damagedFeeBs = Number((damagedQty * damagedUnitChargeBs).toFixed(2));
+          const legacyPending = !Object.prototype.hasOwnProperty.call(line ?? {}, 'pendingClientQty')
+            && Boolean(rental.operational?.clientPendingPickup?.active);
+          const missingQty = legacyPending ? 0 : Math.max(0, Math.trunc(Number(line?.missingQty ?? 0)));
+          const missingUnitChargeBs = Math.max(0, Number(line?.missingUnitChargeBs ?? 0));
+          const previousFeeBs = Number((damagedQty * damagedUnitChargeBs + missingQty * missingUnitChargeBs).toFixed(2));
           if (chargeOwner === 'cliente') {
-            penaltiesBs = Number((penaltiesBs + damagedFeeBs).toFixed(2));
+            penaltiesBs = Number((penaltiesBs + previousFeeBs).toFixed(2));
           } else {
-            internalPenaltiesBs = Number((internalPenaltiesBs + damagedFeeBs).toFixed(2));
+            internalPenaltiesBs = Number((internalPenaltiesBs + previousFeeBs).toFixed(2));
           }
         });
+        const getConfirmedMissingQty = (entry) => (
+          !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
+            && Boolean(rental.operational?.clientPendingPickup?.active)
+            ? 0
+            : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0)))
+        );
         const getPreviouslyProcessedQty = (rentalLine, rentalLineKey) => previousPartialItems
           .filter((entry) => (
             String(entry?.lineKey ?? '') === String(rentalLineKey)
@@ -18003,7 +18023,8 @@ const createWebBridge = () => ({
           ))
           .reduce((sum, entry) => sum
             + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-            + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
+            + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
+            + getConfirmedMissingQty(entry), 0);
         const consumedReturnLineIndexes = new Set();
         const returnReport = rental.items.map((rentalLine, index) => {
           const rentalLineKey = getInventoryLineKey(rentalLine, index);
@@ -18051,18 +18072,19 @@ const createWebBridge = () => ({
           const returnedQty = Math.max(0, toInteger(incomingLine.returnedQty, `devuelto (${rentalLine.itemName})`));
           const damagedQty = Math.max(0, toInteger(incomingLine.damagedQty, `daniado (${rentalLine.itemName})`));
           const missingQty = Math.max(0, toInteger(incomingLine.missingQty, `faltante (${rentalLine.itemName})`));
+          const pendingClientQty = Math.max(0, toInteger(incomingLine.pendingClientQty ?? 0, `con cliente (${rentalLine.itemName})`));
           const chargeOwner = normalizeReturnChargeOwner(incomingLine.chargeOwner);
           const damageNote = String(incomingLine.damageNote ?? '').trim();
           const originalExpectedQty = Math.max(0, Math.trunc(Number(rentalLine.quantity ?? 0)));
           const previousProcessedQty = getPreviouslyProcessedQty(rentalLine, rentalLineKey);
           const expectedQty = Math.max(0, originalExpectedQty - previousProcessedQty);
 
-          if (returnedQty + damagedQty + missingQty !== expectedQty) {
+          if (returnedQty + damagedQty + missingQty + pendingClientQty !== expectedQty) {
             throw new Error(
-              `La suma de devuelto + daniado + faltante para "${rentalLine.itemName}" debe ser ${expectedQty}.`,
+              `La suma de devuelto + daniado + faltante + con cliente para "${rentalLine.itemName}" debe ser ${expectedQty}.`,
             );
           }
-          if ((damagedQty > 0 || missingQty > 0) && !damageNote) {
+          if ((damagedQty > 0 || missingQty > 0 || pendingClientQty > 0) && !damageNote) {
             throw new Error(`Debes registrar la observacion para "${rentalLine.itemName}".`);
           }
 
@@ -18115,7 +18137,7 @@ const createWebBridge = () => ({
             const movedToCleaningQty = 0;
             const returnedToAvailableQty = internalGoodQty;
             const damagedStockLossQty = internalDamagedQty;
-            const missingStockLossQty = isPartialReturn ? 0 : internalMissingQty;
+            const missingStockLossQty = internalMissingQty;
             const stockLossQty = damagedStockLossQty + missingStockLossQty;
 
             const stockCommitment = getInventoryStockCommitment(state, item.id);
@@ -18168,6 +18190,7 @@ const createWebBridge = () => ({
               stockLossQty,
               damagedQty,
               missingQty,
+              pendingClientQty,
               damageNote,
               chargeOwner,
               damagedUnitChargeBs,
@@ -18190,6 +18213,7 @@ const createWebBridge = () => ({
             movedToCleaningQty: 0,
             damagedQty,
             missingQty,
+            pendingClientQty,
             damageNote,
             chargeOwner,
             damagedUnitChargeBs,
@@ -18202,13 +18226,13 @@ const createWebBridge = () => ({
 
         if (isPartialReturn) {
           const pendingItems = returnReport
-            .filter((line) => Math.max(0, Math.trunc(Number(line.missingQty ?? 0))) > 0)
+            .filter((line) => Math.max(0, Math.trunc(Number(line.pendingClientQty ?? 0))) > 0)
             .map((line) => ({
               lineKey: line.lineKey,
               itemId: line.itemId,
               itemName: line.itemName,
               expectedQty: line.expectedQty,
-              pendingQty: Math.max(0, Math.trunc(Number(line.missingQty ?? 0))),
+              pendingQty: Math.max(0, Math.trunc(Number(line.pendingClientQty ?? 0))),
               note: String(line.damageNote ?? '').trim(),
             }));
           if (pendingItems.length === 0) {
@@ -18291,6 +18315,7 @@ const createWebBridge = () => ({
         const settledPartialItems = previousPartialItems.filter((line) => (
           Math.max(0, Math.trunc(Number(line?.returnedQty ?? 0))) > 0
           || Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0))) > 0
+          || getConfirmedMissingQty(line) > 0
         ));
         rental.returnReport = [...settledPartialItems, ...returnReport];
         rental.partialReturnReport = null;

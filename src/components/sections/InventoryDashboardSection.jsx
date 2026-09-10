@@ -3000,7 +3000,9 @@ function InventoryDashboardSection({
       const reserved = Number(kardex?.committedStock ?? reservedByItem[item.id] ?? 0);
       const maintenance = Number(maintenanceByItem[item.id] ?? 0);
       const totalStock = Number(item.totalStock ?? 0);
-      const effectiveAvailable = Math.max(0, totalStock - reserved - maintenance);
+      const outsideStock = Math.max(0, Number(kardex?.outsideStock ?? 0));
+      const warehouseStock = Math.max(0, Number(kardex?.warehouseStock ?? totalStock - outsideStock));
+      const effectiveAvailable = Math.max(0, Number(kardex?.availableStock ?? totalStock - reserved - maintenance));
       const stockControlled = item.controlsStock !== false
         && String(item.verificationStatus ?? '').trim() !== 'pending_verification'
         && String(item.adoptionSource ?? '').trim() !== 'service_order_quick_item'
@@ -3022,6 +3024,8 @@ function InventoryDashboardSection({
           || 'GEN',
         available: effectiveAvailable,
         reserved,
+        outsideStock,
+        warehouseStock,
         maintenance,
         total: totalStock,
         initialStock: Number(kardex?.initialStock ?? totalStock),
@@ -6604,7 +6608,7 @@ function InventoryDashboardSection({
                       {isProductsModule ? <th>Inicio</th> : null}
                       {isProductsModule ? <th>Entradas</th> : null}
                       {isProductsModule ? <th>Bajas</th> : null}
-                      {isProductsModule ? <th>Stock actual</th> : null}
+                      {isProductsModule ? <th>En almacén</th> : null}
                       <th>Disponible</th>
                       {!isProductsModule ? <th>Reservado</th> : null}
                       {!isProductsModule ? <th>En Mantenimiento</th> : null}
@@ -6656,7 +6660,7 @@ function InventoryDashboardSection({
                             <td><button type="button" className="inventory-kardex-number is-initial" onClick={() => openProductKardex(row, 'initial')}><strong>{row.initialStock}</strong><span>Ver origen</span></button></td>
                             <td><button type="button" className="inventory-kardex-number is-in" onClick={() => openProductKardex(row, 'increases')}><strong>+{row.stockIn}</strong><span>Ver entradas</span></button></td>
                             <td><button type="button" className="inventory-kardex-number is-out" onClick={() => openProductKardex(row, 'decreases')}><strong>-{row.stockOut}</strong><span>Ver bajas</span></button></td>
-                            <td><button type="button" className="inventory-kardex-number is-current" onClick={() => openProductKardex(row, 'current')}><strong>{row.total}</strong><span>Físico</span></button></td>
+                            <td><button type="button" className="inventory-kardex-number is-current" onClick={() => openProductKardex(row, 'current')}><strong>{row.warehouseStock}</strong><span>{row.outsideStock > 0 ? `${row.outsideStock} fuera · ${row.total} total` : 'Todo en almacén'}</span></button></td>
                             <td><button type="button" className={`inventory-kardex-number is-available ${row.lowAvailability ? 'is-low' : ''}`} onClick={() => openProductKardex(row, 'available')}><strong>{row.controlsStock ? row.available : '-'}</strong><span>{row.reserved > 0 ? `${row.reserved} comprometido` : 'Libre'}</span></button></td>
                           </>
                         ) : (
@@ -6864,7 +6868,7 @@ function InventoryDashboardSection({
                     : productKardexModal.metric === 'increases' ? 'Historial de aumentos de stock físico'
                     : productKardexModal.metric === 'decreases' ? 'Historial de bajas de stock físico'
                     : productKardexModal.metric === 'available' ? 'Movimientos que explican la disponibilidad'
-                    : 'Movimientos que explican el stock físico actual'}
+                    : 'Stock propio físicamente en almacén; lo que sigue con clientes se muestra fuera hasta su devolución'}
                 </p>
               </div>
               <button type="button" className="inventory-kardex-close" onClick={() => setProductKardexModal(null)} aria-label="Cerrar kardex">×</button>
@@ -6878,14 +6882,14 @@ function InventoryDashboardSection({
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'initial')} className={productKardexModal.metric === 'initial' ? 'active' : ''}><span>Inicio</span><strong>{productKardexModal.data.summary?.initialStock ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'increases')} className={productKardexModal.metric === 'increases' ? 'active' : ''}><span>Entradas</span><strong className="positive">+{productKardexModal.data.summary?.stockIn ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'decreases')} className={productKardexModal.metric === 'decreases' ? 'active' : ''}><span>Bajas</span><strong className="negative">-{productKardexModal.data.summary?.stockOut ?? 0}</strong></button>
-                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'current')} className={productKardexModal.metric === 'current' ? 'active' : ''}><span>Stock actual</span><strong>{productKardexModal.data.summary?.currentStock ?? 0}</strong></button>
+                  <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'current')} className={productKardexModal.metric === 'current' ? 'active' : ''}><span>En almacén</span><strong>{productKardexModal.data.summary?.warehouseStock ?? productKardexModal.data.summary?.currentStock ?? 0}</strong></button>
                   <button type="button" onClick={() => openProductKardex(productKardexModal.row, 'available')} className={productKardexModal.metric === 'available' ? 'active' : ''}><span>Disponible</span><strong>{productKardexModal.data.summary?.availableStock ?? 0}</strong></button>
                 </div>
 
                 {productKardexModal.metric === 'initial' ? (
                   <div className="inventory-kardex-equation">
-                    <strong>{productKardexModal.data.summary?.currentStock ?? 0}</strong>
-                    <span>stock actual</span><b>−</b>
+                    <strong>{productKardexModal.data.summary?.ownedStock ?? productKardexModal.data.summary?.currentStock ?? 0}</strong>
+                    <span>existencia total</span><b>−</b>
                     <strong>{productKardexModal.data.summary?.stockIn ?? 0}</strong>
                     <span>entradas</span><b>+</b>
                     <strong>{productKardexModal.data.summary?.stockOut ?? 0}</strong>
@@ -6893,7 +6897,7 @@ function InventoryDashboardSection({
                     <strong className="result">{productKardexModal.data.summary?.initialStock ?? 0}</strong>
                     <span>stock inicial</span>
                     <p>
-                      El inicio se reconstruye con todos los movimientos físicos registrados, por eso siempre concilia con el stock actual.
+                      El inicio se reconstruye con entradas y bajas patrimoniales. El material temporalmente con clientes no se pierde: se descuenta solo de «En almacén» hasta que vuelva.
                       {productKardexModal.data.item?.createdAt ? ` Producto registrado el ${formatDateTime(productKardexModal.data.item.createdAt)}` : ''}
                       {productKardexModal.data.item?.createdByName ? ` por ${productKardexModal.data.item.createdByName}.` : '.'}
                     </p>

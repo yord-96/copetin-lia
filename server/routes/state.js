@@ -1594,6 +1594,25 @@ const directRentalAffectsCurrentStock = (rental) => {
   // fecha operativa sea futura. La disponibilidad por fecha se calcula aparte.
   return true;
 };
+const directConfirmedProcessedQty = (rental, line, lineKey) => (
+  (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+    .filter((entry) => (
+      String(entry?.lineKey ?? '') === String(lineKey)
+      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
+    ))
+    .reduce((sum, entry) => {
+      const legacyPending = !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
+        && Boolean(rental?.operational?.clientPendingPickup?.active);
+      const confirmedMissingQty = legacyPending
+        ? 0
+        : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0)));
+      return sum
+        + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
+        + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
+        + confirmedMissingQty;
+    }, 0)
+);
+
 const directOutstandingReservedQty = (rental, line, index = 0) => {
   if (!line || line?.controlsStock === false) return 0;
   const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
@@ -1607,15 +1626,7 @@ const directOutstandingReservedQty = (rental, line, index = 0) => {
   if (reservedQty <= 0) return 0;
 
   const lineKey = directInventoryLineKey(line, index);
-  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
-    .filter((entry) => (
-      String(entry?.lineKey ?? '') === String(lineKey)
-      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
-    ))
-    .reduce((sum, entry) => sum
-      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
-
+  const processedQty = directConfirmedProcessedQty(rental, line, lineKey);
   return Math.max(0, reservedQty - processedQty);
 };
 const directActiveReservedStockForItem = (state, itemId) => {
@@ -7900,7 +7911,11 @@ const buildCurrentInventoryCommitments = (state = {}) => {
     (Array.isArray(rental.items) ? rental.items : []).forEach((line, index) => {
       const itemId = String(line?.itemId ?? '').trim();
       if (!itemId || line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
-      const quantity = Math.max(0, Number(line?.internalReservedQty ?? line?.quantity ?? 0));
+      // En una devolución parcial solo permanece comprometido lo que todavía
+      // no volvió. Ej.: salieron 80, regresaron 78 y 2 siguen con el cliente ->
+      // el compromiso actual es 2, no 80. Las coberturas de proveedor tampoco
+      // forman parte del stock propio comprometido.
+      const quantity = directOutstandingCommittedQty(rental, line, index);
       if (!quantity) return;
       const rows = detailsByItem.get(itemId) ?? [];
       const endKeyRaw = toInventoryDateKey(rental.dueDate ?? rental.pickupDate ?? startKey);
@@ -7962,7 +7977,18 @@ const buildCurrentInventoryCommitments = (state = {}) => {
     totalsByItem.set(itemId, peakCommitted);
   });
 
-  return { todayKey, totalsByItem, detailsByItem, contractById, rentals };
+  const outsideByItem = new Map();
+  const outsideDetailsByItem = new Map();
+  detailsByItem.forEach((rows, itemId) => {
+    const outsideRows = rows.filter((row) => ['salio', 'retorno_parcial'].includes(String(row?.status ?? '').trim().toLowerCase()));
+    const outsideQty = outsideRows.reduce((sum, row) => sum + Math.max(0, Math.abs(Number(row?.deltaUnits ?? 0))), 0);
+    if (outsideQty > 0) {
+      outsideByItem.set(itemId, outsideQty);
+      outsideDetailsByItem.set(itemId, outsideRows);
+    }
+  });
+
+  return { todayKey, totalsByItem, detailsByItem, outsideByItem, outsideDetailsByItem, contractById, rentals };
 };
 
 const enrichInventoryMovementReference = (movement = {}, commitmentContext = {}) => {
@@ -8613,21 +8639,9 @@ const finalizeLegacyContractIfResolved = (entry, userName = 'Sistema', now = new
 };
 
 
-const directOutstandingCommittedQty = (rental, line, index = 0) => {
-  if (!line) return 0;
-  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
-  if (quantity <= 0) return 0;
-  const lineKey = directInventoryLineKey(line, index);
-  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
-    .filter((entry) => (
-      String(entry?.lineKey ?? '') === String(lineKey)
-      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
-    ))
-    .reduce((sum, entry) => sum
-      + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-      + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0))), 0);
-  return Math.max(0, quantity - processedQty);
-};
+const directOutstandingCommittedQty = (rental, line, index = 0) => (
+  directOutstandingReservedQty(rental, line, index)
+);
 
 const directInventoryDeleteCommitments = (state, itemId) => {
   const requestedItemId = String(itemId ?? '').trim();
@@ -9338,10 +9352,16 @@ router.get('/__copetin_db/inventory/products-kardex', async (req, res, next) => 
     const commitmentContext = buildCurrentInventoryCommitments(state);
     const activeItems = (Array.isArray(state.items) ? state.items : []).filter((item) => item && !item.deletedAt);
     const rows = buildInventoryKardexRows(activeItems, state.inventoryMovements).map((row) => {
-      const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(String(row.itemId ?? '')) ?? 0));
+      const itemId = String(row.itemId ?? '');
+      const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(itemId) ?? 0));
+      const outsideStock = Math.max(0, Number(commitmentContext.outsideByItem.get(itemId) ?? 0));
+      const ownedStock = Math.max(0, Number(row.currentStock ?? 0));
       return {
         ...row,
-        availableStock: Math.max(0, Number(row.currentStock ?? 0) - committedStock),
+        ownedStock,
+        warehouseStock: Math.max(0, ownedStock - outsideStock),
+        outsideStock,
+        availableStock: Math.max(0, ownedStock - committedStock),
         committedStock,
       };
     });
@@ -9377,9 +9397,14 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
     const commitmentContext = buildCurrentInventoryCommitments(state);
     const [baseSummary] = buildInventoryKardexRows([item], allItemMovements);
     const committedStock = Math.max(0, Number(commitmentContext.totalsByItem.get(itemId) ?? 0));
+    const outsideStock = Math.max(0, Number(commitmentContext.outsideByItem.get(itemId) ?? 0));
+    const ownedStock = Math.max(0, Number(baseSummary?.currentStock ?? item.totalStock ?? 0));
     const summary = {
       ...baseSummary,
-      availableStock: Math.max(0, Number(baseSummary?.currentStock ?? item.totalStock ?? 0) - committedStock),
+      ownedStock,
+      warehouseStock: Math.max(0, ownedStock - outsideStock),
+      outsideStock,
+      availableStock: Math.max(0, ownedStock - committedStock),
       committedStock,
     };
 
