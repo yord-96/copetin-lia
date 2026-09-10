@@ -5514,8 +5514,17 @@ function AccountingSection({
     try {
       const definition = scope === 'petty' ? await getPettyReportDefinition(section) : getBigCashReportDefinition(section);
       const { headers, rows } = buildReportMatrix(definition);
-      const popup = window.open('', '_blank', 'noopener,noreferrer,width=1280,height=860');
+      // Esta ventana se abre vacía y luego se rellena desde la aplicación.
+      // En Chrome, usar `noopener` en window.open() puede hacer que la llamada
+      // devuelva null aunque la pestaña sí se haya abierto; eso provocaba el
+      // falso mensaje de "ventana bloqueada" y dejaba about:blank.
+      const popup = window.open('', '_blank', 'width=1280,height=860');
       if (!popup) throw new Error('El navegador bloqueó la ventana del reporte.');
+      try {
+        popup.opener = null;
+      } catch {
+        // Algunos navegadores no permiten modificar opener; no impide generar el reporte.
+      }
       const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
       const moneyIndexes = headers.map((label, index) => /monto|saldo|total|pagado|ingreso|egreso|costo|garant/i.test(label) ? index : -1).filter((index) => index >= 0);
       const tableRows = rows.map((values) => `<tr>${values.map((value, index) => `<td class="${moneyIndexes.includes(index) && typeof value === 'number' ? 'money' : ''}">${moneyIndexes.includes(index) && typeof value === 'number' ? esc(formatBs(value)) : esc(value)}</td>`).join('')}</tr>`).join('');
