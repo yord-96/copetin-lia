@@ -7902,8 +7902,12 @@ const buildCurrentInventoryCommitments = (state = {}) => {
       if (!itemId || line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
       const quantity = Math.max(0, Number(line?.internalReservedQty ?? line?.quantity ?? 0));
       if (!quantity) return;
-      totalsByItem.set(itemId, Number(totalsByItem.get(itemId) ?? 0) + quantity);
       const rows = detailsByItem.get(itemId) ?? [];
+      const endKeyRaw = toInventoryDateKey(rental.dueDate ?? rental.pickupDate ?? startKey);
+      const endKey = inventoryStatus === 'salio' && endKeyRaw && endKeyRaw < todayKey
+        ? todayKey
+        : (endKeyRaw || startKey || todayKey);
+      const eventDateKey = toInventoryDateKey(contract?.eventDate ?? rental.eventDate ?? startKey) || startKey || todayKey;
       rows.push({
         id: `current-reservation:${rental.id ?? orderCode}:${line?.lineKey ?? index}`,
         itemId,
@@ -7921,8 +7925,11 @@ const buildCurrentInventoryCommitments = (state = {}) => {
         contractCode,
         orderCode,
         deltaUnits: -quantity,
-        operationDate: (startKey || rental.rentalDate) ?? rental.createdAt ?? null,
-        deliveryDate: (startKey || rental.rentalDate) ?? null,
+        operationDate: eventDateKey,
+        eventDate: eventDateKey,
+        deliveryDate: startKey || rental.rentalDate || null,
+        periodStartKey: startKey || todayKey,
+        periodEndKey: endKey,
         status: inventoryStatus || status || 'pendiente',
         userName: rental?.operational?.inventoryConfirmedByName ?? rental.createdByName ?? rental.createdBy ?? 'Sistema',
         userRole: rental?.operational?.inventoryConfirmedByRole ?? rental.createdByRole ?? 'Inventario',
@@ -7930,6 +7937,29 @@ const buildCurrentInventoryCommitments = (state = {}) => {
       });
       detailsByItem.set(itemId, rows);
     });
+  });
+
+  // "Comprometido" representa el máximo de unidades propias ocupadas al mismo
+  // tiempo, no la suma de contratos de fechas distintas. Así el mismo stock
+  // puede reutilizarse después de una devolución sin aparecer agotado para siempre.
+  detailsByItem.forEach((rows, itemId) => {
+    const dateKeys = new Set([todayKey]);
+    rows.forEach((row) => {
+      if (row.periodStartKey) dateKeys.add(row.periodStartKey);
+      if (row.eventDate) dateKeys.add(row.eventDate);
+    });
+    let peakCommitted = 0;
+    dateKeys.forEach((dateKey) => {
+      const committed = rows.reduce((sum, row) => {
+        const start = row.periodStartKey || todayKey;
+        const end = row.periodEndKey || start;
+        return dateKey >= start && dateKey <= end
+          ? sum + Math.max(0, Math.abs(Number(row.deltaUnits ?? 0)))
+          : sum;
+      }, 0);
+      peakCommitted = Math.max(peakCommitted, committed);
+    });
+    totalsByItem.set(itemId, peakCommitted);
   });
 
   return { todayKey, totalsByItem, detailsByItem, contractById, rentals };
@@ -9356,19 +9386,27 @@ router.get('/__copetin_db/inventory/products/:itemId/kardex', async (req, res, n
     const currentCommitments = (commitmentContext.detailsByItem.get(itemId) ?? [])
       .slice()
       .sort((a, b) => new Date(a?.operationDate ?? 0) - new Date(b?.operationDate ?? 0));
-    let runningAvailable = Number(summary.currentStock ?? 0);
+    const currentStock = Number(summary.currentStock ?? 0);
     const currentAvailabilityRows = currentCommitments.map((movement) => {
       const quantity = Math.max(0, Math.abs(Number(movement.deltaUnits ?? 0)));
-      const beforeAvailableStock = runningAvailable;
-      const afterAvailableStock = Math.max(0, runningAvailable - quantity);
-      runningAvailable = afterAvailableStock;
+      const anchorDate = movement.eventDate || movement.periodStartKey || commitmentContext.todayKey;
+      const committedForPeriod = currentCommitments.reduce((sum, candidate) => {
+        const start = candidate.periodStartKey || commitmentContext.todayKey;
+        const end = candidate.periodEndKey || start;
+        return anchorDate >= start && anchorDate <= end
+          ? sum + Math.max(0, Math.abs(Number(candidate.deltaUnits ?? 0)))
+          : sum;
+      }, 0);
+      const committedWithoutThis = Math.max(0, committedForPeriod - quantity);
+      const beforeAvailableStock = Math.max(0, currentStock - committedWithoutThis);
+      const afterAvailableStock = Math.max(0, currentStock - committedForPeriod);
       return {
         ...movement,
-        beforeTotalStock: Number(summary.currentStock ?? 0),
-        afterTotalStock: Number(summary.currentStock ?? 0),
+        beforeTotalStock: currentStock,
+        afterTotalStock: currentStock,
         beforeAvailableStock,
         afterAvailableStock,
-        reservedStockAfter: Number(summary.currentStock ?? 0) - afterAvailableStock,
+        reservedStockAfter: committedForPeriod,
       };
     });
 

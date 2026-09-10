@@ -2996,7 +2996,8 @@ function InventoryDashboardSection({
 
   const inventoryRows = useMemo(() => {
     return items.filter((item) => item && !item.deletedAt).map((item) => {
-      const reserved = Number(reservedByItem[item.id] ?? 0);
+      const kardex = productKardexById[String(item.id ?? '')] ?? null;
+      const reserved = Number(kardex?.committedStock ?? reservedByItem[item.id] ?? 0);
       const maintenance = Number(maintenanceByItem[item.id] ?? 0);
       const totalStock = Number(item.totalStock ?? 0);
       const effectiveAvailable = Math.max(0, totalStock - reserved - maintenance);
@@ -3006,7 +3007,6 @@ function InventoryDashboardSection({
         && totalStock > 0;
       const lowThreshold = Math.max(3, Math.ceil(totalStock * 0.15));
       const lowAvailability = stockControlled && effectiveAvailable <= lowThreshold;
-      const kardex = productKardexById[String(item.id ?? '')] ?? null;
       return {
         id: item.id,
         name: item.name,
@@ -6901,16 +6901,23 @@ function InventoryDashboardSection({
                 ) : (
                   <div className="inventory-kardex-history-wrap">
                     <table className="inventory-kardex-history">
-                      <thead><tr><th>Fecha y hora</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
+                      <thead><tr><th>{productKardexModal.metric === 'available' ? 'Fecha evento' : 'Fecha y hora'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
                       <tbody>
                         {(productKardexModal.data.movements ?? []).map((movement) => {
                           const availabilityMetric = productKardexModal.metric === 'available';
                           const delta = Number(availabilityMetric ? movement.availableDelta : movement.physicalDelta);
                           const before = availabilityMetric ? movement.beforeAvailableStock : movement.beforeTotalStock;
                           const after = availabilityMetric ? movement.afterAvailableStock : movement.afterTotalStock;
+                          const availabilityDateKey = availabilityMetric ? getDateKey(movement.eventDate ?? movement.operationDate) : '';
+                          const availabilityDateLabel = availabilityDateKey
+                            ? (() => {
+                                const [year, month, day] = availabilityDateKey.split('-');
+                                return `${day}/${month}/${year}`;
+                              })()
+                            : '';
                           return (
                             <tr key={movement.id}>
-                              <td><strong>{formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
+                              <td><strong>{availabilityMetric ? (availabilityDateLabel || 'Sin fecha') : formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
                               <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.displayReason || movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && (movement.displayReason || movement.reason) ? <small>{movement.detail}</small> : null}</td>
                               <td>{movement.displayReference || movement.contractCode || movement.reference || '-'}</td>
                               <td><strong className={delta >= 0 ? 'positive' : 'negative'}>{delta > 0 ? `+${delta}` : delta}</strong></td>
