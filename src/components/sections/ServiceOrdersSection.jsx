@@ -7765,7 +7765,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           if ((id && (removedIds.has(id) || liveIds.has(id)))) return false;
           const lineKey = String(line?.lineKey ?? '').trim();
           const itemId = String(line?.itemId ?? '').trim();
-          return (lineKey && retainedLineKeys.has(lineKey)) || (itemId && retainedItemIds.has(itemId));
+          // Una cobertura ligada a una linea concreta no puede migrar a otra linea
+          // solo porque ambas usan el mismo producto. Si la linea original ya no
+          // existe, la cobertura fue retirada en la edicion y debe desaparecer.
+          if (lineKey) return retainedLineKeys.has(lineKey);
+          // Compatibilidad con coberturas legacy que nunca guardaron lineKey.
+          return Boolean(itemId && retainedItemIds.has(itemId));
         });
 
       return [...livePlan, ...preservedPlan];

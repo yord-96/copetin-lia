@@ -670,7 +670,7 @@ const normalizeSupplierFulfillmentPlan = (plan) => {
     .filter(Boolean);
 };
 
-const repriceSupplierFulfillmentPlanFromItems = (plan, items = []) => {
+export const repriceSupplierFulfillmentPlanFromItems = (plan, items = []) => {
   const normalizedPlan = normalizeSupplierFulfillmentPlan(plan);
   const normalizedItems = Array.isArray(items) ? items : [];
   const itemByLineKey = new Map();
@@ -691,9 +691,16 @@ const repriceSupplierFulfillmentPlanFromItems = (plan, items = []) => {
     const lineKey = String(coverage?.lineKey ?? '').trim();
     const itemId = String(coverage?.itemId ?? '').trim();
     const candidates = itemsByItemId.get(itemId) ?? [];
-    const linkedLine = (lineKey ? itemByLineKey.get(lineKey) : null)
-      ?? (candidates.length === 1 ? candidates[0] : null);
+    const linkedLine = lineKey
+      ? itemByLineKey.get(lineKey) ?? null
+      : (candidates.length === 1 ? candidates[0] : null);
 
+    // Si una cobertura moderna tenia lineKey y esa linea ya no existe, fue
+    // retirada/reemplazada durante la edicion. No debe revivir por coincidir
+    // solamente el itemId con una linea nueva del mismo producto.
+    if (!linkedLine && lineKey) return null;
+    // Las coberturas legacy sin lineKey se conservan si no podemos vincularlas
+    // de forma inequivoca, manteniendo el comportamiento historico existente.
     if (!linkedLine) return coverage;
 
     const baseSaleUnitPriceBs = Math.max(
@@ -729,7 +736,7 @@ const repriceSupplierFulfillmentPlanFromItems = (plan, items = []) => {
       totalSaleBs: Number((neededQty * saleUnitPriceBs).toFixed(2)),
       marginBs: Number((neededQty * (saleUnitPriceBs - supplierUnitCostBs)).toFixed(2)),
     };
-  });
+  }).filter(Boolean);
 };
 
 const getManualSupplierSaleTotalBs = (supplierFulfillmentPlan) =>
