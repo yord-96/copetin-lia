@@ -897,3 +897,119 @@ button.lincoln-commercial-metric-card.is-selected::after{
   .lincoln-commercial-formalization{grid-template-columns:2.4rem 1fr auto}
   .lincoln-commercial-formalization > em{display:none}
 }
+
+/* ================================================================
+   RESERVAS Y CONTRATOS · TABLA 2026 + RESPONSABLE + NOTAS INTERNAS
+   ================================================================ */
+.lincoln-commercial-table{
+  min-width:1420px;
+  table-layout:fixed;
+}
+.lincoln-commercial-table col.is-code{width:120px}
+.lincoln-commercial-table col.is-date{width:130px}
+.lincoln-commercial-table col.is-client{width:180px}
+.lincoln-commercial-table col.is-event{width:170px}
+.lincoln-commercial-table col.is-guests{width:80px}
+.lincoln-commercial-table col.is-responsible{width:150px}
+.lincoln-commercial-table col.is-note{width:140px}
+.lincoln-commercial-table col.is-status{width:125px}
+.lincoln-commercial-table col.is-money{width:105px}
+.lincoln-commercial-table col.is-actions{width:145px}
+.lincoln-commercial-table th{
+  padding:.84rem .8rem;
+  font-size:.74rem;
+  line-height:1.12;
+}
+.lincoln-commercial-table td{
+  padding:.9rem .8rem;
+  font-size:.86rem;
+  line-height:1.3;
+}
+.lincoln-commercial-table td strong{font-size:.86rem;line-height:1.28}
+.lincoln-commercial-table td small{font-size:.72rem;line-height:1.3}
+.lincoln-commercial-code{font-size:.84rem}
+.lincoln-commercial-status{font-size:.7rem}
+.lincoln-commercial-actions button{font-size:.7rem}
+.lincoln-commercial-responsible strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#2f4c46!important;
+}
+.lincoln-commercial-note-cell{padding-left:.55rem!important;padding-right:.55rem!important}
+.lincoln-commercial-note-button{
+  width:100%;
+  min-height:2.25rem;
+  display:flex;
+  align-items:center;
+  gap:.4rem;
+  border:1px dashed #dcc9c2;
+  border-radius:.58rem;
+  padding:.42rem .5rem;
+  background:#fffaf8;
+  color:#9a756c;
+  font:inherit;
+  font-size:.7rem;
+  font-weight:800;
+  cursor:pointer;
+  text-align:left;
+}
+.lincoln-commercial-note-button svg{flex:0 0 auto}
+.lincoln-commercial-note-button span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.lincoln-commercial-note-button:hover{border-style:solid;border-color:#ad6b68;background:#fff4f1;color:#7a121b}
+.lincoln-commercial-note-button.has-note{border-style:solid;border-color:#d6b48a;background:#fff8e9;color:#76511f}
+.lincoln-commercial-note-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:10120;
+  display:grid;
+  place-items:center;
+  padding:1rem;
+  background:rgba(31,23,22,.52);
+  backdrop-filter:blur(4px);
+}
+.lincoln-commercial-note-modal{
+  width:min(590px,calc(100vw - 2rem));
+  overflow:hidden;
+  border:1px solid #e3d4ce;
+  border-radius:1rem;
+  background:#fff;
+  box-shadow:0 28px 80px rgba(48,28,27,.25);
+}
+.lincoln-commercial-note-modal header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  padding:1rem 1.1rem;
+  border-bottom:1px solid #eee2dd;
+  background:linear-gradient(115deg,#fff,#fff7f3);
+}
+.lincoln-commercial-note-modal header small{color:#9a1b24;font-size:.62rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.lincoln-commercial-note-modal header h2{margin:.12rem 0 0;color:#2f2021;font-size:1.25rem}
+.lincoln-commercial-note-modal header p{margin:.2rem 0 0;color:#8c7670;font-size:.75rem}
+.lincoln-commercial-note-modal header>button{width:2.2rem;height:2.2rem;display:grid;place-items:center;border:1px solid #e4d7d1;border-radius:.6rem;background:#fff;color:#8a1d25;cursor:pointer}
+.lincoln-commercial-note-body{display:grid;gap:.55rem;padding:1rem 1.1rem}
+.lincoln-commercial-note-body label{color:#594844;font-size:.73rem;font-weight:900}
+.lincoln-commercial-note-body textarea{width:100%;min-height:9rem;resize:vertical;border:1px solid #ddcec8;border-radius:.7rem;padding:.78rem;background:#fff;color:#302725;font:inherit;font-size:.85rem;line-height:1.45;outline:none}
+.lincoln-commercial-note-body textarea:focus{border-color:#a94c54;box-shadow:0 0 0 3px rgba(154,27,36,.08)}
+.lincoln-commercial-note-meta{display:flex;justify-content:space-between;gap:1rem;color:#94817a;font-size:.66rem}
+.lincoln-commercial-note-error{padding:.62rem;border:1px solid #efc9c5;border-radius:.55rem;background:#fff2f0;color:#98322f;font-size:.72rem;font-weight:750}
+.lincoln-commercial-note-modal footer{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.8rem 1.1rem;border-top:1px solid #eee2dd;background:#fffaf8}
+.lincoln-commercial-note-modal footer>div{display:flex;gap:.5rem;margin-left:auto}
+.lincoln-commercial-note-modal footer button{min-height:2.25rem;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;border-radius:.58rem;padding:0 .8rem;font:inherit;font-size:.72rem;font-weight:900;cursor:pointer}
+.lincoln-commercial-note-modal footer button:disabled{opacity:.55;cursor:not-allowed}
+.lincoln-commercial-note-modal .is-secondary{border:1px solid #dfd2cc;background:#fff;color:#655651}
+.lincoln-commercial-note-modal .is-save{border:1px solid #7a121b;background:#7a121b;color:#fff}
+.lincoln-commercial-note-modal .is-delete{border:1px solid #efc8c5;background:#fff5f4;color:#a33a36}
+@media(max-width:680px){
+  .lincoln-commercial-note-backdrop{padding:.45rem}
+  .lincoln-commercial-note-modal{width:100%}
+  .lincoln-commercial-note-modal footer{align-items:stretch;flex-direction:column}
+  .lincoln-commercial-note-modal footer>div{width:100%;display:grid;grid-template-columns:1fr 1fr}
+}

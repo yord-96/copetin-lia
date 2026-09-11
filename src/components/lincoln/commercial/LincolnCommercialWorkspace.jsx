@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, FileCheck2, Hash, Search } from 'lucide-react';
+import { CalendarDays, FileCheck2, Hash, Pencil, Search, StickyNote, Trash2, X } from 'lucide-react';
 import { api } from '../../../services/api';
 
 const money = (value) => new Intl.NumberFormat('es-BO', {
@@ -25,6 +25,7 @@ export default function LincolnCommercialWorkspace({
   onOpenDocument,
   onOpenEconomic,
   onCancelReservation,
+  onSaveInternalNote,
 }) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -35,6 +36,10 @@ export default function LincolnCommercialWorkspace({
   const [error, setError] = useState('');
   const [openMenuKey, setOpenMenuKey] = useState('');
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [noteRow, setNoteRow] = useState(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState('');
   const menuRootRef = useRef(null);
 
   useEffect(() => {
@@ -120,6 +125,34 @@ export default function LincolnCommercialWorkspace({
     setOpenMenuKey(row.key);
   };
 
+  const openNote = (row) => {
+    setNoteRow(row);
+    setNoteDraft(String(row?.internalNote ?? ''));
+    setNoteError('');
+  };
+
+  const closeNote = () => {
+    if (noteSaving) return;
+    setNoteRow(null);
+    setNoteDraft('');
+    setNoteError('');
+  };
+
+  const persistNote = async (value) => {
+    if (!noteRow || !onSaveInternalNote) return;
+    setNoteSaving(true);
+    setNoteError('');
+    try {
+      await onSaveInternalNote(noteRow, value);
+      setNoteRow(null);
+      setNoteDraft('');
+    } catch (saveError) {
+      setNoteError(saveError?.message || 'No se pudo guardar la nota.');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
   const activeMenuRow = rows.find((row) => row.key === openMenuKey) ?? null;
   const activeReservationConfirmed = activeMenuRow?.kind === 'reservation'
     && !['lead', 'cancelled', 'converted'].includes(String(activeMenuRow.status ?? '').toLowerCase());
@@ -193,11 +226,11 @@ export default function LincolnCommercialWorkspace({
         {error ? <div className="lincoln-commercial-error">{error}</div> : null}
         <div className="lincoln-commercial-table-wrap">
           <table className="lincoln-commercial-table">
-            <colgroup><col className="is-code" /><col className="is-date" /><col className="is-client" /><col className="is-event" /><col className="is-guests" /><col className="is-status" /><col className="is-money" /><col className="is-money" /><col className="is-actions" /></colgroup>
-            <thead><tr><th>Código</th><th>Fecha evento</th><th>Cliente</th><th>Salón / tipo</th><th>Personas</th><th>Estado</th><th>Total</th><th>Saldo</th><th>Acciones</th></tr></thead>
+            <colgroup><col className="is-code" /><col className="is-date" /><col className="is-client" /><col className="is-event" /><col className="is-guests" /><col className="is-responsible" /><col className="is-note" /><col className="is-status" /><col className="is-money" /><col className="is-money" /><col className="is-actions" /></colgroup>
+            <thead><tr><th>Código</th><th>Fecha evento</th><th>Cliente</th><th>Salón / tipo</th><th>Personas</th><th>Responsable</th><th>Nota</th><th>Estado</th><th>Total</th><th>Saldo</th><th>Acciones</th></tr></thead>
             <tbody>
-              {loading && !rows.length ? <tr><td colSpan="9" className="is-empty">Cargando operación comercial...</td></tr> : null}
-              {!loading && !rows.length ? <tr><td colSpan="9" className="is-empty">No hay registros con estos filtros.</td></tr> : null}
+              {loading && !rows.length ? <tr><td colSpan="11" className="is-empty">Cargando operación comercial...</td></tr> : null}
+              {!loading && !rows.length ? <tr><td colSpan="11" className="is-empty">No hay registros con estos filtros.</td></tr> : null}
               {rows.map((row) => (
                 <tr key={row.key}>
                   <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => onOpenRecord(row)}>{row.code}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
@@ -205,6 +238,13 @@ export default function LincolnCommercialWorkspace({
                   <td><strong>{row.clientName || 'Sin cliente'}</strong><small>{row.clientPhone || ''}</small></td>
                   <td><strong>{row.roomName || 'Sin salón'}</strong><small>{row.eventType || 'Sin tipo'}</small></td>
                   <td>{row.guestCount || '—'}</td>
+                  <td className="lincoln-commercial-responsible"><strong>{row.responsibleName || 'Sin registrar'}</strong><small>{row.responsibleName ? 'Creó el registro' : 'Registro histórico'}</small></td>
+                  <td className="lincoln-commercial-note-cell">
+                    <button type="button" className={`lincoln-commercial-note-button ${row.internalNote ? 'has-note' : ''}`} onClick={() => openNote(row)} title={row.internalNote || 'Agregar nota interna'} aria-label={`${row.internalNote ? 'Editar' : 'Agregar'} nota de ${row.code}`}>
+                      <StickyNote size={16} strokeWidth={2} />
+                      {row.internalNote ? <span>{row.internalNote}</span> : <span>Agregar</span>}
+                    </button>
+                  </td>
                   <td><span className={`lincoln-commercial-status is-${row.kind} is-status-${String(row.status ?? '').toLowerCase()}`}>{row.statusLabel}</span></td>
                   <td><strong>{money(row.totalBs)}</strong></td>
                   <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
@@ -230,6 +270,28 @@ export default function LincolnCommercialWorkspace({
         </div>
         <footer className="lincoln-commercial-footer"><span>Mostrando <strong>{rows.length}</strong> registro(s)</span><span>Reservas y contratos de Centro de Eventos Lincoln</span></footer>
       </section>
+
+      {typeof document !== 'undefined' && noteRow ? createPortal(
+        <div className="lincoln-commercial-note-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeNote(); }}>
+          <section className="lincoln-commercial-note-modal" role="dialog" aria-modal="true" aria-labelledby="lincoln-note-title">
+            <header>
+              <div><small>Nota interna</small><h2 id="lincoln-note-title">{noteRow.code}</h2><p>{noteRow.clientName || 'Sin cliente'} · {dateLabel(noteRow.eventDate)}</p></div>
+              <button type="button" onClick={closeNote} disabled={noteSaving} aria-label="Cerrar"><X size={18} /></button>
+            </header>
+            <div className="lincoln-commercial-note-body">
+              <label htmlFor="lincoln-commercial-note">Nota para seguimiento comercial</label>
+              <textarea id="lincoln-commercial-note" rows="6" maxLength="1200" placeholder="Escribe una nota interna para esta reserva o contrato..." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} autoFocus />
+              <div className="lincoln-commercial-note-meta"><span>Solo para uso interno. No modifica el contrato ni el PDF.</span><b>{noteDraft.length}/1200</b></div>
+              {noteError ? <div className="lincoln-commercial-note-error">{noteError}</div> : null}
+            </div>
+            <footer>
+              {String(noteRow.internalNote ?? '').trim() ? <button type="button" className="is-delete" disabled={noteSaving} onClick={() => persistNote('')}><Trash2 size={15} /> Eliminar nota</button> : <span />}
+              <div><button type="button" className="is-secondary" onClick={closeNote} disabled={noteSaving}>Cancelar</button><button type="button" className="is-save" onClick={() => persistNote(noteDraft)} disabled={noteSaving || String(noteDraft).trim() === String(noteRow.internalNote ?? '').trim()}><Pencil size={15} /> {noteSaving ? 'Guardando...' : 'Guardar nota'}</button></div>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      ) : null}
 
       {typeof document !== 'undefined' && activeMenuRow ? createPortal(
         <div

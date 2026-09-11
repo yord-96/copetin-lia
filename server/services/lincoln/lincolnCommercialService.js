@@ -92,6 +92,9 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       statusLabel: reservationStatusLabel(reservation.status),
       reservationId: reservation.id,
       eventId: null,
+      responsibleId: reservation.createdById ?? null,
+      responsibleName: reservation.createdByName ?? '',
+      internalNote: reservation.internalCommercialNote ?? '',
       updatedAt: reservation.updatedAt ?? reservation.createdAt ?? '',
     }));
 
@@ -118,6 +121,9 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       statusLabel: contractStatusLabel(event.status),
       reservationId: event.reservationId ?? null,
       eventId: event.id,
+      responsibleId: event.createdById ?? null,
+      responsibleName: event.createdByName ?? '',
+      internalNote: event.internalCommercialNote ?? '',
       updatedAt: event.updatedAt ?? event.createdAt ?? '',
     };
   });
@@ -127,7 +133,7 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
   const rows = [...reservationRows, ...contractRows]
     .filter((row) => {
       if (q) {
-        const haystack = normalize(`${row.code} ${row.clientName} ${row.clientPhone} ${row.contractor2Name ?? ''} ${row.organizerName ?? ''} ${row.eventType} ${row.roomName} ${row.statusLabel}`);
+        const haystack = normalize(`${row.code} ${row.clientName} ${row.clientPhone} ${row.contractor2Name ?? ''} ${row.organizerName ?? ''} ${row.eventType} ${row.roomName} ${row.statusLabel} ${row.responsibleName ?? ''} ${row.internalNote ?? ''}`);
         if (!haystack.includes(q)) return false;
       }
       if (normalizedStatus !== 'all') {

@@ -1200,6 +1200,32 @@ function LinconWorkspaceSection({
     }
   };
 
+  const saveCommercialInternalNote = async (row, note) => {
+    if (!snapshot?.revision || !row?.id) return;
+    const collection = row.kind === 'reservation' ? 'reservations' : 'events';
+    const record = collection === 'reservations'
+      ? state.reservations.find((item) => item.id === row.id)
+      : state.events.find((item) => item.id === (row.eventId || row.id));
+    if (!record) throw new Error('No se encontró el registro de Lincoln para guardar la nota.');
+
+    setSaving(true);
+    try {
+      await api.lincoln.updateRecord({
+        collection,
+        id: record.id,
+        record: { internalCommercialNote: String(note ?? '').trim() },
+        revision: snapshot.revision,
+        actor,
+      });
+      await loadLincoln();
+    } catch (error) {
+      await handleLincolnMutationError(error, 'No se pudo guardar la nota interna.');
+      throw error;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const convertReservation = async (reservation, eventPayload) => {
     if (!snapshot?.revision) return;
     setSaving(true);
@@ -1502,6 +1528,7 @@ Escribe RESET ECONOMICO para continuar:`);
                 }
                 setEconomicEventId(row.eventId || row.id);
               }}
+              onSaveInternalNote={saveCommercialInternalNote}
               onCancelReservation={(row) => {
                 const record = state.reservations.find((item) => item.id === row.id);
                 if (record) void cancelReservation(record);

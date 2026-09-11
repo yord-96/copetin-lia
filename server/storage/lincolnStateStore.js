@@ -690,6 +690,7 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       accountPaymentBs: Number(reservation.accountPaymentBs ?? 0),
       guaranteeBs: Number(reservation.guaranteeBs ?? 0),
       notes: reservation.notes ?? '',
+      internalCommercialNote: reservation.internalCommercialNote ?? '',
       status: 'contract_pending',
       ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
       contractCode,
