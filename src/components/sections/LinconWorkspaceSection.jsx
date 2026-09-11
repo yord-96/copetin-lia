@@ -1200,24 +1200,83 @@ function LinconWorkspaceSection({
     }
   };
 
-  const saveCommercialInternalNote = async (row, note) => {
-    if (!snapshot?.revision || !row?.id) return;
+  const saveCommercialInternalNote = async (row, mutation = {}) => {
+    if (!snapshot?.revision || !row?.id) return null;
     const collection = row.kind === 'reservation' ? 'reservations' : 'events';
     const record = collection === 'reservations'
       ? state.reservations.find((item) => item.id === row.id)
       : state.events.find((item) => item.id === (row.eventId || row.id));
     if (!record) throw new Error('No se encontró el registro de Lincoln para guardar la nota.');
 
+    const now = new Date().toISOString();
+    const legacyText = String(record.internalCommercialNote ?? '').trim();
+    let notes = Array.isArray(record.internalCommercialNotes)
+      ? record.internalCommercialNotes.map((note) => ({ ...note }))
+      : [];
+    if (!notes.length && legacyText) {
+      notes = [{
+        id: `legacy-${record.id}`,
+        note: legacyText,
+        createdAt: record.updatedAt ?? record.createdAt ?? now,
+        createdById: record.createdById ?? null,
+        createdByName: record.createdByName ?? 'Registro histórico',
+      }];
+    }
+
+    const action = String(mutation?.action ?? 'create').trim().toLowerCase();
+    const noteId = String(mutation?.noteId ?? '').trim();
+    const noteText = String(mutation?.note ?? '').trim();
+    if (!['create', 'update', 'delete'].includes(action)) throw new Error('Acción de nota no permitida.');
+    if (action !== 'delete' && !noteText) throw new Error('La nota no puede estar vacía.');
+
+    if (action === 'create') {
+      notes.push({
+        id: globalThis.crypto?.randomUUID?.() ?? `lin-note-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        note: noteText,
+        createdAt: now,
+        createdById: actor.id ?? null,
+        createdByName: actor.name ?? 'Sistema',
+      });
+    } else {
+      const index = notes.findIndex((note) => String(note?.id ?? '') === noteId);
+      if (index < 0) throw new Error('La nota seleccionada ya no existe.');
+      if (action === 'update') {
+        notes[index] = {
+          ...notes[index],
+          note: noteText,
+          editedAt: now,
+          editedById: actor.id ?? null,
+          editedByName: actor.name ?? 'Sistema',
+        };
+      } else {
+        notes[index] = {
+          ...notes[index],
+          deletedAt: now,
+          deletedById: actor.id ?? null,
+          deletedByName: actor.name ?? 'Sistema',
+        };
+      }
+    }
+
+    const activeNotes = notes
+      .filter((note) => note && !note.deletedAt && String(note.note ?? '').trim())
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+    const latestText = String(activeNotes[0]?.note ?? '').trim();
+
     setSaving(true);
     try {
       await api.lincoln.updateRecord({
         collection,
         id: record.id,
-        record: { internalCommercialNote: String(note ?? '').trim() },
+        record: {
+          internalCommercialNotes: notes,
+          internalCommercialNote: latestText,
+        },
         revision: snapshot.revision,
         actor,
       });
       await loadLincoln();
+      return { internalNotes: activeNotes, internalNote: latestText };
     } catch (error) {
       await handleLincolnMutationError(error, 'No se pudo guardar la nota interna.');
       throw error;

@@ -691,6 +691,9 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       guaranteeBs: Number(reservation.guaranteeBs ?? 0),
       notes: reservation.notes ?? '',
       internalCommercialNote: reservation.internalCommercialNote ?? '',
+      internalCommercialNotes: Array.isArray(reservation.internalCommercialNotes)
+        ? reservation.internalCommercialNotes.map((note) => ({ ...note }))
+        : [],
       status: 'contract_pending',
       ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
       contractCode,

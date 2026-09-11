@@ -54,6 +54,38 @@ const parseSequence = (code) => {
   return match ? Number(match[1]) : 0;
 };
 
+const commercialNotesFor = (record = {}) => {
+  const stored = Array.isArray(record?.internalCommercialNotes)
+    ? record.internalCommercialNotes
+        .filter((note) => note && !note.deletedAt && asText(note.note))
+        .map((note, index) => ({
+          id: asText(note.id) || `note-${asText(record?.id) || 'legacy'}-${index + 1}`,
+          note: asText(note.note),
+          createdAt: note.createdAt ?? record.updatedAt ?? record.createdAt ?? '',
+          createdById: note.createdById ?? null,
+          createdByName: note.createdByName ?? '',
+          editedAt: note.editedAt ?? null,
+          editedById: note.editedById ?? null,
+          editedByName: note.editedByName ?? '',
+        }))
+    : [];
+  if (stored.length) {
+    return stored.sort((a, b) => asText(b.createdAt).localeCompare(asText(a.createdAt)));
+  }
+  const legacy = asText(record?.internalCommercialNote);
+  if (!legacy) return [];
+  return [{
+    id: `legacy-${asText(record?.id) || 'record'}`,
+    note: legacy,
+    createdAt: record.updatedAt ?? record.createdAt ?? '',
+    createdById: record.createdById ?? null,
+    createdByName: record.createdByName ?? 'Registro histórico',
+    editedAt: null,
+    editedById: null,
+    editedByName: '',
+  }];
+};
+
 export const getLincolnCommercialOverview = async ({ query = '', status = 'all', from = '', to = '' } = {}) => {
   const snapshot = await getLincolnStateSnapshot();
   const state = snapshot.state;
@@ -94,7 +126,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       eventId: null,
       responsibleId: reservation.createdById ?? null,
       responsibleName: reservation.createdByName ?? '',
-      internalNote: reservation.internalCommercialNote ?? '',
+      internalNotes: commercialNotesFor(reservation),
+      internalNote: commercialNotesFor(reservation)[0]?.note ?? '',
       updatedAt: reservation.updatedAt ?? reservation.createdAt ?? '',
     }));
 
@@ -123,7 +156,8 @@ export const getLincolnCommercialOverview = async ({ query = '', status = 'all',
       eventId: event.id,
       responsibleId: event.createdById ?? null,
       responsibleName: event.createdByName ?? '',
-      internalNote: event.internalCommercialNote ?? '',
+      internalNotes: commercialNotesFor(event),
+      internalNote: commercialNotesFor(event)[0]?.note ?? '',
       updatedAt: event.updatedAt ?? event.createdAt ?? '',
     };
   });

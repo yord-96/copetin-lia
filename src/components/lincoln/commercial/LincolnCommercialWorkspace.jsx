@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, FileCheck2, Hash, Pencil, Search, StickyNote, Trash2, X } from 'lucide-react';
+import { CalendarDays, FileCheck2, Hash, MessageCircle, MessageSquarePlus, Pencil, Search, Trash2, X } from 'lucide-react';
 import { api } from '../../../services/api';
 
 const money = (value) => new Intl.NumberFormat('es-BO', {
@@ -12,6 +12,15 @@ const dateLabel = (value) => {
   const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return String(value);
   return parsed.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const dateTimeLabel = (value) => {
+  if (!value) return 'Sin fecha';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString('es-BO', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 };
 
 export default function LincolnCommercialWorkspace({
@@ -38,6 +47,7 @@ export default function LincolnCommercialWorkspace({
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [noteRow, setNoteRow] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
+  const [noteEditingId, setNoteEditingId] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
   const menuRootRef = useRef(null);
@@ -126,8 +136,9 @@ export default function LincolnCommercialWorkspace({
   };
 
   const openNote = (row) => {
-    setNoteRow(row);
-    setNoteDraft(String(row?.internalNote ?? ''));
+    setNoteRow({ ...row, internalNotes: Array.isArray(row?.internalNotes) ? row.internalNotes : [] });
+    setNoteDraft('');
+    setNoteEditingId('');
     setNoteError('');
   };
 
@@ -135,22 +146,60 @@ export default function LincolnCommercialWorkspace({
     if (noteSaving) return;
     setNoteRow(null);
     setNoteDraft('');
+    setNoteEditingId('');
     setNoteError('');
   };
 
-  const persistNote = async (value) => {
+  const startNoteEdit = (note) => {
+    setNoteEditingId(String(note?.id ?? ''));
+    setNoteDraft(String(note?.note ?? ''));
+    setNoteError('');
+  };
+
+  const cancelNoteEdit = () => {
+    setNoteEditingId('');
+    setNoteDraft('');
+    setNoteError('');
+  };
+
+  const persistNote = async (action, noteId = '') => {
     if (!noteRow || !onSaveInternalNote) return;
+    const value = String(noteDraft ?? '').trim();
+    if (action !== 'delete' && !value) {
+      setNoteError('Escribe una nota antes de guardarla.');
+      return;
+    }
     setNoteSaving(true);
     setNoteError('');
     try {
-      await onSaveInternalNote(noteRow, value);
-      setNoteRow(null);
+      const result = await onSaveInternalNote(noteRow, { action, noteId, note: value });
+      const internalNotes = Array.isArray(result?.internalNotes) ? result.internalNotes : [];
+      setNoteRow((current) => current ? {
+        ...current,
+        internalNotes,
+        internalNote: result?.internalNote ?? internalNotes[0]?.note ?? '',
+      } : current);
+      setData((current) => ({
+        ...current,
+        rows: (current.rows ?? []).map((row) => row.key === noteRow.key ? {
+          ...row,
+          internalNotes,
+          internalNote: result?.internalNote ?? internalNotes[0]?.note ?? '',
+        } : row),
+      }));
       setNoteDraft('');
+      setNoteEditingId('');
     } catch (saveError) {
       setNoteError(saveError?.message || 'No se pudo guardar la nota.');
     } finally {
       setNoteSaving(false);
     }
+  };
+
+  const deleteNote = async (note) => {
+    if (!note?.id) return;
+    if (!window.confirm('¿Eliminar esta nota interna?')) return;
+    await persistNote('delete', note.id);
   };
 
   const activeMenuRow = rows.find((row) => row.key === openMenuKey) ?? null;
@@ -240,10 +289,17 @@ export default function LincolnCommercialWorkspace({
                   <td>{row.guestCount || '—'}</td>
                   <td className="lincoln-commercial-responsible"><strong>{row.responsibleName || 'Sin registrar'}</strong><small>{row.responsibleName ? 'Creó el registro' : 'Registro histórico'}</small></td>
                   <td className="lincoln-commercial-note-cell">
-                    <button type="button" className={`lincoln-commercial-note-button ${row.internalNote ? 'has-note' : ''}`} onClick={() => openNote(row)} title={row.internalNote || 'Agregar nota interna'} aria-label={`${row.internalNote ? 'Editar' : 'Agregar'} nota de ${row.code}`}>
-                      <StickyNote size={16} strokeWidth={2} />
-                      {row.internalNote ? <span>{row.internalNote}</span> : <span>Agregar</span>}
-                    </button>
+                    <div className="lincoln-commercial-note-actions">
+                      {Array.isArray(row.internalNotes) && row.internalNotes.length ? (
+                        <button type="button" className="lincoln-commercial-note-count" onClick={() => openNote(row)} title="Ver notas internas" aria-label={`Ver ${row.internalNotes.length} nota(s) de ${row.code}`}>
+                          <MessageCircle size={15} aria-hidden="true" />
+                          <span>{row.internalNotes.length}</span>
+                        </button>
+                      ) : null}
+                      <button type="button" className="lincoln-commercial-note-add" onClick={() => openNote(row)} title="Agregar nueva nota" aria-label={`Agregar nueva nota a ${row.code}`}>
+                        <MessageSquarePlus size={15} aria-hidden="true" />
+                      </button>
+                    </div>
                   </td>
                   <td><span className={`lincoln-commercial-status is-${row.kind} is-status-${String(row.status ?? '').toLowerCase()}`}>{row.statusLabel}</span></td>
                   <td><strong>{money(row.totalBs)}</strong></td>
@@ -275,19 +331,59 @@ export default function LincolnCommercialWorkspace({
         <div className="lincoln-commercial-note-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeNote(); }}>
           <section className="lincoln-commercial-note-modal" role="dialog" aria-modal="true" aria-labelledby="lincoln-note-title">
             <header>
-              <div><small>Nota interna</small><h2 id="lincoln-note-title">{noteRow.code}</h2><p>{noteRow.clientName || 'Sin cliente'} · {dateLabel(noteRow.eventDate)}</p></div>
+              <div>
+                <h2 id="lincoln-note-title">Notas internas</h2>
+                <p>{noteRow.kind === 'reservation' ? 'Reserva' : 'Contrato'} {noteRow.code} | {noteRow.clientName || 'Cliente sin registrar'} · {(noteRow.internalNotes ?? []).length} {(noteRow.internalNotes ?? []).length === 1 ? 'nota' : 'notas'}</p>
+              </div>
               <button type="button" onClick={closeNote} disabled={noteSaving} aria-label="Cerrar"><X size={18} /></button>
             </header>
+
             <div className="lincoln-commercial-note-body">
-              <label htmlFor="lincoln-commercial-note">Nota para seguimiento comercial</label>
-              <textarea id="lincoln-commercial-note" rows="6" maxLength="1200" placeholder="Escribe una nota interna para esta reserva o contrato..." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} autoFocus />
-              <div className="lincoln-commercial-note-meta"><span>Solo para uso interno. No modifica el contrato ni el PDF.</span><b>{noteDraft.length}/1200</b></div>
+              <section className="lincoln-commercial-note-history">
+                <div className="lincoln-commercial-note-history-head">
+                  <strong>Historial de notas</strong>
+                  <span>{(noteRow.internalNotes ?? []).length ? 'Las notas nuevas no reemplazan las anteriores' : 'Todavía no hay notas'}</span>
+                </div>
+
+                {(noteRow.internalNotes ?? []).length ? (
+                  <div className="lincoln-commercial-note-list">
+                    {(noteRow.internalNotes ?? []).map((note, index) => (
+                      <article key={note.id} className={`lincoln-commercial-note-card ${noteEditingId === note.id ? 'is-editing' : ''}`}>
+                        <div className="lincoln-commercial-note-card-head">
+                          <div>
+                            <strong>{index === 0 ? 'Más reciente · ' : ''}{note.createdByName || 'Sistema'}</strong>
+                            <span>{dateTimeLabel(note.createdAt)}{note.editedAt ? ` · Editada ${dateTimeLabel(note.editedAt)}` : ''}</span>
+                          </div>
+                          <div>
+                            <button type="button" className="is-edit" onClick={() => startNoteEdit(note)} disabled={noteSaving} title="Editar esta nota"><Pencil size={13} /> Editar</button>
+                            <button type="button" className="is-delete" onClick={() => deleteNote(note)} disabled={noteSaving} title="Eliminar esta nota"><Trash2 size={13} /> Eliminar</button>
+                          </div>
+                        </div>
+                        <p>{note.note}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="lincoln-commercial-note-empty">Este {noteRow.kind === 'reservation' ? 'registro' : 'contrato'} todavía no tiene notas internas.</div>
+                )}
+              </section>
+
+              <section className="lincoln-commercial-note-editor">
+                <div className="lincoln-commercial-note-editor-head">
+                  <strong>{noteEditingId ? 'Editar nota seleccionada' : '+ Nueva nota'}</strong>
+                  {noteEditingId ? <button type="button" onClick={cancelNoteEdit} disabled={noteSaving}>Cancelar edición</button> : null}
+                </div>
+                <textarea rows="4" maxLength="2000" placeholder={noteEditingId ? 'Modifica únicamente esta nota...' : 'Escribe una nueva nota. Las notas anteriores se conservarán...'} value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} autoFocus disabled={noteSaving} />
+                <div className="lincoln-commercial-note-editor-foot">
+                  <small>{noteDraft.length}/2000</small>
+                  <button type="button" className="is-save" onClick={() => persistNote(noteEditingId ? 'update' : 'create', noteEditingId)} disabled={noteSaving || !String(noteDraft).trim()}>{noteSaving ? 'Guardando...' : noteEditingId ? 'Guardar cambios' : 'Agregar nota'}</button>
+                </div>
+              </section>
+
               {noteError ? <div className="lincoln-commercial-note-error">{noteError}</div> : null}
             </div>
-            <footer>
-              {String(noteRow.internalNote ?? '').trim() ? <button type="button" className="is-delete" disabled={noteSaving} onClick={() => persistNote('')}><Trash2 size={15} /> Eliminar nota</button> : <span />}
-              <div><button type="button" className="is-secondary" onClick={closeNote} disabled={noteSaving}>Cancelar</button><button type="button" className="is-save" onClick={() => persistNote(noteDraft)} disabled={noteSaving || String(noteDraft).trim() === String(noteRow.internalNote ?? '').trim()}><Pencil size={15} /> {noteSaving ? 'Guardando...' : 'Guardar nota'}</button></div>
-            </footer>
+
+            <footer><button type="button" className="is-secondary" onClick={closeNote} disabled={noteSaving}>Cerrar</button></footer>
           </section>
         </div>,
         document.body,
