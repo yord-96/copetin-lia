@@ -1032,3 +1032,95 @@ button.lincoln-commercial-metric-card.is-selected::after{
   .lincoln-commercial-note-card-head>div:last-child{display:grid;grid-template-columns:1fr 1fr}
   .lincoln-commercial-note-card-head button{width:100%}
 }
+
+/* ================================================================
+   RESERVAS Y CONTRATOS · AJUSTE DE TABLA 2026-09-11
+   - Sin bloque redundante "Siguiente etapa"
+   - Código compacto numérico
+   - Columnas centradas y cifras en una sola línea
+   ================================================================ */
+.lincoln-commercial-table{
+  min-width:1420px;
+  table-layout:fixed;
+}
+.lincoln-commercial-table col.is-code{width:90px}
+.lincoln-commercial-table col.is-date{width:125px}
+.lincoln-commercial-table col.is-client{width:175px}
+.lincoln-commercial-table col.is-event{width:185px}
+.lincoln-commercial-table col.is-guests{width:78px}
+.lincoln-commercial-table col.is-responsible{width:160px}
+.lincoln-commercial-table col.is-note{width:92px}
+.lincoln-commercial-table col.is-status{width:132px}
+.lincoln-commercial-table col.is-money{width:120px}
+.lincoln-commercial-table col.is-actions{width:150px}
+
+.lincoln-commercial-table th,
+.lincoln-commercial-table td{
+  text-align:center;
+}
+
+.lincoln-commercial-table td{
+  vertical-align:middle;
+}
+
+.lincoln-commercial-table td > strong,
+.lincoln-commercial-table td > small{
+  margin-left:auto;
+  margin-right:auto;
+}
+
+.lincoln-commercial-table td small{
+  margin-top:.2rem;
+}
+
+.lincoln-commercial-code-cell,
+.lincoln-commercial-responsible,
+.lincoln-commercial-note-cell,
+.lincoln-commercial-status-cell,
+.lincoln-commercial-money,
+.lincoln-commercial-actions-cell,
+.lincoln-commercial-guests{
+  text-align:center!important;
+}
+
+.lincoln-commercial-code{
+  min-width:3.6rem;
+  white-space:nowrap;
+  line-height:1;
+  text-align:center;
+}
+
+.lincoln-commercial-money,
+.lincoln-commercial-money strong,
+.lincoln-commercial-guests{
+  white-space:nowrap;
+}
+
+.lincoln-commercial-responsible strong{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:center;
+}
+
+.lincoln-commercial-responsible small{
+  white-space:nowrap;
+  text-align:center;
+}
+
+.lincoln-commercial-status-cell .lincoln-commercial-status{
+  justify-content:center;
+  max-width:100%;
+}
+
+.lincoln-commercial-note-actions,
+.lincoln-commercial-actions{
+  justify-content:center;
+}
+
+/* El resumen superior ya contiene reservas, numeración y contratos;
+   los filtros continúan inmediatamente debajo sin una franja extra. */
+.lincoln-commercial-metrics + .lincoln-commercial-filters{
+  border-top:1px solid #f0e7e2;
+}

@@ -14,6 +14,12 @@ const dateLabel = (value) => {
   return parsed.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
+const compactCommercialCode = (value) => {
+  const text = String(value ?? '').trim();
+  const trailing = text.match(/(\d+)$/);
+  return trailing?.[1] || text.replace(/\D+/g, '') || '—';
+};
+
 const dateTimeLabel = (value) => {
   if (!value) return 'Sin fecha';
   const parsed = new Date(value);
@@ -252,13 +258,6 @@ export default function LincolnCommercialWorkspace({
           </button>
         </div>
 
-        <button type="button" className={`lincoln-commercial-formalization ${status === 'formalization' ? 'is-active' : ''}`} onClick={() => setStatus('formalization')}>
-          <span><FileCheck2 size={20} aria-hidden="true" /></span>
-          <div><small>Siguiente etapa</small><strong>Eventos listos para pasar a contrato</strong><p>Revisa los datos, congela el paquete y genera el PDF contractual.</p></div>
-          <b>{summary.readyToContract ?? 0}</b>
-          <em>Ver por formalizar</em>
-        </button>
-
         <div className="lincoln-commercial-filters">
           <label className="lincoln-commercial-search"><Search size={17} aria-hidden="true" /><input type="search" placeholder="Buscar código, cliente, evento o salón..." value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <label><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
@@ -282,11 +281,11 @@ export default function LincolnCommercialWorkspace({
               {!loading && !rows.length ? <tr><td colSpan="11" className="is-empty">No hay registros con estos filtros.</td></tr> : null}
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <td><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => onOpenRecord(row)}>{row.code}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
+                  <td className="lincoln-commercial-code-cell"><button type="button" className={`lincoln-commercial-code is-${row.kind}`} onClick={() => onOpenRecord(row)} title={row.code}>{compactCommercialCode(row.code)}</button><small>{row.kind === 'reservation' ? 'Reserva' : 'Contrato'}</small></td>
                   <td><strong>{dateLabel(row.eventDate)}</strong><small>{row.startTime || 'Hora pendiente'}</small></td>
                   <td><strong>{row.clientName || 'Sin cliente'}</strong><small>{row.clientPhone || ''}</small></td>
                   <td><strong>{row.roomName || 'Sin salón'}</strong><small>{row.eventType || 'Sin tipo'}</small></td>
-                  <td>{row.guestCount || '—'}</td>
+                  <td className="lincoln-commercial-guests">{row.guestCount || '—'}</td>
                   <td className="lincoln-commercial-responsible"><strong>{row.responsibleName || 'Sin registrar'}</strong><small>{row.responsibleName ? 'Creó el registro' : 'Registro histórico'}</small></td>
                   <td className="lincoln-commercial-note-cell">
                     <div className="lincoln-commercial-note-actions">
@@ -301,10 +300,10 @@ export default function LincolnCommercialWorkspace({
                       </button>
                     </div>
                   </td>
-                  <td><span className={`lincoln-commercial-status is-${row.kind} is-status-${String(row.status ?? '').toLowerCase()}`}>{row.statusLabel}</span></td>
-                  <td><strong>{money(row.totalBs)}</strong></td>
-                  <td>{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
-                  <td>
+                  <td className="lincoln-commercial-status-cell"><span className={`lincoln-commercial-status is-${row.kind} is-status-${String(row.status ?? '').toLowerCase()}`}>{row.statusLabel}</span></td>
+                  <td className="lincoln-commercial-money"><strong>{money(row.totalBs)}</strong></td>
+                  <td className="lincoln-commercial-money">{row.kind === 'contract' ? <strong>{money(row.balanceBs)}</strong> : <span className="is-muted">—</span>}</td>
+                  <td className="lincoln-commercial-actions-cell">
                     <div className="lincoln-commercial-actions">
                       <button type="button" className={`lincoln-commercial-open ${row.readyToContract ? 'is-formalize' : ''}`} onClick={() => row.readyToContract ? onConvertReservation(row) : onOpenRecord(row)}>{row.readyToContract ? 'Pasar a contrato' : 'Abrir'}</button>
                       <button
