@@ -7502,6 +7502,17 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   }
   .rc-logo { min-width: 0; overflow: hidden; }
   .rc-logo img { display: block; width: 67mm; max-width: 100%; height: auto; }
+  .rc-contact-phones {
+    width: 67mm;
+    max-width: 100%;
+    margin-top: 1mm;
+    color: #725020;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-align: center;
+    white-space: nowrap;
+  }
   .rc-code {
     display: grid;
     grid-template-columns: 24mm repeat(3, minmax(0, 1fr));
@@ -9256,7 +9267,10 @@ export const buildContractDocumentHtml = ({
   <body>
     <main class="rc-sheet ${densityClass} ${multipageClass}">
       <header class="rc-top">
-        <div class="rc-logo"><img src="/imagenes/logo_el_copetin_redisenado.png" alt="El Copetin" /></div>
+        <div class="rc-logo">
+          <img src="/imagenes/logo_el_copetin_redisenado.png" alt="El Copetin" />
+          <p class="rc-contact-phones">Contactos: 78333334 - 67402818</p>
+        </div>
         <div class="rc-code">
           <div class="rc-number"><strong>${escapeHtml(mainCode)}</strong></div>
           <div class="rc-code-item rc-date"><span><small>Fecha de creacion</small><b>${escapeHtml(issuedAt)}</b></span></div>

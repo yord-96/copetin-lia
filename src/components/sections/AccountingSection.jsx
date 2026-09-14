@@ -6709,9 +6709,9 @@ function AccountingSection({
             {finalizedCollectionsError && receivablesView === 'finalized' ? (
               <p className="status error">{finalizedCollectionsError}</p>
             ) : null}
-            <div className="bigcash-table-wrap bigcash-command-table-wrap">
+            <div className="bigcash-table-wrap bigcash-command-table-wrap bigcash-receivables-scroll" tabIndex={0} role="region" aria-label="Contratos y cobros">
               <table className={`accounting-table bigcash-table bigcash-command-table bigcash-receivables-table ${receivablesView === 'pending' ? 'is-pending' : 'is-finalized'}`}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 6, background: '#fff', boxShadow: '0 1px 0 rgba(15,23,42,.08)' }}>
+                <thead>
                   {receivablesView === 'pending' ? (
                     <tr>
                       <th>Contrato</th>
@@ -6725,7 +6725,7 @@ function AccountingSection({
                       <th>Daños / faltantes</th>
                       <th>Ítems por devolver</th>
                       <th>Total a cobrar</th>
-                      <th />
+                      <th>Acciones</th>
                     </tr>
                   ) : (
                     <tr>
