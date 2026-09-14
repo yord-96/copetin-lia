@@ -244,9 +244,9 @@ export const useAppController = () => {
     try {
       if (calendarFirst) {
         const calendarOverview = await api.sync.getMobileCalendarOverview();
-        setContracts(Array.isArray(calendarOverview?.contracts) ? calendarOverview.contracts : []);
-        setRentals(Array.isArray(calendarOverview?.rentals) ? calendarOverview.rentals : []);
-        setDeliveries(Array.isArray(calendarOverview?.deliveries) ? calendarOverview.deliveries : []);
+        setContracts((current) => mergeProgressiveRows(current, calendarOverview?.contracts));
+        setRentals((current) => mergeProgressiveRows(current, calendarOverview?.rentals));
+        setDeliveries((current) => mergeProgressiveRows(current, calendarOverview?.deliveries));
         setCalendarEvents(Array.isArray(calendarOverview?.calendarEvents) ? calendarOverview.calendarEvents : []);
         calendarOverviewLoadedRef.current = true;
 
@@ -407,6 +407,9 @@ export const useAppController = () => {
 
   const prepareTabData = useCallback(async (targetTab) => {
     const requestedTab = String(targetTab);
+    // Otros modulos comparten colecciones parciales. Al volver a Ordenes,
+    // confirmar su listado completo (incluidos anulados y ocultos).
+    if (requestedTab !== 'alquiler') ordersOverviewLoadedRef.current = false;
     if (requestedTab === 'items') {
       await prepareClientsOverview();
       return;
@@ -560,9 +563,9 @@ export const useAppController = () => {
       group = 'calendar-overview';
       loader = async () => {
         const overview = await api.sync.getMobileCalendarOverview();
-        setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
-        setRentals(Array.isArray(overview?.rentals) ? overview.rentals : []);
-        setDeliveries(Array.isArray(overview?.deliveries) ? overview.deliveries : []);
+        setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
+        setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
+        setDeliveries((current) => mergeProgressiveRows(current, overview?.deliveries));
         setCalendarEvents(Array.isArray(overview?.calendarEvents) ? overview.calendarEvents : []);
         calendarOverviewLoadedRef.current = true;
         setLoading(false);
