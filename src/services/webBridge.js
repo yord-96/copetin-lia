@@ -16937,7 +16937,13 @@ const createWebBridge = () => ({
         .slice()
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     },
-    create: async (payload) => {
+    create: async (
+      payload,
+      {
+        registerInitialCash = true,
+        registerPrepaidUsage = true,
+      } = {},
+    ) => {
       const customerName = String(payload?.customerName ?? '').trim();
       const customerPhone = String(payload?.customerPhone ?? '').trim();
       const dueDate = String(payload?.dueDate ?? '').trim();
@@ -17319,12 +17325,14 @@ const createWebBridge = () => ({
         let prepaidClient = null;
         if (prepaidAppliedBs > 0) {
           prepaidClient = state.clients.find((entry) => entry.id === prepaidClientId && !entry.deletedAt);
-          if (!prepaidClient || !prepaidClient.prepaidEnabled) {
-            throw new Error('El cliente no tiene una cuenta prepago activa.');
-          }
-          const availablePrepaidBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
-          if (prepaidAppliedBs > availablePrepaidBs) {
-            throw new Error(`Saldo prepago insuficiente. Disponible: Bs ${availablePrepaidBs.toFixed(2)}.`);
+          if (registerPrepaidUsage) {
+            if (!prepaidClient || !prepaidClient.prepaidEnabled) {
+              throw new Error('El cliente no tiene una cuenta prepago activa.');
+            }
+            const availablePrepaidBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
+            if (prepaidAppliedBs > availablePrepaidBs) {
+              throw new Error(`Saldo prepago insuficiente. Disponible: Bs ${availablePrepaidBs.toFixed(2)}.`);
+            }
           }
           prepaidAppliedBs = Math.min(prepaidAppliedBs, totalBs);
         }
@@ -17467,7 +17475,7 @@ const createWebBridge = () => ({
         };
 
         state.rentals.push(createdRental);
-        if (prepaidClient && prepaidAppliedBs > 0) {
+        if (registerPrepaidUsage && prepaidClient && prepaidAppliedBs > 0) {
           prepaidClient.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
           prepaidClient.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidTotalUsedBs ?? 0));
           prepaidClient.prepaidMovements = normalizePrepaidMovements(prepaidClient.prepaidMovements, prepaidClient.prepaidBalanceBs);
@@ -17493,7 +17501,7 @@ const createWebBridge = () => ({
         if (!historicalReconstruction && createdRental.logisticsMode !== 'recojo') {
           createDeliveryFromRental(state, createdRental);
         }
-        addRentalCashMovements(state, createdRental);
+        if (registerInitialCash) addRentalCashMovements(state, createdRental);
         return state;
       });
 

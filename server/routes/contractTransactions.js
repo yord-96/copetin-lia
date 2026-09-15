@@ -70,7 +70,7 @@ const normalizeApprovalServices = (services) => (Array.isArray(services) ? servi
   serviceDayLabel: service?.serviceDayLabel ?? service?.dayLabel ?? '',
 }));
 
-router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, async (req, res, next) => {
+router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contracts/:id/approve'], requireInternalKey, async (req, res, next) => {
   const startedAt = Date.now();
   const timings = {};
   let lastMarkAt = startedAt;
@@ -85,8 +85,9 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
     return totalMs;
   };
   try {
+    const existingId = String(req.params.id ?? '').trim();
     const contractPayload = req.body?.contract;
-    if (!contractPayload || typeof contractPayload !== 'object' || Array.isArray(contractPayload)) {
+    if (!existingId && (!contractPayload || typeof contractPayload !== 'object' || Array.isArray(contractPayload))) {
       res.status(400).json({ error: 'Debes enviar el contrato completo.' });
       return;
     }
@@ -94,7 +95,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       res.status(409).json({ error: 'No se puede aprobar un contrato resumido.' });
       return;
     }
-    if (!Array.isArray(contractPayload.items) || contractPayload.items.length === 0) {
+    if (!existingId && !contractPayload.items?.length && !contractPayload.services?.length) {
       res.status(400).json({ error: 'El contrato debe incluir sus items completos.' });
       return;
     }
@@ -111,7 +112,22 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       mark('beginBatch');
 
       try {
-      const createdContract = await bridge.contracts.create({
+      const existingContract = existingId ? (state.contracts ?? []).find((entry) => entry.id === existingId) : null;
+      if (existingId && (!existingContract || existingContract.deletedAt || ['anulado', 'rechazado'].includes(existingContract.status))) {
+        throw new Error('El contrato no existe o no admite aprobacion.');
+      }
+      const existingRental = existingContract && (state.rentals ?? []).find((entry) => (
+        !entry.deletedAt && entry.status !== 'cancelled'
+        && (entry.contractId === existingId || entry.id === existingContract.rentalId)
+      ));
+      if (existingContract?.status === 'aprobado' && existingRental) {
+        responseBundle = { contract: existingContract, rental: existingRental, changes: {
+          contracts: [existingContract], rentals: [existingRental],
+        } };
+        return await bridge.__storage.commitBatch();
+      }
+      const repairingApproval = existingContract?.status === 'aprobado';
+      const createdContract = existingContract ?? await bridge.contracts.create({
         ...trace,
         ...contractPayload,
       });
@@ -152,11 +168,10 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       const requestedPrepaidAppliedBs = toMoney(
         createdContract?.payment?.prepaidAppliedBs ?? createdContract?.prepaidAppliedBs,
       );
-      const prepaidAppliedBs = Math.min(
-        requestedPrepaidAppliedBs,
-        availablePrepaidBs,
-        Math.max(0, totalBs - paidAtApprovalBs),
-      );
+      const prepaidRoomBs = Math.max(0, totalBs - paidAtApprovalBs);
+      const prepaidAppliedBs = repairingApproval
+        ? Math.min(requestedPrepaidAppliedBs, prepaidRoomBs)
+        : Math.min(requestedPrepaidAppliedBs, availablePrepaidBs, prepaidRoomBs);
       const coveredAtApprovalBs = toMoney(paidAtApprovalBs + prepaidAppliedBs);
       const paymentMode = coveredAtApprovalBs >= totalBs && totalBs > 0
         ? 'cancelado'
@@ -231,6 +246,9 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         allowPastDueDate: true,
         items: approvalItems,
         services: approvalServices,
+      }, {
+        registerInitialCash: !repairingApproval,
+        registerPrepaidUsage: !repairingApproval,
       });
 
       mark('rentalCreate');
@@ -238,6 +256,7 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
         ?? createdRental.createdAt
         ?? new Date().toISOString();
       const updatedContract = await bridge.contracts.update({
+        ...trace,
         id: createdContract.id,
         status: 'aprobado',
         approvedAt,
@@ -387,6 +406,9 @@ router.post('/__copetin_db/contracts/create-and-approve', requireInternalKey, as
       const finalState = await bridge.__storage.exportState();
       const finalContract = (finalState.contracts ?? []).find((entry) => entry.id === updatedContract.id);
       const finalRental = (finalState.rentals ?? []).find((entry) => entry.id === createdRental.id);
+      if (!finalContract || !finalRental || finalContract.rentalId !== finalRental.id) {
+        throw new Error('No se pudo confirmar la orden vinculada; la aprobacion fue cancelada.');
+      }
       const linkedDeliveries = (finalState.deliveries ?? []).filter((entry) => entry.rentalId === createdRental.id);
       const linkedInventoryMovements = (finalState.inventoryMovements ?? []).filter((entry) => (
         entry.rentalId === createdRental.id

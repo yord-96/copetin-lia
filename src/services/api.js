@@ -2248,17 +2248,19 @@ const createSupplierOnServer = async (payload = {}) => {
   return supplier;
 };
 
-const createAndApproveContractOnServer = async ({ contract, trace } = {}) => {
+const createAndApproveContractOnServer = async ({ contract, contractId, trace } = {}) => {
   if (!shouldUseServerState()) {
     throw new Error('La aprobacion transaccional requiere conexion con el servidor.');
   }
-  if (!contract || contract._summaryOnly) {
+  if (!contractId && (!contract || contract._summaryOnly)) {
     throw new Error('No se puede aprobar un contrato incompleto o resumido.');
   }
 
   const meta = await fetchServerMeta();
   const revision = meta?.revision ?? getKnownLocalRevision();
-  const response = await fetch(getServerStateUrl('/contracts/create-and-approve'), {
+  const response = await fetch(getServerStateUrl(contractId
+    ? `/contracts/${encodeURIComponent(contractId)}/approve`
+    : '/contracts/create-and-approve'), {
     method: 'POST',
     cache: 'no-store',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
@@ -2268,7 +2270,12 @@ const createAndApproveContractOnServer = async ({ contract, trace } = {}) => {
     throw await createServerStateError(response, 'No se pudo crear y aprobar el contrato.');
   }
   const payload = await response.json();
-  await mergeTransactionChangesIntoLocalState(payload?.changes ?? {});
+  if (!payload?.contract?.id || !payload?.rental?.id || payload.contract.rentalId !== payload.rental.id) {
+    throw new Error('El servidor no confirmo la orden de servicio vinculada.');
+  }
+  // React recibe las filas confirmadas directamente; no serializar toda la base
+  // del navegador antes de cerrar la aprobacion.
+  markServerStateStale('contracts.approve');
   if (payload?.revision) {
     rememberServerRevision(payload.revision);
     localServerCommitSerial += 1;

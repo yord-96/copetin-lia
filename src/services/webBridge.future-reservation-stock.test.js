@@ -173,3 +173,89 @@ test('una devolucion parcial reinserta lo devuelto y deja comprometido solo lo q
   assert.equal(rental.status, 'returned');
   assert.equal(rental.operational.clientPendingPickup, null);
 });
+
+
+test('reparar una aprobacion conserva el prepago historico sin volver a descontarlo', async () => {
+  const bridge = getWebBridge();
+  const clientId = 'cliente-prepago-reparacion';
+  const itemId = 'item-prepago-reparacion';
+
+  await bridge.__storage.replaceState({
+    settings: {
+      numbering: {
+        serviceOrderPrefix: 'OS-',
+        serviceOrderNext: 1,
+      },
+    },
+    clients: [{
+      id: clientId,
+      name: 'CLIENTE PREPAGO',
+      phone: '70000000',
+      prepaidEnabled: true,
+      prepaidBalanceBs: 200,
+      prepaidTotalUsedBs: 300,
+      prepaidMovements: [{
+        id: 'pre-historico',
+        type: 'charge',
+        amountBs: -300,
+        description: 'Consumo prepago historico',
+        balanceAfterBs: 200,
+        createdAt: '2099-01-01T00:00:00.000Z',
+      }],
+    }],
+    items: [{
+      id: itemId,
+      name: 'ITEM SIN STOCK',
+      category: 'SERVICIO',
+      rentalPriceBs: 1000,
+      totalStock: 0,
+      availableStock: 0,
+      controlsStock: false,
+      verificationStatus: 'pending_verification',
+    }],
+    contracts: [],
+    rentals: [],
+    deliveries: [],
+    inventoryMovements: [],
+    cashMovements: [],
+    generatedReports: [],
+    supplierLoans: [],
+  });
+
+  const rental = await bridge.rentals.create({
+    customerName: 'CLIENTE PREPAGO',
+    customerPhone: '70000000',
+    contractId: 'contrato-reparacion',
+    contractCode: '9999',
+    rentalDate: '2099-10-10',
+    dueDate: '2099-10-11',
+    dueTime: '22:00',
+    eventDate: '2099-10-10',
+    paymentMode: 'a_cuenta',
+    prepaidClientId: clientId,
+    prepaidAppliedBs: 300,
+    paidAtRentalBs: 800,
+    items: [{
+      itemId,
+      quantity: 1,
+      unitPriceBs: 1000,
+      rentalPriceBs: 1000,
+      controlsStock: false,
+    }],
+  }, {
+    registerInitialCash: false,
+    registerPrepaidUsage: false,
+  });
+
+  const state = await bridge.__storage.exportState();
+  const client = state.clients.find((entry) => entry.id === clientId);
+
+  assert.equal(rental.prepaidAppliedBs, 300);
+  assert.equal(rental.payment.prepaidAppliedBs, 300);
+  assert.equal(rental.payment.paidAtRentalBs, 800);
+  assert.equal(rental.payment.cashCollectedBs, 500);
+  assert.equal(client.prepaidBalanceBs, 200, 'la reparacion no vuelve a consumir el prepago');
+  assert.equal(client.prepaidTotalUsedBs, 300);
+  assert.equal(client.prepaidMovements.length, 1, 'no agrega un segundo movimiento prepago');
+  assert.equal(state.cashMovements.length, 0, 'la reparacion no duplica movimientos de caja');
+});

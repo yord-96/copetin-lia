@@ -2990,6 +2990,7 @@ function ServiceOrdersSection({
       return {
         ...contract,
         status,
+        needsApprovalRepair: status === 'aprobado' && !linkedRental,
         itemsCount,
         responsibleName: getResponsibleDisplayName(contract),
         responsibleRole: getResponsibleDisplayRole(contract),
@@ -8255,8 +8256,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const handleApproveContractClick = async (contract) => {
-    if (!contract || contract.status === 'aprobado' || contract.status === 'anulado') return;
+    if (!contract || (contract.status === 'aprobado' && !contract.needsApprovalRepair) || contract.status === 'anulado') return;
     if (!beginSubmit()) return;
+    setMenuState(null);
+    setActionFeedback(`Confirmando contrato ${contract.contractCode} y su orden de inventario...`);
     try {
       await onApproveContract?.({ contractId: contract.id });
       setActiveView('contracts');
@@ -12280,12 +12283,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <>
                 {!readOnly ? (
                   <>
-                    {!['aprobado', 'anulado'].includes(activeContractMenuRow.status) ? (
+                    {!['aprobado', 'anulado'].includes(activeContractMenuRow.status) || activeContractMenuRow.needsApprovalRepair ? (
                       <button
                         type="button"
                         onClick={() => handleApproveContractClick(activeContractMenuRow)}
+                        disabled={isSubmitting}
                       >
-                        Aprobar contrato
+                        {activeContractMenuRow.needsApprovalRepair ? 'Completar aprobacion y generar orden' : 'Aprobar contrato'}
                       </button>
                     ) : null}
                     <button
