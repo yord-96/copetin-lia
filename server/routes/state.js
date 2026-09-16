@@ -8097,7 +8097,8 @@ router.get('/__copetin_db/availability/overview', async (req, res, next) => {
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        items: (Array.isArray(state.items) ? state.items : []).map(summarizeAvailabilityItem),
+        items: (Array.isArray(state.items) ? state.items : []).filter((item) => item && !item.deletedAt).map(summarizeAvailabilityItem),
+        inventoryCombos: (Array.isArray(state.inventoryCombos) ? state.inventoryCombos : []).filter((combo) => combo && !combo.deletedAt),
         categories: Array.isArray(state.categories) ? state.categories : [],
         clients: (Array.isArray(state.clients) ? state.clients : []).map(summarizeAvailabilityClient),
         contracts: availabilityContracts.map(summarizeAvailabilityRecord),
@@ -9348,7 +9349,7 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
         items: (Array.isArray(state.items) ? state.items : [])
           .filter((item) => item && !item.deletedAt)
           .map(summarizeInventoryMovementItem),
-        inventoryCombos: [],
+        inventoryCombos: (Array.isArray(state.inventoryCombos) ? state.inventoryCombos : []).filter((combo) => combo && !combo.deletedAt),
         categories: [],
         contracts: allContracts
           .filter((contract) => overviewContractIds.has(String(contract?.id ?? '')))

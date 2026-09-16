@@ -125,7 +125,7 @@ export const useAppController = () => {
   const [inventoryMovementStats, setInventoryMovementStats] = useState(null);
   const [inventoryModuleLoading, setInventoryModuleLoading] = useState(false);
   const [availabilityBundle, setAvailabilityBundle] = useState({
-    items: [], contracts: [], rentals: [], quotes: [], clients: [], categories: [],
+    items: [], inventoryCombos: [], contracts: [], rentals: [], quotes: [], clients: [], categories: [],
   });
   const [stockRecoveries, setStockRecoveries] = useState([]);
   const [damageLossOverview, setDamageLossOverview] = useState({ rows: [], total: 0, summary: {} });
@@ -423,6 +423,7 @@ export const useAppController = () => {
       const request = api.sync.getAvailabilityOverview()
         .then((overview) => {
           setAvailabilityBundle({
+            inventoryCombos: Array.isArray(overview?.inventoryCombos) ? overview.inventoryCombos : [],
             items: Array.isArray(overview?.items) ? overview.items : [],
             contracts: Array.isArray(overview?.contracts) ? overview.contracts : [],
             rentals: Array.isArray(overview?.rentals) ? overview.rentals : [],

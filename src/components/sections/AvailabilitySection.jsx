@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, toDateKey } from '../../utils/availability';
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
+import { getComboAvailabilityRows } from '../../utils/comboAvailability';
 import ProductImage from '../common/ProductImage';
 
 const normalizeText = (value) =>
@@ -161,6 +162,7 @@ function DeferredAvailabilityImage({ item, alt, fallback }) {
 
 function AvailabilitySection({
   items = [],
+  combos = [],
   contracts = [],
   rentals = [],
   quotes = [],
@@ -275,9 +277,11 @@ function AvailabilitySection({
     return map;
   }, [commitmentRecords]);
 
+  const comboRows = useMemo(() => getComboAvailabilityRows({ combos, items, availability }), [combos, items, availability]);
+
   const rows = useMemo(() => {
-    return (Array.isArray(items) ? items : []).map((item) => {
-      const summary = availability.get(item.id) || {
+    return [...(Array.isArray(items) ? items : []), ...comboRows.map((row) => row.item)].map((item) => {
+      const summary = (item.isCombo ? comboRows.find((row) => row.item.id === item.id) : availability.get(item.id)) || {
         itemId: item.id,
         itemName: item.name,
         stockControlled: false,
@@ -305,14 +309,14 @@ function AvailabilitySection({
       row.statusMeta = getStatusMeta(row);
       return row;
     });
-  }, [items, availability, supplierByItem]);
+  }, [items, availability, supplierByItem, comboRows]);
 
   const categoryOptions = useMemo(() => {
     const names = new Set();
     categories.forEach((category) => category?.name && names.add(category.name));
-    items.forEach((item) => item?.category && names.add(item.category));
+    rows.forEach((row) => row.item?.category && names.add(row.item.category));
     return [...names].sort((a, b) => a.localeCompare(b, 'es'));
-  }, [categories, items]);
+  }, [categories, rows]);
 
   const filteredRows = useMemo(() => {
     return rows
@@ -340,7 +344,7 @@ function AvailabilitySection({
 
 
   const metrics = useMemo(() => {
-    const controlled = rows.filter((row) => row.stockControlled);
+    const controlled = rows.filter((row) => row.stockControlled && !row.item.isCombo);
     return {
       products: controlled.length,
       reserved: controlled.reduce((sum, row) => sum + row.hardReservedQty, 0),
@@ -600,6 +604,7 @@ function AvailabilitySection({
                         <div>
                         <small>{row.item.category || 'SIN CATEGORÍA'} · {getInventoryAreaLabel(row.area)}</small>
                         <strong>{row.item.name}</strong>
+                        {row.item.isCombo ? <small>Combo · Disponibilidad por componentes</small> : null}
                         <span>{row.item.sku || 'Sin SKU'}{row.item.itemColor ? ` · ${row.item.itemColor}` : ''}</span>
                         </div>
                       </div>
@@ -654,7 +659,7 @@ function AvailabilitySection({
 
                     <td data-label="Alquilado">
                       <div className="availability-result-quantity">
-                      <strong>{row.hardReservedQty}</strong>
+                      <strong>{row.item.isCombo ? '—' : row.hardReservedQty}</strong>
                       </div>
                     </td>
 

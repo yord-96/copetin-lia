@@ -787,6 +787,7 @@ function AdminApp() {
         {controller.activeTab === 'disponibilidad' && (
           <AvailabilitySection
             items={controller.availabilityBundle.items}
+            combos={controller.availabilityBundle.inventoryCombos}
             contracts={controller.availabilityBundle.contracts}
             rentals={controller.availabilityBundle.rentals}
             quotes={controller.availabilityBundle.quotes}
