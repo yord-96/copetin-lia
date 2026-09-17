@@ -14630,7 +14630,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     textAlign: 'center',
                   }}
                 >
-                  <RefreshCw aria-hidden="true" />
+                  <img
+                    src="/loading-thinking.gif"
+                    alt="Preparando documento"
+                    style={{
+                      width: '112px',
+                      height: '112px',
+                      objectFit: 'cover',
+                      borderRadius: '18px',
+                      display: 'block',
+                    }}
+                  />
                   <strong>Preparando documento...</strong>
                   <span>Estamos cargando la versión completa y verificando que no falte ningún dato.</span>
                 </div>
