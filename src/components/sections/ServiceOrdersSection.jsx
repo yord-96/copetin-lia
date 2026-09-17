@@ -8441,7 +8441,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       ?? '';
     if (linkedRentalIdentifier) {
       try {
-        linkedFullRental = await api.rentals.getFull(linkedRentalIdentifier);
+        linkedFullRental = await api.rentals.getFull(linkedRentalIdentifier, 'edit-contract');
       } catch {
         linkedFullRental = null;
       }

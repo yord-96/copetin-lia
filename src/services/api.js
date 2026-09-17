@@ -976,12 +976,7 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
     rememberServerRevision(payload.revision);
   }
 
-  // El Centro documental solo necesita el contrato completo para leer su historial.
-  // No lo mezclamos en webBridge/localStorage porque esa reconciliacion puede
-  // serializar cientos de contratos y bloquear el hilo principal varios segundos.
-  // Edicion, economico y otros flujos autoritativos conservan el comportamiento
-  // anterior y si actualizan la copia local completa.
-  const isTransientDocumentsHistoryLoad = reason === 'documents-history';
+  const isTransientDocumentsHistoryLoad = ['documents-history', 'edit-contract'].includes(reason);
 
   if (!isTransientDocumentsHistoryLoad) {
     const localSnapshot = await exportLocalCollections(['contracts']);
@@ -1044,15 +1039,20 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
     rememberServerRevision(payload.revision);
   }
 
-  const localSnapshot = await exportLocalCollections(['rentals']);
-  const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
-  const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
-    ? currentRentals.map((entry) => (
-      String(entry?.id ?? '') === String(rental.id) ? rental : entry
-    ))
-    : [rental, ...currentRentals];
+  const isTransientEditRentalLoad = reason === 'edit-contract';
 
-  await mergeLocalState({ rentals: nextRentals });
+  if (!isTransientEditRentalLoad) {
+    const localSnapshot = await exportLocalCollections(['rentals']);
+    const currentRentals = Array.isArray(localSnapshot?.rentals) ? localSnapshot.rentals : [];
+    const nextRentals = currentRentals.some((entry) => String(entry?.id ?? '') === String(rental.id))
+      ? currentRentals.map((entry) => (
+        String(entry?.id ?? '') === String(rental.id) ? rental : entry
+      ))
+      : [rental, ...currentRentals];
+
+    await mergeLocalState({ rentals: nextRentals });
+  }
+
   rememberFullRecordCache(fullRentalCache, rental, [requestedId]);
   console.info('[copetin-sync] Orden completa cargada.', {
     reason,
@@ -3958,7 +3958,7 @@ export const api = {
   },
   rentals: {
     list: () => callBridge('rentals', 'list', false),
-    getFull: (identifier) => fetchFullServerRental(identifier, 'rental-report'),
+    getFull: (identifier, reason = 'rental-report') => fetchFullServerRental(identifier, reason),
     create: (payload) => callBridge('rentals', 'create', true, payload),
     updateOperational: updateRentalOperationalOnServer,
     cancel: async (payload) => {
