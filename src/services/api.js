@@ -976,15 +976,25 @@ const fetchFullServerContract = async (identifier, reason = 'contract-full-load'
     rememberServerRevision(payload.revision);
   }
 
-  const localSnapshot = await exportLocalCollections(['contracts']);
-  const currentContracts = Array.isArray(localSnapshot?.contracts) ? localSnapshot.contracts : [];
-  const nextContracts = currentContracts.some((entry) => String(entry?.id ?? '') === String(contract.id))
-    ? currentContracts.map((entry) => (
-      String(entry?.id ?? '') === String(contract.id) ? contract : entry
-    ))
-    : [contract, ...currentContracts];
+  // El Centro documental solo necesita el contrato completo para leer su historial.
+  // No lo mezclamos en webBridge/localStorage porque esa reconciliacion puede
+  // serializar cientos de contratos y bloquear el hilo principal varios segundos.
+  // Edicion, economico y otros flujos autoritativos conservan el comportamiento
+  // anterior y si actualizan la copia local completa.
+  const isTransientDocumentsHistoryLoad = reason === 'documents-history';
 
-  await mergeLocalState({ contracts: nextContracts });
+  if (!isTransientDocumentsHistoryLoad) {
+    const localSnapshot = await exportLocalCollections(['contracts']);
+    const currentContracts = Array.isArray(localSnapshot?.contracts) ? localSnapshot.contracts : [];
+    const nextContracts = currentContracts.some((entry) => String(entry?.id ?? '') === String(contract.id))
+      ? currentContracts.map((entry) => (
+        String(entry?.id ?? '') === String(contract.id) ? contract : entry
+      ))
+      : [contract, ...currentContracts];
+
+    await mergeLocalState({ contracts: nextContracts });
+  }
+
   rememberFullRecordCache(fullContractCache, contract, [requestedId]);
   console.info('[copetin-sync] Contrato completo cargado.', {
     reason,
