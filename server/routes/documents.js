@@ -690,6 +690,7 @@ router.get(
       );
       const { weekStart, weekEnd } = getWeekRange(baseDate);
 
+      const buildStartedAt = Date.now();
       const rawHtml = buildWeeklyInventoryHtml({
         rentals: [context.rental],
         contracts: context.contract ? [context.contract] : [],
@@ -703,13 +704,26 @@ router.get(
         targetOrderCode: context.rental?.orderCode ?? context.contract?.orderCode ?? '',
         targetContractCode: context.contract?.contractCode ?? context.rental?.contractCode ?? '',
       });
-      const html = await embedInventoryAssets(rawHtml);
+      const buildDurationMs = Date.now() - buildStartedAt;
 
+      const assetStartedAt = Date.now();
+      const html = await embedInventoryAssets(rawHtml);
+      const assetDurationMs = Date.now() - assetStartedAt;
+
+      const renderStartedAt = Date.now();
       const result = await renderHtmlDocumentToPdf({
         html,
         baseUrl: `${req.protocol}://${req.get('host')}`,
         fileName: buildInventoryPdfFileName(context.rental, context.contract),
+        imageOptimization: {
+          selector: '.wi-product img',
+          maxWidth: 180,
+          maxHeight: 180,
+          quality: 0.72,
+          mimeType: 'image/jpeg',
+        },
       });
+      const renderDurationMs = Date.now() - renderStartedAt;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
@@ -718,6 +732,16 @@ router.get(
       res.setHeader('X-Document-Cache', result.cacheHit ? 'HIT' : 'MISS');
       res.setHeader('X-Document-Key', result.cacheKey);
       res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
+      res.setHeader(
+        'Server-Timing',
+        `inventory-build;dur=${buildDurationMs}, inventory-assets;dur=${assetDurationMs}, inventory-pdf;dur=${renderDurationMs}`,
+      );
+      if (result.imageOptimizationStats) {
+        res.setHeader(
+          'X-Document-Optimized-Images',
+          String(result.imageOptimizationStats.optimizedCount ?? 0),
+        );
+      }
       res.send(result.buffer);
     } catch (error) {
       next(error);

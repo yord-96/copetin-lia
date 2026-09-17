@@ -155,6 +155,85 @@ const waitForDocumentAssets = async (page) => {
   });
 };
 
+const normalizeImageOptimization = (value) => {
+  if (!value || typeof value !== 'object') return null;
+
+  const selector = String(value.selector ?? '').trim();
+  if (!selector) return null;
+
+  const maxWidth = Math.max(32, Math.min(1024, Number(value.maxWidth) || 180));
+  const maxHeight = Math.max(32, Math.min(1024, Number(value.maxHeight) || 180));
+  const quality = Math.max(0.35, Math.min(0.95, Number(value.quality) || 0.72));
+  const mimeType = value.mimeType === 'image/webp' ? 'image/webp' : 'image/jpeg';
+
+  return {
+    selector,
+    maxWidth: Math.round(maxWidth),
+    maxHeight: Math.round(maxHeight),
+    quality,
+    mimeType,
+  };
+};
+
+const optimizeDocumentImages = async (page, options) => {
+  const normalized = normalizeImageOptimization(options);
+  if (!normalized) return { optimizedCount: 0, sourcePixelCount: 0, outputPixelCount: 0 };
+
+  return page.evaluate(async (config) => {
+    const images = [...document.querySelectorAll(config.selector)];
+    let optimizedCount = 0;
+    let sourcePixelCount = 0;
+    let outputPixelCount = 0;
+
+    for (const image of images) {
+      const sourceWidth = Number(image.naturalWidth || image.width || 0);
+      const sourceHeight = Number(image.naturalHeight || image.height || 0);
+      if (!sourceWidth || !sourceHeight) continue;
+
+      const scale = Math.min(
+        1,
+        config.maxWidth / sourceWidth,
+        config.maxHeight / sourceHeight,
+      );
+      if (scale >= 0.98) continue;
+
+      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext('2d', { alpha: false });
+      if (!context) continue;
+
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, targetWidth, targetHeight);
+      context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+      let optimizedSource = '';
+      try {
+        optimizedSource = canvas.toDataURL(config.mimeType, config.quality);
+      } catch {
+        continue;
+      }
+      if (!optimizedSource) continue;
+
+      await new Promise((resolve) => {
+        const done = () => resolve();
+        image.addEventListener('load', done, { once: true });
+        image.addEventListener('error', done, { once: true });
+        image.src = optimizedSource;
+        if (image.complete) resolve();
+      });
+
+      optimizedCount += 1;
+      sourcePixelCount += sourceWidth * sourceHeight;
+      outputPixelCount += targetWidth * targetHeight;
+    }
+
+    return { optimizedCount, sourcePixelCount, outputPixelCount };
+  }, normalized);
+};
+
 export const ensureDocumentPdfCacheDirectory = async () => {
   await Promise.all([
     fs.mkdir(cacheDirectory, { recursive: true }),
@@ -196,6 +275,7 @@ export const renderHtmlDocumentToPdf = async ({
   html,
   baseUrl = '',
   fileName = 'documento',
+  imageOptimization = null,
 }) => {
   const sourceHtml = String(html ?? '');
   if (!sourceHtml.trim()) {
@@ -206,9 +286,14 @@ export const renderHtmlDocumentToPdf = async ({
 
   const normalizedFileName = sanitizeFileName(fileName);
   const renderedHtml = injectBaseUrl(sourceHtml, baseUrl);
+  const normalizedImageOptimization = normalizeImageOptimization(imageOptimization);
+  const cacheSignature = normalizedImageOptimization
+    ? `\n<!-- image-optimization:${JSON.stringify(normalizedImageOptimization)} -->`
+    : '';
   const cacheKey = crypto
     .createHash('sha256')
     .update(renderedHtml)
+    .update(cacheSignature)
     .digest('hex');
   const cachePath = path.join(cacheDirectory, `${normalizedFileName}-${cacheKey}.pdf`);
 
@@ -236,6 +321,10 @@ export const renderHtmlDocumentToPdf = async ({
     });
     await page.emulateMediaType('print');
     await waitForDocumentAssets(page);
+    const imageOptimizationStats = await optimizeDocumentImages(
+      page,
+      normalizedImageOptimization,
+    );
 
     const pdf = await page.pdf({
       format: 'A4',
@@ -259,6 +348,7 @@ export const renderHtmlDocumentToPdf = async ({
       cacheHit: false,
       cacheKey,
       fileName: `${normalizedFileName}.pdf`,
+      imageOptimizationStats,
     };
   } finally {
     await page.close();
