@@ -4819,10 +4819,28 @@ const isContractCollectionCashMovement = (movement) => {
     || (Boolean(receiptCode) && isBigCash && isIncome);
 };
 
+const isCashMovementInCurrentContractEconomicEpoch = (movement, contract) => {
+  const resetAtMs = new Date(contract?.economicResetAt ?? 0).getTime();
+  if (!Number.isFinite(resetAtMs) || resetAtMs <= 0) return true;
+
+  // Despues de un Reset economico, ningun movimiento anterior al reset puede
+  // reconstruir pagos o garantias del contrato. Esto evita que snapshots/cobros
+  // legacy vuelvan a aparecer al editar posteriormente solo datos comerciales.
+  const movementAtMs = new Date(
+    movement?.cashRegisteredAt
+    ?? movement?.receiptIssuedAt
+    ?? movement?.createdAt
+    ?? movement?.updatedAt
+    ?? 0,
+  ).getTime();
+  return Number.isFinite(movementAtMs) && movementAtMs >= resetAtMs;
+};
+
 const getRegisteredContractCollectionBs = (state, contract) => {
   const referenceKeys = getContractCashReferenceKeys(state, contract);
   return (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
     .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => isCashMovementInCurrentContractEconomicEpoch(movement, contract))
     .filter(isContractCollectionCashMovement)
     .reduce((sum, movement) => sum + Math.max(0, Number(movement?.amountBs ?? 0)), 0);
 };
@@ -4831,6 +4849,7 @@ const getRegisteredContractGuaranteeBs = (state, contract) => {
   const referenceKeys = getContractCashReferenceKeys(state, contract);
   return (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
     .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => isCashMovementInCurrentContractEconomicEpoch(movement, contract))
     .filter((movement) => !isVoidedCashMovement(movement) && isGuaranteeCashMovement(movement))
     .reduce((sum, movement) => sum + Math.max(0, Number(movement?.amountBs ?? 0)), 0);
 };
@@ -11306,6 +11325,7 @@ const cleanupApprovedContractEconomicDuplicates = (state, contract, payload = {}
   const referenceKeys = getContractCashReferenceKeys(state, contract);
   const linkedCollections = state.cashMovements
     .filter((movement) => cashMovementMatchesContract(movement, referenceKeys))
+    .filter((movement) => isCashMovementInCurrentContractEconomicEpoch(movement, contract))
     .filter(isContractCollectionCashMovement)
     .filter((movement) => Math.max(0, Number(movement?.amountBs ?? 0)) > 0);
   let registeredBs = Number(linkedCollections.reduce((sum, movement) => (

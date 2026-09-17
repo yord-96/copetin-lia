@@ -5056,6 +5056,15 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       // reconstruye el saldo del cliente desde el valor vigente del contrato.
       const prepaidReset = resetContractVipPrepaid(state, contract, rental, now, userName);
       const seed = getContractCurrentEconomicSeed(contract, rental);
+      // RESET significa iniciar de cero el sector economico. Conservamos la
+      // garantia declarada como condicion comercial, pero ningun pago/garantia
+      // previamente cobrado puede sobrevivir ni recrearse durante el reset.
+      const resetSeed = {
+        ...seed,
+        initialPaymentBs: 0,
+        guaranteePaidBs: 0,
+        guaranteeStatus: 'no_validado',
+      };
 
       const removedMovementIds = new Set(
         state.cashMovements
@@ -5103,15 +5112,15 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       const penaltiesBs = reportPenaltiesBs > 0
         ? reportPenaltiesBs
         : directMoney(rental?.returnSettlement?.penaltiesBs ?? rental?.penaltiesBs ?? 0);
-      const outstandingRentalBs = directMoney(Math.max(0, chargeTargetBs - seed.initialPaymentBs));
+      const outstandingRentalBs = directMoney(Math.max(0, chargeTargetBs - resetSeed.initialPaymentBs));
       const pendingCollectionBs = directMoney(outstandingRentalBs + penaltiesBs);
       const paymentStatus = pendingCollectionBs <= 0.009
         ? 'liquidado'
-        : seed.initialPaymentBs > 0
+        : resetSeed.initialPaymentBs > 0
           ? 'a_cuenta'
           : 'sin_pago';
 
-      const ledger = buildResetEconomicLedger({ seed, now, userId, userName });
+      const ledger = buildResetEconomicLedger({ seed: resetSeed, now, userId, userName });
       contract.economicLedger = ledger;
       contract.economicLedgerUpdatedAt = now;
       contract.economicLedgerUpdatedById = userId;
@@ -5120,36 +5129,36 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       // de las lineas automaticas historicas en cliente y normalizadores.
       contract.economicResetAt = now;
       contract.economicResetVersion = 1;
-      contract.paidAtApprovalBs = seed.initialPaymentBs;
+      contract.paidAtApprovalBs = resetSeed.initialPaymentBs;
       contract.pendingPaymentBs = outstandingRentalBs;
       contract.paymentStatus = paymentStatus;
       contract.accountingStatus = pendingCollectionBs <= 0.009 ? 'cobrado_finalizado' : paymentStatus;
       contract.payment = {
         ...(contract.payment ?? {}),
-        paidAtApprovalBs: seed.initialPaymentBs,
+        paidAtApprovalBs: resetSeed.initialPaymentBs,
         pendingBs: outstandingRentalBs,
         pendingPaymentBs: outstandingRentalBs,
         status: paymentStatus,
         mode: paymentStatus,
-        initialPaymentMethod: seed.paymentMethod,
-        initialPaymentAccount: seed.paymentAccount,
-        guaranteeStatus: seed.guaranteeStatus || contract?.payment?.guaranteeStatus || 'no_validado',
-        guaranteePaymentMethod: seed.guaranteeMethod,
-        guaranteePaymentAccount: seed.guaranteeAccount,
+        initialPaymentMethod: resetSeed.paymentMethod,
+        initialPaymentAccount: resetSeed.paymentAccount,
+        guaranteeStatus: resetSeed.guaranteeStatus || contract?.payment?.guaranteeStatus || 'no_validado',
+        guaranteePaymentMethod: resetSeed.guaranteeMethod,
+        guaranteePaymentAccount: resetSeed.guaranteeAccount,
       };
       contract.guarantee = {
         ...(contract.guarantee ?? {}),
-        amountBs: seed.guaranteeDeclaredBs,
-        validatedBs: seed.guaranteePaidBs,
-        status: seed.guaranteeStatus || 'no_validado',
-        paymentMethod: seed.guaranteeMethod,
-        paymentAccount: seed.guaranteeAccount,
-        method: seed.guaranteeMethod,
-        account: seed.guaranteeAccount,
+        amountBs: resetSeed.guaranteeDeclaredBs,
+        validatedBs: resetSeed.guaranteePaidBs,
+        status: resetSeed.guaranteeStatus || 'no_validado',
+        paymentMethod: resetSeed.guaranteeMethod,
+        paymentAccount: resetSeed.guaranteeAccount,
+        method: resetSeed.guaranteeMethod,
+        account: resetSeed.guaranteeAccount,
       };
       contract.totals = {
         ...(contract.totals ?? {}),
-        paidAtApprovalBs: seed.initialPaymentBs,
+        paidAtApprovalBs: resetSeed.initialPaymentBs,
         pendingPaymentBs: outstandingRentalBs,
       };
       contract.updatedAt = now;
@@ -5157,40 +5166,40 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       if (rental) {
         rental.payment = {
           ...(rental.payment ?? {}),
-          paidAtRentalBs: seed.initialPaymentBs,
-          paidAtApprovalBs: seed.initialPaymentBs,
+          paidAtRentalBs: resetSeed.initialPaymentBs,
+          paidAtApprovalBs: resetSeed.initialPaymentBs,
           pendingPaymentBs: outstandingRentalBs,
           damageCollectedBs: 0,
           penaltiesCollectedBs: 0,
           returnChargesCollectedBs: 0,
           status: paymentStatus,
           mode: paymentStatus,
-          initialPaymentMethod: seed.paymentMethod,
-          initialPaymentAccount: seed.paymentAccount,
-          guaranteeStatus: seed.guaranteeStatus || rental?.payment?.guaranteeStatus || 'no_validado',
-          guaranteePaymentMethod: seed.guaranteeMethod,
-          guaranteePaymentAccount: seed.guaranteeAccount,
+          initialPaymentMethod: resetSeed.paymentMethod,
+          initialPaymentAccount: resetSeed.paymentAccount,
+          guaranteeStatus: resetSeed.guaranteeStatus || rental?.payment?.guaranteeStatus || 'no_validado',
+          guaranteePaymentMethod: resetSeed.guaranteeMethod,
+          guaranteePaymentAccount: resetSeed.guaranteeAccount,
         };
         rental.totals = {
           ...(rental.totals ?? {}),
-          paidAtRentalBs: seed.initialPaymentBs,
-          paidAtApprovalBs: seed.initialPaymentBs,
+          paidAtRentalBs: resetSeed.initialPaymentBs,
+          paidAtApprovalBs: resetSeed.initialPaymentBs,
           pendingPaymentBs: outstandingRentalBs,
           damageCollectedBs: 0,
           penaltiesCollectedBs: 0,
           returnChargesCollectedBs: 0,
         };
-        rental.depositBs = seed.guaranteePaidBs;
-        rental.guaranteeDeclaredBs = seed.guaranteeDeclaredBs;
+        rental.depositBs = resetSeed.guaranteePaidBs;
+        rental.guaranteeDeclaredBs = resetSeed.guaranteeDeclaredBs;
         rental.guarantee = {
           ...(rental.guarantee ?? {}),
-          amountBs: seed.guaranteeDeclaredBs,
-          validatedBs: seed.guaranteePaidBs,
-          status: seed.guaranteeStatus || 'no_validado',
-          paymentMethod: seed.guaranteeMethod,
-          paymentAccount: seed.guaranteeAccount,
-          method: seed.guaranteeMethod,
-          account: seed.guaranteeAccount,
+          amountBs: resetSeed.guaranteeDeclaredBs,
+          validatedBs: resetSeed.guaranteePaidBs,
+          status: resetSeed.guaranteeStatus || 'no_validado',
+          paymentMethod: resetSeed.guaranteeMethod,
+          paymentAccount: resetSeed.guaranteeAccount,
+          method: resetSeed.guaranteeMethod,
+          account: resetSeed.guaranteeAccount,
         };
         if (rental.returnSettlement || rental.returnedAt || rental.status === 'returned') {
           rental.returnSettlement = {
@@ -5198,13 +5207,13 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
             outstandingRentalBs,
             penaltiesBs,
             pendingCollectionBs,
-            paidBs: seed.initialPaymentBs,
+            paidBs: resetSeed.initialPaymentBs,
             damageCollectedBs: 0,
             penaltiesCollectedBs: 0,
             collectedAfterReturnBs: 0,
             discountCoveredByDepositBs: 0,
             totalDiscountAgainstDepositBs: 0,
-            refundBs: seed.guaranteePaidBs,
+            refundBs: resetSeed.guaranteePaidBs,
             accountingStatus: pendingCollectionBs <= 0.009 ? 'liquidado' : 'saldo_pendiente',
             settledAt: null,
             collectedAt: null,
@@ -5245,18 +5254,18 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
       const customerName = String(contract?.customerName ?? rental?.customerName ?? 'Cliente').trim() || 'Cliente';
       const newMovements = [];
 
-      if (seed.initialPaymentBs > 0) {
+      if (resetSeed.initialPaymentBs > 0) {
         const movement = buildDirectMovement(state, {
           sessionId,
           type: 'ingreso',
-          amountBs: seed.initialPaymentBs,
+          amountBs: resetSeed.initialPaymentBs,
           description: `Pago inicial contrato ${contract.contractCode || contract.id} - ${customerName}`,
           sourceType: 'contract_economic_reset',
           sourceId: contract.id,
           cashBoxType: 'BIG_CASH',
           category: 'adelanto',
-          paymentMethod: seed.paymentMethod,
-          paymentAccount: seed.paymentAccount,
+          paymentMethod: resetSeed.paymentMethod,
+          paymentAccount: resetSeed.paymentAccount,
           responsible: userName,
           notes: 'Registro limpio recreado por Reset economico.',
           linkedRentalId,
@@ -5265,25 +5274,25 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           accountingTag: 'initial_rental_payment',
           collectionTarget: 'rental',
           collectionTargets: ['rental'],
-          collectionBreakdown: [{ target: 'rental', amountBs: seed.initialPaymentBs }],
+          collectionBreakdown: [{ target: 'rental', amountBs: resetSeed.initialPaymentBs }],
           receiptDetail: `Pago inicial vigente del contrato ${contract.contractCode || contract.id}`,
         });
         state.cashMovements.push(movement);
         newMovements.push(movement);
       }
 
-      if (seed.guaranteePaidBs > 0) {
+      if (resetSeed.guaranteePaidBs > 0) {
         const movement = buildDirectMovement(state, {
           sessionId,
           type: 'ingreso',
-          amountBs: seed.guaranteePaidBs,
+          amountBs: resetSeed.guaranteePaidBs,
           description: `Garantia contrato ${contract.contractCode || contract.id} - ${customerName}`,
           sourceType: 'contract_economic_reset',
           sourceId: contract.id,
           cashBoxType: 'BIG_CASH',
           category: 'garantia',
-          paymentMethod: seed.guaranteeMethod,
-          paymentAccount: seed.guaranteeAccount,
+          paymentMethod: resetSeed.guaranteeMethod,
+          paymentAccount: resetSeed.guaranteeAccount,
           responsible: userName,
           notes: 'Garantia vigente recreada por Reset economico.',
           linkedRentalId,
@@ -5292,7 +5301,7 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           accountingTag: 'contract_guarantee',
           collectionTarget: 'guarantee',
           collectionTargets: ['guarantee'],
-          collectionBreakdown: [{ target: 'guarantee', amountBs: seed.guaranteePaidBs }],
+          collectionBreakdown: [{ target: 'guarantee', amountBs: resetSeed.guaranteePaidBs }],
           receiptDetail: `Garantia vigente del contrato ${contract.contractCode || contract.id}`,
         });
         state.cashMovements.push(movement);
@@ -5334,8 +5343,8 @@ router.post('/__copetin_db/contracts/:id/economic-reset', async (req, res, next)
           removedReports: beforeCounts.generatedReports - state.generatedReports.length,
           removedLedgerRows: beforeCounts.ledgerRows,
           recreatedMovements: newMovements.length,
-          initialPaymentBs: seed.initialPaymentBs,
-          guaranteePaidBs: seed.guaranteePaidBs,
+          initialPaymentBs: resetSeed.initialPaymentBs,
+          guaranteePaidBs: resetSeed.guaranteePaidBs,
           pendingCollectionBs,
           prepaidAppliedBs: prepaidReset.currentPrepaidBs,
           removedPrepaidMovements: prepaidReset.removedPrepaidMovements,
