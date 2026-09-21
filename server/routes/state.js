@@ -135,8 +135,11 @@ const isGuaranteeRefundMovement = (movement = {}) => {
     || values.includes('egreso_devolucion_garantia_manual');
 };
 
-const summarizeBootstrapCollection = (name, rows) => {
-  if (name === 'contracts') return rows.map(summarizeContract);
+const summarizeBootstrapCollection = (name, rows, fullState = null) => {
+  if (name === 'contracts') {
+    const cashMovements = Array.isArray(fullState?.cashMovements) ? fullState.cashMovements : [];
+    return rows.map((contract) => summarizeOrdersContract(contract, cashMovements));
+  }
   if (name === 'rentals') return rows.map(summarizeRental);
   return rows;
 };
@@ -7143,7 +7146,76 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
 });
 
 
-const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
+const getOrdersContractCashEconomicSummary = (contract = {}, cashMovements = []) => {
+  const keys = new Set([
+    contract?.id,
+    contract?.rentalId,
+    contract?.contractCode,
+    contract?.orderCode,
+  ].map((value) => String(value ?? '').trim()).filter(Boolean));
+
+  if (!keys.size || !Array.isArray(cashMovements) || !cashMovements.length) {
+    return { contractPaidBs: 0, guaranteePaidBs: 0, totalReceivedBs: 0, receiptCount: 0 };
+  }
+
+  const matchesContract = (movement) => [
+    movement?.linkedContractId,
+    movement?.linkedRentalId,
+    movement?.linkedOrderCode,
+    movement?.contractId,
+    movement?.rentalId,
+    movement?.contractCode,
+    movement?.orderCode,
+    movement?.reference,
+    movement?.sourceId,
+  ].map((value) => String(value ?? '').trim()).some((value) => value && keys.has(value));
+
+  const totals = (cashMovements ?? []).reduce((acc, movement) => {
+    if (!movement || movement?.deletedAt || movement?.voidedAt || !matchesContract(movement)) return acc;
+    const receiptStatus = String(movement?.receiptStatus ?? '').trim().toLowerCase();
+    if (receiptStatus === 'anulado') return acc;
+
+    const type = String(movement?.type ?? '').trim().toLowerCase();
+    const category = String(movement?.category ?? '').trim().toLowerCase();
+    const tag = String(movement?.accountingTag ?? '').trim().toLowerCase();
+    const amountBs = toPositiveRoundedNumber(Math.abs(Number(movement?.amountBs ?? 0)));
+    const receivedAmountBs = toPositiveRoundedNumber(
+      movement?.receivedAmountBs ?? (amountBs > 0 ? amountBs : 0),
+    );
+    const explicitContractBs = toPositiveRoundedNumber(movement?.contractAllocationBs);
+    const explicitGuaranteeBs = toPositiveRoundedNumber(movement?.guaranteeAllocationBs);
+    const target = String(movement?.collectionTarget ?? '').trim().toLowerCase();
+    const isExtra = tag === 'contract_extra_collection' || category === 'cobro_extra_contrato';
+    const isDamage = target === 'damage' || tag.includes('damage') || category.includes('dano');
+    const isDepositReceipt = tag === 'contract_deposit_receipt' || category === 'abono_contrato';
+    const isCommercialCollection = isDepositReceipt
+      || tag === 'contract_economic_collection'
+      || category === 'cobro_contrato'
+      || type === 'ingreso_alquiler'
+      || type.includes('cobro_saldo');
+
+    if (!isExtra && !isDamage && isCommercialCollection) {
+      acc.contractPaidBs += explicitContractBs > 0
+        ? explicitContractBs
+        : (target === 'balance' ? amountBs : 0);
+    }
+    acc.guaranteePaidBs += explicitGuaranteeBs;
+    if (isDepositReceipt || explicitContractBs > 0 || explicitGuaranteeBs > 0) {
+      acc.totalReceivedBs += receivedAmountBs;
+      if (String(movement?.receiptCode ?? movement?.receipt ?? '').trim()) acc.receiptCount += 1;
+    }
+    return acc;
+  }, { contractPaidBs: 0, guaranteePaidBs: 0, totalReceivedBs: 0, receiptCount: 0 });
+
+  return {
+    contractPaidBs: toPositiveRoundedNumber(totals.contractPaidBs),
+    guaranteePaidBs: toPositiveRoundedNumber(totals.guaranteePaidBs),
+    totalReceivedBs: toPositiveRoundedNumber(totals.totalReceivedBs),
+    receiptCount: totals.receiptCount,
+  };
+};
+
+const getOrdersGuaranteeEconomicSummary = (contract = {}, cashMovements = []) => {
   const declaredBs = toPositiveRoundedNumber(
     contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0,
   );
@@ -7179,10 +7251,12 @@ const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
     contract?.guarantee?.status ?? contract?.payment?.guaranteeStatus ?? '',
   ).trim().toLowerCase();
   const storedValidatedBs = toPositiveRoundedNumber(contract?.guarantee?.validatedBs);
+  const cashSummary = getOrdersContractCashEconomicSummary(contract, cashMovements);
   const paidBs = toPositiveRoundedNumber(Math.max(
     rawStatus === 'validado' ? Math.max(storedValidatedBs, declaredBs) : storedValidatedBs,
     explicitGuaranteePaidBs,
     confirmedDepositGuaranteeBs,
+    cashSummary.guaranteePaidBs,
   ));
 
   const refundedBs = toPositiveRoundedNumber(Math.min(
@@ -7239,7 +7313,7 @@ const getOrdersGuaranteeEconomicSummary = (contract = {}) => {
   };
 };
 
-const summarizeOrdersContract = (contract = {}) => ({
+const summarizeOrdersContract = (contract = {}, cashMovements = []) => ({
   id: contract.id ?? '',
   rentalId: contract.rentalId ?? '',
   contractCode: contract.contractCode ?? '',
@@ -7298,7 +7372,8 @@ const summarizeOrdersContract = (contract = {}) => ({
     : null,
   // Resumen autoritativo calculado en servidor desde el cuaderno completo.
   // Evita que la tabla de Órdenes dependa de snapshots históricos de garantía.
-  guaranteeEconomicSummary: getOrdersGuaranteeEconomicSummary(contract),
+  guaranteeEconomicSummary: getOrdersGuaranteeEconomicSummary(contract, cashMovements),
+  economicCashSummary: getOrdersContractCashEconomicSummary(contract, cashMovements),
   totals: {
     totalBs: Number(contract?.totals?.totalBs ?? 0),
     guaranteeBs: Number(contract?.totals?.guaranteeBs ?? 0),
@@ -9650,8 +9725,8 @@ router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,
       overview: {
-        contracts: allContracts.filter((contract) => !contract?.deletedAt).map(summarizeOrdersContract),
-        hiddenContracts: allContracts.filter((contract) => Boolean(contract?.deletedAt)).map(summarizeOrdersContract),
+        contracts: allContracts.filter((contract) => !contract?.deletedAt).map((contract) => summarizeOrdersContract(contract, state.cashMovements)),
+        hiddenContracts: allContracts.filter((contract) => Boolean(contract?.deletedAt)).map((contract) => summarizeOrdersContract(contract, state.cashMovements)),
         rentals: (Array.isArray(state.rentals) ? state.rentals : []).map(summarizeOrdersRental),
         deliveries: (Array.isArray(state.deliveries) ? state.deliveries : []).map(summarizeOrdersDelivery),
         // Cotizaciones permanecen disponibles porque comparten esta misma vista.
@@ -9909,7 +9984,7 @@ router.get('/__copetin_db', async (req, res, next) => {
       });
       summarizedBootstrapCollections.forEach((collection) => {
         const rows = Array.isArray(snapshot.state[collection]) ? snapshot.state[collection] : [];
-        state[collection] = summarizeBootstrapCollection(collection, rows);
+        state[collection] = summarizeBootstrapCollection(collection, rows, snapshot.state);
       });
       await sendJsonPayload(req, res, {
         ...snapshot,

@@ -2827,6 +2827,9 @@ function ServiceOrdersSection({
       const serverGuaranteeSummary = contract?.guaranteeEconomicSummary && typeof contract.guaranteeEconomicSummary === 'object'
         ? contract.guaranteeEconomicSummary
         : null;
+      const serverCashSummary = contract?.economicCashSummary && typeof contract.economicCashSummary === 'object'
+        ? contract.economicCashSummary
+        : null;
       const reclassifiedGuaranteeFromCollectedDepositBs = economicLedger.reduce((sum, entry) => {
         if (entry?.type !== 'guarantee' || !entry?.reclassifiedFromPayment) return sum;
         const sourceDepositId = String(entry?.sourceDepositId ?? '').trim();
@@ -2843,6 +2846,7 @@ function ServiceOrdersSection({
         reclassifiedGuaranteeFromCollectedDepositBs,
         toMoneyNumber(rowGuaranteeEvidence?.paidBs),
         toMoneyNumber(serverGuaranteeSummary?.paidBs),
+        toMoneyNumber(serverCashSummary?.guaranteePaidBs),
       );
       // No considerar cualquier dano como garantia aplicada: solo cuenta una
       // aplicacion explicita registrada en la hoja economica. El resumen del
@@ -2900,6 +2904,7 @@ function ServiceOrdersSection({
         Number(collectionRegisteredBs.toFixed(2)),
         Number(ledgerReceivedForRentalBs.toFixed(2)),
         canonicalLedgerPaidBs,
+        toMoneyNumber(serverCashSummary?.contractPaidBs),
       );
       const paidOnAccountBs = Math.min(
         rowChargeTargetBs,
