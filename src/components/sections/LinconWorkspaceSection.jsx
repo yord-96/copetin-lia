@@ -1542,54 +1542,59 @@ Escribe RESET ECONOMICO para continuar:`);
           </div>
           <div class="receipt-title">
             <strong>${safe(title)}</strong>
-            <span>COMPROBANTE DE PAGO</span>
-            <em>Más que un lugar, grandes historias</em>
-          </div>
-          <div class="receipt-number">
-            <small>N° DE RECIBO</small>
             <b>${safe(receipt.code)}</b>
-            <span>${copyLabel}</span>
+          </div>
+          <div class="receipt-meta">
+            <span class="receipt-copy">${copyLabel}</span>
+            <div><small>FECHA:</small><strong>${safe(formatDate(receipt.date))}</strong></div>
           </div>
         </header>
 
-        <div class="receipt-rule"></div>
+        <div class="receipt-contact-strip">
+          <span>Centro de Eventos Lincoln</span>
+          <span>Evento: ${safe(receipt.eventCode || '—')}</span>
+          <span>Cliente: ${safe(receipt.clientName || '—')}</span>
+        </div>
 
-        <section class="receipt-data">
-          <div class="receipt-column">
-            <div class="receipt-field"><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
-            <div class="receipt-field"><small>CLIENTE</small><strong>${safe(receipt.clientName || '—')}</strong></div>
-            <div class="receipt-field"><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
-            <div class="receipt-field"><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
+        <section class="receipt-info-grid">
+          <div class="receipt-info-box">
+            <div><i></i><small>TIPO DE MOVIMIENTO</small><strong>${safe(isExpense ? 'Devolución / egreso' : 'Ingreso')}</strong></div>
+            <div><i></i><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
+            <div><i></i><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
           </div>
-          <div class="receipt-column receipt-column-right">
-            <div class="receipt-field"><small>FECHA</small><strong>${safe(formatDate(receipt.date))}</strong></div>
-            <div class="receipt-field receipt-field-concept"><small>CONCEPTO</small><strong>${safe(receipt.concept || 'Movimiento económico')}</strong></div>
-            <div class="receipt-field"><small>DESTINO</small><strong>${safe(receipt.destination || '—')}</strong></div>
-            <div class="receipt-field"><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+          <div class="receipt-info-box">
+            <div><i></i><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
+            <div><i></i><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+            <div><i></i><small>DESTINO</small><strong>${safe(receipt.destination || '—')}</strong></div>
           </div>
         </section>
 
-        <section class="receipt-total-row">
-          <div class="receipt-total-icon" aria-hidden="true">
-            <span class="coin-stack"><i></i><i></i><i></i></span>
+        <section class="receipt-detail-table">
+          <div class="receipt-detail-head">
+            <span>NRO</span><span>DETALLE</span><span>MEDIO</span><span>RESPONSABLE</span><span>VALOR</span>
           </div>
-          <div class="receipt-total-label">${safe(totalLabel)}:</div>
-          <strong>${safe(formatBs(receipt.amountBs))}</strong>
-          <span>${safe(amountToWords(receipt.amountBs))}.</span>
+          <div class="receipt-detail-row">
+            <span>1</span>
+            <span>${safe(receipt.concept || 'Movimiento económico')}</span>
+            <span>${safe(paymentMethodLabel(receipt.method))}</span>
+            <span>${safe(receipt.createdByName || '—')}</span>
+            <strong>${safe(formatBs(receipt.amountBs))}</strong>
+          </div>
         </section>
+
+        <div class="receipt-words-total">
+          <div class="receipt-words"><b>Son:</b> ${safe(amountToWords(receipt.amountBs))}.</div>
+          <div class="receipt-total-box"><span>${safe(totalLabel)}</span><strong>${safe(formatBs(receipt.amountBs))}</strong></div>
+        </div>
 
         <section class="receipt-signatures">
-          <div><span></span><strong>Entregué</strong></div>
-          <div><span></span><strong>Recibí</strong></div>
-          <aside>
-            <b>Gracias por<br/>confiar en nosotros</b>
-            <div class="receipt-watermark" aria-hidden="true"></div>
-          </aside>
+          <div><span></span><strong>Entregué</strong><small>Nombre y firma</small></div>
+          <div><span></span><strong>Recibí</strong><small>Nombre y firma</small></div>
         </section>
 
         <footer>
-          <span>Centro de Eventos Lincoln&nbsp;&nbsp;|&nbsp;&nbsp;Santa Cruz de la Sierra, Bolivia</span>
-          <span>EVENTOS&nbsp;&nbsp;•&nbsp;&nbsp;REUNIONES&nbsp;&nbsp;•&nbsp;&nbsp;CELEBRACIONES</span>
+          <span>Documento generado por Centro de Eventos Lincoln</span>
+          <span>${safe(receipt.code)}</span>
         </footer>
       </main>`;
 
@@ -1610,49 +1615,47 @@ Escribe RESET ECONOMICO para continuar:`);
             .receipt-page{position:relative;width:8.5in;height:11in;margin:0 auto;background:#fff;display:grid;grid-template-rows:5.5in 5.5in;box-shadow:0 15px 46px rgba(54,25,28,.16);overflow:hidden}
             .cut-line{position:absolute;z-index:4;top:5.5in;left:5mm;right:5mm;border-top:1px dashed #9c8e8f;text-align:center;pointer-events:none}
             .cut-line span{position:relative;top:-7px;padding:0 3mm;background:#fff;color:#77696a;font-size:7px;font-weight:900;letter-spacing:.13em}
-            .lincoln-receipt-sheet{width:8.5in;height:5.5in;padding:5.5mm 8mm 4mm;background:#fff;display:flex;flex-direction:column;overflow:hidden}
-            .receipt-head{display:grid;grid-template-columns:1.18fr 1.62fr .95fr;gap:5mm;align-items:center;min-height:33mm}
-            .receipt-brand{height:30mm;display:flex;align-items:center;justify-content:flex-start;padding-right:5mm;border-right:1px solid #c12a33}
-            .receipt-brand img{display:block;max-width:100%;max-height:29mm;object-fit:contain;object-position:left center}
-            .receipt-title{text-align:center;display:grid;justify-items:center;align-content:center;gap:1.3mm;min-width:0}
-            .receipt-title strong{font-family:Georgia,'Times New Roman',serif;font-size:25px;line-height:1;color:#740812;letter-spacing:.01em;white-space:nowrap}
-            .receipt-title span{display:flex;align-items:center;gap:2.2mm;font-size:7.6px;font-weight:800;letter-spacing:.28em;color:#84232c}
-            .receipt-title span:before,.receipt-title span:after{content:"";display:block;width:16mm;border-top:1px solid #ca5a62}
-            .receipt-title em{font-family:Georgia,'Times New Roman',serif;font-size:9.7px;font-weight:400;color:#4a4457;letter-spacing:.035em}
-            .receipt-number{justify-self:end;text-align:center;display:grid;justify-items:center;gap:1.2mm;min-width:49mm}
-            .receipt-number small{font-size:7px;font-weight:800;letter-spacing:.18em;color:#8b1b23}
-            .receipt-number b{width:100%;padding:3mm 3mm;border-radius:5px;background:#fbefef;font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#720912;white-space:nowrap}
-            .receipt-number span{display:inline-flex;margin-top:.4mm;padding:1.3mm 5mm;border-radius:999px;background:#b50d1b;color:#fff;font-size:7.1px;font-weight:900;letter-spacing:.17em}
-            .receipt-rule{border-top:1.5px solid #cb3e49;margin:1.9mm 0 2.8mm}
-            .receipt-data{display:grid;grid-template-columns:1fr 1fr;gap:8mm;min-height:56mm}
-            .receipt-column{display:grid;grid-template-rows:repeat(4,minmax(0,1fr));min-width:0}
-            .receipt-column-right{padding-left:7mm;border-left:1px solid #c95b64}
-            .receipt-field{display:grid;grid-template-columns:37mm 1fr;align-items:center;gap:2mm;min-width:0;border-bottom:1px dotted #cfc4c3;padding:1.55mm 0}
-            .receipt-field:last-child{border-bottom:0}
-            .receipt-field small{font-size:7.6px;font-weight:900;letter-spacing:.19em;color:#40394f;white-space:nowrap}
-            .receipt-field strong{font-size:10.9px;line-height:1.14;color:#17171b;overflow-wrap:anywhere}
-            .receipt-field-concept strong{font-size:9.9px}
-            .receipt-total-row{display:grid;grid-template-columns:14mm auto auto 1fr;align-items:center;gap:4.2mm;margin-top:2.4mm;padding:3.2mm 4.2mm;border-radius:5px;background:#fbefef;border:1px solid #f0d9da;min-height:16mm}
-            .receipt-total-icon{width:12mm;height:12mm;border-radius:50%;background:radial-gradient(circle at 32% 30%, #c71726 0%, #950d19 55%, #6f0710 100%);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
-            .coin-stack{position:relative;display:block;width:7mm;height:6mm}
-            .coin-stack i{position:absolute;display:block;border:1.4px solid #fff;border-radius:50%;width:4.3mm;height:1.9mm;background:transparent}
-            .coin-stack i:nth-child(1){left:.2mm;top:2.8mm}
-            .coin-stack i:nth-child(2){left:1.3mm;top:1.4mm}
-            .coin-stack i:nth-child(3){left:2.4mm;top:0}
-            .receipt-total-label{font-size:9.2px;font-weight:900;letter-spacing:.18em;color:#8f111c;white-space:nowrap;padding-right:4mm;border-right:1px solid #c88e93}
-            .receipt-total-row>strong{padding-right:4.5mm;border-right:1px solid #c88e93;font-family:Georgia,'Times New Roman',serif;font-size:27px;line-height:1;color:#780913;white-space:nowrap}
-            .receipt-total-row>span{font-family:Georgia,'Times New Roman',serif;font-size:9.9px;font-style:italic;line-height:1.2;color:#8b2c32;padding-left:1mm}
-            .receipt-signatures{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:16mm;align-items:end;margin:8mm 6mm 0}
+            .lincoln-receipt-sheet{width:8.5in;height:5.5in;padding:5mm 7mm 3.5mm;background:#fff;display:flex;flex-direction:column;overflow:hidden}
+            .receipt-head{display:grid;grid-template-columns:1.18fr 1.35fr .82fr;gap:5mm;align-items:center;min-height:28mm}
+            .receipt-brand{height:25mm;display:flex;align-items:center;justify-content:flex-start}
+            .receipt-brand img{display:block;max-width:100%;max-height:24mm;object-fit:contain;object-position:left center}
+            .receipt-title{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
+            .receipt-title strong{font-size:15px;line-height:1.05;color:#6f0a12;letter-spacing:.03em;font-weight:900}
+            .receipt-title b{margin-top:1mm;font-size:24px;line-height:1;color:#b50d1b;letter-spacing:.02em}
+            .receipt-meta{justify-self:end;display:grid;gap:3mm;min-width:36mm}
+            .receipt-copy{display:block;text-align:center;padding:1.5mm 4mm;border-radius:4px;background:#8f0d18;color:#fff;font-size:8px;font-weight:900;letter-spacing:.09em}
+            .receipt-meta>div{display:grid;grid-template-columns:auto 1fr;gap:2mm;align-items:center}
+            .receipt-meta small{font-size:6.8px;font-weight:900;color:#5a4d50}
+            .receipt-meta strong{font-size:8.8px;color:#9c111c}
+            .receipt-contact-strip{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2mm;align-items:center;margin:2mm 0 3mm;padding:2mm 3mm;border-radius:4px;background:#730b14;color:#fff;font-size:6.8px;font-weight:700;text-align:center}
+            .receipt-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin-bottom:2.5mm}
+            .receipt-info-box{border:1px solid #9f1721;border-radius:4px;padding:2.4mm 3mm;display:grid;gap:1.8mm;min-height:26mm}
+            .receipt-info-box>div{display:grid;grid-template-columns:3mm 31mm 1fr;gap:1.5mm;align-items:start;min-width:0}
+            .receipt-info-box i{width:2mm;height:2mm;margin-top:.8mm;border-radius:50%;background:#c99027}
+            .receipt-info-box small{font-size:6.6px;line-height:1.12;font-weight:900;color:#2b2230;letter-spacing:.03em}
+            .receipt-info-box strong{font-size:7.6px;line-height:1.12;color:#17171b;overflow-wrap:anywhere}
+            .receipt-detail-table{border:1px solid #8e0f19;border-radius:4px;overflow:hidden;margin-bottom:1.8mm}
+            .receipt-detail-head,.receipt-detail-row{display:grid;grid-template-columns:10mm 1fr 22mm 31mm 30mm;align-items:stretch}
+            .receipt-detail-head{background:#730b14;color:#fff;font-size:6.7px;font-weight:900;text-align:center}
+            .receipt-detail-head span{padding:1.4mm 1mm;border-right:1px solid rgba(255,255,255,.35)}
+            .receipt-detail-head span:last-child{border-right:0}
+            .receipt-detail-row{min-height:17mm;font-size:7.3px;background:#fff}
+            .receipt-detail-row>span,.receipt-detail-row>strong{display:flex;align-items:center;padding:2mm;border-right:1px solid #bda9ab;line-height:1.15}
+            .receipt-detail-row>span:first-child{justify-content:center}
+            .receipt-detail-row>strong{justify-content:center;border-right:0;font-size:14px;color:#b30e1b;white-space:nowrap}
+            .receipt-words-total{display:grid;grid-template-columns:1fr auto;gap:4mm;align-items:center;margin-bottom:3mm}
+            .receipt-words{font-size:7px;color:#342b2d;border-bottom:1px solid #9f1721;padding:1.2mm 2mm}
+            .receipt-words b{color:#730b14}
+            .receipt-total-box{display:grid;grid-template-columns:auto auto;border:1px solid #c99027;min-width:70mm}
+            .receipt-total-box span{display:flex;align-items:center;justify-content:center;background:#730b14;color:#fff;padding:2mm 3mm;font-size:7.2px;font-weight:900;letter-spacing:.03em}
+            .receipt-total-box strong{display:flex;align-items:center;justify-content:center;padding:2mm 4mm;font-size:14px;color:#b30e1b;white-space:nowrap}
+            .receipt-signatures{display:grid;grid-template-columns:1fr 1fr;gap:22mm;margin:7mm 14mm 0}
             .receipt-signatures>div{text-align:center}
-            .receipt-signatures>div>span{display:block;border-top:1px solid #303040}
-            .receipt-signatures>div>strong{display:block;margin-top:1.8mm;font-family:Georgia,'Times New Roman',serif;font-size:9.8px;font-weight:400;color:#35292b}
-            .receipt-signatures aside{position:relative;text-align:center;align-self:center;min-height:23mm}
-            .receipt-signatures aside b{position:relative;z-index:2;display:inline-block;margin-top:1mm;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:11.5px;line-height:1.02;font-weight:400;color:#8e111b;transform:rotate(-7deg);border-bottom:1px solid #b52831;padding:0 2mm 1mm}
-            .receipt-watermark{position:absolute;right:0;bottom:-1mm;width:34mm;height:20mm;opacity:.22;background:linear-gradient(#d7b4b1,#d7b4b1) left 9mm bottom 0/24mm 1px no-repeat,linear-gradient(#d7b4b1,#d7b4b1) left 4mm bottom 0/5mm 1px no-repeat,linear-gradient(#d7b4b1,#d7b4b1) right 0 bottom 0/5mm 1px no-repeat,linear-gradient(90deg,#d7b4b1,#d7b4b1) left 5mm bottom 0/1px 12mm no-repeat,linear-gradient(90deg,#d7b4b1,#d7b4b1) left 28mm bottom 0/1px 12mm no-repeat,linear-gradient(90deg,#d7b4b1,#d7b4b1) left 11mm bottom 0/1px 15mm no-repeat,linear-gradient(90deg,#d7b4b1,#d7b4b1) left 22mm bottom 0/1px 15mm no-repeat,linear-gradient(#d7b4b1,#d7b4b1) left 8mm bottom 12mm/20mm 1px no-repeat,linear-gradient(#d7b4b1,#d7b4b1) left 11mm bottom 15mm/14mm 1px no-repeat,linear-gradient(135deg,transparent 46%, #d7b4b1 47%, #d7b4b1 53%, transparent 54%) left 8mm bottom 12mm/10mm 4mm no-repeat,linear-gradient(225deg,transparent 46%, #d7b4b1 47%, #d7b4b1 53%, transparent 54%) left 18mm bottom 12mm/10mm 4mm no-repeat}
-            footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding:2.2mm 0 0;border-top:1px solid #c33b44;color:#66585a;font-size:6.9px}
-            footer span:first-child{display:flex;align-items:center;gap:1.6mm}
-            footer span:first-child:before{content:"";width:3mm;height:3mm;border-radius:50% 50% 50% 0;background:#b20f1c;display:inline-block;transform:rotate(-45deg);box-shadow:1.15mm 1.15mm 0 -.8mm #fff inset}
-            footer span:last-child{color:#8e111b;font-weight:800;letter-spacing:.16em}
+            .receipt-signatures>div>span{display:block;border-top:1px solid #5f5557}
+            .receipt-signatures>div>strong{display:block;margin-top:1.2mm;font-size:7.5px;color:#302729}
+            .receipt-signatures>div>small{display:block;margin-top:.3mm;font-size:6px;color:#6a5d5f}
+            footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:1.5mm;border-top:1px solid #c99027;color:#75686a;font-size:5.8px}
+            footer span:last-child{color:#8e111b;font-weight:900}
             @media screen{.receipt-page{transform:scale(.93);transform-origin:top center;margin-bottom:-20mm}}
             @media print{
               html,body{width:8.5in;height:11in;padding:0;background:#fff;overflow:hidden}
