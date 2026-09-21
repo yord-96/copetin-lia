@@ -953,21 +953,49 @@ function EventEconomicView({ state, eventRecord, canReset, onBack, onNewPayment,
     receiptId: row.receiptId, receiptCode: row.receiptCode, isCashRegistered: true, date: row.date, createdAt: row.createdAt,
   }));
   const history = [...summary.ledger, ...legacyRows].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
+  const serviceProgress = summary.eventTotalBs > 0 ? Math.min(100, Math.max(0, (summary.servicePaidBs / summary.eventTotalBs) * 100)) : 0;
+  const guaranteeProgress = summary.guaranteeRequiredBs > 0 ? Math.min(100, Math.max(0, (summary.guaranteeCollectedBs / summary.guaranteeRequiredBs) * 100)) : 0;
+  const replacementProgress = summary.replacementChargedBs > 0 ? Math.min(100, Math.max(0, (summary.replacementCollectedBs / summary.replacementChargedBs) * 100)) : 0;
   return (
-    <div className="lincoln-content">
+    <div className="lincoln-content lincoln-economic-content">
       <article className="lincoln-card lincoln-economic-sheet">
-        <header><div><small>Hoja económica del evento</small><h2>{eventRecord.code} · {eventRecord.clientName || eventRecord.eventType}</h2><p>El dinero real se refleja en Caja Lincoln; cargos, garantía y notas conservan su propia trazabilidad.</p></div><div className="lincoln-header-actions"><button type="button" className="is-secondary" onClick={onBack}>← Volver</button>{canReset ? <button type="button" className="is-secondary lincoln-reset-economic" onClick={onResetEconomic}>Reset económico</button> : null}<button type="button" className="is-secondary" onClick={onNewEconomicEntry}>+ Cargo / nota</button><button type="button" onClick={onNewPayment}>+ Registrar dinero</button></div></header>
-        <div className="lincoln-event-summary lincoln-event-summary-economic">
-          <div><small>Costo servicio</small><strong>{formatBs(summary.eventTotalBs)}</strong></div>
-          <div><small>Pagado servicio</small><strong>{formatBs(summary.servicePaidBs)}</strong></div>
-          <div className={summary.serviceBalanceBs > 0 ? 'has-warning' : 'has-ok'}><small>Saldo servicio</small><strong>{formatBs(summary.serviceBalanceBs)}</strong></div>
-          <div><small>Garantía requerida</small><strong>{formatBs(summary.guaranteeRequiredBs)}</strong></div>
-          <div><small>Garantía retenida</small><strong>{formatBs(summary.guaranteeHeldBs)}</strong><span>Aplicada {formatBs(summary.guaranteeAppliedBs)}</span></div>
-          <div><small>Cargos / reposiciones</small><strong>{formatBs(summary.replacementChargedBs)}</strong><span>Cobrado {formatBs(summary.replacementCollectedBs)}</span></div>
-          <div className={summary.replacementPendingBs > 0 ? 'has-warning' : 'has-ok'}><small>Pendiente reposiciones</small><strong>{formatBs(summary.replacementPendingBs)}</strong></div>
-        </div>
-        {summary.guaranteeHeldBs > 0 ? <div className="lincoln-inline-actions"><span>Hay {formatBs(summary.guaranteeHeldBs)} de garantía retenida y disponible.</span><button type="button" onClick={onReturnGuarantee}>Devolver garantía</button></div> : null}
-        <DataTable rows={history} emptyText="Registra el primer ingreso, cargo, garantía o nota económica del evento." columns={[
+        <header className="lincoln-economic-head">
+          <div className="lincoln-economic-titleblock"><small>Hoja económica del evento</small><h2>{eventRecord.code} · {eventRecord.clientName || eventRecord.eventType}</h2><p>Control unificado de pagos, garantías y reposiciones. Los movimientos de dinero quedan respaldados en Caja Lincoln y por su recibo.</p></div>
+          <div className="lincoln-header-actions lincoln-economic-actions"><button type="button" className="is-secondary" onClick={onBack}>← Volver</button>{canReset ? <button type="button" className="is-secondary lincoln-reset-economic" onClick={onResetEconomic}>Reset económico</button> : null}<button type="button" className="is-secondary" onClick={onNewEconomicEntry}>+ Cargo / nota</button><button type="button" className="lincoln-economic-primary" onClick={onNewPayment}>+ Registrar dinero</button></div>
+        </header>
+
+        <section className="lincoln-economic-dashboard">
+          <div className="lincoln-economic-main-kpis">
+            <article><small>Costo del servicio</small><strong>{formatBs(summary.eventTotalBs)}</strong><span>Monto pactado del evento</span></article>
+            <article className="is-paid"><small>Pagado al servicio</small><strong>{formatBs(summary.servicePaidBs)}</strong><span>{serviceProgress.toFixed(0)}% cubierto</span></article>
+            <article className={summary.serviceBalanceBs > 0 ? 'is-balance' : 'is-settled'}><small>Saldo del servicio</small><strong>{formatBs(summary.serviceBalanceBs)}</strong><span>{summary.serviceBalanceBs > 0 ? 'Pendiente de cobro' : 'Servicio cancelado'}</span></article>
+            <article className="is-guarantee"><small>Garantía retenida</small><strong>{formatBs(summary.guaranteeHeldBs)}</strong><span>Aplicada {formatBs(summary.guaranteeAppliedBs)}</span></article>
+          </div>
+
+          <div className="lincoln-economic-breakdown">
+            <div className="lincoln-economic-track">
+              <div className="lincoln-economic-track-head"><span><b>Servicio</b><small>{formatBs(summary.servicePaidBs)} de {formatBs(summary.eventTotalBs)}</small></span><strong>{serviceProgress.toFixed(0)}%</strong></div>
+              <div className="lincoln-economic-progress"><i style={{ width: `${serviceProgress}%` }} /></div>
+              <div className="lincoln-economic-track-foot"><span>Pagado</span><b>{formatBs(summary.servicePaidBs)}</b><span>Saldo</span><b>{formatBs(summary.serviceBalanceBs)}</b></div>
+            </div>
+            <div className="lincoln-economic-track is-guarantee">
+              <div className="lincoln-economic-track-head"><span><b>Garantía</b><small>{formatBs(summary.guaranteeCollectedBs)} recibida</small></span><strong>{summary.guaranteeRequiredBs > 0 ? `${guaranteeProgress.toFixed(0)}%` : '—'}</strong></div>
+              <div className="lincoln-economic-progress"><i style={{ width: `${guaranteeProgress}%` }} /></div>
+              <div className="lincoln-economic-track-foot"><span>Requerida</span><b>{formatBs(summary.guaranteeRequiredBs)}</b><span>Retenida</span><b>{formatBs(summary.guaranteeHeldBs)}</b></div>
+            </div>
+            <div className="lincoln-economic-track is-replacement">
+              <div className="lincoln-economic-track-head"><span><b>Cargos / reposiciones</b><small>{formatBs(summary.replacementCollectedBs)} cobrado</small></span><strong>{summary.replacementChargedBs > 0 ? `${replacementProgress.toFixed(0)}%` : '—'}</strong></div>
+              <div className="lincoln-economic-progress"><i style={{ width: `${replacementProgress}%` }} /></div>
+              <div className="lincoln-economic-track-foot"><span>Cargado</span><b>{formatBs(summary.replacementChargedBs)}</b><span>Pendiente</span><b>{formatBs(summary.replacementPendingBs)}</b></div>
+            </div>
+          </div>
+        </section>
+
+        {summary.guaranteeHeldBs > 0 ? <div className="lincoln-inline-actions lincoln-economic-guarantee-callout"><span><b>Garantía disponible:</b> {formatBs(summary.guaranteeHeldBs)} permanece retenida en este evento.</span><button type="button" onClick={onReturnGuarantee}>Devolver garantía</button></div> : null}
+
+        <section className="lincoln-economic-history">
+          <div className="lincoln-economic-history-head"><div><small>Trazabilidad</small><h3>Movimientos económicos</h3></div><span>{history.length} {history.length === 1 ? 'movimiento' : 'movimientos'}</span></div>
+          <DataTable rows={history} emptyText="Registra el primer ingreso, cargo, garantía o nota económica del evento." columns={[
           { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date ?? row.createdAt) },
           { key: 'code', label: 'Movimiento' },
           { key: 'type', label: 'Concepto', render: (row) => <span>{economicEntryLabel(row)}</span> },
@@ -977,7 +1005,8 @@ function EventEconomicView({ state, eventRecord, canReset, onBack, onNewPayment,
           { key: 'receipt', label: 'Recibo', render: (row) => row.receiptCode ? <button type="button" className="lincoln-link-action" onClick={(e) => { e.stopPropagation(); onPrintReceipt(row.receiptId); }}>{row.receiptCode}</button> : '—' },
           { key: 'amount', label: 'Monto', render: (row) => row.type === 'note' ? <strong>—</strong> : <strong>{formatBs(row.amountBs)}</strong> },
           { key: 'action', label: '', render: (row) => row.paymentId && row.subtype !== 'guarantee_return' && row.type !== 'refund' ? <button type="button" className="lincoln-danger-action" onClick={(e) => { e.stopPropagation(); const payment = summary.payments.find((item) => item.id === row.paymentId); if (payment) onVoidPayment(payment); }}>Anular</button> : null },
-        ]} />
+          ]} />
+        </section>
       </article>
     </div>
   );
@@ -1447,14 +1476,130 @@ Escribe RESET ECONOMICO para continuar:`);
       window.alert('Recibo Lincoln no encontrado.');
       return;
     }
-    const popup = window.open('', '_blank', 'width=820,height=760');
+    const popup = window.open('', '_blank', 'width=1080,height=900');
     if (!popup) {
       window.alert('Habilita ventanas emergentes para imprimir el recibo.');
       return;
     }
     const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+    const isExpense = receipt.direction === 'expense';
+    const title = isExpense ? 'COMPROBANTE DE DEVOLUCIÓN' : 'RECIBO DE INGRESO';
+    const totalLabel = isExpense ? 'TOTAL DEVUELTO' : 'TOTAL RECIBIDO';
+    const partyLabel = isExpense ? 'DEVUELTO A' : 'PAGADO POR';
+    const staffLabel = isExpense ? 'ENTREGADO POR' : 'RECIBIDO POR';
+    const receiptHtml = (copyLabel) => `
+      <main class="lincoln-receipt-sheet">
+        <header class="receipt-head">
+          <div class="receipt-brand">
+            <span class="brand-overline">CENTRO DE EVENTOS</span>
+            <strong>LINCOLN</strong>
+            <small>Comprobante económico del evento</small>
+          </div>
+          <div class="receipt-title">
+            <span>${safe(title)}</span>
+            <b>${safe(receipt.code)}</b>
+          </div>
+          <div class="receipt-copy">
+            <span>${copyLabel}</span>
+            <small>FECHA</small>
+            <strong>${safe(formatDate(receipt.date))}</strong>
+          </div>
+        </header>
+
+        <section class="receipt-context">
+          <div><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
+          <div class="is-wide"><small>CLIENTE</small><strong>${safe(receipt.clientName || '—')}</strong></div>
+          <div><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
+        </section>
+
+        <section class="receipt-detail-grid">
+          <div class="receipt-detail-main">
+            <small>CONCEPTO</small>
+            <strong>${safe(receipt.concept || 'Movimiento económico')}</strong>
+          </div>
+          <div><small>DESTINO / CAJA</small><strong>${safe(receipt.destination || '—')}</strong></div>
+          <div><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
+          <div><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+        </section>
+
+        <section class="receipt-total-row">
+          <div class="receipt-total-caption"><span>${safe(totalLabel)}</span><small>Importe registrado en Caja Lincoln</small></div>
+          <strong>${safe(formatBs(receipt.amountBs))}</strong>
+        </section>
+
+        <section class="receipt-signatures">
+          <div><span></span><strong>Entregué</strong><small>Nombre y firma</small></div>
+          <div><span></span><strong>Recibí</strong><small>Nombre y firma</small></div>
+        </section>
+
+        <footer><span>Documento generado por Centro de Eventos Lincoln</span><b>${safe(receipt.code)}</b></footer>
+      </main>`;
+
     try { popup.opener = null; } catch (error) { void error; }
-    popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${safe(receipt.code)}</title><style>@page{size:Letter portrait;margin:16mm}body{font-family:Arial,sans-serif;color:#173a29}.sheet{border:1px solid #dfe7e2;border-radius:14px;padding:22px}.head{display:flex;justify-content:space-between;border-bottom:3px solid #276342;padding-bottom:14px}.head h1{font-size:22px;margin:0}.code{font-size:22px;font-weight:800;color:#276342}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.grid div{padding:10px;border:1px solid #e2e8e4;border-radius:8px}.grid small{display:block;color:#738078;text-transform:uppercase;font-weight:700}.amount{margin-top:20px;padding:16px;border-radius:10px;background:#edf5ef;text-align:right}.amount strong{font-size:28px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:60px;text-align:center}.line{border-top:1px solid #333;padding-top:7px}button{margin-top:20px;padding:10px 14px}@media print{button{display:none}}</style></head><body><section class="sheet"><div class="head"><div><small>Centro de Eventos Lincoln</small><h1>${receipt.direction === 'expense' ? 'COMPROBANTE DE DEVOLUCIÓN' : 'RECIBO DE INGRESO'}</h1></div><div class="code">${safe(receipt.code)}</div></div><div class="grid"><div><small>Evento</small><strong>${safe(receipt.eventCode)}</strong></div><div><small>Fecha</small><strong>${safe(formatDate(receipt.date))}</strong></div><div><small>Cliente</small><strong>${safe(receipt.clientName)}</strong></div><div><small>Concepto</small><strong>${safe(receipt.concept)}</strong></div><div><small>Medio</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div><div><small>Destino</small><strong>${safe(receipt.destination)}</strong></div><div><small>${receipt.direction === 'expense' ? 'Devuelto a' : 'Pagado por'}</small><strong>${safe(receipt.payerName)}</strong></div><div><small>${receipt.direction === 'expense' ? 'Entregado por' : 'Recibido por'}</small><strong>${safe(receipt.createdByName)}</strong></div></div><div class="amount"><small>${receipt.direction === 'expense' ? 'TOTAL DEVUELTO' : 'TOTAL RECIBIDO'}</small><br><strong>${safe(formatBs(receipt.amountBs))}</strong></div><div class="sign"><div class="line">Entregué</div><div class="line">Recibí</div></div><button onclick="window.print()">Imprimir</button></section></body></html>`);
+    popup.document.write(`<!doctype html>
+      <html lang="es">
+        <head>
+          <meta charset="utf-8">
+          <title>${safe(receipt.code)}</title>
+          <style>
+            @page{size:Letter portrait;margin:0}
+            *{box-sizing:border-box}
+            html{background:#f3f0ed}
+            body{margin:0;padding:12px 8px 18px;font-family:Arial,Helvetica,sans-serif;color:#2b2021;background:#f3f0ed;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            .preview-actions{position:sticky;top:0;z-index:10;display:flex;justify-content:center;gap:9px;margin:0 auto 10px;padding:9px;background:rgba(255,255,255,.94);border:1px solid #ead9da;border-radius:12px;max-width:8.5in;backdrop-filter:blur(8px)}
+            .preview-actions button{border:1px solid #d9c5c7;border-radius:999px;padding:9px 15px;background:#fff;color:#77131d;font-weight:800;cursor:pointer}
+            .preview-actions .primary{background:#8d1721;border-color:#8d1721;color:#fff}
+            .receipt-page{position:relative;width:8.5in;height:11in;margin:0 auto;background:#fff;display:grid;grid-template-rows:5.5in 5.5in;box-shadow:0 15px 46px rgba(54,25,28,.16);overflow:hidden}
+            .cut-line{position:absolute;z-index:4;top:5.5in;left:5mm;right:5mm;border-top:1.5px dashed #9c8e8f;text-align:center;pointer-events:none}
+            .cut-line span{position:relative;top:-7px;padding:0 3mm;background:#fff;color:#77696a;font-size:7.5px;font-weight:900;letter-spacing:.13em}
+            .lincoln-receipt-sheet{width:8.5in;height:5.5in;padding:5mm 6mm 4mm;background:#fff;display:flex;flex-direction:column;overflow:hidden;border:1px solid #cdb6b8}
+            .receipt-head{display:grid;grid-template-columns:1.05fr 1.25fr .78fr;gap:5mm;align-items:center;padding-bottom:3mm;border-bottom:2.2px solid #8d1721}
+            .receipt-brand{display:grid;align-content:center;min-width:0}
+            .brand-overline{font-size:7.5px;font-weight:900;letter-spacing:.18em;color:#8d1721}
+            .receipt-brand>strong{font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:.95;letter-spacing:.03em;color:#8d1721}
+            .receipt-brand>small{margin-top:1.5mm;color:#736668;font-size:8px}
+            .receipt-title{text-align:center;display:grid;gap:1.7mm;min-width:0}
+            .receipt-title>span{font-size:13px;font-weight:900;letter-spacing:.055em;color:#302224}
+            .receipt-title>b{font-size:23px;line-height:1;color:#8d1721;letter-spacing:.03em}
+            .receipt-copy{justify-self:end;display:grid;justify-items:end;gap:.8mm;text-align:right}
+            .receipt-copy>span{display:inline-flex;padding:1.2mm 2.6mm;border-radius:999px;background:#f6e9ea;color:#8d1721;font-size:7px;font-weight:900;letter-spacing:.14em}
+            .receipt-copy small{margin-top:1mm;color:#857779;font-size:7px;font-weight:900;letter-spacing:.08em}
+            .receipt-copy strong{font-size:10px;color:#332426}
+            .receipt-context{display:grid;grid-template-columns:1fr 1.55fr 1fr;gap:2.2mm;margin-top:2.6mm}
+            .receipt-context>div,.receipt-detail-grid>div{border:1px solid #e2d7d8;border-radius:6px;padding:2mm 2.4mm;min-width:0;background:#fff}
+            .receipt-context small,.receipt-detail-grid small{display:block;margin-bottom:.8mm;color:#8a7b7d;font-size:7px;font-weight:900;letter-spacing:.07em}
+            .receipt-context strong,.receipt-detail-grid strong{display:block;color:#2f2224;font-size:10px;line-height:1.12;overflow-wrap:anywhere}
+            .receipt-detail-grid{display:grid;grid-template-columns:1.55fr 1fr 1fr;gap:2.2mm;margin-top:2.2mm}
+            .receipt-detail-main{grid-row:span 2;min-height:23mm;border-left:3px solid #8d1721!important;background:#fcf8f8!important}
+            .receipt-detail-main strong{font-size:11px;line-height:1.22}
+            .receipt-total-row{display:grid;grid-template-columns:1fr auto;align-items:stretch;margin-top:2.4mm;border:1.5px solid #8d1721;border-radius:7px;overflow:hidden;min-height:13mm}
+            .receipt-total-caption{display:grid;align-content:center;padding:2mm 3mm;background:#f8eeee}
+            .receipt-total-caption span{color:#8d1721;font-size:9px;font-weight:900;letter-spacing:.08em}
+            .receipt-total-caption small{margin-top:.6mm;color:#7b6c6e;font-size:7.5px}
+            .receipt-total-row>strong{display:grid;place-items:center;min-width:47mm;padding:0 4mm;background:#8d1721;color:#fff;font-size:24px;white-space:nowrap}
+            .receipt-signatures{display:grid;grid-template-columns:1fr 1fr;gap:28mm;margin:7mm 15mm 0;text-align:center}
+            .receipt-signatures div>span{display:block;border-top:1px solid #4b3b3d}
+            .receipt-signatures strong{display:block;margin-top:1.2mm;font-size:9px;color:#342629}
+            .receipt-signatures small{display:block;margin-top:.3mm;color:#8a7b7d;font-size:7px}
+            footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:1.8mm;border-top:1px solid #eadfe0;color:#8b7d7f;font-size:7px}
+            footer b{color:#8d1721}
+            @media screen{.receipt-page{transform:scale(.93);transform-origin:top center;margin-bottom:-20mm}}
+            @media print{
+              html,body{width:8.5in;height:11in;padding:0;background:#fff;overflow:hidden}
+              .preview-actions{display:none!important}
+              .receipt-page{margin:0;box-shadow:none;transform:none;width:8.5in;height:11in}
+            }
+          </style>
+        </head>
+        <body>
+          <div class="preview-actions"><button class="primary" onclick="window.print()">Imprimir / guardar PDF</button><button onclick="window.close()">Cerrar</button></div>
+          <div class="receipt-page">
+            ${receiptHtml('ORIGINAL')}
+            ${receiptHtml('COPIA')}
+            <div class="cut-line"><span>CORTAR POR LA MITAD</span></div>
+          </div>
+        </body>
+      </html>`);
     popup.document.close();
     popup.focus();
   };

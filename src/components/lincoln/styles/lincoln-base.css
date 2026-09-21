@@ -3418,17 +3418,86 @@
 
 
 /* Hoja económica Lincoln */
-.lincoln-economic-sheet > header { align-items:flex-start; gap:18px; }
-.lincoln-economic-sheet > header p { margin:5px 0 0; max-width:760px; color:var(--lincoln-muted, #667085); }
-.lincoln-event-summary-economic { grid-template-columns:repeat(7,minmax(120px,1fr)); }
-.lincoln-event-summary-economic > div span { display:block; margin-top:4px; font-size:11px; color:var(--lincoln-muted, #667085); }
-.lincoln-economic-allocation { border:1px solid rgba(15,23,42,.12); border-radius:14px; padding:14px; background:rgba(248,250,252,.85); }
-.lincoln-economic-allocation > p { margin:4px 0 12px; color:#667085; font-size:12px; }
-.lincoln-economic-allocation > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
-.lincoln-economic-allocation > span { display:block; margin-top:8px; font-size:12px; }
-.lincoln-economic-allocation > span.is-error { color:#b42318; font-weight:700; }
-.lincoln-economic-hint { display:flex; flex-direction:column; gap:3px; padding:11px 13px; border-radius:12px; background:#f8fafc; border:1px solid #e2e8f0; }
-.lincoln-economic-hint span { color:#667085; font-size:12px; }
-.lincoln-reset-economic { border-color:#f1b8b8 !important; color:#a61b1b !important; }
-@media (max-width:1180px){.lincoln-event-summary-economic{grid-template-columns:repeat(3,minmax(140px,1fr));}}
-@media (max-width:720px){.lincoln-event-summary-economic,.lincoln-economic-allocation>div{grid-template-columns:1fr;}.lincoln-economic-sheet>header{flex-direction:column;}.lincoln-economic-sheet .lincoln-header-actions{width:100%;flex-wrap:wrap;}}
+.lincoln-economic-content{padding-top:18px}
+.lincoln-economic-sheet{overflow:visible}
+.lincoln-economic-head{align-items:flex-start!important;gap:20px;padding:20px 22px!important;background:linear-gradient(180deg,#fff 0%,#fffafa 100%)}
+.lincoln-economic-titleblock{min-width:0}
+.lincoln-economic-titleblock>small{color:#8d1721!important}
+.lincoln-economic-titleblock h2{font-size:21px;margin-top:4px}
+.lincoln-economic-titleblock p{margin:6px 0 0;max-width:760px;color:var(--lincoln-muted,#667085);font-size:12px;line-height:1.45}
+.lincoln-economic-actions{justify-content:flex-end;flex-wrap:wrap;max-width:610px}
+.lincoln-economic-actions button{min-height:36px;border:1px solid transparent!important;box-shadow:none}
+.lincoln-economic-actions .is-secondary{background:#fff!important;border-color:#e4d8d9!important;color:#5d4a4c!important}
+.lincoln-economic-actions .is-secondary:hover{background:#fbf5f5!important}
+.lincoln-economic-actions .lincoln-economic-primary{background:#8d1721!important;color:#fff!important;border-color:#8d1721!important;box-shadow:0 6px 14px rgba(141,23,33,.16)}
+.lincoln-reset-economic{border-color:#efbabb!important;color:#a11e26!important;background:#fff8f8!important}
+
+.lincoln-economic-dashboard{padding:16px 18px 18px;background:#fbf8f6;border-bottom:1px solid #eadfdd}
+.lincoln-economic-main-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.lincoln-economic-main-kpis article{position:relative;overflow:hidden;padding:14px 14px 13px;border:1px solid #e5dedd;border-radius:12px;background:#fff;box-shadow:0 3px 12px rgba(52,35,37,.035)}
+.lincoln-economic-main-kpis article::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#6f625f}
+.lincoln-economic-main-kpis article.is-paid::before,.lincoln-economic-main-kpis article.is-settled::before{background:#2f7a52}
+.lincoln-economic-main-kpis article.is-balance::before{background:#c17818}
+.lincoln-economic-main-kpis article.is-guarantee::before{background:#7b5a8c}
+.lincoln-economic-main-kpis small{display:block;color:#7b6f6d;font-size:8.5px;font-weight:900;letter-spacing:.075em;text-transform:uppercase}
+.lincoln-economic-main-kpis strong{display:block;margin-top:5px;color:#2f2224;font-size:20px;line-height:1.05}
+.lincoln-economic-main-kpis article.is-balance strong{color:#b16912}
+.lincoln-economic-main-kpis article.is-paid strong,.lincoln-economic-main-kpis article.is-settled strong{color:#276847}
+.lincoln-economic-main-kpis article.is-guarantee strong{color:#68477a}
+.lincoln-economic-main-kpis span{display:block;margin-top:5px;color:#8b7d7b;font-size:10px}
+
+.lincoln-economic-breakdown{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.lincoln-economic-track{padding:12px 13px;border:1px solid #e3dcda;border-radius:12px;background:#fff}
+.lincoln-economic-track-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.lincoln-economic-track-head>span{display:grid;gap:2px}
+.lincoln-economic-track-head b{font-size:11px;color:#3c2d2f}
+.lincoln-economic-track-head small{color:#8a7c7a;font-size:9.5px}
+.lincoln-economic-track-head>strong{font-size:15px;color:#8d1721}
+.lincoln-economic-progress{height:6px;margin:10px 0 9px;border-radius:999px;background:#efe8e6;overflow:hidden}
+.lincoln-economic-progress i{display:block;height:100%;border-radius:inherit;background:#8d1721}
+.lincoln-economic-track.is-guarantee .lincoln-economic-progress i{background:#7b5a8c}
+.lincoln-economic-track.is-replacement .lincoln-economic-progress i{background:#c17818}
+.lincoln-economic-track-foot{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:4px 8px;align-items:center;font-size:9.5px}
+.lincoln-economic-track-foot span{color:#8b7d7b}
+.lincoln-economic-track-foot b{justify-self:end;color:#47383a;font-size:10px}
+.lincoln-economic-track-foot b:last-child{color:#8d1721}
+
+.lincoln-economic-guarantee-callout{margin:0;border-bottom:1px solid #eadfd4;background:#fff9ec;color:#76521d;padding:11px 18px}
+.lincoln-economic-guarantee-callout button{background:#8a6126}
+.lincoln-economic-history{background:#fff}
+.lincoln-economic-history-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px 10px;border-bottom:1px solid #eee7e5}
+.lincoln-economic-history-head small{display:block;color:#8d1721;font-size:8.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.lincoln-economic-history-head h3{margin:3px 0 0;color:#302326;font-size:15px}
+.lincoln-economic-history-head>span{display:inline-flex;padding:5px 9px;border-radius:999px;background:#f4eeee;color:#725c5f;font-size:10px;font-weight:800}
+.lincoln-economic-history .lincoln-table-wrap{border-radius:0 0 16px 16px}
+.lincoln-economic-history .lincoln-data-table{min-width:1040px}
+.lincoln-economic-history .lincoln-data-table th{background:#f8f4f3;color:#77696a;border-bottom:1px solid #e6dddb}
+.lincoln-economic-history .lincoln-data-table td{padding-top:11px;padding-bottom:11px}
+.lincoln-economic-history .lincoln-data-table tbody tr:hover{background:#fffafa}
+.lincoln-economic-history .lincoln-link-action{color:#8d1721!important}
+
+.lincoln-economic-allocation{border:1px solid rgba(15,23,42,.12);border-radius:14px;padding:14px;background:rgba(248,250,252,.85)}
+.lincoln-economic-allocation>p{margin:4px 0 12px;color:#667085;font-size:12px}
+.lincoln-economic-allocation>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.lincoln-economic-allocation>span{display:block;margin-top:8px;font-size:12px}
+.lincoln-economic-allocation>span.is-error{color:#b42318;font-weight:700}
+.lincoln-economic-hint{display:flex;flex-direction:column;gap:3px;padding:11px 13px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+.lincoln-economic-hint span{color:#667085;font-size:12px}
+
+@media(max-width:1180px){
+  .lincoln-economic-head{flex-direction:column}
+  .lincoln-economic-actions{max-width:none;width:100%;justify-content:flex-start}
+  .lincoln-economic-main-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lincoln-economic-breakdown{grid-template-columns:1fr}
+}
+@media(max-width:720px){
+  .lincoln-economic-content{padding:10px}
+  .lincoln-economic-head{padding:16px!important}
+  .lincoln-economic-actions{display:grid;grid-template-columns:1fr 1fr}
+  .lincoln-economic-actions button{width:100%}
+  .lincoln-economic-main-kpis{grid-template-columns:1fr}
+  .lincoln-economic-dashboard{padding:12px}
+  .lincoln-economic-track-foot{grid-template-columns:auto 1fr}
+  .lincoln-economic-history-head{align-items:flex-start}
+  .lincoln-economic-guarantee-callout{align-items:flex-start;flex-direction:column}
+}
