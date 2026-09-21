@@ -7150,6 +7150,49 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     setFormError('');
   };
 
+  const setDraftComboQuantity = (comboLineKey, quantityValue) => {
+    const normalizedComboLineKey = String(comboLineKey ?? '').trim();
+    if (!normalizedComboLineKey) return;
+
+    const existingLines = draft.items.filter((line) => String(line.comboLineKey ?? '') === normalizedComboLineKey);
+    if (existingLines.length === 0) return;
+
+    const comboId = existingLines[0]?.comboId;
+    const combo = (combos ?? []).find((entry) => entry.id === comboId);
+    if (!combo) return;
+
+    const nextComboQuantity = Math.max(1, Math.trunc(Number(quantityValue ?? 1)));
+    const currentComboQuantity = Math.max(1, Math.trunc(Number(existingLines[0]?.comboQuantity ?? 1)));
+    if (nextComboQuantity === currentComboQuantity) return;
+
+    const defaultSelections = buildDefaultComboSelections(combo, currentComboQuantity);
+    const selections = { ...defaultSelections };
+    const quantityMap = { ...getComboSelectionQuantityMap(defaultSelections) };
+
+    getComboRules(combo).forEach((rule, index) => {
+      const ruleLines = existingLines.filter((entry) => Number(entry.comboRuleIndex) === index);
+      const existingIds = ruleLines.map((entry) => entry.itemId).filter(Boolean);
+      if (existingIds.length > 0) selections[index] = existingIds;
+      ruleLines.forEach((entry) => {
+        quantityMap[`${index}:${entry.itemId}`] = Math.max(0, Math.trunc(Number(entry.quantity ?? 0)));
+      });
+    });
+
+    selections.__quantities = quantityMap;
+    selections.__comboQuantity = currentComboQuantity;
+    const normalized = normalizeComboConfiguratorQuantities({
+      combo,
+      selections,
+      quantity: String(currentComboQuantity),
+    }, nextComboQuantity);
+
+    const nextSelections = {
+      ...(normalized?.selections ?? selections),
+      __comboQuantity: nextComboQuantity,
+    };
+    appendConfiguredCombo(combo, nextSelections, normalizedComboLineKey);
+  };
+
   const setDraftItemQuantity = (lineKeyOrItemId, quantityValue) => {
     const draftLine = draft.items.find((line) => (line.lineKey ?? line.itemId) === lineKeyOrItemId);
     const itemId = draftLine?.itemId ?? lineKeyOrItemId;
@@ -17068,7 +17111,41 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   <strong>{line.comboName || 'Combo configurado'}</strong>
                                   <small>{line.comboQuantity || 1} combo(s) · {comboSiblingLines.length} componente(s) · {comboGroupUnits} unidad(es)</small>
                                 </span>
-                                <em>{formatBs(comboGroupTotalBs)}</em>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                  <div style={{ display: 'grid', gap: '0.18rem', justifyItems: 'center' }}>
+                                    <small style={{ fontStyle: 'normal', fontWeight: 800 }}>Cantidad de combos</small>
+                                    <div className="orders-qty-stepper">
+                                      <button
+                                        type="button"
+                                        onClick={() => setDraftComboQuantity(line.comboLineKey, Math.max(1, Number(line.comboQuantity ?? 1) - 1))}
+                                        disabled={Number(line.comboQuantity ?? 1) <= 1}
+                                        aria-label={`Reducir cantidad del combo ${line.comboName || ''}`}
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={String(line.comboQuantity ?? 1)}
+                                        onFocus={selectNumericInput}
+                                        onChange={(event) => {
+                                          const value = cleanIntegerInput(event.target.value);
+                                          if (value === '') return;
+                                          setDraftComboQuantity(line.comboLineKey, value);
+                                        }}
+                                        aria-label={`Cantidad del combo ${line.comboName || ''}`}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setDraftComboQuantity(line.comboLineKey, Number(line.comboQuantity ?? 1) + 1)}
+                                        aria-label={`Aumentar cantidad del combo ${line.comboName || ''}`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <em>{formatBs(comboGroupTotalBs)}</em>
+                                </div>
                               </div>
                             ) : null}
                             <div className="orders-selected-product-cell">
