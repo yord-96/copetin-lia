@@ -2827,9 +2827,20 @@ function ServiceOrdersSection({
       const serverGuaranteeSummary = contract?.guaranteeEconomicSummary && typeof contract.guaranteeEconomicSummary === 'object'
         ? contract.guaranteeEconomicSummary
         : null;
+      const reclassifiedGuaranteeFromCollectedDepositBs = economicLedger.reduce((sum, entry) => {
+        if (entry?.type !== 'guarantee' || !entry?.reclassifiedFromPayment) return sum;
+        const sourceDepositId = String(entry?.sourceDepositId ?? '').trim();
+        if (!sourceDepositId) return sum;
+        const sourceDeposit = rowLedgerById.get(sourceDepositId);
+        if (!sourceDeposit || sourceDeposit?.type !== 'deposit') return sum;
+        const sourceDepositBs = Math.max(0, toMoneyNumber(sourceDeposit?.amountBs));
+        if (sourceDepositBs <= 0 || collectionRegisteredBs + 0.009 < sourceDepositBs) return sum;
+        return sum + Math.max(0, toMoneyNumber(entry?.amountBs));
+      }, 0);
       const rowGuaranteeReserveBs = Math.max(
         rawGuaranteeStatus === 'validado' ? guaranteeBs : 0,
         rowLedgerBackedGuaranteeBs,
+        reclassifiedGuaranteeFromCollectedDepositBs,
         toMoneyNumber(rowGuaranteeEvidence?.paidBs),
         toMoneyNumber(serverGuaranteeSummary?.paidBs),
       );
@@ -3044,7 +3055,11 @@ function ServiceOrdersSection({
                 ? 'Aplicada y devuelta'
               : guaranteeStatus === 'partial'
                 ? 'Por devolver'
-                : 'Pagada'
+                : guaranteeStatus === 'charged'
+                  ? 'Aplicada'
+                  : guaranteeStatus === 'held'
+                    ? 'Apartada'
+                    : 'Pagada'
           : '',
       };
     });
@@ -13647,9 +13662,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                     receiptWindow,
                                   });
                                 }}
-                                title="Generar nuevamente el comprobante con el formato oficial de recibos."
+                                title="Abrir el comprobante interno de aplicacion de garantia."
                               >
-                                Generar comprobante
+                                Ver comprobante
                               </button>
                             ) : null}
                             <button
