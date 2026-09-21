@@ -1481,58 +1481,112 @@ Escribe RESET ECONOMICO para continuar:`);
       window.alert('Habilita ventanas emergentes para imprimir el recibo.');
       return;
     }
+
     const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     const isExpense = receipt.direction === 'expense';
     const title = isExpense ? 'COMPROBANTE DE DEVOLUCIÓN' : 'RECIBO DE INGRESO';
     const totalLabel = isExpense ? 'TOTAL DEVUELTO' : 'TOTAL RECIBIDO';
     const partyLabel = isExpense ? 'DEVUELTO A' : 'PAGADO POR';
     const staffLabel = isExpense ? 'ENTREGADO POR' : 'RECIBIDO POR';
+    const logoUrl = `${window.location.origin}/imagenes/lincoln-logo-recibo.jpg`;
+
+    const amountToWords = (rawAmount) => {
+      const units = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
+      const teens = ['diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve'];
+      const tens = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+      const hundreds = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+      const underHundred = (value) => {
+        if (value < 10) return units[value];
+        if (value < 20) return teens[value - 10];
+        if (value < 30) return value === 20 ? 'veinte' : `veinti${units[value - 20]}`;
+        const ten = Math.floor(value / 10);
+        const unit = value % 10;
+        return unit ? `${tens[ten]} y ${units[unit]}` : tens[ten];
+      };
+      const underThousand = (value) => {
+        if (value === 100) return 'cien';
+        if (value < 100) return underHundred(value);
+        const hundred = Math.floor(value / 100);
+        const rest = value % 100;
+        return rest ? `${hundreds[hundred]} ${underHundred(rest)}` : hundreds[hundred];
+      };
+      const integerToWords = (value) => {
+        if (value === 0) return 'cero';
+        if (value < 1000) return underThousand(value);
+        if (value < 1000000) {
+          const thousands = Math.floor(value / 1000);
+          const rest = value % 1000;
+          const prefix = thousands === 1 ? 'mil' : `${underThousand(thousands)} mil`;
+          return rest ? `${prefix} ${underThousand(rest)}` : prefix;
+        }
+        if (value < 1000000000) {
+          const millions = Math.floor(value / 1000000);
+          const rest = value % 1000000;
+          const prefix = millions === 1 ? 'un millón' : `${integerToWords(millions)} millones`;
+          return rest ? `${prefix} ${integerToWords(rest)}` : prefix;
+        }
+        return String(value);
+      };
+      const amount = Math.max(0, Number(rawAmount) || 0);
+      const integer = Math.floor(amount);
+      const cents = Math.round((amount - integer) * 100);
+      const words = integerToWords(integer).replace(/\buno\b(?=\s*(mil|millón|millones|$))/g, 'un');
+      return `${words.charAt(0).toUpperCase()}${words.slice(1)} ${String(cents).padStart(2, '0')}/100 bolivianos`;
+    };
+
     const receiptHtml = (copyLabel) => `
       <main class="lincoln-receipt-sheet">
         <header class="receipt-head">
           <div class="receipt-brand">
-            <span class="brand-overline">CENTRO DE EVENTOS</span>
-            <strong>LINCOLN</strong>
-            <small>Comprobante económico del evento</small>
+            <img src="${safe(logoUrl)}" alt="Centro de Eventos Lincoln" />
           </div>
           <div class="receipt-title">
-            <span>${safe(title)}</span>
-            <b>${safe(receipt.code)}</b>
+            <strong>${safe(title)}</strong>
+            <span>COMPROBANTE DE PAGO</span>
+            <em>Más que un lugar, grandes historias</em>
           </div>
-          <div class="receipt-copy">
+          <div class="receipt-number">
+            <small>N° DE RECIBO</small>
+            <b>${safe(receipt.code)}</b>
             <span>${copyLabel}</span>
-            <small>FECHA</small>
-            <strong>${safe(formatDate(receipt.date))}</strong>
           </div>
         </header>
 
-        <section class="receipt-context">
-          <div><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
-          <div class="is-wide"><small>CLIENTE</small><strong>${safe(receipt.clientName || '—')}</strong></div>
-          <div><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
-        </section>
+        <div class="receipt-rule"></div>
 
-        <section class="receipt-detail-grid">
-          <div class="receipt-detail-main">
-            <small>CONCEPTO</small>
-            <strong>${safe(receipt.concept || 'Movimiento económico')}</strong>
+        <section class="receipt-data">
+          <div class="receipt-column">
+            <div class="receipt-field"><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
+            <div class="receipt-field"><small>CLIENTE</small><strong>${safe(receipt.clientName || '—')}</strong></div>
+            <div class="receipt-field"><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
+            <div class="receipt-field"><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
           </div>
-          <div><small>DESTINO / CAJA</small><strong>${safe(receipt.destination || '—')}</strong></div>
-          <div><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
-          <div><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+          <div class="receipt-column receipt-column-right">
+            <div class="receipt-field"><small>FECHA</small><strong>${safe(formatDate(receipt.date))}</strong></div>
+            <div class="receipt-field receipt-field-concept"><small>CONCEPTO</small><strong>${safe(receipt.concept || 'Movimiento económico')}</strong></div>
+            <div class="receipt-field"><small>DESTINO</small><strong>${safe(receipt.destination || '—')}</strong></div>
+            <div class="receipt-field"><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+          </div>
         </section>
 
         <section class="receipt-total-row">
-          <div class="receipt-total-caption"><span>${safe(totalLabel)}</span><small>Importe registrado en Caja Lincoln</small></div>
+          <div class="receipt-total-label">${safe(totalLabel)}:</div>
           <strong>${safe(formatBs(receipt.amountBs))}</strong>
+          <span>${safe(amountToWords(receipt.amountBs))}.</span>
         </section>
 
         <section class="receipt-signatures">
-          <div><span></span><strong>Entregué</strong><small>Nombre y firma</small></div>
-          <div><span></span><strong>Recibí</strong><small>Nombre y firma</small></div>
+          <div><span></span><strong>Entregué</strong></div>
+          <div><span></span><strong>Recibí</strong></div>
+          <aside>
+            <b>Gracias por<br/>confiar en nosotros</b>
+          </aside>
         </section>
 
-        <footer><span>Documento generado por Centro de Eventos Lincoln</span><b>${safe(receipt.code)}</b></footer>
+        <footer>
+          <span>Centro de Eventos Lincoln</span>
+          <span>EVENTOS&nbsp;&nbsp;•&nbsp;&nbsp;REUNIONES&nbsp;&nbsp;•&nbsp;&nbsp;CELEBRACIONES</span>
+        </footer>
       </main>`;
 
     try { popup.opener = null; } catch (error) { void error; }
@@ -1545,44 +1599,47 @@ Escribe RESET ECONOMICO para continuar:`);
             @page{size:Letter portrait;margin:0}
             *{box-sizing:border-box}
             html{background:#f3f0ed}
-            body{margin:0;padding:12px 8px 18px;font-family:Arial,Helvetica,sans-serif;color:#2b2021;background:#f3f0ed;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+            body{margin:0;padding:12px 8px 18px;font-family:Arial,Helvetica,sans-serif;color:#17171b;background:#f3f0ed;-webkit-print-color-adjust:exact;print-color-adjust:exact}
             .preview-actions{position:sticky;top:0;z-index:10;display:flex;justify-content:center;gap:9px;margin:0 auto 10px;padding:9px;background:rgba(255,255,255,.94);border:1px solid #ead9da;border-radius:12px;max-width:8.5in;backdrop-filter:blur(8px)}
-            .preview-actions button{border:1px solid #d9c5c7;border-radius:999px;padding:9px 15px;background:#fff;color:#77131d;font-weight:800;cursor:pointer}
-            .preview-actions .primary{background:#8d1721;border-color:#8d1721;color:#fff}
+            .preview-actions button{border:1px solid #d9c5c7;border-radius:999px;padding:9px 15px;background:#fff;color:#8e0f19;font-weight:800;cursor:pointer}
+            .preview-actions .primary{background:#a50d19;border-color:#a50d19;color:#fff}
             .receipt-page{position:relative;width:8.5in;height:11in;margin:0 auto;background:#fff;display:grid;grid-template-rows:5.5in 5.5in;box-shadow:0 15px 46px rgba(54,25,28,.16);overflow:hidden}
-            .cut-line{position:absolute;z-index:4;top:5.5in;left:5mm;right:5mm;border-top:1.5px dashed #9c8e8f;text-align:center;pointer-events:none}
-            .cut-line span{position:relative;top:-7px;padding:0 3mm;background:#fff;color:#77696a;font-size:7.5px;font-weight:900;letter-spacing:.13em}
-            .lincoln-receipt-sheet{width:8.5in;height:5.5in;padding:5mm 6mm 4mm;background:#fff;display:flex;flex-direction:column;overflow:hidden;border:1px solid #cdb6b8}
-            .receipt-head{display:grid;grid-template-columns:1.05fr 1.25fr .78fr;gap:5mm;align-items:center;padding-bottom:3mm;border-bottom:2.2px solid #8d1721}
-            .receipt-brand{display:grid;align-content:center;min-width:0}
-            .brand-overline{font-size:7.5px;font-weight:900;letter-spacing:.18em;color:#8d1721}
-            .receipt-brand>strong{font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:.95;letter-spacing:.03em;color:#8d1721}
-            .receipt-brand>small{margin-top:1.5mm;color:#736668;font-size:8px}
-            .receipt-title{text-align:center;display:grid;gap:1.7mm;min-width:0}
-            .receipt-title>span{font-size:13px;font-weight:900;letter-spacing:.055em;color:#302224}
-            .receipt-title>b{font-size:23px;line-height:1;color:#8d1721;letter-spacing:.03em}
-            .receipt-copy{justify-self:end;display:grid;justify-items:end;gap:.8mm;text-align:right}
-            .receipt-copy>span{display:inline-flex;padding:1.2mm 2.6mm;border-radius:999px;background:#f6e9ea;color:#8d1721;font-size:7px;font-weight:900;letter-spacing:.14em}
-            .receipt-copy small{margin-top:1mm;color:#857779;font-size:7px;font-weight:900;letter-spacing:.08em}
-            .receipt-copy strong{font-size:10px;color:#332426}
-            .receipt-context{display:grid;grid-template-columns:1fr 1.55fr 1fr;gap:2.2mm;margin-top:2.6mm}
-            .receipt-context>div,.receipt-detail-grid>div{border:1px solid #e2d7d8;border-radius:6px;padding:2mm 2.4mm;min-width:0;background:#fff}
-            .receipt-context small,.receipt-detail-grid small{display:block;margin-bottom:.8mm;color:#8a7b7d;font-size:7px;font-weight:900;letter-spacing:.07em}
-            .receipt-context strong,.receipt-detail-grid strong{display:block;color:#2f2224;font-size:10px;line-height:1.12;overflow-wrap:anywhere}
-            .receipt-detail-grid{display:grid;grid-template-columns:1.55fr 1fr 1fr;gap:2.2mm;margin-top:2.2mm}
-            .receipt-detail-main{grid-row:span 2;min-height:23mm;border-left:3px solid #8d1721!important;background:#fcf8f8!important}
-            .receipt-detail-main strong{font-size:11px;line-height:1.22}
-            .receipt-total-row{display:grid;grid-template-columns:1fr auto;align-items:stretch;margin-top:2.4mm;border:1.5px solid #8d1721;border-radius:7px;overflow:hidden;min-height:13mm}
-            .receipt-total-caption{display:grid;align-content:center;padding:2mm 3mm;background:#f8eeee}
-            .receipt-total-caption span{color:#8d1721;font-size:9px;font-weight:900;letter-spacing:.08em}
-            .receipt-total-caption small{margin-top:.6mm;color:#7b6c6e;font-size:7.5px}
-            .receipt-total-row>strong{display:grid;place-items:center;min-width:47mm;padding:0 4mm;background:#8d1721;color:#fff;font-size:24px;white-space:nowrap}
-            .receipt-signatures{display:grid;grid-template-columns:1fr 1fr;gap:28mm;margin:7mm 15mm 0;text-align:center}
-            .receipt-signatures div>span{display:block;border-top:1px solid #4b3b3d}
-            .receipt-signatures strong{display:block;margin-top:1.2mm;font-size:9px;color:#342629}
-            .receipt-signatures small{display:block;margin-top:.3mm;color:#8a7b7d;font-size:7px}
-            footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:1.8mm;border-top:1px solid #eadfe0;color:#8b7d7f;font-size:7px}
-            footer b{color:#8d1721}
+            .cut-line{position:absolute;z-index:4;top:5.5in;left:5mm;right:5mm;border-top:1px dashed #9c8e8f;text-align:center;pointer-events:none}
+            .cut-line span{position:relative;top:-7px;padding:0 3mm;background:#fff;color:#77696a;font-size:7px;font-weight:900;letter-spacing:.13em}
+            .lincoln-receipt-sheet{width:8.5in;height:5.5in;padding:5.5mm 8mm 4mm;background:#fff;display:flex;flex-direction:column;overflow:hidden}
+            .receipt-head{display:grid;grid-template-columns:1.08fr 1.45fr 1fr;gap:6mm;align-items:center;min-height:30mm}
+            .receipt-brand{height:27mm;display:flex;align-items:center;justify-content:flex-start;padding-right:5mm;border-right:1px solid #b30e1b}
+            .receipt-brand img{display:block;max-width:100%;max-height:25mm;object-fit:contain;object-position:left center}
+            .receipt-title{text-align:center;display:grid;justify-items:center;align-content:center;gap:1.2mm;min-width:0}
+            .receipt-title strong{font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1;color:#730810;letter-spacing:.01em;white-space:nowrap}
+            .receipt-title span{display:flex;align-items:center;gap:2mm;font-size:7px;font-weight:800;letter-spacing:.28em;color:#7d252b}
+            .receipt-title span:before,.receipt-title span:after{content:"";display:block;width:14mm;border-top:1px solid #c5555d}
+            .receipt-title em{font-family:Georgia,'Times New Roman',serif;font-size:9px;font-weight:400;color:#4d3f42;letter-spacing:.035em}
+            .receipt-number{justify-self:end;text-align:center;display:grid;justify-items:center;gap:1mm;min-width:44mm}
+            .receipt-number small{font-size:7px;font-weight:800;letter-spacing:.18em;color:#8b1b23}
+            .receipt-number b{width:100%;padding:2.5mm 3mm;border-radius:5px;background:#fbefef;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#720912;white-space:nowrap}
+            .receipt-number span{display:inline-flex;margin-top:.5mm;padding:1mm 2.6mm;border-radius:999px;background:#a50d19;color:#fff;font-size:6.5px;font-weight:900;letter-spacing:.13em}
+            .receipt-rule{border-top:1.5px solid #b30e1b;margin:1.8mm 0 2mm}
+            .receipt-data{display:grid;grid-template-columns:1fr 1fr;gap:8mm;min-height:56mm}
+            .receipt-column{display:grid;grid-template-rows:repeat(4,minmax(0,1fr));min-width:0}
+            .receipt-column-right{padding-left:7mm;border-left:1px solid #cfc4c3}
+            .receipt-field{display:grid;grid-template-columns:36mm 1fr;align-items:center;gap:2mm;min-width:0;border-bottom:1px dotted #cfc4c3;padding:1.2mm 1.5mm}
+            .receipt-field:last-child{border-bottom:0}
+            .receipt-field small{font-size:7.3px;font-weight:900;letter-spacing:.16em;color:#43383a;white-space:nowrap}
+            .receipt-field strong{font-size:10.4px;line-height:1.15;color:#17171b;overflow-wrap:anywhere}
+            .receipt-field-concept strong{font-size:9.5px}
+            .receipt-total-row{display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:4mm;margin-top:2mm;padding:3mm 5mm;border-radius:5px;background:#fbefef;border:1px solid #f0d9da;min-height:15mm}
+            .receipt-total-label{font-size:9px;font-weight:900;letter-spacing:.13em;color:#8f111c;white-space:nowrap}
+            .receipt-total-row>strong{padding-right:5mm;border-right:1px solid #c88e93;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1;color:#780913;white-space:nowrap}
+            .receipt-total-row>span{font-family:Georgia,'Times New Roman',serif;font-size:9.5px;font-style:italic;line-height:1.2;color:#8b2c32}
+            .receipt-signatures{display:grid;grid-template-columns:1fr 1fr .95fr;gap:18mm;align-items:end;margin:7mm 8mm 0}
+            .receipt-signatures>div{text-align:center}
+            .receipt-signatures>div>span{display:block;border-top:1px solid #282022}
+            .receipt-signatures>div>strong{display:block;margin-top:1.5mm;font-family:Georgia,'Times New Roman',serif;font-size:9px;font-weight:400;color:#35292b}
+            .receipt-signatures aside{text-align:center;align-self:center}
+            .receipt-signatures aside b{display:inline-block;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:11px;line-height:1.05;font-weight:400;color:#8e111b;transform:rotate(-3deg);border-bottom:1px solid #b52831;padding:0 2mm 1mm}
+            footer{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:2mm;border-top:1px solid #bc3a43;color:#66585a;font-size:6.7px}
+            footer span:last-child{color:#8e111b;font-weight:800;letter-spacing:.15em}
             @media screen{.receipt-page{transform:scale(.93);transform-origin:top center;margin-bottom:-20mm}}
             @media print{
               html,body{width:8.5in;height:11in;padding:0;background:#fff;overflow:hidden}
