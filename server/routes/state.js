@@ -140,7 +140,7 @@ const summarizeBootstrapCollection = (name, rows) => {
   if (name === 'rentals') return rows.map(summarizeRental);
   return rows;
 };
-const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'guarantee_apply', 'refund', 'note']);
+const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'guarantee_apply', 'refund', 'extra', 'note']);
 const allowedEconomicLedgerPaymentMethods = new Set(['efectivo', 'qr', 'transferencia']);
 const patchableCollections = new Set([
   'categories',

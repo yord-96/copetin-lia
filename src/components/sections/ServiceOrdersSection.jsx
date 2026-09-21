@@ -604,6 +604,7 @@ const ECONOMIC_LEDGER_TYPE_META = {
   charge: { label: 'Dano / faltante', tone: 'orange' },
   guarantee_apply: { label: 'Garantia aplicada', tone: 'orange' },
   refund: { label: 'Devolucion al cliente', tone: 'green' },
+  extra: { label: 'Cobro extra', tone: 'blue' },
   note: { label: 'Nota interna', tone: 'slate' },
 };
 
@@ -785,6 +786,7 @@ const getEconomicCommercialCashAmount = (movement) => {
   // excedente). Para el saldo comercial solo cuenta lo aplicado al contrato.
   const accountingTag = normalizeText(movement?.accountingTag);
   const category = normalizeText(movement?.category);
+  if (accountingTag === 'contract_extra_collection' || category === 'cobro_extra_contrato') return 0;
   const hasDepositAllocation = accountingTag === 'contract_deposit_receipt'
     || category === 'abono_contrato';
   if (hasDepositAllocation) {
@@ -1962,6 +1964,13 @@ function ServiceOrdersSection({
     receipt: '',
     note: '',
   });
+  const [contractEconomicsExtraDraft, setContractEconomicsExtraDraft] = useState({
+    amountBs: '',
+    concept: '',
+    paymentMethod: 'efectivo',
+    paymentAccount: '',
+  });
+  const [isSavingContractEconomicsExtra, setIsSavingContractEconomicsExtra] = useState(false);
   const [contractEconomicsGuaranteeRefundDraft, setContractEconomicsGuaranteeRefundDraft] = useState({
     source: 'guarantee',
     amountBs: '',
@@ -9377,6 +9386,93 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
+
+  const handleSubmitContractExtraCollection = async (event) => {
+    event.preventDefault();
+    if (!contractEconomicsData || isSavingContractEconomicsExtra) return;
+    const amountBs = Math.max(0, toMoneyNumber(contractEconomicsExtraDraft.amountBs));
+    const concept = String(contractEconomicsExtraDraft.concept ?? '').trim();
+    const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsExtraDraft.paymentMethod);
+    const paymentAccount = paymentMethod === 'qr'
+      ? normalizeLedgerPaymentAccount(contractEconomicsExtraDraft.paymentAccount)
+      : '';
+    if (amountBs <= 0) {
+      setContractEconomicsError('El monto del cobro extra debe ser mayor a 0.');
+      return;
+    }
+    if (!concept) {
+      setContractEconomicsError('Escribe el concepto del cobro extra.');
+      return;
+    }
+    if (paymentMethod === 'qr' && !paymentAccount) {
+      setContractEconomicsError('Selecciona la cuenta o banco QR para el cobro extra.');
+      return;
+    }
+
+    const createdBy = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
+    const contractCode = contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || '';
+    const customerName = contractEconomicsData.contract?.customerName || contractEconomicsData.rental?.customerName || 'Cliente';
+    const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
+    let receiptWindow = null;
+    setIsSavingContractEconomicsExtra(true);
+    setContractEconomicsError('');
+    try {
+      receiptWindow = openCashReceiptWindow();
+      const result = await api.cash.createManualMovement({
+        type: 'ingreso',
+        cashBoxType: 'BIG_CASH',
+        amountBs,
+        paymentMethod,
+        paymentAccount,
+        description: `Cobro extra contrato ${contractCode}: ${concept}`,
+        receiptDetail: `COBRO EXTRA\nConcepto: ${concept}\nContrato: ${contractCode}\nCliente: ${customerName}`,
+        receiptCustomerName: customerName,
+        customerName,
+        note: concept,
+        notes: concept,
+        linkedRentalId: rentalId,
+        linkedContractId: contractEconomicsData.contract?.id ?? '',
+        linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
+        accountingTag: 'contract_extra_collection',
+        category: 'cobro_extra_contrato',
+        createdBy,
+        responsible: createdBy,
+      });
+      rememberEconomicCashResult(result);
+      const movement = result?.movement ?? result ?? {};
+      const movementId = resolveEconomicMovementId(result);
+      if (!movementId) throw new Error('Caja registro el cobro extra, pero no devolvio el movimiento para generar el recibo.');
+      const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim();
+      const entry = {
+        id: `eco-extra-${movementId}`,
+        type: 'extra',
+        amountBs,
+        paymentMethod,
+        paymentAccount,
+        note: concept,
+        createdAt: movement?.createdAt ?? new Date().toISOString(),
+        createdByName: createdBy,
+        cashMovementId: movementId,
+        cashReceiptCode: receiptCode,
+        isCashRegistered: true,
+        cashRegisteredAt: movement?.receiptIssuedAt ?? movement?.createdAt ?? new Date().toISOString(),
+        cashCollectionTarget: 'extra',
+      };
+      await saveContractEconomicLedgerRows(
+        [...(contractEconomicsData.economicLedger ?? []), entry],
+        `Cobro extra ${formatBs(amountBs)} registrado${receiptCode ? ` con recibo ${receiptCode}` : ''}.`,
+        { force: true },
+      );
+      await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
+      setContractEconomicsExtraDraft({ amountBs: '', concept: '', paymentMethod: 'efectivo', paymentAccount: '' });
+    } catch (error) {
+      if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
+      setContractEconomicsError(error.message || 'No se pudo registrar el cobro extra.');
+    } finally {
+      setIsSavingContractEconomicsExtra(false);
+    }
+  };
+
   const saveContractEconomicLedgerRows = async (nextLedger, successMessage, options = {}) => {
     if (!contractEconomicsData || (isSavingContractEconomicsLedger && !options.force)) return null;
 
@@ -10056,13 +10152,40 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
-  const printGuaranteeOperationReceipt = ({ title, amountBs, detail, guaranteeBeforeBs, guaranteeAfterBs, receiptWindow: providedWindow = null }) => {
+  const printGuaranteeOperationReceipt = async ({ amountBs, detail, guaranteeBeforeBs, guaranteeAfterBs, receiptWindow: providedWindow = null, entryId = '' }) => {
     const contractCode = contractEconomicsData?.contract?.contractCode || contractEconomicsData?.contract?.id || '';
     const customerName = contractEconomicsData?.contract?.customerName || 'Cliente';
-    const receiptWindow = providedWindow || window.open('', '_blank', 'width=720,height=860');
-    if (!receiptWindow) return;
-    receiptWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} ${contractCode}</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#10254f;background:#f7f4ef}.ticket{max-width:680px;margin:auto;background:#fff;border:1px solid #eaded4;border-radius:16px;padding:26px}.brand{color:#e65300;font-weight:800;letter-spacing:.08em}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #e65300;padding-bottom:16px}.head h1{margin:6px 0 0;font-size:24px}.amount{font-size:28px;font-weight:900;color:#0b2d63}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}.box{border:1px solid #e5ddd6;border-radius:12px;padding:14px}.box span{display:block;font-size:11px;text-transform:uppercase;color:#7a6f68;font-weight:800;margin-bottom:6px}.detail{margin-top:18px;padding:16px;border-radius:12px;background:#fff8f1;line-height:1.5}.foot{margin-top:26px;padding-top:14px;border-top:1px solid #e5ddd6;font-size:12px;color:#6b7280}@media print{body{background:#fff;padding:0}.ticket{border:0;box-shadow:none}}</style></head><body><main class="ticket"><div class="head"><div><div class="brand">EL COPETIN</div><h1>${title}</h1><p>Contrato ${contractCode} · ${customerName}</p></div><div class="amount">${formatBs(amountBs)}</div></div><div class="grid"><div class="box"><span>Garantia antes</span><strong>${formatBs(guaranteeBeforeBs)}</strong></div><div class="box"><span>Garantia despues</span><strong>${formatBs(guaranteeAfterBs)}</strong></div></div><div class="detail">${detail}</div><div class="foot">Comprobante interno generado el ${formatDateTime(new Date().toISOString())}. No representa un nuevo ingreso de efectivo cuando se trata de una reclasificacion o aplicacion de garantia.</div></main><script>window.onload=()=>{window.print();}</script></body></html>`);
-    receiptWindow.document.close();
+    const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
+    const syntheticId = entryId || `guarantee-application-${contractCode}-${Date.now()}`;
+    const movement = {
+      id: syntheticId,
+      type: 'aplicacion_garantia',
+      amountBs: Math.max(0, toMoneyNumber(amountBs)),
+      cashBoxType: 'BIG_CASH',
+      paymentMethod: 'garantia',
+      paymentAccount: '',
+      receiptCode: `AG-${String(contractCode || 'GAR').replace(/[^A-Za-z0-9-]/g, '')}-${String(syntheticId).slice(-6)}`,
+      receiptCustomerName: customerName,
+      customerName,
+      receiptDetail: [
+        detail || 'Aplicacion de garantia a daños o faltantes.',
+        `Garantia antes: ${formatBs(guaranteeBeforeBs)}`,
+        `Garantia aplicada: ${formatBs(amountBs)}`,
+        `Garantia disponible despues: ${formatBs(guaranteeAfterBs)}`,
+      ].join('\n'),
+      description: `Aplicacion de garantia por daños/faltantes contrato ${contractCode}`,
+      notes: 'Reclasificacion interna de garantia. No representa un nuevo ingreso de efectivo.',
+      accountingTag: 'guarantee_damage_application',
+      category: 'aplicacion_garantia_danos',
+      linkedContractId: contractEconomicsData?.contract?.id ?? '',
+      linkedRentalId: contractEconomicsData?.rental?.id ?? contractEconomicsData?.contract?.rentalId ?? '',
+      linkedOrderCode: contractEconomicsData?.contract?.orderCode ?? '',
+      createdByName,
+      responsible: createdByName,
+      createdAt: new Date().toISOString(),
+      receiptIssuedAt: new Date().toISOString(),
+    };
+    await handlePrintEconomicReceipt(movement, providedWindow);
   };
 
   const handleSeparateEconomicGuarantee = async (depositEntry) => {
@@ -10132,13 +10255,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const receiptWindow = window.open('', '_blank', 'width=720,height=860');
     const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], 'Dano o faltante aplicado contra la garantia.');
     if (updated) {
-      printGuaranteeOperationReceipt({
-        title: 'Comprobante de aplicacion de garantia',
+      await printGuaranteeOperationReceipt({
         amountBs: amount,
-        detail: 'Este importe fue descontado de la garantia para cubrir danos o faltantes registrados en la devolucion.',
+        detail: 'Este importe fue descontado de la garantia para cubrir daños o faltantes registrados en la devolucion.',
         guaranteeBeforeBs: contractEconomicsData.guaranteeReserveBs,
         guaranteeAfterBs: Math.max(0, contractEconomicsData.guaranteeReserveBs - amount),
         receiptWindow,
+        entryId: entry.id,
       });
       resetContractEconomicLedgerForm();
     }
@@ -12879,6 +13002,77 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         </div>
                       </form>
 
+                      <form
+                        onSubmit={handleSubmitContractExtraCollection}
+                        style={{
+                          margin: 0,
+                          border: '1px solid #bfdbfe',
+                          borderRadius: '12px',
+                          background: '#f8fbff',
+                          padding: '10px',
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(220px, 1.5fr) minmax(110px, .5fr) minmax(120px, .55fr) auto',
+                          gap: '8px',
+                          alignItems: 'end',
+                        }}
+                      >
+                        <label style={{ minWidth: 0 }}>
+                          <span style={{ display: 'block', color: '#1d4ed8', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', marginBottom: '4px' }}>Cobro extra</span>
+                          Concepto
+                          <input
+                            value={contractEconomicsExtraDraft.concept}
+                            onChange={(event) => setContractEconomicsExtraDraft((current) => ({ ...current, concept: event.target.value }))}
+                            placeholder="Ej. Hora extra, limpieza adicional, servicio adicional"
+                            disabled={readOnly || isSavingContractEconomicsExtra}
+                          />
+                        </label>
+                        <label>
+                          Monto
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={contractEconomicsExtraDraft.amountBs}
+                            onChange={(event) => setContractEconomicsExtraDraft((current) => ({ ...current, amountBs: event.target.value }))}
+                            placeholder="0.00"
+                            disabled={readOnly || isSavingContractEconomicsExtra}
+                          />
+                        </label>
+                        <label>
+                          Metodo
+                          <select
+                            value={contractEconomicsExtraDraft.paymentMethod}
+                            onChange={(event) => setContractEconomicsExtraDraft((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
+                            disabled={readOnly || isSavingContractEconomicsExtra}
+                          >
+                            <option value="efectivo">Efectivo</option>
+                            <option value="qr">QR</option>
+                            <option value="transferencia">Transferencia</option>
+                          </select>
+                        </label>
+                        {contractEconomicsExtraDraft.paymentMethod === 'qr' ? (
+                          <label>
+                            Cuenta QR
+                            <select
+                              value={contractEconomicsExtraDraft.paymentAccount}
+                              onChange={(event) => setContractEconomicsExtraDraft((current) => ({ ...current, paymentAccount: event.target.value }))}
+                              disabled={readOnly || isSavingContractEconomicsExtra}
+                            >
+                              <option value="">Seleccionar</option>
+                              {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                            </select>
+                          </label>
+                        ) : null}
+                        <button
+                          type="submit"
+                          className="primary-button"
+                          disabled={readOnly || isSavingContractEconomicsExtra || !String(contractEconomicsExtraDraft.concept || '').trim() || toMoneyNumber(contractEconomicsExtraDraft.amountBs) <= 0}
+                          style={{ whiteSpace: 'nowrap' }}
+                        >
+                          {isSavingContractEconomicsExtra ? 'Registrando...' : 'Cobrar extra + recibo'}
+                        </button>
+                      </form>
+
                       <div
                         style={{
                           display: 'grid',
@@ -13430,6 +13624,25 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 {economicReceiptImageBusyId === entry.id ? 'Subiendo...' : 'Adjuntar comprobante'}
                               </button>
                             )}
+                            {entry.type === 'charge' && !entry.cashMovementId ? (
+                              <button
+                                type="button"
+                                className="contract-economics-row-action"
+                                onClick={() => {
+                                  const beforeBs = contractEconomicsData.guaranteeReserveBs + toMoneyNumber(entry.amountBs);
+                                  void printGuaranteeOperationReceipt({
+                                    amountBs: entry.amountBs,
+                                    detail: entry.note || 'Aplicacion de garantia a daños o faltantes.',
+                                    guaranteeBeforeBs: beforeBs,
+                                    guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs,
+                                    entryId: entry.id,
+                                  });
+                                }}
+                                title="Generar nuevamente el comprobante con el formato oficial de recibos."
+                              >
+                                Generar comprobante
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="contract-economics-row-action"

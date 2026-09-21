@@ -5388,6 +5388,8 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     || String(movement.type ?? '').toLowerCase().includes('egreso');
   const isPersonnelAdvance = String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance'
     || String(movement?.category ?? '').toLowerCase() === 'adelanto_personal';
+  const isGuaranteeDamageApplication = String(movement?.accountingTag ?? '').toLowerCase() === 'guarantee_damage_application'
+    || String(movement?.category ?? '').toLowerCase() === 'aplicacion_garantia_danos';
   const movementResponsible = String(movement?.responsible ?? '').trim();
   const movementCreator = String(
     movement?.createdByName
@@ -5416,14 +5418,18 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     : isOut
     ? movementResponsible || contractCustomer || movementCreator || 'Administracion'
     : contractCustomer || movementResponsible || movementCreator || 'Administracion';
-  const cashBoxLabel = cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
+  const cashBoxLabel = isGuaranteeDamageApplication
+    ? 'Garantia retenida'
+    : cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
   const movementLabel = isOut ? 'Egreso' : 'Ingreso';
-  const title = isPersonnelAdvance
+  const title = isGuaranteeDamageApplication
+    ? 'COMPROBANTE DE APLICACION DE GARANTIA'
+    : isPersonnelAdvance
     ? 'RECIBO DE ADELANTO DE PERSONAL'
     : `RECIBO DE ${movementLabel.toUpperCase()} DE ${cashBoxLabel.toUpperCase()}`;
-  const totalLabel = isPersonnelAdvance ? 'ADELANTO ENTREGADO' : isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
-  const partyLabel = isPersonnelAdvance ? 'TRABAJADOR' : isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
-  const cashBoxRoleLabel = isOut ? 'Caja origen' : 'Caja destino';
+  const totalLabel = isGuaranteeDamageApplication ? 'VALOR APLICADO' : isPersonnelAdvance ? 'ADELANTO ENTREGADO' : isOut ? 'VALOR ENTREGADO' : 'VALOR RECIBIDO';
+  const partyLabel = isGuaranteeDamageApplication ? 'CLIENTE' : isPersonnelAdvance ? 'TRABAJADOR' : isOut ? 'ENTREGADO A' : 'RECIBIDO DE';
+  const cashBoxRoleLabel = isGuaranteeDamageApplication ? 'Origen' : isOut ? 'Caja origen' : 'Caja destino';
   const createdAt = new Date(resolveEconomicReceiptDisplayTimestamp({
     movement,
     ledgerEntry: linkedEconomicLedgerEntry,
@@ -5481,8 +5487,10 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const contextReferenceLabel = isPersonnelAdvance ? 'CI trabajador' : 'Contrato';
   const contextResponsibleLabel = isPersonnelAdvance ? 'Registrado por' : 'Resp. contrato';
   const contextResponsibleValue = isPersonnelAdvance ? effectiveMovementCreator || 'Administracion' : contractResponsible;
-  const receiptUserHeader = isPersonnelAdvance ? 'Trabajador' : 'Usuario que cobra';
-  const paymentMethodLabel = normalizePaymentMethod(movement.paymentMethod) === 'qr' && movement.paymentAccount
+  const receiptUserHeader = isGuaranteeDamageApplication ? 'Registrado por' : isPersonnelAdvance ? 'Trabajador' : 'Usuario que cobra';
+  const paymentMethodLabel = isGuaranteeDamageApplication
+    ? 'Garantia retenida'
+    : normalizePaymentMethod(movement.paymentMethod) === 'qr' && movement.paymentAccount
     ? `QR - ${movement.paymentAccount}`
     : movement.paymentMethod || 'Efectivo';
 
@@ -16201,7 +16209,7 @@ const createWebBridge = () => ({
         }
         syncValidatedGuaranteeCashMovement(state, contract, payload, now, beforeContract);
         if (payload.economicLedger !== undefined) {
-          const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+          const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'guarantee_apply', 'refund', 'extra', 'note']);
           const rows = Array.isArray(payload.economicLedger) ? payload.economicLedger : [];
           contract.economicLedger = rows.map((entry) => {
             const type = String(entry?.type ?? '').trim();
@@ -16280,7 +16288,7 @@ const createWebBridge = () => ({
         if (!contract) throw new Error('Contrato no encontrado.');
         const beforeContract = deepClone(contract);
         const now = new Date().toISOString();
-        const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'refund', 'note']);
+        const allowedEconomicLedgerTypes = new Set(['deposit', 'guarantee', 'charge', 'guarantee_apply', 'refund', 'extra', 'note']);
         const normalizeEntry = (entry) => {
           const type = String(entry?.type ?? '').trim();
           const normalizedType = allowedEconomicLedgerTypes.has(type) ? type : 'note';
