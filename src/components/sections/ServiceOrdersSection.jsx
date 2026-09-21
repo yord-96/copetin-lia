@@ -10152,6 +10152,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
+  const getGuaranteeApplicationReceiptCode = (entryId = '', contractCode = '') => {
+    const safeContract = String(contractCode || 'GAR').replace(/[^A-Za-z0-9-]/g, '');
+    const safeEntry = String(entryId || '').replace(/[^A-Za-z0-9]/g, '');
+    const suffix = safeEntry.slice(-6) || 'GARANT';
+    return `AG-${safeContract}-${suffix}`;
+  };
+
   const printGuaranteeOperationReceipt = async ({ amountBs, detail, guaranteeBeforeBs, guaranteeAfterBs, receiptWindow: providedWindow = null, entryId = '' }) => {
     const contractCode = contractEconomicsData?.contract?.contractCode || contractEconomicsData?.contract?.id || '';
     const customerName = contractEconomicsData?.contract?.customerName || 'Cliente';
@@ -10164,7 +10171,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       cashBoxType: 'BIG_CASH',
       paymentMethod: 'garantia',
       paymentAccount: '',
-      receiptCode: `AG-${String(contractCode || 'GAR').replace(/[^A-Za-z0-9-]/g, '')}-${String(syntheticId).slice(-6)}`,
+      receiptCode: getGuaranteeApplicationReceiptCode(syntheticId, contractCode),
       receiptCustomerName: customerName,
       customerName,
       receiptDetail: [
@@ -13630,12 +13637,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 className="contract-economics-row-action"
                                 onClick={() => {
                                   const beforeBs = contractEconomicsData.guaranteeReserveBs + toMoneyNumber(entry.amountBs);
+                                  const receiptWindow = openCashReceiptWindow();
                                   void printGuaranteeOperationReceipt({
                                     amountBs: entry.amountBs,
                                     detail: entry.note || 'Aplicacion de garantia a daños o faltantes.',
                                     guaranteeBeforeBs: beforeBs,
                                     guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs,
                                     entryId: entry.id,
+                                    receiptWindow,
                                   });
                                 }}
                                 title="Generar nuevamente el comprobante con el formato oficial de recibos."
@@ -13686,8 +13695,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 <article className="contract-economics-panel contract-economics-movements-card" style={{ gridColumn: '1 / -1' }}>
                   <header>
                     <div>
-                      <h4>Pagos y movimientos de caja</h4>
-                      <p>4. Solo ingresos y egresos reales. El retorno físico no genera recibos ni mueve dinero automáticamente.</p>
+                      <h4>Pagos, movimientos de caja y comprobantes</h4>
+                      <p>4. Los ingresos/egresos reales aparecen en Caja Grande. Las aplicaciones de garantía generan comprobante, pero no se contabilizan como dinero nuevo.</p>
                     </div>
                   </header>
                   <div className="contract-economics-table">
@@ -13753,6 +13762,74 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       <p className="contract-economics-empty">No hay ingresos ni egresos reales vinculados a este contrato.</p>
                     )}
                   </div>
+
+                  {(() => {
+                    const internalReceipts = (contractEconomicsData.economicLedger ?? [])
+                      .filter((entry) => entry?.type === 'charge' && !entry?.cashMovementId && toMoneyNumber(entry?.amountBs) > 0);
+                    if (!internalReceipts.length) return null;
+                    return (
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
+                          <div>
+                            <strong style={{ fontSize: 13 }}>Comprobantes internos · sin movimiento de caja</strong>
+                            <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64748b' }}>
+                              Aquí se muestran aplicaciones de garantía. Tienen comprobante, pero no suman un segundo ingreso a Caja Grande.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="contract-economics-table">
+                          <div className="contract-economics-table-head">
+                            <span>Fecha</span>
+                            <span>Estado</span>
+                            <span>Detalle</span>
+                            <span>Monto</span>
+                            <span>Tipo</span>
+                            <span>Comprobante</span>
+                          </div>
+                          {internalReceipts.map((entry) => {
+                            const contractCode = contractEconomicsData?.contract?.contractCode || contractEconomicsData?.contract?.id || '';
+                            const receiptCode = getGuaranteeApplicationReceiptCode(entry.id, contractCode);
+                            const beforeBs = contractEconomicsData.guaranteeReserveBs + toMoneyNumber(entry.amountBs);
+                            return (
+                              <div className="contract-economics-table-row is-neutral" key={`internal-receipt-${entry.id}`}>
+                                <span className="contract-economics-table-date">
+                                  {entry.createdAt
+                                    ? (formatDateTime?.(entry.createdAt) ?? formatDate?.(entry.createdAt) ?? entry.createdAt)
+                                    : '-'}
+                                </span>
+                                <span className="contract-economics-movement-badge is-neutral">Garantía aplicada</span>
+                                <span className="contract-economics-table-detail">
+                                  <small>COMPROBANTE INTERNO</small>
+                                  <b>{entry.note || 'Aplicación de garantía a daños o faltantes.'}</b>
+                                </span>
+                                <strong className="contract-economics-table-amount is-neutral">{formatBs(entry.amountBs)}</strong>
+                                <span className="contract-economics-table-edit" style={{ color: '#64748b', fontSize: 11 }}>No mueve caja</span>
+                                <span className="contract-economics-table-receipt">
+                                  <button
+                                    type="button"
+                                    className="section-link blue"
+                                    onClick={() => {
+                                      const receiptWindow = openCashReceiptWindow();
+                                      void printGuaranteeOperationReceipt({
+                                        amountBs: entry.amountBs,
+                                        detail: entry.note || 'Aplicación de garantía a daños o faltantes.',
+                                        guaranteeBeforeBs: beforeBs,
+                                        guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs,
+                                        entryId: entry.id,
+                                        receiptWindow,
+                                      });
+                                    }}
+                                  >
+                                    {receiptCode}
+                                  </button>
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </article>
               </div>
 

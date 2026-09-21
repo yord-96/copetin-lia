@@ -20116,7 +20116,9 @@ const createWebBridge = () => ({
         throw new Error('Debes indicar el movimiento de caja para imprimir recibo.');
       }
 
-      const state = readState();
+      // Imprimir es una operación de solo lectura. Evitamos deepClone de toda la base
+      // porque el estado puede pesar decenas de MB y hacía que abrir un recibo demorara varios segundos.
+      const state = readQueryState();
       const payloadMovement = payload?.movement && typeof payload.movement === 'object'
         ? payload.movement
         : null;
