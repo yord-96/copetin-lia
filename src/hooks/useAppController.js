@@ -531,7 +531,7 @@ export const useAppController = () => {
     // Calendario, Ordenes, Usuarios y Asistencia tienen cargas pequenas propias.
     // El resto del sistema conserva la carga completa, pero de forma diferida.
     if (
-      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios', 'items'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios', 'items', 'personal'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) return;
@@ -573,9 +573,7 @@ export const useAppController = () => {
           setAttendanceUsersLoading(false);
         }
       };
-    } else if (activeTab === 'personal') {
-      group = 'personnel';
-      loader = async () => setPersonnelBundle(await api.personnel.listBundle());
+
     } else if (activeTab === 'recibos') {
       group = 'reports';
       loader = async () => {
@@ -793,6 +791,8 @@ export const useAppController = () => {
         }, 50);
         return;
       }
+
+      if (activeTab === 'personal' && event?.domain !== 'presence') return;
 
       if (event?.domain === 'presence') {
         window.clearTimeout(presenceTimer);
@@ -1154,7 +1154,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.personnel.createEmployee(payload);
-      await loadData();
+      ordersEditorDataLoadedRef.current = false;
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear el personal.');
@@ -1166,7 +1166,7 @@ export const useAppController = () => {
     setError('');
     try {
       const updated = await api.personnel.updateEmployee(payload);
-      await loadData();
+      ordersEditorDataLoadedRef.current = false;
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el personal.');
@@ -1178,7 +1178,7 @@ export const useAppController = () => {
     setError('');
     try {
       await api.personnel.removeEmployee(payload);
-      await loadData();
+      ordersEditorDataLoadedRef.current = false;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo dar de baja al personal.');
       throw requestError;
@@ -1189,7 +1189,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.personnel.createIncident(payload);
-      await loadData();
+      ordersEditorDataLoadedRef.current = false;
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el permiso o falta.');
@@ -1201,7 +1201,7 @@ export const useAppController = () => {
     setError('');
     try {
       const result = await api.personnel.importAttendance(payload);
-      await loadData();
+      ordersEditorDataLoadedRef.current = false;
       return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo importar la asistencia.');

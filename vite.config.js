@@ -1,3 +1,5 @@
+import { buildPersonnelOverview } from './src/utils/personnelOverview.js'
+import { mutatePersonnel, personnelMutationMethods } from './server/services/personnelService.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -7,6 +9,7 @@ import react from '@vitejs/plugin-react'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sharedDbPath = path.join(__dirname, '.copetin-shared-db.json')
+let personnelWriteQueue = Promise.resolve()
 const maxSharedDbPayloadBytes = 64 * 1024 * 1024
 const defaultProductUploadDirectory = path.join(__dirname, 'uploads', 'products')
 const defaultAttendanceUploadDirectory = path.join(__dirname, 'uploads', 'attendance')
@@ -594,6 +597,30 @@ const sharedDemoDbPlugin = (env) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost')
         const normalizedPath = url.pathname.replace(/^\/__copetin_db/, '') || '/'
+        if (req.method === 'GET' && normalizedPath === '/personnel/overview') {
+          const state = fs.existsSync(sharedDbPath) ? JSON.parse(fs.readFileSync(sharedDbPath, 'utf8')) : {}
+          res.setHeader('Cache-Control', 'private, no-store')
+          sendJson(res, 200, buildPersonnelOverview(state, Object.fromEntries(url.searchParams)))
+          return
+        }
+        if (req.method === 'POST' && normalizedPath.startsWith('/personnel/')) {
+          const method = normalizedPath.slice('/personnel/'.length)
+          if (!personnelMutationMethods.has(method)) {
+            sendJson(res, 400, { error: 'Operacion no valida.' })
+            return
+          }
+          const payload = JSON.parse(await readBody(req) || '{}')
+          const update = async () => {
+            const state = fs.existsSync(sharedDbPath) ? JSON.parse(fs.readFileSync(sharedDbPath, 'utf8')) : {}
+            const record = await mutatePersonnel(state, method, payload)
+            fs.writeFileSync(sharedDbPath, JSON.stringify(state), 'utf8')
+            return { ok: true, record, revision: getSharedDbRevision() }
+          }
+          const request = personnelWriteQueue.then(update, update)
+          personnelWriteQueue = request.catch(() => {})
+          sendJson(res, 200, await request)
+          return
+        }
         if (req.method === 'POST' && normalizedPath === '/database/export') {
           if (!fs.existsSync(sharedDbPath)) {
             sendJson(res, 404, { error: 'La base de datos aun no esta inicializada.' })

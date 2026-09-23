@@ -686,7 +686,6 @@ function AdminApp() {
 
         {controller.activeTab === 'personal' && (
           <PersonnelSection
-            personnelBundle={controller.personnelBundle}
             formatDate={formatDate}
             formatBs={formatBs}
             onCreateEmployee={controller.handleCreatePersonnelEmployee}

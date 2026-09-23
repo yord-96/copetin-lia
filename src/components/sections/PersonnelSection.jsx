@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { api } from '../../services/api';
 import { readFileAsDataUrl } from '../../utils/files';
 
 const EMPTY_EMPLOYEE = {
@@ -241,7 +242,6 @@ function PersonnelIcon({ kind }) {
 }
 
 function PersonnelSection({
-  personnelBundle = { employees: [], attendance: [], incidents: [] },
   formatDate,
   formatBs,
   onCreateEmployee,
@@ -250,10 +250,6 @@ function PersonnelSection({
   onCreateIncident,
   onImportAttendance,
 }) {
-  const employees = useMemo(() => personnelBundle.employees ?? [], [personnelBundle.employees]);
-  const attendance = useMemo(() => personnelBundle.attendance ?? [], [personnelBundle.attendance]);
-  const incidents = useMemo(() => personnelBundle.incidents ?? [], [personnelBundle.incidents]);
-
   const [activeView, setActiveView] = useState('employees');
   const [query, setQuery] = useState('');
   const [employeeModal, setEmployeeModal] = useState(null);
@@ -267,29 +263,37 @@ function PersonnelSection({
   const today = new Date().toISOString().slice(0, 10);
   const currentMonth = today.slice(0, 7);
 
-  const filteredEmployees = useMemo(() => {
-    const text = normalizeText(query);
-    return employees.filter((employee) => {
-      if (!text) return true;
-      return [
-        employee.fullName,
-        employee.employeeCode,
-        employee.biometricCode,
-        employee.documentId,
-        employee.department,
-        employee.position,
-      ].some((value) => normalizeText(value).includes(text));
-    });
-  }, [employees, query]);
-
-  const monthAttendance = attendance.filter((entry) => String(entry.date ?? '').startsWith(currentMonth));
-  const activeEmployees = employees.filter((employee) => employee.status === 'active');
-  const monthOvertime = monthAttendance.reduce((sum, entry) => sum + Number(entry.overtimeHours ?? 0), 0);
-  const monthMissing = monthAttendance.reduce((sum, entry) => sum + Number(entry.missingHours ?? 0), 0);
-  const openIncidents = incidents.filter((entry) => ['pendiente', 'aprobado'].includes(entry.status)).length;
+  const [page, setPage] = useState(1);
+  const [overview, setOverview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const refresh = () => setRefreshVersion((value) => value + 1);
+  useEffect(() => api.sync.subscribe((event) => {
+    if (event?.domain === 'presence') return;
+    if (event?.domain === 'personnel' || ['broadcast', 'storage', 'remote-revision'].includes(event?.reason)) refresh();
+  }, { moduleScoped: true }), []);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    const timer = setTimeout(() => {
+      api.personnel.getOverview({ view: activeView, query, page, pageSize: 25, month: currentMonth })
+        .then((result) => { if (!cancelled) setOverview(result); })
+        .catch((error) => { if (!cancelled) setLoadError(error.message || 'No se pudo cargar Personal.'); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, query ? 250 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [activeView, query, page, currentMonth, refreshVersion]);
+  const rows = overview?.view === activeView ? overview.rows ?? [] : [];
+  const filteredEmployees = activeView === 'employees' ? rows : [];
+  const employees = overview?.employeeOptions ?? [];
+  const attendance = activeView === 'attendance' ? rows : [];
+  const incidents = activeView === 'incidents' ? rows : [];
+  const { activeEmployees = 0, monthOvertime = 0, monthMissing = 0, openIncidents = 0 } = overview?.summary ?? {};
 
   const cards = [
-    { tone: 'lilac', icon: 'user', value: activeEmployees.length, label: 'Personal activo' },
+    { tone: 'lilac', icon: 'user', value: activeEmployees, label: 'Personal activo' },
     { tone: 'mint', icon: 'clock', value: `${monthOvertime.toFixed(1)} h`, label: 'Horas extra del mes' },
     { tone: 'peach', icon: 'alert', value: `${monthMissing.toFixed(1)} h`, label: 'Horas faltantes' },
     { tone: 'sky', icon: 'file', value: openIncidents, label: 'Permisos y faltas' },
@@ -362,7 +366,8 @@ function PersonnelSection({
       } else {
         await onCreateEmployee?.(payload);
       }
-      closeEmployeeModal();
+      setEmployeeModal(null);
+      refresh();
     } catch (error) {
       setFormError(error?.message || 'No se pudo guardar el personal.');
     } finally {
@@ -396,7 +401,8 @@ function PersonnelSection({
     setFormError('');
     try {
       await onCreateIncident?.(incidentModal);
-      closeIncidentModal();
+      setIncidentModal(null);
+      refresh();
     } catch (error) {
       setFormError(error?.message || 'No se pudo registrar el permiso o falta.');
     } finally {
@@ -427,6 +433,7 @@ function PersonnelSection({
       const result = await onImportAttendance?.({ records: importPreview, source: 'ZKTeco' });
       setImportFeedback(`Importados: ${result?.imported ?? 0}. Observados: ${result?.observed ?? 0}. Horas extra: ${result?.overtime ?? 0}. Sin coincidencia: ${result?.unmatched ?? 0}.`);
       setImportPreview([]);
+      refresh();
     } catch (error) {
       setImportFeedback(error?.message || 'No se pudo importar la asistencia.');
     } finally {
@@ -587,7 +594,7 @@ function PersonnelSection({
         {cards.map((card) => (
           <article key={card.label} className={`clients-kpi-card ${card.tone}`}>
             <span className={`clients-kpi-icon ${card.tone}`}><PersonnelIcon kind={card.icon} /></span>
-            <strong>{card.value}</strong>
+            <strong>{overview ? card.value : '...'}</strong>
             <p>{card.label}</p>
           </article>
         ))}
@@ -596,25 +603,25 @@ function PersonnelSection({
       <article className="personnel-main-card">
         <header className="personnel-toolbar">
           <div className="personnel-view-tabs" role="tablist" aria-label="Vistas de personal">
-            <button type="button" className={activeView === 'employees' ? 'active' : ''} onClick={() => setActiveView('employees')}>
+            <button type="button" className={activeView === 'employees' ? 'active' : ''} onClick={() => { setActiveView('employees'); setPage(1); }}>
               <span><PersonnelIcon kind="user" /></span>
               Personal
-              <small>{employees.length}</small>
+              <small>{overview?.counts?.employees ?? '...'}</small>
             </button>
-            <button type="button" className={activeView === 'attendance' ? 'active' : ''} onClick={() => setActiveView('attendance')}>
+            <button type="button" className={activeView === 'attendance' ? 'active' : ''} onClick={() => { setActiveView('attendance'); setPage(1); }}>
               <span><PersonnelIcon kind="clock" /></span>
               Asistencia
-              <small>{attendance.length}</small>
+              <small>{overview?.counts?.attendance ?? '...'}</small>
             </button>
-            <button type="button" className={activeView === 'incidents' ? 'active' : ''} onClick={() => setActiveView('incidents')}>
+            <button type="button" className={activeView === 'incidents' ? 'active' : ''} onClick={() => { setActiveView('incidents'); setPage(1); }}>
               <span><PersonnelIcon kind="file" /></span>
               Permisos y faltas
-              <small>{incidents.length}</small>
+              <small>{overview?.counts?.incidents ?? '...'}</small>
             </button>
           </div>
           <label className="clients-search personnel-search">
             <span aria-hidden="true" className="clients-search-glyph"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="m15.5 15.5 4 4" /></svg></span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar personal por nombre, CI, codigo, cargo..." />
+            <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar personal por nombre, CI, codigo, cargo..." />
           </label>
         </header>
 
@@ -632,7 +639,9 @@ function PersonnelSection({
           </div>
         ) : null}
 
-        {activeView === 'employees' ? (
+        {loading ? <p role="status">Cargando personal...</p> : null}
+        {loadError ? <p role="alert">{loadError} <button type="button" className="ghost-button" onClick={refresh}>Reintentar</button></p> : null}
+        {!loading && !loadError && activeView === 'employees' ? (
           <div className="clients-table-wrap">
             <table className="clients-table personnel-table">
               <thead><tr><th>Trabajador</th><th>Departamento</th><th>Horario</th><th>Contacto</th><th>Sueldo</th><th>Estado</th><th>Acciones</th></tr></thead>
@@ -645,7 +654,7 @@ function PersonnelSection({
                     <td><div className="clients-cell-stack"><strong>{employee.whatsapp || '-'}</strong><span>{employee.documentId || 'Sin CI'}</span></div></td>
                     <td>{formatBs(Number(employee.salaryBs ?? 0))}</td>
                     <td><span className={`personnel-status ${employee.status}`}>{labelFrom(EMPLOYEE_STATUS_LABELS, employee.status)}</span></td>
-                    <td><div className="personnel-row-actions"><button type="button" className="ghost-button tiny" onClick={() => openEditEmployee(employee)}>Editar</button><button type="button" className="ghost-button tiny" onClick={() => openIncidentModal(employee)}>Permiso</button><button type="button" className="link-button danger" onClick={() => { if (window.confirm(`Dar de baja a ${employee.fullName}?`)) onRemoveEmployee?.({ id: employee.id }); }}>Baja</button></div></td>
+                    <td><div className="personnel-row-actions"><button type="button" className="ghost-button tiny" onClick={() => openEditEmployee(employee)}>Editar</button><button type="button" className="ghost-button tiny" onClick={() => openIncidentModal(employee)}>Permiso</button><button type="button" className="link-button danger" onClick={() => { if (window.confirm(`Dar de baja a ${employee.fullName}?`)) { onRemoveEmployee?.({ id: employee.id }).then(refresh).catch((error) => setLoadError(error.message)); } }}>Baja</button></div></td>
                   </tr>
                 ))}
                 {filteredEmployees.length === 0 ? <tr><td colSpan="7">No hay personal con esos filtros.</td></tr> : null}
@@ -654,12 +663,12 @@ function PersonnelSection({
           </div>
         ) : null}
 
-        {activeView === 'attendance' ? (
+        {!loading && !loadError && activeView === 'attendance' ? (
           <div className="clients-table-wrap">
             <table className="clients-table personnel-table">
               <thead><tr><th>Fecha</th><th>Trabajador</th><th>Entrada</th><th>Salida</th><th>Trabajadas</th><th>Extras</th><th>Faltantes</th><th>Estado</th></tr></thead>
               <tbody>
-                {attendance.slice(0, 80).map((entry) => (
+                {attendance.map((entry) => (
                   <tr key={entry.id}>
                     <td>{formatDate(entry.date)}</td>
                     <td><div className="clients-cell-stack"><strong>{entry.employeeName || 'Sin coincidencia'}</strong><span>{entry.employeeCode || '-'}</span></div></td>
@@ -677,7 +686,7 @@ function PersonnelSection({
           </div>
         ) : null}
 
-        {activeView === 'incidents' ? (
+        {!loading && !loadError && activeView === 'incidents' ? (
           <div className="clients-table-wrap">
             <div className="personnel-inline-actions"><button type="button" className="primary-button" onClick={() => openIncidentModal()}>+ Registrar permiso/falta</button></div>
             <table className="clients-table personnel-table">
@@ -700,6 +709,13 @@ function PersonnelSection({
         ) : null}
       </article>
 
+      {!loadError && overview ? (
+        <nav className="personnel-inline-actions" aria-label="Paginacion de personal">
+          <button type="button" className="ghost-button" disabled={loading || overview.page <= 1} onClick={() => setPage(overview.page - 1)}>Anterior</button>
+          <span>Pagina {overview.page} de {overview.totalPages} · {overview.total} registros</span>
+          <button type="button" className="ghost-button" disabled={loading || overview.page >= overview.totalPages} onClick={() => setPage(overview.page + 1)}>Siguiente</button>
+        </nav>
+      ) : null}
       {renderEmployeeModal()}
       {renderIncidentModal()}
     </section>

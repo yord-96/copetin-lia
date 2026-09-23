@@ -1,3 +1,5 @@
+import { buildPersonnelOverview } from '../../src/utils/personnelOverview.js';
+import { mutatePersonnel, personnelMutationMethods } from '../services/personnelService.js';
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -3948,6 +3950,34 @@ router.get('/__copetin_db/accounting/summary', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/__copetin_db/personnel/overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ ...buildPersonnelOverview(snapshot?.state, req.query), revision: snapshot?.revision });
+  } catch (error) { next(error); }
+});
+
+router.post('/__copetin_db/personnel/:method', async (req, res, next) => {
+  try {
+    if (!personnelMutationMethods.has(req.params.method)) {
+      res.status(400).json({ error: 'Operacion no valida.' });
+      return;
+    }
+    let record;
+    const result = await updateStateSnapshot(async (state) => {
+      record = await mutatePersonnel(state, req.params.method, req.body);
+      return state;
+    });
+    if (!result.initialized) {
+      res.status(409).json({ error: 'La base de datos no esta inicializada.' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ ok: true, record, revision: result.revision });
+  } catch (error) { next(error); }
 });
 
 router.get('/__copetin_db/personnel/options', async (req, res, next) => {

@@ -1,3 +1,4 @@
+import { buildPersonnelOverview } from '../utils/personnelOverview.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups';
 import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex';
@@ -2406,7 +2407,15 @@ const pollRemoteRevision = async () => {
       return;
     }
     if (remoteRevision !== localRevision) {
-      await syncServerState({ force: true, reason: 'remote-revision' });
+      if (moduleScopedSyncSubscribers.size > 0) {
+        // Personal reads its own endpoint. Defer the global snapshot until a
+        // module that actually needs it is opened.
+        markServerStateStale('remote-revision');
+        loadedServerCollections.clear();
+        rememberServerRevision(remoteRevision);
+      } else {
+        await syncServerState({ force: true, reason: 'remote-revision' });
+      }
       notifySubscribers({ source: 'remote', reason: 'remote-revision', revision: remoteRevision });
     }
   } catch (error) {
@@ -2459,12 +2468,15 @@ const ensureSyncListeners = () => {
   document.addEventListener('visibilitychange', pollRemoteRevision);
 };
 
-const subscribeToDataChanges = (callback) => {
+const moduleScopedSyncSubscribers = new Set();
+const subscribeToDataChanges = (callback, { moduleScoped = false } = {}) => {
   ensureSyncListeners();
   startSyncPoll();
   syncSubscribers.add(callback);
+  if (moduleScoped) moduleScopedSyncSubscribers.add(callback);
   return () => {
     syncSubscribers.delete(callback);
+    moduleScopedSyncSubscribers.delete(callback);
     if (syncSubscribers.size === 0 && syncPollTimer) {
       window.clearInterval(syncPollTimer);
       syncPollTimer = null;
@@ -2742,6 +2754,37 @@ const applyDirectCashResultLocally = async (result = {}) => {
   await mergeLocalState({ cashMovements: [...byId.values()] });
   loadedServerCollections.add('cashMovements');
   localServerCommitSerial += 1;
+};
+
+const getPersonnelOverview = async (params = {}) => {
+  if (!shouldUseServerState()) {
+    const bundle = await callBridge('personnel', 'listBundle', false);
+    return buildPersonnelOverview({ personnelEmployees: bundle.employees, personnelAttendance: bundle.attendance, personnelIncidents: bundle.incidents }, params);
+  }
+  const response = await fetch(getServerStateUrl('/personnel/overview?' + new URLSearchParams(params)), {
+    cache: 'no-store', headers: getInternalHeaders(),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar Personal.');
+  return response.json();
+};
+
+const mutatePersonnelOnServer = (method, payload) => {
+  if (!shouldUseServerState()) return callBridge('personnel', method, true, payload);
+  return enqueueMutation(async () => {
+    const response = await fetch(getServerStateUrl('/personnel/' + method), {
+      method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar Personal.');
+    const result = await response.json();
+    markServerStateStale('personnel.' + method);
+    if (result?.revision) {
+      rememberServerRevision(result.revision);
+      localServerCommitSerial += 1;
+    }
+    ['personnelEmployees', 'personnelAttendance', 'personnelIncidents'].forEach((name) => loadedServerCollections.delete(name));
+    announceDataChange({ domain: 'personnel', method, collections: ['personnelEmployees', 'personnelAttendance', 'personnelIncidents'] });
+    return result.record;
+  });
 };
 
 const getPersonnelOptionsFromServer = async ({ query = '', limit = 20 } = {}) => {
@@ -3816,14 +3859,15 @@ export const api = {
     },
   },
   personnel: {
+    getOverview: getPersonnelOverview,
     getOptions: (payload) => getPersonnelOptionsFromServer(payload),
-    listBundle: async () => { await ensureServerCollectionsLoaded(['personnelAttendance', 'personnelIncidents'], 'personnel-bundle'); return callBridge('personnel', 'listBundle', false); },
-    createEmployee: (payload) => callBridge('personnel', 'createEmployee', true, payload),
-    updateEmployee: (payload) => callBridge('personnel', 'updateEmployee', true, payload),
-    removeEmployee: (payload) => callBridge('personnel', 'removeEmployee', true, payload),
-    createIncident: (payload) => callBridge('personnel', 'createIncident', true, payload),
-    updateIncident: (payload) => callBridge('personnel', 'updateIncident', true, payload),
-    importAttendance: (payload) => callBridge('personnel', 'importAttendance', true, payload),
+    listBundle: async () => { await ensureServerCollectionsLoaded(['personnelEmployees', 'personnelAttendance', 'personnelIncidents'], 'personnel-bundle'); return callBridge('personnel', 'listBundle', false); },
+    createEmployee: (payload) => mutatePersonnelOnServer('createEmployee', payload),
+    updateEmployee: (payload) => mutatePersonnelOnServer('updateEmployee', payload),
+    removeEmployee: (payload) => mutatePersonnelOnServer('removeEmployee', payload),
+    createIncident: (payload) => mutatePersonnelOnServer('createIncident', payload),
+    updateIncident: (payload) => mutatePersonnelOnServer('updateIncident', payload),
+    importAttendance: (payload) => mutatePersonnelOnServer('importAttendance', payload),
   },
   clients: {
     list: () => callBridge('clients', 'list', false),
