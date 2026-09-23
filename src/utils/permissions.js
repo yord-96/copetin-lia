@@ -211,4 +211,8 @@ export const canWriteTab = (user, tabId) => {
 
 export const canAssignOrderResponsibles = (user) => Boolean(user)
   && canWriteTab(user, 'alquiler')
-  && (isDeveloper(user) || getUserRoleIds(user).includes('ventas'));
+  && (
+    isDeveloper(user)
+    || isSuperAdmin(user)
+    || getUserRoleIds(user).includes('ventas')
+  );

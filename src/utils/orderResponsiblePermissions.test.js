@@ -5,7 +5,8 @@ import { canAssignOrderResponsibles } from './permissions.js';
 test('Ventas can assign responsibles, including combined and legacy roles', () => {
   for (const user of [
     { roleIds: ['ventas'] }, { roleIds: ['inventario', 'ventas'] },
-    { role: 'Ventas' }, { roleIds: ['developer'] },
+    { role: 'Ventas' }, { roleIds: ['developer'] }, { roleIds: ['super_admin'] },
+    { role: 'Super Admin' }, { role: 'superadmin' },
   ]) assert.equal(canAssignOrderResponsibles(user), true);
 });
 
