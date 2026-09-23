@@ -576,7 +576,7 @@ function PersonnelSection({
   };
 
   return (
-    <section className="personnel-section">
+    <section className="personnel-section" aria-busy={loading}>
       <header className="clients-header">
         <div>
           <h2>Personal</h2>
@@ -639,7 +639,12 @@ function PersonnelSection({
           </div>
         ) : null}
 
-        {loading ? <p role="status">Cargando personal...</p> : null}
+        {loading ? (
+          <div className="personnel-loading" role="status" aria-live="polite">
+            <img src="/loading-thinking.gif" alt="" width="112" height="112" />
+            <strong>Cargando personal...</strong>
+          </div>
+        ) : null}
         {loadError ? <p role="alert">{loadError} <button type="button" className="ghost-button" onClick={refresh}>Reintentar</button></p> : null}
         {!loading && !loadError && activeView === 'employees' ? (
           <div className="clients-table-wrap">
