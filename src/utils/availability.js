@@ -83,8 +83,12 @@ const periodFromRental = (rental, contract) => {
     || legacyCombinedPickupCoordinate;
   const pickupTimeCoordinatesPending = record?.pickupTimeMode === 'coordinate';
   return buildAvailabilityPeriod({
-    deliveryDate: contract?.deliveryDate || rental?.rentalDate || rental?.createdAt,
-    deliveryWindowStart: contract?.deliveryWindowStart || rental?.deliveryWindowStart || '00:00',
+    // La reserva comercial comienza en la fecha del evento. La entrega previa
+    // se maneja como advertencia logística y no como bloqueo de disponibilidad.
+    deliveryDate: contract?.eventDate || rental?.eventDate || contract?.deliveryDate || rental?.rentalDate || rental?.createdAt,
+    deliveryWindowStart: contract?.eventDate || rental?.eventDate
+      ? '00:00'
+      : contract?.deliveryWindowStart || rental?.deliveryWindowStart || '00:00',
     pickupDate: pickupDateCoordinatesPending
       ? (contract?.eventDate || rental?.rentalDate)
       : contract?.pickupDate || rental?.dueDate || contract?.eventDate || rental?.rentalDate,
@@ -101,8 +105,10 @@ const periodFromCommercialRecord = (record) => {
     || legacyCombinedPickupCoordinate;
   const pickupTimeCoordinatesPending = record?.pickupTimeMode === 'coordinate';
   return buildAvailabilityPeriod({
-    deliveryDate: record?.deliveryDate || record?.eventDate,
-    deliveryWindowStart: record?.deliveryWindowStart || record?.eventTime || '00:00',
+    // Para cotizaciones/contratos, la fecha del evento define el inicio de la
+    // reserva. Una entrega anticipada no debe crear un faltante obligatorio.
+    deliveryDate: record?.eventDate || record?.deliveryDate,
+    deliveryWindowStart: record?.eventDate ? '00:00' : record?.deliveryWindowStart || '00:00',
     pickupDate: pickupDateCoordinatesPending
       ? record?.eventDate
       : record?.pickupDate || record?.validUntil || record?.eventDate,

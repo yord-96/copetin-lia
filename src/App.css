@@ -72781,3 +72781,48 @@ button.inventory-loss-row-action:hover {
     -webkit-line-clamp: unset;
   }
 }
+
+/* Entrega anticipada: aviso operativo no bloqueante. */
+.orders-wizard-modal .orders-form-note.orders-form-note-info.orders-early-delivery-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.72rem;
+  border: 1px solid #9ec5ff;
+  background: #eef6ff;
+  color: #245a96;
+  box-shadow: 0 8px 22px rgba(65, 120, 190, 0.08);
+}
+
+.orders-wizard-modal .orders-early-delivery-warning > svg {
+  flex: 0 0 auto;
+  width: 1.08rem;
+  height: 1.08rem;
+  margin: 0.08rem 0 0;
+  color: #3478c9;
+}
+
+.orders-wizard-modal .orders-early-delivery-warning > span {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.orders-wizard-modal .orders-early-delivery-warning strong {
+  color: #1f4f86;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.orders-wizard-modal .orders-early-delivery-warning small,
+.orders-wizard-modal .orders-early-delivery-warning em {
+  color: #456d9c;
+  font-size: 0.68rem;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.orders-wizard-modal .orders-early-delivery-warning em {
+  color: #2d5f96;
+  font-weight: 750;
+}

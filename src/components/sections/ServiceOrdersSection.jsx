@@ -4960,47 +4960,35 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const draftAvailabilityPeriod = useMemo(
     () => {
-      const isEditingOperationalContract = draft.entityType === 'contract' && Boolean(draft.recordId);
-
-      // En un documento nuevo, el paso Items todavía no tiene una logística
-      // confirmada y usa el día del evento como estimación inicial. Al editar un
-      // contrato existente sí conocemos entrega y recojo: deben aplicarse desde
-      // este paso para mostrar exactamente la misma disponibilidad que validará
-      // el guardado (incluidos contratos que devuelven el día de la entrega).
-      if (currentStep === 2 && !isEditingOperationalContract) {
-        return buildAvailabilityPeriod({
-          deliveryDate: draft.eventDate,
-          deliveryWindowStart: '00:00',
-          pickupDate: draft.eventDate,
-          pickupWindowEnd: '23:59',
-          eventDate: draft.eventDate,
-          eventTime: draft.eventTime,
-        });
-      }
-
-      // Desde Logística/Resumen sí se valida el período operativo completo,
-      // porque para entonces entrega y recojo ya son datos explícitos del usuario.
+      // La disponibilidad comercial se reserva desde la fecha del evento. Una
+      // entrega anticipada es una decisión logística: puede generar riesgo
+      // operativo y se advierte por separado, pero no obliga a contratar
+      // proveedor ni bloquea un item que sí está disponible para el evento.
       return buildAvailabilityPeriod({
-        deliveryDate: draft.deliveryDate || draft.eventDate,
-        deliveryWindowStart: draft.deliveryWindowStart || draft.eventTime,
-        pickupDate: draft.pickupDateMode === 'coordinate' ? draft.eventDate : draft.pickupDate || draft.eventDate,
-        pickupWindowEnd: draft.pickupTimeMode === 'coordinate' ? '23:59' : draft.pickupWindowEnd || draft.eventTime,
+        deliveryDate: draft.eventDate,
+        deliveryWindowStart: '00:00',
+        pickupDate: currentStep === 2
+          ? draft.eventDate
+          : draft.pickupDateMode === 'coordinate'
+            ? draft.eventDate
+            : draft.pickupDate || draft.eventDate,
+        pickupWindowEnd: currentStep === 2
+          ? '23:59'
+          : draft.pickupTimeMode === 'coordinate'
+            ? '23:59'
+            : draft.pickupWindowEnd || '23:59',
         eventDate: draft.eventDate,
         eventTime: draft.eventTime,
       });
     },
     [
       currentStep,
-      draft.deliveryDate,
-      draft.deliveryWindowStart,
-      draft.entityType,
       draft.eventDate,
       draft.eventTime,
       draft.pickupDate,
       draft.pickupDateMode,
       draft.pickupWindowEnd,
       draft.pickupTimeMode,
-      draft.recordId,
     ],
   );
 
@@ -5062,6 +5050,94 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     },
     [availabilityOverview, contracts, currentStep, draft.entityType, draft.manualDocumentCode, draft.orderCode, draft.recordId, draft.rentalId, draft.quoteId, draftAvailabilityPeriod, items, modalOpen, quotes, rentals],
   );
+
+  const hasEarlyDelivery = Boolean(
+    draft.deliveryDate
+    && draft.eventDate
+    && getDateKey(draft.deliveryDate)
+    && getDateKey(draft.eventDate)
+    && getDateKey(draft.deliveryDate) < getDateKey(draft.eventDate)
+  );
+
+  const earlyDeliveryAvailabilityByItemId = useMemo(() => {
+    if (!modalOpen || currentStep < 3 || !hasEarlyDelivery) return new Map();
+
+    const draftContractCode = draft.entityType === 'contract'
+      ? String(draft.manualDocumentCode ?? '').trim()
+      : '';
+    const draftRentalId = draft.entityType === 'contract'
+      ? String(draft.rentalId ?? '').trim()
+      : '';
+    const draftOrderCode = draft.entityType === 'contract'
+      ? String(draft.orderCode ?? '').trim()
+      : '';
+    const currentContract = draft.entityType === 'contract' && draft.recordId
+      ? contracts.find((contract) => String(contract.id ?? '') === String(draft.recordId)) ?? null
+      : null;
+    const linkedRental = draft.entityType === 'contract' && (draft.recordId || draftContractCode || draftRentalId || draftOrderCode)
+      ? rentals.find((rental) => (
+        (draftRentalId && String(rental.id ?? '') === draftRentalId)
+        || (draftOrderCode && String(rental.orderCode ?? '').trim() === draftOrderCode)
+        || String(rental.contractId ?? '') === String(draft.recordId)
+        || (draftContractCode && String(rental.contractCode ?? '').trim() === draftContractCode)
+      ))
+      : null;
+
+    const period = buildAvailabilityPeriod({
+      deliveryDate: draft.deliveryDate,
+      deliveryWindowStart: draft.deliveryTimeMode === 'coordinate'
+        ? '00:00'
+        : draft.deliveryWindowStart || '00:00',
+      pickupDate: draft.pickupDateMode === 'coordinate'
+        ? draft.eventDate
+        : draft.pickupDate || draft.eventDate,
+      pickupWindowEnd: draft.pickupTimeMode === 'coordinate'
+        ? '23:59'
+        : draft.pickupWindowEnd || '23:59',
+      eventDate: draft.eventDate,
+      eventTime: draft.eventTime,
+    });
+
+    return getProjectedInventoryAvailability({
+      items: Array.isArray(availabilityOverview?.items) ? availabilityOverview.items : items,
+      rentals: Array.isArray(availabilityOverview?.rentals) ? availabilityOverview.rentals : rentals,
+      contracts: Array.isArray(availabilityOverview?.contracts) ? availabilityOverview.contracts : contracts,
+      quotes: Array.isArray(availabilityOverview?.quotes) ? availabilityOverview.quotes : quotes,
+      period,
+      exclude: {
+        recordId: draft.recordId,
+        quoteId: draft.quoteId,
+        contractId: draft.entityType === 'contract' ? draft.recordId : null,
+        contractCode: draftContractCode || currentContract?.contractCode || null,
+        rentalId: draftRentalId || currentContract?.rentalId || linkedRental?.id || null,
+        orderCode: draftOrderCode || currentContract?.orderCode || linkedRental?.orderCode || null,
+      },
+    });
+  }, [
+    availabilityOverview,
+    contracts,
+    currentStep,
+    draft.deliveryDate,
+    draft.deliveryTimeMode,
+    draft.deliveryWindowStart,
+    draft.entityType,
+    draft.eventDate,
+    draft.eventTime,
+    draft.manualDocumentCode,
+    draft.orderCode,
+    draft.pickupDate,
+    draft.pickupDateMode,
+    draft.pickupWindowEnd,
+    draft.pickupTimeMode,
+    draft.quoteId,
+    draft.recordId,
+    draft.rentalId,
+    hasEarlyDelivery,
+    items,
+    modalOpen,
+    quotes,
+    rentals,
+  ]);
 
   const itemById = useMemo(
     () => new Map(items.map((item) => [String(item.id), item])),
@@ -5470,6 +5546,43 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     },
     [bypassStockValidation, currentStep, getEditableAvailableStock, selectedDemandByItemId, selectedItems],
   );
+
+  const earlyDeliveryStockRisks = useMemo(() => {
+    if (!hasEarlyDelivery || currentStep < 3 || bypassStockValidation) return [];
+    const processedItemIds = new Set();
+    return selectedItems
+      .map((line) => {
+        if (isDetachedFromInventory(line)) return null;
+        const itemId = String(line.itemId);
+        if (processedItemIds.has(itemId)) return null;
+        processedItemIds.add(itemId);
+        const requestedQty = Math.max(0, Number(selectedDemandByItemId.get(line.itemId) ?? line.quantity));
+        const summary = earlyDeliveryAvailabilityByItemId.get(line.itemId) ?? null;
+        const availableQty = Math.max(0, Number(summary?.projectedAvailable ?? line.item.availableStock ?? 0));
+        if (requestedQty <= availableQty) return null;
+        const relatedContractCodes = Array.from(new Set(
+          (Array.isArray(summary?.hardReservedQtyRecords) ? summary.hardReservedQtyRecords : [])
+            .map((record) => String(record?.contractCode || record?.code || record?.orderCode || '').trim())
+            .filter(Boolean),
+        ));
+        return {
+          itemId,
+          itemName: line.item.name,
+          requestedQty,
+          availableQty,
+          shortageQty: Math.max(0, requestedQty - availableQty),
+          relatedContractCodes,
+        };
+      })
+      .filter(Boolean);
+  }, [
+    bypassStockValidation,
+    currentStep,
+    earlyDeliveryAvailabilityByItemId,
+    hasEarlyDelivery,
+    selectedDemandByItemId,
+    selectedItems,
+  ]);
 
   const supplierOffersByItemId = useMemo(() => {
     const map = new Map();
@@ -17701,6 +17814,31 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         </div>
                       </section>
                     </div>
+
+                    {hasEarlyDelivery ? (
+                      <div className="orders-form-note orders-form-note-info orders-early-delivery-warning">
+                        <Info aria-hidden="true" />
+                        <span>
+                          <strong>Entrega anticipada: revisar disponibilidad operativa</strong>
+                          <small>
+                            El evento es el {formatDate(draft.eventDate)} y la entrega está programada para el {formatDate(draft.deliveryDate)}.
+                            El sistema permitirá continuar y validará el stock contra la fecha del evento, pero sacar los items antes puede afectar la disponibilidad física de ese día.
+                          </small>
+                          {earlyDeliveryStockRisks.length > 0 ? (
+                            <em>
+                              Atención: {earlyDeliveryStockRisks.slice(0, 3).map((risk) => {
+                                const contractsToReview = risk.relatedContractCodes.length > 0
+                                  ? ` Contratos a verificar: ${risk.relatedContractCodes.join(', ')}.`
+                                  : ' No se pudo identificar un número de contrato relacionado; revisa los despachos activos de ese día.';
+                                return `${risk.itemName}: ${risk.availableQty} disponibles para la entrega anticipada / ${risk.requestedQty} solicitadas (${risk.shortageQty} en riesgo).${contractsToReview}`;
+                              }).join(' · ')}
+                            </em>
+                          ) : (
+                            <em>No se detectan faltantes con la información actual; no hay contratos que estén generando un conflicto de stock para esta entrega anticipada.</em>
+                          )}
+                        </span>
+                      </div>
+                    ) : null}
 
                     {draft.logisticsMode === 'envio' ? (
                       <div className="orders-form-grid orders-transport-assignment-grid">

@@ -11494,8 +11494,11 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   const pickupTimeCoordinatesForAvailability = contract.pickupTimeMode === 'coordinate'
     || rental.pickupTimeMode === 'coordinate';
   const availabilityPeriod = buildAvailabilityPeriod({
-    deliveryDate: contract.deliveryDate || rental.rentalDate,
-    deliveryWindowStart: contract.deliveryWindowStart || rental.deliveryWindowStart || '00:00',
+    // La disponibilidad contractual se valida desde el evento. Una entrega
+    // anterior queda como riesgo operativo advertido en Logística, no como
+    // faltante que obligue a proveedor.
+    deliveryDate: contract.eventDate || contract.deliveryDate || rental.rentalDate,
+    deliveryWindowStart: '00:00',
     pickupDate: pickupDateCoordinatesForAvailability
       ? (contract.eventDate || contract.deliveryDate || rental.rentalDate)
       : contract.pickupDate || rental.dueDate,
@@ -16798,8 +16801,10 @@ const createWebBridge = () => ({
         const rentalDate = String(payload?.rentalDate ?? now.toISOString().slice(0, 10));
         const operationDate = String(payload?.deliveryDate ?? payload?.eventDate ?? rentalDate).trim() || rentalDate;
         const availabilityPeriod = buildAvailabilityPeriod({
-          deliveryDate: rentalDate,
-          deliveryWindowStart: payload?.deliveryWindowStart || '00:00',
+          // La reserva de stock empieza en la fecha del evento. rentalDate puede
+          // ser una entrega anticipada y no debe bloquear la aprobación por sí sola.
+          deliveryDate: String(payload?.eventDate ?? '').trim() || rentalDate,
+          deliveryWindowStart: '00:00',
           pickupDate: dueDate,
           pickupWindowEnd: payload?.pickupWindowEnd || dueTime,
         });
