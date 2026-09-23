@@ -208,3 +208,7 @@ export const canWriteTab = (user, tabId) => {
   if (target === 'alquiler' && permissions.ordersReadOnly) return false;
   return true;
 };
+
+export const canAssignOrderResponsibles = (user) => Boolean(user)
+  && canWriteTab(user, 'alquiler')
+  && (isDeveloper(user) || getUserRoleIds(user).includes('ventas'));

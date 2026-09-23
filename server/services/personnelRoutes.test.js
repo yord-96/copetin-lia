@@ -4,6 +4,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 test('personnel HTTP endpoints persist concurrent changes without touching commercial data', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'copetin-personnel-'));
@@ -45,6 +48,21 @@ test('personnel HTTP endpoints persist concurrent changes without touching comme
     assert.ok(final.personnelEmployees.find((employee) => employee.id === id).deletedAt);
     assert.equal(final.personnelIncidents.length, 1);
     assert.deepEqual(final.contracts, [{ id: 'contract-1', detail: 'preserved' }]);
+    const recoveryFile = path.join(directory, 'personnel.json');
+    await fs.writeFile(recoveryFile, JSON.stringify({ personnelEmployees: Array.from({ length: 41 }, (_, index) => ({
+      id: `recovery-${index}`, fullName: `Recuperado ${index}`, employeeCode: `REC-${index}`,
+    })) }));
+    const recoveryScript = fileURLToPath(new URL('../../scripts/repair/restore-personnel.mjs', import.meta.url));
+    const recoveryArgs = [recoveryScript, recoveryFile, `--url=http://127.0.0.1:${server.address().port}`, '--apply'];
+    await promisify(execFile)(process.execPath, recoveryArgs, { cwd: directory, env: process.env });
+    await promisify(execFile)(process.execPath, recoveryArgs, { cwd: directory, env: process.env });
+    const recovered = JSON.parse(await fs.readFile(stateFile, 'utf8')).state;
+    assert.equal(recovered.personnelEmployees.length, 44);
+    assert.deepEqual(recovered.contracts, final.contracts);
+    const { updateStateSnapshot } = await import('../storage/fileStateStore.js');
+    await assert.rejects(updateStateSnapshot((state) => ({ ...state, personnelEmployees: [] })), {
+      code: 'STATE_COLLECTION_REGRESSION_BLOCKED',
+    });
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

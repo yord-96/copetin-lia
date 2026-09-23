@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { resolveInventoryArea } from '../../utils/inventoryArea';
-import { getUserDisplayRole, isDeveloper } from '../../utils/permissions';
+import { canAssignOrderResponsibles, getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
 import { isInventoryCatalogItemActive } from '../../utils/inventoryCatalogVisibility';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
@@ -2158,7 +2158,7 @@ function ServiceOrdersSection({
     });
   }, []);
 
-  const canChooseResponsibles = isDeveloper(currentUser);
+  const canChooseResponsibles = !readOnly && canAssignOrderResponsibles(currentUser);
   const canViewHiddenContracts = isDeveloper(currentUser);
   const canRemoveCancelledContract = isDeveloper(currentUser) && Boolean(onRemoveContract);
   const canManageContractEconomicLedger = !readOnly;
@@ -5416,7 +5416,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   ), []);
 
   const isHistoricalReconstruction = useMemo(() => {
-    if (!canChooseResponsibles || draft.entityType !== 'contract' || draft.recordId) return false;
+    if (!isDeveloper(currentUser) || draft.entityType !== 'contract' || draft.recordId) return false;
     if (draft.documentCodeMode !== 'manual') return false;
     // En una reconstruccion manual manda la fecha historica del evento.
     // pickupDate y deliveryDate nacen con valores futuros en el borrador nuevo y
@@ -5425,7 +5425,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const todayKey = getDateKey(new Date());
     return Boolean(historicalEventDate && todayKey && historicalEventDate < todayKey);
   }, [
-    canChooseResponsibles,
+    currentUser,
     draft.contractDate,
     draft.documentCodeMode,
     draft.entityType,
@@ -16267,7 +16267,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <header>
                           <div>
                             <strong><UsersRound aria-hidden="true" />Responsable(s) del registro</strong>
-                            <span>Solo Developer: usa esto para cargar contratos o cotizaciones antiguas del cuaderno.</span>
+                            <span>Selecciona uno o varios responsables de este contrato o cotizacion.</span>
                           </div>
                           <em>{(draft.responsibleIds ?? []).length || 1} seleccionado(s)</em>
                         </header>

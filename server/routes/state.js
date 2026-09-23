@@ -59,6 +59,7 @@ const deferredBootstrapCollections = Object.freeze([
 ]);
 const summarizedBootstrapCollections = Object.freeze(['contracts', 'rentals']);
 const readablePartialCollectionSet = new Set([
+  'personnelEmployees',
   'cashSessions',
   'users',
   'clients',

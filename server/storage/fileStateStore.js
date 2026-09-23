@@ -29,6 +29,9 @@ const protectedBusinessCollections = [
   'suppliers',
   'supplierQuotes',
   'supplierLoans',
+  'personnelEmployees',
+  'personnelAttendance',
+  'personnelIncidents',
   'calendarEvents',
   'generatedReports',
 ];
