@@ -17199,7 +17199,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           const hasStockShortage = !bypassStockValidation && !isProvisionalItem && effectiveShortageForItem > 0;
                           const hasUncoveredShortage = !bypassStockValidation && !isProvisionalItem && uncoveredForItem > 0;
                           const returningRecords = availability?.returningBeforeStartQtyRecords ?? [];
-                          const hardRecords = availability?.hardReservedQtyRecords ?? [];
                           const softRecords = availability?.softReservedQtyRecords ?? [];
                           const moveKey = getWizardItemMoveKey(line);
                           return (
@@ -17535,37 +17534,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             >
                               <Trash2 aria-hidden="true" />
                             </button>
-                            {!bypassStockValidation && !isProvisionalItem && (hasStockShortage || hardRecords.length > 0) ? (
-                              <div className={`orders-item-stock-detail${hasUncoveredShortage ? ' is-error' : ''}`}>
-                                <strong>
-                                  {hasUncoveredShortage
-                                    ? `Faltan ${uncoveredForItem} u. por cubrir con proveedor.`
-                                    : hasStockShortage
-                                      ? `Faltante cubierto por proveedor: ${supplierCoveredQty} u.`
-                                      : 'Reservas para este período'}
-                                </strong>
-                                <span>
-                                  {formatDate(draftAvailabilityPeriod.startDate)} al {formatDate(draftAvailabilityPeriod.endDate)}
-                                  {' · '}{availableStock} disponibles / {requestedForItem} solicitadas
-                                </span>
-                                {hardRecords.length > 0 ? (
-                                  <div className="orders-item-stock-contracts">
-                                    <span>Usado por:</span>
-                                    {hardRecords.map((record, index) => (
-                                      <button
-                                        key={`${record.id || record.code}-hard-${index}`}
-                                        type="button"
-                                        onClick={() => openAvailabilityContractDetail(record)}
-                                      >
-                                        Contrato {record.contractCode || record.code || record.orderCode || 'previo'}
-                                        {' · '}{record.quantity} u.
-                                        {' · '}{formatDate(record.startDate)} al {formatDate(record.endDate)}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : null}
-                              </div>
-                            ) : null}
                             {supplierCoverageLines.length > 0 ? (
                               <div className={`orders-supplier-coverage-field orders-supplier-coverage-band${hasUncoveredShortage ? ' needs-provider' : ''}`}>
                                 <span>Subalquiler</span>
