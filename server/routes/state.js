@@ -36,8 +36,10 @@ const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurity
 const MAX_CHUNKED_STATE_BYTES = Number(process.env.MAX_CHUNKED_STATE_BYTES ?? 64 * 1024 * 1024);
 const CHUNK_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const chunkUploads = new Map();
-const JSON_PAYLOAD_CACHE_LIMIT = 32;
+const JSON_PAYLOAD_CACHE_LIMIT = 12;
+const JSON_PAYLOAD_CACHE_MAX_BODY_BYTES = 2 * 1024 * 1024;
 const jsonPayloadCache = new Map();
+let jsonPayloadCacheRevision = null;
 let suppliersOverviewCache = null;
 
 const getSnapshotRevisionKey = (value = {}) => String(
@@ -324,16 +326,37 @@ const sendJsonPayload = async (req, res, payload) => {
       : payload?.state
         ? 'full'
         : `route:${req.originalUrl}`;
-  const cacheKey = `${String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision')}:${payloadScope}`;
+  const revisionKey = String(payload?.revision ?? payload?.updatedAt ?? payload?.version ?? 'no-revision');
+
+  // Nunca conservamos respuestas de revisiones anteriores. Antes, cada cambio de
+  // estado dejaba cuerpos JSON (y sus buffers gzip) vivos hasta completar 32
+  // entradas. Con respuestas de varios MB esto podia llevar el RSS de Node por
+  // encima del limite de PM2 aunque la peticion ya hubiese terminado.
+  if (revisionKey !== 'no-revision' && jsonPayloadCacheRevision !== revisionKey) {
+    jsonPayloadCache.clear();
+    jsonPayloadCacheRevision = revisionKey;
+  }
+
+  const cacheKey = `${revisionKey}:${payloadScope}`;
   let cacheEntry = jsonPayloadCache.get(cacheKey);
-  if (!cacheEntry) {
-    cacheEntry = { body: JSON.stringify(payload), gzipPromise: null };
-    jsonPayloadCache.set(cacheKey, cacheEntry);
-    if (jsonPayloadCache.size > JSON_PAYLOAD_CACHE_LIMIT) {
-      jsonPayloadCache.delete(jsonPayloadCache.keys().next().value);
+  let body = cacheEntry?.body;
+
+  if (!body) {
+    body = JSON.stringify(payload);
+    const bodyBytes = Buffer.byteLength(body);
+
+    // Los payloads grandes se usan solo durante esta respuesta. No deben quedar
+    // retenidos en memoria junto con su copia comprimida.
+    if (revisionKey !== 'no-revision' && bodyBytes <= JSON_PAYLOAD_CACHE_MAX_BODY_BYTES) {
+      cacheEntry = { body, gzipPromise: null };
+      jsonPayloadCache.set(cacheKey, cacheEntry);
+      if (jsonPayloadCache.size > JSON_PAYLOAD_CACHE_LIMIT) {
+        jsonPayloadCache.delete(jsonPayloadCache.keys().next().value);
+      }
+    } else {
+      cacheEntry = { body, gzipPromise: null };
     }
   }
-  const body = cacheEntry.body;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Vary', 'Accept-Encoding');
 

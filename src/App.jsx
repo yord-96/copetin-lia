@@ -8,6 +8,7 @@ import TabsNav, { MobileNavigation } from './components/layout/TabsNav';
 import WorkspaceHeader from './components/layout/WorkspaceHeader';
 import ImageModal from './components/common/ImageModal';
 import GlobalUpdateNotice from './components/common/GlobalUpdateNotice';
+import RefreshBoundary from './components/common/RefreshBoundary';
 import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
@@ -798,11 +799,11 @@ function AdminApp() {
           />
         )}
 
-        {controller.activeTab === 'alquiler' && controller.ordersModuleLoading && (
-          <p className="status">Cargando Ordenes...</p>
-        )}
-
-        {controller.activeTab === 'alquiler' && !controller.ordersModuleLoading && (
+        {controller.activeTab === 'alquiler' && (
+          <RefreshBoundary
+            loading={controller.ordersModuleLoading}
+            fallback={<p className="status">Cargando Ordenes...</p>}
+          >
           <StableServiceOrdersSection
             quotes={controller.quotes}
             contracts={controller.contracts}
@@ -865,6 +866,7 @@ function AdminApp() {
             canAccessTransport={canAccessTab(controller.currentUser, 'devolucion_entregas')}
             canAccessInventory={canAccessTab(controller.currentUser, 'inventario_movimientos')}
           />
+          </RefreshBoundary>
         )}
 
         {String(controller.activeTab).startsWith('devolucion') && (
