@@ -1,7 +1,7 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
-import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge';
-import { buildContractCollectionGroups } from '../utils/contractCollectionGroups';
-import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex';
+import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
+import { buildContractCollectionGroups } from '../utils/contractCollectionGroups.js';
+import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex.js';
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
@@ -111,7 +111,6 @@ const SYNC_CHANNEL_NAME = 'copetin-data-sync-v1';
 const SERVER_REVISION_STORAGE_KEY = `${WEB_DB_STORAGE_KEY}:server-revision`;
 const SYNC_THROTTLE_MS = 2000;
 const REMOTE_POLL_MS = 30000;
-const REMOTE_POLL_HIDDEN_MS = 120000;
 const REMOTE_POLL_TICK_MS = 5000;
 const REMOTE_BACKOFF_BASE_MS = 30000;
 const REMOTE_BACKOFF_MAX_MS = 180000;
@@ -138,6 +137,7 @@ let lastSharedRevision = null;
 let hasLoadedServerState = false;
 let serverStateFetchCount = 0;
 let lastRemotePollAt = 0;
+let remotePollInFlight = false;
 let remotePollBackoffUntil = 0;
 let remotePollBackoffMs = 0;
 let syncChannel = null;
@@ -485,6 +485,10 @@ const preserveLocalDetailsInSummaries = async (state) => {
 
 const replaceLocalState = async (state) => {
   const storage = getLocalStorageBridge();
+  if (storage?.applyServerState && state) {
+    await storage.applyServerState(await preserveLocalDetailsInSummaries(state), { replace: true });
+    return;
+  }
   if (storage?.replaceState && state) {
     await storage.replaceState(await preserveLocalDetailsInSummaries(state));
   }
@@ -492,6 +496,10 @@ const replaceLocalState = async (state) => {
 
 const mergeLocalState = async (state) => {
   const storage = getLocalStorageBridge();
+  if (storage?.applyServerState && state) {
+    await storage.applyServerState(await preserveLocalDetailsInSummaries(state));
+    return;
+  }
   if (storage?.mergeState && state) {
     await storage.mergeState(await preserveLocalDetailsInSummaries(state));
     return;
@@ -524,19 +532,36 @@ const exportLocalCollections = async (names = []) => {
   return snapshot;
 };
 
+// El limite incluye la lectura del cuerpo de la respuesta.
+const fetchServerJson = async (url, errorMessage) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: getInternalHeaders(),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw await createServerStateError(response, errorMessage);
+    return await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error('El servidor esta tardando demasiado. Vuelve a intentar la operacion.');
+      timeoutError.code = 'ETIMEDOUT';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const fetchServerState = async (reason = 'sync', { bootstrap = false } = {}) => {
   serverStateFetchCount += 1;
   const requestNumber = serverStateFetchCount;
   const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   console.info(`[copetin-sync] GET ${SERVER_STATE_ENDPOINT} #${requestNumber} iniciado`, { reason });
-  const response = await fetch(getServerStateUrl(bootstrap ? '?bootstrap=1' : ''), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo leer la base de datos del sistema.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl(bootstrap ? '?bootstrap=1' : ''), 'No se pudo leer la base de datos del sistema.');
   const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   console.info(`[copetin-sync] GET ${SERVER_STATE_ENDPOINT} #${requestNumber} completado`, {
     reason,
@@ -555,14 +580,7 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
     .map((name) => String(name ?? '').trim())
     .filter(Boolean))];
   if (!requestedNames.length) return {};
-  const response = await fetch(getServerStateUrl(`/collections?names=${encodeURIComponent(requestedNames.join(','))}`), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudieron cargar los datos adicionales del sistema.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl(`/collections?names=${encodeURIComponent(requestedNames.join(','))}`), 'No se pudieron cargar los datos adicionales del sistema.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
@@ -576,14 +594,7 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
 
 
 const fetchMobileCalendarOverview = async () => {
-  const response = await fetch(getServerStateUrl('/calendar/mobile-overview'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo cargar el resumen movil del calendario.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl('/calendar/mobile-overview'), 'No se pudo cargar el resumen movil del calendario.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
@@ -598,14 +609,7 @@ const fetchMobileCalendarOverview = async () => {
 
 
 const fetchMobileOrdersOverview = async () => {
-  const response = await fetch(getServerStateUrl('/orders/mobile-overview'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo cargar el resumen movil de Ordenes.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl('/orders/mobile-overview'), 'No se pudo cargar el resumen movil de Ordenes.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
@@ -688,28 +692,14 @@ const fetchClientsOverview = async () => {
     const clients = await callBridge('clients', 'list', false);
     return { clients, stats: null };
   }
-  const response = await fetch(getServerStateUrl('/clients/overview'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo cargar el resumen de Clientes.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl('/clients/overview'), 'No se pudo cargar el resumen de Clientes.');
   if (payload?.revision) rememberServerRevision(payload.revision);
   serverStateIsPartial = true;
   return payload?.overview ?? { clients: [], stats: null };
 };
 
 const fetchOrdersEditorOverview = async () => {
-  const response = await fetch(getServerStateUrl('/orders/editor-overview'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudieron cargar los datos del editor de Ordenes.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl('/orders/editor-overview'), 'No se pudieron cargar los datos del editor de Ordenes.');
   if (payload?.revision) rememberServerRevision(payload.revision);
   const overview = payload?.overview ?? {};
   // Los datos de edición sí se mezclan en el bridge porque las mutaciones y
@@ -720,14 +710,7 @@ const fetchOrdersEditorOverview = async () => {
 };
 
 const fetchAvailabilityOverview = async () => {
-  const response = await fetch(getServerStateUrl('/availability/overview'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo cargar la informacion de disponibilidad.');
-  }
-  const payload = await response.json();
+  const payload = await fetchServerJson(getServerStateUrl('/availability/overview'), 'No se pudo cargar la informacion de disponibilidad.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
@@ -1443,14 +1426,7 @@ const createAttendanceRecordDirect = async (payload = {}) => {
 };
 
 const fetchServerMeta = async () => {
-  const response = await fetch(getServerStateUrl('?meta=1'), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo consultar la version del servidor.');
-  }
-  return response.json();
+  return await fetchServerJson(getServerStateUrl('?meta=1'), 'No se pudo consultar la version del servidor.');
 };
 
 const getKnownLocalRevision = () => lastSharedRevision ?? getCachedServerRevision();
@@ -1486,11 +1462,12 @@ const ensureServerStateReadyForMutation = async ({
     return;
   }
 
-  if (!hasCachedLocalState()) {
+  const targeted = Array.isArray(requiredCollections) && requiredCollections.length > 0;
+  if (!targeted && !hasLoadedServerState && !hasCachedLocalState()) {
     await syncServerState({ force: true, required, reason });
   }
 
-  if (serverStateIsPartial) {
+  if (serverStateIsPartial || targeted) {
     const requestedCollections = Array.isArray(requiredCollections) && requiredCollections.length
       ? requiredCollections
       : PARTIAL_BOOTSTRAP_COLLECTIONS;
@@ -1515,7 +1492,13 @@ const ensureServerStateReadyForMutation = async ({
     return;
   }
 
-  await syncServerState({ force: true, required, reason: `${reason}:revision-mismatch` });
+  if (targeted) {
+    loadedServerCollections.clear();
+    serverStateIsPartial = true;
+    await fetchServerCollections(requiredCollections, `${reason}:revision-mismatch`);
+  } else {
+    await syncServerState({ force: true, required, reason: `${reason}:revision-mismatch` });
+  }
 };
 
 const bytesToBase64 = (bytes) => {
@@ -2380,14 +2363,15 @@ const removeContractOnServer = async (payload = {}) => {
 };
 
 const pollRemoteRevision = async () => {
-  if (!shouldUseServerState() || syncSubscribers.size === 0) return;
+  if (!shouldUseServerState() || syncSubscribers.size === 0 || remotePollInFlight) return;
+  if (document.visibilityState === 'hidden') return;
 
   const now = Date.now();
   if (remotePollBackoffUntil && now < remotePollBackoffUntil) return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-  const interval = document.visibilityState === 'hidden' ? REMOTE_POLL_HIDDEN_MS : REMOTE_POLL_MS;
-  if (now - lastRemotePollAt < interval) return;
+  if (now - lastRemotePollAt < REMOTE_POLL_MS) return;
   lastRemotePollAt = now;
+  remotePollInFlight = true;
 
   const commitSerialAtStart = localServerCommitSerial;
   try {
@@ -2406,13 +2390,15 @@ const pollRemoteRevision = async () => {
       rememberServerRevision(remoteRevision);
       return;
     }
-    if (remoteRevision !== localRevision) {
+    if (isIncomingRevisionNewer(remoteRevision, localRevision)) {
       if (moduleScopedSyncSubscribers.size > 0) {
         // Personal reads its own endpoint. Defer the global snapshot until a
         // module that actually needs it is opened.
         markServerStateStale('remote-revision');
         loadedServerCollections.clear();
-        rememberServerRevision(remoteRevision);
+        serverStateIsPartial = true;
+        lastSharedRevision = remoteRevision;
+        setCachedServerRevision(remoteRevision);
       } else {
         await syncServerState({ force: true, reason: 'remote-revision' });
       }
@@ -2421,6 +2407,8 @@ const pollRemoteRevision = async () => {
   } catch (error) {
     applyRemoteBackoff(error);
     // Production can temporarily throttle polling when several users share IP.
+  } finally {
+    remotePollInFlight = false;
   }
 };
 
@@ -2454,12 +2442,16 @@ const ensureSyncListeners = () => {
       }
 
       markServerStateStale('broadcast');
+      loadedServerCollections.clear();
+      serverStateIsPartial = true;
       notifySubscribers({ ...payload, reason: 'broadcast' });
     };
   } else {
     window.addEventListener('storage', (event) => {
       if (event.key !== WEB_DB_STORAGE_KEY) return;
       markServerStateStale('storage');
+      loadedServerCollections.clear();
+      serverStateIsPartial = true;
       notifySubscribers({ source: 'storage', reason: 'storage' });
     });
   }

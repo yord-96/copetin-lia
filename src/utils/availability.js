@@ -52,6 +52,21 @@ export const buildAvailabilityPeriod = ({
 const hasValidPeriod = (period) =>
   Number.isFinite(period?.start) && Number.isFinite(period?.end) && period.end > period.start;
 
+// Todos los pasos del editor deben consultar el mismo periodo comercial.
+// La entrega anticipada se revisa por separado como riesgo operativo.
+export const buildDraftAvailabilityPeriod = (draft = {}) => buildAvailabilityPeriod({
+  deliveryDate: draft.eventDate,
+  deliveryWindowStart: '00:00',
+  pickupDate: draft.pickupDateMode === 'coordinate'
+    ? draft.eventDate
+    : draft.pickupDate || draft.eventDate,
+  pickupWindowEnd: draft.pickupTimeMode === 'coordinate'
+    ? '23:59'
+    : draft.pickupWindowEnd || '23:59',
+  eventDate: draft.eventDate,
+  eventTime: draft.eventTime,
+});
+
 const overlaps = (left, right) =>
   hasValidPeriod(left) && hasValidPeriod(right) && left.start < right.end && left.end > right.start;
 

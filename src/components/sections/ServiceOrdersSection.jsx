@@ -28,7 +28,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { buildAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
+import { buildAvailabilityPeriod, buildDraftAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { resolveInventoryArea } from '../../utils/inventoryArea';
 import { canAssignOrderResponsibles, getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
@@ -1911,6 +1911,8 @@ function ServiceOrdersSection({
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [isPreparingEditor, setIsPreparingEditor] = useState(false);
+  const preparingEditorRef = useRef(false);
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
   const [clientSearchQuery, setClientSearchQuery] = useState('');
   const [isClientSearchOpen, setIsClientSearchOpen] = useState(false);
@@ -4959,30 +4961,15 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   }, [currentStep, modalOpen]);
 
   const draftAvailabilityPeriod = useMemo(
-    () => {
-      // La disponibilidad comercial se reserva desde la fecha del evento. Una
-      // entrega anticipada es una decisión logística: puede generar riesgo
-      // operativo y se advierte por separado, pero no obliga a contratar
-      // proveedor ni bloquea un item que sí está disponible para el evento.
-      return buildAvailabilityPeriod({
-        deliveryDate: draft.eventDate,
-        deliveryWindowStart: '00:00',
-        pickupDate: currentStep === 2
-          ? draft.eventDate
-          : draft.pickupDateMode === 'coordinate'
-            ? draft.eventDate
-            : draft.pickupDate || draft.eventDate,
-        pickupWindowEnd: currentStep === 2
-          ? '23:59'
-          : draft.pickupTimeMode === 'coordinate'
-            ? '23:59'
-            : draft.pickupWindowEnd || '23:59',
-        eventDate: draft.eventDate,
-        eventTime: draft.eventTime,
-      });
-    },
+    () => buildDraftAvailabilityPeriod({
+      eventDate: draft.eventDate,
+      eventTime: draft.eventTime,
+      pickupDate: draft.pickupDate,
+      pickupDateMode: draft.pickupDateMode,
+      pickupWindowEnd: draft.pickupWindowEnd,
+      pickupTimeMode: draft.pickupTimeMode,
+    }),
     [
-      currentStep,
       draft.eventDate,
       draft.eventTime,
       draft.pickupDate,
@@ -6329,13 +6316,19 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const openCreateModal = async (mode, entityType = 'quote', sourceRecord = null) => {
-    if (readOnly) return;
+    if (readOnly || preparingEditorRef.current) return;
     if (onPrepareEditorData) {
+      preparingEditorRef.current = true;
+      setIsPreparingEditor(true);
+      setFormError('');
       try {
         await onPrepareEditorData();
       } catch (prepareError) {
-        setActionFeedback(prepareError?.message || 'No se pudieron cargar los datos del editor.');
+        setFormError(prepareError?.message || 'No se pudieron cargar los datos del editor.');
         return;
+      } finally {
+        preparingEditorRef.current = false;
+        setIsPreparingEditor(false);
       }
     }
     setActionFeedback('');
@@ -11363,10 +11356,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         </div>
         {!readOnly ? (
           <div className="orders-header-actions">
-            <button type="button" className="primary-button orders-new-btn" onClick={() => openCreateModal('order', 'contract')}>
+            <button type="button" className="primary-button orders-new-btn" disabled={isPreparingEditor} onClick={() => openCreateModal('order', 'contract')}>
               + Nuevo Contrato
             </button>
-            <button type="button" className="ghost-button orders-new-btn" onClick={() => openCreateModal('quote')}>
+            <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={() => openCreateModal('quote')}>
               + Cotizacion
             </button>
           </div>
@@ -11411,6 +11404,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           ))}
         </div>
 
+        {isPreparingEditor ? <p className="status" role="status" aria-live="polite">Preparando formulario...</p> : null}
         {contractActionStatus ? <p className="status">{contractActionStatus}</p> : null}
         {actionFeedback ? <p className="status success">{actionFeedback}</p> : null}
         {formError ? <p className="status error">{formError}</p> : null}
@@ -17480,20 +17474,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   ))}
                                 </small>
                               ) : null}
-                              {hardRecords.length > 0 ? (
-                                <small className="orders-available-note is-warning orders-return-contract-note">
-                                  <span>Usado por:</span>
-                                  {hardRecords.slice(0, 2).map((record) => (
-                                    <button
-                                      key={`${record.id || record.code}-hard-${record.endDate}`}
-                                      type="button"
-                                      onClick={() => openAvailabilityContractDetail(record)}
-                                    >
-                                      Contrato {record.contractCode || record.code || record.orderCode || 'previo'} · {record.quantity} u. · hasta {formatDate(record.endDate)}
-                                    </button>
-                                  ))}
-                                </small>
-                              ) : null}
                               {softRecords.length > 0 ? (
                                 <small className="orders-available-note is-warning">
                                   Riesgo blando: {softRecords.slice(0, 2).map((record) => `${record.quantity} ${record.code || ''}`).join(' · ')}
@@ -17555,6 +17535,37 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             >
                               <Trash2 aria-hidden="true" />
                             </button>
+                            {!bypassStockValidation && !isProvisionalItem && (hasStockShortage || hardRecords.length > 0) ? (
+                              <div className={`orders-item-stock-detail${hasUncoveredShortage ? ' is-error' : ''}`}>
+                                <strong>
+                                  {hasUncoveredShortage
+                                    ? `Faltan ${uncoveredForItem} u. por cubrir con proveedor.`
+                                    : hasStockShortage
+                                      ? `Faltante cubierto por proveedor: ${supplierCoveredQty} u.`
+                                      : 'Reservas para este período'}
+                                </strong>
+                                <span>
+                                  {formatDate(draftAvailabilityPeriod.startDate)} al {formatDate(draftAvailabilityPeriod.endDate)}
+                                  {' · '}{availableStock} disponibles / {requestedForItem} solicitadas
+                                </span>
+                                {hardRecords.length > 0 ? (
+                                  <div className="orders-item-stock-contracts">
+                                    <span>Usado por:</span>
+                                    {hardRecords.map((record, index) => (
+                                      <button
+                                        key={`${record.id || record.code}-hard-${index}`}
+                                        type="button"
+                                        onClick={() => openAvailabilityContractDetail(record)}
+                                      >
+                                        Contrato {record.contractCode || record.code || record.orderCode || 'previo'}
+                                        {' · '}{record.quantity} u.
+                                        {' · '}{formatDate(record.startDate)} al {formatDate(record.endDate)}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {supplierCoverageLines.length > 0 ? (
                               <div className={`orders-supplier-coverage-field orders-supplier-coverage-band${hasUncoveredShortage ? ' needs-provider' : ''}`}>
                                 <span>Subalquiler</span>

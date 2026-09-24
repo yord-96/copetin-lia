@@ -72826,3 +72826,48 @@ button.inventory-loss-row-action:hover {
   color: #2d5f96;
   font-weight: 750;
 }
+
+/* Ocupaciones visibles desde Items, fuera de la columna angosta de cantidad. */
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-selected-row > .orders-item-stock-detail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #dbe4f1;
+  border-radius: 0.65rem;
+  background: #f7f9fc;
+  color: #334766;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.orders-wizard-modal .orders-wizard-panel-step-3 .orders-item-stock-detail.is-error {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.orders-item-stock-contracts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+}
+
+.orders-item-stock-contracts button {
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0;
+  color: #245baa;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.orders-item-stock-contracts button:focus-visible {
+  outline: 2px solid #245baa;
+  outline-offset: 2px;
+}

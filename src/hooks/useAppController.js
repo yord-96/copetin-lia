@@ -745,18 +745,9 @@ export const useAppController = () => {
 
     const refreshOrderContractsAndRentals = async () => {
       try {
-        // En Ordenes sincronizamos solamente las dos colecciones que alimentan
-        // la tabla y sus estados operativos. Esto permite reflejar notas y
-        // movimientos de otros usuarios sin reemplazar todo el estado local.
-        await api.sync.refreshCollections(['contracts', 'rentals'], 'orders-contract-change');
-        const [contractsData, rentalsData] = await Promise.all([
-          api.contracts.list(),
-          api.rentals.list(),
-        ]);
-        if (!disposed) {
-          setContracts(contractsData);
-          setRentals(rentalsData);
-        }
+        ordersOverviewLoadedRef.current = false;
+        ordersEditorDataLoadedRef.current = false;
+        await prepareTabData('alquiler');
       } catch (refreshError) {
         console.warn('[copetin] No se pudieron sincronizar contratos y alquileres de las ordenes.', refreshError);
       }
@@ -820,6 +811,7 @@ export const useAppController = () => {
       if (activeTab === 'asistencia') {
         const changedCollections = Array.isArray(event?.collections) ? event.collections : [];
         const attendanceChanged = event?.domain === 'attendance'
+          || event?.reason === 'remote-revision'
           || changedCollections.includes('attendanceRecords');
         if (attendanceChanged) {
           window.clearTimeout(refreshTimer);
@@ -848,12 +840,42 @@ export const useAppController = () => {
         const changedCollections = Array.isArray(event?.collections) ? event.collections : [];
         const ordersChanged = event?.domain === 'rentals'
           || event?.domain === 'contracts'
+          || event?.domain === 'quotes'
+          || event?.domain === 'cash'
+          || event?.reason === 'remote-revision'
+          || event?.reason === 'storage'
           || changedCollections.includes('rentals')
-          || changedCollections.includes('contracts');
+          || changedCollections.includes('contracts')
+          || changedCollections.includes('quotes')
+          || changedCollections.includes('cashMovements');
         if (ordersChanged) {
           window.clearTimeout(refreshTimer);
           refreshTimer = window.setTimeout(refreshOrderContractsAndRentals, 100);
         }
+        return;
+      }
+
+      if (activeTab === 'caja') {
+        calendarOverviewLoadedRef.current = false;
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => {
+          if (!disposed) loadData({ silent: true });
+        }, 250);
+        return;
+      }
+
+      if (activeTab === 'usuarios' || activeTab === 'items') {
+        clientsOverviewLoadedRef.current = false;
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(async () => {
+          try {
+            if (disposed) return;
+            if (activeTab === 'usuarios') await api.sync.refreshCollections(['users'], 'users-remote-change');
+            if (!disposed) await prepareTabData(activeTab);
+          } catch (refreshError) {
+            console.warn('[copetin] No se pudo actualizar el modulo.', refreshError);
+          }
+        }, 250);
         return;
       }
 
@@ -883,6 +905,9 @@ export const useAppController = () => {
           loadData({ silent: true });
         }
       }, isRemoteChange ? 450 : 0);
+    }, {
+      moduleScoped: ['alquiler', 'caja', 'personal', 'asistencia', 'usuarios', 'items', 'disponibilidad'].includes(String(activeTab))
+        || String(activeTab).startsWith('contabilidad'),
     });
 
     return () => {
@@ -933,7 +958,7 @@ export const useAppController = () => {
       return;
     }
     if (
-      ['caja', 'alquiler', 'disponibilidad'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'personal', 'asistencia', 'usuarios', 'items'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) {

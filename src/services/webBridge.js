@@ -19990,6 +19990,36 @@ const createWebBridge = () => ({
   },
 
   __storage: {
+    // Las respuestas del servidor ya son autoritativas. Recibirlas no debe
+    // ejecutar migraciones ni reconstruir cobros sobre un estado parcial.
+    // El almacenamiento local/importaciones conserva su normalizacion legacy.
+    applyServerState: async (state, { replace = false } = {}) => {
+      if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        throw new Error('El estado del servidor no es valido.');
+      }
+      const incoming = deepClone(state);
+      const base = replace || !inMemoryStateHydrated ? createSeedData() : inMemoryState;
+      // Usuarios admite los formatos legacy de roles y permisos, sin recorrer
+      // las colecciones comerciales para autenticar una sesion.
+      if (Array.isArray(incoming.users)) {
+        incoming.users = normalizeState({ users: incoming.users }).users;
+      }
+      inMemoryState = {
+        ...base,
+        ...incoming,
+        settings: {
+          ...base.settings,
+          ...incoming.settings,
+          numbering: { ...base.settings?.numbering, ...incoming.settings?.numbering },
+        },
+      };
+      inMemoryStateHydrated = true;
+      invalidateQueryStateSnapshot();
+      // No serializar toda la base al incorporar una coleccion pequena.
+      // La proxima sesion vuelve a consultar el servidor.
+      disableLocalStateStorage();
+      return { ok: true };
+    },
     beginBatch: async (state) => {
       if (activeServerBatchState) {
         throw new Error('Ya existe una transaccion interna activa.');
