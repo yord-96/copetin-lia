@@ -58,7 +58,7 @@ const getCollectionStatusMeta = (entry = {}) => {
 };
 
 function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summary: {} }, formatBs }) {
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [activeView, setActiveView] = useState('danado');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [query, setQuery] = useState('');
@@ -73,20 +73,34 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('ok');
 
-  const filteredRows = useMemo(() => {
-    const rows = Array.isArray(damageLossOverview?.rows) ? damageLossOverview.rows : [];
-    return rows.filter((row) => {
-      if (typeFilter !== 'all' && row.lossType !== typeFilter) return false;
-      const key = dateKey(row.occurredAt);
-      if (dateFrom && key && key < dateFrom) return false;
-      if (dateTo && key && key > dateTo) return false;
-      const search = normalize(query);
-      if (!search) return true;
-      return normalize([
-        row.itemName, row.category, row.contractCode, row.orderCode, row.customerName, row.note,
-      ].filter(Boolean).join(' ')).includes(search);
-    });
-  }, [damageLossOverview, typeFilter, dateFrom, dateTo, query]);
+  const allRows = useMemo(
+    () => (Array.isArray(damageLossOverview?.rows) ? damageLossOverview.rows : []),
+    [damageLossOverview],
+  );
+
+  const viewTotals = useMemo(() => allRows.reduce((acc, row) => {
+    const qty = Math.max(0, Number(row.quantity ?? 0));
+    if (row.lossType === 'danado') {
+      acc.damagedUnits += qty;
+      acc.damagedRecords += 1;
+    } else if (row.lossType === 'faltante') {
+      acc.missingUnits += qty;
+      acc.missingRecords += 1;
+    }
+    return acc;
+  }, { damagedUnits: 0, damagedRecords: 0, missingUnits: 0, missingRecords: 0 }), [allRows]);
+
+  const filteredRows = useMemo(() => allRows.filter((row) => {
+    if (row.lossType !== activeView) return false;
+    const key = dateKey(row.occurredAt);
+    if (dateFrom && key && key < dateFrom) return false;
+    if (dateTo && key && key > dateTo) return false;
+    const search = normalize(query);
+    if (!search) return true;
+    return normalize([
+      row.itemName, row.category, row.contractCode, row.orderCode, row.customerName, row.note,
+    ].filter(Boolean).join(' ')).includes(search);
+  }), [allRows, activeView, dateFrom, dateTo, query]);
 
   const summary = useMemo(() => filteredRows.reduce((acc, row) => {
     const qty = Math.max(0, Number(row.quantity ?? 0));
@@ -110,6 +124,10 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
     repairedUnits: 0,
     repairedValueBs: 0,
   }), [filteredRows]);
+
+  const affectedContracts = useMemo(() => new Set(
+    filteredRows.map((row) => String(row?.rentalId ?? row?.contractCode ?? '')).filter(Boolean),
+  ).size, [filteredRows]);
 
   const economicSummary = useMemo(() => {
     const byRental = damageLossOverview?.summary?.economicsByRental ?? {};
@@ -321,11 +339,11 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
     }).join('');
 
     const reportHtml = `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><title>Reporte de Daños y Faltantes</title>
+<html lang="es"><head><meta charset="utf-8"><title>Reporte de ${activeView === 'danado' ? 'Daños' : 'Faltantes'}</title>
 <style>
 @page{size:letter landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#17233a;margin:0;background:#fff;font-size:9.5px}.page{width:100%}.head{display:flex;justify-content:space-between;gap:24px;border-bottom:3px solid #15345f;padding:0 0 11px;margin-bottom:10px}.brand{font-size:10px;font-weight:800;letter-spacing:.09em;color:#df4d00;text-transform:uppercase}.title{font-size:23px;font-weight:800;color:#15345f;margin:3px 0}.subtitle{color:#64748b}.meta{text-align:right;line-height:1.55;min-width:210px}.section-kicker{font-size:8px;font-weight:800;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin:11px 0 5px}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:8px 0 10px}.card{border:1px solid #d9e1eb;border-radius:7px;padding:8px;background:#f8fafc}.card span{display:block;color:#64748b;font-size:7.5px;text-transform:uppercase;font-weight:700}.card strong{display:block;font-size:16px;margin-top:2px;color:#15345f}.economic{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:11px}.economic .card{background:#fffaf6;border-color:#f1d8c6}.economic .card.good{background:#f0fdf4;border-color:#bbf7d0}.economic .card.warn{background:#fffbeb;border-color:#fde68a}.section-title{font-size:13px;font-weight:800;color:#15345f;margin:12px 0 6px}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}th{background:#15345f;color:#fff;padding:6px 5px;text-align:left;font-size:7.5px;text-transform:uppercase}td{border-bottom:1px solid #dbe2ea;padding:5px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8fafc}tbody tr.settled-row{background:#f0fdf4!important}tbody tr.partial-row{background:#fffbeb!important}tbody tr.pending-row{background:#fffafa!important}td small{display:block;color:#758195;margin-top:2px;line-height:1.25}.center{text-align:center}.money{text-align:right;white-space:nowrap}.strong-number{font-weight:800}.pill,.collection{display:inline-block;border-radius:999px;padding:3px 6px;font-weight:800;font-size:7px;white-space:nowrap}.pill.damage{background:#fff1d6;color:#9a5a00}.pill.missing{background:#ffe7e7;color:#b42318}.collection.paid{background:#dcfce7;color:#166534}.collection.guarantee{background:#dcfce7;color:#166534}.collection.mixed{background:#dcfce7;color:#166534}.collection.partial{background:#fef3c7;color:#92400e}.collection.pending{background:#fee2e2;color:#b91c1c}.collection.neutral{background:#eef2f7;color:#526174}.collection-cell small{margin-top:4px}.finance-list{display:grid;gap:7px}.finance-record{display:grid;grid-template-columns:30px 1fr;border:1px solid #dbe2ea;border-left:4px solid #16a34a;border-radius:8px;overflow:hidden;break-inside:avoid;background:#f7fff9}.finance-record.is-partial{border-left-color:#d97706;background:#fffdf5}.finance-no{display:flex;align-items:flex-start;justify-content:center;padding:10px 5px;font-weight:800;color:#64748b;border-right:1px solid #e5eaf0}.finance-main{padding:8px}.finance-record span{display:block;color:#64748b;font-size:7px;text-transform:uppercase;font-weight:700}.finance-record strong{display:block;margin-top:2px}.finance-headline{display:grid;grid-template-columns:105px 1.35fr 85px 90px 90px 82px;gap:0;border-bottom:1px solid #dbe2ea;padding-bottom:6px}.finance-headline>div{padding:0 8px;border-right:1px solid #e5eaf0}.finance-headline>div:first-child{padding-left:0}.finance-headline>div:last-child{border-right:0}.finance-status{display:flex;align-items:center;justify-content:center}.issue-summary{padding:6px 0;border-bottom:1px dashed #cfd8e3}.issue-summary strong{font-size:8px;font-weight:600}.payment-details{display:grid;gap:5px;padding-top:6px}.payment-detail{display:grid;grid-template-columns:90px 82px 1.2fr 120px 130px 90px;gap:0;background:#fff;border:1px solid #dbe2ea;border-radius:6px;overflow:hidden}.payment-detail>div{padding:6px 7px;border-right:1px solid #e5eaf0}.payment-detail>div:last-child{border-right:0}.payment-detail strong{font-size:8px}.payment-method strong{color:#15345f}.muted{color:#7a8798}.note{margin-top:10px;padding:8px 10px;border-left:3px solid #15345f;background:#f8fafc;color:#526174}.footer{margin-top:12px;padding-top:8px;border-top:1px solid #dbe2ea;display:flex;justify-content:space-between;color:#7a8798;font-size:8px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.finance-record{break-inside:avoid}.section-title{break-after:avoid}}
 </style></head><body><main class="page">
-<div class="head"><div><div class="brand">EL COPETÍN · CONTROL DE INVENTARIO</div><div class="title">Reporte de Daños y Faltantes</div><div class="subtitle">Incidencias físicas y recuperación económica vinculada a cada contrato</div></div><div class="meta"><strong>Periodo</strong><br>${escapeHtml(period)}<br><strong>Generado</strong><br>${escapeHtml(generatedAt)}</div></div>
+<div class="head"><div><div class="brand">EL COPETÍN · CONTROL DE INVENTARIO</div><div class="title">Reporte de ${activeView === 'danado' ? 'Daños' : 'Faltantes'}</div><div class="subtitle">${activeView === 'danado' ? 'Daños confirmados, reinserciones y recuperación económica vinculada a cada contrato' : 'Faltantes confirmados y recuperación económica vinculada a cada contrato'}</div></div><div class="meta"><strong>Periodo</strong><br>${escapeHtml(period)}<br><strong>Generado</strong><br>${escapeHtml(generatedAt)}</div></div>
 <div class="section-kicker">Resumen físico</div>
 <div class="cards">
 <div class="card"><span>Registros</span><strong>${filteredRows.length}</strong></div>
@@ -352,25 +370,62 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
 </main></body></html>`;
     setFeedback('');
     setReportPreview({
-      title: `Reporte de daños y faltantes · ${period}`,
+      title: `Reporte de ${activeView === 'danado' ? 'daños' : 'faltantes'} · ${period}`,
       html: reportHtml,
     });
   };
 
+  const isDamageView = activeView === 'danado';
+
   return (
     <section className="panel inventory-ops-panel inventory-loss-panel">
-      <div className="inventory-ops-cards inventory-loss-cards">
-        <article className="stat-card"><h2>Unidades Afectadas</h2><p>{summary.totalUnits}</p><small>Dañadas + faltantes</small></article>
-        <article className="stat-card"><h2>Dañadas</h2><p>{summary.damagedUnits}</p><small>{formatBs(summary.damagedValueBs)}</small></article>
-        <article className="stat-card"><h2>Faltantes</h2><p>{summary.missingUnits}</p><small>{formatBs(summary.missingValueBs)}</small></article>
-        <article className="stat-card"><h2>Reinsertadas</h2><p>{summary.repairedUnits}</p><small>{formatBs(summary.repairedValueBs)}</small></article>
+      <div className="inventory-loss-view-tabs" role="tablist" aria-label="Daños y faltantes">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isDamageView}
+          className={`inventory-loss-view-tab ${isDamageView ? 'is-active' : ''}`}
+          onClick={() => { setActiveView('danado'); closeRowMenu(); }}
+        >
+          <span>Daños</span>
+          <strong>{viewTotals.damagedUnits}</strong>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isDamageView}
+          className={`inventory-loss-view-tab ${!isDamageView ? 'is-active' : ''}`}
+          onClick={() => { setActiveView('faltante'); closeRowMenu(); }}
+        >
+          <span>Faltantes</span>
+          <strong>{viewTotals.missingUnits}</strong>
+        </button>
+      </div>
+
+      <div className={`inventory-ops-cards inventory-loss-cards inventory-loss-cards-${activeView}`}>
+        {isDamageView ? (
+          <>
+            <article className="stat-card"><h2>Unidades dañadas</h2><p>{summary.damagedUnits}</p><small>{filteredRows.length} registro(s)</small></article>
+            <article className="stat-card"><h2>Valor en daños</h2><p className="inventory-loss-money-stat">{formatBs(summary.damagedValueBs)}</p><small>Cargo registrado</small></article>
+            <article className="stat-card"><h2>Reinsertadas</h2><p>{summary.repairedUnits}</p><small>{formatBs(summary.repairedValueBs)}</small></article>
+          </>
+        ) : (
+          <>
+            <article className="stat-card"><h2>Unidades faltantes</h2><p>{summary.missingUnits}</p><small>{filteredRows.length} registro(s)</small></article>
+            <article className="stat-card"><h2>Valor faltante</h2><p className="inventory-loss-money-stat">{formatBs(summary.missingValueBs)}</p><small>Cargo registrado</small></article>
+            <article className="stat-card"><h2>Contratos afectados</h2><p>{affectedContracts}</p><small>Con faltantes visibles</small></article>
+          </>
+        )}
       </div>
 
       <article className="inventory-ops-table-card inventory-loss-card">
         <div className="inventory-loss-head">
           <div>
-            <h2>Kardex de daños y faltantes</h2>
-            <p>Los faltantes permanecen como pérdida. Los dañados reparados pueden volver al stock mediante una reinserción controlada.</p>
+            <span className="inventory-loss-section-kicker">{isDamageView ? 'CONTROL DE DAÑOS' : 'CONTROL DE FALTANTES'}</span>
+            <h2>{isDamageView ? 'Kardex de daños' : 'Kardex de faltantes'}</h2>
+            <p>{isDamageView
+              ? 'Consulta los daños confirmados y reinserta al stock únicamente las unidades que ya fueron reparadas.'
+              : 'Consulta las unidades faltantes confirmadas por devolución y su trazabilidad por contrato y cliente.'}</p>
           </div>
           <div className="inventory-actions">
             <strong>{filteredRows.length} registro(s)</strong>
@@ -380,17 +435,12 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
 
         {feedback ? <p className={`status ${feedbackType === 'error' ? 'error' : ''}`}>{feedback}</p> : null}
 
-        <div className="inventory-loss-filters">
-          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
-            <option value="all">Daños y faltantes</option>
-            <option value="danado">Solo dañados</option>
-            <option value="faltante">Solo faltantes</option>
-          </select>
+        <div className="inventory-loss-filters inventory-loss-filters-segmented">
           <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Desde" />
           <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Hasta" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar item, contrato, cliente o nota..." />
-          {(typeFilter !== 'all' || dateFrom || dateTo || query) ? (
-            <button type="button" className="ghost-button" onClick={() => { setTypeFilter('all'); setDateFrom(''); setDateTo(''); setQuery(''); }}>Limpiar</button>
+          {(dateFrom || dateTo || query) ? (
+            <button type="button" className="ghost-button" onClick={() => { setDateFrom(''); setDateTo(''); setQuery(''); }}>Limpiar</button>
           ) : null}
         </div>
 
@@ -398,7 +448,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
           <table>
             <thead>
               <tr>
-                <th>Fecha</th><th>Tipo</th><th>Item</th><th>Cant.</th><th>Valor unit.</th><th>Valor</th><th>Contrato / orden</th><th>Cliente</th><th>Observación</th><th aria-label="Acciones" />
+                <th>Fecha</th><th>Item</th><th>Cant.</th><th>Valor unit.</th><th>Valor</th><th>Contrato / orden</th><th>Cliente</th><th>Observación</th><th aria-label="Acciones" />
               </tr>
             </thead>
             <tbody>
@@ -406,11 +456,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
                 return (
                   <tr key={row.id}>
                     <td>{formatDateTime(row.occurredAt)}</td>
-                    <td>
-                      <span className={`inventory-loss-badge ${row.lossType}`}>{row.lossType === 'danado' ? 'Dañado' : 'Faltante'}</span>
-                      {row.lossType === 'danado' && Number(row.repairedQty ?? 0) > 0 ? <small>{row.repairedQty} reinsertada(s)</small> : null}
-                    </td>
-                    <td><strong>{row.itemName}</strong><small>{row.category || ''}</small></td>
+                    <td><strong>{row.itemName}</strong><small>{row.category || ''}</small>{row.lossType === 'danado' && Number(row.repairedQty ?? 0) > 0 ? <small className="inventory-loss-reinserted-note">{row.repairedQty} reinsertada(s)</small> : null}</td>
                     <td>{row.quantity}</td>
                     <td>{formatBs(row.unitValueBs)}</td>
                     <td><strong>{formatBs(row.totalValueBs)}</strong></td>
@@ -431,7 +477,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
                   </tr>
                 );
               })}
-              {filteredRows.length === 0 ? <tr><td colSpan="10" className="inventory-loss-empty">No hay daños o faltantes para este filtro.</td></tr> : null}
+              {filteredRows.length === 0 ? <tr><td colSpan="9" className="inventory-loss-empty">{isDamageView ? 'No hay daños para estos filtros.' : 'No hay faltantes para estos filtros.'}</td></tr> : null}
             </tbody>
           </table>
         </div>

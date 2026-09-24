@@ -72855,3 +72855,140 @@ button.inventory-loss-row-action:hover {
   color: #2d5f96;
   font-weight: 750;
 }
+
+/* Daños y Faltantes · segmentación en dos vistas, alineada con Movimientos */
+.inventory-loss-view-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .45rem;
+  padding: .45rem;
+  border: 1px solid rgba(223, 77, 0, .16);
+  border-radius: 1rem;
+  background: rgba(255, 251, 247, .78);
+}
+
+.inventory-loss-view-tab {
+  min-height: 3.05rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  border: 1px solid transparent;
+  border-radius: .78rem;
+  background: transparent;
+  color: #5d6472;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, color .16s ease;
+}
+
+.inventory-loss-view-tab strong {
+  min-width: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: .16rem .48rem;
+  background: #eef2f6;
+  color: #607086;
+  font-size: .72rem;
+  line-height: 1.2;
+}
+
+.inventory-loss-view-tab:hover {
+  background: rgba(255, 255, 255, .78);
+  color: #d94c00;
+}
+
+.inventory-loss-view-tab.is-active {
+  border-color: rgba(223, 77, 0, .10);
+  background: #fff;
+  color: #e34f00;
+  box-shadow: 0 4px 13px rgba(102, 55, 29, .08);
+}
+
+.inventory-loss-view-tab.is-active strong {
+  background: #fff0e7;
+  color: #e34f00;
+}
+
+.inventory-loss-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.inventory-loss-cards.inventory-loss-cards-danado,
+.inventory-loss-cards.inventory-loss-cards-faltante {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.inventory-loss-money-stat {
+  font-size: clamp(1.55rem, 2vw, 2.15rem) !important;
+  letter-spacing: -.035em;
+}
+
+.inventory-loss-section-kicker {
+  display: block;
+  margin-bottom: .22rem;
+  color: #e34f00;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .075em;
+}
+
+.inventory-loss-filters.inventory-loss-filters-segmented {
+  grid-template-columns: 150px 150px minmax(260px, 1fr) auto;
+}
+
+.inventory-loss-reinserted-note {
+  width: fit-content;
+  margin-top: .28rem !important;
+  border-radius: 999px;
+  padding: .12rem .4rem;
+  background: #e9f8ef;
+  color: #23834f !important;
+  font-size: .66rem !important;
+  font-weight: 800;
+}
+
+@media (max-width: 1000px) {
+  .inventory-loss-cards.inventory-loss-cards-danado,
+  .inventory-loss-cards.inventory-loss-cards-faltante {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-loss-filters.inventory-loss-filters-segmented {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-loss-filters.inventory-loss-filters-segmented input:nth-of-type(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .inventory-loss-view-tabs {
+    gap: .3rem;
+    padding: .32rem;
+  }
+
+  .inventory-loss-view-tab {
+    min-height: 2.75rem;
+    font-size: .74rem;
+  }
+
+  .inventory-loss-cards.inventory-loss-cards-danado,
+  .inventory-loss-cards.inventory-loss-cards-faltante {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-loss-filters.inventory-loss-filters-segmented {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-loss-filters.inventory-loss-filters-segmented input:nth-of-type(3) {
+    grid-column: auto;
+  }
+}
