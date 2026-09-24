@@ -9147,13 +9147,34 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     });
   };
 
+  const buildCashReceiptLoadingHtml = () => {
+    const loaderGifUrl = new URL('/imagenes/recibo-loading.gif', window.location.origin).href;
+    return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Generando recibo</title>
+  </head>
+  <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px 24px;text-align:center;">
+      <img src="${loaderGifUrl}" alt="Generando recibo" style="width:min(260px,58vw);max-width:260px;height:auto;border-radius:16px;box-shadow:0 10px 24px rgba(15,23,42,.10);background:#ffffff;" />
+      <div>
+        <strong style="display:block;font-size:22px;line-height:1.2;">Generando recibo...</strong>
+        <p style="margin:8px 0 0;font-size:14px;line-height:1.5;color:#475569;">Estamos preparando el comprobante. Esto puede tardar unos segundos.</p>
+      </div>
+    </div>
+  </body>
+</html>`;
+  };
+
   const openCashReceiptWindow = () => {
     const printWindow = window.open('', '_blank', 'width=1120,height=760');
     if (!printWindow) {
       throw new Error('Chrome bloqueo la ventana del recibo. Habilita ventanas emergentes para este sitio.');
     }
     printWindow.document.open();
-    printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Generando recibo</title></head><body style="font-family:Arial,sans-serif;padding:24px;color:#111827;"><strong>Generando recibo...</strong></body></html>');
+    printWindow.document.write(buildCashReceiptLoadingHtml());
     printWindow.document.close();
     printWindow.focus();
     return printWindow;
@@ -9627,12 +9648,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         cashRegisteredAt: movement?.receiptIssuedAt ?? movement?.createdAt ?? new Date().toISOString(),
         cashCollectionTarget: 'extra',
       };
-      await saveContractEconomicLedgerRows(
+      const ledgerSyncPromise = saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
         `Cobro extra ${formatBs(amountBs)} registrado${receiptCode ? ` con recibo ${receiptCode}` : ''}.`,
         { force: true },
       );
       await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
+      const ledgerSynced = await ledgerSyncPromise;
+      if (!ledgerSynced) {
+        throw new Error('Caja registro el cobro extra y genero el recibo, pero no se pudo enlazar la linea al cuaderno economico.');
+      }
       setContractEconomicsExtraDraft({ amountBs: '', concept: '', paymentMethod: 'efectivo', paymentAccount: '' });
     } catch (error) {
       if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
@@ -10154,12 +10179,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             }
           : row
       ));
-      await saveContractEconomicLedgerRows(
+      const ledgerSyncPromise = saveContractEconomicLedgerRows(
         nextLedger,
         `Abono respaldado con recibo ${receiptCode || 'oficial'}.`,
         { force: true },
       );
       await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
+      const ledgerSynced = await ledgerSyncPromise;
+      if (!ledgerSynced) {
+        throw new Error('Caja registro el abono y genero el recibo, pero no se pudo enlazar el movimiento al cuaderno economico.');
+      }
     } catch (error) {
       if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       setContractEconomicsError(error.message || 'No se pudo generar el recibo del deposito.');
@@ -10575,13 +10604,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           cashReceiptCode: String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim(),
           cashRegisteredAt: movement?.createdAt ?? result?.createdAt ?? new Date().toISOString(),
         };
-        const updated = await saveContractEconomicLedgerRows(
+        const ledgerSyncPromise = saveContractEconomicLedgerRows(
           [...baseLedger, applicationEntry, refundEntry],
           `Garantía liquidada: ${formatBs(plan.rentalAppliedBs)} aplicada y ${formatBs(plan.refundBs)} devuelta con recibo.`,
           { force: true },
         );
-        if (!updated) throw new Error('La aplicación fue guardada, pero no se pudo vincular la devolución al cuaderno económico.');
         if (movementId) await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
+        const updated = await ledgerSyncPromise;
+        if (!updated) throw new Error('La aplicación fue guardada, pero no se pudo vincular la devolución al cuaderno económico.');
       } else {
         printGuaranteeOperationReceipt({
           title: 'Aplicación de garantía al contrato',
