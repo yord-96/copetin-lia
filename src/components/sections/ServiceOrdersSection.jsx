@@ -7015,7 +7015,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       const selectedIds = getSelectedComboOptionIds(selections[index], []);
       const assignedUnits = getComboSelectedUnitsForRule(index, selectedIds, selections);
       const requiredUnits = Math.max(1, Math.trunc(Number(rule?.quantity ?? 1))) * requestedComboQuantity;
-      return selectedIds.length === 0 || assignedUnits !== requiredUnits;
+      return selectedIds.length > 0 && assignedUnits !== requiredUnits;
     });
     if (invalidRule) {
       setFormError(`Revisa ${invalidRule.slotLabel || invalidRule.itemName || 'los componentes'}: la distribución debe coincidir con lo incluido en el combo.`);
@@ -7119,7 +7119,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .map((entry) => entry.itemId)
         .filter(Boolean);
-      selections[index] = existingIds.length > 0 ? existingIds : selections[index] ?? [];
+      selections[index] = existingComboLineKey ? existingIds : selections[index] ?? [];
       existingLines
         .filter((entry) => Number(entry.comboRuleIndex) === index)
         .forEach((entry) => {
@@ -7192,7 +7192,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         : [...selectedIds, itemId];
       const quantityMap = { ...getComboSelectionQuantityMap(current.selections) };
       if (selected) {
-        if (selectedIds.length === 1) return current;
         delete quantityMap[`${ruleIndex}:${itemId}`];
       } else {
         quantityMap[`${ruleIndex}:${itemId}`] = 0;
@@ -7278,7 +7277,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     getComboRules(combo).forEach((rule, index) => {
       const ruleLines = existingLines.filter((entry) => Number(entry.comboRuleIndex) === index);
       const existingIds = ruleLines.map((entry) => entry.itemId).filter(Boolean);
-      if (existingIds.length > 0) selections[index] = existingIds;
+      selections[index] = existingIds;
       ruleLines.forEach((entry) => {
         quantityMap[`${index}:${entry.itemId}`] = Math.max(0, Math.trunc(Number(entry.quantity ?? 0)));
       });
@@ -12874,8 +12873,24 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
       {contractEconomicsData ? (
         <div className="orders-modal-backdrop contract-economics-backdrop" onClick={handleContractEconomicsBackdropClick}>
+          {generatingDepositReceiptId ? (
+            <div
+              className="contract-economics-receipt-loading"
+              role="status"
+              aria-live="polite"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="contract-economics-receipt-loading-card">
+                <img src="/imagenes/recibo-loading.gif" alt="" width="498" height="359" />
+                <strong>Generando recibo...</strong>
+                <span>Estamos preparando el comprobante. Espera un momento.</span>
+              </div>
+            </div>
+          ) : null}
           <section
             className="orders-modal contract-economics-modal"
+            inert={Boolean(generatingDepositReceiptId)}
+            aria-busy={Boolean(generatingDepositReceiptId)}
             onClick={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
           >
@@ -15490,7 +15505,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <div>
                 <span className="orders-combo-configurator-kicker">Configurar combo</span>
                 <h3>{comboConfigurator.combo.name}</h3>
-                <p>Define cuántos combos necesitas y reparte cada componente entre los modelos que prefieras. Tus cantidades manuales no cambiarán el número de combos.</p>
+                <p>Define cuántos combos necesitas y reparte cada componente entre los modelos que prefieras. Puedes desmarcar los componentes que el cliente no quiera; el precio del combo se mantiene.</p>
               </div>
               <label className="orders-combo-quantity-field">
                 <span>Cantidad de combos</span>
@@ -15609,6 +15624,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <button
                               type="button"
                               className="orders-combo-option-pick"
+                              aria-pressed={selected}
                               onClick={() => toggleComboOption(index, item.id, comboQty)}
                             >
                               <span className="orders-combo-option-image">

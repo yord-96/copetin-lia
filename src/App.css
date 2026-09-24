@@ -11248,6 +11248,48 @@ textarea:focus {
   isolation: isolate;
 }
 
+.contract-economics-receipt-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(8, 17, 36, 0.55);
+  cursor: progress;
+}
+
+.contract-economics-receipt-loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  width: min(100%, 390px);
+  padding: 1.5rem;
+  border-radius: 1.2rem;
+  background: #fff;
+  color: #0f172a;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(8, 17, 36, 0.25);
+}
+
+.contract-economics-receipt-loading-card img {
+  display: block;
+  width: min(100%, 300px);
+  height: auto;
+  border-radius: 0.85rem;
+}
+
+.contract-economics-receipt-loading-card strong {
+  font-size: 1.2rem;
+}
+
+.contract-economics-receipt-loading-card span {
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .contract-economics-modal {
   width: min(1448px, calc(100vw - 1.2rem));
   max-height: min(980px, calc(100vh - 1.2rem));
