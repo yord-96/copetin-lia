@@ -6284,8 +6284,8 @@ textarea:focus {
 
 .duck-loading-video {
   display: block;
-  width: clamp(120px, 14vw, 190px);
-  max-width: 42vw;
+  width: clamp(170px, 20vw, 280px);
+  max-width: 52vw;
   height: auto;
   object-fit: contain;
   pointer-events: none;
@@ -6298,8 +6298,8 @@ textarea:focus {
   }
 
   .duck-loading-video {
-    width: clamp(108px, 32vw, 150px);
-    max-width: 48vw;
+    width: clamp(148px, 42vw, 220px);
+    max-width: 62vw;
   }
 }
 
