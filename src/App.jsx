@@ -151,6 +151,24 @@ const areServiceOrdersPropsEqual = (previous, next) => {
 };
 
 const StableServiceOrdersSection = memo(ServiceOrdersSection, areServiceOrdersPropsEqual);
+
+const DuckLoadingView = () => (
+  <div className="duck-loading-view" role="status" aria-label="Cargando">
+    <video
+      className="duck-loading-video"
+      src="/video%20carga/duck%203.mp4"
+      autoPlay
+      loop
+      muted
+      playsInline
+      preload="metadata"
+      controls={false}
+      disablePictureInPicture
+      tabIndex={-1}
+      aria-hidden="true"
+    />
+  </div>
+);
 const AvailabilitySection = lazy(loadAvailabilitySection);
 const AttendanceSection = lazy(loadAttendanceSection);
 const InventoryDashboardSection = lazy(loadInventoryDashboardSection);
@@ -544,7 +562,7 @@ function AdminApp() {
 
   const renderWorkspaceContent = () => {
     if (controller.loading) {
-      return <p className="status">Cargando informacion...</p>;
+      return <DuckLoadingView />;
     }
 
     const showWorkspaceHeader =
@@ -802,7 +820,7 @@ function AdminApp() {
         {controller.activeTab === 'alquiler' && (
           <RefreshBoundary
             loading={controller.ordersModuleLoading}
-            fallback={<p className="status">Cargando Ordenes...</p>}
+            fallback={<DuckLoadingView />}
           >
           <StableServiceOrdersSection
             quotes={controller.quotes}
@@ -973,7 +991,7 @@ function AdminApp() {
                 </p>
               ) : null}
               {isNavigating || shouldShowDeveloperCompanyModal ? null : (
-                <Suspense fallback={<p className="status">Preparando vista...</p>}>
+                <Suspense fallback={<DuckLoadingView />}>
                   {renderWorkspaceContent()}
                 </Suspense>
               )}

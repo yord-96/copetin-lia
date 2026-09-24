@@ -6274,6 +6274,35 @@ textarea:focus {
   padding: 0.63rem 0.8rem;
 }
 
+.duck-loading-view {
+  min-height: clamp(240px, 48vh, 560px);
+  display: grid;
+  place-items: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+.duck-loading-video {
+  display: block;
+  width: clamp(120px, 14vw, 190px);
+  max-width: 42vw;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 700px) {
+  .duck-loading-view {
+    min-height: 42vh;
+  }
+
+  .duck-loading-video {
+    width: clamp(108px, 32vw, 150px);
+    max-width: 48vw;
+  }
+}
+
 .status.error {
   background: #f8f2f2;
   border-color: #d5c1c1;
